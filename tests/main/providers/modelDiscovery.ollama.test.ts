@@ -1,0 +1,271 @@
+/**
+ * Locks dialect-aware discovery routing.
+ *
+ *   - `ollama-native` providers must hit `GET {baseUrl}/api/tags` and
+ *     map the documented Ollama tags response into `ModelInfo[]`.
+ *   - `openai` providers continue to hit `GET {baseUrl}/v1/models`
+ *     unchanged.
+ *   - `detectDialect` must return `'openai'` when /v1/models 200s, and
+ *     fall back to `'ollama-native'` when /v1/models 404s but
+ *     /api/tags 200s. If neither responds, it must throw.
+ */
+
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+
+const persisted = {
+  id: 'p1',
+  name: 'Ollama Cloud',
+  baseUrl: 'https://ollama.com',
+  dialect: 'ollama-native' as const,
+  enabled: true,
+  models: [],
+  lastDiscoveredAt: undefined,
+  apiKey: 'k-test'
+};
+
+vi.mock('@main/providers/providerStore', () => ({
+  getProviderWithKey: vi.fn(async () => persisted),
+  updateProvider: vi.fn(async () => persisted)
+}));
+
+import { detectDialect, discoverModels } from '@main/providers/modelDiscovery';
+
+interface MockFetchCall {
+  url: string;
+  init?: RequestInit;
+}
+
+function mockFetchSequence(steps: Array<(call: MockFetchCall) => Response | Promise<Response>>) {
+  const calls: MockFetchCall[] = [];
+  let i = 0;
+  const fn = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+    const call = { url: String(url), init };
+    calls.push(call);
+    const step = steps[Math.min(i, steps.length - 1)]!;
+    i += 1;
+    return step(call);
+  });
+  (globalThis as unknown as { fetch: typeof fetch }).fetch = fn as unknown as typeof fetch;
+  return { fn, calls };
+}
+
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
+beforeEach(() => {
+  vi.resetModules();
+});
+
+describe('discoverModels — ollama-native dialect', () => {
+  it('hits /api/tags and maps the documented response', async () => {
+    const { calls } = mockFetchSequence([
+      () =>
+        jsonResponse(200, {
+          models: [
+            {
+              name: 'llama3.2:latest',
+              model: 'llama3.2:latest',
+              details: { family: 'llama', parameter_size: '3.2B' }
+            },
+            {
+              name: 'gpt-oss:120b-cloud',
+              model: 'gpt-oss:120b-cloud',
+              details: { family: 'gpt-oss', parameter_size: '120B' }
+            }
+          ]
+        })
+    ]);
+
+    const models = await discoverModels('p1', true);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe('https://ollama.com/api/tags');
+    expect(models.map((m) => m.id)).toEqual([
+      'gpt-oss:120b-cloud',
+      'llama3.2:latest'
+    ]);
+    // parameter_size becomes part of the label (informational only).
+    expect(models[0]!.label).toContain('120B');
+    // /api/tags does not expose context_window — it MUST be left
+    // undefined so the per-model override mechanism takes over.
+    expect(models[0]!.contextWindow).toBeUndefined();
+  });
+
+  it('forwards the API key as a Bearer token (cloud auth)', async () => {
+    const { calls } = mockFetchSequence([
+      () => jsonResponse(200, { models: [] })
+    ]);
+    await discoverModels('p1', true);
+    const auth = (calls[0]!.init?.headers as Record<string, string>)['Authorization'];
+    expect(auth).toBe('Bearer k-test');
+  });
+
+  it('throws ProviderError(endpoint-missing) on 404 from /api/tags', async () => {
+    // Discovery surface: a 404 means the BASE URL is wrong (the
+    // daemon doesn't expose /api/tags at all), not that a specific
+    // model is missing. Renderer can show a single-line "Endpoint
+    // not found. Verify the Base URL and dialect" instead of dumping
+    // the raw 404 body.
+    mockFetchSequence([
+      () =>
+        new Response('not found', {
+          status: 404,
+          statusText: 'Not Found'
+        })
+    ]);
+    await expect(discoverModels('p1', true)).rejects.toMatchObject({
+      name: 'ProviderError',
+      kind: 'endpoint-missing',
+      status: 404,
+      surface: 'discovery'
+    });
+  });
+
+  it('throws ProviderError(auth) on 401 from /api/tags (bad key)', async () => {
+    mockFetchSequence([
+      () =>
+        new Response('unauthorized', {
+          status: 401,
+          statusText: 'Unauthorized'
+        })
+    ]);
+    await expect(discoverModels('p1', true)).rejects.toMatchObject({
+      name: 'ProviderError',
+      kind: 'auth',
+      status: 401,
+      surface: 'discovery'
+    });
+  });
+});
+
+describe('detectDialect — auto-probe', () => {
+  it('returns "openai" when /v1/models is reachable', async () => {
+    const { calls } = mockFetchSequence([
+      () => jsonResponse(200, { data: [] })
+    ]);
+    const dialect = await detectDialect('https://api.example.com', '');
+    expect(dialect).toBe('openai');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toContain('/v1/models');
+  });
+
+  it('falls back to "ollama-native" when /v1/models is 404 but /api/tags is 200', async () => {
+    const { calls } = mockFetchSequence([
+      () => new Response('not found', { status: 404, statusText: 'Not Found' }),
+      () => jsonResponse(200, { models: [] })
+    ]);
+    const dialect = await detectDialect('https://ollama.com', 'k');
+    expect(dialect).toBe('ollama-native');
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.url).toContain('/v1/models');
+    expect(calls[1]!.url).toContain('/api/tags');
+  });
+
+  it('throws when neither endpoint is reachable', async () => {
+    mockFetchSequence([
+      () => new Response('nope', { status: 404 }),
+      () => new Response('nope', { status: 404 })
+    ]);
+    await expect(detectDialect('https://broken.example', '')).rejects.toThrow(
+      /Could not detect dialect/
+    );
+  });
+
+  it('continues to /api/tags even if /v1/models throws (DNS / TCP reset)', async () => {
+    mockFetchSequence([
+      () => {
+        throw new Error('ECONNREFUSED');
+      },
+      () => jsonResponse(200, { models: [] })
+    ]);
+    const dialect = await detectDialect('http://localhost:11434', '');
+    expect(dialect).toBe('ollama-native');
+  });
+
+  it('normalizes a trailing /api on the user-supplied base URL before probing (Ollama Cloud)', async () => {
+    // Regression: PROVIDERS_ADD ran `detectDialect(rawUrl, …)` BEFORE
+    // any normalization had a chance to remove a trailing dialect
+    // suffix. So a user pasting `https://ollama.com/api` got probed
+    // and persisted with mismatched URLs. The current dialect-aware
+    // path normalizes the probe URL against EACH dialect:
+    //
+    //   - OpenAI probe URL: `normalizeBaseUrl(raw, 'openai')` strips
+    //     only `/v1`, so `https://ollama.com/api` is preserved and
+    //     the probe goes to `https://ollama.com/api/v1/models`.
+    //     This 404s on Ollama Cloud (it doesn't speak OpenAI), which
+    //     is exactly what we want — the probe falls through to:
+    //   - Ollama-native probe URL: `normalizeBaseUrl(raw,
+    //     'ollama-native')` strips `/api`, so the probe goes to
+    //     `https://ollama.com/api/tags` (the canonical native
+    //     endpoint), which returns 200 and locks the dialect.
+    //
+    // The "doubled `/api/api`" bug the old path was vulnerable to is
+    // structurally impossible with the dialect-aware rule.
+    const { calls } = mockFetchSequence([
+      () => new Response('not found', { status: 404, statusText: 'Not Found' }),
+      () => jsonResponse(200, { models: [] })
+    ]);
+    const dialect = await detectDialect('https://ollama.com/api', 'k');
+    expect(dialect).toBe('ollama-native');
+    expect(calls[0]!.url).toBe('https://ollama.com/api/v1/models');
+    expect(calls[1]!.url).toBe('https://ollama.com/api/tags');
+  });
+
+  it('preserves a trailing /api on the OpenAI probe (OpenRouter regression)', async () => {
+    // OpenRouter exposes its OpenAI-compat surface under
+    // `https://openrouter.ai/api`. The probe must NOT strip `/api` —
+    // the canonical models endpoint is `…/api/v1/models`. The old
+    // dialect-blind probe stripped to `https://openrouter.ai` and
+    // 404'd before the dialect could ever resolve to `'openai'`.
+    const { calls } = mockFetchSequence([
+      () => jsonResponse(200, { data: [{ id: 'openai/gpt-4o', context_length: 128000 }] })
+    ]);
+    const dialect = await detectDialect('https://openrouter.ai/api', 'sk-or-test');
+    expect(dialect).toBe('openai');
+    expect(calls[0]!.url).toBe('https://openrouter.ai/api/v1/models');
+  });
+
+  it('normalizes a trailing /v1 on the user-supplied base URL before probing', async () => {
+    const { calls } = mockFetchSequence([
+      () => jsonResponse(200, { data: [] })
+    ]);
+    const dialect = await detectDialect('https://api.example.com/v1', 'k');
+    expect(dialect).toBe('openai');
+    expect(calls[0]!.url).toBe('https://api.example.com/v1/models');
+  });
+
+  /**
+   * Regression — Cluster 2 audit. Both detectDialect probes must
+   * forward an AbortSignal so a base URL that DNS-resolves but never
+   * responds at the socket layer cannot hang PROVIDERS_ADD past the
+   * `MODEL_DISCOVERY_TIMEOUT_MS` budget. Before this fix, the probe
+   * fetches had no signal and the renderer's settings modal spun
+   * indefinitely (minutes on Linux, ~21s on Windows) when a user
+   * mistyped the URL or it pointed at a blackholing firewall.
+   *
+   * The assertion checks the SHAPE of the wired-up signal — every
+   * probe call's `init.signal` must be a live AbortSignal. We don't
+   * actually trigger the timer to fire because vitest's fake-timer
+   * setup would interfere with the real-fetch mock chain; a presence
+   * check is sufficient to prove the wiring is intact.
+   */
+  it('forwards a bounded AbortSignal on every probe fetch (timeout wiring)', async () => {
+    const { calls } = mockFetchSequence([
+      () => new Response('not found', { status: 404 }),
+      () => jsonResponse(200, { models: [] })
+    ]);
+    await detectDialect('https://maybe-broken.example', '');
+    expect(calls).toHaveLength(2);
+    for (const c of calls) {
+      const sig = c.init?.signal;
+      expect(sig).toBeDefined();
+      // AbortSignal instance check — not a literal undefined and not
+      // a boolean, so the underlying transport can cancel on timeout.
+      expect(typeof (sig as AbortSignal).aborted).toBe('boolean');
+    }
+  });
+});

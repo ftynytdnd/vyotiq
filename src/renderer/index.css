@@ -1,0 +1,699 @@
+@import "tailwindcss";
+
+@import "./styles/tokens.css";
+@import "highlight.js/styles/github-dark.css";
+
+/* ---------------------------------------------------------------------------
+   Tailwind v4 — CSS-First Theme Tokens
+   All colors / radii / spacing are exposed as utilities by virtue of being
+   declared in the @theme block. NO tailwind.config.js exists in this project.
+   --------------------------------------------------------------------------- */
+
+@theme {
+  /* Surfaces (stealth dark — never pure black) */
+  --color-surface-base: oklch(0.18 0.005 260);
+  /* #18181A */
+  --color-surface-raised: oklch(0.22 0.005 260);
+  /* #262628 */
+  --color-surface-overlay: oklch(0.26 0.006 260);
+  /* slightly lighter */
+  --color-surface-hover: oklch(0.30 0.007 260);
+
+  /* Text */
+  --color-text-primary: #ffffff;
+  --color-text-secondary: oklch(0.92 0.005 260);
+  --color-text-muted: #8a8a8e;
+  --color-text-faint: oklch(0.55 0.005 260);
+
+  /* Borders (used sparingly) */
+  --color-border-subtle: oklch(0.30 0.005 260 / 0.4);
+  --color-border-strong: oklch(0.40 0.005 260 / 0.6);
+
+  /* Accent + state
+     --------------------------------------------------------------------
+     Vyotiq identity: steel violet. Chosen to sit cleanly on the
+     stealth-dark surface family without clashing with the warning
+     amber or danger red tokens below. Lightness ≈ 0.74 matches the
+     state token band so focus halos, links, and small chips land in
+     the same perceptual register.
+  */
+  --color-accent: oklch(0.74 0.14 290);
+  --color-accent-soft: oklch(0.74 0.14 290 / 0.18);
+  --color-accent-strong: oklch(0.80 0.16 290);
+  --color-success: oklch(0.78 0.16 150);
+  --color-danger: oklch(0.70 0.20 25);
+  --color-warning: oklch(0.82 0.15 80);
+
+  /* Diff */
+  --color-diff-add: oklch(0.78 0.16 150);
+  --color-diff-del: oklch(0.70 0.20 25);
+
+  /* Radii */
+  --radius-card: 12px;
+  --radius-pill: 9999px;
+  --radius-inner: 6px;
+  --radius-line: 4px;
+
+  /* Line-level surfaces (timeline rows, cascade-style log lines). Kept
+     tokenized so every row surface is controlled by a single variable. */
+  --color-line-hover: oklch(0.26 0.006 260 / 0.55);
+  --color-chevron: oklch(0.55 0.005 260);
+
+  /* Typography
+     --------------------------------------------------------------------
+     Named font-size scale. Replaces scattered `text-[10px]` / `[11px]` /
+     `[12px]` / `[13px]` ad-hoc sizing. The existing `text-xs` (12px) and
+     `text-sm` (14px) Tailwind defaults remain available for semantically
+     neutral sizing; prefer the named tokens on meta/row/body surfaces.
+
+       text-meta   10px  uppercase eyebrows, timestamps, hint rows
+       text-row    11px  timeline row labels, sidebar items
+       text-log    12px  tool/reasoning/subagent log lines
+       text-body   14px  assistant text, prompts, primary copy
+  */
+  --text-meta: 10px;
+  --text-row: 11px;
+  --text-log: 12px;
+  --text-body: 14px;
+
+  --font-sans: "Inter", "SF Pro Display", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+
+/* ---------------------------------------------------------------------------
+   Base layer
+   --------------------------------------------------------------------------- */
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--color-surface-base);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Frameless drag region utilities */
+.app-drag {
+  -webkit-app-region: drag;
+}
+
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Custom scrollbar — minimal, stealthy */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-subtle);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-strong);
+  background-clip: padding-box;
+}
+
+/* Selection */
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-text-primary);
+}
+
+/* Focus ring (subtle two-stop halo) — applied only to interactive
+   controls. Form inputs (textarea / input / select) sit inside their
+   own visually-distinct containers (composer card, sidebar search
+   row, picker popover) so the ring is suppressed on them to avoid a
+   double affordance.
+
+   Design: a 1px base-tinted inset that separates the focused element
+   from the surrounding surface, plus a 3px soft accent halo. Reads
+   cleaner than a hard 2px solid outline on dark surfaces, and
+   animates smoothly because it's a single `box-shadow` property. */
+:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 1px var(--color-surface-base),
+    0 0 0 3px color-mix(in oklab, var(--color-accent) 55%, transparent);
+  border-radius: 6px;
+  transition: box-shadow 120ms ease;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+textarea {
+  font-family: inherit;
+}
+
+/* ---------------------------------------------------------------------------
+   Elevation system (two canonical levels)
+   ---------------------------------------------------------------------------
+   Replaces ad-hoc `shadow-lg shadow-black/30 ring-1 ring-border-subtle/40`
+   compositions that were drifting across the composer, modals, popovers,
+   toasts, menus, and the jump-to-latest chip.
+
+   Design:
+     - Shadow stops are intentionally dim (stealth-dark, never glossy).
+     - The inset hairline ring lives inside the same `box-shadow`
+       declaration so the elevation is a single property — no more
+       duelling `shadow-*` + `ring-*` classes.
+     - Two levels only:
+         elev-1  chips, toasts, menu panels, popovers      (low relief)
+         elev-2  composer, modal dialog, model picker panel (higher relief)
+   --------------------------------------------------------------------------- */
+.elev-1 {
+  box-shadow:
+    inset 0 0 0 1px var(--color-border-subtle),
+    0 1px 2px 0 oklch(0 0 0 / 0.30),
+    0 2px 6px -2px oklch(0 0 0 / 0.25);
+}
+
+.elev-2 {
+  box-shadow:
+    inset 0 0 0 1px var(--color-border-subtle),
+    0 2px 4px -1px oklch(0 0 0 / 0.30),
+    0 8px 24px -6px oklch(0 0 0 / 0.45);
+}
+
+/* Focused composer variant — elev-2 plus a quiet inset edge. Swap in
+   via the single `.elev-2-focused` class so the composer doesn't
+   need to stack two separate shadow utilities. */
+.elev-2-focused {
+  box-shadow:
+    inset 0 0 0 1px var(--color-border-strong),
+    0 2px 4px -1px oklch(0 0 0 / 0.30),
+    0 8px 24px -6px oklch(0 0 0 / 0.45);
+  transition: box-shadow 150ms ease;
+}
+
+/* Subtle slide + fade for streaming list items (e.g. sub-agent steps
+   arriving in real time). Kept short and low-amplitude so many items
+   appearing in quick succession don't feel jarring. */
+@keyframes vyotiq-stepfade {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.vyotiq-stepfade {
+  animation: vyotiq-stepfade 180ms ease-out;
+}
+
+/* ---------------------------------------------------------------------------
+   Streaming shimmer — applied to in-flight timeline labels (reasoning,
+   agent-thought, sub-agent, tool call/group summaries, status pill).
+
+   Contrast design:
+     The shimmer is a *lightness* oscillation, not a color shift. Base
+     sits at `text-muted` (≈ lightness 0.58) and the peak rises to
+     `text-primary` (white, lightness 1.0) — a ~0.42 lightness delta,
+     which is the minimum for the effect to read clearly on 10–12px
+     labels without feeling flashy. Accent color is deliberately NOT
+     in the peak — a blue tint shows up as a hue spike rather than
+     shimmer, and that is what earlier iterations read as "pulsing".
+
+   Motion design:
+     - 3-stop continuous oscillation gradient (base → peak → base) with
+       matching start/end stops, so tiled backgrounds are seamless and
+       no visible color jump happens at the tile boundary.
+     - Em-based tile (`background-size: 12em` text / `5em` pill) keeps
+       the highlight a font-relative width across labels of every
+       length — short pills and long sub-agent lines shimmer with the
+       same cadence.
+     - Jittered keyframe stops (35% / 62%) drift slightly off a linear
+       progression; combined with `cubic-bezier(0.45,0,0.55,1)` this
+       reads as "light moving over paper" rather than a metronome.
+     - Per-instance phase via `--shimmer-offset`. Components set a
+       deterministic negative `animation-delay` derived from their
+       stable id so concurrent shimmers desync naturally.
+     - GPU promoted via `will-change: background-position`.
+
+   Cascade note:
+     `-webkit-text-fill-color: transparent` is the key to letting the
+     clipped gradient show through. It is independent of and higher
+     priority than `color`, so it survives Tailwind `text-*` utilities
+     that callers compose via the `extra` argument to `shimmerText` /
+     `shimmerPill`.
+
+   Reduced-motion:
+     Freezes animation and paints a static `text-primary` tint so the
+     label stays perfectly legible.
+   --------------------------------------------------------------------------- */
+@keyframes vyotiq-shimmer-text {
+  0% {
+    background-position-x: 0;
+  }
+
+  /* Slightly behind a perfect linear progression — gives a subtle
+     "lift" feeling at the start of the sweep. */
+  35% {
+    background-position-x: -4em;
+  }
+
+  /* Slightly ahead of linear — the highlight feels like it accelerates
+     through the middle then settles. */
+  62% {
+    background-position-x: -8em;
+  }
+
+  100% {
+    background-position-x: -12em;
+  }
+}
+
+@keyframes vyotiq-shimmer-pill {
+  0% {
+    background-position-x: 0;
+  }
+
+  35% {
+    background-position-x: -1.7em;
+  }
+
+  62% {
+    background-position-x: -3.3em;
+  }
+
+  100% {
+    background-position-x: -5em;
+  }
+}
+
+.vyotiq-shimmer-text {
+  background-image: linear-gradient(110deg,
+      var(--color-text-muted) 0%,
+      var(--color-text-primary) 50%,
+      var(--color-text-muted) 100%);
+  background-size: 12em 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: vyotiq-shimmer-text 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  animation-delay: var(--shimmer-offset, 0s);
+  will-change: background-position;
+}
+
+.vyotiq-shimmer-pill {
+  background-image: linear-gradient(110deg,
+      var(--color-text-muted) 0%,
+      var(--color-text-primary) 50%,
+      var(--color-text-muted) 100%);
+  background-size: 5em 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: vyotiq-shimmer-pill 2.0s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  animation-delay: var(--shimmer-offset, 0s);
+  will-change: background-position;
+}
+
+/* Defensive cascade fix (audit C2). The shimmer technique relies on
+   `background-clip: text` + transparent fill; both color properties
+   inherit to children. Markdown / structured-content children that
+   re-declare their own `background` (inline `<code>`, `<mark>`, link
+   underlines, …) silently break the text-clip on themselves, leaving
+   the inherited transparent fill with NO gradient to paint — they
+   appear as sized empty pills inside the rendered prose. Force any
+   such child back to opaque text fill so a future caller that
+   re-introduces shimmer over a markdown body can't reproduce the
+   bug. The shimmer animation still plays on the parent's plain text;
+   only nested elements with their own paint properties are excluded. */
+.vyotiq-shimmer-text :is(code, strong, em, a, mark, kbd, del, ins, s, sub, sup) {
+  color: var(--color-text-primary);
+  -webkit-text-fill-color: var(--color-text-primary);
+  background-image: none;
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .vyotiq-shimmer-text,
+  .vyotiq-shimmer-pill {
+    animation: none;
+    background: none;
+    will-change: auto;
+    color: var(--color-text-primary);
+    -webkit-text-fill-color: var(--color-text-primary);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Edit-tool diff settle
+   ---------------------------------------------------------------------------
+   Plays only when the EditDiffView mounts in its `authoritative` variant —
+   i.e. the moment the synthetic pre-result preview is replaced by the real
+   `tool-result.data.hunks`. Each hunk container carries a
+   `--vyotiq-hunk-idx` custom property so consecutive hunks cascade in.
+
+   Design:
+     - 140 ms ease-out, low-amplitude (2 px translate, 0 → 1 opacity).
+       Matches the existing `vyotiq-stepfade` rhythm so the timeline's
+       motion vocabulary stays consistent.
+     - 28 ms per-hunk delay multiplier. A 4-hunk diff settles in
+       ~140 + 3*28 = 224 ms — still well under any "feels slow"
+       threshold but readable enough that the eye registers the
+       transition instead of a flash.
+     - `animation-fill-mode: backwards` so a hunk delayed past its
+       parent's mount frame doesn't briefly paint at opacity 1
+       before the keyframe runs.
+
+   Reduced-motion:
+     - The whole rule is wrapped in `@media (prefers-reduced-motion:
+       no-preference)`, so users with reduce-motion preferences see
+       the diff appear instantly (no class effect at all). The
+       authoritative content is identical in both paths; only the
+       transition is suppressed.
+   --------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes vyotiq-diff-settle {
+    from {
+      opacity: 0;
+      transform: translateY(2px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .vyotiq-diff-settle {
+    animation: vyotiq-diff-settle 140ms ease-out backwards;
+    animation-delay: calc(var(--vyotiq-hunk-idx, 0) * 28ms);
+  }
+
+  /* ---------------------------------------------------------------------------
+     Streaming-cursor blink — rendered at the tail of the last `+` / `-`
+     line in a `partial` EditDiffView. Telegraphs "more bytes still
+     arriving" without competing with the row-level shimmer (which the
+     `InvocationShell` already paints on the collapsed line).
+
+     Reduced-motion users see a static caret bar via the no-keyframe
+     fallback below — same visual presence, no blink.
+     --------------------------------------------------------------------------- */
+  @keyframes vyotiq-stream-cursor-blink {
+
+    0%,
+    50% {
+      opacity: 1;
+    }
+
+    50.01%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  .vyotiq-stream-cursor {
+    background-color: currentColor;
+    animation: vyotiq-stream-cursor-blink 900ms steps(2, end) infinite;
+    border-radius: 1px;
+  }
+}
+
+/* Reduced-motion fallback: keep the cursor visible as a static bar so
+   the streaming UI still has a tail marker, just without the blink. */
+@media (prefers-reduced-motion: reduce) {
+  .vyotiq-stream-cursor {
+    background-color: currentColor;
+    opacity: 0.6;
+    border-radius: 1px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Stealth-thin scrollbar — scoped opt-in via `.scrollbar-stealth`. The
+   global scrollbar (10 px) stays as-is for body scroll surfaces; only
+   sidebar-internal scroll regions need this finer treatment.
+   --------------------------------------------------------------------------- */
+.scrollbar-stealth::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-stealth::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-stealth::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 9999px;
+  border: 0;
+}
+
+.scrollbar-stealth:hover::-webkit-scrollbar-thumb {
+  background: var(--color-border-subtle);
+}
+
+.scrollbar-stealth::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-strong);
+}
+
+/* ---------------------------------------------------------------------------
+   Markdown scope (.vyotiq-md)
+   Applied to assistant text, memory previews, and any sanitized markdown
+   body. All rules target descendants only — never leak across the app.
+   --------------------------------------------------------------------------- */
+.vyotiq-md {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-primary);
+  word-break: break-word;
+}
+
+.vyotiq-md>*:first-child {
+  margin-top: 0;
+}
+
+.vyotiq-md>*:last-child {
+  margin-bottom: 0;
+}
+
+.vyotiq-md p {
+  margin: 0 0 0.65em 0;
+}
+
+.vyotiq-md h1,
+.vyotiq-md h2,
+.vyotiq-md h3,
+.vyotiq-md h4 {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 1em 0 0.35em 0;
+  letter-spacing: -0.005em;
+}
+
+.vyotiq-md h1 {
+  font-size: 1.25rem;
+}
+
+.vyotiq-md h2 {
+  font-size: 1.1rem;
+}
+
+.vyotiq-md h3 {
+  font-size: 1rem;
+}
+
+.vyotiq-md h4 {
+  font-size: 0.92rem;
+  color: var(--color-text-secondary);
+}
+
+.vyotiq-md ul,
+.vyotiq-md ol {
+  margin: 0.25em 0 0.65em 1.15em;
+  padding: 0;
+}
+
+.vyotiq-md ul {
+  list-style: disc;
+}
+
+.vyotiq-md ol {
+  list-style: decimal;
+}
+
+.vyotiq-md li {
+  margin: 0.1em 0;
+}
+
+.vyotiq-md li>p {
+  margin: 0.1em 0;
+}
+
+.vyotiq-md a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--color-accent) 45%, transparent);
+  text-underline-offset: 2px;
+  transition: text-decoration-color 150ms ease;
+}
+
+.vyotiq-md a:hover {
+  text-decoration-color: var(--color-accent);
+}
+
+.vyotiq-md code {
+  font-family: var(--font-mono);
+  font-size: 0.87em;
+  background: var(--color-surface-overlay);
+  color: var(--color-text-primary);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+
+.vyotiq-md pre {
+  font-family: var(--font-mono);
+  background: var(--color-surface-overlay);
+  color: var(--color-text-secondary);
+  padding: 0.85em 1em;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  overflow-x: auto;
+  margin: 0.5em 0 0.9em 0;
+}
+
+.vyotiq-md pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  color: inherit;
+}
+
+.vyotiq-md blockquote {
+  margin: 0.5em 0 0.9em 0;
+  padding: 0.15em 0 0.15em 0.9em;
+  border-left: 2px solid var(--color-border-subtle);
+  color: var(--color-text-muted);
+}
+
+.vyotiq-md hr {
+  border: none;
+  border-top: 1px solid var(--color-border-subtle);
+  /* Asymmetric margin: more breathing room below than above so the
+     HR visually anchors to the prose section it closes rather than
+     reading as a header for whatever timeline rows follow it. */
+  margin: 1em 0 1.4em 0;
+}
+
+.vyotiq-md table {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  border-collapse: collapse;
+  margin: 0.4em 0 0.75em 0;
+  overflow-x: auto;
+  font-size: 0.86em;
+}
+
+.vyotiq-md thead {
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.vyotiq-md th,
+.vyotiq-md td {
+  padding: 0.28em 0.65em;
+  text-align: left;
+  border-right: 1px solid color-mix(in oklab, var(--color-border-subtle) 70%, transparent);
+  color: var(--color-text-secondary);
+  /* Prose cells still wrap, but the global `.vyotiq-md` `word-break:
+     break-word` is overridden so identifiers in inline `<code>` (filenames,
+     symbol names) don't split mid-token. The table itself already declares
+     `display: block; max-width: 100%; overflow-x: auto` above, so wide cells
+     produce a horizontal scrollbar instead. */
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+.vyotiq-md td code,
+.vyotiq-md th code {
+  /* Filenames, function names, and other monospace identifiers must
+     never split mid-token inside a table cell — `openai_compat_mixin.py`
+     would otherwise break at `_` boundaries when the column gets narrow
+     (see screenshot regression). */
+  white-space: nowrap;
+}
+
+.vyotiq-md th:last-child,
+.vyotiq-md td:last-child {
+  border-right: 0;
+}
+
+.vyotiq-md tbody tr {
+  border-bottom: 1px solid color-mix(in oklab, var(--color-border-subtle) 55%, transparent);
+}
+
+.vyotiq-md tbody tr:last-child {
+  border-bottom: 0;
+}
+
+.vyotiq-md strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.vyotiq-md em {
+  color: var(--color-text-secondary);
+}
+
+/* Tighten the highlight.js palette down to the Vyotiq surface family by
+   overriding just the background so the dark theme colors still read but
+   blend with the panel. */
+.vyotiq-md pre code.hljs {
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Timeline log-line utility
+   A flat, flush row used by the Cascade-style tool/reasoning/subagent rows.
+   --------------------------------------------------------------------------- */
+.log-line {
+  transition: background-color 150ms ease;
+  border-radius: var(--radius-line);
+}
+
+.log-line:hover {
+  background: var(--color-line-hover);
+}

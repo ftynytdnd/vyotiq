@@ -1,0 +1,632 @@
+/**
+ * Typed IPC contract. The shape of `window.vyotiq` exposed via contextBridge.
+ * Both the preload and the renderer import this; the renderer treats it as
+ * read-only.
+ */
+
+import type {
+  ProviderConfig,
+  AddProviderInput,
+  ProviderAttribution,
+  ModelInfo
+} from './provider.js';
+import type {
+  ChatSendInput,
+  ChatSendReply,
+  Conversation,
+  ConversationMeta,
+  TimelineEvent
+} from './chat.js';
+import type {
+  CheckpointRunManifest,
+  CheckpointRevertResult,
+  CheckpointsSummary,
+  FileHistoryRow,
+  PendingChange,
+  RewindPreviewResult,
+  RewindResult
+} from './checkpoint.js';
+import type { DiffHunk } from './tool.js';
+
+/**
+ * Structured payload for the richer "approve this edit/delete" dialog
+ * mounted under `strictApprovalsByWorkspace = true`. The user sees a
+ * full diff instead of a text-only "Allow?" modal, so they can make
+ * a genuinely informed choice before the write lands.
+ *
+ * Carried as a sibling of `message` on `ConfirmRequest`. Legacy
+ * text-only prompts (destructive-command confirmations, provider
+ * writes, etc.) continue to use just `message` and ignore this slot.
+ */
+export interface EditApprovalPayload {
+  kind: 'edit-approval';
+  /** Workspace-relative path. */
+  filePath: string;
+  /** What the tool is about to do. */
+  operation: 'create' | 'modify' | 'delete';
+  /** Body BEFORE the change. Omitted for `create`. */
+  preBody?: string;
+  /** Body AFTER the change. Omitted for `delete`. */
+  postBody?: string;
+  /** Precomputed hunks for `modify` (avoids a renderer-side diff). */
+  hunks?: DiffHunk[];
+  /** Cosmetic diff stats for the dialog header badge. */
+  additions: number;
+  deletions: number;
+  /** Run id — lets the dialog latch "Accept all remaining in this run". */
+  runId: string;
+  /** Sub-agent attribution when the change came from a delegate. */
+  subagentId?: string;
+}
+
+export interface ConfirmRequest {
+  id: string;
+  /**
+   * Plain-text message for legacy text-only confirms (destructive
+   * commands, provider permission prompts). When `payload` is set to
+   * an `edit-approval` payload the renderer uses the richer
+   * `EditApprovalDialog` and ignores `message`.
+   */
+  message: string;
+  /**
+   * Structured payload. Currently only `edit-approval` but left open
+   * for future richer prompt shapes without churning the wire type.
+   */
+  payload?: EditApprovalPayload;
+}
+
+/**
+ * Extended renderer reply shape. Legacy boolean replies still work
+ * (the renderer calls `respondConfirm(id, true | false)`); the richer
+ * reply adds an `'accept-all'` sentinel the `EditApprovalDialog` uses
+ * to latch auto-accept on every subsequent edit in the same run.
+ *
+ * The main-side confirm bus normalizes booleans into
+ * `{ approved: bool }` for back-compat, and the edit-approval handler
+ * interprets `'accept-all'` as "approved this one AND set the latch".
+ */
+export type ConfirmResponse = boolean | { approved: boolean; acceptAllRemaining?: boolean };
+
+export interface AppSettings {
+  defaultModel?: { providerId: string; modelId: string };
+  /**
+   * Optional on the wire (old settings files predate this field), but the
+   * settings store ALWAYS populates a fully-resolved `permissions` object
+   * on the public `AppSettings` shape (`settingsStore.publicShape`), so
+   * consumers can treat this as required after the first `refresh()`.
+   */
+  permissions?: {
+    allowFileWrites: boolean;
+    allowBash: boolean;
+    allowWebSearch: boolean;
+  };
+  webSearchEndpoint?: string;
+  /**
+   * Audit fix §2.2 — opt-in transcript-aware summarization. When the
+   * per-turn trim policy (§2.3) cannot get the request under the
+   * model's effective context window, the run-loop calls a one-shot
+   * summarizer LLM call to compact the OLDEST half of the post-trim
+   * history into a `<history_summary>` block. Off by default — long
+   * sessions still work without it (the trim policy + the provider's
+   * own retry path keep things moving), but on very long delegate-
+   * heavy chats this is the only lever that prevents repeated
+   * provider-side context-overflow rejections.
+   *
+   * The setting carries no model selection: the summarizer reuses the
+   * run's selected provider + model (the model the user trusts for
+   * THIS conversation is also the model we trust to summarize it).
+   */
+  historySummary?: {
+    enabled: boolean;
+  };
+  /**
+   * Persisted UI state. Kept under a sub-object so future renderer-level
+   * preferences (theme, density, etc.) can be added without churning the
+   * top-level shape.
+   */
+  ui?: {
+    sidebarOpen?: boolean;
+    /**
+     * Timeline row expand/collapse state keyed by `conversationId`. Each
+     * value is an array of opaque row keys (e.g. `tool-group:<id>`) that
+     * the user has explicitly expanded. Collapsed is implicit absence.
+     * Closed-by-default on first appearance; survives restart.
+     */
+    expandedRows?: Record<string, string[]>;
+    /**
+     * Per-workspace last-active conversation id. Lets each workspace
+     * remember which session was open when the user switched away, so
+     * flipping back restores the prior timeline without aborting any
+     * in-flight run. Keyed by `WorkspaceEntry.id`.
+     */
+    activeConversationByWorkspace?: Record<string, string>;
+    /**
+     * Sidebar workspace-group expand/collapse state, keyed by
+     * `WorkspaceEntry.id`. Open is the default — absence means "expanded".
+     */
+    collapsedWorkspaces?: string[];
+    /**
+     * Per-workspace last-used model. When the model picker has no
+     * conversation-level preference (`lastProviderId`/`lastModelId` on
+     * the active conversation), it falls back to this map keyed by
+     * `WorkspaceEntry.id` BEFORE the global `defaultModel` — so a
+     * fresh chat in a workspace defaults to the model that workspace
+     * was last using rather than the app-wide default.
+     */
+    lastModelByWorkspace?: Record<string, { providerId: string; modelId: string }>;
+    /**
+     * Per-workspace permission overrides, keyed by `WorkspaceEntry.id`.
+     * When a workspace has an entry here, sending a message under that
+     * workspace uses the override INSTEAD of the global
+     * `permissions` block. Each entry is partial — only the flags the
+     * user explicitly toggled in that workspace are persisted, and any
+     * unspecified flag falls back to the global default. This keeps
+     * the override surface minimal: a brand-new workspace with one
+     * "allow bash" toggle stores `{ allowBash: false }`, not all three
+     * flags.
+     *
+     * Why per-workspace and not per-conversation: the user's mental
+     * model is "this folder is safe for writes / unsafe / sandboxed"
+     * — a property of the workspace itself, not of any single chat
+     * inside it. Per-conversation overrides would multiply the
+     * surface area without addressing the actual safety question.
+     */
+    permissionsByWorkspace?: Record<
+      string,
+      Partial<{
+        allowFileWrites: boolean;
+        allowBash: boolean;
+        allowWebSearch: boolean;
+      }>
+    >;
+    /**
+     * Per-workspace "strict approvals" toggle. When `true`, every
+     * `edit` / `delete` tool call pauses the run and surfaces a
+     * full-diff approval dialog (`PreApplyApprovalDialog`) instead
+     * of writing optimistically. Absence = `false` (post-hoc review
+     * mode — Cursor-style). Keyed by `WorkspaceEntry.id`.
+     */
+    strictApprovalsByWorkspace?: Record<string, boolean>;
+    /**
+     * Per-workspace "require pending changes to be resolved before
+     * sending a new message" toggle. When `true`, `chat:send` on a
+     * conversation with pending checkpoint entries resolves with
+     * `{ ok: false, kind: 'pending-checkpoints', count }` instead of
+     * auto-accepting on the new prompt. Absence = `false` (legacy
+     * auto-accept-on-next-prompt behavior, the default). Keyed by
+     * `WorkspaceEntry.id`.
+     */
+    gatePromptOnPendingByWorkspace?: Record<string, boolean>;
+  };
+}
+
+/**
+ * A single workspace registered with the app. The user can have many;
+ * conversations are stamped with one `workspaceId` and tools/sandbox/
+ * memory for a given run resolve through that id (NOT the globally
+ * active workspace). That decoupling is what lets a run keep going
+ * after the user switches the active workspace.
+ */
+export interface WorkspaceEntry {
+  id: string;
+  path: string;
+  label: string;
+  addedAt: number;
+  /**
+   * Set on the wire ONLY when main couldn't `fs.stat` the path on the
+   * most recent reachability check (boot or explicit retry). The
+   * registry entry is preserved so the user can fix the mount and
+   * retry — the flag is purely advisory and lets the renderer paint
+   * a warning chip on the sidebar group. Optional in the type so
+   * existing settings blobs without the field deserialise unchanged.
+   */
+  unreachable?: boolean;
+}
+
+/**
+ * Multi-workspace registry exposed to the renderer. `activeId` is the
+ * workspace currently in focus in the UI; `workspaces[]` is the full
+ * set the sidebar tree renders. May be empty on first launch (no
+ * workspace picked yet).
+ */
+export interface WorkspacesState {
+  activeId: string | null;
+  workspaces: WorkspaceEntry[];
+}
+
+/**
+ * Snapshot row returned by `chat.listActiveRuns()`. One entry per
+ * orchestrator run currently in flight in main. Optional fields are
+ * left undefined for runs that haven't bound a conversation /
+ * workspace yet (transient pre-binding window inside `startRun`); the
+ * renderer skips those entries during rehydration.
+ */
+export interface ActiveRunInfo {
+  runId: string;
+  conversationId?: string;
+  workspaceId?: string;
+  startedAt?: number;
+}
+
+/**
+ * Snapshot of the app's identity + on-disk layout. Surfaced in the
+ * Settings → About tab so a user (or anyone helping with support /
+ * backup) can find their config and log files without digging through
+ * Electron's userData conventions. Plain JSON, no live state — values
+ * never change for a given install short of an Electron upgrade or a
+ * fresh build.
+ */
+export interface AppInfo {
+  /** Semantic version from `package.json`. */
+  version: string;
+  /** Electron runtime version (e.g. `28.2.0`). */
+  electron: string;
+  /** Node version embedded in Electron (e.g. `18.18.2`). */
+  node: string;
+  /** Resolved `app.getPath('userData')`. */
+  userDataDir: string;
+  /** Absolute path to `settings.json` inside `userDataDir`. */
+  settingsFile: string;
+  /** Absolute path to the rolling log directory. */
+  logDir: string;
+}
+
+/**
+ * Whitelisted targets for `vyotiq.app.revealPath`. The IPC handler
+ * accepts ONLY these enum values (not arbitrary paths) so the channel
+ * cannot be abused to open any filesystem location.
+ */
+export type AppRevealTarget = 'userData' | 'settings' | 'log';
+
+export interface MemoryEntry {
+  /** Storage scope. */
+  scope: 'global' | 'workspace';
+  /** Filename relative to the memory folder, e.g. `user-preferences.md`. */
+  key: string;
+  /** Markdown contents. */
+  content: string;
+  /** Last modified ms epoch. */
+  updatedAt: number;
+}
+
+export interface WorkspaceInfo {
+  path: string | null;
+  /** Pretty short name for display. */
+  label: string | null;
+}
+
+/**
+ * Result shape for `workspace.listTree`. `entries` is the (capped) list
+ * of paths, `total` is the uncapped count the walker actually found, and
+ * `truncated` is `true` iff `entries.length < total`. Consumers render
+ * the truncation hint ("results truncated, narrow the filter") only when
+ * `truncated === true` so small workspaces stay visually silent.
+ */
+export interface WorkspaceTreeResult {
+  entries: string[];
+  truncated: boolean;
+  total: number;
+}
+
+/**
+ * The renderer-facing API surface. All methods must be plain JSON-safe values.
+ * Complex bidirectional streams use event listeners (`onChat*`).
+ */
+export interface VyotiqApi {
+  // ---- Window controls (frameless title bar) ----
+  window: {
+    minimize(): Promise<void>;
+    maximizeToggle(): Promise<void>;
+    close(): Promise<void>;
+    isMaximized(): Promise<boolean>;
+    onStateChanged(cb: (state: { isMaximized: boolean }) => void): () => void;
+    reload(): Promise<void>;
+    toggleDevTools(): Promise<void>;
+  };
+
+  // ---- Workspace ----
+  workspace: {
+    get(): Promise<WorkspaceInfo>;
+    pick(): Promise<WorkspaceInfo>;
+    set(path: string): Promise<WorkspaceInfo>;
+    listTree(opts?: { depth?: number }): Promise<WorkspaceTreeResult>;
+
+    /** Full multi-workspace registry. Used by the sidebar tree. */
+    list(): Promise<WorkspacesState>;
+    /**
+     * Add a workspace. If `path` is omitted, opens the OS picker —
+     * matches the existing `pick()` UX. The added workspace is also
+     * activated. Returns the new entry.
+     */
+    add(path?: string): Promise<WorkspaceEntry>;
+    /** Activate a workspace by id (already registered). */
+    setActive(id: string): Promise<WorkspacesState>;
+    /** Rename a workspace's display label (path is immutable). */
+    rename(id: string, label: string): Promise<WorkspaceEntry>;
+    /**
+     * Remove a workspace. Conversations stamped with this id are either
+     * deleted (`deleteConversations: true`) or reparented to the
+     * synthetic "Unassigned" workspace.
+     */
+    remove(id: string, opts: { deleteConversations: boolean }): Promise<WorkspacesState>;
+    /**
+     * Re-stat a workspace's path. If the mount is now reachable, clears
+     * its `unreachable` flag in the registry. Returns the refreshed
+     * `WorkspacesState` so the renderer can paint the result in a
+     * single round-trip.
+     */
+    retryReachability(id: string): Promise<WorkspacesState>;
+  };
+
+  // ---- Providers ----
+  providers: {
+    list(): Promise<ProviderConfig[]>;
+    add(input: AddProviderInput): Promise<ProviderConfig>;
+    update(
+      id: string,
+      patch: Partial<AddProviderInput> & {
+        enabled?: boolean;
+        /** OpenRouter app-attribution overrides; see ProviderConfig.attribution. */
+        attribution?: ProviderAttribution;
+      }
+    ): Promise<ProviderConfig>;
+    remove(id: string): Promise<void>;
+    discoverModels(id: string, force?: boolean): Promise<ModelInfo[]>;
+    test(id: string): Promise<{ ok: boolean; message: string }>;
+    /**
+     * Pin a custom context-window value for a given model on this provider,
+     * or pass `value: null` to clear the override. Returns the updated
+     * provider record. Used when /v1/models doesn't expose `context_length`
+     * (OpenAI / Anthropic / DeepSeek direct) or when the user wants to
+     * pin a ceiling regardless of what the router reports.
+     */
+    setContextOverride(
+      providerId: string,
+      modelId: string,
+      value: number | null
+    ): Promise<ProviderConfig>;
+  };
+
+  // ---- Token estimation (pre-flight, BPE-based) ----
+  tokens: {
+    /**
+     * Best-effort token count for a composer draft. Resolves the right
+     * encoding for the given model id (o200k_base for GPT-4o+ / DeepSeek,
+     * cl100k_base fallback, chars/3.8 for models with no BPE).
+     */
+    estimate(input: {
+      modelId: string;
+      prompt: string;
+      attachments?: string[];
+    }): Promise<{ tokens: number; exact: boolean }>;
+  };
+
+  // ---- Chat / orchestrator ----
+  chat: {
+    send(input: ChatSendInput): Promise<ChatSendReply>;
+    abort(runId: string): Promise<void>;
+    onEvent(cb: (runId: string, event: TimelineEvent) => void): () => void;
+    onDone(cb: (runId: string) => void): () => void;
+    onError(cb: (runId: string, message: string) => void): () => void;
+    /**
+     * Snapshot of every orchestrator run currently in flight in main.
+     * Used by the renderer at boot to rehydrate its `runId →
+     * conversation` dispatch table after a renderer reload (HMR /
+     * F5). Without this, sibling-workspace runs keep streaming events
+     * the renderer no longer recognises and they're silently dropped.
+     */
+    listActiveRuns(): Promise<ActiveRunInfo[]>;
+  };
+
+  // ---- Conversations (persistent JSONL transcripts) ----
+  conversations: {
+    /**
+     * List conversations. When `workspaceId` is supplied, only
+     * conversations stamped with that id are returned; otherwise the
+     * full cross-workspace list is returned (used by the sidebar tree
+     * to render every group in one pass).
+     */
+    list(workspaceId?: string): Promise<ConversationMeta[]>;
+    read(id: string): Promise<Conversation | null>;
+    /**
+     * Create a new conversation under a specific workspace. The
+     * renderer always passes the active workspace id; main rejects
+     * with a thrown error when no workspaces are registered yet.
+     */
+    create(workspaceId: string): Promise<ConversationMeta>;
+    rename(id: string, title: string): Promise<ConversationMeta>;
+    remove(id: string): Promise<void>;
+    /**
+     * Move a conversation under a different workspace. Aborts any
+     * in-flight runs pinned to it (workspaceId is part of every run's
+     * pinned sandbox; re-pinning mid-run would silently swap the
+     * orchestrator's effective workspace path). Throws on unknown id
+     * / unknown target. Returns the refreshed meta.
+     */
+    move(id: string, targetWorkspaceId: string): Promise<ConversationMeta>;
+  };
+
+  // ---- Tools (renderer-initiated helpers) ----
+  tools: {
+    /**
+     * Open a workspace-relative path in the OS default opener.
+     *
+     * `workspaceId` is optional; when supplied the path is resolved
+     * against THAT workspace's root rather than the globally-active
+     * workspace. The renderer threads it through whenever it knows
+     * which workspace the file belongs to (report "open in browser"
+     * clicks for sibling-workspace conversations, etc.) so an open
+     * never silently lands on a different workspace's same-relative-path
+     * file when the active
+     * workspace has drifted away from the artifact's owner.
+     *
+     * Backwards-compatible: callers that omit it fall back to the
+     * legacy active-workspace behavior.
+     */
+    openPath(path: string, workspaceId?: string): Promise<void>;
+    onConfirmRequest(cb: (req: ConfirmRequest) => void): () => void;
+    /**
+     * Subscribe to confirm-cancel broadcasts. Fired when the main process
+     * resolves a pending confirm request WITHOUT a renderer reply (server-
+     * side timeout, shutdown drain). The renderer must drop the matching
+     * pending dialog so it never lingers visible after main has already
+     * fail-closed the request.
+     */
+    onConfirmCancel(cb: (id: string) => void): () => void;
+    /**
+     * Reply to a `TOOLS_REQUEST_CONFIRM`. Bare `true` / `false` matches
+     * the legacy text-only dialog. The richer `EditApprovalDialog`
+     * passes `{ approved, acceptAllRemaining }` so a single click can
+     * Both approve THIS edit AND latch auto-accept for the rest of
+     * the run.
+     */
+    respondConfirm(id: string, reply: ConfirmResponse): Promise<void>;
+  };
+
+  // ---- Memory ----
+  memory: {
+    list(scope: 'global' | 'workspace'): Promise<MemoryEntry[]>;
+    read(scope: 'global' | 'workspace', key: string): Promise<MemoryEntry | null>;
+    /**
+     * Write or append to a memory entry.
+     *
+     * `mode` defaults to `'set'` (overwrite). Pass `'append'` to add a
+     * line to an existing entry without rewriting the whole body.
+     * Currently `'append'` is only honored for `scope: 'global'` —
+     * workspace notes are always overwritten because their editor is
+     * full-textarea (no append affordance in the UI).
+     *
+     * F-022: prior wire shape used the magic key `'append'` to
+     * disambiguate the mode, which conflicted with the `key`
+     * parameter's role (an entry filename). The dedicated `mode` arg
+     * removes the conflict — passing `key: 'append'` no longer has
+     * sentinel meaning.
+     */
+    write(
+      scope: 'global' | 'workspace',
+      key: string,
+      content: string,
+      mode?: 'set' | 'append'
+    ): Promise<MemoryEntry>;
+    /** Open the OS file manager focused on the entry's underlying file. */
+    reveal(scope: 'global' | 'workspace', key: string): Promise<void>;
+  };
+
+  // ---- Settings ----
+  settings: {
+    get(): Promise<AppSettings>;
+    set(patch: Partial<AppSettings>): Promise<AppSettings>;
+  };
+
+  // ---- Checkpoints (file-change review + revert) ----
+  checkpoints: {
+    /** Summary (runs, files, disk usage) for one workspace. */
+    summary(workspaceId: string): Promise<CheckpointsSummary>;
+    /** Full run manifest with every entry. */
+    readRun(workspaceId: string, runId: string): Promise<CheckpointRunManifest | null>;
+    /** Chronological history rows for one workspace-relative file. */
+    readFileHistory(workspaceId: string, filePath: string): Promise<FileHistoryRow[]>;
+    /** Pending changes for one conversation. */
+    listPending(conversationId: string): Promise<PendingChange[]>;
+    /** Drop one entry from pending without reverting. */
+    accept(entryId: string): Promise<void>;
+    /** Drop every pending entry for a conversation. */
+    acceptAll(conversationId: string): Promise<void>;
+    /** Revert AND drop from pending. */
+    reject(entryId: string): Promise<CheckpointRevertResult>;
+    /**
+     * Revert one entry by id (does not touch pending).
+     * Main resolves the entry's owning workspace/run via manifest scan.
+     */
+    revertEntry(entryId: string): Promise<CheckpointRevertResult>;
+    /** Revert an entire run (reverse order). */
+    revertRun(runId: string): Promise<CheckpointRevertResult>;
+    /** Revert one file to a content hash from its history. */
+    revertFileToHash(
+      workspaceId: string,
+      filePath: string,
+      hash: string
+    ): Promise<CheckpointRevertResult>;
+    /** Read a snapshot blob's UTF-8 body (used for diff previews). */
+    readBlob(workspaceId: string, hash: string): Promise<string | null>;
+    /**
+     * Read the CURRENT on-disk contents of a workspace-relative file
+     * (UTF-8). Used by `FileHistoryList` to render a "compare with
+     * current" diff against any snapshot. Returns `null` when the
+     * file no longer exists on disk.
+     */
+    readCurrentFile(workspaceId: string, filePath: string): Promise<string | null>;
+    /** Write an archive of the workspace's checkpoint store into the workspace. */
+    exportArchive(workspaceId: string): Promise<{ archivePath: string; bytes: number }>;
+    /** Prune older than N days. `days: 0` clears everything for the workspace. */
+    prune(workspaceId: string, days: number): Promise<{ removedRuns: number; removedBlobs: number }>;
+    /**
+     * Delete a single run + every blob it uniquely references + any
+     * pending rows that point at this run's entries. Returns
+     * `{ removed: true, droppedPending }` on success and
+     * `{ removed: false, droppedPending: 0 }` for an unknown / already-
+     * deleted run (idempotent). The Checkpoints view uses this for
+     * the per-row Delete affordance.
+     */
+    deleteRun(workspaceId: string, runId: string): Promise<{ removed: boolean; droppedPending: number }>;
+    /**
+     * Compute the impact of rewinding a conversation to before a
+     * specific user-prompt event WITHOUT performing the rewind. Drives
+     * the inline confirmation modal's preview body.
+     */
+    previewRewind(input: {
+      conversationId: string;
+      workspaceId: string;
+      promptEventId: string;
+    }): Promise<RewindPreviewResult>;
+    /**
+     * Atomically revert every file change AND trim the conversation
+     * transcript from the named user-prompt event onward. The
+     * inline-on-prompt Revert button calls this after the user
+     * confirms the modal preview.
+     */
+    rewindToPrompt(input: {
+      conversationId: string;
+      workspaceId: string;
+      promptEventId: string;
+    }): Promise<RewindResult>;
+    /**
+     * Subscribe to checkpoint-store mutations. Fired on every accept /
+     * reject / revert / prune / export so renderer views can refresh
+     * without polling. Returns the unsubscribe handle.
+     */
+    onChanged(cb: (workspaceId: string) => void): () => void;
+    /**
+     * Subscribe to per-conversation transcript-rewind broadcasts.
+     * Fired by `rewindToPrompt` after the JSONL trim lands so the
+     * renderer can refresh its cached event slice for the affected
+     * conversation. Returns the unsubscribe handle.
+     */
+    onTranscriptRewound(cb: (conversationId: string) => void): () => void;
+  };
+
+  // ---- App identity + on-disk paths (Settings → About) ----
+  app: {
+    /** Read the app's version + userData/settings/log paths. Cheap & idempotent. */
+    info(): Promise<AppInfo>;
+    /**
+     * Reveal one of the whitelisted paths in the OS file manager. The
+     * handler maps the enum to a concrete path; the renderer never
+     * passes raw paths in.
+     */
+    revealPath(target: AppRevealTarget): Promise<void>;
+  };
+
+  // ---- Renderer → main log relay (used by the React error boundary) ----
+  log: (
+    level: 'debug' | 'info' | 'warn' | 'error',
+    message: string,
+    fields?: Record<string, unknown>
+  ) => Promise<void>;
+}
+
+declare global {
+  interface Window {
+    vyotiq: VyotiqApi;
+  }
+}

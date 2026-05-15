@@ -1,0 +1,257 @@
+/**
+ * Confirm bus. The bridge between tools (which call `ctx.confirm(message)`)
+ * and the renderer (which renders an inline confirm UI). Any tool needing
+ * user approval triggers an IPC round-trip through here.
+ */
+
+import { randomUUID } from 'node:crypto';
+import { IPC } from '@shared/constants.js';
+import type { EditApprovalPayload, ConfirmResponse } from '@shared/types/ipc.js';
+import { getMainWindow } from '../window/getMainWindow.js';
+import { logger } from '../logging/logger.js';
+
+const log = logger.child('confirm');
+
+/**
+ * What the resolver hands back to the tool. `approved` is the actual
+ * gate; `acceptAllRemaining` is the "Accept all remaining in this
+ * run" latch flipped by the `EditApprovalDialog`. Legacy text-only
+ * confirms never set the latch, so the value is always `false` for
+ * them.
+ */
+export interface ConfirmResult {
+  approved: boolean;
+  acceptAllRemaining: boolean;
+}
+
+interface PendingConfirm {
+  resolve: (result: ConfirmResult) => void;
+  timer: NodeJS.Timeout;
+  /** Guards against any double-settle path (timeout firing in the same
+   *  microtask as a renderer reply, shutdown drain stomping a real reply,
+   *  etc.). Promise.resolve is already idempotent, but the flag makes the
+   *  invariant explicit and gives us a structured log when it fires. */
+  resolved: boolean;
+  /**
+   * Caller-supplied abort signal + its listener. When a `requestConfirm`
+   * call forwards the run-scoped `AbortSignal` (sub-agent cancellation,
+   * Stop button, shutdown drain that arrives before `clearAllPending`),
+   * `finalize` MUST detach the listener or the AbortController holds a
+   * reference to this map entry forever — a classic long-lived-signal
+   * leak visible only under heavy chat churn. Both fields are `null`
+   * for the legacy signal-less call path so the predicate stays cheap
+   * (`if (entry.signal)` is truthy-checked before use).
+   */
+  signal: AbortSignal | null;
+  onAbort: (() => void) | null;
+}
+
+const pending = new Map<string, PendingConfirm>();
+
+const TIMEOUT_MS = 5 * 60 * 1000;
+
+function finalize(
+  id: string,
+  entry: PendingConfirm,
+  result: ConfirmResult,
+  reason: string
+): void {
+  if (entry.resolved) {
+    log.warn('double-settle suppressed on confirm', { id, reason });
+    return;
+  }
+  entry.resolved = true;
+  clearTimeout(entry.timer);
+  // Drop the abort listener (if any) BEFORE clearing the map entry so a
+  // late-firing signal can't re-enter `finalize` with a stale reference.
+  if (entry.signal && entry.onAbort) {
+    try {
+      entry.signal.removeEventListener('abort', entry.onAbort);
+    } catch {
+      /* AbortSignal.removeEventListener is standard, but defensive
+         against any non-standard polyfill that throws. */
+    }
+  }
+  pending.delete(id);
+  // Notify the renderer that the request is gone whenever the resolution
+  // did NOT originate there. Without this, a server-side timeout (or a
+  // shutdown drain) would leave the modal rendered until the user clicks
+  // Deny — by which point we'd already have resolved the request and the
+  // click would fall on a dead handler.
+  if (reason !== 'renderer-reply') {
+    try {
+      const win = getMainWindow();
+      if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send(IPC.TOOLS_CANCEL_CONFIRM, id);
+      }
+    } catch (err) {
+      log.warn('failed to broadcast confirm:cancel', { id, reason, err });
+    }
+  }
+  try {
+    entry.resolve(result);
+  } catch (err) {
+    log.error('confirm resolver threw', { id, reason, err });
+  }
+}
+
+/** Shorthand for the most common `approved` outcome. */
+const denied: ConfirmResult = { approved: false, acceptAllRemaining: false };
+const approvedOnly: ConfirmResult = { approved: true, acceptAllRemaining: false };
+
+/**
+ * Per-run "accept all remaining edits" latch.
+ *
+ * When the user clicks "Accept all remaining in this run" inside the
+ * `EditApprovalDialog`, the toolRunner sets `runId → true` here so
+ * subsequent `confirmEdit` calls in the SAME run resolve immediately
+ * as approved without re-prompting. Cleared on `clearEditApprovalLatch`
+ * (called by the run lifecycle).
+ *
+ * NOT used by the legacy text confirms — they always re-prompt.
+ */
+const editApprovalLatch = new Set<string>();
+
+/** Returns `true` when the run has the auto-accept latch flipped. */
+export function isEditApprovalLatched(runId: string): boolean {
+  return editApprovalLatch.has(runId);
+}
+
+/** Flip the latch — called by `toolRunner` after a `confirmEdit` reply
+ *  carries `acceptAllRemaining: true`. */
+export function setEditApprovalLatch(runId: string): void {
+  if (runId) editApprovalLatch.add(runId);
+}
+
+/** Clear the latch — called when a run ends (finalize / abort) so the
+ *  flag never leaks across runs. */
+export function clearEditApprovalLatch(runId: string): void {
+  editApprovalLatch.delete(runId);
+}
+
+/**
+ * Request user confirmation for a tool action.
+ *
+ * Returns a {@link ConfirmResult} so callers (specifically the `edit`
+ * and `delete` tools, which forward the `EditApprovalPayload`) can see
+ * the "Accept all remaining in this run" latch flag in addition to
+ * the boolean gate.
+ *
+ * @param message  Text fallback prompt (used by legacy confirms; the
+ *                 `EditApprovalDialog` ignores this when `payload` is
+ *                 set).
+ * @param signal   Optional abort signal. When it fires, the pending
+ *                 confirm is finalized as denied (`approved: false`)
+ *                 and the renderer modal is dismissed via
+ *                 `IPC.TOOLS_CANCEL_CONFIRM`. Without this plumbing
+ *                 a tool blocked on approval would hang for up to
+ *                 `TIMEOUT_MS` (5 min) after the user hit Stop.
+ * @param payload  Optional structured payload. When supplied, the
+ *                 renderer mounts the richer `EditApprovalDialog`
+ *                 with a full diff and three buttons (Deny / Accept
+ *                 / Accept all remaining).
+ */
+export function requestConfirm(
+  message: string,
+  signal?: AbortSignal,
+  payload?: EditApprovalPayload
+): Promise<ConfirmResult> {
+  // Short-circuit when the signal was already aborted at the call
+  // site — no point in emitting a modal the renderer will immediately
+  // be told to cancel.
+  if (signal?.aborted === true) {
+    return Promise.resolve(denied);
+  }
+  const win = getMainWindow();
+  // Fail CLOSED when the window is gone or torn down. Historically the
+  // nullish check on `win` was enough because `getMainWindow()` already
+  // filters destroyed windows, but a mid-request reload can race us —
+  // check `isDestroyed()` before touching `webContents`.
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) {
+    log.warn('confirm requested but no live window; failing closed');
+    return Promise.resolve(denied);
+  }
+  const id = randomUUID();
+  return new Promise<ConfirmResult>((resolve) => {
+    const entry: PendingConfirm = {
+      resolve,
+      resolved: false,
+      signal: signal ?? null,
+      onAbort: null,
+      timer: setTimeout(() => {
+        const cur = pending.get(id);
+        if (cur) finalize(id, cur, denied, 'timeout');
+      }, TIMEOUT_MS)
+    };
+    if (signal) {
+      // `once: true` is belt-and-suspenders; `finalize` also detaches
+      // the listener explicitly so a misbehaving polyfill that ignores
+      // `once` still cleans up.
+      const onAbort = (): void => {
+        const cur = pending.get(id);
+        if (cur) finalize(id, cur, denied, 'aborted');
+      };
+      entry.onAbort = onAbort;
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+    pending.set(id, entry);
+    try {
+      win.webContents.send(IPC.TOOLS_REQUEST_CONFIRM, {
+        id,
+        message,
+        ...(payload ? { payload } : {})
+      });
+    } catch (err) {
+      // Window died between the liveness check above and the send —
+      // unwind the pending entry and fail closed. Without this the
+      // tool would park until `TIMEOUT_MS` waiting for a renderer
+      // reply that can never arrive.
+      log.warn('failed to send confirm request; failing closed', { id, err });
+      const cur = pending.get(id);
+      if (cur) finalize(id, cur, denied, 'send-failed');
+    }
+  });
+}
+
+/**
+ * Resolve a pending confirm with the renderer's reply.
+ *
+ * Accepts the legacy boolean reply shape AND the richer
+ * `{ approved, acceptAllRemaining }` envelope used by
+ * `EditApprovalDialog`. Booleans are normalized so the boolean callers
+ * (`ConfirmDialog`, destructive-command path) need no churn.
+ */
+export function settleConfirm(id: string, reply: ConfirmResponse): void {
+  const entry = pending.get(id);
+  if (!entry) {
+    // The renderer occasionally re-sends a settle for an id we've already
+    // finalized (e.g. duplicate click). It's harmless but worth a debug
+    // breadcrumb.
+    log.warn('settleConfirm for unknown id', { id });
+    return;
+  }
+  let result: ConfirmResult;
+  if (typeof reply === 'boolean') {
+    result = reply ? approvedOnly : denied;
+  } else {
+    result = {
+      approved: reply.approved === true,
+      acceptAllRemaining: reply.approved === true && reply.acceptAllRemaining === true
+    };
+  }
+  finalize(id, entry, result, 'renderer-reply');
+}
+
+/**
+ * Drain every pending confirm as denied. Called from the app's `before-quit`
+ * handler so we never leak timers or unresolved promises at shutdown.
+ * Safe to call multiple times; the map is cleared in-place.
+ */
+export function clearAllPending(): void {
+  const count = pending.size;
+  if (count > 0) log.info('draining pending confirms at shutdown', { count });
+  // Snapshot before iterating because `finalize` mutates the map.
+  for (const [id, entry] of [...pending.entries()]) {
+    finalize(id, entry, denied, 'shutdown');
+  }
+}

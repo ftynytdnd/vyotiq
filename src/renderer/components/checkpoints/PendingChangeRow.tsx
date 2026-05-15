@@ -1,0 +1,114 @@
+/**
+ * One pending change. Header row with file path + diff stats + Accept
+ * / Reject affordances; expandable detail pane with the full diff.
+ *
+ * Visual rhythm reuses `InvocationShell`'s log-line cadence so the
+ * pending panel reads as a sibling of the timeline rather than a
+ * card-styled overlay.
+ */
+
+import { useState } from 'react';
+import { ChevronDown, ChevronRight, FilePlus, PencilLine, Trash2 } from 'lucide-react';
+import type { PendingChange } from '@shared/types/checkpoint.js';
+import { useCheckpointsStore } from '../../store/useCheckpointsStore.js';
+import { useToastStore } from '../../store/useToastStore.js';
+import { Button } from '../ui/Button.js';
+import { DiffStatsBadge } from '../timeline/tools/shared/DiffStatsBadge.js';
+import { PendingChangeDiff } from './PendingChangeDiff.js';
+import { cn } from '../../lib/cn.js';
+
+interface PendingChangeRowProps {
+  change: PendingChange;
+}
+
+export function PendingChangeRow({ change }: PendingChangeRowProps) {
+  const [expanded, setExpanded] = useState(false);
+  const accept = useCheckpointsStore((s) => s.accept);
+  const reject = useCheckpointsStore((s) => s.reject);
+  const showToast = useToastStore((s) => s.show);
+
+  const Icon =
+    change.kind === 'create' ? FilePlus : change.kind === 'delete' ? Trash2 : PencilLine;
+  const verb =
+    change.kind === 'create' ? 'Created' : change.kind === 'delete' ? 'Deleted' : 'Modified';
+  const pathIndex = Math.max(change.filePath.lastIndexOf('/'), change.filePath.lastIndexOf('\\'));
+  const fileName = pathIndex >= 0 ? change.filePath.slice(pathIndex + 1) : change.filePath;
+  const dirName = pathIndex >= 0 ? change.filePath.slice(0, pathIndex + 1) : '';
+
+  const onAccept = () => void accept(change.entryId, change.conversationId);
+  const onReject = async () => {
+    const result = await reject(change.entryId, change.conversationId);
+    if (!result.ok) {
+      const msg =
+        result.error.kind === 'blob-missing'
+          ? `Snapshot missing — cannot revert ${change.filePath}.`
+          : result.error.kind === 'fs'
+            ? `Revert failed: ${result.error.message}`
+            : result.error.kind === 'sandbox'
+              ? `Revert blocked by sandbox: ${result.error.message}`
+              : `Revert failed (${result.error.kind}).`;
+      showToast(msg, 'danger');
+    } else {
+      showToast(`Reverted ${change.filePath}`, 'success');
+    }
+  };
+
+  return (
+    <div className="vyotiq-stepfade group flex flex-col">
+      <div className="log-line flex items-center gap-2 px-2 py-1">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="app-no-drag flex items-center gap-1 rounded-inner text-text-muted hover:text-text-primary"
+          aria-label={expanded ? 'Collapse diff' : 'Expand diff'}
+          aria-expanded={expanded}
+        >
+          {expanded ? (
+            <ChevronDown className="h-3.5 w-3.5" strokeWidth={2} />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
+          )}
+        </button>
+        <Icon
+          className={cn(
+            'h-3.5 w-3.5 shrink-0',
+            change.kind === 'create'
+              ? 'text-accent'
+              : change.kind === 'delete'
+                ? 'text-danger'
+                : 'text-text-muted'
+          )}
+          strokeWidth={2}
+        />
+        <div className="min-w-0 flex-1 truncate text-row text-text-secondary" title={change.filePath}>
+          <span className="font-medium text-text-primary">{verb}</span>{' '}
+          {dirName && <span className="font-mono text-text-faint">{dirName}</span>}
+          <span className="font-mono text-text-secondary">{fileName}</span>
+        </div>
+        <DiffStatsBadge
+          additions={change.additions}
+          deletions={change.deletions}
+          className="w-16 shrink-0 justify-end"
+        />
+        <div className="ml-1 flex shrink-0 gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+          <Button size="sm" variant="ghost" onClick={onReject} aria-label={`Reject ${change.filePath}`}>
+            Reject
+          </Button>
+          <Button size="sm" variant="secondary" onClick={onAccept} aria-label={`Accept ${change.filePath}`}>
+            Accept
+          </Button>
+        </div>
+      </div>
+      {expanded && (
+        <div className="px-3 pb-2 pt-1">
+          <PendingChangeDiff
+            workspaceId={change.workspaceId}
+            kind={change.kind}
+            {...(change.preHash ? { preHash: change.preHash } : {})}
+            {...(change.postHash ? { postHash: change.postHash } : {})}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
