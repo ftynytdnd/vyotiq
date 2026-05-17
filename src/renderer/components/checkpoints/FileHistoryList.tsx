@@ -188,7 +188,7 @@ function HistoryRow({
       <div className="log-line flex items-center gap-2 px-2 py-1">
         <span
           className={cn(
-            'shrink-0 rounded px-1 font-mono text-meta uppercase',
+            'shrink-0 rounded-inner px-1 font-mono text-meta uppercase',
             row.kind === 'create'
               ? 'bg-success/10 text-success'
               : row.kind === 'delete'

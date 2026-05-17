@@ -69,7 +69,7 @@ export const ModelPickerTrigger = forwardRef<HTMLButtonElement, ModelPickerTrigg
         )}
       >
         {showProviderBadge && (
-          <span className="shrink-0 rounded bg-surface-base px-1 py-0.5 text-meta text-text-faint">
+          <span className="shrink-0 rounded-inner bg-surface-base px-1 py-0.5 text-meta text-text-faint">
             {provider!.name}
           </span>
         )}

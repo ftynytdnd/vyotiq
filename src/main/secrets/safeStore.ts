@@ -19,6 +19,35 @@ async function ensureUserDataDir(): Promise<string> {
 }
 
 /**
+ * Atomic write helper: writes payload to `${path}.tmp`, then renames to the
+ * destination. A crash between writeFile + rename leaves the original file
+ * intact (best case) or leaks a `.tmp` sibling (worst case — readable by a
+ * future cleanup pass). Without this, `fs.writeFile` opens the target with
+ * `O_TRUNC`, so a kernel-level interruption mid-write produces a truncated
+ * settings.json / providers.json that the next `JSON.parse` rejects — and
+ * the catch path silently downgrades to `{}`, wiping the user's entire
+ * persisted state. Audit fix H-02 / M-02.
+ *
+ * The `.tmp` cleanup on failure is best-effort — a concurrent successful
+ * write would have already replaced the target, and a stale `.tmp` is
+ * harmless.
+ */
+async function atomicWrite(absPath: string, data: string | Buffer): Promise<void> {
+  const tmp = `${absPath}.tmp`;
+  try {
+    await fs.writeFile(tmp, data);
+    await fs.rename(tmp, absPath);
+  } catch (err) {
+    try {
+      await fs.unlink(tmp);
+    } catch {
+      /* noop — tmp may not exist */
+    }
+    throw err;
+  }
+}
+
+/**
  * Encrypts an object as JSON and writes it to disk.
  * On systems without crypto support, throws — we never silently downgrade.
  */
@@ -31,7 +60,7 @@ export async function writeEncryptedJson(filename: string, data: unknown): Promi
     );
   }
   const buf = safeStorage.encryptString(json);
-  await fs.writeFile(userDataPath(filename), buf);
+  await atomicWrite(userDataPath(filename), buf);
 }
 
 /**
@@ -54,10 +83,13 @@ export async function readEncryptedJson<T>(filename: string): Promise<T | null> 
   }
 }
 
-/** Plain-JSON helpers for non-secret state (e.g. settings.json). */
+/** Plain-JSON helpers for non-secret state (e.g. settings.json).
+ *
+ * Atomic write via `${path}.tmp` + rename. Same crash-safety contract as
+ * `writeEncryptedJson` above. Audit fix H-02 / M-02. */
 export async function writePlainJson(filename: string, data: unknown): Promise<void> {
   await ensureUserDataDir();
-  await fs.writeFile(userDataPath(filename), JSON.stringify(data, null, 2), 'utf8');
+  await atomicWrite(userDataPath(filename), JSON.stringify(data, null, 2));
 }
 
 export async function readPlainJson<T>(filename: string): Promise<T | null> {

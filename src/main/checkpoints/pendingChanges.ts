@@ -9,10 +9,10 @@
  */
 
 import { promises as fs, existsSync } from 'node:fs';
-import { dirname } from 'node:path';
 import type { PendingChange } from '@shared/types/checkpoint.js';
 import { pendingFile } from './paths.js';
 import { logger } from '../logging/logger.js';
+import { atomicWriteJson } from './atomicWrite.js';
 
 const log = logger.child('checkpoints/pendingChanges');
 
@@ -50,11 +50,7 @@ async function loadBucket(workspaceId: string): Promise<Bucket> {
 }
 
 async function persistBucket(workspaceId: string, bucket: Bucket): Promise<void> {
-  const path = pendingFile(workspaceId);
-  await fs.mkdir(dirname(path), { recursive: true });
-  const tmp = `${path}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(bucket), 'utf8');
-  await fs.rename(tmp, path);
+  await atomicWriteJson(pendingFile(workspaceId), bucket);
 }
 
 /** Append a pending change for a conversation. */

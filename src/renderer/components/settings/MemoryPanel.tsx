@@ -25,6 +25,7 @@ import { Spinner } from '../ui/Spinner.js';
 import { ConfirmDialog } from '../ui/ConfirmDialog.js';
 import { PromptDialog } from '../ui/PromptDialog.js';
 import { TextField } from '../ui/TextField.js';
+import { Eyebrow } from '../ui/Eyebrow.js';
 import { MarkdownBody } from '../timeline/markdown/MarkdownBody.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
@@ -291,9 +292,9 @@ export function MemoryPanel() {
                 )}
                 {scope === 'global' && (
                   <div className="flex flex-col gap-1.5 rounded-card bg-surface-overlay p-3">
-                    <div className="text-row uppercase tracking-wider text-text-faint">
+                    <Eyebrow as="span" size="row">
                       Append a new rule (date-stamped)
-                    </div>
+                    </Eyebrow>
                     <div className="flex items-center gap-2">
                       <TextField
                         className="flex-1"

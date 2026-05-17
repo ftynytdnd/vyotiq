@@ -45,6 +45,22 @@ const FIVE_LINE_BODY = [
   'line five'
 ].join('\n');
 
+async function waitUntil(assertion: () => void, timeoutMs = 500): Promise<void> {
+  const started = Date.now();
+  let lastError: unknown;
+  while (Date.now() - started < timeoutMs) {
+    try {
+      assertion();
+      return;
+    } catch (err) {
+      lastError = err;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  if (lastError) throw lastError;
+  assertion();
+}
+
 describe('DiffStreamer', () => {
   it('emits a diff-stream event with real hunks when oldString matches the cached body', async () => {
     const workspacePath = await mkTempWorkspace();
@@ -60,10 +76,10 @@ describe('DiffStreamer', () => {
       name: 'edit',
       parsed: { path: 'a.ts', oldString: 'line two', newString: 'LINE TWO' }
     });
-    // Resolve the awaiting body-read.
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await waitUntil(() => {
+      expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(1);
+    });
     const streamEvents = events.filter((e) => e.kind === 'diff-stream');
-    expect(streamEvents).toHaveLength(1);
     const ev = streamEvents[0]!;
     if (ev.kind !== 'diff-stream') throw new Error('expected diff-stream');
     expect(ev.callId).toBe('c1');
@@ -146,10 +162,14 @@ describe('DiffStreamer', () => {
     });
     const args = { path: 'a.ts', oldString: 'line two', newString: 'LINE TWO' };
     streamer.onArgsDelta({ callId: 'c1', name: 'edit', parsed: args });
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await waitUntil(() => {
+      expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(1);
+    });
     streamer.onArgsDelta({ callId: 'c1', name: 'edit', parsed: args });
     streamer.onArgsDelta({ callId: 'c1', name: 'edit', parsed: args });
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await waitUntil(() => {
+      expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(1);
+    });
     expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(1);
     streamer.dispose();
   });
@@ -168,19 +188,25 @@ describe('DiffStreamer', () => {
       name: 'edit',
       parsed: { path: 'a.ts', oldString: 'line two', newString: 'LINE TW' }
     });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await waitUntil(() => {
+      expect(events.filter((e) => e.kind === 'diff-stream').length).toBeGreaterThanOrEqual(1);
+    });
     streamer.onArgsDelta({
       callId: 'c1',
       name: 'edit',
       parsed: { path: 'a.ts', oldString: 'line two', newString: 'LINE TWO' }
     });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await waitUntil(() => {
+      expect(events.filter((e) => e.kind === 'diff-stream').length).toBeGreaterThanOrEqual(2);
+    });
     streamer.onArgsDelta({
       callId: 'c1',
       name: 'edit',
       parsed: { path: 'a.ts', oldString: 'line two', newString: 'LINE TWO EXTRA' }
     });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await waitUntil(() => {
+      expect(events.filter((e) => e.kind === 'diff-stream').length).toBeGreaterThanOrEqual(2);
+    });
     expect(events.filter((e) => e.kind === 'diff-stream').length).toBeGreaterThanOrEqual(2);
     streamer.dispose();
   });
@@ -251,10 +277,10 @@ describe('DiffStreamer', () => {
       name: 'edit',
       parsed: { path: 'a.ts', oldString: 'beta', newString: 'BETA' }
     });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(readFile).toHaveBeenCalledTimes(1);
-    const ev = events.find((e) => e.kind === 'diff-stream');
-    expect(ev).toBeDefined();
+    await waitUntil(() => {
+      expect(readFile).toHaveBeenCalledTimes(1);
+      expect(events.find((e) => e.kind === 'diff-stream')).toBeDefined();
+    });
     streamer.dispose();
   });
 
@@ -272,9 +298,9 @@ describe('DiffStreamer', () => {
       name: 'edit',
       parsed: { path: 'a.ts', oldString: 'line two', newString: 'LINE TWO' }
     });
-    // Long enough for the initial body-read + compute to settle so
-    // the post-settle assertion isn't racing the in-flight emit.
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await waitUntil(() => {
+      expect(events.filter((e) => e.kind === 'diff-stream').length).toBe(1);
+    });
     expect(events.filter((e) => e.kind === 'diff-stream').length).toBe(1);
     streamer.notifySettled('c1');
     // Audit fix H8: `notifySettled` re-emits the cached hunks with
@@ -313,9 +339,10 @@ describe('DiffStreamer', () => {
           command: `cat > a.ts << EOF\nbrand new line one\nbrand new line two\nEOF`
         }
       });
-      await new Promise((resolve) => setTimeout(resolve, 30));
+      await waitUntil(() => {
+        expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(1);
+      });
       const streamEvents = events.filter((e) => e.kind === 'diff-stream');
-      expect(streamEvents).toHaveLength(1);
       const ev = streamEvents[0]!;
       if (ev.kind !== 'diff-stream') throw new Error('expected diff-stream');
       expect(ev.tool).toBe('bash');
@@ -356,7 +383,9 @@ describe('DiffStreamer', () => {
           command: `cat > a.ts << EOF\npartial\nmore lines\nEOF`
         }
       });
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await waitUntil(() => {
+        expect(events.filter((e) => e.kind === 'diff-stream').length).toBeGreaterThanOrEqual(2);
+      });
       const count = events.filter((e) => e.kind === 'diff-stream').length;
       // At least 2 distinct emits (the partial-body content changes,
       // terminator arrival may or may not change the hunks, but it
@@ -404,9 +433,10 @@ describe('DiffStreamer', () => {
         name: 'bash',
         parsed: { command: `echo 'new content' > greeting.txt` }
       });
-      await new Promise((resolve) => setTimeout(resolve, 30));
+      await waitUntil(() => {
+        expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(1);
+      });
       const streamEvents = events.filter((e) => e.kind === 'diff-stream');
-      expect(streamEvents).toHaveLength(1);
       if (streamEvents[0]!.kind !== 'diff-stream') throw new Error();
       expect(streamEvents[0]!.tool).toBe('bash');
       streamer.dispose();
@@ -444,10 +474,9 @@ describe('DiffStreamer', () => {
           content: 'line A\nline B\nline C'
         }
       });
-      // No FS read needed for creates, but the resolver awaits a
-      // realpath of the workspace root. Give the microtask queue a
-      // beat to drain.
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await waitUntil(() => {
+        expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(1);
+      });
       const streamEvents = events.filter(
         (e): e is Extract<TimelineEvent, { kind: 'diff-stream' }> => e.kind === 'diff-stream'
       );
@@ -498,7 +527,9 @@ describe('DiffStreamer', () => {
         name: 'edit',
         parsed: { path: 'a.ts', create: true, content: 'one\ntwo\nthree' }
       });
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await waitUntil(() => {
+        expect(events.filter((e) => e.kind === 'diff-stream').length).toBe(3);
+      });
       const streamEvents = events.filter(
         (e): e is Extract<TimelineEvent, { kind: 'diff-stream' }> => e.kind === 'diff-stream'
       );
@@ -527,9 +558,10 @@ describe('DiffStreamer', () => {
       streamer.onArgsDelta({ callId: 'c1', name: 'edit', parsed: args });
       streamer.onArgsDelta({ callId: 'c1', name: 'edit', parsed: { ...args } });
       streamer.onArgsDelta({ callId: 'c1', name: 'edit', parsed: { ...args } });
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await waitUntil(() => {
+        expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(1);
+      });
       const streamEvents = events.filter((e) => e.kind === 'diff-stream');
-      expect(streamEvents).toHaveLength(1);
       streamer.dispose();
     });
 
@@ -547,7 +579,9 @@ describe('DiffStreamer', () => {
         parsed: { path: 'README.md', create: true, content: '# Vyotiq' },
         subagentId: 'sa-worker-1'
       });
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await waitUntil(() => {
+        expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(1);
+      });
       const streamEvents = events.filter(
         (e): e is Extract<TimelineEvent, { kind: 'diff-stream' }> => e.kind === 'diff-stream'
       );
@@ -603,7 +637,9 @@ describe('DiffStreamer', () => {
         name: 'edit',
         parsed: { path: 'a.ts', create: true, content: 'x\ny\nz' }
       });
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await waitUntil(() => {
+        expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(1);
+      });
       streamer.notifySettled('c-settle');
       const streamEvents = events.filter(
         (e): e is Extract<TimelineEvent, { kind: 'diff-stream' }> => e.kind === 'diff-stream'
@@ -631,7 +667,9 @@ describe('DiffStreamer', () => {
         name: 'edit',
         parsed: { path: 'a.ts', create: true, content: 'x' }
       });
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await waitUntil(() => {
+        expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(1);
+      });
       streamer.notifySettled('c-late');
       // A delta racing the settle MUST be dropped.
       streamer.onArgsDelta({
@@ -639,7 +677,9 @@ describe('DiffStreamer', () => {
         name: 'edit',
         parsed: { path: 'a.ts', create: true, content: 'x\ny' }
       });
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await waitUntil(() => {
+        expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(2);
+      });
       const streamEvents = events.filter((e) => e.kind === 'diff-stream');
       // Initial emit + settle re-emit = 2. The post-settle delta
       // is dropped by the `settledCallIds` gate at the top of
@@ -673,7 +713,9 @@ describe('DiffStreamer', () => {
         name: 'bash',
         parsed: { command }
       });
-      await new Promise((resolve) => setTimeout(resolve, 30));
+      await waitUntil(() => {
+        expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(1);
+      });
       const streamEvents = events.filter(
         (e): e is Extract<TimelineEvent, { kind: 'diff-stream' }> => e.kind === 'diff-stream'
       );
@@ -739,7 +781,9 @@ describe('DiffStreamer', () => {
         parsed: { path: 'a.ts', oldString: 'line two', newString: 'LINE TWO' },
         subagentId: 'sub-7'
       });
-      await new Promise((resolve) => setTimeout(resolve, 30));
+      await waitUntil(() => {
+        expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(1);
+      });
       // One live diff-stream emit under the surrogate.
       const liveEvents = events.filter((e) => e.kind === 'diff-stream');
       expect(liveEvents).toHaveLength(1);
@@ -790,7 +834,9 @@ describe('DiffStreamer', () => {
         parsed: { path: 'a.ts', oldString: 'line two', newString: 'LINE TWO A' },
         subagentId: 'sub-7'
       });
-      await new Promise((resolve) => setTimeout(resolve, 40));
+      await waitUntil(() => {
+        expect(events.filter((e) => e.kind === 'diff-stream').length).toBeGreaterThanOrEqual(2);
+      });
       // Settle the first authoritative tool-call with the LOWEST
       // surrogate index (mirrors the runtime ordering rule).
       streamer.notifySettled('c-real-A', 'sub-7');
@@ -833,7 +879,9 @@ describe('DiffStreamer', () => {
         parsed: { path: 'a.ts', oldString: 'line two', newString: 'LINE TWO' },
         subagentId: 'sub-7'
       });
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await waitUntil(() => {
+        expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(1);
+      });
       streamer.notifySettled('c-real', 'sub-7', 0);
       // A delta racing the settle on the SURROGATE id MUST be
       // dropped — both callIds were added to `settledCallIds`
@@ -851,7 +899,9 @@ describe('DiffStreamer', () => {
         parsed: { path: 'a.ts', oldString: 'line four', newString: 'LINE FOUR' },
         subagentId: 'sub-7'
       });
-      await new Promise((resolve) => setTimeout(resolve, 30));
+      await waitUntil(() => {
+        expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(2);
+      });
       const total = events.filter((e) => e.kind === 'diff-stream').length;
       // Live emit (under surrogate) + settle re-emit (under real
       // id). No more.
@@ -882,7 +932,9 @@ describe('DiffStreamer', () => {
         parsed: { path: 'a.ts', oldString: 'line two', newString: 'LINE TWO' },
         subagentId: 'sub-7'
       });
-      await new Promise((resolve) => setTimeout(resolve, 30));
+      await waitUntil(() => {
+        expect(events.filter((e) => e.kind === 'diff-stream').length).toBeGreaterThanOrEqual(1);
+      });
       expect(
         events.filter((e) => e.kind === 'diff-stream').length
       ).toBeGreaterThanOrEqual(1);
@@ -911,7 +963,9 @@ describe('DiffStreamer', () => {
       name: 'edit',
       parsed: { path: 'sub/b.ts', oldString: 'two', newString: 'TWO' }
     });
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    await waitUntil(() => {
+      expect(events.filter((e) => e.kind === 'diff-stream').length).toBeGreaterThanOrEqual(2);
+    });
     const streams = events.filter(
       (e): e is Extract<TimelineEvent, { kind: 'diff-stream' }> => e.kind === 'diff-stream'
     );

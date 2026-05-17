@@ -5,6 +5,10 @@
 import type { ToolCall, ToolResult, DiffHunk } from './tool.js';
 import type { ModelSelection } from './provider.js';
 import type { CheckpointChangeKind } from './checkpoint.js';
+import type {
+  ContextMessageOverride,
+  PersistedSummaryConfig
+} from './contextSummary.js';
 
 /**
  * Internal role union for `ChatMessage`. Not exported because the only
@@ -159,6 +163,20 @@ export type TimelineEvent =
      * resolvable ones. Omitted on the wire when every path resolved.
      */
     missingFiles?: string[];
+    /**
+     * Tool names the orchestrator's `<delegate tools="..." />`
+     * directive listed that were NOT in the sub-agent allowlist —
+     * typically typos (`reed` for `read`) or out-of-set names. The
+     * legacy filter in `validateSubagentToolset` dropped these
+     * silently and the orchestrator never learned about it (review
+     * finding H10). Surfaced here so the renderer can mark them as
+     * dimmed "rejected — unknown tool" chips alongside the granted
+     * ones, and the orchestrator's harness sees the typo on its next
+     * iteration via the matching `phase` event.
+     *
+     * Omitted on the wire when every requested tool was granted.
+     */
+    unknownTools?: string[];
   }
   | {
     kind: 'subagent-status';
@@ -335,18 +353,7 @@ export type TimelineEvent =
     | 'delegating'
     | 'verifying'
     | 'nudging'
-    | 'retrying'
-    /**
-     * Pre-iteration context-budget shrink fired. Audit fix §2.3 — the
-     * orchestrator estimates the request's token count against the
-     * model's effective context window and trims oldest sub-agent
-     * envelopes / tool rounds before issuing the request. Only emitted
-     * when the trimmer ACTUALLY removed something so the live status
-     * row never flashes a no-op label. The detail's `trimmedMessages`
-     * + `targetTokens` slots let the UI surface "trimmed N old turns
-     * to fit Mk window".
-     */
-    | 'trimming';
+    | 'retrying';
     /** Short human-readable label the row shows by default. */
     label: string;
     /** Optional structured context for richer rendering. */
@@ -359,74 +366,9 @@ export type TimelineEvent =
       providerId?: string;
       modelId?: string;
       iteration?: number;
-      /**
-       * Audit fix §2.3 — number of `ChatMessage` rows the trimmer
-       * removed on this `trimming` event. Lets the live row read
-       * "trimmed 4 old turns to fit 128k window" instead of a vague
-       * shrinking pill.
-       */
-      trimmedMessages?: number;
-      /**
-       * Audit fix §2.3 — the token target the trimmer was aiming for
-       * (typically `0.85 * effectiveContextWindow`). Combined with the
-       * `tokensBefore` / `tokensAfter` snapshots in `label`, this gives
-       * triage a single-row view of why the trim fired.
-       */
-      targetTokens?: number;
-      /** Audit fix §2.3 — pre-trim estimate. */
-      tokensBefore?: number;
-      /** Audit fix §2.3 — post-trim estimate. */
-      tokensAfter?: number;
     };
   }
   | { kind: 'error'; id: string; ts: number; message: string }
-  /**
-   * Audit fix §2.2 — transcript-aware summarization sentinel. Emitted
-   * by the run-loop when (a) the user has opted into summarization
-   * via `AppSettings.historySummary.enabled`, (b) the per-turn trim
-   * policy (§2.3) couldn't get the request under budget, and (c) the
-   * one-shot summarizer LLM call returned a usable body.
-   *
-   * The event is **persistent** (lands in JSONL) so transcript replay
-   * reconstructs the same compacted view the live run saw. On replay
-   * (`replayTranscript.ts`):
-   *
-   *   1. The summary body is injected as a synthetic
-   *      `<history_summary>…</history_summary>` user message at the
-   *      original event's position in the stream.
-   *   2. Every `replacedEventIds` is masked out — those original
-   *      events DO still live on disk for audit/debug purposes, but
-   *      are NOT folded into the orchestrator's reconstructed
-   *      `messages[]`. The model sees the summary, not the raw
-   *      history.
-   *
-   * The renderer reducer treats this as event-list-only churn (no
-   * dedicated row) — the user already saw the live timeline; once
-   * the summary collapses old turns, those rows stay rendered for
-   * the current session and only get masked on transcript reload.
-   */
-  | {
-    kind: 'history-summary';
-    id: string;
-    ts: number;
-    /**
-     * Markdown body produced by the summarizer LLM call. Wrapped in
-     * `<history_summary>…</history_summary>` on the wire so the
-     * orchestrator can recognize / re-cite it.
-     */
-    summary: string;
-    /**
-     * Event ids whose model-visible projection this summary replaces.
-     * Replay skips them when reconstructing `messages[]` so the
-     * orchestrator's view stays compact. Stable event ids — the same
-     * ids the renderer already uses to index the timeline.
-     */
-    replacedEventIds: string[];
-    /** Provider used for the summarizer call. Audit trail. */
-    providerId?: string;
-    /** Model used for the summarizer call. Audit trail. */
-    modelId?: string;
-  }
   /**
    * A checkpoint entry was recorded — the `edit` or new `delete` tool
    * snapshotted a file's pre-state into the blob store. Persistent;
@@ -508,6 +450,145 @@ export type TimelineEvent =
     /** Workspace-relative paths that were created/modified/deleted. */
     paths: string[];
     subagentId?: string;
+  }
+  /**
+   * Context summarization — open marker. Emitted the moment the
+   * orchestrator decides (auto or manual) to compress a slice of
+   * its `messages[]`. Carries the index range being summarized
+   * (computed against `messages.length` at decision time), the
+   * stable `messageId` set being replaced, the trigger reason,
+   * and a `PersistedSummaryConfig` snapshot so transcript replay
+   * can reproduce the same state.
+   *
+   * PERSISTENT — written to JSONL. `replayCompression` walks
+   * `(pending, end)` pairs on transcript load and applies the
+   * matching splice so the orchestrator's replayed `messages[]`
+   * matches what the live run produced.
+   */
+  | {
+    kind: 'context-summary-pending';
+    id: string;
+    ts: number;
+    /** Stable id for this summarization. Matches the `summaryId`
+     *  field on every `context-summary-*` event in the same
+     *  sequence so the renderer can group them. */
+    summaryId: string;
+    /** Half-open index range `[startIdx, endIdx)` in the live
+     *  `messages[]` at decision time. After replay-by-splice, the
+     *  indices are no longer authoritative — `replacedMessageIds`
+     *  is the canonical handle. */
+    range: { startIdx: number; endIdx: number };
+    /** Stable message ids being replaced (mint via
+     *  `messageWindow.identify(messages)`). Persists the splice
+     *  identity across iterations even after the live indices
+     *  shift. */
+    replacedMessageIds: string[];
+    /** Stable message ids that the user marked `'drop'` and that
+     *  this summary is "consuming" — they leave the array but
+     *  are NOT folded into the summary text (the marker style
+     *  governs whether a placeholder hint appears). */
+    droppedMessageIds: string[];
+    /** Estimated token count of the summarizable range BEFORE
+     *  compression. Cached so the renderer can render the
+     *  before/after diff without recomputing. */
+    beforeTokens: number;
+    /** Configuration snapshot taken at trigger time. */
+    config: PersistedSummaryConfig;
+  }
+  /**
+   * Streaming text from the summarizer LLM. Same shape and
+   * coalescer semantics as `agent-text-delta` — the chat IPC's
+   * persistence coalescer is extended to recognise this kind, and
+   * the renderer reducer aggregates `delta` into the matching
+   * `summaries[summaryId].text` accumulator. PERSISTENT (via the
+   * coalesced row).
+   */
+  | {
+    kind: 'context-summary-delta';
+    id: string;
+    ts: number;
+    summaryId: string;
+    delta: string;
+  }
+  /**
+   * Optional streaming reasoning from the summarizer LLM. Routed
+   * into `summaries[summaryId].reasoningText` so the Inspector
+   * can show a "Thinking…" panel during compression for providers
+   * that emit `reasoning_content`. PERSISTENT (coalesced).
+   */
+  | {
+    kind: 'context-summary-reasoning-delta';
+    id: string;
+    ts: number;
+    summaryId: string;
+    delta: string;
+  }
+  /**
+   * Summarization complete. Marks the splice as authoritative,
+   * carries the final compressed `finalText` (truncated to
+   * `CONTEXT_SUMMARY_MAX_FINAL_CHARS`), the post-compression
+   * token estimate, and the savings percentage for the renderer
+   * card. PERSISTENT.
+   */
+  | {
+    kind: 'context-summary-end';
+    id: string;
+    ts: number;
+    summaryId: string;
+    afterTokens: number;
+    /** Final compressed body. The orchestrator splices this into
+     *  `messages[]` as a `role:'system'` envelope. */
+    finalText: string;
+    /** `beforeTokens - afterTokens` divided by `beforeTokens`,
+     *  rounded to one decimal. Cached so the renderer card has a
+     *  single source of truth for the savings label. */
+    savedPercent: number;
+  }
+  /**
+   * Summarization aborted (user pressed Stop, the run terminated
+   * mid-compression, the provider call exceeded `maxRetries`).
+   * The reducer drops the accumulators; the splice is NOT applied
+   * (since `context-summary-end` never lands). PERSISTENT so the
+   * audit trail survives reload.
+   */
+  | {
+    kind: 'context-summary-aborted';
+    id: string;
+    ts: number;
+    summaryId: string;
+    reason: string;
+  }
+  /**
+   * User clicked Undo on the inline `ContextSummaryRow` while it
+   * was still the current turn. Restores the pre-splice
+   * `messages[]` snapshot from `undoRegistry`. PERSISTENT — replay
+   * walks the matching `(end, undone)` pair and skips the splice
+   * so transcript reloads observe the same un-applied state.
+   */
+  | {
+    kind: 'context-summary-undone';
+    id: string;
+    ts: number;
+    summaryId: string;
+  }
+  /**
+   * Per-message override applied via the Context Inspector. The
+   * sentinel `messageId: '*'` means "clear ALL overrides on this
+   * conversation". A `null` override means "remove the entry for
+   * this messageId" (a no-op when none existed). PERSISTENT —
+   * replay walks these so overrides survive renderer reloads,
+   * conversation switches, and app restarts.
+   */
+  | {
+    kind: 'context-override-set';
+    id: string;
+    ts: number;
+    /** Stable messageId from `messageWindow.identify(messages)`,
+     *  OR the sentinel `'*'` to reset all overrides on this
+     *  conversation in one event. */
+    messageId: string;
+    /** Effective override. `null` clears the entry. */
+    override: ContextMessageOverride | null;
   };
 
 /** Sent from renderer to main to start an agent run. */

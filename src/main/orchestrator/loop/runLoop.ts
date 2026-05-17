@@ -24,21 +24,44 @@ import type {
   ChatMessage,
   ChatPermissions,
   ChatSendInput,
-  TimelineEvent
+  TimelineEvent,
+  TokenUsage
 } from '@shared/types/chat.js';
+import type { ContextSummaryRules } from '@shared/types/contextSummary.js';
+import { resolveContextSummaryRules } from '@shared/types/contextSummary.js';
+import { selectEffectiveContextWindow } from '@shared/providers/contextWindow.js';
 import { buildOrchestratorSystemPrompt } from '../../harness/harnessLoader.js';
+import { probeWorkspaceOverridePresent } from '../../harness/probeOverride.js';
 import { refreshEnvelopes } from '../contextManager.js';
 import { parseDelegatesWithDuplicates, stripDelegates } from '../envelope/index.js';
 import { backoff } from '../retry.js';
 import { isAbortError } from '../abortSignal.js';
 import { logger } from '../../logging/logger.js';
 import { isProviderError } from '../../providers/providerError.js';
-import { getProviderWithKey } from '../../providers/providerStore.js';
+import {
+  getProviderWithKey,
+  listProviders
+} from '../../providers/providerStore.js';
+import { getSettings } from '../../settings/settingsStore.js';
 import {
   MAX_SELF_CORRECTION_ATTEMPTS,
   MAX_TOTAL_ITERATIONS
 } from '@shared/constants.js';
 import { ORCHESTRATOR_TOOLS } from '../../tools/policy/index.js';
+import {
+  clearForRun,
+  dropSnapshot as dropUndoSnapshot,
+  getInspectorSnapshot,
+  getSnapshot as getUndoSnapshot,
+  maybeRunSummarization,
+  revertSummary,
+  shouldTrigger as shouldTriggerSummary
+} from '../contextSummarizer/index.js';
+import {
+  registerRunContext,
+  unregisterRunContext,
+  type RunContextHandle
+} from '../runContextRegistry.js';
 
 import { buildSystemPrompt } from './buildSystemPrompt.js';
 import { buildOrchestratorRequest } from './buildOrchestratorRequest.js';
@@ -50,13 +73,8 @@ import { DiffStreamer } from '../diffStreamer.js';
 import { DiffWorkerPool } from '../diffWorkerPool.js';
 import { createStreamingArgsTap } from '../streamingArgsTap.js';
 import { lockToolCallIds } from './lockToolCallIds.js';
-import { sanitizeToolCallPairing } from './sanitizeToolPairing.js';
+import { sanitizeToolCallPairingWithStats } from './sanitizeToolPairing.js';
 import { emitRunStatus } from './emitRunStatus.js';
-import { enforceContextBudget } from './trimMessages.js';
-import { summarizeOlderTurns } from './summarizeHistory.js';
-import { getEffectiveContextWindow } from '../../providers/contextWindow.js';
-import { getSettings } from '../../settings/settingsStore.js';
-import { readTranscript } from '../../conversations/conversationStore.js';
 import {
   createSpinSignatureBuffer,
   pushToolRound,
@@ -95,6 +113,77 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
   const messages = opts.initialMessages;
   let query = opts.initialQuery;
 
+  // ── Context-summarization runtime state ────────────────────────────
+  // Resolved once at run start, then re-resolved at the top of every
+  // iteration (review finding H2) so a Settings → Context edit
+  // mid-run lands on the very next auto-trigger evaluation. The
+  // manual-trigger IPC also re-resolves at click time as a belt-
+  // and-braces measure. Kept as a `let` because both paths refresh
+  // it.
+  let summaryRules: ContextSummaryRules = await resolveSummaryRulesForRun(
+    opts.input.workspaceId
+  );
+  // Effective context-window ceiling for the run's selected model.
+  // Used by `shouldTriggerSummary`. Static for the run.
+  let summaryCeiling: number | undefined;
+  try {
+    const providers = await listProviders();
+    summaryCeiling = selectEffectiveContextWindow(
+      providers,
+      opts.input.selection.providerId,
+      opts.input.selection.modelId
+    );
+  } catch (err) {
+    log.debug('failed to resolve context-window ceiling for summarizer', { err });
+  }
+  // Mutable accumulator written by the wrapped `emit` below — every
+  // `token-usage` event the loop forwards updates this. The auto-
+  // trigger predicate reads it at the top of each iteration.
+  let latestUsage: TokenUsage | undefined;
+  // Latest run-state XML, threaded into the summarizer's user
+  // envelope so it sees the same loop snapshot the orchestrator does.
+  let latestRunStateXml: string | undefined;
+  // Set while a summary is mid-stream so the auto-trigger doesn't
+  // double-fire and the manual IPC rejects with a friendly reason.
+  // Updated by the `emit` wrapper below when the `context-summary-
+  // pending` event lands — i.e. AFTER `streamSummary` has done its
+  // partition / token estimation / system-prompt build work and is
+  // about to start streaming the first delta. That window
+  // (synchronous gate → `await streamSummary` → first emit) is
+  // closed by `summarizationStarting` (H3); `activeSummaryId`
+  // remains the authoritative handle once the pending event lands.
+  let activeSummaryId: string | undefined;
+  // H3: synchronous in-flight flag. The async window between a
+  // trigger-gate check (`activeSummaryId === undefined`) and
+  // `streamSummary` actually emitting `context-summary-pending`
+  // spans several awaits (`partition`, `estimateRangeTokens`,
+  // `buildSummarizerSystemPrompt`). Without this flag, two
+  // concurrent trigger paths (auto + manual, or manual + manual
+  // through two open Inspector windows) could both pass the gate
+  // before either had emitted its pending marker. They'd then
+  // race on `applySummary`'s in-place splice and the second one's
+  // partition would be stale. The flag is set SYNCHRONOUSLY at
+  // the top of each trigger and cleared in `finally` so both
+  // success and failure paths release it.
+  let summarizationStarting = false;
+
+  // Single `emit` everything in the loop uses. Forwards to
+  // `opts.emit` verbatim while side-channel-capturing the bits the
+  // summarizer needs (latest usage, summary lifecycle markers).
+  const emit = (event: TimelineEvent): void => {
+    if (event.kind === 'token-usage') {
+      latestUsage = event.usage;
+    } else if (event.kind === 'context-summary-pending') {
+      activeSummaryId = event.summaryId;
+    } else if (
+      event.kind === 'context-summary-end' ||
+      event.kind === 'context-summary-aborted'
+    ) {
+      if (activeSummaryId === event.summaryId) activeSummaryId = undefined;
+    }
+    opts.emit(event);
+  };
+
   // Phase 2 — FS-aware live diff streamer. One per run; shared
   // between the orchestrator's own turns and every spawned
   // sub-agent so a single source of truth produces the
@@ -112,7 +201,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
   const diffStreamer = new DiffStreamer({
     workspacePath: opts.workspacePath,
     runId: opts.input.runId,
-    emit: opts.emit,
+    emit: emit,
     computeHunksAsync: (before, after) => diffWorkerPool.computeHunks(before, after)
   });
   const {
@@ -134,78 +223,252 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
   // abort path (where the signal fires before we reach the
   // for-loop's natural exit); the finally covers normal
   // termination + the explicit `return` exits inside the loop.
+  //
+  // Audit fix M-05: the `try { ... } finally { disposeStreaming() }`
+  // block opens RIGHT HERE (immediately after `diffWorkerPool` and
+  // `diffStreamer` are constructed) instead of further down. The
+  // original placement opened the try AFTER `resolveProviderName`
+  // (an `await`) and `registerRunContext` — so if either threw, the
+  // for-loop's `finally` never executed and the diff-worker thread
+  // pool leaked for the lifetime of the parent process. With the
+  // try-block opened here, every throw between construction and
+  // loop entry still routes through `disposeStreaming()` +
+  // `unregisterRunContext()` in the finally.
   opts.signal.addEventListener('abort', disposeStreaming, { once: true });
 
-  const counters: DelegationCounters = { consecutiveBadRounds: 0 };
-  const nudges: NudgeState = { used: 0 };
-  /**
-   * Hot-tool-call-signature ring buffer. Pure observability — the
-   * value flows into `<run_state>.spin_signature_hot` so the model
-   * can pivot before the per-run tool-result cache starts prepending
-   * its "you already issued this" banner. See
-   * `toolSpinSignature.ts` for the subtraction-pass rationale (the
-   * old detector + nudge + halt path was redundant with the cache
-   * banner and is gone).
-   */
-  const spin = createSpinSignatureBuffer();
-  let consecutiveErrors = 0;
-  /**
-   * Consecutive orchestrator iterations whose tool round attempted at
-   * least one tool and saw EVERY result fail (`!ok`). Mirrors the
-   * delegation-side `MAX_BAD_ROUNDS` so the harness's three-strike
-   * rule is enforced for direct-tool failure cycles. Reset to 0 by
-   * any tool round that produces at least one successful result, by
-   * a clean delegate round, or by a clean termination branch.
-   */
-  let consecutiveBadToolRounds = 0;
-  /**
-   * Mutable run-state accumulator. Surfaced into the system prompt as
-   * `<run_state>` each iteration so the model can self-regulate
-   * (subtraction-principle replacement for several reactive
-   * heuristics — see `buildRunState.ts`).
-   */
-  const runStateAcc = createRunStateAccumulator();
-
-  /**
-   * Effective context window for this run's selected model. Resolved
-   * ONCE up-front (the model can't change mid-run) so the per-iteration
-   * trim path is a synchronous estimate-and-shrink — no extra IO on
-   * the hot path. `undefined` means "the host doesn't know the
-   * window" (no override pinned, /v1/models didn't expose it), in
-   * which case the trim policy is skipped entirely. Audit fix §2.3.
-   */
-  const effectiveContextWindow = await getEffectiveContextWindow(
-    opts.input.selection.providerId,
-    opts.input.selection.modelId
-  );
-
-  /**
-   * Provider display name resolved ONCE at run start. Surfaced into the
-   * `Connecting to <name>…` and `Awaiting first token from <model>…`
-   * status labels so the user sees a human-readable provider instead
-   * of the raw `providerId` UUID (e.g. `ba60a0a3-2625-4e08-…`). When
-   * the provider record can't be loaded (deleted between send and run
-   * start, encrypted-store read failure) we fall back to the providerId
-   * — better than a blank label, and the same surface the renderer
-   * pre-rate-guard transports already used.
-   */
-  const providerName = await resolveProviderName(opts.input.selection.providerId);
-
-  /**
-   * Audit fix §2.2 — opt-in transcript summarization. Resolved once
-   * per run; the user toggling the setting mid-run takes effect on
-   * the NEXT run (the persisted history-summary events on disk
-   * remain valid regardless of the toggle's current state). When
-   * disabled, the summarizer never fires; the trim policy alone
-   * remains in charge of fitting the request to the window.
-   */
-  const settings = await getSettings();
-  const summarizerEnabled = settings.historySummary?.enabled === true;
-
   try {
+    const counters: DelegationCounters = {
+      consecutiveBadRounds: 0,
+      perTaskBadStreak: new Map()
+    };
+    const nudges: NudgeState = { used: 0 };
+    /**
+     * Hot-tool-call-signature ring buffer. Pure observability — the
+     * value flows into `<run_state>.spin_signature_hot` so the model
+     * can pivot before the per-run tool-result cache starts prepending
+     * its "you already issued this" banner. See
+     * `toolSpinSignature.ts` for the subtraction-pass rationale (the
+     * old detector + nudge + halt path was redundant with the cache
+     * banner and is gone).
+     */
+    const spin = createSpinSignatureBuffer();
+    let consecutiveErrors = 0;
+    /**
+     * Consecutive orchestrator iterations whose tool round attempted at
+     * least one tool and saw EVERY result fail (`!ok`). Mirrors the
+     * delegation-side `MAX_BAD_ROUNDS` so the harness's three-strike
+     * rule is enforced for direct-tool failure cycles. Reset to 0 by
+     * any tool round that produces at least one successful result, by
+     * a clean delegate round, or by a clean termination branch.
+     */
+    let consecutiveBadToolRounds = 0;
+    /**
+     * Mutable run-state accumulator. Surfaced into the system prompt as
+     * `<run_state>` each iteration so the model can self-regulate
+     * (subtraction-principle replacement for several reactive
+     * heuristics — see `buildRunState.ts`).
+     */
+    const runStateAcc = createRunStateAccumulator();
+
+    /**
+     * Provider display name resolved ONCE at run start. Surfaced into the
+     * `Connecting to <name>…` and `Awaiting first token from <model>…`
+     * status labels so the user sees a human-readable provider instead
+     * of the raw `providerId` UUID (e.g. `ba60a0a3-2625-4e08-…`). When
+     * the provider record can't be loaded (deleted between send and run
+     * start, encrypted-store read failure) we fall back to the providerId
+     * — better than a blank label, and the same surface the renderer
+     * pre-rate-guard transports already used.
+     */
+    const providerName = await resolveProviderName(opts.input.selection.providerId);
+
+    // Register this run's context for the contextSummary IPC handlers
+    // and the inspector. Holds a live REFERENCE to `messages`; the
+    // registry's reader contract is read-only — only the run loop and
+    // `applySummary`/`revertSummary` mutate the array. Unregistered in
+    // the `finally` block below regardless of how the loop exits.
+    const runHandle: RunContextHandle = {
+      runId: opts.input.runId,
+      conversationId: opts.input.conversationId ?? '',
+      workspaceId: opts.workspaceId,
+      workspacePath: opts.workspacePath,
+      messages,
+      originalPrompt: opts.input.prompt,
+      selection: opts.input.selection,
+      rules: summaryRules,
+      triggerManual: async () => {
+        // H3: claim the synchronous in-flight gate FIRST so a
+        // concurrent auto-trigger (or a second manual click via a
+        // second open Inspector) can't race past while we await
+        // the rules-resolve and the partition build below. Cleared
+        // in `finally` so both success and failure release it.
+        if (summarizationStarting || activeSummaryId !== undefined) {
+          return { ok: false, reason: 'A summary is already in flight' };
+        }
+        summarizationStarting = true;
+        try {
+          // Re-resolve rules so a settings change between run start and
+          // the click is honored. The summarizer model falls back to the
+          // run's selection when `summarizerSelection === null`.
+          summaryRules = await resolveSummaryRulesForRun(opts.input.workspaceId);
+          runHandle.rules = summaryRules;
+          if (!summaryRules.enabled) {
+            return { ok: false, reason: 'Context summarization is disabled in settings' };
+          }
+          const summarizerSelection =
+            summaryRules.summarizerSelection ?? opts.input.selection;
+          const result = await maybeRunSummarization({
+            runId: opts.input.runId,
+            conversationId: opts.input.conversationId ?? '',
+            workspacePath: opts.workspacePath,
+            messages,
+            rules: summaryRules,
+            summarizerSelection,
+            trigger: 'manual',
+            originalPrompt: opts.input.prompt,
+            ...(latestRunStateXml !== undefined ? { runStateXml: latestRunStateXml } : {}),
+            signal: opts.signal,
+            emit
+          });
+          if (result.ok) return { ok: true, summaryId: result.summaryId };
+          return { ok: false, reason: result.reason ?? 'Manual trigger failed' };
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          log.warn('manual summarization failed', { runId: opts.input.runId, reason });
+          return { ok: false, reason };
+        } finally {
+          summarizationStarting = false;
+        }
+      },
+      undo: async (summaryId: string) => {
+        const snapshot = getUndoSnapshot(opts.input.runId, summaryId);
+        if (!snapshot) return { ok: false };
+        revertSummary({
+          runId: opts.input.runId,
+          summaryId,
+          messages,
+          preSplice: snapshot.preSplice
+        });
+        dropUndoSnapshot(opts.input.runId, summaryId);
+        emit({
+          kind: 'context-summary-undone',
+          id: randomUUID(),
+          ts: Date.now(),
+          summaryId
+        });
+        return { ok: true };
+      },
+      snapshot: async () => {
+        // Pull the freshest rules so a Settings → Context edit between
+        // the last iteration and the Inspector open lands in the
+        // surfaced rules. Cheap (one settings read).
+        summaryRules = await resolveSummaryRulesForRun(opts.input.workspaceId);
+        runHandle.rules = summaryRules;
+        // Probe the workspace override file so the Inspector's badge
+        // accurately reflects whether the bundled or the per-workspace
+        // summarizer prompt is in effect for this run. Cheap: one
+        // `stat` + (when present) one small `readFile`.
+        const workspaceOverridePresent = await probeWorkspaceOverridePresent(
+          opts.workspacePath
+        );
+        const snap = await getInspectorSnapshot({
+          runId: opts.input.runId,
+          conversationId: opts.input.conversationId ?? '',
+          workspaceId: opts.workspaceId,
+          messages,
+          rules: summaryRules,
+          workspaceOverridePresent,
+          modelId: opts.input.selection.modelId,
+          ...(summaryCeiling !== undefined ? { ceiling: summaryCeiling } : {}),
+          ...(activeSummaryId !== undefined ? { activeSummaryId } : {})
+        });
+        return snap;
+      }
+    };
+    registerRunContext(runHandle);
+
     for (let iter = 0; iter < MAX_TOTAL_ITERATIONS; iter++) {
       if (opts.signal.aborted) return;
       const iterStartedAt = Date.now();
+
+      // H2: re-resolve `summaryRules` per iteration. Resolving only
+      // once at run start meant a Settings → Context edit mid-run
+      // wasn't honored by the auto-trigger until the user opened
+      // the Inspector or clicked Trigger Manual. The resolver
+      // reads through the memoized settings store so the cost is
+      // a Map lookup on the happy path. Updating `runHandle.rules`
+      // keeps the registry's mirror consistent for any concurrent
+      // Inspector poll.
+      try {
+        summaryRules = await resolveSummaryRulesForRun(opts.input.workspaceId);
+        runHandle.rules = summaryRules;
+      } catch (err) {
+        // Resolver failures already log inside `resolveSummaryRulesForRun`
+        // and fall back to defaults; the next iteration retries.
+        log.debug('per-iter summaryRules refresh failed; keeping prior', {
+          runId: opts.input.runId,
+          iter,
+          err: err instanceof Error ? err.message : String(err)
+        });
+      }
+
+      // Auto-trigger summarization. Fires when the previous
+      // iteration's `token-usage` frame indicates the prompt-token
+      // ratio crossed the configured threshold. The first iteration
+      // always skips because no usage has been reported yet. The
+      // call mutates `messages[]` in place via `applySummary` when
+      // it lands; the next request build downstream sees the
+      // compressed shape.
+      //
+      // H3: the trigger gate consults BOTH `summarizationStarting`
+      // (synchronous claim) AND `activeSummaryId` (post-pending
+      // state). The first defeats the auto-vs-manual race in the
+      // partition/build window; the second covers the steady-
+      // state mid-stream condition. We set `summarizationStarting
+      // = true` SYNCHRONOUSLY here so a manual-trigger IPC that
+      // lands during our `await maybeRunSummarization` sees the
+      // claim and rejects with a friendly reason.
+      if (
+        iter > 0 &&
+        !summarizationStarting &&
+        activeSummaryId === undefined &&
+        shouldTriggerSummary(latestUsage, summaryCeiling, summaryRules)
+      ) {
+        summarizationStarting = true;
+        const summarizerSelection =
+          summaryRules.summarizerSelection ?? opts.input.selection;
+        try {
+          await maybeRunSummarization({
+            runId: opts.input.runId,
+            conversationId: opts.input.conversationId ?? '',
+            workspacePath: opts.workspacePath,
+            messages,
+            rules: summaryRules,
+            summarizerSelection,
+            trigger: 'auto',
+            originalPrompt: opts.input.prompt,
+            ...(latestRunStateXml !== undefined ? { runStateXml: latestRunStateXml } : {}),
+            signal: opts.signal,
+            emit
+          });
+        } catch (err) {
+          // A summarizer failure is non-fatal — the orchestrator's
+          // own retry loop will handle a downstream provider
+          // context-overflow if compression couldn't land. Logged
+          // for triage; the matching `context-summary-aborted`
+          // event already surfaced the user-facing error.
+          log.warn('auto-summarization failed; continuing without compression', {
+            runId: opts.input.runId,
+            iter,
+            err: err instanceof Error ? err.message : String(err)
+          });
+        } finally {
+          summarizationStarting = false;
+        }
+        // Re-check abort state — the streamer's `await` may have
+        // observed a Stop click while we were compressing.
+        if (opts.signal.aborted) return;
+      }
 
       // Refresh envelopes and rebuild the system message in-place. The
       // `conversationId` lets `contextManager` populate `<session_context>`
@@ -232,6 +495,11 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
       const runStateXml = buildRunStateXml(
         snapshotRunState(runStateAcc, counters, nudges, spin, consecutiveBadToolRounds)
       );
+      // Stash for the summarizer's user-envelope builder (consumed
+      // by both the auto-trigger above and the manual-trigger IPC
+      // call). Updated even on iterations where no summarization
+      // fires so a later click sees the freshest snapshot.
+      latestRunStateXml = runStateXml;
       if (messages.length > 0 && messages[0]?.role === 'system') {
         messages[0] = { role: 'system', content: buildSystemPrompt(harness, env, runStateXml) };
       } else {
@@ -246,168 +514,23 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
       // Inject stub responses for any orphans so the wire shape is always
       // valid — if a prior result was lost, the model sees a short
       // "result missing" placeholder and can re-issue.
-      let candidateMessages = sanitizeToolCallPairing(messages);
-
-      // Audit fix §2.3 — pre-iteration token-budget enforcement. Estimate
-      // the prompt token count against the model's effective context
-      // window and trim oldest sub-agent envelopes / tool rounds first
-      // (see `enforceContextBudget` for the full priority order). When
-      // the host doesn't know the window (`effectiveContextWindow ===
-      // undefined`) the policy short-circuits — provider rejection
-      // remains the only signal in that case, which the existing retry
-      // loop already handles gracefully. The trim NEVER mutates the
-      // rolling `messages` array directly: callers downstream (assistant
-      // turn folding, tool-result injection) keep their full-history
-      // contract; only the per-request copy passed to the provider is
-      // shrunk. Without this, a long delegate-heavy run would hit the
-      // provider-side context-overflow error and waste retries.
-      if (typeof effectiveContextWindow === 'number' && effectiveContextWindow > 0) {
-        const trim = enforceContextBudget(candidateMessages, {
-          contextWindow: effectiveContextWindow,
-          modelId: opts.input.selection.modelId
+      //
+      // Observability (review finding H7): when stubs are injected we
+      // surface a single `phase` event with the count so the user has a
+      // triage breadcrumb. Without this, repeated stub injection on a
+      // broken replay was silent at the user-facing layer (the model
+      // proceeded correctly, but the user couldn't tell why the agent
+      // appeared to "loop on missing data"). One event per iteration,
+      // not per stub — count is enough.
+      const sanitized = sanitizeToolCallPairingWithStats(messages);
+      const candidateMessages = sanitized.messages;
+      if (sanitized.stats.injectedStubs > 0) {
+        emit({
+          kind: 'phase',
+          id: randomUUID(),
+          ts: Date.now(),
+          label: `Recovered ${sanitized.stats.injectedStubs} orphan tool_call(s) from history; the agent will re-issue if needed.`
         });
-        if (trim.trimmedMessages > 0) {
-          candidateMessages = trim.messages;
-          emitRunStatus(
-            opts.emit,
-            'trimming',
-            `Trimmed ${trim.trimmedMessages} old turn${trim.trimmedMessages === 1 ? '' : 's'} ` +
-            `to fit ${Math.round(effectiveContextWindow / 1000)}k window…`,
-            {
-              trimmedMessages: trim.trimmedMessages,
-              targetTokens: Math.floor(effectiveContextWindow * 0.85),
-              tokensBefore: trim.tokensBefore,
-              tokensAfter: trim.tokensAfter,
-              providerId: opts.input.selection.providerId,
-              modelId: opts.input.selection.modelId,
-              iteration: iter
-            }
-          );
-          log.info('pre-iteration trim applied', {
-            iteration: iter,
-            trimmedMessages: trim.trimmedMessages,
-            tokensBefore: trim.tokensBefore,
-            tokensAfter: trim.tokensAfter,
-            contextWindow: effectiveContextWindow
-          });
-        }
-
-        // Audit fix §2.2 — last-resort summarizer. Fires only when the
-        // user has opted in AND the structured trim above couldn't get
-        // the request under target. The summarizer compacts the OLDEST
-        // half of the post-trim history into a `<history_summary>` user
-        // message; the persistent `history-summary` event records the
-        // ids of the events whose model-visible projection it replaces
-        // so transcript replay reconstructs the same compacted view.
-        // Returning `null` from `summarizeOlderTurns` (provider error,
-        // timeout, empty body) is non-fatal: the next iteration's trim
-        // path runs again, and the provider's own retry loop already
-        // handles a context-overflow rejection on the request after
-        // this one.
-        const targetTokens = Math.floor(effectiveContextWindow * 0.85);
-        const postTrimTokens = trim.trimmedMessages > 0 ? trim.tokensAfter : trim.tokensBefore;
-        if (
-          summarizerEnabled &&
-          postTrimTokens > targetTokens &&
-          opts.input.conversationId
-        ) {
-          emitRunStatus(
-            opts.emit,
-            'trimming',
-            'Summarizing older turns to fit window…',
-            {
-              tokensBefore: postTrimTokens,
-              targetTokens,
-              providerId: opts.input.selection.providerId,
-              modelId: opts.input.selection.modelId,
-              iteration: iter
-            }
-          );
-          const result = await summarizeOlderTurns(candidateMessages, {
-            selection: opts.input.selection,
-            signal: opts.signal
-          });
-          if (result && result.replacedIndices.length > 0) {
-            // Compute the replaced event ids from the persisted
-            // transcript at this moment. Events older than the most
-            // recent `user-prompt` are eligible for masking on replay;
-            // anything from that user prompt onward is the live tail
-            // and stays visible.
-            let replacedEventIds: string[] = [];
-            try {
-              const persisted = await readTranscript(opts.input.conversationId);
-              let lastUserPromptIdx = -1;
-              for (let i = persisted.length - 1; i >= 0; i--) {
-                if (persisted[i]?.kind === 'user-prompt') {
-                  lastUserPromptIdx = i;
-                  break;
-                }
-              }
-              const cutoff = lastUserPromptIdx >= 0 ? lastUserPromptIdx : persisted.length;
-              replacedEventIds = persisted.slice(0, cutoff).map((e) => e.id);
-            } catch (err) {
-              log.warn('summarizer: failed to read transcript for replacedEventIds', {
-                conversationId: opts.input.conversationId,
-                err: err instanceof Error ? err.message : String(err)
-              });
-            }
-
-            // If we couldn't compute `replacedEventIds` (transcript read
-            // failure, or no events older than the most recent user
-            // prompt are eligible for masking), skip the summarizer for
-            // this iteration entirely. Emitting `history-summary` with
-            // an empty `replacedEventIds` is correctness-poison: the
-            // replay masker masks nothing, but the summary message is
-            // STILL synthesized on top of the un-condensed history —
-            // so the model sees both the summary AND the events it was
-            // meant to replace, bloating context on every reload. The
-            // standard trim pass remains in effect for this iteration;
-            // the next iteration's summarizer call tries again on a
-            // fresh transcript snapshot. Review finding M2.
-            if (replacedEventIds.length === 0) {
-              log.warn('summarizer: replacedEventIds empty; skipping summary emit', {
-                iteration: iter,
-                conversationId: opts.input.conversationId,
-                replacedMessages: result.replacedIndices.length
-              });
-            } else {
-              // Splice the synthetic `<history_summary>` message into
-              // the candidate at the position of the FIRST replaced
-              // index, and drop the original messages at those
-              // indices. The result is the same compaction
-              // `replayTranscript` will produce on reload, so the
-              // orchestrator's view stays consistent across live +
-              // replay.
-              const firstIdx = result.replacedIndices[0]!;
-              const lastIdx = result.replacedIndices[result.replacedIndices.length - 1]!;
-              const summaryMessage: ChatMessage = {
-                role: 'user',
-                content: `<history_summary>\n${result.summary}\n</history_summary>`
-              };
-              candidateMessages = [
-                ...candidateMessages.slice(0, firstIdx),
-                summaryMessage,
-                ...candidateMessages.slice(lastIdx + 1)
-              ];
-
-              opts.emit({
-                kind: 'history-summary',
-                id: randomUUID(),
-                ts: Date.now(),
-                summary: result.summary,
-                replacedEventIds,
-                providerId: opts.input.selection.providerId,
-                modelId: opts.input.selection.modelId
-              });
-              log.info('history summarizer fired', {
-                iteration: iter,
-                replacedMessages: result.replacedIndices.length,
-                replacedEventIds: replacedEventIds.length,
-                summaryChars: result.summary.length
-              });
-            }
-          }
-        }
       }
 
       const req = buildOrchestratorRequest({
@@ -431,14 +554,14 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
       //      `connecting` automatically once `streamChat`'s `onConnect`
       //      hook fires (see ChatStreamRequest.onConnect).
       if (iter > 0) {
-        emitRunStatus(opts.emit, 'preparing-turn', 'Preparing next turn…', {
+        emitRunStatus(emit, 'preparing-turn', 'Preparing next turn…', {
           providerId: opts.input.selection.providerId,
           modelId: opts.input.selection.modelId,
           iteration: iter
         });
       }
       emitRunStatus(
-        opts.emit,
+        emit,
         'connecting',
         `Connecting to ${providerName}…`,
         {
@@ -449,7 +572,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
       );
       req.onConnect = () => {
         emitRunStatus(
-          opts.emit,
+          emit,
           'awaiting-response',
           `Awaiting first token from ${opts.input.selection.modelId}…`,
           {
@@ -460,7 +583,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
         );
       };
 
-      const turn = await handleAssistantTurn(req, opts.emit, argsDeltaTap);
+      const turn = await handleAssistantTurn(req, emit, argsDeltaTap);
 
       if (turn.error) {
         // User-initiated Stop (or the run-scoped signal firing for any
@@ -476,7 +599,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
         // and exit silently so Stop is a true silent-cancel.
         if (isAbortError(turn.error, opts.signal)) {
           if (turn.hadText || turn.hadReasoning) {
-            opts.emit({ kind: 'agent-text-aborted', id: turn.assistantMsgId, ts: Date.now() });
+            emit({ kind: 'agent-text-aborted', id: turn.assistantMsgId, ts: Date.now() });
           }
           return;
         }
@@ -499,10 +622,10 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
         // without text left the partial reasoning buffer in state until the
         // next turn overwrote it.
         if (turn.hadText || turn.hadReasoning) {
-          opts.emit({ kind: 'agent-text-aborted', id: turn.assistantMsgId, ts: Date.now() });
+          emit({ kind: 'agent-text-aborted', id: turn.assistantMsgId, ts: Date.now() });
         }
         if (consecutiveErrors >= MAX_SELF_CORRECTION_ATTEMPTS) {
-          opts.emit({
+          emit({
             kind: 'error',
             id: randomUUID(),
             ts: Date.now(),
@@ -510,7 +633,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
           });
           return;
         }
-        opts.emit({
+        emit({
           kind: 'agent-thought',
           id: randomUUID(),
           ts: Date.now(),
@@ -521,7 +644,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
           severity: 'warn'
         });
         emitRunStatus(
-          opts.emit,
+          emit,
           'retrying',
           `Retrying provider call (${consecutiveErrors}/${MAX_SELF_CORRECTION_ATTEMPTS})…`,
           {
@@ -553,10 +676,10 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
       // later turn-end one, which would bloat the "Thought for Ns" label
       // with the time spent streaming the post-reasoning answer.
       if (turn.hadReasoning && !turn.reasoningEndEmitted) {
-        opts.emit({ kind: 'agent-reasoning-end', id: turn.assistantMsgId, ts: Date.now() });
+        emit({ kind: 'agent-reasoning-end', id: turn.assistantMsgId, ts: Date.now() });
       }
       if (turn.hadText) {
-        opts.emit({ kind: 'agent-text-end', id: turn.assistantMsgId, ts: Date.now() });
+        emit({ kind: 'agent-text-end', id: turn.assistantMsgId, ts: Date.now() });
       }
 
       const finishedToolCalls = turn.partialToolCalls.filter((tc) => tc?.name);
@@ -622,7 +745,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
       // `role:"tool"` message telling the model to use `<delegate>`,
       // matching the sub-agent allowlist refusal surface.
       if (finishedToolCalls.length > 0) {
-        const summary = await handleToolCalls(finishedToolCalls, messages, opts.emit, {
+        const summary = await handleToolCalls(finishedToolCalls, messages, emit, {
           workspacePath: opts.workspacePath,
           workspaceId: opts.workspaceId,
           runId: opts.input.runId,
@@ -637,6 +760,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
         // burn another iteration on a stale stream request.
         if (opts.signal.aborted) return;
         runStateAcc.directToolRoundsTotal += 1;
+        runStateAcc.childRedelegationsTotal += summary.childRedelegations;
         runStateAcc.lastAction = 'direct-tool';
 
         // Refresh the rolling memory-retrieval query with a cheap summary
@@ -674,7 +798,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
               consecutiveBadToolRounds,
               iteration: iter
             });
-            opts.emit({
+            emit({
               kind: 'error',
               id: randomUUID(),
               ts: Date.now(),
@@ -716,7 +840,19 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
                 if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
                   args = parsed as Record<string, unknown>;
                 }
-              } catch {
+              } catch (err) {
+                // Audit fix M-10: surface malformed tool-call args at
+                // the runLoop spin-signature site (the Ollama
+                // transport already warn-logs the same condition).
+                // Without this log, the downstream tool fails with
+                // "missing <param>" and the user / model can't tell
+                // whether the model produced bad JSON or the tool
+                // schema regressed.
+                log.warn('tool-call argumentsBuf JSON.parse failed; using {} for signature', {
+                  toolName: tc.name,
+                  rawPreview: (tc.argumentsBuf || '').slice(0, 200),
+                  err: err instanceof Error ? err.message : String(err)
+                });
                 args = {};
               }
               return toolCallSignature(tc.name!, args);
@@ -736,15 +872,18 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
       // B1). We emit a `phase` event so the user sees the drop in the
       // timeline, and log it for ops triage — keeping the
       // first-occurrence-wins semantics unchanged.
-      const { directives: delegates, duplicates: droppedDelegateIds } =
-        parseDelegatesWithDuplicates(turn.assistantText);
+      const {
+        directives: delegates,
+        duplicates: droppedDelegateIds,
+        malformedOpeners
+      } = parseDelegatesWithDuplicates(turn.assistantText);
       if (droppedDelegateIds.length > 0) {
         const uniqueDropped = Array.from(new Set(droppedDelegateIds));
         log.warn('dropped duplicate delegate directive(s)', {
           ids: uniqueDropped,
           totalDroppedOccurrences: droppedDelegateIds.length
         });
-        opts.emit({
+        emit({
           kind: 'phase',
           id: randomUUID(),
           ts: Date.now(),
@@ -752,6 +891,29 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
             `Dropped duplicate <delegate> id${uniqueDropped.length === 1 ? '' : 's'}: ` +
             uniqueDropped.join(', ') +
             ' (only the first occurrence ran)'
+        });
+      }
+      // Malformed-opener surface (review finding M7). The
+      // `malformedOpeners` array is a reserved slot on the parser
+      // result — under today's `DELEGATE_RE` it is always empty
+      // (newlines are already allowed in both attribute separators
+      // and values, so genuine multi-line directives parse
+      // cleanly). The emit-site stays wired so a future-discovered
+      // malformed-opener pattern lands here as a `phase` event
+      // without further plumbing; see `ParseDelegatesResult` for
+      // the contract.
+      if (malformedOpeners.length > 0) {
+        log.warn('rejected malformed <delegate> opener(s)', {
+          count: malformedOpeners.length,
+          openersHead: malformedOpeners
+        });
+        emit({
+          kind: 'phase',
+          id: randomUUID(),
+          ts: Date.now(),
+          label:
+            `Rejected ${malformedOpeners.length} malformed <delegate> directive(s) — ` +
+            'check the directive shape against the harness contract.'
         });
       }
       if (delegates.length > 0) {
@@ -766,7 +928,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
           delegates,
           messages,
           counters,
-          opts.emit,
+          emit,
           {
             selection: opts.input.selection,
             providerName,
@@ -796,10 +958,11 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
       // 3) Plain assistant text → either nudge to continue or terminate.
       // A substantive text turn is real progress — any prior spin window
       // is invalidated. The terminus heuristic itself is now tiny: it
-      // only fires on reasoning-only empty turns and unclosed-delegate
-      // tags. Substantive answers, clarifying questions, and completion
-      // narrations all flow through to the clean terminate branch — the
-      // consolidated harness handles the language-level guidance.
+      // only fires on reasoning-only empty turns. Substantive answers,
+      // clarifying questions, completion narrations, and turns that
+      // contain a partial / unclosed `<delegate>` tag all flow through
+      // to the clean terminate branch — the consolidated harness and
+      // the `<run_state>` envelope handle the language-level guidance.
       const cleanText = stripDelegates(turn.assistantText).trim();
       if (cleanText.length > 0) resetSpinBuffer(spin);
       const outcome = handleNoToolNoDelegate(
@@ -808,13 +971,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
         turn.hadReasoning,
         messages,
         nudges,
-        opts.emit,
-        {
-          // Forward the RAW (pre-strip) assistant text so the heuristic
-          // can detect a `<delegate ...` tag whose closing `/>` was lost
-          // to a length-finish_reason or mid-attribute truncation.
-          rawText: turn.assistantText
-        }
+        emit
       );
       if (outcome === 'continue') {
         runStateAcc.lastAction = 'nudge';
@@ -843,7 +1000,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
       runId: opts.input.runId,
       conversationId: opts.input.conversationId
     });
-    opts.emit({
+    emit({
       kind: 'error',
       id: randomUUID(),
       ts: Date.now(),
@@ -855,7 +1012,41 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
     // iteration loop: clean return, halt, iteration cap, thrown
     // exception. The signal-listener path above is idempotent
     // (the streamer's `dispose()` is safe to call twice).
-    disposeStreaming();
+    //
+    // Throw-safety (review finding H2): each cleanup step is
+    // independently try/caught so a throw from `disposeStreaming()`
+    // (e.g., the underlying `DiffWorkerPool.dispose` rejecting on a
+    // worker `terminate`) cannot skip the subsequent
+    // `clearForRun` / `unregisterRunContext` calls. Without this,
+    // a single failed disposal would leak the run's context-summary
+    // undo snapshots AND the registry entry for the entire parent-
+    // process lifetime, growing memory linearly with the number of
+    // failed runs. Mirrors the pattern `AgentV.startRun`'s `finally`
+    // already uses for `finalizeCheckpointRun`.
+    try {
+      disposeStreaming();
+    } catch (err) {
+      log.debug('disposeStreaming threw during runLoop cleanup', {
+        runId: opts.input.runId,
+        err: err instanceof Error ? err.message : String(err)
+      });
+    }
+    try {
+      clearForRun(opts.input.runId);
+    } catch (err) {
+      log.debug('clearForRun threw during runLoop cleanup', {
+        runId: opts.input.runId,
+        err: err instanceof Error ? err.message : String(err)
+      });
+    }
+    try {
+      unregisterRunContext(opts.input.runId);
+    } catch (err) {
+      log.debug('unregisterRunContext threw during runLoop cleanup', {
+        runId: opts.input.runId,
+        err: err instanceof Error ? err.message : String(err)
+      });
+    }
   }
 }
 
@@ -1047,3 +1238,43 @@ async function resolveProviderName(providerId: string): Promise<string> {
   }
   return providerId;
 }
+
+/**
+ * Resolve the fully-collapsed `ContextSummaryRules` for a run.
+ *
+ * Layering precedence (most → least specific):
+ *   1. Workspace patch  → `AppSettings.ui.contextSummaryByWorkspace[wsId]`
+ *   2. Global patch     → `AppSettings.contextSummary`
+ *   3. Build-time defaults (`DEFAULT_CONTEXT_SUMMARY_RULES`)
+ *
+ * Both the auto-trigger and the manual IPC re-resolve via this
+ * helper. Cheap — `getSettings()` is a memoized read.
+ */
+async function resolveSummaryRulesForRun(
+  workspaceId: string | undefined
+): Promise<ContextSummaryRules> {
+  try {
+    const settings = await getSettings();
+    const global = settings.contextSummary;
+    const workspace = workspaceId
+      ? settings.ui?.contextSummaryByWorkspace?.[workspaceId]
+      : undefined;
+    return resolveContextSummaryRules(global, workspace);
+  } catch (err) {
+    log.warn('failed to resolve summary rules; using defaults', {
+      workspaceId,
+      err: err instanceof Error ? err.message : String(err)
+    });
+    return resolveContextSummaryRules(undefined, undefined);
+  }
+}
+
+// Note (review finding M2): the local `probeWorkspaceOverridePresent`
+// helper that used to live here is now imported from
+// `../../harness/probeOverride.js`. The old copy used dynamic
+// imports of `node:fs`, `node:path`, and `@shared/constants.js` on
+// every call — the Inspector polls this via `runHandle.snapshot()`
+// every time the user opens the panel, so the module-resolution
+// cost on the hot path was noticeable. Centralising the helper
+// keeps the implementation single-source-of-truth and the imports
+// at module-load time.

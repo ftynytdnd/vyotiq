@@ -57,6 +57,42 @@ const ORPHAN_STUB =
   're-issue the call if you still need the data)';
 
 /**
+ * Stats surfaced alongside the sanitized message stream so callers can
+ * emit user-visible signals (a `phase` event saying "Recovered N
+ * orphan tool_calls in history") without re-walking the messages.
+ *
+ * Review finding H7: prior to this slot, sanitizer activity was a
+ * `log.info` only — the model proceeded correctly under the stubs but
+ * the USER saw nothing, even when stub injection fired repeatedly on
+ * a broken replay. The orchestrator's `runLoop` now reads
+ * `injectedStubs` and emits a single `phase` event so the user has a
+ * triage breadcrumb without polluting the timeline with one event per
+ * stub.
+ */
+export interface SanitizeStats {
+  /** Stub `role:'tool'` messages injected after assistants with unpaired `tool_calls`. */
+  injectedStubs: number;
+  /** Orphan `role:'tool'` messages dropped (no preceding matching `tool_calls[].id`). */
+  droppedOrphans: number;
+}
+
+export interface SanitizeResult {
+  messages: ChatMessage[];
+  stats: SanitizeStats;
+}
+
+/**
+ * Rich variant of `sanitizeToolCallPairing` that also returns the
+ * stub/drop counts so callers can surface them via a `phase` event.
+ * Production orchestrator path uses this; sub-agents stay on the
+ * simple form because their internals are isolated from user-visible
+ * timeline events anyway.
+ */
+export function sanitizeToolCallPairingWithStats(messages: ChatMessage[]): SanitizeResult {
+  return sanitizeImpl(messages);
+}
+
+/**
  * Returns a NEW message array with:
  *
  *   - Stub `role:'tool'` messages injected after each `assistant` that
@@ -72,73 +108,92 @@ const ORPHAN_STUB =
  * appears once in `role:'tool'` messages within the response block.
  */
 export function sanitizeToolCallPairing(messages: ChatMessage[]): ChatMessage[] {
-  // Pass 1: gather the set of `tool_call_id`s that belong to any
-  // preceding assistant within each response block. An orphan
-  // `role:'tool'` message is one whose id is NOT a member of the
-  // CURRENT response block's valid-id set. We rebuild the set every
-  // time an `assistant` appears because each assistant starts a fresh
-  // response block.
+  return sanitizeImpl(messages).messages;
+}
+
+function sanitizeImpl(messages: ChatMessage[]): SanitizeResult {
+  // Single-pass sanitizer (review finding M5). The legacy
+  // implementation was O(N²) on long histories: for every assistant
+  // message it ran an inner forward scan to find the next assistant
+  // boundary. With 100 assistants in history that was ~5000
+  // iterations per `chat:send`. The structure below collapses the
+  // walk to one pass:
+  //
+  //   1. Walk messages forward exactly once.
+  //   2. When we see an `assistant`, finalize the PREVIOUS response
+  //      block (emit any unresponded stubs for its tool_calls), then
+  //      open a fresh response block for the new assistant.
+  //   3. Tool messages flush into the current block's `responded`
+  //      set IFF their id is in `currentValidIds`; orphans drop.
+  //   4. After the loop, finalize the final response block.
+  //
+  // The closure over `pendingAssistant` / `pendingTools` is shared by
+  // the assistant branch and the post-loop finalize so the close-
+  // block logic lives in exactly one place.
   const out: ChatMessage[] = [];
-  let currentValidIds: Set<string> = new Set();
   let droppedOrphans = 0;
+  let injectedStubs = 0;
 
-  for (let i = 0; i < messages.length; i++) {
-    const m = messages[i]!;
+  // Open response block state. `null` until the first assistant lands.
+  let pendingAssistant: ChatMessage | null = null;
+  let pendingValidIds: Set<string> = new Set();
+  let pendingResponded: Set<string> = new Set();
+  let pendingTools: ChatMessage[] = [];
 
-    if (m.role === 'assistant') {
-      // New response block opens here. Recompute the valid-id set from
-      // this assistant's `tool_calls` (may be empty).
-      currentValidIds = new Set();
-      if (Array.isArray(m.tool_calls)) {
-        for (const tc of m.tool_calls) currentValidIds.add(tc.id);
-      }
-      out.push(m);
-
-      if (!Array.isArray(m.tool_calls) || m.tool_calls.length === 0) {
-        continue;
-      }
-      // Locate the response block — everything between this assistant
-      // message and the next assistant message (exclusive).
-      let endIdx = messages.length;
-      for (let j = i + 1; j < messages.length; j++) {
-        if (messages[j]!.role === 'assistant') {
-          endIdx = j;
-          break;
-        }
-      }
-      const responded = new Set<string>();
-      for (let k = i + 1; k < endIdx; k++) {
-        const t = messages[k]!;
-        if (t.role === 'tool' && typeof t.tool_call_id === 'string') {
-          // Only count tool messages whose id is in the valid set —
-          // the orphan-drop pass below will strip the invalid ones, so
-          // they shouldn't satisfy the pairing requirement here either.
-          if (currentValidIds.has(t.tool_call_id)) {
-            responded.add(t.tool_call_id);
-          }
-        }
-      }
-      for (const tc of m.tool_calls) {
-        if (!responded.has(tc.id)) {
+  const closePendingBlock = (): void => {
+    if (pendingAssistant === null) return;
+    out.push(pendingAssistant);
+    // Emit retained tool messages first (those that paired against
+    // a real id in the assistant). Stubs are appended after — the
+    // strict-OpenAI contract only requires every tool_call_id to
+    // appear once in the response block; order within the block is
+    // free.
+    for (const t of pendingTools) out.push(t);
+    if (Array.isArray(pendingAssistant.tool_calls)) {
+      for (const tc of pendingAssistant.tool_calls) {
+        if (!pendingResponded.has(tc.id)) {
           out.push({
             role: 'tool',
             tool_call_id: tc.id,
             name: tc.function.name,
             content: ORPHAN_STUB
           });
+          injectedStubs += 1;
         }
+      }
+    }
+    pendingAssistant = null;
+    pendingValidIds = new Set();
+    pendingResponded = new Set();
+    pendingTools = [];
+  };
+
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]!;
+
+    if (m.role === 'assistant') {
+      // Boundary — close the previous block (if any) BEFORE starting
+      // the new one so retained-then-stubbed ordering matches the
+      // legacy behaviour.
+      closePendingBlock();
+      pendingAssistant = m;
+      pendingValidIds = new Set();
+      pendingResponded = new Set();
+      pendingTools = [];
+      if (Array.isArray(m.tool_calls)) {
+        for (const tc of m.tool_calls) pendingValidIds.add(tc.id);
       }
       continue;
     }
 
     if (m.role === 'tool') {
-      // Orphan detection: a tool message whose id is NOT a member of
-      // the most recent assistant's `tool_calls` set is illegal under
-      // strict providers. Drop it rather than forwarding a guaranteed
-      // 400. Logged so transcripts with the issue are debuggable from
-      // `vyotiq.log`.
       const id = typeof m.tool_call_id === 'string' ? m.tool_call_id : '';
-      if (!currentValidIds.has(id)) {
+      if (!pendingValidIds.has(id)) {
+        // Orphan: no preceding assistant has a matching
+        // `tool_calls[].id`. Drop rather than forward — strict
+        // providers reject the message with a generic 400. Logged
+        // so transcripts with the issue are debuggable from
+        // `vyotiq.log`.
         droppedOrphans += 1;
         log.warn('dropping orphan role:tool message — no matching assistant.tool_calls[].id', {
           tool_call_id: id,
@@ -146,16 +201,26 @@ export function sanitizeToolCallPairing(messages: ChatMessage[]): ChatMessage[] 
         });
         continue;
       }
-      out.push(m);
+      pendingResponded.add(id);
+      pendingTools.push(m);
       continue;
     }
 
-    // User / system / any future role passes through unchanged.
+    // User / system / any future role: close any open response block
+    // first so stubs never appear AFTER a user message (strict
+    // providers expect the response block to be contiguous).
+    closePendingBlock();
     out.push(m);
   }
+  // Final flush — handles a transcript that ends with an assistant
+  // (tool_calls + responses, possibly missing some).
+  closePendingBlock();
 
   if (droppedOrphans > 0) {
     log.info('orphan tool messages dropped from request', { droppedOrphans });
   }
-  return out;
+  return {
+    messages: out,
+    stats: { injectedStubs, droppedOrphans }
+  };
 }

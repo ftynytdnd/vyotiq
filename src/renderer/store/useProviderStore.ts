@@ -109,7 +109,6 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
  * Re-exported here for backward-compatibility with renderer call sites
  * (composer + model picker) that imported this from `useProviderStore`.
  * The actual implementation lives in `@shared/providers/contextWindow`
- * so the main-process run-loop can apply the same precedence rules
- * when enforcing per-turn token budgets (Audit fix §2.3).
+ * so both renderer and main process share the same precedence rules.
  */
 export { selectEffectiveContextWindow } from '@shared/providers/contextWindow.js';

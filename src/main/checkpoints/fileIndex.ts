@@ -10,11 +10,11 @@
  */
 
 import { promises as fs } from 'node:fs';
-import { dirname } from 'node:path';
 import type { FileHistoryRow } from '@shared/types/checkpoint.js';
 import { fileIndexPath, filesDir } from './paths.js';
 import { decodeFileKey } from './paths.js';
 import { logger } from '../logging/logger.js';
+import { atomicWriteJson } from './atomicWrite.js';
 
 const log = logger.child('checkpoints/fileIndex');
 
@@ -53,11 +53,7 @@ async function save(
   relPath: string,
   rows: FileHistoryRow[]
 ): Promise<void> {
-  const path = fileIndexPath(workspaceId, relPath);
-  await fs.mkdir(dirname(path), { recursive: true });
-  const tmp = `${path}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(rows), 'utf8');
-  await fs.rename(tmp, path);
+  await atomicWriteJson(fileIndexPath(workspaceId, relPath), rows);
 }
 
 /** Append one row to a file's history. */

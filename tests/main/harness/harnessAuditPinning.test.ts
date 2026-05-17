@@ -15,8 +15,6 @@
  *   - I3: Prime Directives's reasoning paragraph acknowledges that
  *         reasoning is persisted and the user sees a "Thought for Ns"
  *         card (no longer claims it's invisible).
- *   - I4: `02-context-and-memory.md` documents the `<history_summary>`
- *         host-generated message.
  *   - I6: Every harness `<delegate>` example carries `tools="..."`.
  *   - I8: Prime Directives §1 documents the user-attached files flow.
  *   - K2: Planning nudge cap named in §C of the loop doc. The
@@ -60,11 +58,6 @@ describe('harness audit pinning', () => {
     expect(prompt).toMatch(/Thought for Ns/);
     // Pre-audit claim must NOT regress.
     expect(prompt).not.toMatch(/Reasoning is invisible to the orchestrator and to the user/);
-  });
-
-  it('I4 — <history_summary> sentinel is documented', () => {
-    expect(prompt).toMatch(/<history_summary>/);
-    expect(prompt).toMatch(/HOST-GENERATED compaction/i);
   });
 
   it('I6 — every concrete <delegate ...> example in the harness carries tools="..."', () => {

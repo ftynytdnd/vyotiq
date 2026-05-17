@@ -3,4 +3,7 @@
  * decide whether to terminate, nudge, or escalate.
  */
 
-export { isPlanningWithoutAction } from './isPlanningWithoutAction.js';
+export {
+  classifyPlanningWithoutAction
+} from './isPlanningWithoutAction.js';
+export type { PlanningOutcome } from './isPlanningWithoutAction.js';

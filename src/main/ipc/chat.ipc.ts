@@ -8,7 +8,7 @@
  *   - Derive a short title from the first user prompt.
  */
 
-import { IPC, PERSIST_DELTA_COALESCE_CHARS } from '@shared/constants.js';
+import { IPC, MAX_USER_PROMPT_BYTES, PERSIST_DELTA_COALESCE_CHARS } from '@shared/constants.js';
 import type {
   ChatSendInput,
   ChatSendReply,
@@ -67,10 +67,31 @@ const log = logger.child('ipc/chat');
  * single 200-char delta is functionally identical to 200 single-char
  * deltas. The renderer always receives every individual delta for
  * smooth token-by-token streaming — only the persisted shape changes.
+ *
+ * The same coalescer machinery handles the four delta kinds the
+ * orchestrator emits — assistant text/reasoning AND
+ * context-summary text/reasoning. The summarizer streams via the
+ * same `streamChat` transport that produces `agent-text-delta` for
+ * normal turns, so the same per-token-frame pressure applies. The
+ * summary variants are keyed by `summaryId` (instead of
+ * `assistantMsgId`) and live in a sibling Map; flush + tombstone
+ * semantics mirror the assistant flow.
  */
 interface DeltaBuf {
-  kind: 'agent-text-delta' | 'agent-reasoning-delta';
-  /** assistantMsgId the deltas share. */
+  kind:
+  | 'agent-text-delta'
+  | 'agent-reasoning-delta'
+  | 'context-summary-delta'
+  | 'context-summary-reasoning-delta';
+  /**
+   * For assistant kinds, the assistantMsgId carried on every delta
+   * (the persisted event's `id` slot).
+   *
+   * For summary kinds, this slot holds a synthetic id used for the
+   * persisted event's `id` (minted on first delta for the summary
+   * id; replay treats it the same as any other event id). The
+   * authoritative handle for summary deltas is `summaryId` below.
+   */
   id: string;
   /** Timestamp of the FIRST unflushed delta in this buffer. */
   ts: number;
@@ -88,8 +109,19 @@ interface DeltaBuf {
    * `undefined` for orchestrator-scoped deltas (the default), kept
    * out of the persisted shape via the spread on flush so legacy
    * JSONL records are byte-identical to the pre-§1.1 encoding.
+   *
+   * Summary deltas never carry a `subagentId` — the summarizer is a
+   * dedicated orchestrator-side LLM call, not a sub-agent — but we
+   * keep the slot on the buf shape so a single flush helper handles
+   * both families.
    */
   subagentId?: string;
+  /**
+   * Summary-stream id for `context-summary-*` kinds. Required for
+   * the persisted event's `summaryId` slot. `undefined` for
+   * assistant kinds.
+   */
+  summaryId?: string;
 }
 
 interface CoalescerEntry {
@@ -154,6 +186,63 @@ function safeSend(channel: string, ...args: unknown[]): void {
 
 export function registerChatIpc(): void {
   wrapIpcHandler(IPC.CHAT_SEND, async (_event, input: ChatSendInput): Promise<ChatSendReply> => {
+
+    // Audit fix M-03: shape-validate the input BEFORE doing anything
+    // else. The renderer enforces composer-side limits, but a direct-
+    // IPC caller (test, future integration, malicious script) could
+    // otherwise push:
+    //   - a non-string `prompt` (passes through to `appendEvent` and
+    //     corrupts the transcript's `user-prompt.content` slot —
+    //     `applyTimelineEvent` then concatenates undefined into the
+    //     persisted assistant view),
+    //   - a megabyte-scale prompt that bloats every transcript reload
+    //     for the conversation's lifetime,
+    //   - a missing / non-string `runId` that races the route map,
+    //   - a missing / mis-typed `selection` object that crashes the
+    //     orchestrator after the conversation is already created.
+    //
+    // We throw a structured Error here so `wrapIpcHandler` surfaces
+    // it as a renderer-facing rejection instead of leaving the run
+    // half-created.
+    if (input === null || typeof input !== 'object') {
+      throw new Error('chat:send: input must be an object');
+    }
+    if (typeof input.runId !== 'string' || input.runId.length === 0) {
+      throw new Error('chat:send: runId is required (string)');
+    }
+    if (typeof input.prompt !== 'string') {
+      throw new Error('chat:send: prompt must be a string');
+    }
+    // Byte-cap rather than char-cap so multi-byte unicode prompts are
+    // measured by what actually lands on disk.
+    const promptBytes = Buffer.byteLength(input.prompt, 'utf8');
+    if (promptBytes > MAX_USER_PROMPT_BYTES) {
+      throw new Error(
+        `chat:send: prompt exceeds the ${MAX_USER_PROMPT_BYTES.toLocaleString()}-byte cap ` +
+        `(received ${promptBytes.toLocaleString()} bytes). Split the prompt into smaller messages.`
+      );
+    }
+    if (input.selection === null || typeof input.selection !== 'object') {
+      throw new Error('chat:send: selection must be a ModelSelection object');
+    }
+    if (typeof input.selection.providerId !== 'string' || typeof input.selection.modelId !== 'string') {
+      throw new Error('chat:send: selection.providerId and selection.modelId must both be strings');
+    }
+    if (input.permissions === null || typeof input.permissions !== 'object') {
+      throw new Error('chat:send: permissions must be a ChatPermissions object');
+    }
+    // `conversationId` / `workspaceId` / `attachments` are optional and
+    // each branch below already handles undefined; type-check them
+    // only if present so a stray `null` doesn't slip through.
+    if (input.conversationId !== undefined && typeof input.conversationId !== 'string') {
+      throw new Error('chat:send: conversationId must be a string when set');
+    }
+    if (input.workspaceId !== undefined && typeof input.workspaceId !== 'string') {
+      throw new Error('chat:send: workspaceId must be a string when set');
+    }
+    if (input.attachments !== undefined && !Array.isArray(input.attachments)) {
+      throw new Error('chat:send: attachments must be an array when set');
+    }
 
     // Resolve the workspace for this run. Priority:
     //   1. `input.workspaceId` from the renderer (the active workspace's id).
@@ -220,9 +309,18 @@ export function registerChatIpc(): void {
     // streaming into the JSONL. The `findAll…` array surface makes that
     // case impossible by construction, and a count > 1 is logged loudly
     // so the regression is visible.
-    const priorRunIds = findAllActiveRunsForConversation(cid).filter(
-      (rid) => rid !== input.runId
-    );
+    //
+    // Self-abort safety (review finding M1). The legacy code filtered
+    // out `input.runId` before aborting, on the assumption a fresh
+    // run could never be in `activeRuns` already. That assumption
+    // breaks if the renderer ever reuses a runId (a renderer-side bug
+    // in run-id minting, a HMR hot-reload state mismatch, or a buggy
+    // replay-and-resend). Without the filter, a renderer-side runId
+    // collision now correctly aborts the stale half before starting
+    // the new one — `abortRun` is idempotent (it's a no-op for an
+    // unknown id and a single signal-flip for the live entry), so
+    // there's no cost on the steady-state path.
+    const priorRunIds = findAllActiveRunsForConversation(cid);
     if (priorRunIds.length > 0) {
       if (priorRunIds.length > 1) {
         log.warn('chat:send found multiple in-flight runs for conversation; aborting all', {
@@ -371,6 +469,24 @@ export function registerChatIpc(): void {
     // `assistantMsgId`.
     const coalescer = new Map<string, CoalescerEntry>();
     /**
+     * Sibling coalescer for context-summarizer deltas, keyed by
+     * `summaryId`. Same shape, same flush triggers, same residual-
+     * drain on `onDone` / `onError` — kept as a separate map so
+     * collisions between an assistant message id and a summary id
+     * (UUID v4 each, so vanishingly unlikely but not ruled out) can
+     * never alias buckets.
+     *
+     * Flush triggers for this map:
+     *   - buffered length ≥ `PERSIST_DELTA_COALESCE_CHARS`
+     *   - matching `context-summary-end` / `context-summary-aborted`
+     *     arrives (parallel to `agent-text-end` / `-aborted`)
+     *   - `context-summary-undone` arrives — drops both buffers; the
+     *     undone marker lands on a clean transcript so replay sees
+     *     `(pending, end, undone)` without orphan delta tail rows.
+     *   - `onDone` / `onError` — catch-all
+     */
+    const summaryCoalescer = new Map<string, CoalescerEntry>();
+    /**
      * Tombstones for assistant-message ids whose streaming was
      * explicitly terminated via `agent-text-aborted`. Any `delta`
      * event arriving AFTER the abort marker for the same id is
@@ -389,6 +505,16 @@ export function registerChatIpc(): void {
      * Set is the bottleneck.
      */
     const tombstonedIds = new Set<string>();
+    /**
+     * Tombstones for `summaryId`s whose summarization was terminated
+     * via `context-summary-aborted` or `context-summary-undone`. Same
+     * role as `tombstonedIds` for the assistant flow — drops any
+     * stray late `context-summary-delta` /
+     * `context-summary-reasoning-delta` from persistence so replay
+     * sees a clean `(pending, aborted)` or `(pending, end, undone)`
+     * sequence.
+     */
+    const tombstonedSummaryIds = new Set<string>();
 
     const persistEvent = (event: TimelineEvent): void => {
       appendEvent(cid, event).catch((err) =>
@@ -404,26 +530,76 @@ export function registerChatIpc(): void {
       // The `subagentId` slot rides through verbatim when present so
       // sub-agent-scoped streaming bodies replay into the matching
       // worker's `SubAgentTrace` accumulator. Audit fix §1.1.
+      // The `summaryId` slot rides through for `context-summary-*`
+      // kinds so the renderer reducer routes the coalesced row into
+      // the right `summaries[id]` accumulator.
       persistEvent({
         kind: buf.kind,
         id: buf.id,
         ts: buf.ts,
         delta: buf.text,
-        ...(buf.subagentId ? { subagentId: buf.subagentId } : {})
+        ...(buf.subagentId ? { subagentId: buf.subagentId } : {}),
+        ...(buf.summaryId ? { summaryId: buf.summaryId } : {})
       } as TimelineEvent);
       buf.text = '';
     };
 
     const flushAll = (): void => {
-      for (const entry of coalescer.values()) {
-        flushBuf(entry.text);
-        flushBuf(entry.reasoning);
+      // Short-circuit on the empty path (review finding M4).
+      // `flushAll` runs on every non-streaming persistent event AND
+      // on run finalization; on the steady-state path either map is
+      // usually empty, so the `Map.size === 0` check skips both
+      // for-loops at O(1) cost. The legacy code walked the maps
+      // unconditionally — for a turn with 50 tool calls and 5
+      // assistant streams open, that was 50 × 5 = 250 wasted
+      // iterator allocations.
+      if (coalescer.size > 0) {
+        for (const entry of coalescer.values()) {
+          flushBuf(entry.text);
+          flushBuf(entry.reasoning);
+        }
+        coalescer.clear();
       }
-      coalescer.clear();
+      // Drain the summarizer coalescer with the same triggers. Mirrors
+      // the assistant-side `flushAll` exactly so a closing run leaves
+      // both transcript paths consistent.
+      if (summaryCoalescer.size > 0) {
+        for (const entry of summaryCoalescer.values()) {
+          flushBuf(entry.text);
+          flushBuf(entry.reasoning);
+        }
+        summaryCoalescer.clear();
+      }
     };
+
+    // Audit fix M-06: run-finalisation latch. After `onDone` /
+    // `onError` fires we ignore any further `emit` calls from
+    // stragglers — most notably fire-and-forget post-bash mutation
+    // scans (`bash.tool.ts`) that complete on the wall-clock AFTER
+    // the orchestrator loop's `disposeStreaming` ran. Without this
+    // gate those late events still pump through `safeSend` (renderer
+    // drops them because the run isn't in the runIdToConv map) AND
+    // through `persistEvent` (which APPENDS them to the JSONL,
+    // surfacing as ghost rows on transcript reload after a Stop).
+    // The flag is closure-local so it lives only for the duration of
+    // this run; the next `chat:send` for the same conversation gets
+    // its own fresh flag.
+    let runFinalized = false;
 
     void startRun({ ...input, conversationId: cid, workspaceId: workspaceIdForRun }, {
       emit: (event: TimelineEvent) => {
+        if (runFinalized) {
+          // Late event from a fire-and-forget task whose run already
+          // settled. Dropped — neither forwarded to the renderer nor
+          // persisted. Logged at debug so the breadcrumb is available
+          // when triaging "why did this checkpoint row appear / not
+          // appear" without polluting routine logs.
+          log.debug('dropping post-finalisation event', {
+            runId: input.runId,
+            kind: event.kind
+          });
+          return;
+        }
         // ALWAYS forward to the renderer verbatim so the UI gets
         // token-by-token streaming. The coalescer below only affects
         // what goes to disk.
@@ -458,6 +634,39 @@ export function registerChatIpc(): void {
           }
           const slot = event.kind === 'agent-text-delta' ? 'text' : 'reasoning';
           let buf = entry[slot];
+          // Defensive subagentId-mismatch flush (review finding H6).
+          // Each coalescer entry captures `subagentId` from its FIRST
+          // delta; subsequent deltas for the same id are assumed to
+          // share that attribution. Today's code path holds the
+          // invariant (every iteration mints a fresh assistantMsgId
+          // via `randomUUID()`, so an orchestrator turn and a
+          // sub-agent iteration never share an id), but a future
+          // emit-order change — e.g. a mid-stream tool-call detection
+          // that paralleled delegate detection across iterations —
+          // could violate it. If the incoming delta's `subagentId`
+          // disagrees with the buf's captured one, FLUSH the current
+          // buf first and start a fresh entry. The persisted JSONL
+          // then has two coalesced rows under the right attribution
+          // instead of one row whose `subagentId` claims to cover
+          // both. Logged at warn so the violation is auditable.
+          if (buf) {
+            const bufAttribution = buf.subagentId;
+            const evtAttribution = event.subagentId;
+            if (bufAttribution !== evtAttribution) {
+              log.warn(
+                'coalescer subagentId mismatch — flushing prior buf and starting fresh entry',
+                {
+                  id: event.id,
+                  kind: event.kind,
+                  bufAttribution: bufAttribution ?? null,
+                  evtAttribution: evtAttribution ?? null
+                }
+              );
+              flushBuf(buf);
+              buf = undefined;
+              entry[slot] = undefined;
+            }
+          }
           if (!buf) {
             buf = {
               kind: event.kind,
@@ -469,7 +678,8 @@ export function registerChatIpc(): void {
               // §1.1). Sub-agent assistantMsgIds are minted via
               // `randomUUID()` per iteration, so a coalescer entry
               // never aliases between an orchestrator turn and a
-              // sub-agent iteration.
+              // sub-agent iteration. The H6 mismatch flush above
+              // covers the future case where this invariant breaks.
               ...(event.subagentId ? { subagentId: event.subagentId } : {})
             };
             entry[slot] = buf;
@@ -513,6 +723,83 @@ export function registerChatIpc(): void {
           // of producing an out-of-order `aborted → delta` row on
           // replay. Review finding H6.
           tombstonedIds.add(event.id);
+        } else if (
+          event.kind === 'context-summary-delta' ||
+          event.kind === 'context-summary-reasoning-delta'
+        ) {
+          // Sibling coalescer for summarizer streams. Same flush
+          // triggers as the assistant flow but keyed by `summaryId`
+          // (carried on every event in the family) instead of
+          // `assistantMsgId`. Late deltas after `-aborted` /
+          // `-undone` are dropped via `tombstonedSummaryIds` so the
+          // persisted JSONL stays in canonical order.
+          if (tombstonedSummaryIds.has(event.summaryId)) {
+            log.debug('dropping late summary delta after terminal', {
+              summaryId: event.summaryId,
+              kind: event.kind
+            });
+            return;
+          }
+          let entry = summaryCoalescer.get(event.summaryId);
+          if (!entry) {
+            entry = {};
+            summaryCoalescer.set(event.summaryId, entry);
+          }
+          const slot =
+            event.kind === 'context-summary-delta' ? 'text' : 'reasoning';
+          let buf = entry[slot];
+          if (!buf) {
+            buf = {
+              kind: event.kind,
+              // Reuse the FIRST delta's event id for the synthesized
+              // flushed row. Replay treats it as any other event id
+              // (used for dedupe within `events[]`); the
+              // authoritative grouping handle is `summaryId`.
+              id: event.id,
+              ts: event.ts,
+              text: '',
+              summaryId: event.summaryId
+            };
+            entry[slot] = buf;
+          }
+          buf.text += event.delta;
+          if (buf.text.length >= PERSIST_DELTA_COALESCE_CHARS) {
+            flushBuf(buf);
+          }
+          return;
+        } else if (event.kind === 'context-summary-end') {
+          // Flush the matching summary buffers BEFORE persisting the
+          // end marker so replay sees `...summary-deltas → end`.
+          const entry = summaryCoalescer.get(event.summaryId);
+          if (entry) {
+            flushBuf(entry.text);
+            flushBuf(entry.reasoning);
+            summaryCoalescer.delete(event.summaryId);
+          }
+        } else if (event.kind === 'context-summary-aborted') {
+          // Abort kills both summary buffers; tombstone the id so
+          // any straggling delta after the abort is dropped (same
+          // role as the assistant `tombstonedIds` set).
+          const entry = summaryCoalescer.get(event.summaryId);
+          if (entry) {
+            flushBuf(entry.text);
+            flushBuf(entry.reasoning);
+            summaryCoalescer.delete(event.summaryId);
+          }
+          tombstonedSummaryIds.add(event.summaryId);
+        } else if (event.kind === 'context-summary-undone') {
+          // Undo lands AFTER `context-summary-end` for the same id —
+          // both buffers should already be drained, but be defensive
+          // (a future emit-order change could let an undo race a
+          // streaming-end). Tombstone the id so stray deltas after
+          // the undo are dropped.
+          const entry = summaryCoalescer.get(event.summaryId);
+          if (entry) {
+            flushBuf(entry.text);
+            flushBuf(entry.reasoning);
+            summaryCoalescer.delete(event.summaryId);
+          }
+          tombstonedSummaryIds.add(event.summaryId);
         } else {
           // Implicit boundary: any other persistent event kind
           // (`tool-call`, `tool-result`, `phase`, `subagent-*`,
@@ -537,6 +824,16 @@ export function registerChatIpc(): void {
             flushBuf(entry.text);
             flushBuf(entry.reasoning);
           }
+          // Same boundary invariant for the summarizer coalescer:
+          // any non-summary persistent event lands AFTER any
+          // pending summary deltas. Today the summarizer's emit
+          // path always interleaves `pending → delta+ → end` with
+          // no foreign events between, so this is defensive against
+          // a future emit-order change.
+          for (const entry of summaryCoalescer.values()) {
+            flushBuf(entry.text);
+            flushBuf(entry.reasoning);
+          }
         }
 
         // Non-delta events persist verbatim.
@@ -552,6 +849,11 @@ export function registerChatIpc(): void {
         // turns it just produced. The outer `drainAppendChain`
         // additionally awaits every in-flight `fs.appendFile`.
         flushAll();
+        // Audit fix M-06: flip the latch AFTER flushAll so any
+        // legitimate end-of-run deltas still drain, but BEFORE
+        // drainAppendChain settles so the post-finalisation guard
+        // is armed by the time fire-and-forget tasks try to emit.
+        runFinalized = true;
         drainAppendChain(cid)
           .catch(() => undefined)
           .finally(() => safeSend(IPC.CHAT_DONE, input.runId));
@@ -562,6 +864,7 @@ export function registerChatIpc(): void {
         // the user often retries immediately, so a missed tail event
         // here can corrupt the next run's replay.
         flushAll();
+        runFinalized = true;
         drainAppendChain(cid)
           .catch(() => undefined)
           .finally(() => safeSend(IPC.CHAT_ERROR, input.runId, message));

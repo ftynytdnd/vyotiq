@@ -20,6 +20,7 @@ import {
 import { bulkRemoveOrReparentByWorkspace } from '../conversations/conversationStore.js';
 import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
+import { IpcCancelledError } from './ipcCancelledError.js';
 
 const log = logger.child('ipc/workspace');
 
@@ -42,7 +43,7 @@ export function registerWorkspaceIpc(): void {
       // callers — alignment locks in a single mental model for any
       // future revival.
       log.info('workspace picker cancelled');
-      throw new Error('workspace_pick_cancelled');
+      throw new IpcCancelledError('workspace_pick_cancelled');
     }
     return setWorkspace(result.filePaths[0]!);
   });
@@ -62,8 +63,11 @@ export function registerWorkspaceIpc(): void {
       if (result.canceled || result.filePaths.length === 0) {
         log.info('workspace add picker cancelled');
         // Throw a friendly error so the renderer can suppress its
-        // toast — caller catches and treats as a no-op.
-        throw new Error('workspace_add_cancelled');
+        // toast — caller catches and treats as a no-op. `IpcCancelledError`
+        // is recognised by `wrapIpcHandler` and logged at `info`
+        // (not `error`) so cancelled dialogs don't generate stack-traced
+        // noise in `vyotiq.log`.
+        throw new IpcCancelledError('workspace_add_cancelled');
       }
       resolved = result.filePaths[0]!;
     }

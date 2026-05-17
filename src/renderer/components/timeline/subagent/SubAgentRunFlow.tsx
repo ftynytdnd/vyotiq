@@ -328,7 +328,25 @@ function settledRank(it: Exclude<FlowItem, { kind: 'partial' }>): number {
 }
 
 export function SubAgentRunFlow({ snap }: SubAgentRunFlowProps) {
-  const groups = useMemo(() => buildSubAgentFlow(snap), [snap]);
+  // Memo deps are narrowed to the slots `buildSubAgentFlow` actually
+  // reads off `snap`. Pre-fix the `[snap]` dep invalidated on every
+  // reducer event that produced a fresh top-level snapshot reference
+  // (including `token-usage` events that touch no flow-shape data),
+  // forcing a full sort + group fold per delta. Shallow-equal'ing
+  // the per-slot references aligns the memo lifetime with what
+  // actually changes the render.
+  const groups = useMemo(
+    () => buildSubAgentFlow(snap),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      snap.iterationOrder,
+      snap.steps,
+      snap.fileEdits,
+      snap.partialToolCallArgs,
+      snap.reasoningTexts,
+      snap.assistantTexts
+    ]
+  );
   if (groups.length === 0) return null;
   return (
     <div className="flex flex-col gap-1.5">

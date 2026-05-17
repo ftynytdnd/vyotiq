@@ -8,9 +8,10 @@
  * text reaches the markdown parser.
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Copy, Check, RefreshCcw } from 'lucide-react';
 import type { ModelSelection } from '@shared/types/provider.js';
+import { stripEmoji } from '@shared/text/emoji.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import {
   useSettingsStore,
@@ -20,6 +21,7 @@ import { useWorkspaceStore } from '../../../store/useWorkspaceStore.js';
 import { stripDelegatesForDisplay } from '../../../lib/text.js';
 import { MarkdownBody } from '../markdown/MarkdownBody.js';
 import { cn } from '../../../lib/cn.js';
+import { safeCopy } from '../../../lib/clipboard.js';
 
 interface AssistantTextRowProps {
   id: string;
@@ -41,6 +43,18 @@ export function AssistantTextRow({ id, model }: AssistantTextRowProps) {
   const permissions = selectEffectivePermissions(activeWorkspaceId, settings);
 
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      if (copyTimerRef.current !== null) {
+        clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = null;
+      }
+    };
+  }, []);
 
   if (!acc) return null;
   const cleaned = stripDelegatesForDisplay(acc.text);
@@ -51,9 +65,15 @@ export function AssistantTextRow({ id, model }: AssistantTextRowProps) {
     !isProcessing && hasLastPrompt && model !== null && conversationId !== null;
 
   const handleCopy = () => {
-    void navigator.clipboard.writeText(cleaned).then(() => {
+    void safeCopy(stripEmoji(cleaned), { context: 'assistant-row' }).then((ok) => {
+      if (!ok || !mountedRef.current) return;
       setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
+      if (copyTimerRef.current !== null) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => {
+        if (!mountedRef.current) return;
+        copyTimerRef.current = null;
+        setCopied(false);
+      }, 1200);
     });
   };
 

@@ -21,7 +21,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { access } from 'node:fs/promises';
+import { access, realpath } from 'node:fs/promises';
 import { isAbsolute, relative as relativePath, resolve as resolvePath } from 'node:path';
 import type {
   ChatMessage,
@@ -34,19 +34,59 @@ import { runSubAgentPool } from '../SubAgentPool.js';
 import { verifySubagentOutput } from '../verifier.js';
 import { buildSubagentResultsEnvelope } from '../envelope/index.js';
 import { parseResultEnvelope } from '@shared/text/resultPatterns.js';
+import { listForConversation as listPendingChanges } from '../../checkpoints/pendingChanges.js';
+import type { PendingChange } from '@shared/types/checkpoint.js';
 import {
   MAX_DELEGATION_BAD_ROUNDS,
-  MAX_PARALLEL_SUBAGENTS
+  MAX_FILES_PER_DELEGATE,
+  MAX_PARALLEL_SUBAGENTS,
+  MAX_PER_TASK_BAD_STREAK
 } from '@shared/constants.js';
 import { emitRunStatus } from './emitRunStatus.js';
 import { logger } from '../../logging/logger.js';
 import type { ArgsDeltaTap } from './handleAssistantTurn.js';
+import { validateSubagentToolsetDetailed } from '../../tools/policy/index.js';
 
 const log = logger.child('orch/delegates');
 
 export interface DelegationCounters {
   /** Number of consecutive delegation rounds that ended in total failure. */
   consecutiveBadRounds: number;
+  /**
+   * Per-task bad-verdict streak. Keyed by a stable signature of the
+   * sub-agent task (first 80 chars + sorted files), the value is the
+   * number of CONSECUTIVE rounds in which a task with that signature
+   * received a `self-failed` or `malformed` verdict.
+   *
+   * Mixed rounds reset `consecutiveBadRounds` but were previously a
+   * blind spot for tasks that fail repeatedly while siblings succeed
+   * (see `e6859f7b-...jsonl`: `App.tsx` edits failed across D1,
+   * D1_retry, ... while sibling sub-agents reported success). This
+   * map closes that gap.
+   *
+   * A task's entry is incremented on a bad verdict and DELETED on
+   * any OK verdict for the same signature in the same round, so the
+   * map size stays bounded by "tasks the model is currently retrying
+   * in vain". Surfaced to the model via `<run_state>.failing_tasks`
+   * when any value crosses `MAX_PER_TASK_BAD_STREAK - 1` so it can
+   * pivot decomposition before the soft threshold trips.
+   */
+  perTaskBadStreak: Map<string, number>;
+}
+
+/**
+ * Stable signature for a sub-agent task. Keep deterministic — used as
+ * a map key. Truncating the task to its first 80 chars defends against
+ * the model padding semantically identical tasks with different
+ * preamble (e.g. "Retry the failed edit: ..." vs "Re-attempt: ..."). A
+ * sorted file list collapses re-ordering noise. Module-private —
+ * only consumed by the per-task strike accounting at the bottom of
+ * `applyDelegateVerdict` further down this file.
+ */
+function taskSignature(task: string, files: ReadonlyArray<string>): string {
+  const head = task.trim().slice(0, 80).toLowerCase().replace(/\s+/g, ' ');
+  const sortedFiles = Array.from(files).sort().join(',');
+  return `${head}|${sortedFiles}`;
 }
 
 export interface HandleDelegatesOpts {
@@ -127,12 +167,28 @@ export async function handleDelegates(
   const validatedSpecs = await Promise.all(
     delegates.map(async (d) => {
       const { resolved, missing } = await classifyFiles(d.files, opts.workspacePath);
+      // Tool validation (review finding H10): when the directive
+      // listed `tools=`, surface unknown / out-of-set names so the
+      // renderer can show "rejected — unknown tool" chips and the
+      // orchestrator's harness sees the typo via the matching
+      // `phase` event below. The detailed variant returns the
+      // resolved `allowed` list (used for the spec) AND a `dropped`
+      // list (used purely for surfacing).
+      const toolset = validateSubagentToolsetDetailed(d.tools);
+      // Pass the AUTHORITATIVE allowlist to the worker so it
+      // doesn't re-derive it (and so the renderer's `subagent-spawn`
+      // chip row matches what actually ran). Defaulted runs (empty
+      // / all-dropped) flow through with the read-only default,
+      // which is exactly what `runSubAgent` would have produced
+      // under the old surface.
       return {
         id: d.id,
         task: d.task,
         files: resolved,
-        ...(d.tools !== undefined ? { tools: d.tools } : {}),
-        missingFiles: missing
+        tools: toolset.allowed,
+        missingFiles: missing,
+        unknownTools: toolset.dropped,
+        toolsetDefaulted: toolset.defaulted
       };
     })
   );
@@ -142,6 +198,36 @@ export async function handleDelegates(
         .filter((s) => s.missingFiles.length > 0)
         .map((s) => ({ id: s.id, missing: s.missingFiles }))
     });
+  }
+  // Surface dropped tool names as a single `phase` event per offending
+  // spec. One event per sub-agent (not per dropped tool) keeps the
+  // timeline tidy when a directive lists 3+ typos. The matching
+  // `subagent-spawn.unknownTools` slot below carries the same data
+  // for the renderer's chip row — the phase event exists so the
+  // orchestrator's NEXT iteration also sees the typo in its prompt
+  // history (`phase` events flow through `priorTranscript`'s replay
+  // into `messages[]` only as renderer-only signals; the model sees
+  // them through `<run_state>` reads of the timeline rather than as
+  // assistant memory, which is the correct boundary).
+  for (const spec of validatedSpecs) {
+    if (spec.unknownTools.length > 0) {
+      const grantedDescription = spec.toolsetDefaulted
+        ? 'defaulted to read-only'
+        : `granted ${spec.tools.join(', ')}`;
+      emit({
+        kind: 'phase',
+        id: randomUUID(),
+        ts: Date.now(),
+        label:
+          `Sub-agent ${spec.id}: dropped unknown tool(s) ` +
+          `${spec.unknownTools.join(', ')}; ${grantedDescription}.`
+      });
+      log.warn('subagent toolset validation: dropped unknown tools', {
+        id: spec.id,
+        dropped: spec.unknownTools,
+        granted: spec.tools
+      });
+    }
   }
   // The earlier `phase` emit produced a structural divider (`Delegating
   // N sub-tasks`) ABOVE the spawn cards while the live status row
@@ -159,12 +245,39 @@ export async function handleDelegates(
     { delegates: delegates.length }
   );
 
+  // Pull every pending checkpoint change for this conversation —
+  // these are the file mutations the orchestrator's tool rounds have
+  // performed so far that the user has not yet Accepted or Rejected.
+  // We surface them to each spawning sub-agent as a
+  // `<recent_mutations>` block so the worker doesn't try to `read` a
+  // path that was renamed / deleted earlier in the same run. Best-
+  // effort: any failure (disk error, stale workspace handle) returns
+  // an empty list — the worker just sees no mutation block, same as
+  // before.
+  let recentMutations: PendingChange[] = [];
+  try {
+    recentMutations = await listPendingChanges(opts.conversationId, [opts.workspaceId]);
+  } catch (err) {
+    log.warn('listPendingChanges failed; sub-agents get no recent_mutations block', { err });
+  }
+  const recentMutationsCondensed = recentMutations
+    .filter((m) => m.runId === opts.runId) // current run only
+    .map((m) => ({
+      kind: m.kind,
+      filePath: m.filePath,
+      additions: m.additions,
+      deletions: m.deletions
+    }));
+
   const runs = await runSubAgentPool(
     validatedSpecs.map((s) => ({
       id: s.id,
       task: s.task,
       files: s.files,
-      ...(s.tools !== undefined ? { tools: s.tools } : {})
+      ...(s.tools !== undefined ? { tools: s.tools } : {}),
+      ...(recentMutationsCondensed.length > 0
+        ? { recentMutations: recentMutationsCondensed }
+        : {})
     })),
     {
       selection: opts.selection,
@@ -202,6 +315,9 @@ export async function handleDelegates(
           tools: spec.tools ?? [],
           ...(validated && validated.missingFiles.length > 0
             ? { missingFiles: validated.missingFiles }
+            : {}),
+          ...(validated && validated.unknownTools.length > 0
+            ? { unknownTools: validated.unknownTools }
             : {})
         });
       },
@@ -409,6 +525,76 @@ export async function handleDelegates(
     counters.consecutiveBadRounds = 0;
   }
 
+  // Per-task strike accounting. A task that fails three rounds in a
+  // row is surfaced as a soft signal even when the round-level
+  // `allBad` counter never trips (because of successful siblings).
+  // The map is updated AFTER the round-level reset so the two
+  // counters stay independent.
+  //
+  // We resolve each verified id back to its originating spec via
+  // `validatedSpecs` (already keyed by id at spawn time) so the
+  // signature uses the post-validation files list — same shape the
+  // worker actually saw.
+  const specsById = new Map(
+    validatedSpecs.map((s) => [s.id, { task: s.task, files: s.files }])
+  );
+  const newlyEscalated: Array<{ key: string; streak: number; ids: string[] }> = [];
+  // Track which signatures saw at least one OK verdict in THIS round
+  // so a mixed-signature spec (rare but possible if the model reuses
+  // the same task description) clears the streak deterministically.
+  const okSignaturesThisRound = new Set<string>();
+  for (const v of verified) {
+    const spec = specsById.get(v.id);
+    if (!spec) continue;
+    if (v.structural === 'ok') {
+      okSignaturesThisRound.add(taskSignature(spec.task, spec.files));
+    }
+  }
+  // Map of signature → ids attributed in THIS round (for the
+  // escalation surface).
+  const idsBySignatureThisRound = new Map<string, string[]>();
+  for (const v of verified) {
+    const spec = specsById.get(v.id);
+    if (!spec) continue;
+    const key = taskSignature(spec.task, spec.files);
+    if (v.structural === 'ok' || okSignaturesThisRound.has(key)) {
+      counters.perTaskBadStreak.delete(key);
+      continue;
+    }
+    const next = (counters.perTaskBadStreak.get(key) ?? 0) + 1;
+    counters.perTaskBadStreak.set(key, next);
+    const bucket = idsBySignatureThisRound.get(key) ?? [];
+    bucket.push(v.id);
+    idsBySignatureThisRound.set(key, bucket);
+    if (next >= MAX_PER_TASK_BAD_STREAK) {
+      newlyEscalated.push({ key, streak: next, ids: bucket });
+    }
+  }
+  if (newlyEscalated.length > 0) {
+    log.warn('per-task bad streak escalation', {
+      escalations: newlyEscalated.map((e) => ({
+        key: e.key.slice(0, 120),
+        streak: e.streak,
+        ids: e.ids
+      }))
+    });
+    // One phase divider per escalated task so the timeline carries a
+    // human-readable pivot signal next to the next iteration's nudge
+    // / pivot from the model. Truncating the key for display — the
+    // structured log above already has the full signature for
+    // triage.
+    for (const e of newlyEscalated) {
+      const display = e.key.split('|')[0]!.slice(0, 80);
+      emit({
+        kind: 'phase',
+        id: randomUUID(),
+        ts: Date.now(),
+        label:
+          `Task failing ${e.streak} rounds in a row — pivot decomposition: ${display}`
+      });
+    }
+  }
+
   // Push the verified `<subagent_results>` envelope into the
   // orchestrator's message history BEFORE the halt branch so the
   // failing-round verdicts are persisted into replay even on
@@ -467,6 +653,28 @@ export async function handleDelegates(
 }
 
 /**
+ * Sentinel placeholder appended to `missing[]` when the delegate's
+ * `files=` list exceeded `MAX_FILES_PER_DELEGATE` (review finding H4).
+ * The renderer's `subagent-spawn` chip surface treats every entry in
+ * `missing[]` identically — a small dimmed chip with a tooltip — so a
+ * synthetic path here is the cheapest way to surface the truncation
+ * without changing the wire shape. The leading angle-bracket
+ * guarantees the placeholder can never collide with a real workspace-
+ * relative path on any platform.
+ */
+const FILE_LIST_CAP_PLACEHOLDER = '<file-list cap exceeded>';
+
+/**
+ * Concurrency cap on parallel `fs.access` probes inside `classifyFiles`
+ * (review finding H4). Without this cap, a 32-file directive triggers
+ * 32 parallel probes against the FS layer; tuning to 8 matches the
+ * `MAX_PARALLEL_SUBAGENTS` ceiling and keeps the I/O budget aligned
+ * with the swarm itself. The cap is internal — exported only for
+ * the regression test that asserts no more than `N` probes overlap.
+ */
+export const CLASSIFY_FILES_CONCURRENCY = 8;
+
+/**
  * Split a delegate's `files[]` into the paths that resolve against the
  * active workspace (`resolved`) and the ones that don't (`missing`).
  * Used by `handleDelegates` to (a) hand the worker only the real
@@ -492,57 +700,158 @@ export async function handleDelegates(
  * matches the directive's literal order. Pure / no-throw — every
  * branch returns a structured value the caller can rely on.
  *
- * Exported for the dedicated unit test that pins the path-prefix
- * sandbox boundary (review finding H1). Treat as an internal helper
- * for production callers — only `handleDelegates` invokes it.
+ * Caps (review finding H4):
+ *   - File-list length is capped at `MAX_FILES_PER_DELEGATE`. Excess
+ *     entries land in `missing` with the `<file-list cap exceeded>`
+ *     placeholder so the user / renderer sees the truncation; the
+ *     model's actual paths beyond the cap are dropped (the harness
+ *     forbids long lists; over-cap input is a bug or pathological
+ *     turn either way).
+ *   - The probe Promise.all is bounded to `CLASSIFY_FILES_CONCURRENCY`
+ *     parallel `fs.access` calls. Cap is enforced via a tiny
+ *     index-stepper pool (no third-party dep). Result order is
+ *     preserved by writing each probe's outcome into a pre-sized
+ *     slot and then partitioning at the end.
+ *
+ * Exported for the dedicated unit tests that pin the path-prefix
+ * sandbox boundary (review finding H1) and the cap + concurrency
+ * contract (review finding H4). Treat as an internal helper for
+ * production callers — only `handleDelegates` invokes it.
  */
 export async function classifyFiles(
   files: ReadonlyArray<string>,
   workspacePath: string
 ): Promise<{ resolved: string[]; missing: string[] }> {
-  const resolved: string[] = [];
-  const missing: string[] = [];
-  await Promise.all(
-    files.map(async (raw) => {
+  // Dedupe by trimmed string (review finding M9). The directive
+  // parser doesn't reject duplicates — a `<delegate files="A,A,A" />`
+  // would otherwise probe `A` three times and inline its body three
+  // times in the worker's `<files>` block, wasting tokens. We
+  // preserve first-seen order via a Set so the renderer's chip row
+  // and the worker's prompt see the same logical sequence.
+  //
+  // Whitespace-only / empty entries are NOT folded together here —
+  // each empty raw entry stays distinct so the inner pool can
+  // surface each as its own `missing` bucket entry. The dedupe is
+  // ONLY between equal trimmed real strings.
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const raw of files) {
+    if (typeof raw !== 'string') {
+      // Defensive — non-string entries land in `missing` via the
+      // pool below. Pass through verbatim so the slot count matches.
+      deduped.push(raw as string);
+      continue;
+    }
+    const trimmed = raw.trim();
+    if (trimmed.length === 0) {
+      // Each empty entry is structurally distinct — pass through.
+      deduped.push(raw);
+      continue;
+    }
+    if (seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    deduped.push(raw);
+  }
+  // Cap the input length BEFORE any FS work so a thousand-path
+  // directive cannot spike the I/O budget even with concurrency
+  // throttling — the throttle bounds parallelism, the cap bounds
+  // total work.
+  const overflow = deduped.length > MAX_FILES_PER_DELEGATE
+    ? deduped.slice(MAX_FILES_PER_DELEGATE)
+    : [];
+  const accepted = deduped.length > MAX_FILES_PER_DELEGATE
+    ? deduped.slice(0, MAX_FILES_PER_DELEGATE)
+    : deduped;
+
+  // Pre-sized slot per accepted entry so we can preserve directive
+  // order regardless of the order in which probes settle. Each slot
+  // ends as exactly one of:
+  //   { kind: 'resolved'; trimmed: string }
+  //   { kind: 'missing';  raw: string }
+  type Slot =
+    | { kind: 'resolved'; trimmed: string }
+    | { kind: 'missing'; raw: string };
+  const slots = new Array<Slot>(accepted.length);
+
+  // Bounded-concurrency probe pool. A simple shared-cursor design:
+  // each worker pulls the next index, runs the probe, writes the
+  // slot, repeats. Workers exit when the cursor is past the end.
+  // The pool size is `min(concurrency, accepted.length)` so we
+  // don't spin extra idle workers on tiny inputs.
+  //
+  // Workspace-root canonicalization (review finding M8). The legacy
+  // code used a lexical `resolvePath(workspacePath)` for the
+  // containment check below. If the workspace path is itself a
+  // symlink (`~/code/project → /Volumes/Foo/project` — common Mac
+  // setup with external drives, or a Linux user using a `~/work`
+  // symlink to a SSD mount), the lexical resolution returned the
+  // pre-symlink path. The candidate file's `abs` was then
+  // realpath'd (or absolute-passed-through) and `relative()`
+  // returned a `..`-prefixed string — every legitimate file appeared
+  // to escape the sandbox.
+  //
+  // Falling back to the lexical resolve when `realpath` fails
+  // (ENOENT, EACCES) keeps the function usable in tests that pass
+  // synthetic paths that don't exist on disk; the containment check
+  // then matches what the legacy code did.
+  let wsRoot: string;
+  try {
+    wsRoot = await realpath(workspacePath);
+  } catch {
+    wsRoot = resolvePath(workspacePath);
+  }
+  let cursor = 0;
+  const probe = async (): Promise<void> => {
+    while (cursor < accepted.length) {
+      const i = cursor++;
+      const raw = accepted[i] as string | undefined;
       if (typeof raw !== 'string' || raw.trim().length === 0) {
-        missing.push(typeof raw === 'string' ? raw : String(raw));
-        return;
+        slots[i] = { kind: 'missing', raw: typeof raw === 'string' ? raw : String(raw) };
+        continue;
       }
       const trimmed = raw.trim();
-      // Reject absolute paths that escape the sandbox before touching
-      // the disk — `path.resolve` would otherwise happily traverse
-      // upward and `fs.access` would either succeed (leaking out-of-
-      // scope state into the worker) or fail with a generic ENOENT
-      // that hides the policy violation.
-      //
-      // Containment check uses `path.relative` rather than the prior
-      // `abs.startsWith(wsRoot)`: a literal prefix match treats a
-      // sibling directory whose name shares a workspace's prefix
-      // (`/projects/foo` vs `/projects/foobar/...`) as "inside" the
-      // sandbox. `relative()` returns an `..`-prefixed string when
-      // the target escapes the root, regardless of name overlap.
-      // Review finding H1.
+      // Resolve relative paths against the canonical workspace root
+      // (review finding M8) so a symlinked workspace doesn't make
+      // every file appear to escape the sandbox. Absolute candidates
+      // pass through unchanged — they undergo the same `relative`
+      // check against the canonical root below.
       const abs = isAbsolute(trimmed)
         ? trimmed
-        : resolvePath(workspacePath, trimmed);
-      const wsRoot = resolvePath(workspacePath);
+        : resolvePath(wsRoot, trimmed);
       const rel = relativePath(wsRoot, abs);
       if (rel.length === 0 || rel.startsWith('..') || isAbsolute(rel)) {
-        // `rel === ''` means the path resolved to the workspace root
-        // itself — useless as a "file" attachment, treat as missing.
-        // `..`-prefix is a sandbox escape. An `isAbsolute(rel)` result
-        // happens on Windows when `abs` lives on a different drive
-        // than `wsRoot`; same escape semantics.
-        missing.push(trimmed);
-        return;
+        // Sandbox escape (literal `..`-prefix or cross-drive on
+        // Windows) — see review finding H1.
+        slots[i] = { kind: 'missing', raw: trimmed };
+        continue;
       }
       try {
         await access(abs);
-        resolved.push(trimmed);
+        slots[i] = { kind: 'resolved', trimmed };
       } catch {
-        missing.push(trimmed);
+        slots[i] = { kind: 'missing', raw: trimmed };
       }
-    })
-  );
+    }
+  };
+  const workerCount = Math.min(CLASSIFY_FILES_CONCURRENCY, accepted.length);
+  const workers: Promise<void>[] = [];
+  for (let w = 0; w < workerCount; w++) workers.push(probe());
+  await Promise.all(workers);
+
+  const resolved: string[] = [];
+  const missing: string[] = [];
+  for (const slot of slots) {
+    if (!slot) continue; // unreachable — every index is filled by a worker
+    if (slot.kind === 'resolved') resolved.push(slot.trimmed);
+    else missing.push(slot.raw);
+  }
+  // Surface the cap-exceeded overflow as a single sentinel chip so
+  // the user sees "the model asked for N more paths; we ignored
+  // them" without polluting `missing[]` with N entries that all
+  // mean the same thing. The placeholder is structurally distinct
+  // from any real workspace path (leading `<`).
+  if (overflow.length > 0) {
+    missing.push(FILE_LIST_CAP_PLACEHOLDER);
+  }
   return { resolved, missing };
 }

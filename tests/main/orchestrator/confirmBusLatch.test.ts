@@ -63,9 +63,13 @@ describe('confirmBus / edit-approval latch', () => {
     expect(sentMessages).toHaveLength(1);
     const id = (sentMessages[0]?.payload as { id: string }).id;
     settleConfirm(id, { approved: true, acceptAllRemaining: true });
+    // Audit fix H-04: envelope now carries a `reason` discriminator
+    // (`'approved'` on user accept, `'denied'` on user reject, plus
+    // host-side reasons for the fail-closed paths).
     await expect(promise).resolves.toEqual({
       approved: true,
-      acceptAllRemaining: true
+      acceptAllRemaining: true,
+      reason: 'approved'
     });
   });
 
@@ -73,9 +77,11 @@ describe('confirmBus / edit-approval latch', () => {
     const promise = requestConfirm('legacy text confirm');
     const id = (sentMessages[0]?.payload as { id: string }).id;
     settleConfirm(id, false);
+    // Audit fix H-04: bare-false reply normalizes to reason 'denied'.
     await expect(promise).resolves.toEqual({
       approved: false,
-      acceptAllRemaining: false
+      acceptAllRemaining: false,
+      reason: 'denied'
     });
   });
 });

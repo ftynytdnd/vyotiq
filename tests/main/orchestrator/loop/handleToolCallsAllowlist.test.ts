@@ -116,7 +116,7 @@ describe('handleToolCalls — orchestrator allowlist enforcement', () => {
     expect(refusal.content).toContain('tools="edit"');
     // 4. Refusal counts as 0 attempted, 0 failed — does not burn the
     //    three-strike consecutive-failed-tool-round budget.
-    expect(summary).toEqual({ attempted: 0, failed: 0 });
+    expect(summary).toEqual({ attempted: 0, failed: 0, childRedelegations: 0 });
   });
 
   it('refuses `bash` and `delete` with the same orchestrator hint copy', async () => {
@@ -164,7 +164,7 @@ describe('handleToolCalls — orchestrator allowlist enforcement', () => {
       .map(([e]) => e)
       .filter((e) => e.kind === 'tool-result');
     expect(toolResultEmits).toHaveLength(3);
-    expect(summary).toEqual({ attempted: 3, failed: 0 });
+    expect(summary).toEqual({ attempted: 3, failed: 0, childRedelegations: 0 });
     expect(messages).toHaveLength(3);
     // None of the responses use the refusal phrase.
     for (const m of messages) {

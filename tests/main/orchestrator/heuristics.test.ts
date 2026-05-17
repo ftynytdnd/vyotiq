@@ -1,21 +1,33 @@
 /**
  * Regression tests for the post-audit `isPlanningWithoutAction`.
  *
- * The heuristic was deliberately reduced from 240 lines of regex
- * bandages to two structural checks:
+ * The heuristic is intentionally tiny — a single structural check:
  *
- *   1. Reasoning-only empty turn → nudge.
- *   2. Unclosed `<delegate ...` tag in the raw text → nudge.
+ *   - Reasoning-only empty turn → `reasoning-only`.
+ *
+ * The earlier `unclosed-delegate` re-emit nudge was removed: a
+ * truncated `<delegate ...` tag is silently ignored by
+ * `parseDelegates`, masked by `stripDelegatesForDisplay`, and the
+ * model can self-regulate against `<run_state>.iteration` and the
+ * `finish_reason` it sees in subsequent turns. Phrase-matching
+ * ("I'll delegate", "let me spawn", colon hand-offs, etc.) is also
+ * NOT in the heuristic. The narration-loop pathology those regex
+ * bandages tried to catch was a symptom of an Ollama-transport bug
+ * (`reasoning_content` was being stripped on outgoing messages,
+ * losing the model's plan across turns) — not a heuristic concern.
+ * That root cause is fixed in `providers/ollamaChatStream.ts`.
  *
  * Everything else (substantive answers, clarifying questions,
  * completion narrations, plan-announcements that the model decides to
- * emit anyway, body-level "first/finally/step" enumerations, etc.) is
- * a clean terminus. The consolidated harness handles language-level
- * guidance.
+ * emit anyway, body-level "first/finally/step" enumerations, partial
+ * `<delegate ...` truncations, etc.) is a clean terminus.
  */
 
 import { describe, it, expect } from 'vitest';
-import { isPlanningWithoutAction } from '@main/orchestrator/heuristics/isPlanningWithoutAction';
+import {
+  classifyPlanningWithoutAction,
+  isPlanningWithoutAction
+} from '@main/orchestrator/heuristics/isPlanningWithoutAction';
 
 describe('isPlanningWithoutAction (post-audit minimal surface)', () => {
   describe('action overrides nudges', () => {
@@ -64,68 +76,88 @@ describe('isPlanningWithoutAction (post-audit minimal surface)', () => {
     });
   });
 
-  describe('unclosed-delegate nudge (rawText path)', () => {
-    it('fires when raw text ends with an unclosed `<delegate` tag', () => {
+  describe('partial / unclosed `<delegate>` is a clean terminus', () => {
+    /**
+     * The host previously fired a re-emit nudge when the assistant
+     * text ended with an unclosed `<delegate ...` tag. That surface
+     * was removed: the parser already silently ignores partials, the
+     * renderer-side strip keeps the partial XML out of the timeline,
+     * and the `<run_state>` envelope already exposes the iteration /
+     * finish_reason context the model needs to recover. Pin the new
+     * contract here.
+     */
+
+    it('does NOT fire when output text contains a partial `<delegate` tag', () => {
       expect(
         isPlanningWithoutAction({
           cleanText: 'Spawning A1 to read the config.',
           hadToolCall: false,
-          hadDelegate: false,
-          rawText: 'Spawning A1 to read the config.\n<delegate id="A1" task="Read src/config.ts'
-        })
-      ).toBe(true);
-    });
-
-    it('fires on a bare opening tag without attributes (truncated mid-stream)', () => {
-      expect(
-        isPlanningWithoutAction({
-          cleanText: '',
-          hadToolCall: false,
-          hadDelegate: false,
-          rawText: 'I will delegate next.\n<delegate'
-        })
-      ).toBe(true);
-    });
-
-    it('does NOT fire when the directive closed normally — even if raw still contains the form', () => {
-      // Both raw and clean reflect a fully-closed directive that the
-      // parser would have already fired; the `hadDelegate` flag is the
-      // source of truth and it short-circuits before we reach the
-      // structural check anyway.
-      expect(
-        isPlanningWithoutAction({
-          cleanText: '',
-          hadToolCall: false,
-          hadDelegate: true,
-          rawText: '<delegate id="A1" task="x" />'
+          hadDelegate: false
         })
       ).toBe(false);
     });
 
-    it('does NOT fire on substantive answer with no delegate markup', () => {
+    it('does NOT fire on an empty turn that came from a length-truncated directive', () => {
+      // The strip pass collapsed the partial to empty, the
+      // `finish_reason` will be `length`, and there is no
+      // `hadReasoning` signal. Heuristic must accept the terminus.
+      expect(
+        isPlanningWithoutAction({
+          cleanText: '',
+          hadToolCall: false,
+          hadDelegate: false,
+          hadReasoning: false
+        })
+      ).toBe(false);
+    });
+
+    it('does NOT fire when a directive closed normally', () => {
+      expect(
+        isPlanningWithoutAction({
+          cleanText: '',
+          hadToolCall: false,
+          hadDelegate: true
+        })
+      ).toBe(false);
+    });
+
+    it('does NOT fire on a substantive answer', () => {
       expect(
         isPlanningWithoutAction({
           cleanText: 'I reviewed the bootstrap sequence and confirmed it matches the audit notes.',
           hadToolCall: false,
-          hadDelegate: false,
-          rawText: 'I reviewed the bootstrap sequence and confirmed it matches the audit notes.'
+          hadDelegate: false
         })
       ).toBe(false);
     });
   });
 
-  describe('subtraction — formerly false-positive cases now terminate cleanly', () => {
+  describe('clean terminus — narration patterns the host MUST NOT nudge', () => {
     /**
-     * Cases that the OLD heuristic flagged for nudging. The new
-     * heuristic must NOT nudge any of them — the harness handles them
-     * via prose guidance instead.
+     * These are the cases that earlier symptom-treating heuristics
+     * (regex phrase matchers, colon-handoff detectors) would have
+     * flagged. They are clean termini under the corrected transport
+     * contract — `reasoning_content` is round-tripped on Ollama and
+     * OpenAI alike, so a model that planned in reasoning and emitted
+     * a brief content announcement carries its plan into the next
+     * turn naturally.
      */
 
-    it('does NOT nudge a planning paragraph without action', () => {
+    it('does NOT nudge a colon-handoff "let me start by …:"', () => {
+      expect(
+        isPlanningWithoutAction({
+          cleanText: 'Let me start by creating the project structure:',
+          hadToolCall: false,
+          hadDelegate: false
+        })
+      ).toBe(false);
+    });
+
+    it('does NOT nudge a "now I\'ll delegate …:" hand-off', () => {
       expect(
         isPlanningWithoutAction({
           cleanText:
-            "Here's my plan: first I'll list the workspace, then I will read the README, finally I will summarize.",
+            "Now I'll delegate multiple parallel agents to thoroughly analyze different aspects of the codebase. Each agent will focus on a specific area:",
           hadToolCall: false,
           hadDelegate: false
         })
@@ -177,19 +209,6 @@ describe('isPlanningWithoutAction (post-audit minimal surface)', () => {
       ).toBe(false);
     });
 
-    it('does NOT nudge a body-level "first/finally" enumeration', () => {
-      expect(
-        isPlanningWithoutAction({
-          cleanText:
-            'The harness has three layers. First, the orchestrator decomposes the task. ' +
-            'Second, sub-agents execute in isolated contexts. Finally, the verifier ' +
-            'checks the result envelope.',
-          hadToolCall: false,
-          hadDelegate: false
-        })
-      ).toBe(false);
-    });
-
     it('does NOT nudge a one-liner', () => {
       expect(
         isPlanningWithoutAction({
@@ -198,6 +217,69 @@ describe('isPlanningWithoutAction (post-audit minimal surface)', () => {
           hadDelegate: false
         })
       ).toBe(false);
+    });
+  });
+
+  describe('classifyPlanningWithoutAction — variant routing', () => {
+    it('returns `reasoning-only` for an empty + reasoning turn', () => {
+      expect(
+        classifyPlanningWithoutAction({
+          cleanText: '',
+          hadToolCall: false,
+          hadDelegate: false,
+          hadReasoning: true
+        })
+      ).toBe('reasoning-only');
+    });
+
+    it('returns `none` for a colon-handoff narration', () => {
+      // The narration-loop pathology is a transport-layer concern, not
+      // a heuristic concern. The classifier must NOT flag this as a
+      // planning failure.
+      expect(
+        classifyPlanningWithoutAction({
+          cleanText: "Now I'll delegate multiple parallel agents to analyze different aspects:",
+          hadToolCall: false,
+          hadDelegate: false
+        })
+      ).toBe('none');
+    });
+
+    it('returns `none` for a substantive answer', () => {
+      expect(
+        classifyPlanningWithoutAction({
+          cleanText: 'I reviewed the bootstrap sequence and confirmed it matches the audit notes.',
+          hadToolCall: false,
+          hadDelegate: false
+        })
+      ).toBe('none');
+    });
+
+    it('returns `none` for a clarifying question', () => {
+      expect(
+        classifyPlanningWithoutAction({
+          cleanText: 'Which of these would you like me to tackle first?',
+          hadToolCall: false,
+          hadDelegate: false
+        })
+      ).toBe('none');
+    });
+
+    it('always returns `none` when `hadToolCall` or `hadDelegate` is true', () => {
+      expect(
+        classifyPlanningWithoutAction({
+          cleanText: '',
+          hadToolCall: true,
+          hadDelegate: false
+        })
+      ).toBe('none');
+      expect(
+        classifyPlanningWithoutAction({
+          cleanText: 'Let me start:',
+          hadToolCall: false,
+          hadDelegate: true
+        })
+      ).toBe('none');
     });
   });
 });

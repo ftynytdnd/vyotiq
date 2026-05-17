@@ -26,6 +26,7 @@
  */
 
 import { wrapXml } from '../envelope/index.js';
+import { escapeXmlBody } from '../envelope/escapeXmlBody.js';
 import type { DelegationCounters } from './handleDelegates.js';
 import type { NudgeState } from './handleNoToolNoDelegate.js';
 import type { SpinSignatureBuffer } from './toolSpinSignature.js';
@@ -80,6 +81,20 @@ export interface RunStateView {
    * "you already issued this" banner. `null` when nothing is hot.
    */
   spinSignatureHot: string | null;
+  /**
+   * Cumulative count of refused `delegate` tool calls. Surfaced only
+   * when non-zero — the steady-state path is silent.
+   */
+  childRedelegations: number;
+  /**
+   * Sub-agent tasks whose bad-verdict streak has reached `2` or more.
+   * The model sees them as "this exact decomposition is not working —
+   * pick a different angle of attack". Empty when nothing is hot.
+   * Each entry's `signature` is the same key the orchestrator
+   * maintains in `DelegationCounters.perTaskBadStreak`; surfaced
+   * truncated for display.
+   */
+  failingTasks: Array<{ signature: string; streak: number }>;
 }
 
 /**
@@ -97,6 +112,40 @@ export function buildRunStateXml(view: RunStateView): string {
     `last_action: ${view.lastAction}`,
     `spin_signature_hot: ${view.spinSignatureHot ?? '(none)'}`
   ];
+  if (view.childRedelegations > 0) {
+    lines.push(
+      `child_redelegations: ${view.childRedelegations} ` +
+      `(model tried calling \`delegate\` as a tool — use the \`<delegate ... />\` XML directive instead)`
+    );
+  }
+  if (view.failingTasks.length > 0) {
+    // Render the failing-task list as one line per task so a single
+    // grep over `<run_state>` lines surfaces both the counter and the
+    // body. Truncate the signature display so a long task body
+    // doesn't blow out the prompt width; the orchestrator's
+    // structured log carries the full key for triage.
+    const body = view.failingTasks
+      .map((t) => {
+        // Escape the signature head (review finding H5). Task
+        // signatures are derived from model-controlled `<delegate
+        // task="..."/>` strings; an unescaped `</run_state>` in a
+        // task body would otherwise let a malicious tool output
+        // (or a confused model) break out of the run-state envelope
+        // and inject pseudo-instructions into both the orchestrator
+        // prompt and the summarizer's user envelope (which threads
+        // this block verbatim — see `summarizerPrompt.ts`). Prime
+        // Directives §6 boundary defense. The numeric framework
+        // around `head` (`streak`, `slice(0, 80)`) is host-built
+        // and trusted; only the user-derived head needs escaping.
+        const rawHead = t.signature.split('|')[0] ?? t.signature;
+        const head = escapeXmlBody(rawHead.slice(0, 80));
+        return `  - streak ${t.streak}: ${head}`;
+      })
+      .join('\n');
+    lines.push('failing_tasks:\n' + body);
+  } else {
+    lines.push('failing_tasks: (none)');
+  }
   return wrapXml('run_state', lines.join('\n'));
 }
 
@@ -114,6 +163,17 @@ export interface RunStateAccumulator {
   iteration: number;
   directToolRoundsTotal: number;
   delegateRoundsTotal: number;
+  /**
+   * Running total of refused `delegate` tool calls. Surfaced into
+   * `<run_state>.child_redelegations` so the model sees the
+   * cumulative pivot signal without the orchestrator having to
+   * thread the per-round count separately. Maintained by the run
+   * loop after each direct-tool round and after each delegate round
+   * (sub-agent re-delegation attempts come back through the
+   * `<subagent_results>` envelope's structural verdict and are not
+   * counted here — only orchestrator-level mistakes are).
+   */
+  childRedelegationsTotal: number;
   lastAction: LastAction;
   spinSignatureHot: string | null;
 }
@@ -123,6 +183,7 @@ export function createRunStateAccumulator(): RunStateAccumulator {
     iteration: 0,
     directToolRoundsTotal: 0,
     delegateRoundsTotal: 0,
+    childRedelegationsTotal: 0,
     lastAction: 'none',
     spinSignatureHot: null
   };
@@ -148,6 +209,15 @@ export function snapshotRunState(
   _spin: SpinSignatureBuffer,
   consecutiveBadToolRounds: number
 ): RunStateView {
+  // Only surface failing tasks with streak >= 2 so the run_state
+  // doesn't churn for first-time failures (which the model is
+  // expected to recover from on its own). Sort newest/hottest first
+  // so the top of the list draws attention.
+  const failingTasks: Array<{ signature: string; streak: number }> = [];
+  for (const [signature, streak] of counters.perTaskBadStreak.entries()) {
+    if (streak >= 2) failingTasks.push({ signature, streak });
+  }
+  failingTasks.sort((a, b) => b.streak - a.streak);
   return {
     iteration: acc.iteration,
     directToolRounds: {
@@ -162,6 +232,8 @@ export function snapshotRunState(
       planning: { used: nudges.used, max: MAX_NUDGES_PER_RUN }
     },
     lastAction: acc.lastAction,
-    spinSignatureHot: acc.spinSignatureHot
+    spinSignatureHot: acc.spinSignatureHot,
+    childRedelegations: acc.childRedelegationsTotal,
+    failingTasks
   };
 }

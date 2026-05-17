@@ -45,17 +45,75 @@ const SUBAGENT_FULL_TOOLS: readonly ToolName[] = [
 ] as const;
 
 /**
+ * Detailed validation result. Carries both the resolved allowlist
+ * (`allowed`) AND the names that were silently dropped (`dropped`),
+ * so callers can surface a `phase` event / spawn-card chip telling
+ * the user (and the model) that the directive's `tools=` attribute
+ * contained a typo or an out-of-set name. Review finding H10 — the
+ * legacy filter dropped unknowns silently and the orchestrator never
+ * learned about it.
+ *
+ * `defaulted: true` indicates the requested list was empty / had no
+ * survivors and the read-only default kicked in. The renderer can
+ * use this to surface a softer "no tools requested → defaulted to
+ * read-only" hint instead of a "tools dropped" warning.
+ */
+export interface ValidatedToolset {
+  allowed: ToolName[];
+  dropped: string[];
+  defaulted: boolean;
+}
+
+/**
+ * Detailed variant of `validateSubagentToolset` that surfaces the
+ * dropped names. Production callers (handleDelegates) use this so
+ * they can emit a `phase` event and populate
+ * `subagent-spawn.unknownTools` for the renderer's chip surface.
+ */
+export function validateSubagentToolsetDetailed(
+  requested: readonly string[] | undefined
+): ValidatedToolset {
+  if (!requested || requested.length === 0) {
+    return {
+      allowed: [...SUBAGENT_DEFAULT_TOOLS],
+      dropped: [],
+      defaulted: true
+    };
+  }
+  const allow = new Set<string>(SUBAGENT_FULL_TOOLS);
+  const allowed: ToolName[] = [];
+  const dropped: string[] = [];
+  for (const t of requested) {
+    if (allow.has(t)) {
+      allowed.push(t as ToolName);
+    } else {
+      // Defensive: the parser already trims, but a future grammar
+      // change could let a stray empty string slip through. Skip
+      // those silently — they aren't a meaningful "typo" surface.
+      if (typeof t === 'string' && t.length > 0) dropped.push(t);
+    }
+  }
+  if (allowed.length === 0) {
+    return {
+      allowed: [...SUBAGENT_DEFAULT_TOOLS],
+      dropped,
+      defaulted: true
+    };
+  }
+  return { allowed, dropped, defaulted: false };
+}
+
+/**
  * Resolves an opt-in `tools` list from a `<delegate>` directive against the
  * sub-agent capability whitelist. Unknown / disallowed tool names are
  * filtered out silently — the sub-agent will simply not see them. If the
  * resulting list is empty (e.g. the directive omitted `tools` entirely),
  * the read-only default is returned.
+ *
+ * Backward-compatible thin wrapper around `validateSubagentToolsetDetailed`
+ * (review finding H10) — call sites that don't need the dropped-name
+ * surface keep their existing signature.
  */
 export function validateSubagentToolset(requested: readonly string[] | undefined): ToolName[] {
-  if (!requested || requested.length === 0) {
-    return [...SUBAGENT_DEFAULT_TOOLS];
-  }
-  const allow = new Set<string>(SUBAGENT_FULL_TOOLS);
-  const filtered = requested.filter((t) => allow.has(t)) as ToolName[];
-  return filtered.length > 0 ? filtered : [...SUBAGENT_DEFAULT_TOOLS];
+  return validateSubagentToolsetDetailed(requested).allowed;
 }

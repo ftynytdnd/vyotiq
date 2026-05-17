@@ -40,6 +40,7 @@ import type {
 import type { ModelSelection } from '@shared/types/provider.js';
 import { Modal } from '../../ui/Modal.js';
 import { Button } from '../../ui/Button.js';
+import { Eyebrow } from '../../ui/Eyebrow.js';
 import { useCheckpointsStore } from '../../../store/useCheckpointsStore.js';
 import { useToastStore } from '../../../store/useToastStore.js';
 import { useChatStore } from '../../../store/useChatStore.js';
@@ -410,9 +411,9 @@ function PromptPreviewBanner({
   return (
     <div className="space-y-2">
       <div className="rounded-inner bg-surface-overlay px-3 py-2 text-row text-text-secondary">
-        <div className="text-meta uppercase tracking-wide text-text-faint">
+        <Eyebrow>
           Reverting to before this message
-        </div>
+        </Eyebrow>
         <div className="mt-1 whitespace-pre-wrap text-text-primary">
           {preview || <span className="text-text-faint">(empty prompt)</span>}
         </div>
@@ -462,10 +463,10 @@ const EditPromptBanner = forwardRef<HTMLTextAreaElement, EditPromptBannerProps>(
     return (
       <div className="space-y-2">
         <div className="rounded-inner bg-surface-overlay px-3 py-2">
-          <div className="flex items-center gap-1.5 text-meta uppercase tracking-wide text-text-faint">
+          <Eyebrow className="flex items-center gap-1.5">
             <Pencil className="h-3 w-3" strokeWidth={2.25} />
             Edit and resend
-          </div>
+          </Eyebrow>
           <textarea
             ref={ref}
             value={value}

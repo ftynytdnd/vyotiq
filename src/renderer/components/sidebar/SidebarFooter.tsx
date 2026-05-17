@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { HelpCircle, History, Settings } from 'lucide-react';
+import { HelpCircle, Settings } from 'lucide-react';
 import { NavItem } from './NavItem.js';
 import { Popover } from '../ui/Popover.js';
 import { Eyebrow } from '../ui/Eyebrow.js';
@@ -7,8 +7,6 @@ import { cn } from '../../lib/cn.js';
 
 interface SidebarFooterProps {
   onOpenSettings: () => void;
-  /** Open the Checkpoints view (file-change review + revert). */
-  onOpenCheckpoints: () => void;
   /**
    * The scroll container of the chats list. The footer paints a hairline
    * border-top only when this container is overflowing, so the divider
@@ -40,7 +38,6 @@ function platformAltKey(): string {
 
 export function SidebarFooter({
   onOpenSettings,
-  onOpenCheckpoints,
   scrollContainerRef
 }: SidebarFooterProps) {
   const [overflows, setOverflows] = useState(false);
@@ -85,11 +82,6 @@ export function SidebarFooter({
         always-visible 10 px hint block was illegible at production
         resolution, so this surface is now opt-in.
       */}
-      <NavItem
-        icon={<History className="h-3.5 w-3.5" strokeWidth={2} />}
-        label="Checkpoints"
-        onClick={onOpenCheckpoints}
-      />
       <div className="flex items-center gap-1">
         <div className="min-w-0 flex-1">
           <NavItem

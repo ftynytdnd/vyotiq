@@ -12,6 +12,7 @@
 import { promises as fs } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type { Tool } from './types.js';
+import { describeConfirmFailure } from './types.js';
 import type { ToolResult } from '@shared/types/tool.js';
 import { realpathInsideWorkspace, workspaceRelative } from './sandbox.js';
 import { recordChange } from '../checkpoints/index.js';
@@ -140,11 +141,14 @@ export const deleteTool: Tool = {
         return failure(id, started, `User denied delete of ${a.path}.`, 'permission denied');
       }
     } else if (!ctx.permissions.allowFileWrites) {
-      const approved = await ctx.confirm(
+      const outcome = await ctx.confirm(
         `Agent V wants to DELETE ${a.path}. Allow?`
       );
-      if (!approved) {
-        return failure(id, started, `User denied delete of ${a.path}.`, 'permission denied');
+      if (!outcome.approved) {
+        // Audit fix H-04: surface precise failure (denied / timeout /
+        // aborted / no-ui) instead of always reporting a denial.
+        const desc = describeConfirmFailure(outcome.reason, `delete ${a.path}`);
+        return failure(id, started, desc.output, desc.error);
       }
     }
 

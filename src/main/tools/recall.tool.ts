@@ -270,14 +270,34 @@ async function runRead(
   // different workspace. The renderer's `recall list` only returns
   // same-workspace ids, but the model could still try to recall by a
   // remembered id, and this guard makes the boundary structural.
+  //
+  // Fail-closed on legacy conversations (review finding M2). Pre-
+  // workspace-pinning conversations have `conv.workspaceId === undefined`;
+  // the legacy `if (runWorkspaceId && conv.workspaceId && ...)` guard
+  // was a no-op for them — a stale id remembered from a different
+  // workspace would silently leak its transcript into the active run.
+  // Once we know the run is workspace-pinned, an unpinned conversation
+  // CANNOT be safely classified as same-workspace; refuse with an
+  // actionable error instead of trusting the absent id.
   const runWorkspaceId = activeWorkspaceByRun.get(ctx.signal);
-  if (runWorkspaceId && conv.workspaceId && conv.workspaceId !== runWorkspaceId) {
-    return fail(
-      id,
-      started,
-      `Error: conversation id="${targetId}" belongs to a different workspace and is not recallable from this run.`,
-      'cross-workspace recall refused'
-    );
+  if (runWorkspaceId) {
+    if (!conv.workspaceId) {
+      return fail(
+        id,
+        started,
+        `Error: conversation id="${targetId}" predates workspace pinning and is not recallable from this workspace-scoped run. ` +
+        'Open the conversation in its original workspace once to migrate it; new conversations are workspace-pinned automatically.',
+        'legacy conversation unpinned'
+      );
+    }
+    if (conv.workspaceId !== runWorkspaceId) {
+      return fail(
+        id,
+        started,
+        `Error: conversation id="${targetId}" belongs to a different workspace and is not recallable from this run.`,
+        'cross-workspace recall refused'
+      );
+    }
   }
 
   const requestedMax = typeof a.maxEvents === 'number' && a.maxEvents > 0

@@ -110,7 +110,7 @@ export function ChatPage({ onOpenProviders, onOpenCheckpoints }: ChatPageProps) 
         <div className="mx-auto w-full max-w-3xl">
           {isFresh && (
             <div className="flex min-h-[64vh] flex-col items-center justify-center px-2 pb-8 pt-8 text-center">
-              <div className="text-sm font-semibold tracking-[-0.01em] text-text-primary">
+              <div className="text-body font-semibold tracking-[-0.01em] text-text-primary">
                 What can {AGENT_NAME} help you with today?
               </div>
 

@@ -103,17 +103,6 @@ describe('AppSettings — top-level fields persist via useSettingsStore', () => 
       'https://example.com/search'
     );
   });
-
-  it('historySummary.enabled: single IPC, cache merge, identity-skip on same value', async () => {
-    await useSettingsStore.getState().setHistorySummaryEnabled(true);
-    expect(setSpy()).toHaveBeenCalledTimes(1);
-    expect(setSpy()).toHaveBeenCalledWith({ historySummary: { enabled: true } });
-    expect(useSettingsStore.getState().settings.historySummary?.enabled).toBe(true);
-
-    setSpy().mockClear();
-    await useSettingsStore.getState().setHistorySummaryEnabled(true);
-    expect(setSpy()).not.toHaveBeenCalled();
-  });
 });
 
 describe('AppSettings.ui — per-workspace maps persist via useSettingsStore', () => {

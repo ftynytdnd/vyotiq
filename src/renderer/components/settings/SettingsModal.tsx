@@ -2,6 +2,7 @@ import { Modal } from '../ui/Modal.js';
 import { ProvidersPanel } from './ProvidersPanel.js';
 import { MemoryPanel } from './MemoryPanel.js';
 import { CheckpointSettingsPanel } from '../checkpoints/CheckpointSettingsPanel.js';
+import { ContextPanel } from './ContextPanel.js';
 import { describeEndpointWarning } from './endpointWarning.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { useProviderStore } from '../../store/useProviderStore.js';
@@ -32,7 +33,7 @@ interface SettingsModalProps {
 type TabId =
   | 'providers'
   | 'permissions'
-  | 'performance'
+  | 'context'
   | 'checkpoints'
   | 'memory'
   | 'about';
@@ -40,7 +41,7 @@ type TabId =
 const TABS: { id: TabId; label: string }[] = [
   { id: 'providers', label: 'Providers' },
   { id: 'permissions', label: 'Permissions' },
-  { id: 'performance', label: 'Performance' },
+  { id: 'context', label: 'Context' },
   { id: 'checkpoints', label: 'Checkpoints' },
   { id: 'memory', label: 'Memory' },
   { id: 'about', label: 'About' }
@@ -81,14 +82,14 @@ export function SettingsModal({ open, onClose, initialTab = 'providers' }: Setti
               className="mt-auto flex items-center gap-1.5 px-3 pt-3 text-meta text-text-faint"
               aria-live="polite"
             >
-              <Spinner size={12} /> Syncing…
+              <Spinner /> Syncing…
             </div>
           )}
         </nav>
         <div className="min-w-0 flex-1 overflow-y-auto px-5 py-4">
           {tab === 'providers' && <ProvidersPanel />}
           {tab === 'permissions' && <PermissionsTab />}
-          {tab === 'performance' && <PerformanceTab />}
+          {tab === 'context' && <ContextPanel />}
           {tab === 'checkpoints' && <CheckpointSettingsPanel />}
           {tab === 'memory' && <MemoryTab />}
           {tab === 'about' && <AboutTab />}
@@ -376,48 +377,6 @@ function MemoryTab() {
 }
 
 /**
- * PerformanceTab — settings that affect how the orchestrator handles
- * very long sessions. Right now there's a single toggle here
- * (`historySummary.enabled`); the tab exists as a dedicated home so
- * future perf-leaning settings (token-budget caps, retry policy
- * tuning, parallel-delegate concurrency) have a natural place to land
- * without crowding the safety-focused Permissions tab.
- *
- * Safety vs performance is a real ontological split: Permissions
- * answers "is the agent allowed to do X?", Performance answers "how
- * does the agent behave when context / time / cost gets tight?". A
- * user reasoning about either question shouldn't have to wade through
- * the other.
- */
-function PerformanceTab() {
-  const settings = useSettingsStore((s) => s.settings);
-  const setHistorySummary = useSettingsStore((s) => s.setHistorySummaryEnabled);
-  const enabled = settings.historySummary?.enabled === true;
-
-  return (
-    <div className="flex flex-col">
-      <Row
-        label="Summarize old turns on long sessions"
-        description={
-          // Plain-language description — the audit-fix vocabulary
-          // ("§2.2", "trim policy", "post-trim history") belongs in
-          // the codebase, not in the user-facing copy. The user only
-          // needs to know: this trades a small extra LLM call against
-          // the cost of repeated context-overflow rejections on very
-          // long delegate-heavy chats.
-          'On very long conversations, Agent V may struggle to fit the full history into the model\'s context window. ' +
-          'When enabled, the orchestrator falls back to a single summarizer call that compacts the oldest half of the ' +
-          'transcript before resuming. Off by default; enable for marathon sessions where you see repeated ' +
-          'context-overflow errors. Takes effect on the next message.'
-        }
-        value={enabled}
-        onChange={(v) => void setHistorySummary(v)}
-      />
-    </div>
-  );
-}
-
-/**
  * About tab — static product description PLUS the read-only `AppInfo`
  * snapshot fetched from `vyotiq.app.info()`. The paths section lets a
  * user (or anyone helping with support / backup) find their settings,
@@ -499,7 +458,7 @@ function AboutTab() {
           <div className="text-row text-text-muted">Build info unavailable: {loadError}</div>
         ) : (
           <div className="flex items-center gap-2 text-row text-text-muted">
-            <Spinner size={12} /> Loading…
+            <Spinner /> Loading…
           </div>
         )}
       </div>
@@ -566,7 +525,7 @@ function PathRow({
   return (
     <div className="flex items-center justify-between gap-3 border-b border-border-subtle/30 py-2 last:border-b-0">
       <div className="min-w-0 flex-1">
-        <div className="text-meta uppercase tracking-wider text-text-faint">{label}</div>
+        <Eyebrow>{label}</Eyebrow>
         <div className="mt-0.5 break-all font-mono text-row text-text-secondary">{path}</div>
       </div>
       <Button size="sm" variant="ghost" onClick={onReveal} title={`Reveal ${label.toLowerCase()}`}>

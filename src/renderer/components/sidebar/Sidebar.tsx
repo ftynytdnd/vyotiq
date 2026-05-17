@@ -30,11 +30,9 @@ import { useSidebarShortcuts } from './useSidebarShortcuts.js';
 
 interface SidebarProps {
   onOpenSettings: () => void;
-  /** Open the Checkpoints view modal. Wired through the sidebar footer. */
-  onOpenCheckpoints: () => void;
 }
 
-export function Sidebar({ onOpenSettings, onOpenCheckpoints }: SidebarProps) {
+export function Sidebar({ onOpenSettings }: SidebarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   useSidebarShortcuts();
 
@@ -45,7 +43,6 @@ export function Sidebar({ onOpenSettings, onOpenCheckpoints }: SidebarProps) {
       <ChatsSection scrollRef={scrollRef} />
       <SidebarFooter
         onOpenSettings={onOpenSettings}
-        onOpenCheckpoints={onOpenCheckpoints}
         scrollContainerRef={scrollRef}
       />
     </aside>

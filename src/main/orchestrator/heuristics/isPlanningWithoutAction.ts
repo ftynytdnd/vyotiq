@@ -3,58 +3,48 @@
  * visible action (no tool call, no `<delegate>`) but clearly intended
  * to continue?
  *
- * After the audit-pass subtraction, this heuristic is intentionally
- * tiny. The consolidated harness (Orchestration Loop §A "Termination",
- * §B "Narrate-and-emit in the same turn") and the new `<run_state>`
- * envelope carry most of the responsibility the older 240-line
- * regex-bandage stack used to: the model can read its own
+ * After the audit-pass subtraction (and the May-26 follow-up that
+ * removed the `unclosed-delegate` re-emit nudge), this heuristic is
+ * intentionally tiny. The consolidated harness (Orchestration Loop
+ * §A "Termination", §B "Narrate-and-emit in the same turn") and the
+ * `<run_state>` envelope carry most of the responsibility the older
+ * 240-line regex-bandage stack used to: the model can read its own
  * iteration / nudges-remaining / last-action and self-regulate. The
- * heuristic now only catches the two structural patterns the prose
- * cannot detect from the assistant text alone:
+ * heuristic now only catches the single structural pattern the
+ * prose cannot detect from the assistant text alone:
  *
- *   1. **Reasoning-only empty turn** — the model produced reasoning
- *      content but emitted no output text, no tool call, and no
- *      `<delegate>`. The provider returned `finish_reason: "stop"`
- *      while the model "thought but didn't act". This is the single
- *      most common cause of phantom early-termination on reasoning
- *      providers and the model has no way to recover from it without
- *      a nudge — there's nothing visible to inspect.
+ *   - **Reasoning-only empty turn** — the model produced reasoning
+ *     content but emitted no output text, no tool call, and no
+ *     `<delegate>`. The provider returned `finish_reason: "stop"`
+ *     while the model "thought but didn't act". This is the single
+ *     most common cause of phantom early-termination on reasoning
+ *     providers and the model has no way to recover from it without
+ *     a nudge — there's nothing visible to inspect.
  *
- *   2. **Unclosed `<delegate>` directive** — the model began emitting
- *      a directive (`<delegate id="A1" task="…"`) but the buffer
- *      ended before the closing `/>` or `</delegate>` arrived,
- *      because the provider truncated the turn (`finish_reason:
- *      "length"`) or the model lost the thread. The directive
- *      parser correctly ignores it, so the host's `delegates.length`
- *      is zero and the cleaned text has no actionable content.
- *
- * Visible-completion guards, planning-hint regexes, and clarifying-
- * question terminus checks were ALL removed: the harness explicitly
- * tells the agent that a clarifying-question turn is a clean
- * terminus, and an answer turn ends naturally without needing a
- * regex to recognise it.
+ * The previous "unclosed `<delegate>` directive" detection was
+ * removed because (a) the `parseDelegates` parser already silently
+ * ignores partial tags, (b) the `stripDelegatesForDisplay` strip
+ * keeps the partial XML out of the rendered timeline, and (c) when
+ * the provider truncates a turn (`finish_reason: "length"`) the
+ * `<run_state>` envelope already exposes that signal — the model
+ * self-regulates without a host-side re-emit nudge. Visible-
+ * completion guards, planning-hint regexes, clarifying-question
+ * terminus checks, and colon-handoff detectors were similarly
+ * removed: the harness explicitly tells the agent that a clarifying-
+ * question turn is a clean terminus, and the Ollama transport now
+ * round-trips `reasoning_content` ↔ `thinking` so the model retains
+ * its planning chain-of-thought across turns (see
+ * `providers/ollamaChatStream.ts:toOllamaMessage`). Without that
+ * round-trip, a model that planned in reasoning and emitted only a
+ * brief content announcement could not recover its plan on the next
+ * turn and stalled in a narration loop — the regex bandages that
+ * used to flag the announcement turn were treating the symptom of
+ * that transport bug, not the cause.
  *
  * The cap on nudges per turn (enforced by the caller) bounds the cost
- * of any false-positive to one extra round.
+ * of any false-positive to one extra round; after that the run halts
+ * with a visible error rather than a silent return.
  */
-
-import { STRIP_PARTIAL_TAG_RE } from '@shared/text/strip.js';
-
-/**
- * Detects an unclosed `<delegate ...` tag at any position in the
- * assistant text. Anchored to "no closing `>`/`/>` follows": if the
- * model started a directive but the buffer truncated mid-attribute
- * list, the parser ignored it and the orchestrator would otherwise
- * silently terminate.
- *
- * The shared `STRIP_PARTIAL_TAG_RE` is the renderer-side strip
- * pattern; we re-use it as a detection probe because it captures
- * exactly the same shape we want to flag here. If it matches, there
- * is a partial directive lurking that never closed.
- */
-function hasUnclosedDelegate(text: string): boolean {
-  return STRIP_PARTIAL_TAG_RE.test(text);
-}
 
 interface PlanningCheckInput {
   /** Cleaned assistant text after stripping fully-formed `<delegate>` markup. */
@@ -70,33 +60,46 @@ interface PlanningCheckInput {
    * didn't act" — the worst kind of planning-without-action.
    */
   hadReasoning?: boolean;
-  /**
-   * Raw assistant text BEFORE delegate-stripping. Used to detect a
-   * partial / unclosed `<delegate ...` tag that the parser ignored.
-   * Optional — when omitted, the unclosed-delegate detection is
-   * skipped (legacy callers and tests that don't supply it).
-   */
-  rawText?: string;
 }
 
-export function isPlanningWithoutAction(input: PlanningCheckInput): boolean {
-  // Action of any kind always overrides — the loop is making progress.
-  if (input.hadToolCall || input.hadDelegate) return false;
+/**
+ * Structured reason a turn was flagged for nudging. Surfaced via
+ * `classifyPlanningWithoutAction` so the caller can pick the right
+ * human-readable label and the correct nudge body. The legacy
+ * boolean predicate `isPlanningWithoutAction` is preserved as a thin
+ * wrapper for callers that only need the yes/no signal.
+ *
+ *   - `reasoning-only`: empty output channel + reasoning produced.
+ *     Tell the model to act in the output channel.
+ *   - `none`: clean terminus — caller should accept the turn.
+ */
+export type PlanningOutcome = 'reasoning-only' | 'none';
 
-  // Unclosed `<delegate>` directive: the model TRIED to delegate but
-  // the buffer truncated before the closing `/>`. Nudge so the next
-  // turn re-emits a complete directive instead of silently ending.
-  if (typeof input.rawText === 'string' && hasUnclosedDelegate(input.rawText)) {
-    return true;
-  }
+export function classifyPlanningWithoutAction(
+  input: PlanningCheckInput
+): PlanningOutcome {
+  // Action of any kind always overrides — the loop is making progress.
+  if (input.hadToolCall || input.hadDelegate) return 'none';
 
   const text = input.cleanText.trim();
   // Reasoning-only empty turn: the model produced no output channel
   // content at all. Nudge so the next turn emits something visible.
-  if (text.length === 0 && input.hadReasoning === true) return true;
+  if (text.length === 0 && input.hadReasoning === true) return 'reasoning-only';
 
   // Anything else — including substantive answers, clarifying
-  // questions, completion narrations, and short acknowledgements —
-  // is a clean terminus. The harness handles the rest.
-  return false;
+  // questions, completion narrations, short acknowledgements, and
+  // turns that contain a partial / unclosed `<delegate>` tag — is a
+  // clean terminus. The harness handles the rest, and the transport-
+  // level reasoning round-trip ensures the model has the continuity
+  // it needs across turns.
+  return 'none';
+}
+
+/**
+ * Boolean predicate kept for backward compatibility with the legacy
+ * call sites and tests. Returns `true` when `classifyPlanningWithoutAction`
+ * picks any non-`'none'` outcome.
+ */
+export function isPlanningWithoutAction(input: PlanningCheckInput): boolean {
+  return classifyPlanningWithoutAction(input) !== 'none';
 }

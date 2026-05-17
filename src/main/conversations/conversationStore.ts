@@ -27,6 +27,7 @@ import type {
 import { logger } from '../logging/logger.js';
 import { sanitizeTitle } from './titleSanitizer.js';
 import { getActiveWorkspace, listWorkspaces } from '../workspace/workspaceState.js';
+import { atomicWriteString } from '../checkpoints/atomicWrite.js';
 
 const log = logger.child('conversations');
 
@@ -241,9 +242,11 @@ async function flushIndex(): Promise<void> {
   writeChain = writeChain.then(async () => {
     try {
       await ensureDir();
-      const tmp = indexPath() + '.tmp';
-      await fs.writeFile(tmp, snapshot, 'utf8');
-      await fs.rename(tmp, indexPath());
+      // Shared atomic write helper — same `.tmp` rename pattern as
+      // the run manifest / pending bucket, with built-in Windows-
+      // EBUSY rename-retry that the old inline implementation
+      // lacked.
+      await atomicWriteString(indexPath(), snapshot);
     } catch (err) {
       // Re-arm the dirty flag so the next event-driven schedule (or
       // the next debounce tick) retries the write. Without this,
@@ -664,20 +667,17 @@ export async function truncateTranscriptFrom(
       return;
     }
 
-    // Atomic rewrite: write the kept lines into a tmp file then
-    // rename. Same pattern the run manifest + pending bucket use.
+    // Atomic rewrite via the shared `atomicWriteString` helper —
+    // same `.tmp` rename pattern as the run manifest + pending
+    // bucket, plus built-in Windows-EBUSY rename-retry the old
+    // inline path was missing. We retain the local `log.error`
+    // so the truncate failure remains distinguishable from other
+    // helper consumers in the structured log stream.
     await ensureDir();
-    const tmp = `${file}.tmp`;
     const body = kept.length === 0 ? '' : kept.map((e) => JSON.stringify(e)).join('\n') + '\n';
     try {
-      await fs.writeFile(tmp, body, 'utf8');
-      await fs.rename(tmp, file);
+      await atomicWriteString(file, body);
     } catch (err) {
-      try {
-        await fs.unlink(tmp);
-      } catch {
-        /* noop */
-      }
       log.error('truncateTranscriptFrom: rewrite failed', { id, fromEventId, err });
       throw err;
     }
@@ -745,8 +745,58 @@ export async function readConversation(id: string): Promise<Conversation | null>
   await loadIndex();
   const meta = findMeta(id);
   if (!meta) return null;
-  const events = await readTranscript(id);
+  // `readTranscript` returns the raw on-disk event stream. Apply the
+  // orphan filter for downstream consumers (renderer load, recall
+  // tool, rewind preview) so a `subagent-pending` event whose
+  // matching `subagent-spawn` never landed — typically because the
+  // run was aborted between mid-stream directive parse and
+  // verification — doesn't materialize as a phantom sub-agent row
+  // in the renderer's timeline. Review finding H3.
+  const rawEvents = await readTranscript(id);
+  const events = dropOrphanPendingSubagents(rawEvents);
   return { ...meta, events };
+}
+
+/**
+ * Drop every `subagent-pending` event whose `subagentId` has no
+ * matching `subagent-spawn` in the same transcript (review finding
+ * H3). Mid-stream directive parsing in `handleAssistantTurn` emits
+ * `subagent-pending` to the renderer the instant a `<delegate />`
+ * is detected; the matching `subagent-spawn` only fires once
+ * `handleDelegates` validates the directive and reaches verification
+ * phase. A run aborted between those two events leaves an orphan
+ * pending row that, on conversation reload, materializes a sub-agent
+ * snapshot the renderer never resolves.
+ *
+ * Single-pass: one walk to collect spawn ids, one filter pass to
+ * drop orphans. The retained event order is preserved verbatim
+ * (we only drop, never reorder). On the steady-state path (no
+ * orphans) the function returns the input array untouched so the
+ * caller's reference equality is preserved.
+ *
+ * Exported for the dedicated unit test that pins the orphan-drop
+ * contract across replay and renderer load paths.
+ */
+export function dropOrphanPendingSubagents(events: TimelineEvent[]): TimelineEvent[] {
+  const spawnedIds = new Set<string>();
+  let hasPending = false;
+  for (const e of events) {
+    if (e.kind === 'subagent-spawn') spawnedIds.add(e.subagentId);
+    else if (e.kind === 'subagent-pending') hasPending = true;
+  }
+  if (!hasPending) return events;
+  // Steady-state fast path: every pending has a spawn → no drop.
+  let allMatched = true;
+  for (const e of events) {
+    if (e.kind === 'subagent-pending' && !spawnedIds.has(e.subagentId)) {
+      allMatched = false;
+      break;
+    }
+  }
+  if (allMatched) return events;
+  return events.filter((e) =>
+    e.kind !== 'subagent-pending' || spawnedIds.has(e.subagentId)
+  );
 }
 
 /**

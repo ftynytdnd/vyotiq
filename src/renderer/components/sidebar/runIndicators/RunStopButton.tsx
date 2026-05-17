@@ -33,7 +33,7 @@ export function RunStopButton({ runId, conversationTitle }: RunStopButtonProps) 
         void useChatStore.getState().abortRun(runId);
       }}
       className={cn(
-        'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded',
+        'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-inner',
         'opacity-0 transition-opacity duration-150',
         'group-hover:opacity-60 group-focus-within:opacity-60',
         'hover:opacity-100 focus-visible:opacity-100 hover:text-text-primary'

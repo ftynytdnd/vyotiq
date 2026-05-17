@@ -19,6 +19,7 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { logger } from '../logging/logger.js';
 import { isProviderError } from '../providers/providerError.js';
+import { isIpcCancelledError } from './ipcCancelledError.js';
 
 /**
  * Registers an IPC handler with logging + error capture. Drop-in
@@ -45,6 +46,17 @@ export function wrapIpcHandler<
       return out;
     } catch (err: unknown) {
       const ms = Date.now() - started;
+      // `IpcCancelledError` is a benign user-driven outcome (e.g. they
+      // dismissed a folder picker). It propagates to the renderer as
+      // a rejected promise but must not surface in the main log as an
+      // `error`-level event — the previous behaviour produced a full
+      // stack trace for every cancelled workspace-add dialog (see
+      // `vyotiq.log` line 217 in the May 16 capture), which polluted
+      // triage. Downgrade to `info` and drop the stack.
+      if (isIpcCancelledError(err)) {
+        log.info('cancelled', { ms, reason: err.message });
+        throw err;
+      }
       // `ProviderError` represents a USER-CONFIG problem (bad URL,
       // wrong API key, expired billing, mistyped model name), not a
       // system bug. Log at WARN with the structured fields so triage

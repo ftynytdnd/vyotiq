@@ -7,6 +7,65 @@
 import type { ToolName, ToolResult } from '@shared/types/tool.js';
 import type { ChatPermissions, TimelineEvent } from '@shared/types/chat.js';
 import type { EditApprovalPayload } from '@shared/types/ipc.js';
+import type { ConfirmReason } from '../orchestrator/confirmBus.js';
+
+/**
+ * Outcome of a `ctx.confirm` round-trip. `approved` is the gate;
+ * `reason` distinguishes the four ways `approved: false` can arise so
+ * tools can render a precise failure message to the model + user
+ * instead of always saying "user denied". Audit fix H-04.
+ */
+export interface ConfirmOutcome {
+  approved: boolean;
+  reason: ConfirmReason;
+}
+
+/**
+ * Map a non-approved `ConfirmOutcome.reason` into the
+ * `(output, error)` pair tools surface in their `ToolResult`. Keeps
+ * the failure-message wording consistent across tools so the model
+ * sees a stable surface and the user sees something honest:
+ *
+ *   - `'denied'`  → "User denied permission …"
+ *   - `'timeout'` → "Permission prompt timed out …"
+ *   - `'aborted'` → "Permission prompt aborted (user pressed Stop)…"
+ *   - `'no-ui'`   → "Host could not show the permission prompt…"
+ *
+ * `verb` is the tool-action description that goes in the message
+ * (`"run shell command"`, `"modify foo.ts"`, `"delete bar"`, etc.).
+ * Audit fix H-04.
+ */
+export function describeConfirmFailure(
+  reason: ConfirmReason,
+  verb: string
+): { output: string; error: string } {
+  switch (reason) {
+    case 'denied':
+      return {
+        output: `User denied permission to ${verb}.`,
+        error: 'permission denied'
+      };
+    case 'timeout':
+      return {
+        output: `Permission prompt for "${verb}" timed out without a user reply.`,
+        error: 'permission prompt timeout'
+      };
+    case 'aborted':
+      return {
+        output: `Permission prompt for "${verb}" was aborted (run cancelled before the user replied).`,
+        error: 'permission prompt aborted'
+      };
+    case 'no-ui':
+      return {
+        output: `Host could not show the permission prompt for "${verb}" (no live window). The action was NOT performed.`,
+        error: 'no-ui'
+      };
+    case 'approved':
+      // Defensive fallthrough — callers should only reach this helper
+      // on the non-approved path.
+      return { output: `Approved.`, error: '' };
+  }
+}
 
 /** Per-call execution context handed to every tool. */
 export interface ToolContext {
@@ -36,11 +95,16 @@ export interface ToolContext {
   /** Abort signal for the entire run — tools should respect this. */
   signal: AbortSignal;
   /**
-   * Asks the user for confirmation. Returns true if approved. Used for
-   * destructive operations (bash destructive patterns, allow-bash
-   * gate, etc.) where a plain "Allow?" prompt is enough.
+   * Asks the user for confirmation. Returns `{ approved, reason }`
+   * (audit fix H-04). `reason` is `'approved'` on accept, `'denied'`
+   * on a real user click, and one of `'timeout' | 'aborted' | 'no-ui'`
+   * for the host-side fail-closed paths so the calling tool can
+   * surface a precise failure message — "host could not show the
+   * prompt" / "timed out" / "aborted" instead of always "user denied".
+   * Used for destructive operations (bash destructive patterns,
+   * allow-bash gate, etc.) where a plain "Allow?" prompt is enough.
    */
-  confirm(message: string): Promise<boolean>;
+  confirm(message: string): Promise<ConfirmOutcome>;
   /**
    * Richer approval flow for file mutations. Used by `edit` / `delete`
    * (and bash-mutation recovery may opt in later). The renderer

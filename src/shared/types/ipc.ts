@@ -27,6 +27,11 @@ import type {
   RewindResult
 } from './checkpoint.js';
 import type { DiffHunk } from './tool.js';
+import type {
+  ContextInspectorSnapshot,
+  ContextMessageOverride,
+  ContextSummaryRules
+} from './contextSummary.js';
 
 /**
  * Structured payload for the richer "approve this edit/delete" dialog
@@ -90,6 +95,14 @@ export type ConfirmResponse = boolean | { approved: boolean; acceptAllRemaining?
 export interface AppSettings {
   defaultModel?: { providerId: string; modelId: string };
   /**
+   * Global context-summarization defaults. Optional on the wire; an
+   * absent field is layered onto `DEFAULT_CONTEXT_SUMMARY_RULES` via
+   * `resolveContextSummaryRules` so a brand-new install starts with
+   * sensible defaults. Workspace overrides live under
+   * `ui.contextSummaryByWorkspace[wsId]` and win over this layer.
+   */
+  contextSummary?: Partial<ContextSummaryRules>;
+  /**
    * Optional on the wire (old settings files predate this field), but the
    * settings store ALWAYS populates a fully-resolved `permissions` object
    * on the public `AppSettings` shape (`settingsStore.publicShape`), so
@@ -101,24 +114,6 @@ export interface AppSettings {
     allowWebSearch: boolean;
   };
   webSearchEndpoint?: string;
-  /**
-   * Audit fix §2.2 — opt-in transcript-aware summarization. When the
-   * per-turn trim policy (§2.3) cannot get the request under the
-   * model's effective context window, the run-loop calls a one-shot
-   * summarizer LLM call to compact the OLDEST half of the post-trim
-   * history into a `<history_summary>` block. Off by default — long
-   * sessions still work without it (the trim policy + the provider's
-   * own retry path keep things moving), but on very long delegate-
-   * heavy chats this is the only lever that prevents repeated
-   * provider-side context-overflow rejections.
-   *
-   * The setting carries no model selection: the summarizer reuses the
-   * run's selected provider + model (the model the user trusts for
-   * THIS conversation is also the model we trust to summarize it).
-   */
-  historySummary?: {
-    enabled: boolean;
-  };
   /**
    * Persisted UI state. Kept under a sub-object so future renderer-level
    * preferences (theme, density, etc.) can be added without churning the
@@ -197,6 +192,20 @@ export interface AppSettings {
      * `WorkspaceEntry.id`.
      */
     gatePromptOnPendingByWorkspace?: Record<string, boolean>;
+    /**
+     * Per-workspace context-summarization rule overrides. Each entry is
+     * a partial `ContextSummaryRules` that wins over the global
+     * `contextSummary` slot for runs pinned to that workspace. Layered
+     * via `resolveContextSummaryRules`. Keyed by `WorkspaceEntry.id`.
+     *
+     * Why per-workspace (and not per-conversation) for the rules: rules
+     * are *policy* (when to trigger, what to preserve, which model to
+     * use); per-message overrides are *content* and live in the
+     * conversation's JSONL transcript via `context-override-set` events.
+     * Two-layer split matches the existing permissions / strict-
+     * approvals pattern.
+     */
+    contextSummaryByWorkspace?: Record<string, Partial<ContextSummaryRules>>;
   };
 }
 
@@ -603,6 +612,81 @@ export interface VyotiqApi {
      * conversation. Returns the unsubscribe handle.
      */
     onTranscriptRewound(cb: (conversationId: string) => void): () => void;
+  };
+
+  // ---- Context summarization (orchestrator-side compression) ----
+  contextSummary: {
+    /**
+     * Snapshot the orchestrator's current `messages[]` for a run into
+     * a `ContextInspectorSnapshot`. Returns `null` for unknown runIds
+     * (e.g. an Inspector opened against a conversation with no active
+     * run) — the renderer falls back to inspecting the persisted
+     * initial-messages state via `conversations.read` in that case.
+     */
+    inspect(runId: string): Promise<ContextInspectorSnapshot | null>;
+    /**
+     * Trigger a manual summarization for the given run. Resolves once
+     * the `context-summary-pending` event has been emitted; the actual
+     * streaming continues async through `chat.onEvent`. Returns
+     * `{ ok: false, reason }` when the trigger was rejected (run
+     * unknown, rules disabled, mid-summary, or the summarizable range
+     * is below `minMessagesToSummarize`).
+     */
+    triggerManual(
+      runId: string
+    ): Promise<
+      | { ok: true; summaryId: string }
+      | { ok: false; reason: string }
+    >;
+    /**
+     * Revert the splice applied by `summaryId`. Returns `{ ok: false }`
+     * when the snapshot has already been GC'd (next user-prompt
+     * boundary, run-ended, or unknown id).
+     */
+    undo(
+      runId: string,
+      summaryId: string
+    ): Promise<{ ok: boolean }>;
+    /**
+     * Set or clear a per-message override on the given conversation.
+     * Persisted as a `context-override-set` TimelineEvent in the JSONL
+     * so the override survives renderer reloads and app restarts.
+     */
+    setMessageOverride(
+      conversationId: string,
+      messageId: string,
+      override: ContextMessageOverride | null
+    ): Promise<void>;
+    /**
+     * Clear ALL per-message overrides on the given conversation. Emits
+     * a single `context-override-set` event with the sentinel
+     * `messageId: '*'` so replay can reconstruct the same state.
+     */
+    resetMessageOverrides(conversationId: string): Promise<void>;
+    /**
+     * Read the fully-resolved rules for the given workspace (global ←
+     * workspace overrides collapsed). Used by Settings → Context and
+     * by the Inspector to surface what's currently in effect.
+     */
+    getRules(workspaceId: string | null): Promise<ContextSummaryRules>;
+    /**
+     * Persist a partial rules patch at the given scope. Returns the
+     * refreshed `AppSettings` so the renderer settings-store can swap
+     * its cache atomically.
+     */
+    updateRules(
+      scope: 'global' | 'workspace',
+      patch: Partial<ContextSummaryRules>,
+      workspaceId?: string
+    ): Promise<AppSettings>;
+    /**
+     * Subscribe to inspector-snapshot-changed broadcasts. Fired
+     * whenever a run's `messages[]` or override map changed in a way
+     * the Inspector would care about. Carries the affected runId so
+     * the renderer can refetch only when its open Inspector is bound
+     * to that run. Returns the unsubscribe handle.
+     */
+    onSnapshotChanged(cb: (runId: string) => void): () => void;
   };
 
   // ---- App identity + on-disk paths (Settings → About) ----

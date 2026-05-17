@@ -145,6 +145,38 @@ const api: VyotiqApi = {
       on<[string]>(IPC.CONVERSATION_TRANSCRIPT_REWOUND, (conversationId) => cb(conversationId))
   },
 
+  contextSummary: {
+    inspect: (runId: string) =>
+      ipcRenderer.invoke(IPC.CONTEXT_SUMMARY_INSPECT, runId),
+    triggerManual: (runId: string) =>
+      ipcRenderer.invoke(IPC.CONTEXT_SUMMARY_TRIGGER_MANUAL, runId),
+    undo: (runId: string, summaryId: string) =>
+      ipcRenderer.invoke(IPC.CONTEXT_SUMMARY_UNDO, runId, summaryId),
+    setMessageOverride: (conversationId, messageId, override) =>
+      ipcRenderer.invoke(
+        IPC.CONTEXT_SUMMARY_SET_MESSAGE_OVERRIDE,
+        conversationId,
+        messageId,
+        override
+      ),
+    resetMessageOverrides: (conversationId: string) =>
+      ipcRenderer.invoke(
+        IPC.CONTEXT_SUMMARY_RESET_MESSAGE_OVERRIDES,
+        conversationId
+      ),
+    getRules: (workspaceId: string | null) =>
+      ipcRenderer.invoke(IPC.CONTEXT_SUMMARY_GET_RULES, workspaceId),
+    updateRules: (scope, patch, workspaceId) =>
+      ipcRenderer.invoke(
+        IPC.CONTEXT_SUMMARY_UPDATE_RULES,
+        scope,
+        patch,
+        workspaceId
+      ),
+    onSnapshotChanged: (cb) =>
+      on<[string]>(IPC.CONTEXT_SUMMARY_SNAPSHOT_CHANGED, (runId) => cb(runId))
+  },
+
   app: {
     info: () => ipcRenderer.invoke(IPC.APP_INFO_GET),
     revealPath: (target) => ipcRenderer.invoke(IPC.APP_REVEAL_PATH, target)

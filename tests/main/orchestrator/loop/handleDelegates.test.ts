@@ -78,7 +78,8 @@ describe('handleDelegates — envelope-before-halt fidelity', () => {
     const messages: ChatMessage[] = [];
     const events: TimelineEvent[] = [];
     const counters: DelegationCounters = {
-      consecutiveBadRounds: MAX_DELEGATION_BAD_ROUNDS - 1
+      consecutiveBadRounds: MAX_DELEGATION_BAD_ROUNDS - 1,
+      perTaskBadStreak: new Map()
     };
 
     const outcome = await handleDelegates(
@@ -121,7 +122,10 @@ describe('handleDelegates — envelope-before-halt fidelity', () => {
 
     const messages: ChatMessage[] = [];
     const events: TimelineEvent[] = [];
-    const counters: DelegationCounters = { consecutiveBadRounds: 1 };
+    const counters: DelegationCounters = {
+      consecutiveBadRounds: 1,
+      perTaskBadStreak: new Map()
+    };
 
     const outcome = await handleDelegates(
       [{ id: 'A1', task: 'good', files: [], tools: [] }],
@@ -173,7 +177,10 @@ describe('handleDelegates — envelope-before-halt fidelity', () => {
 
     const messages: ChatMessage[] = [];
     const events: TimelineEvent[] = [];
-    const counters: DelegationCounters = { consecutiveBadRounds: 0 };
+    const counters: DelegationCounters = {
+      consecutiveBadRounds: 0,
+      perTaskBadStreak: new Map()
+    };
 
     await handleDelegates(
       [{ id: 'A1', task: 'rambling worker', files: [], tools: [] }],
@@ -216,7 +223,10 @@ describe('handleDelegates — envelope-before-halt fidelity', () => {
 
     const messages: ChatMessage[] = [];
     const events: TimelineEvent[] = [];
-    const counters: DelegationCounters = { consecutiveBadRounds: 0 };
+    const counters: DelegationCounters = {
+      consecutiveBadRounds: 0,
+      perTaskBadStreak: new Map()
+    };
 
     await handleDelegates(
       [{ id: 'A1', task: 'crashed worker', files: [], tools: [] }],
@@ -263,7 +273,8 @@ describe('handleDelegates — envelope-before-halt fidelity', () => {
     const messages: ChatMessage[] = [];
     const events: TimelineEvent[] = [];
     const counters: DelegationCounters = {
-      consecutiveBadRounds: MAX_DELEGATION_BAD_ROUNDS - 1
+      consecutiveBadRounds: MAX_DELEGATION_BAD_ROUNDS - 1,
+      perTaskBadStreak: new Map()
     };
 
     const outcome = await handleDelegates(
@@ -313,7 +324,10 @@ describe('handleDelegates — envelope-before-halt fidelity', () => {
 
     const messages: ChatMessage[] = [];
     const events: TimelineEvent[] = [];
-    const counters: DelegationCounters = { consecutiveBadRounds: 0 };
+    const counters: DelegationCounters = {
+      consecutiveBadRounds: 0,
+      perTaskBadStreak: new Map()
+    };
 
     const outcome = await handleDelegates(
       [{ id: 'A1', task: 'doomed', files: [], tools: [] }],
@@ -328,5 +342,159 @@ describe('handleDelegates — envelope-before-halt fidelity', () => {
     // Envelope is pushed; no escalation event.
     expect(events.filter((e) => e.kind === 'error')).toHaveLength(0);
     expect(messages.some((m) => typeof m.content === 'string' && m.content.includes('<subagent_results>'))).toBe(true);
+  });
+});
+
+describe('handleDelegates — per-task strike map', () => {
+  it('tracks consecutive bad verdicts per task signature across mixed rounds', async () => {
+    // Mixed round: one bad verdict + one good verdict. `consecutiveBadRounds`
+    // resets to 0 (because not allBad) but the BAD task's per-task
+    // streak should be 1, while the GOOD task is absent from the map.
+    vi.mocked(runSubAgentPool).mockResolvedValueOnce([
+      {
+        id: 'A1',
+        task: 'edit frontend/src/App.tsx',
+        output: '<result><status>failed</status></result>',
+        toolResults: [],
+        status: 'failed',
+        error: 'malformed'
+      },
+      {
+        id: 'A2',
+        task: 'edit frontend/src/Header.tsx',
+        output: '<result><status>success</status><summary>ok</summary></result>',
+        toolResults: [],
+        status: 'success'
+      }
+    ]);
+
+    const messages: ChatMessage[] = [];
+    const events: TimelineEvent[] = [];
+    const counters: DelegationCounters = {
+      consecutiveBadRounds: 0,
+      perTaskBadStreak: new Map()
+    };
+
+    await handleDelegates(
+      [
+        { id: 'A1', task: 'edit frontend/src/App.tsx', files: [], tools: [] },
+        { id: 'A2', task: 'edit frontend/src/Header.tsx', files: [], tools: [] }
+      ],
+      messages,
+      counters,
+      (e) => events.push(e),
+      baseOpts
+    );
+
+    expect(counters.consecutiveBadRounds).toBe(0); // mixed → reset
+    // The failing task gained one streak; the successful one is not tracked.
+    const streaks = Array.from(counters.perTaskBadStreak.values());
+    expect(streaks).toEqual([1]);
+  });
+
+  it('emits a pivot phase divider when a task crosses MAX_PER_TASK_BAD_STREAK', async () => {
+    // Three consecutive bad rounds for the SAME task signature, each
+    // paired with a successful sibling so `consecutiveBadRounds` stays
+    // 0 throughout. The per-task counter should escalate on the third
+    // round and emit a phase divider.
+    const messages: ChatMessage[] = [];
+    const events: TimelineEvent[] = [];
+    const counters: DelegationCounters = {
+      consecutiveBadRounds: 0,
+      perTaskBadStreak: new Map()
+    };
+
+    for (let round = 0; round < 3; round++) {
+      vi.mocked(runSubAgentPool).mockResolvedValueOnce([
+        {
+          id: `A${round}`,
+          task: 'edit frontend/src/App.tsx',
+          output: '<result><status>failed</status></result>',
+          toolResults: [],
+          status: 'failed',
+          error: 'malformed'
+        },
+        {
+          id: `B${round}`,
+          task: 'edit frontend/src/Other.tsx',
+          output:
+            '<result><status>success</status><summary>fine</summary></result>',
+          toolResults: [],
+          status: 'success'
+        }
+      ]);
+      await handleDelegates(
+        [
+          { id: `A${round}`, task: 'edit frontend/src/App.tsx', files: [], tools: [] },
+          { id: `B${round}`, task: 'edit frontend/src/Other.tsx', files: [], tools: [] }
+        ],
+        messages,
+        counters,
+        (e) => events.push(e),
+        baseOpts
+      );
+    }
+
+    // Round-level halt did NOT trip (mixed rounds reset it).
+    expect(counters.consecutiveBadRounds).toBe(0);
+    // Per-task streak is at 3 for the failing task.
+    const streaks = Array.from(counters.perTaskBadStreak.values());
+    expect(streaks).toContain(3);
+    // Pivot divider was emitted at least once.
+    const phases = events.filter(
+      (e): e is Extract<TimelineEvent, { kind: 'phase' }> => e.kind === 'phase'
+    );
+    expect(
+      phases.some((p) => p.label.includes('pivot decomposition'))
+    ).toBe(true);
+  });
+
+  it('clears the streak when the same task signature succeeds in a later round', async () => {
+    // Round 1: fail. Round 2: succeed. After round 2, the streak entry
+    // for that signature MUST be removed.
+    const messages: ChatMessage[] = [];
+    const events: TimelineEvent[] = [];
+    const counters: DelegationCounters = {
+      consecutiveBadRounds: 0,
+      perTaskBadStreak: new Map()
+    };
+
+    vi.mocked(runSubAgentPool).mockResolvedValueOnce([
+      {
+        id: 'A',
+        task: 'edit foo',
+        output: '<result><status>failed</status></result>',
+        toolResults: [],
+        status: 'failed',
+        error: 'malformed'
+      }
+    ]);
+    await handleDelegates(
+      [{ id: 'A', task: 'edit foo', files: [], tools: [] }],
+      messages,
+      counters,
+      (e) => events.push(e),
+      baseOpts
+    );
+    expect(counters.perTaskBadStreak.size).toBe(1);
+
+    vi.mocked(runSubAgentPool).mockResolvedValueOnce([
+      {
+        id: 'A',
+        task: 'edit foo',
+        output:
+          '<result><status>success</status><summary>good</summary></result>',
+        toolResults: [],
+        status: 'success'
+      }
+    ]);
+    await handleDelegates(
+      [{ id: 'A', task: 'edit foo', files: [], tools: [] }],
+      messages,
+      counters,
+      (e) => events.push(e),
+      baseOpts
+    );
+    expect(counters.perTaskBadStreak.size).toBe(0);
   });
 });

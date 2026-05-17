@@ -10,7 +10,10 @@
 
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage } from '@shared/types/chat.js';
-import { sanitizeToolCallPairing } from '@main/orchestrator/loop/sanitizeToolPairing';
+import {
+  sanitizeToolCallPairing,
+  sanitizeToolCallPairingWithStats
+} from '@main/orchestrator/loop/sanitizeToolPairing';
 
 function asst(toolCallIds: string[], content: string | null = ''): ChatMessage {
   return {
@@ -166,5 +169,76 @@ describe('sanitizeToolCallPairing', () => {
     const out = sanitizeToolCallPairing(msgs);
     expect(out[1]?.role).toBe('tool');
     expect(out[1]?.name).toBe('bash');
+  });
+
+  /**
+   * Review finding H7 — orphan-stub injection MUST surface a count via
+   * `sanitizeToolCallPairingWithStats` so the orchestrator's runLoop
+   * can emit a single user-visible `phase` event ("Recovered N orphan
+   * tool_call(s) ...") rather than silently mutating the wire shape.
+   */
+  describe('sanitizeToolCallPairingWithStats — H7 observability', () => {
+    it('returns 0/0 stats on a clean transcript', () => {
+      const msgs: ChatMessage[] = [
+        { role: 'user', content: 'q' },
+        { role: 'assistant', content: 'a' }
+      ];
+      const out = sanitizeToolCallPairingWithStats(msgs);
+      expect(out.stats.injectedStubs).toBe(0);
+      expect(out.stats.droppedOrphans).toBe(0);
+      expect(out.messages).toHaveLength(msgs.length);
+    });
+
+    it('counts each injected stub exactly once', () => {
+      const msgs: ChatMessage[] = [asst(['c1', 'c2', 'c3'])];
+      const out = sanitizeToolCallPairingWithStats(msgs);
+      // 3 unpaired tool_calls → 3 stubs injected.
+      expect(out.stats.injectedStubs).toBe(3);
+      expect(out.stats.droppedOrphans).toBe(0);
+      expect(out.messages.filter((m) => m.role === 'tool')).toHaveLength(3);
+    });
+
+    it('counts each dropped orphan exactly once', () => {
+      // Two orphan tool messages with no preceding assistant.
+      const msgs: ChatMessage[] = [
+        tool('orphan-a'),
+        tool('orphan-b'),
+        { role: 'user', content: 'q' }
+      ];
+      const out = sanitizeToolCallPairingWithStats(msgs);
+      expect(out.stats.droppedOrphans).toBe(2);
+      expect(out.stats.injectedStubs).toBe(0);
+      // The user message survives.
+      expect(out.messages.filter((m) => m.role === 'tool')).toHaveLength(0);
+    });
+
+    it('counts a mix of injected stubs and dropped orphans', () => {
+      const msgs: ChatMessage[] = [
+        tool('orphan-pre'),                  // 1 dropped
+        asst(['c1', 'c2']),                  // 1 stub injected (only c1 paired below)
+        tool('c1'),                          // paired
+        // c2 has no matching tool message → 1 stub injected
+        { role: 'user', content: 'next' },
+        asst(['c3']),                        // 1 stub injected
+        tool('orphan-post')                  // 1 dropped (no preceding assistant for it)
+      ];
+      const out = sanitizeToolCallPairingWithStats(msgs);
+      // The orphan-post lives AFTER an assistant whose valid id is
+      // c3, so its id `orphan-post` is not in `currentValidIds` →
+      // dropped. The c3 assistant has no matching tool message →
+      // stub injected.
+      expect(out.stats.droppedOrphans).toBe(2);
+      expect(out.stats.injectedStubs).toBe(2);
+    });
+
+    it('keeps the simple variant backward-compatible', () => {
+      // The existing call sites that pass through SubAgent etc. must
+      // keep returning a bare `ChatMessage[]`.
+      const msgs: ChatMessage[] = [asst(['c1'])];
+      const out = sanitizeToolCallPairing(msgs);
+      expect(Array.isArray(out)).toBe(true);
+      expect(out).toHaveLength(2); // assistant + injected stub
+      expect(out[1]?.role).toBe('tool');
+    });
   });
 });

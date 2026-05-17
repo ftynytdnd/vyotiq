@@ -40,7 +40,7 @@ export function RunningElsewhereHint({ className }: { className?: string }) {
         }}
         disabled={!firstRunningId}
         className={cn(
-          'app-no-drag rounded text-text-secondary',
+          'app-no-drag rounded-inner text-text-secondary',
           'transition-colors duration-150',
           'hover:text-text-primary focus-visible:text-text-primary focus-visible:outline-none',
           'disabled:cursor-not-allowed disabled:text-text-faint'

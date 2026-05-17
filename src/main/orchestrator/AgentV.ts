@@ -19,6 +19,11 @@ import { inlineFiles } from './contextManager.js';
 import { replayTranscript } from './replay/index.js';
 import { runOrchestratorLoop } from './loop/index.js';
 import {
+  clearConversation as clearOverridesForConversation,
+  replayCompression,
+  replayOverrideEvents
+} from './contextSummarizer/index.js';
+import {
   requireWorkspace,
   requireWorkspaceById
 } from '../workspace/workspaceState.js';
@@ -57,6 +62,14 @@ interface ActiveRun {
    * pinned workspace rather than by conversation id alone.
    */
   workspaceId: string | undefined;
+  /**
+   * The provider this run is talking to. Captured at startRun so a
+   * `removeProvider` IPC can abort every in-flight run that depends
+   * on the deleted provider record (Audit fix L-07) instead of
+   * letting subsequent iterations fail at `getProviderWithKey`
+   * lookup and surface as confusing provider errors.
+   */
+  providerId: string;
   /** Wall-clock ms when the run was registered. */
   startedAt: number;
 }
@@ -134,6 +147,14 @@ export function abortRunsForConversation(conversationId: string): number {
       aborted += 1;
     }
   }
+  // Conversation is going away — drop its in-memory per-message
+  // overrides too. The persisted JSONL is being tombstoned by the
+  // caller (`conversationStore.removeConversation`); leaving stale
+  // in-memory entries would leak a tiny amount of state into a
+  // future fresh conversation that happens to reuse the id (the
+  // store mints UUIDs, so collision is astronomically unlikely,
+  // but the cleanup is cheap and makes the contract explicit).
+  clearOverridesForConversation(conversationId);
   return aborted;
 }
 
@@ -147,6 +168,25 @@ export function abortRunsForWorkspace(workspaceId: string): number {
   let aborted = 0;
   for (const [runId, run] of activeRuns) {
     if (run.workspaceId === workspaceId) {
+      run.abort.abort();
+      activeRuns.delete(runId);
+      aborted += 1;
+    }
+  }
+  return aborted;
+}
+
+/**
+ * Aborts every in-flight run pinned to the given `providerId`. Used by
+ * `removeProvider` so deleting a provider mid-run stops the orchestrator
+ * loops that depend on the deleted provider record immediately, instead
+ * of letting subsequent iterations surface as confusing provider errors
+ * when `getProviderWithKey` returns null. Audit fix L-07.
+ */
+export function abortRunsForProvider(providerId: string): number {
+  let aborted = 0;
+  for (const [runId, run] of activeRuns) {
+    if (run.providerId === providerId) {
       run.abort.abort();
       activeRuns.delete(runId);
       aborted += 1;
@@ -175,6 +215,7 @@ export async function startRun(
     abort,
     conversationId: input.conversationId,
     workspaceId: input.workspaceId,
+    providerId: input.selection.providerId,
     startedAt: Date.now()
   });
 
@@ -364,14 +405,69 @@ async function buildInitialMessages(
    */
   currentPromptId?: string
 ): Promise<ChatMessage[]> {
-  // Sanitize prior transcript: drop the just-emitted user-prompt event for
-  // the current run by id. Filtering by content (the prior behavior) was
-  // unsafe — two identical prompts would BOTH be dropped from history.
-  const replayEvents = (priorTranscript ?? []).filter((e) => {
-    if (e.kind !== 'user-prompt') return true;
-    return currentPromptId ? e.id !== currentPromptId : e.content !== input.prompt;
-  });
+  // Audit fix M-09: single-pass partition of the prior transcript.
+  // Previously this site walked `priorTranscript` THREE times — once
+  // to drop the current prompt for replay, once to bin
+  // `context-override-set` events, and once to bin the three
+  // summary-related kinds. Each pass allocated a full filtered copy,
+  // so a 10 MB / ~50k-event JSONL materialised three intermediate
+  // arrays on every `chat:send`. The single-loop variant below
+  // keeps memory bounded by the three target bins (which together
+  // are a tiny fraction of the transcript) and walks the input
+  // exactly once. Behaviour is identical: each bin retains the
+  // same event-order it would have had under the original
+  // sequential filters.
+  const source = priorTranscript ?? [];
+  const replayEvents: TimelineEvent[] = [];
+  const overrideEvents: Array<Extract<TimelineEvent, { kind: 'context-override-set' }>> = [];
+  const summaryEvents: Array<
+    Extract<
+      TimelineEvent,
+      | { kind: 'context-summary-pending' }
+      | { kind: 'context-summary-end' }
+      | { kind: 'context-summary-undone' }
+    >
+  > = [];
+  for (const e of source) {
+    // Drop the just-emitted user-prompt event for the current run by
+    // id. Filtering by content (the prior behavior) was unsafe — two
+    // identical prompts would BOTH be dropped from history.
+    if (e.kind === 'user-prompt') {
+      const isCurrent = currentPromptId
+        ? e.id === currentPromptId
+        : e.content === input.prompt;
+      if (!isCurrent) replayEvents.push(e);
+    } else {
+      replayEvents.push(e);
+    }
+    if (e.kind === 'context-override-set') {
+      overrideEvents.push(e);
+    } else if (
+      e.kind === 'context-summary-pending' ||
+      e.kind === 'context-summary-end' ||
+      e.kind === 'context-summary-undone'
+    ) {
+      summaryEvents.push(e);
+    }
+  }
   const replayed = replayTranscript(replayEvents);
+
+  // Hydrate the per-conversation override store from persisted
+  // `context-override-set` events so the summarizer's per-message
+  // overrides survive renderer reloads, conversation switches, and
+  // app restarts. Scoped to this conversation; cleared on remove.
+  if (input.conversationId) {
+    replayOverrideEvents(input.conversationId, overrideEvents);
+  }
+  // Re-apply any persisted summary splices on top of the rebuilt
+  // messages. Walks `(end, undone)` pairs in transcript order;
+  // events whose `replacedMessageIds` no longer match the current
+  // id space (manual JSONL edit, ID hash drift across an upgrade)
+  // are skipped with a warn — see `replayCompression` for the
+  // matching invariant.
+  if (summaryEvents.length > 0) {
+    replayCompression(replayed, summaryEvents);
+  }
 
   const userMessageXml = wrapXml('user_message', input.prompt, undefined, { escape: true });
   const attachmentsXml =

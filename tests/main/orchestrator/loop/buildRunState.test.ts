@@ -35,7 +35,7 @@ describe('buildRunStateXml', () => {
     acc.lastAction = 'delegate';
     acc.spinSignatureHot = null;
 
-    const counters = { consecutiveBadRounds: 0 };
+    const counters = { consecutiveBadRounds: 0, perTaskBadStreak: new Map<string, number>() };
     const nudges = { used: 0 };
     const spin = createSpinSignatureBuffer();
 
@@ -70,7 +70,7 @@ describe('buildRunStateXml', () => {
     const xml = buildRunStateXml(
       snapshotRunState(
         acc,
-        { consecutiveBadRounds: 0 },
+        { consecutiveBadRounds: 0, perTaskBadStreak: new Map() },
         { used: 0 },
         createSpinSignatureBuffer(),
         0
@@ -84,7 +84,7 @@ describe('buildRunStateXml', () => {
     const acc = createRunStateAccumulator();
     acc.iteration = 2;
     acc.lastAction = 'direct-tool';
-    const counters = { consecutiveBadRounds: 1 };
+    const counters = { consecutiveBadRounds: 1, perTaskBadStreak: new Map<string, number>() };
     const nudges = { used: 1 };
     const spin = createSpinSignatureBuffer();
 
@@ -101,7 +101,7 @@ describe('buildRunStateXml', () => {
   it('surfaces the hot tool-call signature when one is filling the buffer', () => {
     const acc = createRunStateAccumulator();
     acc.iteration = 5;
-    const counters = { consecutiveBadRounds: 0 };
+    const counters = { consecutiveBadRounds: 0, perTaskBadStreak: new Map<string, number>() };
     const nudges = { used: 0 };
     const spin = createSpinSignatureBuffer();
     const sig = toolCallSignature('read', { path: 'README.md' });
@@ -121,7 +121,7 @@ describe('buildRunStateXml', () => {
     const xml = buildRunStateXml(
       snapshotRunState(
         acc,
-        { consecutiveBadRounds: 0 },
+        { consecutiveBadRounds: 0, perTaskBadStreak: new Map() },
         { used: 0 },
         createSpinSignatureBuffer(),
         0

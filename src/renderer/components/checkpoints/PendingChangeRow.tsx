@@ -1,6 +1,7 @@
 /**
- * One pending change. Header row with file path + diff stats + Accept
- * / Reject affordances; expandable detail pane with the full diff.
+ * One pending change. Header row with file path + diff stats +
+ * Accept / Reject / Open affordances; expandable detail pane with
+ * the full diff via the modular `DiffViewer`.
  *
  * Visual rhythm reuses `InvocationShell`'s log-line cadence so the
  * pending panel reads as a sibling of the timeline rather than a
@@ -8,24 +9,37 @@
  */
 
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, FilePlus, PencilLine, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, FilePlus, FileCode, PencilLine, Trash2 } from 'lucide-react';
 import type { PendingChange } from '@shared/types/checkpoint.js';
 import { useCheckpointsStore } from '../../store/useCheckpointsStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
+import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { Button } from '../ui/Button.js';
 import { DiffStatsBadge } from '../timeline/tools/shared/DiffStatsBadge.js';
 import { PendingChangeDiff } from './PendingChangeDiff.js';
+import { openWorkspaceFile } from '../../lib/openPath.js';
 import { cn } from '../../lib/cn.js';
 
 interface PendingChangeRowProps {
   change: PendingChange;
+  /**
+   * When true, the row mounts in always-expanded mode and skips the
+   * collapse chevron — used by the "Review all" lightbox so a single
+   * change stays readable without an extra click.
+   */
+  alwaysExpanded?: boolean;
 }
 
-export function PendingChangeRow({ change }: PendingChangeRowProps) {
-  const [expanded, setExpanded] = useState(false);
+export function PendingChangeRow({
+  change,
+  alwaysExpanded = false
+}: PendingChangeRowProps) {
+  const [expanded, setExpanded] = useState(alwaysExpanded);
   const accept = useCheckpointsStore((s) => s.accept);
   const reject = useCheckpointsStore((s) => s.reject);
   const showToast = useToastStore((s) => s.show);
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
+  const open = alwaysExpanded || expanded;
 
   const Icon =
     change.kind === 'create' ? FilePlus : change.kind === 'delete' ? Trash2 : PencilLine;
@@ -35,7 +49,13 @@ export function PendingChangeRow({ change }: PendingChangeRowProps) {
   const fileName = pathIndex >= 0 ? change.filePath.slice(pathIndex + 1) : change.filePath;
   const dirName = pathIndex >= 0 ? change.filePath.slice(0, pathIndex + 1) : '';
 
-  const onAccept = () => void accept(change.entryId, change.conversationId);
+  const onAccept = () => {
+    void accept(change.entryId, change.conversationId).then((ok) => {
+      if (!ok) {
+        showToast(`Could not accept change for ${change.filePath}`, 'danger');
+      }
+    });
+  };
   const onReject = async () => {
     const result = await reject(change.entryId, change.conversationId);
     if (!result.ok) {
@@ -53,22 +73,33 @@ export function PendingChangeRow({ change }: PendingChangeRowProps) {
     }
   };
 
+  const canOpenInEditor = change.kind !== 'delete';
+  const onOpenFile = () => {
+    if (!canOpenInEditor) return;
+    void openWorkspaceFile(change.filePath, {
+      ...(activeWorkspaceId ? { workspaceId: activeWorkspaceId } : {}),
+      context: 'pending-change'
+    });
+  };
+
   return (
     <div className="vyotiq-stepfade group flex flex-col">
       <div className="log-line flex items-center gap-2 px-2 py-1">
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="app-no-drag flex items-center gap-1 rounded-inner text-text-muted hover:text-text-primary"
-          aria-label={expanded ? 'Collapse diff' : 'Expand diff'}
-          aria-expanded={expanded}
-        >
-          {expanded ? (
-            <ChevronDown className="h-3.5 w-3.5" strokeWidth={2} />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
-          )}
-        </button>
+        {!alwaysExpanded && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="app-no-drag flex items-center gap-1 rounded-inner text-text-muted hover:text-text-primary"
+            aria-label={open ? 'Collapse diff' : 'Expand diff'}
+            aria-expanded={open}
+          >
+            {open ? (
+              <ChevronDown className="h-3.5 w-3.5" strokeWidth={2} />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
+            )}
+          </button>
+        )}
         <Icon
           className={cn(
             'h-3.5 w-3.5 shrink-0',
@@ -90,7 +121,25 @@ export function PendingChangeRow({ change }: PendingChangeRowProps) {
           deletions={change.deletions}
           className="w-16 shrink-0 justify-end"
         />
-        <div className="ml-1 flex shrink-0 gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+        <div
+          className={cn(
+            'ml-1 flex shrink-0 gap-1 transition-opacity duration-150',
+            alwaysExpanded
+              ? 'opacity-100'
+              : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+          )}
+        >
+          {canOpenInEditor && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onOpenFile}
+              aria-label={`Open ${change.filePath} in editor`}
+              title="Open in editor"
+            >
+              <FileCode className="h-3 w-3" strokeWidth={2.25} />
+            </Button>
+          )}
           <Button size="sm" variant="ghost" onClick={onReject} aria-label={`Reject ${change.filePath}`}>
             Reject
           </Button>
@@ -99,7 +148,7 @@ export function PendingChangeRow({ change }: PendingChangeRowProps) {
           </Button>
         </div>
       </div>
-      {expanded && (
+      {open && (
         <div className="px-3 pb-2 pt-1">
           <PendingChangeDiff
             workspaceId={change.workspaceId}

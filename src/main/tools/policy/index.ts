@@ -7,4 +7,8 @@
  */
 
 export { ORCHESTRATOR_TOOLS } from './orchestratorTools.js';
-export { validateSubagentToolset } from './subagentTools.js';
+export {
+    validateSubagentToolset,
+    validateSubagentToolsetDetailed,
+    type ValidatedToolset
+} from './subagentTools.js';

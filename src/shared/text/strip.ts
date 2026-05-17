@@ -24,7 +24,7 @@
  * allows `>` and `<` ONLY inside quoted attribute values; both `"..."`
  * and `'...'` forms are supported.
  *
- * The trailing `STRIP_PARTIAL_TAG_RE` is deliberately permissive so a
+ * The trailing `STRIP_PARTIAL_ORCH_RE` is deliberately permissive so a
  * buffer that ends mid-tag (`<delegate id="A1"`) does not flash raw XML
  * into the timeline during streaming.
  *
@@ -191,23 +191,15 @@ const ORCH_SELFCLOSE_RE = new RegExp(
 const BARE_ENVELOPE_RE = /<\/?\|[^<>\n]{0,200}\|[^<>\n]{0,200}>/g;
 
 /**
- * Trailing unclosed open or close orchestration tag at the END of the
- * buffer. `[^<]*` anchors at the next opening bracket so we never gobble
- * unrelated content earlier in the buffer — by design this matches
- * ONLY up to the first `<` that could start an embedded tag. That
- * means a mid-stream partial `<delegate task="... <%ae` correctly
+ * Trailing partial of ANY allowlisted orchestration tag at the END of
+ * the buffer. `[^<]*` anchors at the next opening bracket so we never
+ * gobble unrelated content earlier in the buffer — by design this
+ * matches ONLY up to the first `<` that could start an embedded tag.
+ * That means a mid-stream partial `<delegate task="... <%ae` correctly
  * strips only the tail back to the embedded `<%ae` token; the fully
  * formed directive (once it arrives) is handled by the stricter
- * DELEGATE_SELFCLOSE_RE above.
- *
- * Kept as `<delegate>` only so the main-side `stripDelegateMarkup`
- * continues to behave identically to its prior version. Display mode
- * additionally trims a partial of ANY orchestration tag via
- * `STRIP_PARTIAL_ORCH_RE`.
+ * directive-level patterns above.
  */
-export const STRIP_PARTIAL_TAG_RE = /<\/?delegate\b[^<]*$/i;
-
-/** Trailing partial of ANY allowlisted orchestration tag. */
 const STRIP_PARTIAL_ORCH_RE = new RegExp(
   `<\\/?${ORCH_TAG_GROUP}\\b[^<]*$`,
   'i'
@@ -276,6 +268,50 @@ function withFencedRegionsMasked(
     ),
     (_full, idx: string) => fences[Number(idx)] ?? ''
   );
+}
+
+/**
+ * Match a trailing OPEN fence (no closing delimiter yet). Mirrors
+ * `FENCE_RE` exactly through the opener, then accepts any body
+ * (including newlines) up to end-of-string with NO closing `\2`. Used
+ * by the streaming-safe `stripFencedCode` so a buffer that ends mid-
+ * fence (`hello\n\`\`\`xml\n<delegate id="A1"`) doesn't leak the
+ * fenced body to a subsequent regex pass.
+ *
+ * Capture group 1 is the leading `^|\n` so the replacement can
+ * preserve paragraph spacing without re-anchoring.
+ */
+const TRAILING_OPEN_FENCE_RE = /(^|\n)(```|~~~)[^\n]*(?:\n[\s\S]*)?$/;
+
+/**
+ * Drop every fenced markdown code block from `text`. Closed fences
+ * (``` ... ``` and ~~~ ... ~~~) are removed entirely; a trailing OPEN
+ * fence (no closing delimiter at end-of-buffer, common during streaming)
+ * is also removed so a partial fence body cannot leak into a
+ * subsequent regex pass.
+ *
+ * Used by `parseDelegates` so a `<delegate />` directive emitted as a
+ * code example inside ``` is NEVER parsed as a real spawn directive.
+ * The harness explicitly forbids fenced directives
+ * (`01-orchestration-loop.md` §A Phase 4 "never inside a code fence
+ * and never as a quoted preview"), but soft rules degrade — the host
+ * now enforces the boundary structurally.
+ *
+ * Streaming safety: the trailing-open-fence pass means a model that
+ * narrates *"I'll send: \`\`\`xml\n<delegate ... />"* and pauses
+ * mid-stream will NOT trigger a spurious mid-stream `subagent-pending`
+ * event. Once the closing delimiter arrives the body is already
+ * masked by the closed-fence pass.
+ *
+ * Returns the input unchanged if no fences are present.
+ */
+export function stripFencedCode(text: string): string {
+  // Order matters: strip closed fences FIRST so the trailing-open
+  // sweep cannot interpret the opener of a closed fence as the
+  // start of a partial. After this pass, any remaining ``` or ~~~
+  // at line-start MUST be an unclosed opener.
+  const noClosed = text.replace(FENCE_RE, (_match, leading: string) => leading);
+  return noClosed.replace(TRAILING_OPEN_FENCE_RE, '$1');
 }
 
 /**

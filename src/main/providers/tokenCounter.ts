@@ -25,7 +25,6 @@ import {
   encode as encodeCl100k,
   encodeChat as encodeChatCl100k
 } from 'gpt-tokenizer/model/gpt-4';
-import type { ChatMessage } from '@shared/types/chat.js';
 import { logger } from '../logging/logger.js';
 import { escapeXmlAttr } from '../orchestrator/envelope/index.js';
 import { resolveInsideWorkspace } from '../tools/sandbox.js';
@@ -169,123 +168,7 @@ export async function estimateTokens(input: EstimateInput): Promise<EstimateResu
     }
   }
 
-  // Heuristic: 3.8 chars ≈ 1 token for English prose. This matches the
-  // codebase's existing CONTEXT_PRUNE calibration within a few percent.
+  // Heuristic: 3.8 chars ≈ 1 token for English prose.
   const tokens = Math.ceil(combined.length / 3.8);
   return { tokens, exact: false };
-}
-
-/**
- * Per-message framing overhead used by the heuristic fallback path.
- * `encodeChat` already accounts for role + separator tokens when the
- * BPE encoder matches the model; this constant covers the same bytes
- * for providers we can't tokenize exactly (Claude, Gemini, Qwen, …).
- * Tuned to OpenAI's documented `tokens_per_message ≈ 3` plus one
- * separator — a small over-estimate is safer than under-estimating
- * since `enforceContextBudget` uses the count to decide when to trim.
- */
-const HEURISTIC_PER_MESSAGE_OVERHEAD = 4;
-
-/**
- * Pre-flight token count for an entire `ChatMessage[]`. Used by the
- * orchestrator's per-turn token-budget enforcement (Audit fix §2.3) to
- * decide when to trim the rolling history before issuing a request.
- *
- * Strategy:
- *   - When the model's encoding is known, run `encodeChat` over a
- *     normalized projection of the messages. Tool-call envelopes,
- *     reasoning text, and tool results all contribute via stable
- *     string projections so the count tracks what the wire format
- *     will actually carry. Mirrors the wrapping `chatClient` performs.
- *   - Otherwise fall back to `chars / 3.8` plus the per-message
- *     overhead so the trim policy still has a usable budget for
- *     Claude/Gemini-style providers.
- *
- * Pure / never throws — any encoder failure falls through to the
- * heuristic. Reasoning text is intentionally INCLUDED: providers that
- * accept `reasoning_content` (DeepSeek-style) DO send it on the wire
- * and the budget must reflect that.
- */
-export function estimateMessagesTokens(
-  messages: ReadonlyArray<ChatMessage>,
-  modelId: string
-): number {
-  if (messages.length === 0) return 0;
-
-  // Build a normalized text projection per message. Tool-call shapes
-  // and tool-result shapes are stringified through the same JSON the
-  // wire carries so the count stays close to the real upload.
-  const projected = messages.map((m) => projectMessage(m));
-
-  const enc = resolveEncoding(modelId);
-  if (enc !== null) {
-    try {
-      // `encodeChat` only models the legacy `system` / `user` /
-      // `assistant` roles — `tool` and the assistant-with-tool-calls
-      // shape carry no public framing constants. Roll our own:
-      //   - encode each message body as raw text
-      //   - add the per-message overhead constant once
-      // This is what OpenAI's own cookbook recommends for non-trivial
-      // shapes (see "How to count tokens with tiktoken").
-      let total = 0;
-      for (const text of projected) {
-        total += encodeText(enc, text);
-        total += HEURISTIC_PER_MESSAGE_OVERHEAD;
-      }
-      // Trailing primer the chat completion API always reserves.
-      total += 3;
-      return total;
-    } catch (err) {
-      log.debug('estimateMessagesTokens encode failed, falling back', { modelId, err });
-    }
-  }
-
-  let total = 0;
-  for (const text of projected) {
-    total += Math.ceil(text.length / 3.8) + HEURISTIC_PER_MESSAGE_OVERHEAD;
-  }
-  return total + 3;
-}
-
-/**
- * Stable string projection of a single `ChatMessage` for token
- * estimation. Picks up text content, reasoning, tool-call envelopes,
- * and tool-result bodies — the same fields the wire transport sends.
- *
- * Pure / no-throw. Unknown shapes degrade to JSON.stringify so any
- * future role addition still contributes a sensible byte count
- * without forcing an estimator update.
- */
-function projectMessage(m: ChatMessage): string {
-  const parts: string[] = [];
-  parts.push(m.role);
-  if (typeof m.content === 'string') {
-    parts.push(m.content);
-  } else if (m.content === null) {
-    // Assistant turn with `tool_calls` only — body lives below.
-  } else {
-    try {
-      parts.push(JSON.stringify(m.content));
-    } catch {
-      parts.push(String(m.content));
-    }
-  }
-  // Reasoning content (DeepSeek-style separate stream).
-  if ('reasoning_content' in m && typeof m.reasoning_content === 'string') {
-    parts.push(m.reasoning_content);
-  }
-  // Assistant tool-call envelopes — the wire form is the JSON shape.
-  if ('tool_calls' in m && Array.isArray(m.tool_calls)) {
-    try {
-      parts.push(JSON.stringify(m.tool_calls));
-    } catch {
-      // Fall through; an unstringifiable cycle is not realistic for
-      // our shapes but the fallback keeps the estimator total non-zero.
-    }
-  }
-  if ('name' in m && typeof m.name === 'string') parts.push(m.name);
-  if ('tool_call_id' in m && typeof m.tool_call_id === 'string') {
-    parts.push(m.tool_call_id);
-  }
-  return parts.join('\n');
 }

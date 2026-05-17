@@ -11,6 +11,7 @@ import { promises as fs } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Tool, ToolContext } from './types.js';
+import { describeConfirmFailure } from './types.js';
 import type { ToolResult } from '@shared/types/tool.js';
 import type { EditApprovalPayload } from '@shared/types/ipc.js';
 import {
@@ -203,11 +204,14 @@ Create a new file:
       preReadOriginal = previewResult.preReadOriginal;
     } else if (!ctx.permissions.allowFileWrites) {
       const verb = a.create ? 'create' : 'modify';
-      const approved = await ctx.confirm(
+      const outcome = await ctx.confirm(
         `Agent V wants to ${verb} ${a.path}. Allow?`
       );
-      if (!approved) {
-        return failure(id, started, `User denied write to ${a.path}.`, 'permission denied');
+      if (!outcome.approved) {
+        // Audit fix H-04: surface the precise failure reason instead
+        // of always claiming the user denied the write.
+        const desc = describeConfirmFailure(outcome.reason, `${verb} ${a.path}`);
+        return failure(id, started, desc.output, desc.error);
       }
     }
 

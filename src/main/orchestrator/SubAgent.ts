@@ -48,6 +48,22 @@ export interface SubAgentSpec {
   files: string[];
   /** Restricted toolset. Defaults to read-only. */
   tools?: string[];
+  /**
+   * Recent mutations the orchestrator has performed in the SAME run
+   * before this sub-agent spawned. Surfaced to the worker as a
+   * `<recent_mutations>` block so it can avoid reading paths that no
+   * longer exist (or have been renamed) — the most common failure
+   * mode visible in the May 16 capture, where D3 tried to read
+   * `frontend/src/index.css` after C2 had moved it to
+   * `frontend/src/styles/index.css`. Optional; absent means the
+   * worker sees no mutation block.
+   */
+  recentMutations?: ReadonlyArray<{
+    kind: 'create' | 'modify' | 'delete';
+    filePath: string;
+    additions: number;
+    deletions: number;
+  }>;
 }
 
 export interface SubAgentRun {
@@ -227,16 +243,44 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
     );
   };
 
-  // The user message is now PURELY the file payload + closing nudge.
-  // The task text itself lives in the system prompt's `<task>` block
-  // (see `buildSubagentSystemPrompt`). Repeating it here was the
+  // Recent-mutations block. Surfaced BEFORE `<files>` so the worker
+  // sees the rename/delete signal before scanning the inlined file
+  // contents. Soft hint only — the worker is free to ignore it, but
+  // every `read` against a deleted path is a wasted iteration. We
+  // cap the rendered list at 50 entries so a long-running run doesn't
+  // blow out the prompt; the model already has the cumulative file
+  // history through its own prior tool results.
+  const recentMutationsBlock =
+    spec.recentMutations && spec.recentMutations.length > 0
+      ? `<recent_mutations>\n` +
+      spec.recentMutations
+        .slice(0, 50)
+        .map((m) => `${m.kind}: ${m.filePath} (+${m.additions} / -${m.deletions})`)
+        .join('\n') +
+      `\n</recent_mutations>\n\n`
+      : '';
+
+  // The user message is now PURELY the file payload + recent-mutations
+  // hint. The task text itself lives in the system prompt's `<task>`
+  // block (see `buildSubagentSystemPrompt`). Repeating it here was the
   // original duplication source and a small but real attack surface:
   // the model could be tempted to read the user-message version as
   // overriding the system block. One source of truth, escaped, in the
   // instruction plane.
+  //
+  // Result-envelope rule moved out of the data plane (review finding
+  // M10). The bundled `04-subagent-prompt.md` already enforces "Your
+  // LAST action MUST be emitting one `<result>…</result>` envelope"
+  // in the system-instructions block, AND the host wires
+  // `tool_choice: 'none'` on the wrap-up turn (`SUBAGENT_WRAPUP_ITER`)
+  // so the rule is enforced at the wire level. Restating it in the
+  // user message duplicated the contract across the
+  // instruction/data boundary — Prime Directives §6 wants
+  // instructions to live in EXACTLY one place. The system prompt
+  // remains authoritative; the user message is now pure data.
   const userMessage =
-    (filesBlock ? `<files>\n${filesBlock}\n</files>\n\n` : '') +
-    `When you are done, output exactly one <result>…</result> envelope.`;
+    recentMutationsBlock +
+    (filesBlock ? `<files>\n${filesBlock}\n</files>` : '');
 
   const messages: ChatMessage[] = [
     // Placeholder system message — rebuilt in-place each iteration so

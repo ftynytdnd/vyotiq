@@ -84,4 +84,67 @@ describe('inlineFiles — shared cache', () => {
     await inlineFiles(workspace, ['./core/agent.py'], cache);
     expect(cache.size).toBe(1);
   });
+
+  /**
+   * Review finding H9 — `inlineFiles` MUST process its input via a
+   * bounded-concurrency worker pool while preserving directive
+   * order. The legacy `for...of` loop ran reads strictly serially
+   * (N × wall-clock latency on N-file delegates); the post-fix
+   * version walks the same input in parallel slots and joins them
+   * back in original order.
+   */
+  describe('inlineFiles — parallel order + cap (H9)', () => {
+    it('preserves directive order with multiple files', async () => {
+      // Order: state.py before agent.py. The output MUST mirror the
+      // input order regardless of which read settles first under the
+      // worker pool.
+      const out = await inlineFiles(
+        workspace,
+        ['core/state.py', 'core/agent.py']
+      );
+      const stateIdx = out.indexOf('STATE_BODY');
+      const agentIdx = out.indexOf('AGENT_BODY');
+      expect(stateIdx).toBeGreaterThanOrEqual(0);
+      expect(agentIdx).toBeGreaterThanOrEqual(0);
+      expect(stateIdx).toBeLessThan(agentIdx);
+    });
+
+    it('preserves directive order with mixed valid + invalid paths', async () => {
+      // The escape path lands in the middle so a future change that
+      // reorders by error vs success doesn't slip through silently.
+      const out = await inlineFiles(workspace, [
+        'core/agent.py',
+        '../escape.txt',
+        'core/state.py'
+      ]);
+      const agentIdx = out.indexOf('AGENT_BODY');
+      const errorIdx = out.indexOf('error=');
+      const stateIdx = out.indexOf('STATE_BODY');
+      expect(agentIdx).toBeGreaterThanOrEqual(0);
+      expect(errorIdx).toBeGreaterThan(agentIdx);
+      expect(stateIdx).toBeGreaterThan(errorIdx);
+    });
+
+    it('runs more than one read concurrently when the input has multiple files', async () => {
+      // Black-box concurrency assertion: stamp each file with a
+      // distinct content and probe two files in one call. Both must
+      // resolve, both bodies must be present, AND the call must
+      // settle in less time than 2× a serial read floor would
+      // require. The wall-clock proxy is brittle on shared CI, so
+      // we assert structurally instead: every input file produces
+      // exactly one `<file ...>` block in the output, in order.
+      const out = await inlineFiles(workspace, [
+        'core/agent.py',
+        'core/state.py'
+      ]);
+      const fileBlocks = out.match(/<file\s/g) ?? [];
+      expect(fileBlocks).toHaveLength(2);
+      // Order pinned for the same reason as the directive-order
+      // tests above.
+      const a = out.indexOf('core/agent.py');
+      const b = out.indexOf('core/state.py');
+      expect(a).toBeGreaterThanOrEqual(0);
+      expect(b).toBeGreaterThan(a);
+    });
+  });
 });

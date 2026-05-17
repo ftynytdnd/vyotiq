@@ -111,12 +111,12 @@ export function ReasoningPanel({
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
-        className="log-line app-no-drag flex w-full cursor-pointer items-center gap-2 rounded-inner px-2 py-0.5 text-left transition-colors duration-150 hover:bg-surface-hover/60"
+        className="log-line app-no-drag flex w-full cursor-pointer items-center gap-2 rounded-inner px-2 py-0.5 text-left transition-colors duration-150"
       >
         {expanded ? (
-          <ChevronDown className="h-3 w-3 shrink-0 text-[color:var(--color-chevron)]" strokeWidth={2} />
+          <ChevronDown className="h-3 w-3 shrink-0 text-chevron" strokeWidth={2} />
         ) : (
-          <ChevronRight className="h-3 w-3 shrink-0 text-[color:var(--color-chevron)]" strokeWidth={2} />
+          <ChevronRight className="h-3 w-3 shrink-0 text-chevron" strokeWidth={2} />
         )}
         <Brain className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} />
         <span

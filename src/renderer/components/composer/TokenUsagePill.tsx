@@ -40,13 +40,24 @@ interface TokenUsagePillProps {
    * to `useProviderStore.setContextOverride(providerId, modelId, …)`.
    */
   onCeilingChange: (value: number | null) => void;
+  /**
+   * When provided, the pill's primary click opens the Context
+   * Inspector slide-over instead of the inline ceiling editor.
+   * The pencil affordance remains as a dedicated entry point for
+   * the editor (visible on hover, click stops propagation so it
+   * doesn't double-fire the inspector). When omitted (e.g. the
+   * Settings preview surface) the pill keeps its legacy behaviour
+   * — primary click opens the editor.
+   */
+  onOpenInspector?: () => void;
 }
 
 export function TokenUsagePill({
   used,
   ceiling,
   estimated,
-  onCeilingChange
+  onCeilingChange,
+  onOpenInspector
 }: TokenUsagePillProps) {
   const hasCeiling = typeof ceiling === 'number' && ceiling > 0;
 
@@ -116,32 +127,73 @@ export function TokenUsagePill({
   }
 
   // ──────────────────────────────────────────────────────────────────
-  // No ceiling pinned: render an actionable "Set ctx" button so the
-  // user fixes the missing data right here, not in a settings menu.
+  // No ceiling pinned: surface the Inspector as the primary action
+  // when one is wired. Without it, the pill would dead-end into the
+  // tiny inline editor and the user could never reach the Context
+  // Inspector or the manual summarize button — which is exactly the
+  // class of providers (Ollama / LM Studio / vLLM without
+  // `context_length` on `/v1/models`) where compression matters
+  // most. The pencil affordance keeps the ceiling-edit path one
+  // click away. When `onOpenInspector` isn't wired (e.g. the
+  // Settings preview surface), we fall back to the legacy
+  // edit-on-click behavior so existing entry points keep working.
   // ──────────────────────────────────────────────────────────────────
   if (!hasCeiling) {
+    const primaryAction = onOpenInspector ?? openEditor;
+    const primaryLabel = onOpenInspector
+      ? 'Open Context Inspector'
+      : 'Set context window ceiling';
+    const primaryTitle =
+      `${used.toLocaleString()} tokens prepared` +
+      `${estimated ? ' (pre-flight estimate)' : ''}. ` +
+      `This provider didn't expose a context-window size, so the ` +
+      `auto-trigger is disabled until you pin one. ` +
+      (onOpenInspector
+        ? 'Click to open the Context Inspector (manual summarize, per-message overrides, set ceiling).'
+        : 'Click to set a ceiling (e.g. 128k, 1M).');
     return (
       <button
         type="button"
-        onClick={openEditor}
-        aria-label="Set context window ceiling"
-        title={
-          `${used.toLocaleString()} tokens prepared` +
-          `${estimated ? ' (pre-flight estimate)' : ''}. ` +
-          `This provider didn't expose a context-window size. ` +
-          `Click to set one (e.g. 128k, 1M).`
-        }
+        onClick={primaryAction}
+        aria-label={primaryLabel}
+        title={primaryTitle}
         className={cn(
-          'inline-flex h-6 shrink-0 items-center gap-1 rounded-inner bg-surface-overlay px-1.5 text-meta',
-          'text-warning hover:bg-surface-hover',
-          'transition-colors duration-150'
+          'group relative inline-flex h-6 shrink-0 items-center gap-1 rounded-inner bg-surface-overlay px-1.5 text-meta',
+          'text-warning transition-colors duration-150 hover:bg-surface-hover'
         )}
       >
         <BarChart2 className="h-3 w-3" strokeWidth={2} />
         <span className="font-mono">{formatTokenCount(used)} / </span>
         <span className="font-mono">
-          set ctx
+          {onOpenInspector ? 'no ctx' : 'set ctx'}
         </span>
+        {onOpenInspector ? (
+          <span
+            role="button"
+            tabIndex={0}
+            aria-label="Set context window ceiling"
+            title="Set ceiling (e.g. 128k, 1M)"
+            onClick={(e) => {
+              e.stopPropagation();
+              openEditor();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.stopPropagation();
+                e.preventDefault();
+                openEditor();
+              }
+            }}
+            className="ml-0.5 inline-flex cursor-pointer items-center opacity-0 transition-opacity group-hover:opacity-70 hover:opacity-100"
+          >
+            <Pencil className="h-2.5 w-2.5" strokeWidth={2} />
+          </span>
+        ) : (
+          <Pencil
+            className="h-2.5 w-2.5 opacity-0 group-hover:opacity-70"
+            strokeWidth={2}
+          />
+        )}
       </button>
     );
   }
@@ -167,17 +219,28 @@ export function TokenUsagePill({
     `${estimated ? ' (pre-flight estimate; the provider will replace it with the real count once the next turn streams)' : ''}. ` +
     `Click to retune.`;
 
+  // Primary click: open the Inspector when wired, otherwise fall
+  // back to the inline ceiling editor (legacy behaviour for any
+  // surface that hasn't wired the slide-over yet).
+  const primaryAction = onOpenInspector ?? openEditor;
+  const primaryLabel = onOpenInspector
+    ? 'Open Context Inspector'
+    : 'Retune context window ceiling';
+  const primaryTitle = onOpenInspector
+    ? `${title} Click to open the Context Inspector.`
+    : `${title}`;
+
   return (
     <button
       type="button"
-      onClick={openEditor}
-      aria-label="Retune context window ceiling"
+      onClick={primaryAction}
+      aria-label={primaryLabel}
       className={cn(
         'group relative inline-flex h-6 shrink-0 items-center gap-1 overflow-hidden rounded-inner bg-surface-overlay px-1.5 text-meta',
         'transition-colors duration-150 hover:bg-surface-hover',
         toneClass
       )}
-      title={title}
+      title={primaryTitle}
     >
       <BarChart2 className="h-3 w-3" strokeWidth={2} />
       <span className="font-mono">
@@ -191,10 +254,40 @@ export function TokenUsagePill({
         {formatTokenCount(ceiling!)}
       </span>
       <span className="font-mono text-text-faint">{pctLabel}</span>
-      <Pencil
-        className="h-2.5 w-2.5 opacity-0 group-hover:opacity-70"
-        strokeWidth={2}
-      />
+      {/*
+        Pencil — dedicated ceiling-edit affordance. Only shown
+        when the Inspector hijacks the primary click; otherwise
+        the primary click already opens the editor and a separate
+        button would be redundant. `stopPropagation` keeps the
+        outer button's click from firing alongside.
+      */}
+      {onOpenInspector ? (
+        <span
+          role="button"
+          tabIndex={0}
+          aria-label="Edit context window ceiling"
+          title="Edit ceiling"
+          onClick={(e) => {
+            e.stopPropagation();
+            openEditor();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.stopPropagation();
+              e.preventDefault();
+              openEditor();
+            }
+          }}
+          className="ml-0.5 inline-flex cursor-pointer items-center opacity-0 transition-opacity group-hover:opacity-70 hover:opacity-100"
+        >
+          <Pencil className="h-2.5 w-2.5" strokeWidth={2} />
+        </span>
+      ) : (
+        <Pencil
+          className="h-2.5 w-2.5 opacity-0 group-hover:opacity-70"
+          strokeWidth={2}
+        />
+      )}
       <span
         aria-hidden
         className={cn('absolute bottom-0 left-0 h-[1px] transition-[width]', barClass)}

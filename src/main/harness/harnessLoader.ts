@@ -17,12 +17,21 @@
  * paths in production.
  */
 
+import { promises as fs } from 'node:fs';
+import { join } from 'node:path';
 import { listTools } from '../tools/registry.js';
 import { wrapXml } from '../orchestrator/envelope/index.js';
+import { escapeXmlBody } from '../orchestrator/envelope/escapeXmlBody.js';
 import { ORCHESTRATOR_TOOLS } from '../tools/policy/index.js';
 import { MAX_NUDGES_PER_RUN } from '../orchestrator/loop/handleNoToolNoDelegate.js';
 import {
   BASE_BACKOFF_MS,
+  CONTEXT_SUMMARY_DEFAULT_KEEP_RECENT_TURNS,
+  CONTEXT_SUMMARY_DEFAULT_MAX_RETRIES,
+  CONTEXT_SUMMARY_DEFAULT_TRIGGER_RATIO,
+  CONTEXT_SUMMARY_MAX_FINAL_CHARS,
+  CONTEXT_SUMMARY_MIN_MESSAGES_TO_SUMMARIZE,
+  CONTEXT_SUMMARY_OVERRIDE_FILENAME,
   MAX_BACKOFF_MS,
   MAX_DELEGATION_BAD_ROUNDS,
   MAX_PARALLEL_SUBAGENTS,
@@ -31,14 +40,19 @@ import {
   MAX_TOTAL_ITERATIONS,
   STREAM_INACTIVITY_TIMEOUT_MS,
   SUBAGENT_MAX_ITERATIONS,
-  SUBAGENT_WRAPUP_ITER
+  SUBAGENT_WRAPUP_ITER,
+  WORKSPACE_DOTDIR
 } from '@shared/constants.js';
+import { logger } from '../logging/logger.js';
 
 import primeDirectives from './00-prime-directives.md?raw';
 import orchestrationLoop from './01-orchestration-loop.md?raw';
 import contextAndMemory from './02-context-and-memory.md?raw';
 import continuousLearning from './03-continuous-learning.md?raw';
 import subagentPrompt from './04-subagent-prompt.md?raw';
+import contextSummarizer from './05-context-summarizer.md?raw';
+
+const log = logger.child('harness/loader');
 
 const ORCHESTRATOR_SECTIONS: ReadonlyArray<{ title: string; body: string }> = [
   { title: 'Prime Directives', body: primeDirectives },
@@ -95,7 +109,18 @@ function buildRuntimeLimitsBlock(): string {
       // retries". The §C "Backoff" prose says transport flakes are
       // retried with exponential backoff; this is the dwell time before
       // the backoff ladder even starts.
-      `STREAM_INACTIVITY_TIMEOUT_MS=${STREAM_INACTIVITY_TIMEOUT_MS}`
+      `STREAM_INACTIVITY_TIMEOUT_MS=${STREAM_INACTIVITY_TIMEOUT_MS}`,
+      // Context-summarization defaults — surfaced so the orchestrator
+      // can self-reason about when the host will compress its
+      // `messages[]`. The actual values in effect at run time may be
+      // OVERRIDDEN by `AppSettings.contextSummary` (global) or
+      // `AppSettings.ui.contextSummaryByWorkspace[wsId]` (workspace);
+      // these are the build-time defaults that apply in absence of any
+      // user override. The §E "Compressed History" prose in
+      // `02-context-and-memory.md` references these by name.
+      `CONTEXT_SUMMARY_DEFAULT_TRIGGER_RATIO=${CONTEXT_SUMMARY_DEFAULT_TRIGGER_RATIO}`,
+      `CONTEXT_SUMMARY_DEFAULT_KEEP_RECENT_TURNS=${CONTEXT_SUMMARY_DEFAULT_KEEP_RECENT_TURNS}`,
+      `CONTEXT_SUMMARY_MIN_MESSAGES_TO_SUMMARIZE=${CONTEXT_SUMMARY_MIN_MESSAGES_TO_SUMMARIZE}`
     ].join('\n')
   );
 }
@@ -294,6 +319,25 @@ function buildSubagentStaticBody(task: string, allowedTools: string[]): string {
   );
 }
 
+/**
+ * Canonicalize the task string for cache-key purposes (review finding
+ * M11). Two semantically-equal tasks differing only in casing /
+ * whitespace ("Read foo.ts" vs "read  foo.ts") used to produce two
+ * cache entries — the bounded `SUBAGENT_BODY_CACHE_MAX` saves us from
+ * a leak, but the hit rate suffered.
+ *
+ * Cheap canonicalization: lowercase + trim + collapse interior runs
+ * of whitespace to a single space. Applied ONLY to the cache key —
+ * the body is still built from the raw `opts.task` so the worker
+ * sees its task text verbatim. The trade-off: two canonically-equal
+ * tasks share the first one's body. Bounded by intent — the model
+ * almost never relies on whitespace / casing as semantic signal in
+ * sub-agent tasks.
+ */
+function canonicalizeTaskForCacheKey(task: string): string {
+  return task.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
 export function buildSubagentSystemPrompt(opts: {
   task: string;
   allowedTools: string[];
@@ -303,8 +347,10 @@ export function buildSubagentSystemPrompt(opts: {
   // [bash,read]) produce one cache entry, not two. NUL separator
   // defeats concatenation collisions between any tool name with
   // the task body even when the task happens to contain `,`.
+  // Task canonicalization (M11) further improves hit rate without
+  // affecting body content — see `canonicalizeTaskForCacheKey`.
   const sortedTools = [...opts.allowedTools].sort();
-  const key = `${sortedTools.join(',')}\u0000${opts.task}`;
+  const key = `${sortedTools.join(',')}\u0000${canonicalizeTaskForCacheKey(opts.task)}`;
   let staticBody = subagentBodyCache.get(key);
   if (staticBody === undefined) {
     staticBody = buildSubagentStaticBody(opts.task, sortedTools);
@@ -336,4 +382,231 @@ export function buildSubagentSystemPrompt(opts: {
  */
 export function __resetSubagentPromptCacheForTests(): void {
   subagentBodyCache.clear();
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Context-summarizer system prompt
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * Cached map of `<workspacePath>` → resolved bundled-vs-override body.
+ *
+ * The bundled `05-context-summarizer.md` is embedded via `?raw` and
+ * never changes at runtime. Per-workspace overrides at
+ * `<workspacePath>/.vyotiq/context-summarizer.md` ARE filesystem-
+ * resident and the user can edit them between summarizations, so
+ * the cache entry is keyed on `(workspacePath, mtimeMs)` to bust
+ * automatically when the override file is touched.
+ *
+ * Bound (`SUMMARIZER_OVERRIDE_CACHE_MAX = 16`) so even a session that
+ * cycles through dozens of workspaces keeps memory predictable; same
+ * insertion-order LRU eviction pattern as `subagentBodyCache`.
+ */
+interface SummarizerOverrideCacheEntry {
+  body: string;
+  /** True ⇒ workspace override was found and used. False ⇒ bundled
+   *  body returned. The renderer surfaces this in the Inspector. */
+  fromOverride: boolean;
+  /** mtime of the override file at cache time. `undefined` when no
+   *  override file existed. Used to invalidate when the user edits
+   *  the file between summarizations. */
+  mtimeMs?: number;
+}
+
+const SUMMARIZER_OVERRIDE_CACHE_MAX = 16;
+const summarizerOverrideCache = new Map<string, SummarizerOverrideCacheEntry>();
+
+/**
+ * Resolve the summarizer body for a given workspace.
+ *
+ *   1. Look for `<workspacePath>/.vyotiq/context-summarizer.md`. If it
+ *      exists and is non-empty after trim, return it as the body.
+ *   2. Otherwise return the bundled `05-context-summarizer.md`.
+ *
+ * Returns `{ body, fromOverride }` so the Inspector can surface a
+ * badge when the workspace is using a custom prompt. The result is
+ * cached per workspace path; the cache invalidates when the override
+ * file's mtime advances (or it's deleted between calls).
+ *
+ * Workspace-less callers (no workspace pinned to the run) skip the
+ * override probe entirely and always get the bundled body.
+ *
+ * Errors are swallowed — an unreadable override file (permission
+ * flap, ENOENT mid-read) falls back to the bundled body and logs a
+ * `debug` line so production stays quiet.
+ */
+async function resolveSummarizerBody(
+  workspacePath: string | undefined
+): Promise<{ body: string; fromOverride: boolean }> {
+  const bundled = { body: contextSummarizer, fromOverride: false as const };
+  if (!workspacePath || workspacePath.length === 0) return bundled;
+  const overridePath = join(
+    workspacePath,
+    WORKSPACE_DOTDIR,
+    CONTEXT_SUMMARY_OVERRIDE_FILENAME
+  );
+  // mtime probe: cheap stat. If the file isn't there, the cache may
+  // still hold an entry from a previous session (where the file
+  // existed) — invalidate by deleting the cache entry so we don't
+  // serve stale override bodies after the user removed the file.
+  let mtimeMs: number | undefined;
+  try {
+    const st = await fs.stat(overridePath);
+    mtimeMs = st.mtimeMs;
+  } catch {
+    mtimeMs = undefined;
+  }
+  const cached = summarizerOverrideCache.get(workspacePath);
+  if (cached && cached.mtimeMs === mtimeMs) {
+    // Re-insert so the freshest hit floats to the tail (LRU).
+    summarizerOverrideCache.delete(workspacePath);
+    summarizerOverrideCache.set(workspacePath, cached);
+    return { body: cached.body, fromOverride: cached.fromOverride };
+  }
+  // Either no cache entry, or mtime advanced — re-read.
+  let resolved: SummarizerOverrideCacheEntry;
+  if (mtimeMs === undefined) {
+    resolved = { body: bundled.body, fromOverride: false };
+  } else {
+    try {
+      const raw = await fs.readFile(overridePath, 'utf8');
+      const trimmed = raw.trim();
+      if (trimmed.length === 0) {
+        // Empty file → fall back to bundled but DO cache the mtime so
+        // we don't re-read on every iteration. The user explicitly
+        // chose to "blank" the override; honoring it would mean
+        // sending an empty system prompt to the summarizer (worse
+        // than the bundled body), so we surface it as bundled with
+        // a soft warning.
+        log.warn('summarizer override file is empty; using bundled', {
+          path: overridePath
+        });
+        resolved = { body: bundled.body, fromOverride: false, mtimeMs };
+      } else {
+        // Defense in depth (review finding H8). The bundled summarizer
+        // body is trusted (built-time `?raw` import), but a workspace-
+        // local override file is a Prime-Directives §6 boundary
+        // crossing: an external process — a malicious npm postinstall,
+        // a project scaffolder writing dotfiles, a dev-tool artifact
+        // dump — could plant content there that includes literal
+        // `</system_instructions>` (or any other tag the host wraps
+        // around `body`) and inject arbitrary instructions into the
+        // summarizer LLM call. We XML-escape the override body before
+        // caching so:
+        //
+        //   1. `<` / `>` / `&` inside the override are neutralized —
+        //      a literal `</system_instructions>` becomes
+        //      `&lt;/system_instructions&gt;` in the prompt and
+        //      cannot close the wrapper.
+        //   2. Markdown prose flows through unchanged in normal use
+        //      (markdown almost never contains raw XML metacharacters);
+        //      only crafted XML payloads are reshaped.
+        //   3. The escape is applied ONCE at cache time so the
+        //      steady-state per-summarization cost is unchanged.
+        //
+        // Bundled `body` is NOT escaped — the harness markdown
+        // intentionally contains `<delegate>`, `<result>`, etc. in
+        // prose that the model is trained to read.
+        resolved = { body: escapeXmlBody(raw), fromOverride: true, mtimeMs };
+      }
+    } catch (err) {
+      log.debug('summarizer override read failed; using bundled', {
+        path: overridePath,
+        err
+      });
+      resolved = { body: bundled.body, fromOverride: false, mtimeMs };
+    }
+  }
+  summarizerOverrideCache.set(workspacePath, resolved);
+  if (summarizerOverrideCache.size > SUMMARIZER_OVERRIDE_CACHE_MAX) {
+    for (const oldest of summarizerOverrideCache.keys()) {
+      summarizerOverrideCache.delete(oldest);
+      break;
+    }
+  }
+  return { body: resolved.body, fromOverride: resolved.fromOverride };
+}
+
+/**
+ * Render the `<runtime_limits>` envelope the summarizer LLM receives.
+ *
+ * The summarizer's only hard limit is `MAX_FINAL_CHARS` — the harness
+ * (§D point 3) instructs it to truncate sections in priority order
+ * when the projected output would exceed this value. We also surface
+ * the global retry budget so the summarizer is aware its output may
+ * be re-issued under transport flakes (matters for any future
+ * "deterministic output" clause it could lean on).
+ */
+function buildSummarizerRuntimeLimitsBlock(): string {
+  return wrapXml(
+    'runtime_limits',
+    [
+      `MAX_FINAL_CHARS=${CONTEXT_SUMMARY_MAX_FINAL_CHARS}`,
+      `MAX_RETRIES=${CONTEXT_SUMMARY_DEFAULT_MAX_RETRIES}`
+    ].join('\n')
+  );
+}
+
+/**
+ * System prompt for the dedicated context-summarizer LLM call.
+ *
+ * Composition (in order):
+ *   1. Prime Directives (`00-prime-directives.md`) — the summarizer is
+ *      still bound by the privacy / containment / "never invent paths"
+ *      rules.
+ *   2. The summarizer-specific harness body — bundled
+ *      `05-context-summarizer.md` OR a workspace override at
+ *      `<workspace>/.vyotiq/context-summarizer.md` when present and
+ *      non-empty.
+ *   3. `<runtime_limits>` block (final-chars cap + retry budget).
+ *
+ * The whole block is wrapped in `<system_instructions>` per the
+ * Prime Directives §6 boundary rule. The summarizer's USER message
+ * (the actual messages-to-compress payload) is constructed by
+ * `streamSummary.ts` and is XML-body-escaped there — same defense
+ * the orchestrator's user-envelope path uses.
+ *
+ * Returns `{ prompt, fromOverride }`. The renderer surfaces the
+ * `fromOverride` flag in the Inspector via a small "Using workspace
+ * override" badge so the user can tell whether their `.vyotiq/
+ * context-summarizer.md` is in effect for this workspace.
+ *
+ * Async because the workspace-override probe touches the filesystem.
+ * Cache hits are microsecond-cheap; the first call per workspace
+ * pays one `stat` + one `readFile` only when an override exists.
+ */
+export async function buildSummarizerSystemPrompt(opts: {
+  workspacePath?: string;
+}): Promise<{ prompt: string; fromOverride: boolean }> {
+  const { body, fromOverride } = await resolveSummarizerBody(opts.workspacePath);
+  const sections = [
+    primeDirectives,
+    body,
+    buildSummarizerRuntimeLimitsBlock()
+  ].join('\n\n---\n\n');
+  return {
+    prompt: wrapXml('system_instructions', sections),
+    fromOverride
+  };
+}
+
+/**
+ * Test-only cache reset. Production never calls this; the override
+ * cache invalidates itself on mtime advance, so a production
+ * invalidation would only mask a bug in that pathway.
+ */
+export function __resetSummarizerOverrideCacheForTests(): void {
+  summarizerOverrideCache.clear();
+}
+
+/**
+ * Test-only readout of the bundled summarizer body. Lets the
+ * harness-level summarizer-prompt tests assert that
+ * `buildSummarizerSystemPrompt` falls back to this exact string when
+ * no workspace override exists, without re-importing the `?raw`
+ * module from the test side (Vite's `?raw` only resolves under the
+ * main-bundle config).
+ */
+export function __getBundledSummarizerBodyForTests(): string {
+  return contextSummarizer;
 }

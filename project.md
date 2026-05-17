@@ -88,7 +88,6 @@ The harness must define a continuous, self-governing loop that dictates how Agen
 ## 2. Context Management & Awareness
 The harness must contain explicit plain-English rules for managing its own context window dynamically:
 - **Context Injection:** Rules for when to automatically pull in environmental data (e.g., current directory structure, recent errors).
-- **Context Summarization & Pruning:** When the conversation or task history grows too long, the agent must autonomously invoke a summarization protocol, condensing older information into a dense, readable summary, and pruning the raw logs to save tokens.
 
 ## 3. Local Memory & Note-Taking System
 The agent must have a localized, persistent memory governed by natural language triggers:

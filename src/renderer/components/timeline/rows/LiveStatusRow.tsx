@@ -45,7 +45,6 @@ import {
   Loader2,
   Radio,
   RefreshCcw,
-  Scissors,
   ShieldCheck,
   Sparkles,
   Users,
@@ -100,10 +99,6 @@ const ICONS: Record<DerivedPhase, LucideIcon> = {
   verifying: ShieldCheck,
   nudging: Sparkles,
   retrying: RefreshCcw,
-  // Audit fix §2.3 — pre-iteration history shrink. Scissors icon
-  // mirrors the "trimming" mental model (cutting off old turns to
-  // fit the model's window).
-  trimming: Scissors,
   'streaming-reasoning': BrainCircuit,
   'streaming-text': Activity
 };

@@ -18,6 +18,7 @@ import { promises as fs } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import type { Tool } from './types.js';
+import { describeConfirmFailure } from './types.js';
 import type { ToolResult } from '@shared/types/tool.js';
 import type { CheckpointChangeKind } from '@shared/types/checkpoint.js';
 import { isDestructiveCommand } from './sandbox.js';
@@ -131,13 +132,31 @@ function looksBinary(body: string): boolean {
  * sandbox boundary (review finding H2). Production callers go
  * through the `bashTool.run` entry point — no other source-tree
  * site imports this helper directly.
+ *
+ * `signal` (Audit fix H-05): when supplied, the dirent walk checks
+ * `signal.aborted` between iterations and returns the partial snapshot
+ * if the user clicks Stop. Without this, `runOrchestratorLoop` had to
+ * wait for the pre-scan to drain (multi-second on large monorepos)
+ * before the abort signal fired — the user saw a frozen UI mid-Stop.
  */
-export async function scanWorkspaceForBash(root: string): Promise<PreSnapshot> {
+export async function scanWorkspaceForBash(
+  root: string,
+  signal?: AbortSignal
+): Promise<PreSnapshot> {
   const entries = new Map<string, PreSnapshotEntry>();
   let truncated = false;
   let capturedBytes = 0;
   const stack: string[] = [root];
   while (stack.length > 0) {
+    if (signal?.aborted) {
+      // Cooperative-abort exit. Return the partial snapshot so any
+      // mutations from a still-running shell command can still be
+      // partially recovered; the matching post-scan respects the
+      // same signal so we never compare a partial pre against a
+      // full post.
+      truncated = true;
+      break;
+    }
     if (entries.size >= BASH_SNAPSHOT_MAX_ENTRIES) {
       truncated = true;
       break;
@@ -150,6 +169,13 @@ export async function scanWorkspaceForBash(root: string): Promise<PreSnapshot> {
       continue;
     }
     for (const de of dirents) {
+      // Per-dirent abort check: a deeply-nested directory can hold
+      // thousands of entries; outer-loop check alone wouldn't honor
+      // a Stop until the current directory was drained.
+      if (signal?.aborted) {
+        truncated = true;
+        break;
+      }
       const child = join(current, de.name);
       // Hard sandbox: never follow symlinks during the bash pre-scan.
       // A workspace-rooted symlink whose target lives outside the
@@ -209,14 +235,23 @@ export async function scanWorkspaceForBash(root: string): Promise<PreSnapshot> {
  * Re-scan mtimes only (no body reads) after bash exits. Matches the
  * pre-snapshot's keyspace; any new keys are creates, missing keys are
  * deletes, and matching keys with different mtimes are modifies.
+ *
+ * `signal` (Audit fix H-05): same cooperative-abort contract as
+ * `scanWorkspaceForBash`. The post-scan runs fire-and-forget after the
+ * bash child settles, so without this check it would walk the entire
+ * tree even when the run is finalised — wasted work plus a window
+ * where late `recordChange` events emit through `ctx.emit` after the
+ * orchestrator's `disposeStreaming` already ran.
  */
 async function scanWorkspaceMtimesOnly(
-  root: string
+  root: string,
+  signal?: AbortSignal
 ): Promise<Map<string, number>> {
   const out = new Map<string, number>();
   const stack: string[] = [root];
   let count = 0;
   while (stack.length > 0) {
+    if (signal?.aborted) break;
     if (count >= BASH_SNAPSHOT_MAX_ENTRIES) break;
     const current = stack.pop()!;
     let dirents: import('node:fs').Dirent[];
@@ -226,6 +261,7 @@ async function scanWorkspaceMtimesOnly(
       continue;
     }
     for (const de of dirents) {
+      if (signal?.aborted) break;
       const child = join(current, de.name);
       // Same symlink-skip rule as the pre-scanner (review finding H2):
       // a `vendor -> /etc` symlink must never enter the post-scan
@@ -399,6 +435,81 @@ function platformShell(): { cmd: string; args: (command: string) => string[] } {
   };
 }
 
+/**
+ * Privacy-allowlisted env for the bash child. See the call-site comment
+ * in `run()` for the full rationale (Audit fix H-01). The allowlist is
+ * deliberately minimal: PATH (command resolution), Windows / *nix
+ * location vars (so things like `$HOME` and `$USERPROFILE` resolve),
+ * locale (so `git`, `python`, etc. produce expected text encoding),
+ * and TERM (so commands that probe `isatty` get a sensible answer).
+ *
+ * Kept as an exported function with a per-process snapshot so a future
+ * test can stub `process.env` and assert the projection. Never includes
+ * any var whose name matches the secret-y patterns even if the var ends
+ * up in the allowlist (defense in depth — `PATH` itself can technically
+ * be a vector, but it's required for shells to function).
+ */
+const BASH_ENV_ALLOWLIST = new Set<string>([
+  // Command resolution
+  'PATH',
+  'PATHEXT',
+  // Windows location / shell support
+  'SystemRoot',
+  'SystemDrive',
+  'WINDIR',
+  'COMSPEC',
+  'TEMP',
+  'TMP',
+  'PSModulePath',
+  // *nix location / shell support (HOME is intentionally allowed —
+  // many tools probe `~/.cache`, `~/.config`, etc.; the model can't
+  // exfiltrate $HOME's value without echoing it explicitly, and the
+  // value is not a secret on its own).
+  'HOME',
+  'USER',
+  'LOGNAME',
+  'SHELL',
+  'TMPDIR',
+  // Windows user identity (same rationale as HOME — surfaced in
+  // shell prompts and tool output already)
+  'USERPROFILE',
+  'USERNAME',
+  'APPDATA',
+  'LOCALAPPDATA',
+  // Locale + terminal — keeps `git log`, `python`, `ls --color`, etc.
+  // producing the user's expected output shape.
+  'LANG',
+  'LANGUAGE',
+  'LC_ALL',
+  'LC_CTYPE',
+  'LC_MESSAGES',
+  'TERM',
+  'COLORTERM',
+  // Time zone for date-aware commands
+  'TZ'
+]);
+
+/**
+ * Patterns that mark a variable name as secret-shaped. Any allowlisted
+ * var whose name matches is still dropped — defense in depth in case a
+ * user / tool ever sets e.g. `PATH_API_KEY` (unusual but the regex is
+ * permissive on purpose).
+ */
+const SECRET_NAME_RE = /(?:^|_)(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|API|AUTH|CREDENTIAL|BEARER|COOKIE|SESSION)(?:_|$)/i;
+
+function buildBashEnv(): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const name of BASH_ENV_ALLOWLIST) {
+    const v = process.env[name];
+    if (typeof v !== 'string' || v.length === 0) continue;
+    // Belt-and-suspenders: even allowlisted names get the secret-shape
+    // check. A user with `LANG_API_TOKEN=…` (unusual) is still safe.
+    if (SECRET_NAME_RE.test(name)) continue;
+    out[name] = v;
+  }
+  return out;
+}
+
 export const bashTool: Tool = {
   name: 'bash',
   briefMarkdown: `### Tool: \`bash\`
@@ -418,7 +529,18 @@ export const bashTool: Tool = {
 - The cwd is the workspace root; you cannot \`cd ..\` out.
 - Destructive operations (\`rm -rf /\`, \`format c:\`, \`git reset --hard\`, etc.) require explicit user confirmation; do not attempt to bypass.
 - Output is truncated at 64K chars (head retained, tail dropped).
-- Each invocation has a 30-second timeout unless you override \`timeoutMs\`.`,
+- Each invocation has a 30-second timeout unless you override \`timeoutMs\`.
+
+**Windows / PowerShell quirks.** On Windows the runner is PowerShell, NOT bash. Bash idioms that look universal will fail with \`exited with code 1\` and no obvious hint. The most common traps and their PowerShell replacements:
+- Make a directory tree: \`New-Item -ItemType Directory -Path foo/bar -Force\` (NOT \`mkdir -p foo/bar\`).
+- Move / rename: \`Move-Item src dst\` (NOT \`mv src dst\`).
+- Recursive copy: \`Copy-Item src dst -Recurse\` (NOT \`cp -r src dst\`).
+- Recursive delete: \`Remove-Item dst -Recurse -Force\` (NOT \`rm -rf dst\`).
+- Read a file: \`Get-Content path\` (NOT \`cat path\`; \`cat\` is aliased but flags differ).
+- Chain on success: separate calls or \`;\` then check \`$LASTEXITCODE\` (NOT \`&&\`).
+- Heredoc / inline files: PowerShell does not support \`<<EOF\`; use \`Set-Content path -Value @"..."\` with PowerShell here-strings.
+
+If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and the runner will hand off to a bash subprocess when one is on PATH — but the default path is PowerShell on Windows.`,
   schema: {
     type: 'function',
     function: {
@@ -456,32 +578,49 @@ export const bashTool: Tool = {
     }
 
     if (!ctx.permissions.allowBash) {
-      const approved = await ctx.confirm(
+      const outcome = await ctx.confirm(
         `Agent V wants to run a shell command:\n\n${command}\n\nAllow?`
       );
-      if (!approved) {
+      if (!outcome.approved) {
+        // Audit fix H-04: surface the precise failure reason instead
+        // of always claiming the user denied the prompt.
+        const desc = describeConfirmFailure(outcome.reason, 'run shell commands');
         return {
           id,
           name: 'bash',
           ok: false,
-          output: 'User denied permission to run shell commands.',
-          error: 'permission denied',
+          output: desc.output,
+          error: desc.error,
           durationMs: Date.now() - started
         };
       }
     }
 
     if (isDestructiveCommand(command)) {
-      const approved = await ctx.confirm(
+      const outcome = await ctx.confirm(
         `Agent V is about to run a potentially DESTRUCTIVE command:\n\n${command}\n\nThis is blocked by the Prime Directives. Confirm?`
       );
-      if (!approved) {
+      if (!outcome.approved) {
+        // Same H-04 mapping. The 'denied' path keeps the legacy
+        // "destructive blocked" wording for clarity; the others
+        // route through the shared describer.
+        if (outcome.reason === 'denied') {
+          return {
+            id,
+            name: 'bash',
+            ok: false,
+            output: 'Destructive command blocked by user.',
+            error: 'destructive blocked',
+            durationMs: Date.now() - started
+          };
+        }
+        const desc = describeConfirmFailure(outcome.reason, 'run a destructive command');
         return {
           id,
           name: 'bash',
           ok: false,
-          output: 'Destructive command blocked by user.',
-          error: 'destructive blocked',
+          output: desc.output,
+          error: desc.error,
           durationMs: Date.now() - started
         };
       }
@@ -497,7 +636,7 @@ export const bashTool: Tool = {
     // returns mtimes for the rest. Best-effort — a scan failure must
     // never block the command; we fall back to an empty pre-snapshot,
     // which simply means every post-exit mutation lands as audit-only.
-    const preSnap: PreSnapshot = await scanWorkspaceForBash(ctx.workspacePath).catch((err) => {
+    const preSnap: PreSnapshot = await scanWorkspaceForBash(ctx.workspacePath, ctx.signal).catch((err) => {
       log.debug('pre-bash scan failed; falling back to audit-only', {
         err: err instanceof Error ? err.message : String(err)
       });
@@ -537,14 +676,24 @@ export const bashTool: Tool = {
 
       const child = spawn(cmd, argsFor(command), {
         cwd: ctx.workspacePath,
-        // No additional environment is layered onto the spawn — the
-        // child inherits the parent's env unchanged. Earlier versions
-        // exported a `VYOTIQ=1` marker but no consumer ever read it,
-        // so it was undocumented surface area. If a marker is ever
-        // genuinely needed (e.g. user scripts that want to detect they
-        // were launched by Agent V), document it in the harness FIRST
-        // and re-add it here paired with that doc.
-        env: process.env,
+        // PRIVACY BOUNDARY (Audit fix H-01): build a minimal env allowlist
+        // instead of inheriting `process.env`. The Prime Directives
+        // explicitly forbid transmitting environment variables to
+        // external servers, and the model's bash command is the
+        // canonical exfil channel — `echo $OPENAI_API_KEY` (or any env
+        // var the user happened to set in the shell that launched
+        // Vyotiq, plus anything Electron itself exposes) would land
+        // verbatim in the bash result, get folded into the next
+        // assistant turn's `messages[]`, and ship outbound.
+        //
+        // We forward only the variables required for normal command
+        // resolution + locale-correct output (`PATH`, OS-specific
+        // location vars, locale vars, terminal vars). Anything else
+        // (API keys, tokens, secrets, $HOME-relative dotfile paths
+        // that aren't strictly needed) is dropped. The model can
+        // still read files inside the workspace via the `read` tool —
+        // the boundary closed here is the implicit env-var leak.
+        env: buildBashEnv(),
         windowsHide: true
       });
 
@@ -560,21 +709,41 @@ export const bashTool: Tool = {
         /* noop — some platforms surface a synchronous EPIPE here */
       }
 
-      const killTimer = setTimeout(() => {
-        timedOut = true;
+      // Graceful kill (Audit fix M-12): SIGTERM first with a short
+      // grace period, then SIGKILL. On Windows `child.kill` always
+      // maps to TerminateProcess regardless of the signal name, so the
+      // grace path is a no-op there but the SIGKILL escalation still
+      // matches the documented contract. On *nix the SIGTERM gives
+      // long-running children (test runners, build tools) a chance to
+      // flush stdio and clean up tmp files before being torn down.
+      const KILL_GRACE_MS = 1000;
+      const killHard = (): void => {
         try {
           child.kill('SIGKILL');
         } catch {
           /* noop */
         }
+      };
+      const killGraceful = (): void => {
+        try {
+          child.kill('SIGTERM');
+        } catch {
+          /* noop */
+        }
+        // Escalate to SIGKILL if the child is still alive after the grace.
+        setTimeout(() => {
+          if (!settled) killHard();
+        }, KILL_GRACE_MS).unref?.();
+      };
+
+      const killTimer = setTimeout(() => {
+        timedOut = true;
+        killGraceful();
       }, timeoutMs);
 
       const onAbort = () => {
-        try {
-          child.kill('SIGKILL');
-        } catch {
-          /* noop */
-        }
+        // User Stop or run-scoped abort: try SIGTERM first, escalate.
+        killGraceful();
       };
       ctx.signal.addEventListener('abort', onAbort, { once: true });
 
@@ -668,11 +837,26 @@ export const bashTool: Tool = {
             stderr += tailErr;
           }
         }
-        // Post-exit mutation recovery + audit. Fire-and-forget — the
-        // scan must never delay the bash result; the renderer sees
-        // each recovered `checkpoint-entry` and (for the subset we
-        // couldn't capture) a single `checkpoint-bash-mutation`
-        // audit row asynchronously.
+        // Post-exit mutation recovery + audit.
+        //
+        // Ordering contract (review finding H11): the scan is now
+        // AWAITED before `settle()` resolves the outer promise. The
+        // legacy code ran the scan as `void (async () => {...})()`
+        // and called `settle()` in parallel — the bash tool returned
+        // to the orchestrator BEFORE the scan finished, the next
+        // assistant turn streamed deltas into the JSONL, and any
+        // late `recordChange` events emitted via `ctx.emit`
+        // interleaved with subsequent agent text. Replay then saw
+        // an inconsistent ordering — `checkpoint-entry` events
+        // landed AFTER the assistant's reasoning about them.
+        //
+        // The await delays the bash result by 50–200 ms on small
+        // workspaces (multi-second on monorepos). Acceptable: the
+        // scan is bounded by `BASH_SNAPSHOT_MAX_ENTRIES`, the
+        // existing run-signal abort checks short-circuit each loop
+        // iteration when the user clicks Stop, and the bash tool
+        // is the only mutation surface where the scan is required
+        // (edit/delete record their changes synchronously inline).
         //
         // Flow:
         //   1. Mtime-only post-scan.
@@ -684,15 +868,32 @@ export const bashTool: Tool = {
         //   4. Emit one `checkpoint-bash-mutation` if any audit-only
         //      paths exist. A flurry of these implies the agent is
         //      bypassing the `edit` / `delete` tools with bash.
-        void (async () => {
+        const runPostBashScan = async (): Promise<void> => {
+          // Audit fix H-03: post-bash scan must respect the run-scoped
+          // signal. Without these checks the scan walks the entire
+          // workspace tree after bash settles, and every
+          // `recordChange` / `checkpoint-bash-mutation` emit pushes
+          // through `ctx.emit` even after the orchestrator loop's
+          // `disposeStreaming` ran for an aborted/finalised run.
+          // The renderer reducer drops events for runIds it no
+          // longer recognises, but the JSONL `appendEvent` chain
+          // still persists them — observable as ghost checkpoint
+          // rows on transcript reload after a Stop.
+          if (ctx.signal.aborted) {
+            log.debug('post-bash scan skipped: run aborted before scan started');
+            return;
+          }
           try {
-            const postScan = await scanWorkspaceMtimesOnly(ctx.workspacePath);
+            const postScan = await scanWorkspaceMtimesOnly(ctx.workspacePath, ctx.signal);
+            if (ctx.signal.aborted) return;
             const { mutations, auditOnlyPaths } = await computeMutations(
               ctx.workspacePath,
               preSnap,
               postScan
             );
+            if (ctx.signal.aborted) return;
             for (const m of mutations) {
+              if (ctx.signal.aborted) return;
               try {
                 const preContent = m.preBody ?? '';
                 const postContent = m.postBody ?? '';
@@ -726,7 +927,7 @@ export const bashTool: Tool = {
                 });
               }
             }
-            if (auditOnlyPaths.length > 0) {
+            if (auditOnlyPaths.length > 0 && !ctx.signal.aborted) {
               ctx.emit({
                 kind: 'checkpoint-bash-mutation',
                 id: randomUUID(),
@@ -741,7 +942,8 @@ export const bashTool: Tool = {
               err: err instanceof Error ? err.message : String(err)
             });
           }
-        })();
+        };
+
         const exitLine = timedOut
           ? '--- exit: TIMEOUT ---'
           : code === null
@@ -761,24 +963,33 @@ export const bashTool: Tool = {
             : code !== 0
               ? `exited with code ${code}`
               : null;
-        settle({
-          id,
-          name: 'bash',
-          ok,
-          output: merged.trim(),
-          data: {
-            tool: 'bash',
-            command,
-            stdout,
-            stderr,
-            exitCode: code,
-            signal: signalName ?? null,
-            timedOut,
-            stdoutTruncated,
-            stderrTruncated
-          },
-          ...(errorField ? { error: errorField } : {}),
-          durationMs: Date.now() - started
+
+        // Run the scan first, settle second. Errors inside the scan
+        // are already swallowed by `runPostBashScan` (debug-logged),
+        // so the outer settle ALWAYS fires — the bash result is
+        // never lost to a scan failure. The `durationMs` field is
+        // recomputed inside `settle` to include the scan time so
+        // downstream telemetry is honest about the wait.
+        runPostBashScan().finally(() => {
+          settle({
+            id,
+            name: 'bash',
+            ok,
+            output: merged.trim(),
+            data: {
+              tool: 'bash',
+              command,
+              stdout,
+              stderr,
+              exitCode: code,
+              signal: signalName ?? null,
+              timedOut,
+              stdoutTruncated,
+              stderrTruncated
+            },
+            ...(errorField ? { error: errorField } : {}),
+            durationMs: Date.now() - started
+          });
         });
       });
     });

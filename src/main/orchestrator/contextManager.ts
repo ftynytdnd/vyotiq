@@ -419,14 +419,33 @@ export function createInlineFileCache(): InlineFileCache {
   return new Map();
 }
 
+/**
+ * Concurrency cap for the bounded probe pool inside `inlineFiles`
+ * (review finding H9). Without bounding, an N-file delegate runs
+ * `realpath` + `readFile` strictly serially — N × wall-clock latency
+ * even when the OS could have served them concurrently. The cap of
+ * 4 keeps the FS pressure modest (well below `MAX_PARALLEL_SUBAGENTS`
+ * so a multi-spec delegation round doesn't fan out N×8 reads at once)
+ * while still cutting the typical 5-file delegate's latency by ~4×.
+ *
+ * Result order is preserved by writing each task's output into a
+ * pre-sized slot indexed by input position, then joining at the end.
+ */
+const INLINE_FILES_CONCURRENCY = 4;
+
 export async function inlineFiles(
   workspacePath: string,
   files: string[],
   cache?: InlineFileCache
 ): Promise<string> {
   if (files.length === 0) return '';
-  const out: string[] = [];
-  for (const rel of files) {
+  // Pre-sized output slots so concurrent workers can write directly
+  // by index without contending on a shared array push order. Each
+  // slot ends as exactly one rendered `<file ...>` block (or the
+  // matching error / sandbox-escape variant).
+  const slots = new Array<string>(files.length);
+
+  const inlineOne = async (rel: string, idx: number): Promise<void> => {
     // `rel` is workspace-relative but can contain characters that would
     // otherwise close the `path="…"` attribute (`"`, `&`, `<`, `>`).
     // Same story for `msg` on the error branch. Both are escaped through
@@ -455,8 +474,8 @@ export async function inlineFiles(
       abs = await realpathInsideWorkspace(workspacePath, rel);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      out.push(`<file path="${safeRel}" error="${escapeXmlAttr(msg)}" />`);
-      continue;
+      slots[idx] = `<file path="${safeRel}" error="${escapeXmlAttr(msg)}" />`;
+      return;
     }
     // Round-scoped cache hit — N parallel workers in the same
     // delegation round reading file X all share one disk read. The
@@ -466,8 +485,8 @@ export async function inlineFiles(
     if (cache) {
       const cached = cache.get(abs);
       if (cached !== undefined) {
-        out.push(`<file path="${safeRel}">\n${cached}\n</file>`);
-        continue;
+        slots[idx] = `<file path="${safeRel}">\n${cached}\n</file>`;
+        return;
       }
     }
     try {
@@ -482,11 +501,29 @@ export async function inlineFiles(
         buildInlineTruncationMarker(INLINE_FILE_CHAR_CAP, txt.length)
         : txt;
       if (cache) cache.set(abs, body);
-      out.push(`<file path="${safeRel}">\n${body}\n</file>`);
+      slots[idx] = `<file path="${safeRel}">\n${body}\n</file>`;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      out.push(`<file path="${safeRel}" error="${escapeXmlAttr(msg)}" />`);
+      slots[idx] = `<file path="${safeRel}" error="${escapeXmlAttr(msg)}" />`;
     }
-  }
-  return out.join('\n\n');
+  };
+
+  // Bounded-concurrency worker pool (review finding H9). Each worker
+  // pulls the next index off a shared cursor and runs `inlineOne`
+  // until the cursor is past the end. The pool size is
+  // `min(concurrency, files.length)` so a 1-file delegate spins
+  // exactly one worker, not `INLINE_FILES_CONCURRENCY` idle ones.
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    while (cursor < files.length) {
+      const idx = cursor++;
+      await inlineOne(files[idx]!, idx);
+    }
+  };
+  const workerCount = Math.min(INLINE_FILES_CONCURRENCY, files.length);
+  const workers: Promise<void>[] = [];
+  for (let w = 0; w < workerCount; w++) workers.push(worker());
+  await Promise.all(workers);
+
+  return slots.join('\n\n');
 }

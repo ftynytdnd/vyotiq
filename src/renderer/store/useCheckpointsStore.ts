@@ -49,8 +49,18 @@ interface CheckpointsStore {
   refreshPending: (conversationId: string) => Promise<void>;
   /** Refresh the workspace summary. */
   refreshSummary: (workspaceId: string) => Promise<void>;
-  /** Accept one pending entry. */
-  accept: (entryId: string, conversationId: string) => Promise<void>;
+  /**
+   * Accept one pending entry.
+   *
+   * Resolves to `true` on success, `false` when the underlying IPC
+   * rejected and the optimistic drop was rolled back via refetch.
+   * Callers that don't need the signal can still `void accept(...)`
+   * — the boolean is additive. Bulk Accept-all surfaces failures
+   * via toast by counting the `false` results, which would
+   * otherwise be invisible after the refetch repopulated the
+   * panel.
+   */
+  accept: (entryId: string, conversationId: string) => Promise<boolean>;
   /** Reject one pending entry (revert + drop). */
   reject: (entryId: string, conversationId: string) => Promise<CheckpointRevertResult>;
   /** Revert one entry (no pending interaction). */
@@ -224,9 +234,11 @@ export const useCheckpointsStore = create<CheckpointsStore>((setState, getState)
     });
     try {
       await vyotiq.checkpoints.accept(entryId);
+      return true;
     } catch (err) {
       log.warn('accept failed; refetching', { entryId, err });
       await getState().refreshPending(conversationId);
+      return false;
     }
   },
 

@@ -109,19 +109,55 @@ export const readTool: Tool = {
     // heuristic was just NUL-in-first-4 KB which let through a number of
     // binary formats (UTF-16, some compressed blobs) whose null bytes
     // start later in the file.
-    const probe = buf.subarray(0, Math.min(8192, buf.length));
-    let nonText = 0;
-    for (let i = 0; i < probe.length; i++) {
-      const b = probe[i]!;
-      if (b === 0) {
-        return binaryRefusal(id, started, a.path);
+    //
+    // BOM-aware exemption: a file that opens with a UTF-16 / UTF-32 byte
+    // order mark has NUL bytes as a NORMAL part of its text encoding —
+    // every ASCII character is paired with a `\0`. Refusing those as
+    // "binary" would block any source file PowerShell saved with
+    // `Out-File` (the default encoding on older PS) or any file an editor
+    // stamped with a UTF-16 BOM. We detect the BOM, decode using the
+    // matching encoding, and re-run the heuristic against the decoded
+    // text so genuinely-binary content (no BOM, NULs in the stream) is
+    // still refused. Audit fix — see review §5.
+    const bomEnc = detectBomEncoding(buf);
+    if (bomEnc !== null) {
+      const text = bomDecode(buf, bomEnc);
+      // Re-probe the DECODED text. Genuine text in any BOM-tagged
+      // encoding has no remaining NULs; binary masquerading as a
+      // BOM'd file would. We use the same 8 KB / 5 % rule as the
+      // raw-buffer path.
+      const decodedProbe = text.slice(0, 8192);
+      let decodedNonText = 0;
+      for (let i = 0; i < decodedProbe.length; i++) {
+        const code = decodedProbe.charCodeAt(i);
+        if (code === 0) {
+          return binaryRefusal(id, started, a.path, `NUL after ${bomEnc} BOM at char ${i}`);
+        }
+        if ((code < 9 || (code > 13 && code < 32)) && code < 128) decodedNonText++;
       }
-      // Allow tab(9), LF(10), CR(13), printable ASCII (32–126), and any
-      // byte ≥128 (UTF-8 continuation/lead). Everything else is suspect.
-      if ((b < 9 || (b > 13 && b < 32)) && b < 128) nonText++;
-    }
-    if (probe.length > 0 && nonText > probe.length * 0.05) {
-      return binaryRefusal(id, started, a.path);
+      if (decodedProbe.length > 0 && decodedNonText > decodedProbe.length * 0.05) {
+        return binaryRefusal(id, started, a.path, `${bomEnc} but >5% control bytes`);
+      }
+      // Re-route through the line-slicing return below by replacing
+      // the `buf.toString('utf8')` decode with the BOM-aware result.
+      // We do this by assigning a normalised UTF-8 buffer back — the
+      // canonical downstream path stays text-based.
+      buf = Buffer.from(text, 'utf8');
+    } else {
+      const probe = buf.subarray(0, Math.min(8192, buf.length));
+      let nonText = 0;
+      for (let i = 0; i < probe.length; i++) {
+        const b = probe[i]!;
+        if (b === 0) {
+          return binaryRefusal(id, started, a.path, `NUL at offset ${i}`);
+        }
+        // Allow tab(9), LF(10), CR(13), printable ASCII (32–126), and any
+        // byte ≥128 (UTF-8 continuation/lead). Everything else is suspect.
+        if ((b < 9 || (b > 13 && b < 32)) && b < 128) nonText++;
+      }
+      if (probe.length > 0 && nonText > probe.length * 0.05) {
+        return binaryRefusal(id, started, a.path, `${nonText} control bytes in first ${probe.length}`);
+      }
     }
 
     const text = buf.toString('utf8');
@@ -156,13 +192,89 @@ export const readTool: Tool = {
   }
 };
 
-function binaryRefusal(id: string, started: number, path: string): ToolResult {
+function binaryRefusal(
+  id: string,
+  started: number,
+  path: string,
+  detail?: string
+): ToolResult {
+  // Surface the detection reason in the structured `error` field so the
+  // model can choose a recovery strategy (e.g. `bash` `sed` against a
+  // specific offset, or skip the file entirely) instead of receiving
+  // an opaque "binary file" label and giving up. The user-visible
+  // `output` keeps the friendly phrasing.
+  const error = detail ? `binary file (${detail})` : 'binary file';
   return {
     id,
     name: 'read',
     ok: false,
-    output: `Refusing to read binary file: ${path}`,
-    error: 'binary file',
+    output: `Refusing to read binary file: ${path}${detail ? ` (${detail})` : ''}`,
+    error,
     durationMs: Date.now() - started
   };
 }
+
+/**
+ * Byte-order-mark detection. Returns the canonical encoding name when
+ * `buf` begins with a recognised BOM, or `null` when there is no BOM.
+ * Order matters: UTF-32 (4-byte) BOMs must be checked BEFORE UTF-16
+ * (2-byte) because the UTF-32 LE BOM `FF FE 00 00` shares its first
+ * two bytes with the UTF-16 LE BOM `FF FE`.
+ */
+function detectBomEncoding(buf: Buffer): 'utf-8' | 'utf-16le' | 'utf-16be' | 'utf-32le' | 'utf-32be' | null {
+  if (buf.length >= 4) {
+    if (buf[0] === 0xff && buf[1] === 0xfe && buf[2] === 0x00 && buf[3] === 0x00) return 'utf-32le';
+    if (buf[0] === 0x00 && buf[1] === 0x00 && buf[2] === 0xfe && buf[3] === 0xff) return 'utf-32be';
+  }
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) return 'utf-8';
+  if (buf.length >= 2) {
+    if (buf[0] === 0xff && buf[1] === 0xfe) return 'utf-16le';
+    if (buf[0] === 0xfe && buf[1] === 0xff) return 'utf-16be';
+  }
+  return null;
+}
+
+/**
+ * Decode a BOM-prefixed buffer to a string, stripping the BOM in the
+ * process so the downstream line-slicer sees clean text. UTF-32
+ * variants are not natively supported by Node's `TextDecoder` on every
+ * runtime — fall back to a manual decode for those.
+ */
+function bomDecode(
+  buf: Buffer,
+  enc: 'utf-8' | 'utf-16le' | 'utf-16be' | 'utf-32le' | 'utf-32be'
+): string {
+  if (enc === 'utf-8') {
+    return buf.subarray(3).toString('utf8');
+  }
+  if (enc === 'utf-16le') {
+    // Node Buffers expose a native UTF-16 LE decode under the alias
+    // `'utf16le'`; skip the 2-byte BOM.
+    return buf.subarray(2).toString('utf16le');
+  }
+  if (enc === 'utf-16be') {
+    // Node doesn't decode UTF-16 BE directly; swap byte pairs and reuse
+    // the LE decoder. The slice excludes the 2-byte BOM.
+    const body = buf.subarray(2);
+    const swapped = Buffer.alloc(body.length);
+    for (let i = 0; i + 1 < body.length; i += 2) {
+      swapped[i] = body[i + 1]!;
+      swapped[i + 1] = body[i]!;
+    }
+    return swapped.toString('utf16le');
+  }
+  // UTF-32 variants — rare in source code but possible. Manual decode
+  // via code-point reconstruction.
+  const body = buf.subarray(4);
+  const out: string[] = [];
+  for (let i = 0; i + 3 < body.length; i += 4) {
+    const cp = enc === 'utf-32le'
+      ? body[i]! | (body[i + 1]! << 8) | (body[i + 2]! << 16) | (body[i + 3]! << 24)
+      : (body[i]! << 24) | (body[i + 1]! << 16) | (body[i + 2]! << 8) | body[i + 3]!;
+    out.push(String.fromCodePoint(cp >>> 0));
+  }
+  return out.join('');
+}
+
+/** Exported for unit tests; not part of the runtime public surface. */
+export const __testing = { detectBomEncoding, bomDecode };

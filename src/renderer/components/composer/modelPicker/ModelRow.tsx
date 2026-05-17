@@ -152,8 +152,8 @@ function ContextWindowEditor({
         }}
         placeholder="e.g. 128k"
         className={cn(
-          'w-20 shrink-0 rounded bg-surface-base/80 px-1.5 py-0.5 font-mono text-meta',
-          'text-text-primary outline-none focus:outline-none ring-1 ring-accent/50'
+          'w-20 shrink-0 rounded-inner bg-surface-overlay px-1.5 py-0.5 font-mono text-meta',
+          'text-text-primary outline-none focus:outline-none ring-1 ring-accent/60'
         )}
       />
     );
@@ -169,14 +169,15 @@ function ContextWindowEditor({
           : 'Set context window'
       }
       className={cn(
-        'inline-flex shrink-0 items-center gap-1 rounded bg-surface-base/60 px-1.5 py-0.5 font-mono text-meta',
-        'text-text-faint hover:bg-surface-base hover:text-text-secondary transition-colors duration-150',
-        hasOverride ? 'ring-1 ring-accent/40' : ''
+        'inline-flex shrink-0 items-center gap-1 rounded-inner bg-surface-overlay px-1.5 py-0.5 font-mono text-meta',
+        'text-text-faint transition-colors duration-150',
+        'hover:bg-surface-hover hover:text-text-primary',
+        hasOverride && 'ring-1 ring-accent/40'
       )}
     >
       {typeof effective === 'number' ? formatTokenCount(effective) : 'set'}
       <Pencil
-        className="h-2.5 w-2.5 opacity-0 group-hover:opacity-80"
+        className="h-2.5 w-2.5 opacity-0 group-hover:opacity-70"
         strokeWidth={2}
       />
     </button>

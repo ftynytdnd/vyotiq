@@ -515,6 +515,26 @@ function looksRateLimited(msg: string): boolean {
 interface OllamaWireMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
+  /**
+   * Echo of the assistant's reasoning trace from the previous turn.
+   *
+   * Ollama's `/api/chat` endpoint surfaces a thinking-capable model's
+   * chain-of-thought through a dedicated `message.thinking` field —
+   * see `https://docs.ollama.com/capabilities/thinking`. Ollama
+   * preserves the trace across multi-turn conversations IFF the
+   * client echoes the field back on the next request. Without this
+   * echo, a model that planned in `thinking` and emitted only a one-
+   * line announcement in `content` (a common harness §A Phase 3 +
+   * §B "Narrate-and-emit" interaction) loses its plan on the next
+   * turn — it sees only the announcement and has no anchor for what
+   * it was about to delegate. The visible symptom: a plan-only turn
+   * followed by an unproductive narration loop until the host's
+   * planning-nudge budget is exhausted.
+   *
+   * Mirrors the OpenAI transport's `reasoning_content` round-trip;
+   * the wire field name differs but the contract is identical.
+   */
+  thinking?: string;
   tool_calls?: Array<{
     function: {
       name: string;
@@ -545,9 +565,15 @@ interface OllamaWireMessage {
  *      producing a 400 mid-conversation.
  *
  *   3. Unknown/extra fields — `tool_calls[].id`, `tool_calls[].type`,
- *      `tool_call_id`, `reasoning_content` — are all OpenAI-specific.
- *      Strict Ollama Cloud routes reject them. We emit only the
- *      fields Ollama documents.
+ *      `tool_call_id` — are all OpenAI-specific. Strict Ollama Cloud
+ *      routes reject them. We emit only the fields Ollama documents.
+ *
+ *      `reasoning_content` (the OpenAI-side reasoning field) is
+ *      translated, NOT stripped: Ollama's documented equivalent is
+ *      `message.thinking`, and echoing it back to the wire is what
+ *      preserves the model's chain-of-thought across multi-turn
+ *      conversations. See `OllamaWireMessage.thinking` for the full
+ *      rationale on why this round-trip matters.
  *
  * `role:'tool'` messages map `ChatMessage.name` → `tool_name` which
  * is what Ollama uses to pair the result back to the call; the id
@@ -572,6 +598,25 @@ function toOllamaMessage(m: ChatMessage): OllamaWireMessage {
   }
   if (m.role === 'tool' && typeof m.name === 'string' && m.name.length > 0) {
     out.tool_name = m.name;
+  }
+  // Translate `reasoning_content` → `thinking` on outgoing assistant
+  // messages so the model sees its prior chain-of-thought on the next
+  // turn. This is the Ollama equivalent of the OpenAI transport's
+  // `reasoning_content` round-trip and the canonical field name per
+  // the Ollama capabilities/thinking docs. Without this echo, a model
+  // that planned in `thinking` and emitted only a one-line content
+  // hand-off (e.g. "Now I'll delegate:") cannot recover its plan on
+  // the next turn — it loses everything in the reasoning channel and
+  // gets stuck in a narration loop. Scoped to `role:'assistant'`
+  // because the Ollama schema only documents `thinking` on assistant
+  // turns, and we never want to leak prompt-side text through this
+  // field.
+  if (
+    m.role === 'assistant' &&
+    typeof m.reasoning_content === 'string' &&
+    m.reasoning_content.length > 0
+  ) {
+    out.thinking = m.reasoning_content;
   }
   return out;
 }

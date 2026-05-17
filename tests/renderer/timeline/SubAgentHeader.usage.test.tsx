@@ -88,47 +88,29 @@ describe('SubAgentHeader usage pill', () => {
   });
 });
 
-describe('SubAgentHeader chip overflow', () => {
-  it('renders all chips when count <= cap', () => {
-    const files = ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts'];
+describe('SubAgentHeader chip cleanup (post-redesign)', () => {
+  it('does NOT render the historical file-chip wall in the status strip', () => {
+    // Per the redesign brief ("Remove unnecessary chips and clutter"),
+    // file + tool chips moved into the structured Scope subsection
+    // inside `SubAgentBriefing` and no longer live on the status
+    // strip. The strip carries id + status pill + usage pill ONLY.
+    const files = Array.from({ length: 12 }, (_, i) => `src/file-${i + 1}.ts`);
     const { container } = render(<SubAgentHeader snap={snap({ files })} />);
-    for (const f of files) {
-      expect(container.textContent).toContain(f);
+    for (let i = 0; i < 12; i++) {
+      expect(container.textContent).not.toContain(`file-${i + 1}.ts`);
     }
+    // No `+N more` overflow toggle remains either.
     expect(container.textContent).not.toMatch(/\+\d+ more/);
   });
 
-  it('caps file chips at 6 and exposes a `+N more` overflow toggle', () => {
-    const files = Array.from({ length: 12 }, (_, i) => `src/file-${i + 1}.ts`);
-    const { container, getByRole } = render(<SubAgentHeader snap={snap({ files })} />);
-    // First 6 visible; remaining 6 hidden behind the toggle.
-    for (let i = 0; i < 6; i++) {
-      expect(container.textContent).toContain(`file-${i + 1}.ts`);
-    }
-    for (let i = 6; i < 12; i++) {
-      expect(container.textContent).not.toContain(`file-${i + 1}.ts`);
-    }
-    const toggle = getByRole('button', { name: '+6 more' });
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
-
-    fireEvent.click(toggle);
-    for (let i = 0; i < 12; i++) {
-      expect(container.textContent).toContain(`file-${i + 1}.ts`);
-    }
-    expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    expect(toggle.textContent).toContain('show less');
-  });
-
-  it('caps tool chips at 4 with the same overflow control', () => {
+  it('does NOT render tool chips in the status strip', () => {
     const tools = ['read', 'edit', 'bash', 'search', 'memory', 'recall'];
-    const { container, getByRole } = render(<SubAgentHeader snap={snap({ tools })} />);
-    const toggle = getByRole('button', { name: '+2 more' });
-    expect(toggle).toBeDefined();
-    expect(container.textContent).toContain('read');
-    expect(container.textContent).not.toContain('memory');
-    fireEvent.click(toggle);
-    expect(container.textContent).toContain('memory');
-    expect(container.textContent).toContain('recall');
+    const { container } = render(<SubAgentHeader snap={snap({ tools })} />);
+    for (const t of tools) {
+      // The strip MUST NOT carry tool names; they live on the
+      // Scope list inside `SubAgentBriefing`.
+      expect(container.textContent).not.toContain(t);
+    }
   });
 });
 

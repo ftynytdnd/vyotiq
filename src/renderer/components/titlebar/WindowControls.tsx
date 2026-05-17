@@ -31,7 +31,7 @@ export function WindowControls() {
       className={cn(
         'app-no-drag inline-flex h-8 w-11 items-center justify-center text-text-muted',
         'transition-colors duration-150 hover:text-text-primary',
-        danger ? 'hover:bg-danger/80 hover:text-white' : 'hover:bg-surface-hover'
+        danger ? 'hover:bg-danger/80 hover:text-text-primary' : 'hover:bg-surface-hover'
       )}
     >
       {children}

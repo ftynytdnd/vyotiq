@@ -53,7 +53,7 @@ export function FileEditRow({ filePath, additions, deletions }: FileEditRowProps
         type="button"
         onClick={() => void handleOpen()}
         className={cn(
-          'app-no-drag inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-row shrink-0',
+          'app-no-drag inline-flex items-center gap-1 rounded-inner px-1.5 py-0.5 text-row shrink-0',
           'text-text-muted transition-colors duration-150',
           'hover:bg-surface-hover hover:text-text-primary opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100'
         )}

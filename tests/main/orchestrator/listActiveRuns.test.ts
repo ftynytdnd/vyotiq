@@ -41,9 +41,25 @@ vi.mock('@main/workspace/workspaceState.js', () => ({
 }));
 
 // `recall` tool wires per-run state via a WeakMap; not relevant here.
+// Provide every export `tools/registry.ts` reaches for so the
+// transitive load through `AgentV.ts` →
+// `contextSummarizer/index.ts` → `streamSummary.ts` →
+// `harnessLoader.ts` → `tools/registry.ts` doesn't blow up on a
+// missing partial-mock surface. The two `setActive*ForRun`
+// helpers are the ones `AgentV.ts` actually calls; `recallTool`
+// is read by the registry's static catalogue and is a no-op stub
+// here because `runOrchestratorLoop` (which is the only caller
+// that exercises tool dispatch) is itself mocked above.
 vi.mock('@main/tools/recall.tool.js', () => ({
   setActiveConversationForRun: vi.fn(),
-  setActiveWorkspaceForRun: vi.fn()
+  setActiveWorkspaceForRun: vi.fn(),
+  recallTool: {
+    name: 'recall',
+    description: '',
+    briefMarkdown: '',
+    parameters: { type: 'object', properties: {} },
+    execute: vi.fn()
+  }
 }));
 
 // Skip the inlineFiles + replay machinery — `buildInitialMessages`

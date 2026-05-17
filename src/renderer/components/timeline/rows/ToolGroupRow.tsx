@@ -180,9 +180,9 @@ export function ToolGroupRow({ rowKey, toolName, items }: ToolGroupRowProps) {
         )}
       >
         {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[color:var(--color-chevron)]" strokeWidth={2} />
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-chevron" strokeWidth={2} />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[color:var(--color-chevron)]" strokeWidth={2} />
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-chevron" strokeWidth={2} />
         )}
         <Icon className="h-3.5 w-3.5 shrink-0 text-text-faint" strokeWidth={2} />
         <div

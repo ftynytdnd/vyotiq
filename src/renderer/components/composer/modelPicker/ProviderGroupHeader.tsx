@@ -78,7 +78,7 @@ export function ProviderGroupHeader({ provider }: ProviderGroupHeaderProps) {
           aria-label={`Refresh ${provider.name} models`}
           title="Refresh /v1/models"
           className={cn(
-            'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded',
+            'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-inner',
             'text-text-faint transition-colors duration-150',
             'hover:text-text-primary disabled:cursor-not-allowed'
           )}

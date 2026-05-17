@@ -602,4 +602,81 @@ describe('streamChat (Ollama native) — request-body translation', () => {
     expect(options).not.toHaveProperty('num_ctx');
     expect(options['num_predict']).toBe(512);
   });
+
+  /**
+   * Regression: the silent-stoppage / narration-loop pathology
+   * observed with thinking-capable models on Ollama Cloud (notably
+   * `glm-4.7`).
+   *
+   * Failure mode pre-fix:
+   *   1. Turn N: model produces a long reasoning trace (the
+   *      `message.thinking` channel) listing the concrete delegation
+   *      plan, then emits a one-line `content` announcement
+   *      ("Now I'll delegate multiple parallel agents:"). Turn ends.
+   *   2. Turn N+1: the orchestrator re-issues the request. The
+   *      assistant turn from turn N is replayed as a `ChatMessage`
+   *      with `content="Now I'll delegate…"` AND
+   *      `reasoning_content="<the full plan>"`. The Ollama
+   *      transport stripped `reasoning_content` from the wire — the
+   *      model received only the announcement and had no anchor for
+   *      what it had been about to delegate.
+   *   3. Result: the model re-narrates the announcement, the host
+   *      nudges, the model re-narrates again, the host halts.
+   *
+   * The fix maps `reasoning_content` → `message.thinking` on the
+   * outgoing wire (the canonical Ollama field per
+   * `https://docs.ollama.com/capabilities/thinking`) so the model's
+   * planning chain-of-thought survives across turns.
+   *
+   * This test pins the contract: an outgoing assistant message that
+   * carries `reasoning_content` must place those bytes in
+   * `message.thinking` on the Ollama wire, and the `reasoning_content`
+   * key must NOT appear on the wire (Ollama rejects unknown fields
+   * on strict cloud routes).
+   */
+  it('round-trips assistant.reasoning_content as message.thinking on the wire', async () => {
+    const body = await captureRequestBody([
+      {
+        role: 'user',
+        content: 'analyze the codebase'
+      },
+      {
+        role: 'assistant',
+        content: "Now I'll delegate parallel agents to analyze:",
+        reasoning_content:
+          'Plan: A1 reads main.rs. A2 reads ai_provider.rs. A3 reads frontend/App.tsx.'
+      }
+    ]);
+    const msgs = body['messages'] as Array<Record<string, unknown>>;
+    const assistant = msgs[1]!;
+    expect(assistant['thinking']).toBe(
+      'Plan: A1 reads main.rs. A2 reads ai_provider.rs. A3 reads frontend/App.tsx.'
+    );
+    // `reasoning_content` is OpenAI-only and must not cross the Ollama wire.
+    expect(assistant).not.toHaveProperty('reasoning_content');
+  });
+
+  it('does not add a `thinking` field when reasoning_content is absent or empty', async () => {
+    const body = await captureRequestBody([
+      { role: 'assistant', content: 'no reasoning here' },
+      { role: 'assistant', content: 'empty reasoning', reasoning_content: '' }
+    ]);
+    const msgs = body['messages'] as Array<Record<string, unknown>>;
+    expect(msgs[0]).not.toHaveProperty('thinking');
+    expect(msgs[1]).not.toHaveProperty('thinking');
+  });
+
+  it('does not add a `thinking` field on non-assistant roles', async () => {
+    // Defense in depth: the Ollama schema only documents `thinking` on
+    // assistant turns. We never want to leak a value through this
+    // field on a `system` / `user` / `tool` role.
+    const body = await captureRequestBody([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { role: 'user', content: 'hi', reasoning_content: 'should not propagate' } as any
+    ]);
+    const msgs = body['messages'] as Array<Record<string, unknown>>;
+    expect(msgs[0]).not.toHaveProperty('thinking');
+    expect(msgs[0]).not.toHaveProperty('reasoning_content');
+  });
 });
+

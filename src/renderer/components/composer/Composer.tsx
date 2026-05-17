@@ -9,6 +9,7 @@ import { RunningElsewhereHint } from './runningElsewhere/index.js';
 import { useComposerHistory } from './useComposerHistory.js';
 import { Chip } from '../ui/Chip.js';
 import { useChatStore } from '../../store/useChatStore.js';
+import { useContextSummaryStore } from '../../store/useContextSummaryStore.js';
 import {
   useSettingsStore,
   selectEffectivePermissions
@@ -58,6 +59,7 @@ export function Composer({ model, onModelChange, onOpenProviders }: ComposerProp
   const totalRunUsage = useChatStore((s) => s.totalRunUsage);
   const events = useChatStore((s) => s.events);
   const conversationId = useChatStore((s) => s.conversationId);
+  const runId = useChatStore((s) => s.runId);
   const storeDraft = useChatStore((s) => s.draft);
   const setDraft = useChatStore((s) => s.setDraft);
   const providers = useProviderStore((s) => s.providers);
@@ -256,6 +258,20 @@ export function Composer({ model, onModelChange, onOpenProviders }: ComposerProp
     : text.trim().length > 0 && model
       ? 'ready'
       : 'idle';
+  // Inspector entry point: the pill's primary click opens the
+  // Context Inspector slide-over for either the in-flight run
+  // (when one is bound) or the persisted-initial-messages view
+  // of the conversation (when idle). Bound id is preferred in
+  // priority order: live runId → conversationId. The Inspector
+  // store handles the live-vs-idle mode switch internally.
+  const openInspector = (() => {
+    const id = runId ?? conversationId;
+    if (!id) return undefined;
+    const mode: 'live' | 'idle' = runId ? 'live' : 'idle';
+    return () => {
+      void useContextSummaryStore.getState().open(id, mode);
+    };
+  })();
   const tokenUsageSlot = model ? (
     <TokenUsagePill
       used={usedTokens}
@@ -264,6 +280,7 @@ export function Composer({ model, onModelChange, onOpenProviders }: ComposerProp
       onCeilingChange={(value) =>
         setContextOverride(model.providerId, model.modelId, value)
       }
+      {...(openInspector ? { onOpenInspector: openInspector } : {})}
     />
   ) : null;
 

@@ -31,6 +31,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Copy, Check, Pencil, Undo2 } from 'lucide-react';
 import { cn } from '../../../lib/cn.js';
+import { safeCopy } from '../../../lib/clipboard.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import { useRevertPrompt } from '../revert/RevertPromptContext.js';
 
@@ -158,7 +159,7 @@ export function UserPromptRow({ id, runId, content }: UserPromptRowProps) {
           label="Copy"
           icon={<Copy className="h-3 w-3" strokeWidth={2.25} />}
           copiedIcon={<Check className="h-3 w-3 text-success" strokeWidth={2.25} />}
-          onClick={() => void navigator.clipboard.writeText(content)}
+          onClick={() => safeCopy(content, { context: 'user-prompt' })}
         />
         <PromptAction
           label="Edit"
@@ -212,7 +213,15 @@ function PromptAction({
   label: string;
   icon: React.ReactNode;
   copiedIcon?: React.ReactNode;
-  onClick: () => void;
+  /**
+   * Click handler. May return `void` (synchronous fire-and-forget,
+   * e.g. open a modal) or a `Promise<boolean>` — when it returns a
+   * promise AND `copiedIcon` is set, the "Copied" success state only
+   * flips after the promise resolves `true`. Without this gate a
+   * failed clipboard write would still paint the green check for
+   * 1.2 s and lie to the user.
+   */
+  onClick: () => void | Promise<boolean>;
   /** When true the button renders muted + non-interactive. */
   disabled?: boolean;
   /** Optional tooltip override — falls back to `label`. */
@@ -231,21 +240,41 @@ function PromptAction({
   // posture: a long-lived chat with hundreds of prompt rows that all
   // mount/unmount on tab switch must not accumulate timeouts.
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
   useEffect(() => {
     return () => {
+      mountedRef.current = false;
       if (copyTimerRef.current) {
         clearTimeout(copyTimerRef.current);
         copyTimerRef.current = null;
       }
     };
   }, []);
+  const flipCopied = () => {
+    if (!mountedRef.current) return;
+    setCopied(true);
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => {
+      if (!mountedRef.current) return;
+      setCopied(false);
+    }, 1200);
+  };
   const handleClick = () => {
     if (disabled) return;
-    onClick();
-    if (copiedIcon) {
-      setCopied(true);
-      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-      copyTimerRef.current = setTimeout(() => setCopied(false), 1200);
+    const result = onClick();
+    if (!copiedIcon) return;
+    // Synchronous `void`-returning handlers are treated as
+    // unconditional success — that preserves the prior contract for
+    // any future PromptAction whose click handler isn't a copy
+    // (e.g. the Edit / Revert actions never set `copiedIcon` so
+    // they never reach this branch). Promise-returning handlers
+    // are awaited so the success state only paints on `true`.
+    if (result && typeof (result as Promise<boolean>).then === 'function') {
+      void (result as Promise<boolean>).then((ok) => {
+        if (ok) flipCopied();
+      });
+    } else {
+      flipCopied();
     }
   };
   return (

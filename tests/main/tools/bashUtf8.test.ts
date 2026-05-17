@@ -45,7 +45,10 @@ function makeCtx(workspacePath: string) {
     permissions: PERM_ALLOW,
     strictApprovals: false,
     signal: new AbortController().signal,
-    confirm: async () => true,
+    // Audit fix H-04: ctx.confirm now returns `ConfirmOutcome` (the
+    // boolean approved + reason discriminator) instead of a bare
+    // boolean.
+    confirm: async () => ({ approved: true, reason: 'approved' as const }),
     confirmEdit: async () => ({ approved: true, acceptAllRemaining: false }),
     emit: () => { }
   };

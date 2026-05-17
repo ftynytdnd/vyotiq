@@ -21,6 +21,22 @@ interface PersistedProvider extends ProviderConfig {
 
 let cache: PersistedProvider[] | null = null;
 
+/**
+ * Hook for aborting in-flight runs pinned to a provider id. Wired by
+ * `registerIpc` at boot (so `removeProvider` can break the dependency
+ * cycle that would form if this module imported `AgentV` directly).
+ * Tests that don't exercise the orchestrator leave the hook unset and
+ * `removeProvider` falls back to a no-op abort — preserving the prior
+ * behaviour. Audit fix L-07.
+ */
+let abortRunsForProviderHook: ((providerId: string) => number) | null = null;
+
+export function setProviderAbortHook(
+  hook: (providerId: string) => number
+): void {
+  abortRunsForProviderHook = hook;
+}
+
 async function load(): Promise<PersistedProvider[]> {
   if (cache) return cache;
   const raw = (await readEncryptedJson<PersistedProvider[]>(PROVIDERS_FILE)) ?? [];
@@ -219,6 +235,16 @@ export async function removeProvider(id: string): Promise<void> {
   // after the disk write succeeds.
   await persistCandidate(candidate);
   cache = candidate;
+  // Audit fix L-07: abort any in-flight runs pinned to this provider.
+  // The orchestrator wired its `abortRunsForProvider` into us at boot
+  // via `setProviderAbortHook`. Without this, a mid-run delete left
+  // the loop spinning until the next iteration's `getProviderWithKey`
+  // returned null and surfaced as a confusing provider error. The
+  // hook may be unset in tests that don't bring up the orchestrator
+  // path — fall back to a no-op in that case.
+  if (abortRunsForProviderHook) {
+    abortRunsForProviderHook(id);
+  }
 }
 
 // Base-URL normalization moved to `@shared/providers/normalizeBaseUrl`

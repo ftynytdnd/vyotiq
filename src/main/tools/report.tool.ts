@@ -16,6 +16,7 @@ import { promises as fs } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { Tool } from './types.js';
+import { describeConfirmFailure } from './types.js';
 import type { ToolResult } from '@shared/types/tool.js';
 import {
   resolveCreateInsideWorkspace,
@@ -135,16 +136,13 @@ The \`body\` is an HTML FRAGMENT, not a full document. Do NOT include \`<html>\`
     const relForDisplay = workspaceRelative(ctx.workspacePath, abs);
 
     if (!ctx.permissions.allowFileWrites) {
-      const approved = await ctx.confirm(
+      const outcome = await ctx.confirm(
         `Agent V wants to write a report at ${relForDisplay}. Allow?`
       );
-      if (!approved) {
-        return failure(
-          id,
-          started,
-          `User denied write to ${relForDisplay}.`,
-          'permission denied'
-        );
+      if (!outcome.approved) {
+        // Audit fix H-04: surface precise failure reason.
+        const desc = describeConfirmFailure(outcome.reason, `write report ${relForDisplay}`);
+        return failure(id, started, desc.output, desc.error);
       }
     }
 

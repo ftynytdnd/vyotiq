@@ -91,7 +91,7 @@ export function EditApprovalDialog({
         <div className="log-line flex items-center gap-2">
           <span
             className={cn(
-              'shrink-0 rounded px-1.5 py-0.5 font-mono text-meta uppercase tracking-wide',
+              'shrink-0 rounded-inner px-1.5 py-0.5 font-mono text-meta uppercase tracking-wider',
               verbToneClass
             )}
           >

@@ -22,7 +22,10 @@ import { Check, Copy } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
+import { stripEmoji } from '@shared/text/emoji.js';
+import { normalizeMathShortcuts } from '@shared/text/mathShortcuts.js';
 import { cn } from '../../../lib/cn.js';
+import { safeCopy } from '../../../lib/clipboard.js';
 
 interface MarkdownBodyProps {
   text: string;
@@ -48,6 +51,16 @@ const MD_COMPONENTS: MdProps['components'] = {
 };
 
 export function MarkdownBody({ text, className }: MarkdownBodyProps) {
+  // Compose the two display-side text normalizers in one memo so we
+  // pay the scan cost once per delta and re-render only when the
+  // input string actually changes. Order matters: emoji-strip first
+  // (it can shorten the buffer), THEN expand LaTeX shortcuts (so
+  // `$\to$` survives even if it sits next to a stripped pictograph).
+  const sanitizedText = useMemo(
+    () => normalizeMathShortcuts(stripEmoji(text)),
+    [text]
+  );
+
   // For long streamed assistant messages the full markdown tree is rebuilt
   // on every delta. Memoize on `text` so a re-render that didn't change
   // the body skips the parse entirely. The cost of memoizing is one
@@ -60,10 +73,10 @@ export function MarkdownBody({ text, className }: MarkdownBodyProps) {
         rehypePlugins={REHYPE_PLUGINS}
         components={MD_COMPONENTS}
       >
-        {text}
+        {sanitizedText}
       </ReactMarkdown>
     ),
-    [text]
+    [sanitizedText]
   );
 
   return <div className={cn('vyotiq-md', className)}>{tree}</div>;
@@ -73,12 +86,14 @@ function PreWithCopy({ children }: { children?: ReactNode }) {
   const preRef = useRef<HTMLPreElement>(null);
   const [copied, setCopied] = useState(false);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
 
   // Clear the "Copied" reset timer on unmount so a copy click immediately
   // before a re-render (e.g. timeline rebuild) doesn't trigger a setState
   // on a destroyed node.
   useEffect(() => {
     return () => {
+      mountedRef.current = false;
       if (resetTimerRef.current !== null) {
         clearTimeout(resetTimerRef.current);
         resetTimerRef.current = null;
@@ -89,10 +104,12 @@ function PreWithCopy({ children }: { children?: ReactNode }) {
   const onCopy = () => {
     const txt = preRef.current?.innerText ?? '';
     if (!txt) return;
-    void navigator.clipboard.writeText(txt).then(() => {
+    void safeCopy(txt, { context: 'markdown-code' }).then((ok) => {
+      if (!ok || !mountedRef.current) return;
       setCopied(true);
       if (resetTimerRef.current !== null) clearTimeout(resetTimerRef.current);
       resetTimerRef.current = setTimeout(() => {
+        if (!mountedRef.current) return;
         resetTimerRef.current = null;
         setCopied(false);
       }, 1200);

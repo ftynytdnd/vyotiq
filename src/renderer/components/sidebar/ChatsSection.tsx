@@ -145,7 +145,7 @@ export function ChatsSection({ scrollRef }: ChatsSectionProps = {}) {
           title="Add workspace"
           onClick={() => void addWorkspace()}
           className={cn(
-            'app-no-drag inline-flex h-4 w-4 items-center justify-center rounded',
+            'app-no-drag inline-flex h-4 w-4 items-center justify-center rounded-inner',
             'text-text-faint transition-colors duration-150',
             'hover:bg-surface-hover hover:text-text-primary'
           )}
@@ -166,7 +166,7 @@ export function ChatsSection({ scrollRef }: ChatsSectionProps = {}) {
         {empty ? (
           showLoading ? (
             <div className="flex items-center gap-2 px-2.5 py-3 text-row text-text-faint">
-              <Spinner size={12} /> Loading…
+              <Spinner /> Loading…
             </div>
           ) : (
             <div className="px-2.5 py-3 text-row text-text-faint">

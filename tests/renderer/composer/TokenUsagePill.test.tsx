@@ -34,6 +34,48 @@ describe('TokenUsagePill — no-ceiling state', () => {
     );
     expect(getByRole('button').className).toContain('text-warning');
   });
+
+  it('routes primary click to the Inspector when wired (instead of the inline editor)', () => {
+    const onOpenInspector = vi.fn();
+    const onCeilingChange = vi.fn();
+    const { getByRole } = render(
+      <TokenUsagePill
+        used={22000}
+        estimated
+        onCeilingChange={onCeilingChange}
+        onOpenInspector={onOpenInspector}
+      />
+    );
+    // Pill renders the `no ctx` label so the user sees the missing
+    // ceiling but can still reach the Inspector.
+    const btn = getByRole('button', { name: /Open Context Inspector/i });
+    expect(btn.textContent?.toLowerCase()).toContain('no ctx');
+    fireEvent.click(btn);
+    expect(onOpenInspector).toHaveBeenCalledTimes(1);
+    // Editor must NOT have opened — that lives behind the dedicated
+    // pencil affordance below.
+    expect(onCeilingChange).not.toHaveBeenCalled();
+  });
+
+  it('keeps the pencil affordance reachable for the inline ceiling editor', () => {
+    const onOpenInspector = vi.fn();
+    const onCeilingChange = vi.fn();
+    const { getByRole, getByPlaceholderText } = render(
+      <TokenUsagePill
+        used={22000}
+        estimated
+        onCeilingChange={onCeilingChange}
+        onOpenInspector={onOpenInspector}
+      />
+    );
+    fireEvent.click(getByRole('button', { name: /Set context window ceiling/i }));
+    const input = getByPlaceholderText(/128k/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '64k' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onCeilingChange).toHaveBeenCalledWith(64_000);
+    // Pencil click must NOT have re-fired the Inspector primary action.
+    expect(onOpenInspector).not.toHaveBeenCalled();
+  });
 });
 
 describe('TokenUsagePill — inline editor', () => {

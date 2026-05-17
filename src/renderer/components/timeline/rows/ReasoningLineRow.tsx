@@ -131,9 +131,9 @@ export function ReasoningLineRow({ id }: ReasoningLineRowProps) {
         )}
       >
         {expanded ? (
-          <ChevronDown className="h-3 w-3 shrink-0 text-[color:var(--color-chevron)]" strokeWidth={2} />
+          <ChevronDown className="h-3 w-3 shrink-0 text-chevron" strokeWidth={2} />
         ) : (
-          <ChevronRight className="h-3 w-3 shrink-0 text-[color:var(--color-chevron)]" strokeWidth={2} />
+          <ChevronRight className="h-3 w-3 shrink-0 text-chevron" strokeWidth={2} />
         )}
         <Brain
           className="h-3 w-3 shrink-0 text-text-faint"

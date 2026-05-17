@@ -66,9 +66,9 @@ export function FileEditGroupRow({ rowKey, items }: FileEditGroupRowProps) {
         )}
       >
         {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[color:var(--color-chevron)]" strokeWidth={2} />
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-chevron" strokeWidth={2} />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[color:var(--color-chevron)]" strokeWidth={2} />
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-chevron" strokeWidth={2} />
         )}
         <FileCode className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} />
         <div className="min-w-0 flex-1 truncate text-log text-text-secondary">

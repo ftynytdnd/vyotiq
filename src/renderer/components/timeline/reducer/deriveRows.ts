@@ -118,7 +118,16 @@ export type Row =
     key: string;
     children: FileEditGroupChild[];
   }
-  | { kind: 'run-complete'; key: string; durationMs: number };
+  | { kind: 'run-complete'; key: string; durationMs: number }
+  /**
+   * Inline marker that a context-summarization event lifecycle
+   * exists at this position in the timeline. The row component
+   * (`ContextSummaryRow`) reads the live state by `summaryId` from
+   * `useChatStore.summaries[summaryId]` so streaming deltas paint
+   * without re-deriving the entire row list. ONE row per
+   * `summaryId`; the `pending` event is the anchor.
+   */
+  | { kind: 'context-summary'; key: string; summaryId: string };
 
 export interface DeriveRowsOptions {
   /**
@@ -140,6 +149,17 @@ export interface DeriveRowsOptions {
    * mirror's `partialToolCallArgs` from `useChatStore`.
    */
   partialToolCallArgs?: Record<string, PartialToolCallArgs>;
+  /**
+   * Audit fix L-11. Pre-computed map of callIds the reducer has
+   * already observed in an authoritative `tool-call` event. When
+   * provided, `appendSynthesizedPartialRows` skips its O(R×C) walk
+   * over every `tool-group` row's children to recover the same set
+   * — Timeline forwards this from `state.settledCallIds`, which the
+   * reducer already maintains for the late-frame race guard.
+   * Optional for back-compat with callers that don't have access
+   * to the slot (the deriver falls back to the walk).
+   */
+  settledCallIds?: Record<string, true>;
 }
 
 export function deriveRows(
@@ -539,19 +559,6 @@ export function deriveRows(
         // name must not split the rolled-up group.
         break;
 
-      case 'history-summary':
-        // Audit fix §2.2 — transcript-aware summarization sentinel.
-        // Persists in the JSONL so transcript replay can mask the
-        // `replacedEventIds`, but is intentionally invisible as a
-        // timeline row (see the matching skip in
-        // `applyTimelineEvent.ts` and the contract on
-        // `TimelineEvent` in `@shared/types/chat.ts`). Like
-        // `token-usage` / `run-status` above, it must NOT close the
-        // currently-open tool group either — the summary lands at
-        // the orchestrator's iteration boundary, not at a turn
-        // boundary.
-        break;
-
       case 'checkpoint-entry':
       case 'checkpoint-revert':
       case 'checkpoint-bash-mutation':
@@ -563,6 +570,41 @@ export function deriveRows(
         // would just clutter the transcript. Like `token-usage`
         // and `run-status` above, they must NOT close the open
         // tool group.
+        break;
+
+      case 'context-summary-pending':
+        // Anchor row for a summarization. `ContextSummaryRow`
+        // pulls every subsequent state change off
+        // `useChatStore.summaries[summaryId]` so streaming
+        // deltas paint without re-deriving rows. Closes any
+        // open tool/file-edit group — a summary is a structural
+        // boundary in the transcript.
+        closeGroups();
+        out.push({
+          kind: 'context-summary',
+          key: `summary:${e.summaryId}`,
+          summaryId: e.summaryId
+        });
+        break;
+
+      case 'context-summary-delta':
+      case 'context-summary-reasoning-delta':
+      case 'context-summary-end':
+      case 'context-summary-aborted':
+      case 'context-summary-undone':
+        // Pure state mutations on the matching `summaries[id]`
+        // accumulator. The single `context-summary` row already
+        // emitted by `-pending` re-renders against the live
+        // store snapshot; no extra row is synthesized here.
+        // Like the streaming agent-text deltas, these must NOT
+        // close the open tool group.
+        break;
+
+      case 'context-override-set':
+        // Pure state mutation on `messageOverrides`. Inspector
+        // surfaces it; timeline does not render a row for the
+        // toggle itself (the only visible side-effect is that
+        // the next summarization splices a different range).
         break;
 
       default: {
@@ -578,7 +620,7 @@ export function deriveRows(
   // the live position the user is watching.
   const partials = opts.partialToolCallArgs;
   if (partials) {
-    appendSynthesizedPartialRows(out, partials);
+    appendSynthesizedPartialRows(out, partials, opts.settledCallIds);
   }
   if (!opts.runActive) {
     flushRun();
@@ -599,15 +641,26 @@ export function deriveRows(
  */
 function appendSynthesizedPartialRows(
   out: Row[],
-  partials: Record<string, PartialToolCallArgs>
+  partials: Record<string, PartialToolCallArgs>,
+  preComputedSettled?: Record<string, true>
 ): void {
   // Skip entries whose callId is already keyed in the events walk.
   // The reducer drops the partial entry on `tool-call` so the only
   // way this would matter is mid-frame inconsistency — defensive.
+  //
+  // Audit fix L-11: when the caller passes a pre-computed
+  // `settledCallIds` map (built into reducer state for the late-frame
+  // race guard), skip the O(R×C) walk over every tool-group row's
+  // children to derive the same set. Fall back to the walk for
+  // callers that don't have the slot.
   const settledIds = new Set<string>();
-  for (const row of out) {
-    if (row.kind === 'tool-group') {
-      for (const c of row.children) settledIds.add(c.callId);
+  if (preComputedSettled) {
+    for (const id of Object.keys(preComputedSettled)) settledIds.add(id);
+  } else {
+    for (const row of out) {
+      if (row.kind === 'tool-group') {
+        for (const c of row.children) settledIds.add(c.callId);
+      }
     }
   }
   // Append in `index` order so parallel tool-call streams render in

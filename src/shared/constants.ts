@@ -116,6 +116,51 @@ export const MAX_TOTAL_ITERATIONS = 24;
 export const MAX_DELEGATION_BAD_ROUNDS = 3;
 
 /**
+ * Hard cap on the number of files a single `<delegate files="..." />`
+ * directive can list. The model controls this attribute, so without a
+ * cap a buggy or pathological turn could emit a directive with
+ * thousands of paths and trigger that many parallel `realpath` +
+ * `access` probes through `classifyFiles` — a soft DoS on the main
+ * process FS surface (review finding H4).
+ *
+ * 32 is comfortably above the harness §B "Keep this list minimal"
+ * guidance and the largest legitimate delegations observed in
+ * production transcripts (typically ≤ 8). Excess paths are surfaced
+ * to the renderer via `subagent-spawn.missingFiles` with a synthetic
+ * "list-cap exceeded" placeholder so the user sees the truncation.
+ *
+ * Tunable: increase this only after observing a real workflow that
+ * legitimately needs > 32 files per directive AND auditing the
+ * inline-files token cost. The combined `INLINE_FILE_CHAR_CAP` budget
+ * in `contextManager.inlineFiles` will already truncate the body —
+ * raising the file count just trades file diversity for per-file
+ * tokens.
+ */
+export const MAX_FILES_PER_DELEGATE = 32;
+
+/**
+ * Per-task delegation strike threshold. Independent of
+ * `MAX_DELEGATION_BAD_ROUNDS`, which only counts rounds where EVERY
+ * verdict is bad: a sub-task that fails repeatedly while paired with
+ * an unrelated sibling that succeeds was previously invisible to the
+ * round-level counter (the `allBad` reset cleared the streak after
+ * every mixed round). The conversation captured at
+ * `e6859f7b-fd35-4a43-ae1d-6cd06f17831c.jsonl` (May 16, 2026) shows
+ * `App.tsx` edits failing across four sub-agents (D1 → D1_retry →
+ * ...) while siblings reported success, never tripping the round
+ * halt.
+ *
+ * This counter is keyed by a stable signature of the sub-agent's
+ * task (first 80 chars of the task string + sorted files list). When
+ * any key crosses the threshold the orchestrator surfaces a
+ * `failing_tasks` hint in `<run_state>` and emits a `phase` divider —
+ * the model is expected to pivot decomposition. The round-level halt
+ * still fires when every verdict is bad, so this counter is a softer
+ * "you are wasting your budget on this task" signal, not a hard halt.
+ */
+export const MAX_PER_TASK_BAD_STREAK = 3;
+
+/**
  * Sub-agent loop limits.
  *
  * Hard cap on a single sub-agent's iteration count. The audit-pass
@@ -179,6 +224,59 @@ export const STREAM_INACTIVITY_TIMEOUT_MS = 60_000;
  * replay so the coalesced row is functionally identical.
  */
 export const PERSIST_DELTA_COALESCE_CHARS = 256;
+
+/**
+ * Context-summarization tunables — single source of truth for the
+ * orchestrator-side summarization layer. Mirror the build-time
+ * defaults in `@shared/types/contextSummary.ts` so the runtime can
+ * read them either by name (here) or via
+ * `DEFAULT_CONTEXT_SUMMARY_RULES` (over there) and never drift.
+ *
+ * The split exists because the rules struct is a runtime-resolvable
+ * shape (layered global ← workspace ← session, surfaced into the
+ * Inspector) while these constants are import-time-frozen knobs
+ * referenced from the harness `<runtime_limits>` block and from
+ * the IPC channel registry. Keeping both eliminates "what's the
+ * actual default?" ambiguity at the call site.
+ */
+export const CONTEXT_SUMMARY_DEFAULT_TRIGGER_RATIO = 0.7;
+export const CONTEXT_SUMMARY_DEFAULT_KEEP_RECENT_TURNS = 4;
+export const CONTEXT_SUMMARY_MIN_MESSAGES_TO_SUMMARIZE = 6;
+export const CONTEXT_SUMMARY_DEFAULT_MAX_RETRIES = 2;
+/**
+ * Filename of the optional per-workspace summarizer-prompt override.
+ * Placed at `<workspace>/.vyotiq/context-summarizer.md`. When present
+ * and readable, it FULLY replaces the bundled
+ * `src/main/harness/05-context-summarizer.md` body — same convention
+ * as Cursor / Continue projects use for per-repo agent prompts. The
+ * file is never auto-written by the app.
+ */
+export const CONTEXT_SUMMARY_OVERRIDE_FILENAME = 'context-summarizer.md';
+/**
+ * Hard cap on the synthesized summary's text length in the persisted
+ * JSONL. Prevents a runaway summarizer from writing a multi-MB
+ * `context-summary-end.finalText` that bloats every transcript reload
+ * across the conversation's lifetime. The renderer + reducer
+ * truncate to the same cap on the live path so over-budget streams
+ * are clipped at the boundary without further loss.
+ */
+export const CONTEXT_SUMMARY_MAX_FINAL_CHARS = 32_000;
+
+/**
+ * Hard cap on the size of a `chat:send` user prompt (Audit fix M-03).
+ * The orchestrator already truncates oversized OpenAI inputs, but a
+ * direct-IPC caller could otherwise push an arbitrarily large blob
+ * through the `appendEvent` chain and into the persisted JSONL
+ * before any provider-side limit kicks in. 1 MiB is comfortably
+ * larger than any reasonable interactive prompt (~250k characters)
+ * while keeping the renderer's `user-prompt` event under the
+ * `MAX_TIMELINE_EVENT_BYTES` envelope plus headroom for metadata.
+ *
+ * The renderer's chat composer also enforces a smaller UI-level cap;
+ * this constant is the host-side last-line-of-defence so a malicious
+ * or buggy IPC caller can't bypass the UI gate.
+ */
+export const MAX_USER_PROMPT_BYTES = 1_048_576; // 1 MiB
 
 /** Tool execution. */
 export const BASH_TIMEOUT_MS = 30_000;
@@ -278,6 +376,67 @@ export const IPC = {
    * silently drops them. See plan §2.4.
    */
   CHAT_LIST_ACTIVE_RUNS: 'chat:list-active-runs',
+
+  // Context summarization
+  /**
+   * Snapshot the orchestrator's current `messages[]` for a run (or
+   * the persisted initial-messages state for an idle conversation)
+   * into a `ContextInspectorSnapshot` the Inspector renders. Cheap
+   * O(N) over a Map that's typically ≤ a few dozen entries.
+   */
+  CONTEXT_SUMMARY_INSPECT: 'context-summary:inspect',
+  /**
+   * Fire a manual summarization right now. Resolves once the
+   * `context-summary-pending` event has been emitted (the actual
+   * streaming continues asynchronously and arrives through the
+   * existing `CHAT_EVENT` channel). Returns `{ ok: false, reason }`
+   * when the run is unknown / disabled / mid-summary / has no
+   * summarizable messages.
+   */
+  CONTEXT_SUMMARY_TRIGGER_MANUAL: 'context-summary:trigger-manual',
+  /**
+   * Revert the splice for a specific summaryId. Only valid until
+   * the next `user-prompt` lands (turn boundary) — after that the
+   * snapshot is GC'd and the IPC returns `{ ok: false }`.
+   */
+  CONTEXT_SUMMARY_UNDO: 'context-summary:undo',
+  /**
+   * Set / clear a per-message override on a conversation. Persisted
+   * as a `context-override-set` TimelineEvent in the JSONL so
+   * overrides survive renderer reloads and app restarts. Pass
+   * `override: null` to clear.
+   */
+  CONTEXT_SUMMARY_SET_MESSAGE_OVERRIDE: 'context-summary:set-message-override',
+  /**
+   * Clear ALL per-message overrides on a conversation. Emits a
+   * single `context-override-set` event with the synthetic
+   * `messageId: '*'` sentinel so replay can reconstruct the same
+   * state.
+   */
+  CONTEXT_SUMMARY_RESET_MESSAGE_OVERRIDES: 'context-summary:reset-message-overrides',
+  /**
+   * Read the resolved `ContextSummaryRules` (global ← workspace ←
+   * session). Used by the Settings → Context tab and the Inspector
+   * to surface what's currently in effect for the active workspace.
+   */
+  CONTEXT_SUMMARY_GET_RULES: 'context-summary:get-rules',
+  /**
+   * Persist a partial rules patch at the given scope. The IPC
+   * handler routes through `settingsStore.setSettings` for both
+   * scopes — `global` writes `contextSummary`, `workspace` writes
+   * `ui.contextSummaryByWorkspace[wsId]`. Returns the refreshed
+   * AppSettings.
+   */
+  CONTEXT_SUMMARY_UPDATE_RULES: 'context-summary:update-rules',
+  /**
+   * main → renderer broadcast: emitted whenever a run's
+   * inspector snapshot changes (a turn advanced, an override was
+   * written, a summary applied). Carries `runId` so the renderer
+   * can refetch only when the open Inspector is bound to the
+   * affected run. Throttled at the source — at most one emit per
+   * RAF-frame per run.
+   */
+  CONTEXT_SUMMARY_SNAPSHOT_CHANGED: 'context-summary:snapshot-changed',
 
   // Tools (mixed direction — see per-channel comments below)
   /** renderer → main: open a workspace-relative path in the OS default opener. */

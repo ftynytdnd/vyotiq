@@ -144,13 +144,22 @@ describe('discoverModels — ollama-native dialect', () => {
 
 describe('detectDialect — auto-probe', () => {
   it('returns "openai" when /v1/models is reachable', async () => {
+    // Audit fix M-11: detectDialect now races the OpenAI and
+    // Ollama-native probes in parallel via `Promise.any`, so both
+    // fetches fire even when the OpenAI probe wins. The test
+    // provides a fallback ollama-native stub (whose response is
+    // never the winner) and asserts that AT LEAST one call hit
+    // `/v1/models` rather than a strict "only one call" check —
+    // the change brings the worst-case wall-clock on unreachable
+    // endpoints from 2×budget down to ~1×budget.
     const { calls } = mockFetchSequence([
-      () => jsonResponse(200, { data: [] })
+      () => jsonResponse(200, { data: [] }),
+      () => new Response('not found', { status: 404, statusText: 'Not Found' })
     ]);
     const dialect = await detectDialect('https://api.example.com', '');
     expect(dialect).toBe('openai');
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.url).toContain('/v1/models');
+    const openaiCalls = calls.filter((c) => c.url.includes('/v1/models'));
+    expect(openaiCalls.length).toBeGreaterThanOrEqual(1);
   });
 
   it('falls back to "ollama-native" when /v1/models is 404 but /api/tags is 200', async () => {
@@ -221,21 +230,30 @@ describe('detectDialect — auto-probe', () => {
     // the canonical models endpoint is `…/api/v1/models`. The old
     // dialect-blind probe stripped to `https://openrouter.ai` and
     // 404'd before the dialect could ever resolve to `'openai'`.
+    //
+    // Audit fix M-11: parallel probes mean the ollama-native fetch
+    // also fires; provide a fallback stub and assert the OpenAI
+    // probe URL by FILTER rather than positional index.
     const { calls } = mockFetchSequence([
-      () => jsonResponse(200, { data: [{ id: 'openai/gpt-4o', context_length: 128000 }] })
+      () => jsonResponse(200, { data: [{ id: 'openai/gpt-4o', context_length: 128000 }] }),
+      () => new Response('not found', { status: 404, statusText: 'Not Found' })
     ]);
     const dialect = await detectDialect('https://openrouter.ai/api', 'sk-or-test');
     expect(dialect).toBe('openai');
-    expect(calls[0]!.url).toBe('https://openrouter.ai/api/v1/models');
+    const openaiCall = calls.find((c) => c.url.includes('/v1/models'));
+    expect(openaiCall?.url).toBe('https://openrouter.ai/api/v1/models');
   });
 
   it('normalizes a trailing /v1 on the user-supplied base URL before probing', async () => {
+    // Audit fix M-11: parallel probes; provide fallback stub.
     const { calls } = mockFetchSequence([
-      () => jsonResponse(200, { data: [] })
+      () => jsonResponse(200, { data: [] }),
+      () => new Response('not found', { status: 404, statusText: 'Not Found' })
     ]);
     const dialect = await detectDialect('https://api.example.com/v1', 'k');
     expect(dialect).toBe('openai');
-    expect(calls[0]!.url).toBe('https://api.example.com/v1/models');
+    const openaiCall = calls.find((c) => c.url.includes('/v1/models'));
+    expect(openaiCall?.url).toBe('https://api.example.com/v1/models');
   });
 
   /**

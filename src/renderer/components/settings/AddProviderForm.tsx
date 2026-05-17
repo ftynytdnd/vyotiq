@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { Button } from '../ui/Button.js';
 import { Chip } from '../ui/Chip.js';
+import { Eyebrow } from '../ui/Eyebrow.js';
 import { TextField } from '../ui/TextField.js';
 import { useProviderStore } from '../../store/useProviderStore.js';
 import { cn } from '../../lib/cn.js';
@@ -189,7 +190,7 @@ function DialectSwitch({
 }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-row uppercase tracking-wider text-text-faint">Dialect</span>
+      <Eyebrow as="span" size="row">Dialect</Eyebrow>
       <div className="flex overflow-hidden rounded-inner bg-surface-base">
         {PROVIDER_DIALECTS.map((d) => {
           const active = d === value;
@@ -229,7 +230,7 @@ function Field({
 }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-row uppercase tracking-wider text-text-faint">{label}</span>
+      <Eyebrow as="span" size="row">{label}</Eyebrow>
       <TextField
         type={password ? 'password' : 'text'}
         value={value}

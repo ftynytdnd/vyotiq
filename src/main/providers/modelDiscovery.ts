@@ -170,27 +170,43 @@ export async function detectDialect(
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
-  // Probe #1: OpenAI-compat. Always tried first because the OpenAI
-  // shim is more widely deployed (every cloud provider, plus the
-  // local Ollama daemon's /v1/* shim). Both probes are bounded by
-  // `MODEL_DISCOVERY_TIMEOUT_MS` so a non-responsive endpoint can't
-  // hang `PROVIDERS_ADD` past the budget.
-  try {
-    const openaiRes = await fetchWithTimeout(`${openaiBase}/v1/models`, headers);
-    if (openaiRes.ok) return 'openai';
-  } catch {
-    // Network / DNS error / timeout — fall through to the native
-    // probe. Some strict hosts reject the unknown path with a TCP
-    // reset rather than a 404; either way, the native probe is the
-    // next signal.
-  }
+  // Audit fix M-11: race the two probes in parallel instead of
+  // sequentially. Previously this site awaited the OpenAI probe
+  // first and only fell through to the Ollama-native probe on
+  // timeout — combined worst-case wall-clock was 2 × the budget
+  // (~42 s on a hung endpoint, observable as the renderer's
+  // Settings → Add Provider modal spinning for over half a minute).
+  //
+  // Both probes are still bounded individually by
+  // `MODEL_DISCOVERY_TIMEOUT_MS`; the race resolves as soon as the
+  // first probe returns a 200 OK, so a healthy endpoint with the
+  // OpenAI shim continues to resolve at OpenAI-probe latency. The
+  // Promise.allSettled fallback handles the case where neither
+  // probe got a 200 — we throw the same combined error message the
+  // sequential version surfaced.
+  //
+  // We model each probe as a promise that:
+  //   - resolves with the dialect on a 200 OK
+  //   - rejects on any non-OK / network / timeout outcome
+  // and feed both to `Promise.any`, which resolves with the first
+  // fulfilled value. If both reject we fall through to the combined
+  // error path.
+  const probeOpenAi = async (): Promise<ProviderDialect> => {
+    const res = await fetchWithTimeout(`${openaiBase}/v1/models`, headers);
+    if (!res.ok) throw new Error(`openai probe non-OK status ${res.status}`);
+    return 'openai';
+  };
+  const probeNative = async (): Promise<ProviderDialect> => {
+    const res = await fetchWithTimeout(`${ollamaBase}/api/tags`, headers);
+    if (!res.ok) throw new Error(`ollama-native probe non-OK status ${res.status}`);
+    return 'ollama-native';
+  };
 
-  // Probe #2: Ollama native.
   try {
-    const nativeRes = await fetchWithTimeout(`${ollamaBase}/api/tags`, headers);
-    if (nativeRes.ok) return 'ollama-native';
+    return await Promise.any([probeOpenAi(), probeNative()]);
   } catch {
-    // ignored — we'll throw below with a single combined error.
+    // Both probes rejected (Promise.any throws AggregateError). Fall
+    // through to the combined-error throw below.
   }
 
   throw new Error(

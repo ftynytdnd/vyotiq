@@ -32,6 +32,11 @@ const CheckpointsView = lazy(() =>
     default: m.CheckpointsView
   }))
 );
+const ContextInspectorPanel = lazy(() =>
+  import('./components/contextInspector/index.js').then((m) => ({
+    default: m.ContextInspectorPanel
+  }))
+);
 import { useProviderStore } from './store/useProviderStore.js';
 import { useWorkspaceStore } from './store/useWorkspaceStore.js';
 import { useSettingsStore } from './store/useSettingsStore.js';
@@ -67,7 +72,7 @@ export default function App() {
   const [activeMapHydrated, setActiveMapHydrated] = useState(false);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'providers' | 'permissions' | 'performance' | 'checkpoints' | 'memory' | 'about'>('providers');
+  const [settingsTab, setSettingsTab] = useState<'providers' | 'permissions' | 'context' | 'checkpoints' | 'memory' | 'about'>('providers');
   const [workspacePathOpen, setWorkspacePathOpen] = useState(false);
   const [workspacePathError, setWorkspacePathError] = useState<string | null>(null);
   const [checkpointsOpen, setCheckpointsOpen] = useState(false);
@@ -244,11 +249,14 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-    // We only want this to run on the first non-empty providers list. The
-    // server cache deduplicates further calls, so re-running on every change
-    // would be wasteful but safe.
+    // Audit fix L-02: depend on the joined provider-id+enabled-flag
+    // string so REPLACING a provider (same length, different id) still
+    // triggers discovery against the new endpoint. The server's TTL
+    // cache deduplicates anyway — re-running on every change is safe
+    // and ensures cache misses on the new id are caught immediately
+    // rather than waiting for the TTL to expire.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [providers.length]);
+  }, [providers.map((p) => `${p.id}:${p.enabled ? 1 : 0}`).join(',')]);
 
   const openSettings = (tab: typeof settingsTab = 'providers') => {
     setSettingsTab(tab);
@@ -310,7 +318,6 @@ export default function App() {
         >
           <Sidebar
             onOpenSettings={() => openSettings('permissions')}
-            onOpenCheckpoints={() => setCheckpointsOpen(true)}
           />
         </div>
         <EdgeHandle />
@@ -356,6 +363,9 @@ export default function App() {
       </Suspense>
       <Suspense fallback={null}>
         <CheckpointsView open={checkpointsOpen} onClose={() => setCheckpointsOpen(false)} />
+      </Suspense>
+      <Suspense fallback={null}>
+        <ContextInspectorPanel />
       </Suspense>
       <ToastHost />
     </div>

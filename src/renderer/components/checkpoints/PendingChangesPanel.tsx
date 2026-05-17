@@ -1,32 +1,45 @@
 /**
- * PendingChangesPanel — inline panel between the timeline and composer.
- * Surfaces every Accept/Reject candidate for the active conversation
- * with a compact header and per-row affordances.
+ * PendingChangesPanel — inline panel between the timeline and
+ * composer. Surfaces every Accept / Reject candidate for the active
+ * conversation with a sticky header, optional run + path filters,
+ * a virtualisation-light list, and a "Review all" lightbox for
+ * one-at-a-time review.
  *
- * Renders nothing when the conversation has no pending entries — the
- * chat surface stays clean for the common case. Checkpoint history
- * remains available from the sidebar and full Checkpoints view.
+ * Renders nothing when the conversation has no pending entries —
+ * the chat surface stays clean for the common case. Checkpoint
+ * history remains available from the sidebar and full Checkpoints
+ * view.
  *
  * Header copy adapts to `gatePromptOnPendingByWorkspace`:
  *   - off (default): "auto-accepted on next message"
  *   - on:            "approve or reject before sending"
  *
- * When >1 distinct runs are represented, rows group under collapsible
- * run-label sub-headers; a single run renders flush as before to
- * preserve the existing visual density.
+ * Implementation broken up into modular files inside `pending/`:
+ *
+ *   - `PendingChangesHeader`     — sticky header with filters + bulk.
+ *   - `PendingChangesList`       — runId-grouped body + virtualisation.
+ *   - `PendingChangesReviewMode` — full-pane lightbox.
+ *   - `usePendingChangesFilters` — filter state hook.
+ *   - `groupPendingByPath`       — pure run / folder grouping helpers.
+ *
+ * This file owns the data plumbing (refresh, summary warm-up,
+ * accept-all / reject-all bulk actions) and orchestrates the modular
+ * UI pieces.
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, ListChecks } from 'lucide-react';
-import type { PendingChange } from '@shared/types/checkpoint.js';
 import {
   useCheckpointsStore,
   usePendingChanges
 } from '../../store/useCheckpointsStore.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
+import { useToastStore } from '../../store/useToastStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
-import { Button } from '../ui/Button.js';
-import { PendingChangeRow } from './PendingChangeRow.js';
+import { PendingChangesHeader } from './pending/PendingChangesHeader.js';
+import { PendingChangesList } from './pending/PendingChangesList.js';
+import { PendingChangesReviewMode } from './pending/PendingChangesReviewMode.js';
+import { usePendingChangesFilters } from './pending/usePendingChangesFilters.js';
+import { applyPendingFilters } from './pending/groupPendingByPath.js';
 
 interface PendingChangesPanelProps {
   conversationId: string | null;
@@ -51,6 +64,10 @@ export function PendingChangesPanel({
       : false
   );
 
+  const filters = usePendingChangesFilters(conversationId);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const showToast = useToastStore((s) => s.show);
+
   // Refresh whenever the active conversation changes. Live updates
   // arrive via the `onChanged` broadcast wired in `App.tsx`.
   useEffect(() => {
@@ -59,8 +76,9 @@ export function PendingChangesPanel({
   }, [conversationId, refreshPending]);
 
   // Warm the workspace summary so the disk-usage pill has data the
-  // first time the pending panel mounts. The store identity-skips no-op
-  // refetches via its `summaryLoading` map so this isn't wasteful.
+  // first time the pending panel mounts. The store identity-skips
+  // no-op refetches via its `summaryLoading` map so this isn't
+  // wasteful.
   useEffect(() => {
     if (pending.length === 0) return;
     if (!activeWorkspaceId) return;
@@ -68,151 +86,121 @@ export function PendingChangesPanel({
     void refreshSummary(activeWorkspaceId);
   }, [activeWorkspaceId, pending.length, summary, refreshSummary]);
 
-  // Group rows by `runId` so users can see WHICH run produced each
-  // batch of pending changes when one conversation triggered multiple
-  // runs (e.g. an aborted-then-resumed sequence). Single-run case
-  // skips the sub-headers below.
-  const groups = useMemo(() => groupByRun(pending), [pending]);
+  // Distinct run ids in their original order — the panel surfaces
+  // these in the run filter when ≥ 2 are present.
+  const runIds = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const p of pending) {
+      if (seen.has(p.runId)) continue;
+      seen.add(p.runId);
+      out.push(p.runId);
+    }
+    return out;
+  }, [pending]);
+
+  // Pre-filter pending list (run + path filters).
+  const visiblePending = useMemo(
+    () =>
+      applyPendingFilters(pending, {
+        runId: filters.runId,
+        pathQuery: filters.pathQuery
+      }),
+    [pending, filters.runId, filters.pathQuery]
+  );
 
   // Empty-state branch: no pending entries.
   if (!conversationId) return null;
   if (pending.length === 0) return null;
 
-  const additions = pending.reduce((acc, p) => acc + p.additions, 0);
-  const deletions = pending.reduce((acc, p) => acc + p.deletions, 0);
+  const visibleAdditions = visiblePending.reduce((a, p) => a + p.additions, 0);
+  const visibleDeletions = visiblePending.reduce((a, p) => a + p.deletions, 0);
 
-  const onAcceptAll = () => {
-    void Promise.all(
-      pending.map((p) =>
+  // Bulk actions surface failure counts via toast. Per-entry `accept`
+  // / `reject` log + refetch internally, so a silent bulk path used to
+  // leave the user wondering why some entries reappeared after Accept
+  // all. Counting `false` results (accept) or `result.ok === false`
+  // (reject) lets the panel emit a single user-visible summary
+  // instead. (`showToast` is hoisted above the conditional early
+  // returns so React's rules-of-hooks invariant holds.)
+  const onAcceptAll = async () => {
+    const results = await Promise.all(
+      visiblePending.map((p) =>
         useCheckpointsStore.getState().accept(p.entryId, p.conversationId)
       )
     );
+    const failed = results.filter((ok) => ok === false).length;
+    if (failed === 0) return;
+    showToast(
+      `${failed} of ${results.length} change${results.length === 1 ? '' : 's'} could not be accepted — see Checkpoints log`,
+      'danger'
+    );
   };
-  const onRejectAll = () => {
-    void Promise.all(
-      pending.map((p) =>
+  const onRejectAll = async () => {
+    const results = await Promise.all(
+      visiblePending.map((p) =>
         useCheckpointsStore.getState().reject(p.entryId, p.conversationId)
       )
+    );
+    const failed = results.filter((r) => !r.ok).length;
+    if (failed === 0) return;
+    showToast(
+      `${failed} of ${results.length} revert${results.length === 1 ? '' : 's'} failed — see Checkpoints log`,
+      'danger'
     );
   };
 
   const usageLabel = summary
     ? `Checkpoints · ${summary.usage.runCount} run${summary.usage.runCount === 1 ? '' : 's'}`
-    : '';
+    : null;
   const usageTitle = summary
     ? `${summary.usage.runCount} run${summary.usage.runCount === 1 ? '' : 's'} · ${formatBytes(summary.usage.totalBytes)} on disk — open Checkpoints view`
-    : 'Open Checkpoints view';
-  const gateLabel = gateOn
-    ? 'approve or reject before sending'
-    : 'auto-accepted on next message';
-  // When only one change is pending the body row already carries the
-  // `+X −Y` stat next to its filename. Repeating the same stat in the
-  // header reads as duplicate noise; drop the diff fragment in that
-  // single-change case so the header stays focused on "1 pending
-  // change · auto-accepted on next message".
-  const showHeaderDiff = pending.length > 1;
+    : null;
 
   return (
-    <div className="mb-2 flex max-h-[min(34vh,20rem)] flex-col overflow-hidden rounded-inner bg-surface-raised/60">
-      <div className="log-line flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-border-subtle/30 px-3 py-2">
-        <ListChecks className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} />
-        <div className="min-w-0 flex-1 basis-52 text-row text-text-secondary">
-          <span className="font-medium text-text-primary">
-            {pending.length} pending change{pending.length === 1 ? '' : 's'}
-          </span>{' '}
-          <span className="text-text-muted">
-            {showHeaderDiff && <>+{additions} −{deletions} · </>}
-            {gateLabel}
-          </span>
-        </div>
-        {usageLabel && onOpenCheckpoints && (
-          <button
-            type="button"
-            onClick={onOpenCheckpoints}
-            className="shrink-0 text-meta text-text-muted hover:text-text-primary"
-            title={usageTitle}
-          >
-            {usageLabel}
-          </button>
-        )}
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          <Button size="sm" variant="ghost" onClick={onRejectAll}>
-            Reject all
-          </Button>
-          <Button size="sm" variant="primary" onClick={onAcceptAll}>
-            Accept all
-          </Button>
+    <>
+      <div className="mb-2 flex max-h-[min(34vh,20rem)] flex-col overflow-hidden rounded-inner bg-surface-raised/60">
+        <PendingChangesHeader
+          visibleCount={visiblePending.length}
+          totalCount={pending.length}
+          visibleAdditions={visibleAdditions}
+          visibleDeletions={visibleDeletions}
+          gateOn={gateOn}
+          runIds={runIds}
+          selectedRunId={filters.runId}
+          onSelectRunId={filters.setRunId}
+          pathQuery={filters.pathQuery}
+          onPathQueryChange={filters.setPathQuery}
+          usageLabel={usageLabel}
+          usageTitle={usageTitle}
+          {...(onOpenCheckpoints ? { onOpenCheckpoints } : {})}
+          onAcceptAll={onAcceptAll}
+          onRejectAll={onRejectAll}
+          onReviewAll={() => setReviewOpen(true)}
+        />
+        <div className="scrollbar-stealth flex min-h-0 flex-col overflow-y-auto py-0.5">
+          {visiblePending.length === 0 ? (
+            <div className="px-3 py-4 text-row text-text-muted">
+              No pending changes match the current filters.
+              <button
+                type="button"
+                onClick={filters.reset}
+                className="ml-2 text-meta text-accent hover:underline"
+              >
+                Clear filters
+              </button>
+            </div>
+          ) : (
+            <PendingChangesList pending={visiblePending} />
+          )}
         </div>
       </div>
-      <div className="scrollbar-stealth flex min-h-0 flex-col overflow-y-auto py-0.5">
-        {groups.length === 1 ? (
-          // Single-run case — render flush, no sub-header (matches the
-          // pre-grouping visual density).
-          groups[0]!.entries.map((p) => (
-            <PendingChangeRow key={p.entryId} change={p} />
-          ))
-        ) : (
-          groups.map((g) => (
-            <RunGroup key={g.runId} group={g} />
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
-interface RunGroupShape {
-  runId: string;
-  entries: PendingChange[];
-}
-
-function groupByRun(pending: readonly PendingChange[]): RunGroupShape[] {
-  const byRun = new Map<string, PendingChange[]>();
-  for (const p of pending) {
-    const arr = byRun.get(p.runId);
-    if (arr) arr.push(p);
-    else byRun.set(p.runId, [p]);
-  }
-  // Preserve insertion order — `pending` is already sorted by
-  // createdAt asc inside the store, so the first appearance of a
-  // runId is the oldest entry for that run.
-  return Array.from(byRun, ([runId, entries]) => ({ runId, entries }));
-}
-
-function RunGroup({ group }: { group: RunGroupShape }) {
-  const [expanded, setExpanded] = useState(true);
-  const additions = group.entries.reduce((a, e) => a + e.additions, 0);
-  const deletions = group.entries.reduce((a, e) => a + e.deletions, 0);
-  return (
-    <div className="flex flex-col border-t border-border-subtle/30">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="log-line app-no-drag flex w-full items-center gap-2 px-2 py-1 text-left hover:bg-surface-hover"
-        aria-label={expanded ? 'Collapse run group' : 'Expand run group'}
-        aria-expanded={expanded}
-      >
-        {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[color:var(--color-chevron)]" strokeWidth={2} />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[color:var(--color-chevron)]" strokeWidth={2} />
-        )}
-        <div className="min-w-0 flex-1 truncate text-meta text-text-muted">
-          Run {group.runId.slice(0, 8)} · {group.entries.length} change
-          {group.entries.length === 1 ? '' : 's'}
-        </div>
-        <div className="shrink-0 text-meta text-text-faint">
-          +{additions} −{deletions}
-        </div>
-      </button>
-      {expanded && (
-        <div className="flex flex-col">
-          {group.entries.map((p) => (
-            <PendingChangeRow key={p.entryId} change={p} />
-          ))}
-        </div>
-      )}
-    </div>
+      <PendingChangesReviewMode
+        open={reviewOpen}
+        onClose={() => setReviewOpen(false)}
+        entries={visiblePending}
+      />
+    </>
   );
 }
 

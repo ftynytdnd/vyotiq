@@ -15,13 +15,15 @@ import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { reportTool } from '@main/tools/report.tool';
-import type { ToolContext } from '@main/tools/types';
+import type { ConfirmOutcome, ToolContext } from '@main/tools/types';
 
 interface CtxOverrides {
   allowFileWrites?: boolean;
   allowBash?: boolean;
   allowWebSearch?: boolean;
-  confirm?: (msg: string) => Promise<boolean>;
+  // Audit fix H-04: ConfirmOutcome shape (replaces the legacy
+  // `Promise<boolean>` return type).
+  confirm?: (msg: string) => Promise<ConfirmOutcome>;
 }
 
 function makeCtx(workspacePath: string, overrides: CtxOverrides = {}): ToolContext {
@@ -37,7 +39,8 @@ function makeCtx(workspacePath: string, overrides: CtxOverrides = {}): ToolConte
     },
     strictApprovals: false,
     signal: new AbortController().signal,
-    confirm: overrides.confirm ?? (async () => true),
+    // Audit fix H-04: ConfirmOutcome shape.
+    confirm: overrides.confirm ?? (async () => ({ approved: true, reason: 'approved' as const })),
     confirmEdit: async () => ({ approved: true, acceptAllRemaining: false }),
     emit: () => { }
   };
@@ -178,9 +181,12 @@ describe('reportTool — permission gating', () => {
     let confirmCalledWith: string | null = null;
     const ctx = makeCtx(workspace, {
       allowFileWrites: false,
-      confirm: async (msg) => {
+      // Audit fix H-04: ConfirmOutcome shape — denial reports
+      // `reason: 'denied'` so the tool surfaces the legacy
+      // "permission denied" wording.
+      confirm: async (msg: string) => {
         confirmCalledWith = msg;
-        return false;
+        return { approved: false, reason: 'denied' as const };
       }
     });
 
@@ -196,7 +202,8 @@ describe('reportTool — permission gating', () => {
   it('writes the file when allowFileWrites is false but the user confirms', async () => {
     const ctx = makeCtx(workspace, {
       allowFileWrites: false,
-      confirm: async () => true
+      // Audit fix H-04: ConfirmOutcome shape.
+      confirm: async () => ({ approved: true, reason: 'approved' as const })
     });
     const r = await reportTool.run({ title: 'Approved', body: '<p>ok</p>' }, ctx);
     expect(r.ok).toBe(true);

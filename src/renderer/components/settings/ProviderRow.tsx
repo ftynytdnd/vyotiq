@@ -309,7 +309,7 @@ function AttributionField({
 }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-row uppercase tracking-wider text-text-faint">{label}</span>
+      <Eyebrow as="span" size="row">{label}</Eyebrow>
       <TextField
         type="text"
         value={value}

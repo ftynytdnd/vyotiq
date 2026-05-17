@@ -102,9 +102,14 @@ export async function runToolByName(
       // command / permission prompts have no "Accept all remaining"
       // affordance and the bus normalizes their bare boolean replies
       // anyway. Only `confirmEdit` reads the flag.
-      confirm: async (message: string): Promise<boolean> => {
+      //
+      // Audit fix H-04: forward `reason` so the tool can distinguish
+      // "user denied" from "host couldn't show the prompt" / "timed
+      // out" / "aborted" and render a precise failure message
+      // instead of always claiming a denial.
+      confirm: async (message: string) => {
         const r = await requestConfirm(message, opts.signal);
-        return r.approved;
+        return { approved: r.approved, reason: r.reason };
       },
       confirmEdit: async (payload: EditApprovalPayload) => {
         // Fast path: the user already pressed "Accept all remaining"

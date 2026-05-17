@@ -16,15 +16,6 @@ interface SettingsStore {
   setPermissions: (patch: Partial<ChatPermissions>) => Promise<void>;
   setWebSearchEndpoint: (endpoint: string) => Promise<void>;
   /**
-   * Audit fix §2.2 — flip the opt-in transcript-aware summarizer.
-   * When enabled, the run-loop falls back to a one-shot summarizer
-   * LLM call after its structured trim policy can't fit the request
-   * under the model's effective context window. The toggle takes
-   * effect on the NEXT run (the loop snapshots the flag once at
-   * start). Off by default for cost / determinism reasons.
-   */
-  setHistorySummaryEnabled: (enabled: boolean) => Promise<void>;
-  /**
    * Persist the per-workspace last-active conversation map. Called by
    * `useConversationsStore` after every `select` / `bindActive` /
    * `remove` so a restart restores the slot the user was last
@@ -180,18 +171,6 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
 
   setWebSearchEndpoint: async (endpoint) => {
     const updated = await vyotiq.settings.set({ webSearchEndpoint: endpoint });
-    setState({ settings: { ...getState().settings, ...updated } });
-  },
-
-  setHistorySummaryEnabled: async (enabled) => {
-    // The wire shape is `{ historySummary: { enabled: boolean } }` so a
-    // future addition (e.g. a max-tokens cap) can ride alongside without
-    // breaking the toggle's call site. Identity-skip when the value
-    // would be unchanged so a same-value click doesn't churn
-    // settings.json.
-    const current = getState().settings.historySummary?.enabled === true;
-    if (current === enabled) return;
-    const updated = await vyotiq.settings.set({ historySummary: { enabled } });
     setState({ settings: { ...getState().settings, ...updated } });
   },
 

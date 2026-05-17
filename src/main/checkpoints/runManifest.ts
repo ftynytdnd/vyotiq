@@ -9,13 +9,13 @@
  */
 
 import { promises as fs, existsSync } from 'node:fs';
-import { dirname } from 'node:path';
 import type {
   CheckpointEntry,
   CheckpointRunManifest
 } from '@shared/types/checkpoint.js';
 import { runManifestPath, runsDir } from './paths.js';
 import { logger } from '../logging/logger.js';
+import { atomicWriteJson } from './atomicWrite.js';
 
 const log = logger.child('checkpoints/runManifest');
 
@@ -34,11 +34,10 @@ function serialize(runId: string, fn: () => Promise<void>): Promise<void> {
 }
 
 async function persist(manifest: CheckpointRunManifest): Promise<void> {
-  const path = runManifestPath(manifest.workspaceId, manifest.runId);
-  await fs.mkdir(dirname(path), { recursive: true });
-  const tmp = `${path}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(manifest), 'utf8');
-  await fs.rename(tmp, path);
+  await atomicWriteJson(
+    runManifestPath(manifest.workspaceId, manifest.runId),
+    manifest
+  );
 }
 
 /**

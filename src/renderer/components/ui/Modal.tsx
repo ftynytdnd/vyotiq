@@ -20,8 +20,20 @@
  *     correctly.
  *   - Close on Escape and on backdrop click.
  *
+ * Backdrop close uses a mousedown-pair guard: a `mousedown` that
+ * starts on the dialog body and an `mouseup` outside of it MUST NOT
+ * trigger close. Otherwise a user dragging to select text from
+ * inside the dialog into the surrounding chrome (a habit on long
+ * read-only previews) would close the dialog on mouse release. The
+ * pair guard tracks the originating `mousedown` target and only
+ * fires `onClose` when both endpoints land on the backdrop itself.
+ *
+ * `closeOnBackdrop` lets callers opt out entirely — useful for
+ * destructive flows where an accidental backdrop click could lose
+ * unsaved work (e.g. RevertPreviewModal's mid-rewind state).
+ *
  * Visuals (centered card, stealth backdrop, header row with close X)
- * are preserved exactly — this hardens behavior without touching
+ * are preserved exactly — this hardens behaviour without touching
  * aesthetics.
  */
 
@@ -36,7 +48,14 @@ interface ModalProps {
   onClose: () => void;
   title: string;
   children: React.ReactNode;
-  size?: 'md' | 'lg';
+  size?: 'md' | 'lg' | 'xl';
+  /**
+   * When false, clicking the backdrop is a no-op — the user must
+   * close the dialog via Escape or an explicit cancel button. Useful
+   * for destructive flows that shouldn't be dismissable by accident.
+   * Defaults to true to preserve existing behaviour.
+   */
+  closeOnBackdrop?: boolean;
 }
 
 /**
@@ -81,10 +100,27 @@ function getFocusable(root: HTMLElement): HTMLElement[] {
   );
 }
 
-export function Modal({ open, onClose, title, children, size = 'md' }: ModalProps) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  size = 'md',
+  closeOnBackdrop = true
+}: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const titleId = useId();
+  /**
+   * Tracks where the most recent backdrop `mousedown` originated.
+   * Set to `'backdrop'` only when the press lands on the backdrop
+   * element itself (not on any descendant of the dialog). The
+   * mouseup handler then closes the dialog only when its own target
+   * is the backdrop AND the originating mousedown was the backdrop
+   * — covering both a clean backdrop click and rejecting a click
+   * that started inside the dialog (text drag-select).
+   */
+  const downOriginRef = useRef<'backdrop' | 'dialog' | null>(null);
 
   // Acquire / release the body-scroll lock for the lifetime of the
   // open state. Strict-mode double-invoke is harmless because the
@@ -175,10 +211,24 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
 
   if (!open) return null;
   if (typeof document === 'undefined') return null;
+
+  const handleBackdropMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    downOriginRef.current = e.target === e.currentTarget ? 'backdrop' : 'dialog';
+  };
+  const handleBackdropMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
+    const origin = downOriginRef.current;
+    downOriginRef.current = null;
+    if (!closeOnBackdrop) return;
+    if (origin !== 'backdrop') return;
+    if (e.target !== e.currentTarget) return;
+    onClose();
+  };
+
   return createPortal(
     <div
       className="fixed inset-0 z-[100] flex items-start justify-center bg-surface-base/80 backdrop-blur-sm pt-20"
-      onClick={onClose}
+      onMouseDown={handleBackdropMouseDown}
+      onMouseUp={handleBackdropMouseUp}
     >
       <div
         ref={dialogRef}
@@ -186,12 +236,12 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
         className={cn(
           'elev-2 mx-4 flex max-h-[80vh] w-full flex-col overflow-hidden rounded-card',
           'bg-surface-raised',
           size === 'md' && 'max-w-xl',
-          size === 'lg' && 'max-w-3xl'
+          size === 'lg' && 'max-w-3xl',
+          size === 'xl' && 'max-w-6xl'
         )}
       >
         <div className="flex items-center justify-between px-5 py-4">

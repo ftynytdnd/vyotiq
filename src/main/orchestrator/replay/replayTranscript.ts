@@ -30,20 +30,6 @@ import { MAX_TOOL_OUTPUT_CHARS } from '@shared/constants.js';
 import { wrapXml, buildSubagentResultsEnvelope } from '../envelope/index.js';
 
 export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
-  // Audit fix §2.2 — pre-pass: collect every event id masked by ANY
-  // `history-summary` event in the transcript. The main pass below
-  // skips persisted events whose id appears in this set so the
-  // orchestrator's reconstructed view matches the compacted view the
-  // live run produced. The summary itself is injected at the
-  // `history-summary` event's position (see the `history-summary`
-  // case below).
-  const maskedIds = new Set<string>();
-  for (const e of events) {
-    if (e.kind === 'history-summary') {
-      for (const id of e.replacedEventIds) maskedIds.add(id);
-    }
-  }
-
   const messages: ChatMessage[] = [];
 
   // Walking state for the in-progress assistant turn.
@@ -149,27 +135,7 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
   };
 
   for (const e of events) {
-    // Audit fix §2.2 — skip events masked by an earlier (in event
-    // order) `history-summary`. The summary itself is replayed when
-    // we hit its sentinel below, so the orchestrator's reconstructed
-    // `messages[]` reads `…sys, summary, recent turns, current
-    // prompt` — the same shape the live run sent.
-    if (maskedIds.has(e.id)) continue;
     switch (e.kind) {
-      case 'history-summary': {
-        // Synthetic user message that stands in for everything
-        // collapsed into the summary. The XML wrapper matches what
-        // the live run injects (see `runLoop.ts` summarizer block)
-        // so the orchestrator can recognize / re-cite the summary.
-        flushAssistant();
-        flushSubagentRound();
-        pendingCallIds = [];
-        messages.push({
-          role: 'user',
-          content: `<history_summary>\n${e.summary}\n</history_summary>`
-        });
-        break;
-      }
       case 'user-prompt': {
         flushAssistant();
         flushSubagentRound();

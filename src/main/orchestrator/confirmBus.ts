@@ -18,10 +18,28 @@ const log = logger.child('confirm');
  * run" latch flipped by the `EditApprovalDialog`. Legacy text-only
  * confirms never set the latch, so the value is always `false` for
  * them.
+ *
+ * `reason` (Audit fix H-04): distinguishes the four ways a confirm
+ * can resolve to `approved: false`:
+ *   - `'denied'`     — user actively clicked Deny
+ *   - `'timeout'`    — server-side TIMEOUT_MS expired without a reply
+ *   - `'aborted'`    — run-scoped signal fired (Stop click, run abort)
+ *   - `'no-ui'`      — no live BrowserWindow / send-failed; failed
+ *                       closed without ever showing the user a prompt
+ *   - `'approved'`   — user clicked Allow (sentinel value matched on
+ *                       `approved === true`)
+ *
+ * Tools use the reason to pick the right user-facing failure message:
+ * `'denied'` → "User denied permission"; the others → a
+ * "host could not show the prompt" / "timed out" / "aborted" message
+ * so the model + the user aren't told a denial happened when it didn't.
  */
+export type ConfirmReason = 'approved' | 'denied' | 'timeout' | 'aborted' | 'no-ui';
+
 export interface ConfirmResult {
   approved: boolean;
   acceptAllRemaining: boolean;
+  reason: ConfirmReason;
 }
 
 interface PendingConfirm {
@@ -54,7 +72,7 @@ function finalize(
   id: string,
   entry: PendingConfirm,
   result: ConfirmResult,
-  reason: string
+  reason: 'renderer-reply' | 'timeout' | 'aborted' | 'shutdown' | 'send-failed'
 ): void {
   if (entry.resolved) {
     log.warn('double-settle suppressed on confirm', { id, reason });
@@ -95,9 +113,21 @@ function finalize(
   }
 }
 
-/** Shorthand for the most common `approved` outcome. */
-const denied: ConfirmResult = { approved: false, acceptAllRemaining: false };
-const approvedOnly: ConfirmResult = { approved: true, acceptAllRemaining: false };
+/**
+ * Shorthand sentinels by reason. `approved === true` is reserved for
+ * the user-clicked-Allow path; every other `approved: false` outcome
+ * carries a distinct `reason` so the calling tool can tell "user
+ * denied" apart from "no UI", "timed out", or "run aborted".
+ *
+ * `denied` is kept for callers that need the legacy semantics
+ * (renderer reply with `false`); the host-side fail-closed paths use
+ * `noUiResult` / `timeoutResult` / `abortedResult` explicitly.
+ */
+const denied: ConfirmResult = { approved: false, acceptAllRemaining: false, reason: 'denied' };
+const noUiResult: ConfirmResult = { approved: false, acceptAllRemaining: false, reason: 'no-ui' };
+const timeoutResult: ConfirmResult = { approved: false, acceptAllRemaining: false, reason: 'timeout' };
+const abortedResult: ConfirmResult = { approved: false, acceptAllRemaining: false, reason: 'aborted' };
+const approvedOnly: ConfirmResult = { approved: true, acceptAllRemaining: false, reason: 'approved' };
 
 /**
  * Per-run "accept all remaining edits" latch.
@@ -160,16 +190,15 @@ export function requestConfirm(
   // site — no point in emitting a modal the renderer will immediately
   // be told to cancel.
   if (signal?.aborted === true) {
-    return Promise.resolve(denied);
+    return Promise.resolve(abortedResult);
   }
   const win = getMainWindow();
-  // Fail CLOSED when the window is gone or torn down. Historically the
-  // nullish check on `win` was enough because `getMainWindow()` already
-  // filters destroyed windows, but a mid-request reload can race us —
-  // check `isDestroyed()` before touching `webContents`.
+  // Fail CLOSED when the window is gone or torn down. Audit fix H-04:
+  // resolve with `noUiResult` (reason: 'no-ui') so calling tools can
+  // tell "user denied" apart from "host could not show the prompt".
   if (!win || win.isDestroyed() || win.webContents.isDestroyed()) {
     log.warn('confirm requested but no live window; failing closed');
-    return Promise.resolve(denied);
+    return Promise.resolve(noUiResult);
   }
   const id = randomUUID();
   return new Promise<ConfirmResult>((resolve) => {
@@ -180,7 +209,7 @@ export function requestConfirm(
       onAbort: null,
       timer: setTimeout(() => {
         const cur = pending.get(id);
-        if (cur) finalize(id, cur, denied, 'timeout');
+        if (cur) finalize(id, cur, timeoutResult, 'timeout');
       }, TIMEOUT_MS)
     };
     if (signal) {
@@ -189,7 +218,7 @@ export function requestConfirm(
       // `once` still cleans up.
       const onAbort = (): void => {
         const cur = pending.get(id);
-        if (cur) finalize(id, cur, denied, 'aborted');
+        if (cur) finalize(id, cur, abortedResult, 'aborted');
       };
       entry.onAbort = onAbort;
       signal.addEventListener('abort', onAbort, { once: true });
@@ -203,12 +232,12 @@ export function requestConfirm(
       });
     } catch (err) {
       // Window died between the liveness check above and the send —
-      // unwind the pending entry and fail closed. Without this the
-      // tool would park until `TIMEOUT_MS` waiting for a renderer
-      // reply that can never arrive.
+      // unwind the pending entry and fail closed with the no-ui
+      // reason so the tool surfaces "host could not show the prompt"
+      // instead of "user denied permission".
       log.warn('failed to send confirm request; failing closed', { id, err });
       const cur = pending.get(id);
-      if (cur) finalize(id, cur, denied, 'send-failed');
+      if (cur) finalize(id, cur, noUiResult, 'send-failed');
     }
   });
 }
@@ -226,32 +255,44 @@ export function settleConfirm(id: string, reply: ConfirmResponse): void {
   if (!entry) {
     // The renderer occasionally re-sends a settle for an id we've already
     // finalized (e.g. duplicate click). It's harmless but worth a debug
-    // breadcrumb.
-    log.warn('settleConfirm for unknown id', { id });
+    // breadcrumb. Audit fix L-03: dropped from `warn` to `debug` so
+    // duplicate-click noise doesn't show up in normal-operation logs.
+    log.debug('settleConfirm for unknown id', { id });
     return;
   }
   let result: ConfirmResult;
   if (typeof reply === 'boolean') {
     result = reply ? approvedOnly : denied;
   } else {
+    const approved = reply.approved === true;
     result = {
-      approved: reply.approved === true,
-      acceptAllRemaining: reply.approved === true && reply.acceptAllRemaining === true
+      approved,
+      acceptAllRemaining: approved && reply.acceptAllRemaining === true,
+      // Renderer replies always carry an explicit user choice — either
+      // 'approved' or 'denied'. The other reasons are reserved for
+      // host-side fail-closed paths.
+      reason: approved ? 'approved' : 'denied'
     };
   }
   finalize(id, entry, result, 'renderer-reply');
 }
 
 /**
- * Drain every pending confirm as denied. Called from the app's `before-quit`
- * handler so we never leak timers or unresolved promises at shutdown.
- * Safe to call multiple times; the map is cleared in-place.
+ * Drain every pending confirm as no-ui at shutdown. Called from the
+ * app's `before-quit` handler so we never leak timers or unresolved
+ * promises. Safe to call multiple times; the map is cleared in-place.
+ *
+ * Audit fix H-04: shutdown-aborted confirms resolve with `noUiResult`
+ * (reason: 'no-ui') instead of `denied` so a tool that was awaiting
+ * approval at quit-time surfaces "host could not show the prompt"
+ * rather than "user denied permission" — a denial implies a user
+ * choice that never happened.
  */
 export function clearAllPending(): void {
   const count = pending.size;
   if (count > 0) log.info('draining pending confirms at shutdown', { count });
   // Snapshot before iterating because `finalize` mutates the map.
   for (const [id, entry] of [...pending.entries()]) {
-    finalize(id, entry, denied, 'shutdown');
+    finalize(id, entry, noUiResult, 'shutdown');
   }
 }

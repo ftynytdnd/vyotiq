@@ -31,48 +31,74 @@ const log = logger.child('orchestrator/handleToolCalls');
 
 /**
  * Coerce a streaming-tool-call's `argumentsBuf` into the
- * `Record<string, unknown>` shape the tool executor expects.
+ * `Record<string, unknown>` shape the tool executor expects, OR
+ * surface a structured parse error so the caller can short-circuit
+ * dispatch (review finding M6).
  *
  * Three failure modes were silently collapsing to `{}` before this
  * helper existed, and the symptom (e.g. `read` failing with
  * "missing path") looked like a model error:
  *
  *   1. Empty buffer — the model emitted a tool call with no
- *      arguments at all. `JSON.parse('')` throws.
+ *      arguments at all. `JSON.parse('')` throws. We treat this
+ *      as a VALID empty-args call (some tools accept zero args)
+ *      and return `{}` with no error.
  *   2. Malformed JSON — a provider truncated mid-stream or a
  *      non-conformant compat backend forwarded an object as a
- *      string ("[object Object]"). `JSON.parse` throws.
+ *      string ("[object Object]"). `JSON.parse` throws. Surfaced
+ *      as `parseError` so the caller short-circuits with a
+ *      synthetic failure result instead of dispatching the tool
+ *      with `{}` (which usually fails downstream with a generic
+ *      "missing path" / "missing command" — wasting a model
+ *      round-trip).
  *   3. Valid JSON but wrong shape — the buffer parses to `null`,
- *      a string, a number, or an array. The executor signature
- *      types it as `Record<string, unknown>` so destructuring would
- *      crash on `null` or surface as `args.path === undefined`.
+ *      a string, a number, or an array. Same short-circuit
+ *      treatment as malformed JSON.
  *
- * Any of these now degrades to `{}` AND emits a single warn-level
- * log line so the failure is debuggable from `vyotiq.log` instead of
- * being invisible.
+ * The legacy fallback-to-`{}` behaviour for cases 2 and 3 dispatched
+ * the tool, which then surfaced a confusing downstream error
+ * ("missing path") and burned a turn. The short-circuit replaces
+ * that with a precise "argument parse failed" message the model
+ * can directly correct.
  */
-function parseToolArgs(name: string, buf: string): Record<string, unknown> {
-  if (!buf) return {};
+interface ToolArgsParseResult {
+  args: Record<string, unknown>;
+  parseError?: string;
+}
+function parseToolArgs(name: string, buf: string): ToolArgsParseResult {
+  if (!buf) return { args: {} };
   let parsed: unknown;
   try {
     parsed = JSON.parse(buf);
   } catch (err) {
-    log.warn('tool arguments failed to JSON.parse — falling back to {}', {
+    const detail = err instanceof Error ? err.message : String(err);
+    log.warn('tool arguments failed to JSON.parse', {
       tool: name,
       buf: buf.slice(0, 200),
-      err: err instanceof Error ? err.message : String(err)
+      err: detail
     });
-    return {};
+    return {
+      args: {},
+      parseError:
+        `Tool argument JSON failed to parse: ${detail}. ` +
+        'Re-issue the call with a well-formed JSON object for `arguments`.'
+    };
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    log.warn('tool arguments parsed to non-record — falling back to {}', {
+    const shape = parsed === null ? 'null' : Array.isArray(parsed) ? 'array' : typeof parsed;
+    log.warn('tool arguments parsed to non-record', {
       tool: name,
       buf: buf.slice(0, 200),
-      shape: parsed === null ? 'null' : Array.isArray(parsed) ? 'array' : typeof parsed
+      shape
     });
-    return {};
+    return {
+      args: {},
+      parseError:
+        `Tool argument must be a JSON object, got ${shape}. ` +
+        'Re-issue the call with a `{ "key": "value", … }` shape.'
+    };
   }
-  return parsed as Record<string, unknown>;
+  return { args: parsed as Record<string, unknown> };
 }
 
 export interface HandleToolCallsOpts {
@@ -128,6 +154,18 @@ export interface HandleToolCallsResult {
   attempted: number;
   /** Of `attempted`, how many produced a `result.ok === false`. */
   failed: number;
+  /**
+   * Number of refused `delegate` tool calls in this round. The
+   * `<delegate />` directive is an XML construct in the assistant's
+   * output channel — it is NEVER a callable tool. When the model
+   * (orchestrator or sub-agent) tries to invoke it through the
+   * function-calling channel, the allowlist refuses it. Counting
+   * those attempts lets the orchestrator surface a `<run_state>`
+   * hint so the model pivots back to the directive syntax instead
+   * of repeatedly retrying the same refused call. Pure observability
+   * — does not affect the allowlist refusal itself.
+   */
+  childRedelegations: number;
 }
 
 export async function handleToolCalls(
@@ -140,6 +178,7 @@ export async function handleToolCalls(
   let attempted = 0;
   let failed = 0;
   let refused = 0;
+  let childRedelegations = 0;
   for (const tc of finishedToolCalls) {
     // Honor `opts.signal.aborted` between tool calls so a supersede
     // (new `chat:send` on the same conversation) or explicit Stop
@@ -176,10 +215,33 @@ export async function handleToolCalls(
     // a direct mutation through and bypass the delegate pattern.
     if (opts.allowlist && !opts.allowlist.includes(tc.name)) {
       refused += 1;
+      const isDelegateAttempt = tc.name === 'delegate';
+      if (isDelegateAttempt) {
+        childRedelegations += 1;
+        // Pivot-pressure surface: the model tried to spawn a sub-agent
+        // through the function-calling channel instead of via the
+        // `<delegate ... />` directive in its assistant text. The
+        // allowlist already refuses the call — this phase event
+        // surfaces the attempt so the timeline shows a clear
+        // narrative when the model repeatedly mis-channels its
+        // delegations. The label intentionally names the actor so
+        // sub-agent re-delegation reads differently from an
+        // orchestrator-level mistake.
+        emit({
+          kind: 'phase',
+          id: randomUUID(),
+          ts: Date.now(),
+          label:
+            opts.subagentId !== undefined
+              ? `Sub-agent attempted re-delegation (refused — use <result>)`
+              : `Agent called \`delegate\` as a tool (refused — use the XML directive)`
+        });
+      }
       log.warn('allowlist refusal', {
         tool: tc.name,
         subagentId: opts.subagentId,
-        allowlist: opts.allowlist
+        allowlist: opts.allowlist,
+        isDelegateAttempt
       });
       // Context-specific refusal copy. The orchestrator gets an
       // actionable nudge to switch to `<delegate />` so the next
@@ -203,7 +265,7 @@ export async function handleToolCalls(
       continue;
     }
 
-    const parsed = parseToolArgs(tc.name, tc.argumentsBuf);
+    const { args: parsed, parseError } = parseToolArgs(tc.name, tc.argumentsBuf);
     // Phase 2 — settle the in-flight diff stream for this callId
     // before emitting the authoritative `tool-call`. The streamer
     // drops its per-call state synchronously so subsequent deltas
@@ -222,6 +284,40 @@ export async function handleToolCalls(
       call: { id: callId, name: tc.name as ToolName, args: parsed },
       ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
     });
+    // Short-circuit on structural argument parse failure (review
+    // finding M6). Dispatching the tool with `{}` would either
+    // throw a tool-specific "missing path" / "missing command"
+    // (wasting a model round-trip on a confusing downstream
+    // error) or silently succeed with empty args (worse — model
+    // never learns it sent broken JSON). The synthetic
+    // `tool-result` carries the precise parse diagnostic so the
+    // model's next iteration can correct the call directly.
+    if (parseError !== undefined) {
+      attempted += 1;
+      failed += 1;
+      const syntheticResult = {
+        id: callId,
+        name: tc.name as ToolName,
+        ok: false as const,
+        output: parseError,
+        error: 'argument parse failed',
+        durationMs: 0
+      };
+      emit({
+        kind: 'tool-result',
+        id: randomUUID(),
+        ts: Date.now(),
+        result: syntheticResult,
+        ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
+      });
+      messages.push({
+        role: 'tool',
+        tool_call_id: callId,
+        name: tc.name,
+        content: parseError
+      });
+      continue;
+    }
     // Live status only for orchestrator-level tool rounds. Sub-agent
     // tool execution is surfaced by the sub-agent's own trace card, so
     // bubbling it up into the top-level status row would produce a
@@ -285,8 +381,9 @@ export async function handleToolCalls(
     attempted,
     failed,
     refused,
+    childRedelegations,
     subagentId: opts.subagentId,
     ms: Date.now() - startedAt
   });
-  return { attempted, failed };
+  return { attempted, failed, childRedelegations };
 }

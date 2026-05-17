@@ -6,7 +6,25 @@
  * directives in its assistant text. The host parses those directives,
  * spawns the swarm in parallel, and feeds verified results back into the
  * orchestrator's context.
+ *
+ * Fenced-code guard (review finding H1): the harness explicitly forbids
+ * emitting directives inside markdown code fences ("never inside a code
+ * fence and never as a quoted preview"), but soft rules degrade. Two
+ * failure modes the host now enforces structurally:
+ *   1. Model narrates *"I'll send: \`\`\`xml\n<delegate ... />\n\`\`\`"*
+ *      → without this guard, the host spawns a real worker for what was
+ *      meant as illustration.
+ *   2. Replay surface: a prior turn fenced a `<delegate>` example.
+ *      On a subsequent send the model echoes the example back → spawn.
+ *
+ * Both are closed by stripping fenced code blocks via `stripFencedCode`
+ * BEFORE running `DELEGATE_RE`. The strip is streaming-safe (a
+ * trailing OPEN fence at end-of-buffer is removed too) so the
+ * mid-stream `subagent-pending` detection never fires inside an
+ * unclosed fence.
  */
+
+import { stripFencedCode } from '@shared/text/strip.js';
 
 export interface ParsedDelegate {
   id: string;
@@ -25,10 +43,28 @@ export interface ParsedDelegate {
  * `duplicates` lists each id that appeared MORE than once in the
  * input, in the order the duplicate was encountered. The first
  * occurrence is always kept; only the 2nd, 3rd, … land here.
+ *
+ * `malformedOpeners` (review finding M7) is a reserved slot for
+ * surfacing `<delegate ...` openers the primary regex declined.
+ * Under the current `DELEGATE_RE` shape, both attribute
+ * separators (`\s+`) AND attribute values (`[^"]`) accept
+ * newlines, so genuinely-multi-line directives parse cleanly and
+ * this field is always empty. The slot stays on the contract so a
+ * future-discovered failure mode (e.g. value-character classes
+ * tightened, or a different malformed-opener pattern) can land
+ * here without breaking the consumer shape. `parseDelegates.test`
+ * pins the multi-line-parses-correctly invariant.
  */
 export interface ParseDelegatesResult {
   directives: ParsedDelegate[];
   duplicates: string[];
+  /**
+   * Reserved slot for excerpts of `<delegate ...` openers that the
+   * primary regex declined. Always empty under the current parser
+   * (which accepts newlines in attribute separators and values);
+   * retained for future malformed-opener detection.
+   */
+  malformedOpeners: string[];
 }
 
 /**
@@ -110,9 +146,16 @@ export function parseDelegatesWithDuplicates(text: string): ParseDelegatesResult
   // in `duplicates` so the call site can surface the drop instead of
   // discarding it silently (review finding B1).
   const seenIds = new Set<string>();
+  // Fenced-code guard (review finding H1). Strip closed AND trailing-
+  // open fences from the input BEFORE running the directive scan, so
+  // a `<delegate />` quoted inside ``` (or pasted back on replay
+  // from a prior fenced example) never spawns. The strip is a no-op
+  // on text without fences, so the steady-state cost is one regex
+  // miss per call.
+  const scanText = stripFencedCode(text);
   let m: RegExpExecArray | null;
   DELEGATE_RE.lastIndex = 0;
-  while ((m = DELEGATE_RE.exec(text)) !== null) {
+  while ((m = DELEGATE_RE.exec(scanText)) !== null) {
     const attrs: Record<string, string> = {};
     let am: RegExpExecArray | null;
     ATTR_RE.lastIndex = 0;
@@ -142,7 +185,25 @@ export function parseDelegatesWithDuplicates(text: string): ParseDelegatesResult
       tools: (attrs['tools'] ?? '').split(',').map((s) => s.trim()).filter(Boolean)
     });
   }
-  return { directives: found, duplicates };
+  // Malformed-opener slot (review finding M7). Originally drafted
+  // to surface multi-line `<delegate>` directives that the harness
+  // forbids — but on closer inspection, the existing `DELEGATE_RE`
+  // already handles newlines inside both the attribute SEPARATOR
+  // (`\s+` matches `\n`) AND the attribute VALUE (`[^"]` matches
+  // `\n` too), so genuinely-multi-line directives parse cleanly
+  // today. The audit's "silent failure on multi-line" premise was
+  // wrong; there is no observed failure mode to surface here.
+  //
+  // The slot is kept on `ParseDelegatesResult` as a stable surface
+  // so a future-discovered malformed-opener pattern (e.g. a model
+  // variant that emits an attribute name without `=`) can land
+  // here without changing the consumer shape. The runLoop reads it
+  // via `if (malformedOpeners.length > 0)` so the empty-array
+  // steady state is a no-op for the renderer / model. Test
+  // coverage in `parseDelegates.test.ts` pins the
+  // multi-line-parses-correctly invariant.
+  const malformedOpeners: string[] = [];
+  return { directives: found, duplicates, malformedOpeners };
 }
 
 /**

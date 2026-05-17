@@ -161,6 +161,14 @@ function mirrorOf(slice: ChatSlice): ActiveMirror {
     // so re-renders are bounded by the affected prompt row, not the
     // whole timeline.
     runIdToFileEditCount: slice.runIdToFileEditCount,
+    // Context-summarization streaming + lifecycle state. Mirrored
+    // verbatim from the slice so per-row selectors
+    // `(s) => s.summaries[summaryId]` re-render only the matching
+    // `ContextSummaryRow`. The `messageOverrides` map flows through
+    // the same path so the Inspector panel can read the live
+    // toggle state without an IPC round-trip.
+    summaries: slice.summaries,
+    messageOverrides: slice.messageOverrides,
     totalRunUsage,
     conversationId: slice.conversationId,
     runId: slice.runId,
@@ -440,6 +448,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           ? { lastUserPromptContent: rebuilt.lastUserPromptContent }
           : {}),
         runIdToFileEditCount: rebuilt.runIdToFileEditCount,
+        // Carry the rebuilt summarization + override state so a
+        // transcript reload restores the persisted Inspector view
+        // and the active `ContextSummaryRow`s without an extra IPC
+        // round-trip. The reducer's branches already paired
+        // `(pending, end, undone)` events into the same final
+        // shape the live path produces.
+        summaries: rebuilt.summaries,
+        messageOverrides: rebuilt.messageOverrides,
         // Keep live run fields intact when the slice already exists —
         // critical for the "switch away mid-run, switch back" flow.
         runId: prior?.runId ?? null,
@@ -703,15 +719,58 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   rehydrateActiveRuns: (infos) => {
-    if (!Array.isArray(infos) || infos.length === 0) return;
+    if (!Array.isArray(infos)) return;
     set((s) => {
-      const nextMap: Record<string, string> = { ...s.runIdToConv };
-      let nextSlices = s.slices;
-      let touched = false;
+      // Audit fix M-17: build the new map from the SNAPSHOT, not by
+      // additively layering onto `s.runIdToConv`. Pre-fix, the
+      // rehydrate path only ADDED entries — if main had forgotten
+      // about a runId (renderer reload after a dropped `chat:done` /
+      // `chat:error` event, forced quit mid-run, abort path that
+      // never settled), the stale runId in the renderer's local map
+      // survived forever. Over long sessions with frequent reloads
+      // this accumulated unbounded.
+      //
+      // The replacement contract: anything NOT in the authoritative
+      // snapshot is pruned. Anything in the snapshot is preserved
+      // (with the renderer's `boundId` if it was already mapped, or
+      // the snapshot's `conversationId` for fresh entries). Net
+      // effect: the renderer's `runIdToConv` always agrees with
+      // main's view of in-flight runs after every rehydrate.
+      const snapshotMap = new Map<string, string>();
       for (const info of infos) {
-        if (!info.conversationId) continue; // pre-binding window — skip
-        if (nextMap[info.runId]) continue;  // already mapped — leave alone
-        nextMap[info.runId] = info.conversationId;
+        if (info.conversationId) snapshotMap.set(info.runId, info.conversationId);
+      }
+
+      // Compute the pruned + extended map.
+      const prevMap = s.runIdToConv;
+      const nextMap: Record<string, string> = {};
+      let pruned = 0;
+      for (const [rid, cid] of Object.entries(prevMap)) {
+        if (snapshotMap.has(rid)) {
+          // Keep the existing binding (renderer-bound conversationId
+          // is authoritative — it survived the auto-create rebind).
+          nextMap[rid] = cid;
+        } else {
+          pruned += 1;
+        }
+      }
+      for (const [rid, cid] of snapshotMap) {
+        if (!(rid in nextMap)) nextMap[rid] = cid;
+      }
+      if (pruned > 0) {
+        log.debug('rehydrateActiveRuns pruned stale runIds', { pruned });
+      }
+
+      // Apply per-slice `runId / isProcessing / runStartedAt` for any
+      // newly-rehydrated infos. Pre-existing slices whose `runId`
+      // matches a snapshot entry are left untouched (their isProcessing
+      // is already true).
+      let nextSlices = s.slices;
+      let touched = Object.keys(nextMap).length !== Object.keys(prevMap).length;
+      for (const info of infos) {
+        if (!info.conversationId) continue;
+        const slice = nextSlices[info.conversationId];
+        if (slice && slice.runId === info.runId) continue;
         nextSlices = updateSlice(nextSlices, info.conversationId, (prev) => ({
           ...prev,
           runId: info.runId,
@@ -761,6 +820,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         ...(rebuilt.orchestratorUsage !== undefined
           ? { orchestratorUsage: rebuilt.orchestratorUsage }
           : {}),
+        summaries: rebuilt.summaries,
+        messageOverrides: rebuilt.messageOverrides,
         // Preserve any in-flight fields that may have been set by a
         // racing `rehydrateActiveRuns` for this same conversation.
         runId: existing?.runId ?? null,

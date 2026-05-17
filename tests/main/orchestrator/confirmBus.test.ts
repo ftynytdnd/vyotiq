@@ -50,13 +50,17 @@ describe('confirmBus', () => {
     expect(sentMessages[0]?.channel).toBe('tools:request-confirm');
     const id = (sentMessages[0]?.payload as { id: string }).id;
     settleConfirm(id, true);
-    await expect(promise).resolves.toEqual({ approved: true, acceptAllRemaining: false });
+    // Audit fix H-04: envelope carries a `reason` discriminator.
+    await expect(promise).resolves.toEqual({ approved: true, acceptAllRemaining: false, reason: 'approved' });
   });
 
-  it('returns a denied envelope immediately when no main window is available', async () => {
+  it('returns a no-ui envelope immediately when no main window is available', async () => {
     vi.mocked(getMainWindow).mockReturnValueOnce(null as never);
     const result = await requestConfirm('test');
-    expect(result).toEqual({ approved: false, acceptAllRemaining: false });
+    // Audit fix H-04: missing-window path resolves with reason
+    // 'no-ui' so the calling tool can surface "host couldn't show
+    // the prompt" instead of falsely claiming the user denied.
+    expect(result).toEqual({ approved: false, acceptAllRemaining: false, reason: 'no-ui' });
   });
 
   it('ignores duplicate settle calls for the same id', async () => {
@@ -67,30 +71,36 @@ describe('confirmBus', () => {
     // idempotent, but the flag prevents the resolver function being
     // called twice.
     settleConfirm(id, false);
-    await expect(promise).resolves.toEqual({ approved: true, acceptAllRemaining: false });
+    await expect(promise).resolves.toEqual({ approved: true, acceptAllRemaining: false, reason: 'approved' });
   });
 
   it('settleConfirm for an unknown id is silently ignored', () => {
     expect(() => settleConfirm('does-not-exist', true)).not.toThrow();
   });
 
-  it('clearAllPending drains every pending confirm as denied', async () => {
+  it('clearAllPending drains every pending confirm as no-ui at shutdown', async () => {
     const a = requestConfirm('one');
     const b = requestConfirm('two');
     expect(sentMessages).toHaveLength(2);
     clearAllPending();
-    await expect(a).resolves.toEqual({ approved: false, acceptAllRemaining: false });
-    await expect(b).resolves.toEqual({ approved: false, acceptAllRemaining: false });
+    // Audit fix H-04: shutdown drain resolves with reason 'no-ui'
+    // so a tool that was awaiting approval at quit-time surfaces
+    // "host could not show the prompt" rather than a user denial
+    // that never happened.
+    await expect(a).resolves.toEqual({ approved: false, acceptAllRemaining: false, reason: 'no-ui' });
+    await expect(b).resolves.toEqual({ approved: false, acceptAllRemaining: false, reason: 'no-ui' });
     // Idempotent: a second call must not throw or revive anything.
     expect(() => clearAllPending()).not.toThrow();
   });
 
-  it('times out an unanswered confirm to denied', async () => {
+  it('times out an unanswered confirm with reason timeout', async () => {
     vi.useFakeTimers();
     const promise = requestConfirm('idle');
     // Default timeout is 5 minutes — fast-forward past it.
     vi.advanceTimersByTime(5 * 60 * 1000 + 100);
-    await expect(promise).resolves.toEqual({ approved: false, acceptAllRemaining: false });
+    // Audit fix H-04: timeout resolves with reason 'timeout' so the
+    // tool can render a precise "prompt timed out" message.
+    await expect(promise).resolves.toEqual({ approved: false, acceptAllRemaining: false, reason: 'timeout' });
   });
 
   describe('AbortSignal integration (plan §5)', () => {
@@ -106,7 +116,8 @@ describe('confirmBus', () => {
       expect(sentMessages).toHaveLength(1);
       expect(sentMessages[0]?.channel).toBe('tools:request-confirm');
       ctrl.abort();
-      await expect(promise).resolves.toEqual({ approved: false, acceptAllRemaining: false });
+      // Audit fix H-04: abort path resolves with reason 'aborted'.
+      await expect(promise).resolves.toEqual({ approved: false, acceptAllRemaining: false, reason: 'aborted' });
       // Broadcast the cancel so the renderer modal dismisses itself
       // — otherwise the user sees a dialog pointing at a dead handler.
       const cancels = sentMessages.filter((m) => m.channel === 'tools:cancel-confirm');
@@ -117,7 +128,8 @@ describe('confirmBus', () => {
       const ctrl = new AbortController();
       ctrl.abort();
       const promise = requestConfirm('noop', ctrl.signal);
-      await expect(promise).resolves.toEqual({ approved: false, acceptAllRemaining: false });
+      // Pre-aborted guard also reports reason 'aborted'.
+      await expect(promise).resolves.toEqual({ approved: false, acceptAllRemaining: false, reason: 'aborted' });
       // No IPC traffic at all — the pre-aborted guard must exit
       // before `webContents.send` fires so the renderer never paints
       // a modal we'd immediately have to tear down.
@@ -136,7 +148,7 @@ describe('confirmBus', () => {
       expect(addSpy).toHaveBeenCalledTimes(1);
       const id = (sentMessages[0]?.payload as { id: string }).id;
       settleConfirm(id, true);
-      await expect(promise).resolves.toEqual({ approved: true, acceptAllRemaining: false });
+      await expect(promise).resolves.toEqual({ approved: true, acceptAllRemaining: false, reason: 'approved' });
       // `finalize` MUST have removed the listener so aborting AFTER
       // the reply cannot re-enter the finalize path.
       expect(removeSpy).toHaveBeenCalledTimes(1);
@@ -162,7 +174,8 @@ describe('confirmBus', () => {
       ctrl.abort();
       // A late settle arriving AFTER the abort must be a no-op.
       settleConfirm(id, true);
-      await expect(promise).resolves.toEqual({ approved: false, acceptAllRemaining: false });
+      // Abort-wins path reports reason 'aborted'.
+      await expect(promise).resolves.toEqual({ approved: false, acceptAllRemaining: false, reason: 'aborted' });
     });
   });
 });

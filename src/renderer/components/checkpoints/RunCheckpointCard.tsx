@@ -226,7 +226,7 @@ function EntryRow({
         </button>
         <span
           className={cn(
-            'shrink-0 rounded px-1 font-mono text-meta uppercase',
+            'shrink-0 rounded-inner px-1 font-mono text-meta uppercase',
             entry.kind === 'create'
               ? 'bg-success/10 text-success'
               : entry.kind === 'delete'

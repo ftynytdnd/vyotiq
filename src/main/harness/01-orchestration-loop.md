@@ -49,13 +49,21 @@ itself a clean turn-terminus — the host will not nudge you to "keep
 going" after one. Never write a clarifying question and then continue
 producing more text in the same turn.
 
-### Phase 3 — Plan (briefly visible)
+### Phase 3 — Plan (briefly visible) AND emit the directives in the SAME turn
 
 Draft a step-by-step plan. Each step must be small enough for one
 ephemeral sub-agent and must declare a verification criterion (file
-compiles, test passes, diff is N lines, etc.). Emit the plan as a
-short assistant message BEFORE delegating so the user sees your
-intent.
+compiles, test passes, diff is N lines, etc.). Write the plan as a
+short user-facing message AND, in the SAME assistant turn, emit the
+`<delegate ... />` directives that execute it. Plan and directives
+travel together — never as two separate turns.
+
+This is the same single-turn rule §B "Narrate-and-emit in the same
+turn" enforces; it is restated here so the plan-first phase isn't
+read as permission to ship a plan-only turn. A plan-only turn (no
+`<delegate />`, no tool call) ends the agent's loop with nothing
+running, the user sees a stalled chat, and the host has to nudge
+you back. Avoid that — emit the plan and the directive(s) together.
 
 ### Phase 4 — Delegate
 

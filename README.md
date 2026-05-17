@@ -4,7 +4,7 @@ A local-first **asynchronous AI orchestrator** that lives on your device. Vyotiq
 
 ## What's different
 
-- **Plain-English harness, not a code-based one.** Agent V reads its rules, loop, delegation strategy, memory protocol, and tool catalogue from markdown files in [`src/main/harness/`](src/main/harness/). You can read them, change them, and the agent's behavior changes accordingly.
+- **Plain-English harness, not a code-based one.** Agent V reads its rules, loop, delegation strategy, memory protocol, and tool catalogue from markdown files in [`src/main/harness/`](src/main/harness/). You can read them, change them, and the agent's behavior changes accordingly. **Note:** the harness files are bundled into the renderer at build time (via Vite `?raw` imports), so editing them in a packaged build has no effect until the next rebuild. In a dev build (`npm run dev`) Vite's HMR picks up edits live. (Audit clarification M-01.)
 - **Real parallel sub-agents.** When Agent V decomposes a task, each sub-task is spawned as a genuine, isolated `fetch()` call to the model with a fresh context window. Sub-agents never see each other's history.
 - **Strict toolset partition.** The orchestrator can only call `ls`, `read`, and `memory` directly — heavy work (`bash`, `edit`, `search`) is architecturally forced through `<delegate />` directives. The host enforces this by filtering schemas before each request.
 - **Memory across turns.** Every turn appends typed events to a JSONL transcript. Each new send replays prior events into the OpenAI message shape so the agent remembers earlier user prompts, tool calls, and verified sub-agent results. (Sub-agent internals stay isolated; only the verified envelope is replayed.)
@@ -68,7 +68,7 @@ src/
 │   │   ├── SubAgent.ts            Single sub-agent runtime (own fetch, isolated context)
 │   │   ├── SubAgentPool.ts        Bounded parallel pool with telemetry callbacks
 │   │   ├── verifier.ts            Validates each sub-agent's <result> envelope
-│   │   ├── contextManager.ts      Workspace + memory envelopes; per-iter refresh; prune
+│   │   ├── contextManager.ts      Workspace + memory envelopes; per-iter refresh
 │   │   ├── toolRunner.ts          Tool dispatch with permissions + confirm flow
 │   │   ├── confirmBus.ts          Renderer ↔ main confirmation round-trip
 │   │   └── retry.ts               Exponential backoff with abort awareness

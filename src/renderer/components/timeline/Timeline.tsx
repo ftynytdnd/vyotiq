@@ -37,6 +37,7 @@ import { ErrorRow } from './rows/ErrorRow.js';
 import { ToolGroupRow } from './rows/ToolGroupRow.js';
 import { FileEditGroupRow } from './rows/FileEditGroupRow.js';
 import { RunCompleteRow } from './rows/RunCompleteRow.js';
+import { ContextSummaryRow } from './rows/ContextSummaryRow.js';
 import { SubAgentTrace } from './subagent/SubAgentTrace.js';
 import { JumpToLatestChip } from './shared/JumpToLatestChip.js';
 
@@ -77,6 +78,10 @@ export function Timeline({ model }: TimelineProps) {
   // yet emitted their authoritative `tool-call` event. Replays
   // and idle conversations leave this as `{}`.
   const partialToolCallArgs = useChatStore((s) => s.partialToolCallArgs);
+  // Audit fix L-11 — forward the reducer-maintained settled-callId
+  // map so `deriveRows` can skip its O(R×C) walk over every
+  // tool-group row's children to recover the same set.
+  const settledCallIds = useChatStore((s) => s.settledCallIds);
   // Reducer-maintained primitive that flips ONLY when a new
   // `user-prompt` event lands. Used as the snap-on-send effect's
   // sole dependency so the effect no longer fires on every streaming
@@ -115,8 +120,8 @@ export function Timeline({ model }: TimelineProps) {
   const lastUserPromptIdRef = useRef<string | null>(null);
 
   const rows = useMemo(
-    () => deriveRows(events, { runActive: isProcessing, partialToolCallArgs }),
-    [events, isProcessing, partialToolCallArgs]
+    () => deriveRows(events, { runActive: isProcessing, partialToolCallArgs, settledCallIds }),
+    [events, isProcessing, partialToolCallArgs, settledCallIds]
   );
 
   // Note: a `userPromptIndices` memo lived here previously. The `g j` /
@@ -330,6 +335,14 @@ export function Timeline({ model }: TimelineProps) {
             );
           case 'run-complete':
             return <RunCompleteRow key={r.key} durationMs={r.durationMs} />;
+          case 'context-summary':
+            return (
+              <ContextSummaryRow
+                key={r.key}
+                summaryId={r.summaryId}
+                live={isProcessing}
+              />
+            );
           default: {
             const _exhaustive: never = r;
             void _exhaustive;
