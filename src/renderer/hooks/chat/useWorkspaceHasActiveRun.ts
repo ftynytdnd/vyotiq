@@ -7,7 +7,7 @@
  * an event landing on an unrelated workspace's slice never re-renders
  * consumers of this hook.
  *
- * Used by the bottom dock chat strip to keep running tabs visible when
+ * Used by the left dock chat strip to keep running tabs visible when
  * search filter would otherwise hide it (so a streaming run is never
  * hidden by an unrelated query), and is reusable for any future
  * per-workspace badge / state surface.

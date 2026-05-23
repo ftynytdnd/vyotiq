@@ -180,7 +180,7 @@ The design must be extremely clean, minimalist, frameless, and stealthy, ensurin
 
 ## 2. Layout Structure
 - **Frameless Window:** The app must have a custom, thin top title bar that blends perfectly into the base background, containing standard File/Edit menus on the left and window controls on the right.
-- **Bottom Dock:** Workspace-scoped chat tabs, search, and run indicators live in a collapsible bottom dock (not a left sidebar). Settings, checkpoint history, and the Context Inspector open in a **right-hand SecondaryZone** panel beside the conversation surface.
+- **Left Dock:** Workspace-scoped chat tabs, search, and run indicators live in a collapsible left-hand dock. Settings, checkpoint history, and the Context Inspector open in a **right-hand SecondaryZone** panel beside the conversation surface.
 - **Main Content Area:** The central chat and composer area must be strictly **center-aligned** with a constrained maximum width (e.g., max-w-3xl) to prevent eye fatigue from scanning wide text lines.
 
 ## 3. The "Composer" (Input Box) UI

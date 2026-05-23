@@ -52,6 +52,7 @@ beforeEach(() => {
   });
   useUiStore.setState({
     dockExpanded: true,
+    dockWidth: 260,
     collapsedWorkspaces: new Set<string>(),
     hydrated: true
   });
@@ -174,6 +175,14 @@ describe('AppSettings.ui — debounced fields persist via useUiStore + flush', (
 
     expect(setSpy()).toHaveBeenCalledTimes(1);
     expect(setSpy()).toHaveBeenCalledWith({ ui: { dockExpanded: true } });
+  });
+
+  it('dockWidth: setDockWidth schedules a flush, flushUiPersistence drains it', () => {
+    useUiStore.getState().setDockWidth(300);
+    flushUiPersistence();
+
+    expect(setSpy()).toHaveBeenCalledTimes(1);
+    expect(setSpy()).toHaveBeenCalledWith({ ui: { dockWidth: 300 } });
   });
 
   it('collapsedWorkspaces: toggleWorkspaceCollapsed schedules a flush, flushUiPersistence drains it', () => {

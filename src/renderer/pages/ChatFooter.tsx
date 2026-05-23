@@ -1,11 +1,10 @@
 /**
  * ChatFooter — unified bottom anchor for the chat column.
  *
- * Composer sits in a subtle bordered shell; the dock strip sits flush
- * below it (outside the shell).
+ * Composer sits in a subtle bordered shell. Workspace and session
+ * navigation live in the left-hand {@link LeftDock}.
  */
 
-import { BottomDock } from '../components/dock/index.js';
 import { SurfaceShell } from '../components/ui/SurfaceShell.js';
 import { ChatComposerZone } from './ChatComposerZone.js';
 import type { ModelSelection } from '@shared/types/provider.js';
@@ -46,9 +45,6 @@ export function ChatFooter({
             embedded
             footerMode
           />
-        </SurfaceShell>
-        <SurfaceShell className="mt-1">
-          <BottomDock embedded />
         </SurfaceShell>
       </div>
     </div>

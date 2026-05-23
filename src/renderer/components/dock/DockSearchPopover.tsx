@@ -1,13 +1,23 @@
 /**
- * Inline dock search — expands the footer shell when open (toolbar or Ctrl/Cmd+K).
- * Uses normal layout flow so ancestor `overflow-hidden` shells do not clip it.
+ * Inline dock search above the footer toolbar (Ctrl/Cmd+K or Search button).
  */
 
 import { useEffect, useRef } from 'react';
-import { X } from 'lucide-react';
+import { Search, X } from 'lucide-react';
+import { DOCK_BORDER_OPACITY } from './dockShared.js';
+import { filterDockChats } from './filterDockChats.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
+import { useChatStore } from '../../store/useChatStore.js';
+
+function collectRunningIds(): Set<string> {
+  const set = new Set<string>();
+  for (const [id, slice] of Object.entries(useChatStore.getState().slices)) {
+    if (slice.isProcessing) set.add(id);
+  }
+  return set;
+}
 
 export function DockSearchPopover() {
   const open = useDockSearchStore((s) => s.open);
@@ -17,7 +27,7 @@ export function DockSearchPopover() {
     <div
       role="search"
       aria-label="Search chats"
-      className="border-b border-border-subtle/25 bg-surface-base/95 px-3 py-2"
+      className={`border-b ${DOCK_BORDER_OPACITY} px-2 py-1.5`}
     >
       <DockSearchInput />
     </div>
@@ -29,6 +39,7 @@ function DockSearchInput() {
   const setQuery = useDockSearchStore((s) => s.setQuery);
   const setOpen = useDockSearchStore((s) => s.setOpen);
   const conversations = useConversationsStore((s) => s.list);
+  const activeIdByWorkspace = useConversationsStore((s) => s.activeIdByWorkspace);
   const select = useConversationsStore((s) => s.select);
   const activeWs = useWorkspaceStore((s) => s.activeId);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -39,7 +50,8 @@ function DockSearchInput() {
   }, []);
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5">
+      <Search className="h-3 w-3 shrink-0 text-text-faint" strokeWidth={2} aria-hidden />
       <input
         ref={inputRef}
         value={query}
@@ -58,9 +70,17 @@ function DockSearchInput() {
               setOpen(false);
               return;
             }
-            const top = conversations.find(
-              (c) => c.workspaceId === activeWs && c.title.toLowerCase().includes(q)
+            if (!activeWs) return;
+            const activeId = activeIdByWorkspace[activeWs] ?? null;
+            const matches = filterDockChats(
+              conversations,
+              activeWs,
+              query,
+              true,
+              collectRunningIds(),
+              activeId
             );
+            const top = matches[0];
             if (top) {
               void select(top.id);
               setOpen(false);

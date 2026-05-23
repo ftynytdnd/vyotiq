@@ -33,7 +33,7 @@ describe('TitleBar — keyboard shortcut popover', () => {
 
     expect(screen.getByRole('button', { name: 'Settings' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Keyboard shortcuts' })).toBeTruthy();
-    expect(screen.queryByText('Toggle bottom dock')).toBeNull();
+    expect(screen.queryByText('Toggle navigation dock')).toBeNull();
     expect(screen.queryByText('Search chats')).toBeNull();
     expect(screen.queryByText('Prev / next chat')).toBeNull();
   });
@@ -53,7 +53,7 @@ describe('TitleBar — keyboard shortcut popover', () => {
     await userEvent.click(trigger);
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
 
-    expect(screen.getByText('Toggle bottom dock')).toBeTruthy();
+    expect(screen.getByText('Toggle navigation dock')).toBeTruthy();
     expect(screen.getByText('Search chats')).toBeTruthy();
     expect(screen.getByText('Prev / next chat')).toBeTruthy();
     expect(screen.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeTruthy();
@@ -70,10 +70,10 @@ describe('TitleBar — keyboard shortcut popover', () => {
 
     const trigger = screen.getByRole('button', { name: 'Keyboard shortcuts' });
     await userEvent.click(trigger);
-    expect(screen.queryByText('Toggle bottom dock')).not.toBeNull();
+    expect(screen.queryByText('Toggle navigation dock')).not.toBeNull();
 
     await userEvent.keyboard('{Escape}');
-    expect(screen.queryByText('Toggle bottom dock')).toBeNull();
+    expect(screen.queryByText('Toggle navigation dock')).toBeNull();
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
   });
 

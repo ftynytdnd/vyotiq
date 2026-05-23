@@ -1,8 +1,8 @@
 /**
- * Horizontal chat strip for the bottom dock. Each conversation renders
- * as a compact pill; the active chat is highlighted. Reuses the same
- * row-focus registry shared with the dock chat strip so the composer's
- * "running elsewhere" hint can scroll to a tab.
+ * Vertical chat strip for the left dock. Each conversation renders
+ * as a compact pill; the active chat is highlighted. Registers refs
+ * via `useChatRowFocus` so the composer's "running elsewhere" hint
+ * can scroll to a tab.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -12,6 +12,12 @@ import { ConfirmDialog } from '../ui/ConfirmDialog.js';
 import { Spinner } from '../ui/Spinner.js';
 import { cn } from '../../lib/cn.js';
 import { DockChatMoveMenu } from './DockChatMoveMenu.js';
+import { filterDockChats } from './filterDockChats.js';
+import {
+  CONV_DRAG_MIME,
+  DOCK_HOVER_ACTIONS,
+  DOCK_TAB_FOCUS
+} from './dockShared.js';
 import { useConversationProcessing } from '../../hooks/chat/index.js';
 import { PeakContextBadge } from '../chat/PeakContextBadge.js';
 import { useChatRowFocus } from '../../hooks/chat/index.js';
@@ -19,16 +25,10 @@ import { RunningTitle, RunStopButton } from '../runIndicators/index.js';
 import { useChatStore } from '../../store/useChatStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
-import { useWorkspaceHasActiveRun } from '../../hooks/chat/useWorkspaceHasActiveRun.js';
 import { useUiStore } from '../../store/useUiStore.js';
 import { buildDisplayChatTitles } from './displayChatTitles.js';
+import { handleDockVerticalTablistKeyDown } from './dockVerticalTablistKeyboard.js';
 import { useShallow } from 'zustand/react/shallow';
-
-const CONV_DRAG_MIME = 'application/x-vyotiq-conversation';
-
-/** Hover-only dock actions stay visible on keyboard focus. */
-const DOCK_HOVER_ACTIONS =
-  'opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100';
 
 interface DockChatStripProps {
   workspaceId: string | null;
@@ -59,16 +59,15 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
 
   const entries = useMemo(() => {
     if (!workspaceId) return [];
-    const q = query.trim().toLowerCase();
-    const isFiltering = searchOpen && q.length > 0;
-    return list.filter((c) => {
-      if (c.workspaceId !== workspaceId) return false;
-      if (isFiltering && !c.title.toLowerCase().includes(q) && !runningIds.has(c.id)) {
-        return false;
-      }
-      return true;
-    });
-  }, [list, workspaceId, query, searchOpen, runningIds]);
+    return filterDockChats(
+      list,
+      workspaceId,
+      query,
+      searchOpen,
+      runningIds,
+      activeIdByWorkspace[workspaceId] ?? null
+    );
+  }, [list, workspaceId, query, searchOpen, runningIds, activeIdByWorkspace]);
 
   const activeId = workspaceId ? activeIdByWorkspace[workspaceId] ?? null : null;
   const isFiltering = searchOpen && query.trim().length > 0;
@@ -77,7 +76,6 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
     (s) => (workspaceId ? s.collapsedWorkspaces.has(workspaceId) : false)
   );
   const toggleWorkspaceCollapsed = useUiStore((s) => s.toggleWorkspaceCollapsed);
-  const workspaceHasRun = useWorkspaceHasActiveRun(workspaceId);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Hydrate peak-context badges for visible tabs without requiring
@@ -93,13 +91,13 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
     if (!activeId || !scrollRef.current) return;
     const el = scrollRef.current.querySelector(`[data-conv-id="${activeId}"]`);
     if (el instanceof HTMLElement) {
-      el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+      el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
   }, [activeId]);
 
   if (!workspaceId) {
     return (
-      <div className="flex h-9 items-center px-2 text-row text-text-faint">
+      <div className="flex flex-1 flex-col px-2 py-1 text-row text-text-faint">
         Open a workspace to see chats.
       </div>
     );
@@ -107,7 +105,7 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
 
   if (loading && list.length === 0) {
     return (
-      <div className="flex h-9 items-center gap-2 px-2 text-row text-text-faint">
+      <div className="flex flex-1 items-center gap-2 px-2 py-1 text-row text-text-faint">
         <Spinner /> Loading…
       </div>
     );
@@ -115,28 +113,29 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
 
   if (chatsCollapsed) {
     const count = entries.length;
-    const runningEntry = entries.find((e) => runningIds.has(e.id));
-    const runningRunId = runningEntry
-      ? useChatStore.getState().slices[runningEntry.id]?.runId
-      : null;
+    const runningEntries = entries.filter((e) => runningIds.has(e.id));
     return (
-      <div className="flex h-9 min-w-0 items-center gap-2 px-2">
-        {workspaceHasRun && runningEntry && runningRunId && (
-          <>
-            <ChatTab
-              entry={runningEntry}
-              displayTitle={displayTitles.get(runningEntry.id) ?? runningEntry.title}
-              active={runningEntry.id === activeId}
-              onSelect={() => void select(runningEntry.id)}
-              onRename={(title) => void rename(runningEntry.id, title)}
-              onRemove={() => void remove(runningEntry.id)}
-            />
-            <RunStopButton
-              runId={runningRunId}
-              conversationTitle={displayTitles.get(runningEntry.id) ?? runningEntry.title}
-            />
-          </>
-        )}
+      <div className="flex min-h-0 flex-1 flex-col gap-2 px-2 py-1">
+        {runningEntries.map((runningEntry) => {
+          const runningRunId = useChatStore.getState().slices[runningEntry.id]?.runId;
+          if (!runningRunId) return null;
+          return (
+            <div key={runningEntry.id} className="flex min-w-0 items-center gap-1">
+              <ChatTab
+                entry={runningEntry}
+                displayTitle={displayTitles.get(runningEntry.id) ?? runningEntry.title}
+                active={runningEntry.id === activeId}
+                onSelect={() => void select(runningEntry.id)}
+                onRename={(title) => void rename(runningEntry.id, title)}
+                onRemove={() => void remove(runningEntry.id)}
+              />
+              <RunStopButton
+                runId={runningRunId}
+                conversationTitle={displayTitles.get(runningEntry.id) ?? runningEntry.title}
+              />
+            </div>
+          );
+        })}
         <span className="text-row text-text-faint">
           {count === 0 ? 'No chats' : `${count} chat${count === 1 ? '' : 's'} hidden`}
         </span>
@@ -156,7 +155,7 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
 
   if (entries.length === 0) {
     return (
-      <div className="flex h-9 items-center gap-2 px-2">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 px-2 py-1">
         <span className="text-row text-text-faint">
           {isFiltering ? 'No matches.' : 'No chats yet.'}
         </span>
@@ -181,7 +180,17 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
       ref={scrollRef}
       role="tablist"
       aria-label="Chats in workspace"
-      className="scrollbar-stealth flex h-9 items-center gap-1 overflow-x-auto px-1"
+      className="scrollbar-stealth flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1 pb-1"
+      onKeyDown={(e) => {
+        handleDockVerticalTablistKeyDown({
+          e,
+          ids: entries.map((entry) => entry.id),
+          activeId,
+          onActivate: (id) => void select(id),
+          focusTarget: (id) =>
+            scrollRef.current?.querySelector<HTMLElement>(`[data-conv-id="${id}"]`)
+        });
+      }}
     >
       {entries.map((entry) => (
         <ChatTab
@@ -244,10 +253,11 @@ function ChatTab({ entry, displayTitle, active, onSelect, onRename, onRemove }: 
           e.dataTransfer.effectAllowed = 'move';
         }}
         className={cn(
-          'group app-no-drag flex max-w-[18ch] shrink-0 items-center gap-1 rounded-inner px-2 py-1',
+          'group app-no-drag flex w-full max-w-none shrink-0 items-center gap-1 rounded-inner px-2 py-1',
           'text-row transition-colors duration-150',
+          DOCK_TAB_FOCUS,
           active
-            ? 'bg-surface-hover text-text-primary'
+            ? 'bg-surface-overlay text-text-primary'
             : 'text-text-muted hover:bg-surface-hover/60 hover:text-text-secondary'
         )}
       >

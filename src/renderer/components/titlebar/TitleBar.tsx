@@ -4,19 +4,18 @@
  *   [ MenuBar ] [ workspace ]     …     [ settings ] [ help ] [ window controls ]
  *   ←─ interactive ─→   ←── drag ──→   ←── interactive ──→
  *
- * The workspace label is the primary at-a-glance context indicator.
- * Navigation lives in the bottom dock; settings and shortcuts live
- * in the title bar and secondary zone.
+ * The workspace label lives in the left navigation dock (vertical rail
+ * when collapsed, tabs when expanded). Settings and shortcuts live in
+ * the title bar and secondary zone.
  */
 
 import { useMemo, useRef, useState, type ReactNode } from 'react';
-import { Folder, HelpCircle, Settings } from 'lucide-react';
+import { HelpCircle, Settings } from 'lucide-react';
 import { WindowControls } from './WindowControls.js';
 import { MenuBar, type FileMenuActions } from './menu/index.js';
 import { type ViewMenuActions } from './menu/menus/ViewMenu.js';
 import { Popover } from '../ui/Popover.js';
 import { ShortcutsPanel, platformAltKey, platformModKey } from '../shortcuts/ShortcutsPanel.js';
-import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { cn } from '../../lib/cn.js';
 
 export interface TitleBarProps {
@@ -26,13 +25,6 @@ export interface TitleBarProps {
 }
 
 export function TitleBar({ fileActions, viewActions, onOpenSettings }: TitleBarProps) {
-  const activeWorkspaceLabel = useWorkspaceStore(
-    (s) => s.list.find((w) => w.id === s.activeId)?.label ?? null
-  );
-  const activeWorkspacePath = useWorkspaceStore(
-    (s) => s.list.find((w) => w.id === s.activeId)?.path ?? null
-  );
-
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const helpButtonRef = useRef<HTMLButtonElement>(null);
   const mod = useMemo(platformModKey, []);
@@ -43,18 +35,6 @@ export function TitleBar({ fileActions, viewActions, onOpenSettings }: TitleBarP
       <div className="app-no-drag flex items-stretch px-1">
         <MenuBar fileActions={fileActions} viewActions={viewActions} />
       </div>
-      {activeWorkspaceLabel && (
-        <div
-          className={cn(
-            'app-no-drag ml-2 flex min-w-0 max-w-[32ch] items-center gap-1.5',
-            'rounded-inner bg-surface-hover/30 px-2 py-0.5 text-row text-text-muted'
-          )}
-          title={activeWorkspacePath ?? undefined}
-        >
-          <Folder className="h-3 w-3 shrink-0 text-text-faint" strokeWidth={2} />
-          <span className="truncate">{activeWorkspaceLabel}</span>
-        </div>
-      )}
       <div className="flex-1" />
       <div className="app-no-drag flex items-center gap-0.5 pr-1">
         <TitleBarIconButton

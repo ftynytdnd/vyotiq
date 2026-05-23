@@ -44,7 +44,7 @@ npm run preview
 
 ## First run
 
-1. **Pick a workspace.** Use **File → Open Workspace…** or add a workspace tab in the bottom dock. This is the folder Agent V's tools (`bash`, `ls`, `read`, `edit`, `search`) will be sandboxed to.
+1. **Pick a workspace.** Use **File → Open Workspace…** or add a workspace tab in the left navigation dock. This is the folder Agent V's tools (`bash`, `ls`, `read`, `edit`, `search`) will be sandboxed to.
 2. **Add a provider.** Open Settings → Providers → "Add provider". Try a preset:
    - **OpenAI:** `https://api.openai.com` + your key
    - **Ollama (local):** `http://localhost:11434` (no key needed)
@@ -86,7 +86,7 @@ src/
 ├── shared/                        Types + constants used by both processes
 └── renderer/                      React frontend
     ├── components/                titlebar / composer / timeline / dock / zone / settings / ui / confirm
-    │   ├── dock/                  Bottom dock (workspace tabs, chat strip, inline search above strip)
+    │   ├── dock/                  LeftDock (workspace tabs, chat strip, inline search)
     │   ├── timeline/subagent/     Inline sub-agent traces in the conversation timeline (SubAgentTrace, stats)
     │   ├── zone/                  SecondaryZone + PanelFrame (settings, checkpoints, inspector only)
     │   └── titlebar/menu/         Modular File / Edit / View menu strip

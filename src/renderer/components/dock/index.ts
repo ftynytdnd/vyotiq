@@ -1,1 +1,1 @@
-export { BottomDock } from './BottomDock.js';
+export { LeftDock } from './LeftDock.js';

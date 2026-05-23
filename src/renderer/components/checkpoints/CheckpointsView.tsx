@@ -19,7 +19,7 @@ import { timelineRowHeaderClassName } from '../timeline/shared/rowStyles.js';
 
 type Tab = 'runs' | 'files';
 
-/** Checkpoints history body for the secondary zone or modal shell. */
+/** Checkpoints history body for the secondary zone. */
 export function CheckpointsPanel({ embedded = false }: { embedded?: boolean }) {
   const [tab, setTab] = useState<Tab>('runs');
   const [filePicked, setFilePicked] = useState<string | null>(null);

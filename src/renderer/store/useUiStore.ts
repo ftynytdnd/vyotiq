@@ -1,34 +1,28 @@
 /**
- * UI store — small per-renderer slice for global UI toggles (e.g. bottom
+ * UI store — small per-renderer slice for global UI toggles (e.g. left
  * dock visibility). Keeps app-level state out of component trees so any
  * feature (TitleBar menus, keyboard shortcuts, etc.) can flip them.
  *
- * Dock expansion is persisted via the settings IPC. `hydrate` is called
- * once at boot from `App.tsx` after `useSettingsStore.refresh()` resolves;
- * subsequent toggles fire-and-forget a settings patch so state survives a
- * restart. The persistence call is intentionally not awaited so a slow disk
- * never delays UI feedback.
- *
- * F-016: persistence is debounced (`PERSIST_DEBOUNCE_MS`) so a user
- * rapidly toggling the dock or expanding/collapsing many workspace entries
- * in sequence coalesces into one settings.json write per affected key. The
- * flusher is exposed via `flushUiPersistence` and wired to `beforeunload`
- * in `App.tsx` so a fast Cmd+Q before the debounce fires still persists
- * the latest values.
+ * Dock expansion and width are persisted via the settings IPC. `hydrate`
+ * is called once at boot from `App.tsx` after `useSettingsStore.refresh()`
+ * resolves; subsequent toggles fire-and-forget a settings patch so state
+ * survives a restart.
  */
 
 import { create } from 'zustand';
 import { vyotiq } from '../lib/ipc.js';
+import {
+  clampDockWidth,
+  DOCK_WIDTH_DEFAULT
+} from '../components/dock/dockShared.js';
 
-/**
- * Debounce window for dock / collapsed-workspaces persisters.
- * 200ms swallows a click-storm without making the persisted value
- * lag noticeably behind a single deliberate toggle.
- */
 const PERSIST_DEBOUNCE_MS = 200;
 
 let dockPersistTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingDockExpanded: boolean | null = null;
+
+let dockWidthPersistTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingDockWidth: number | null = null;
 
 let collapsedPersistTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingCollapsed: Set<string> | null = null;
@@ -42,6 +36,19 @@ function flushDockExpandedNow(): void {
   const next = pendingDockExpanded;
   pendingDockExpanded = null;
   void vyotiq.settings.set({ ui: { dockExpanded: next } }).catch(() => {
+    /* noop */
+  });
+}
+
+function flushDockWidthNow(): void {
+  if (dockWidthPersistTimer !== null) {
+    clearTimeout(dockWidthPersistTimer);
+    dockWidthPersistTimer = null;
+  }
+  if (pendingDockWidth === null) return;
+  const next = pendingDockWidth;
+  pendingDockWidth = null;
+  void vyotiq.settings.set({ ui: { dockWidth: next } }).catch(() => {
     /* noop */
   });
 }
@@ -61,40 +68,39 @@ function flushCollapsedNow(): void {
     });
 }
 
-/**
- * Public flush hook. Wire to `beforeunload` so a Cmd+Q during the
- * debounce window persists the latest values rather than losing them.
- */
 export function flushUiPersistence(): void {
   flushDockExpandedNow();
+  flushDockWidthNow();
   flushCollapsedNow();
 }
 
 interface UiStore {
   dockExpanded: boolean;
-  /**
-   * Per-workspace collapsed flag for workspace groups in the dock.
-   * Open is the default — absence in this set means "expanded". Keyed
-   * by `WorkspaceEntry.id`. Persisted under
-   * `AppSettings.ui.collapsedWorkspaces` via the same fire-and-forget
-   * pattern as `dockExpanded`.
-   */
+  dockWidth: number;
   collapsedWorkspaces: Set<string>;
-  /** True once `hydrate` has been called; suppresses persistence before then. */
   hydrated: boolean;
   toggleDock: () => void;
   setDockExpanded: (expanded: boolean) => void;
-  /** Toggle a workspace's collapse state in the dock tree. */
+  setDockWidth: (width: number) => void;
   toggleWorkspaceCollapsed: (workspaceId: string) => void;
   clearWorkspaceCollapsed: (workspaceId: string) => void;
-  /** Initialize from persisted AppSettings.ui at boot. */
-  hydrate: (init: { dockExpanded: boolean; collapsedWorkspaces?: string[] }) => void;
+  hydrate: (init: {
+    dockExpanded: boolean;
+    dockWidth?: number;
+    collapsedWorkspaces?: string[];
+  }) => void;
 }
 
 function persistDockExpanded(expanded: boolean): void {
   pendingDockExpanded = expanded;
   if (dockPersistTimer !== null) clearTimeout(dockPersistTimer);
   dockPersistTimer = setTimeout(flushDockExpandedNow, PERSIST_DEBOUNCE_MS);
+}
+
+function persistDockWidth(width: number): void {
+  pendingDockWidth = width;
+  if (dockWidthPersistTimer !== null) clearTimeout(dockWidthPersistTimer);
+  dockWidthPersistTimer = setTimeout(flushDockWidthNow, PERSIST_DEBOUNCE_MS);
 }
 
 function persistCollapsedWorkspaces(set: Set<string>): void {
@@ -105,6 +111,7 @@ function persistCollapsedWorkspaces(set: Set<string>): void {
 
 export const useUiStore = create<UiStore>((set, get) => ({
   dockExpanded: false,
+  dockWidth: DOCK_WIDTH_DEFAULT,
   collapsedWorkspaces: new Set<string>(),
   hydrated: false,
   toggleDock: () => {
@@ -116,6 +123,12 @@ export const useUiStore = create<UiStore>((set, get) => ({
     if (get().dockExpanded === expanded) return;
     set({ dockExpanded: expanded });
     if (get().hydrated) persistDockExpanded(expanded);
+  },
+  setDockWidth: (width) => {
+    const next = clampDockWidth(width);
+    if (get().dockWidth === next) return;
+    set({ dockWidth: next });
+    if (get().hydrated) persistDockWidth(next);
   },
   toggleWorkspaceCollapsed: (workspaceId) => {
     const current = get().collapsedWorkspaces;
@@ -133,9 +146,10 @@ export const useUiStore = create<UiStore>((set, get) => ({
     set({ collapsedWorkspaces: next });
     if (get().hydrated) persistCollapsedWorkspaces(next);
   },
-  hydrate: ({ dockExpanded, collapsedWorkspaces }) =>
+  hydrate: ({ dockExpanded, dockWidth, collapsedWorkspaces }) =>
     set({
       dockExpanded,
+      dockWidth: clampDockWidth(dockWidth ?? DOCK_WIDTH_DEFAULT),
       collapsedWorkspaces: new Set(collapsedWorkspaces ?? []),
       hydrated: true
     })

@@ -276,6 +276,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
   // `unregisterRunContext()` in the finally.
   opts.signal.addEventListener('abort', disposeStreaming, { once: true });
 
+  let runContextGeneration = 0;
   try {
     const counters: DelegationCounters = {
       consecutiveBadRounds: 0,
@@ -512,7 +513,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         return snap;
       }
     };
-    const runContextGeneration = registerRunContext(runHandle);
+    runContextGeneration = registerRunContext(runHandle);
 
     for (let iter = 0; iter < MAX_TOTAL_ITERATIONS; iter++) {
       if (opts.signal.aborted) return {};
@@ -1066,7 +1067,10 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             });
           pushToolRound(spin, sigs);
         }
-        continue;
+        // Fall through to delegate parsing — the model may emit
+        // orchestrator tools AND `<delegate />` directives in the
+        // same assistant turn. Previously we `continue`d here and
+        // silently skipped same-turn delegates.
       }
 
       // 2) Delegate directives.
@@ -1168,6 +1172,10 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           delegates.map((d) => d.task).join(' '),
           opts.input.prompt
         );
+        continue;
+      }
+
+      if (finishedToolCalls.length > 0) {
         continue;
       }
 

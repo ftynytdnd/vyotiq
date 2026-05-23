@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { FolderOpen, Mic, X } from 'lucide-react';
+import { FolderOpen, X } from 'lucide-react';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { ComposerToolbar } from './ComposerToolbar.js';
 import { TokenUsagePill } from './TokenUsagePill.js';

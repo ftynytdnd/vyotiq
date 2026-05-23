@@ -1,7 +1,7 @@
 /**
- * Bottom dock keyboard shortcuts.
+ * Left dock keyboard shortcuts.
  *
- * Bound at the window level on mount of `BottomDock`:
+ * Bound at the window level on mount of `LeftDock`:
  *
  *   - Ctrl+B / Cmd+B : toggle dock expand/collapse
  *   - Ctrl+K / Cmd+K  : open inline chat search
@@ -9,10 +9,12 @@
  */
 
 import { useEffect } from 'react';
+import { filterDockChats } from './filterDockChats.js';
 import { useUiStore } from '../../store/useUiStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
+import { useChatStore } from '../../store/useChatStore.js';
 
 function isTextInputTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -20,6 +22,14 @@ function isTextInputTarget(target: EventTarget | null): boolean {
   if (tag === 'INPUT' || tag === 'TEXTAREA') return true;
   if (target.isContentEditable) return true;
   return false;
+}
+
+function collectRunningIds(): Set<string> {
+  const set = new Set<string>();
+  for (const [id, slice] of Object.entries(useChatStore.getState().slices)) {
+    if (slice.isProcessing) set.add(id);
+  }
+  return set;
 }
 
 export function useDockShortcuts(): void {
@@ -63,15 +73,17 @@ function navigateConversation(dir: 1 | -1): void {
   const activeWs = useWorkspaceStore.getState().activeId;
   if (!activeWs) return;
 
-  const inWorkspace = convs.list.filter((c) => c.workspaceId === activeWs);
-  const list = search.open && search.query.trim().length > 0
-    ? inWorkspace.filter((c) =>
-      c.title.toLowerCase().includes(search.query.trim().toLowerCase())
-    )
-    : inWorkspace;
+  const activeId = convs.activeIdByWorkspace[activeWs] ?? null;
+  const list = filterDockChats(
+    convs.list,
+    activeWs,
+    search.query,
+    search.open,
+    collectRunningIds(),
+    activeId
+  );
   if (list.length === 0) return;
 
-  const activeId = convs.activeIdByWorkspace[activeWs] ?? null;
   const activeIdx = activeId ? list.findIndex((c) => c.id === activeId) : -1;
   let next: number;
   if (activeIdx === -1) {

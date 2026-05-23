@@ -9,7 +9,7 @@
  * Hidden entirely when there are zero background runs — no chrome ever
  * paints in the idle state.
  *
- * "Show" expands the bottom dock (if collapsed) and scrolls the first
+ * "Show" expands the navigation dock (if collapsed) and scrolls the first
  * running chat tab into view via `focusRow`. Tabs register refs through
  * `useChatRowFocus` in `DockChatStrip`.
  *

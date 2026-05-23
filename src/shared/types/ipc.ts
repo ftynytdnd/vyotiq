@@ -128,10 +128,14 @@ export interface AppSettings {
     /** @deprecated Replaced by `dockExpanded`. Read for migration only. */
     sidebarOpen?: boolean;
     /**
-     * Bottom navigation dock expand/collapse. Expanded by default on
+     * Left navigation dock expand/collapse. Collapsed by default on
      * first launch; persisted so the user's preference survives restart.
      */
     dockExpanded?: boolean;
+    /**
+     * Expanded left dock width in px. Default 260; clamped 220–360.
+     */
+    dockWidth?: number;
     /**
      * Timeline row expand/collapse state keyed by `conversationId`. Each
      * value is an array of opaque row keys (e.g. `tool-group:<id>`) that

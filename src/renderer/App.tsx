@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { TitleBar } from './components/titlebar/TitleBar.js';
+import { LeftDock } from './components/dock/index.js';
 import { SecondaryZone } from './components/zone/index.js';
 import { ChatPage } from './pages/ChatPage.js';
 import { ToastHost } from './components/toast/ToastHost.js';
@@ -74,7 +75,7 @@ export default function App() {
     return initCheckpoints();
   }, [initCheckpoints]);
 
-  // Hydrate UI prefs (bottom dock expand state + per-workspace collapse
+  // Hydrate UI prefs (left dock expand state + per-workspace collapse
   // state) from persisted settings exactly once, after the settings
   // refresh has resolved. Subsequent toggles self-persist via the ui
   // store.
@@ -84,7 +85,11 @@ export default function App() {
     const dockExpanded =
       settings.ui?.dockExpanded ??
       (settings.ui?.sidebarOpen !== undefined ? settings.ui.sidebarOpen : false);
-    hydrateUi({ dockExpanded, collapsedWorkspaces: collapsed });
+    hydrateUi({
+      dockExpanded,
+      dockWidth: settings.ui?.dockWidth,
+      collapsedWorkspaces: collapsed
+    });
     if (
       settings.ui?.sidebarOpen !== undefined &&
       settings.ui?.dockExpanded === undefined
@@ -320,6 +325,7 @@ export default function App() {
         onOpenSettings={() => openSettings()}
       />
       <div className="flex min-h-0 flex-1 overflow-hidden">
+        <LeftDock />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <main className="min-h-0 flex-1 overflow-hidden bg-surface-base">
             <ChatPage

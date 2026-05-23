@@ -29,6 +29,7 @@ export function ModelPicker({ value, onChange, onOpenProviders }: ModelPickerPro
   const triggerRef = useRef<HTMLButtonElement>(null);
   const providers = useProviderStore((s) => s.providers);
   const dockExpanded = useUiStore((s) => s.dockExpanded);
+  const dockWidth = useUiStore((s) => s.dockWidth);
   const hasEnabledProvider = useMemo(
     () => providers.some((p) => p.enabled),
     [providers]
@@ -52,7 +53,7 @@ export function ModelPicker({ value, onChange, onOpenProviders }: ModelPickerPro
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dockExpanded]);
+  }, [dockExpanded, dockWidth]);
 
   const handleToggle = () => {
     if (!hasEnabledProvider) {

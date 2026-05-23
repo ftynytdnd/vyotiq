@@ -6,6 +6,7 @@
  */
 
 import { useUiStore } from '../../../../store/useUiStore.js';
+import { useDockSearchStore } from '../../../../store/useDockSearchStore.js';
 import { vyotiq } from '../../../../lib/ipc.js';
 import { MenuItem } from '../MenuItem.js';
 import { MenuSeparator } from '../MenuSeparator.js';
@@ -24,6 +25,8 @@ export function ViewMenu({
 }) {
   const dockExpanded = useUiStore((s) => s.dockExpanded);
   const toggleDock = useUiStore((s) => s.toggleDock);
+  const setDockExpanded = useUiStore((s) => s.setDockExpanded);
+  const setSearchOpen = useDockSearchStore((s) => s.setOpen);
 
   return (
     <>
@@ -31,6 +34,15 @@ export function ViewMenu({
         label={dockExpanded ? 'Collapse Dock' : 'Expand Dock'}
         shortcut={formatPlatformShortcut('Ctrl+B')}
         onSelect={toggleDock}
+        onAfterAction={onAfterAction}
+      />
+      <MenuItem
+        label="Search chats"
+        shortcut={formatPlatformShortcut('Ctrl+K')}
+        onSelect={() => {
+          setDockExpanded(true);
+          setSearchOpen(true);
+        }}
         onAfterAction={onAfterAction}
       />
       <MenuSeparator />

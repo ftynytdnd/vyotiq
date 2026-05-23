@@ -43,7 +43,7 @@ export function ShortcutsPanel({ mod = platformModKey(), alt = platformAltKey() 
       className="flex flex-col gap-2"
     >
       <ShortcutGroup title="Navigation">
-        <ShortcutRow combo={`${mod}+B`} label="Toggle bottom dock" />
+        <ShortcutRow combo={`${mod}+B`} label="Toggle navigation dock" />
         <ShortcutRow combo={`${mod}+K`} label="Search chats" />
         <ShortcutRow combo={`${alt}+\u2191 / ${alt}+\u2193`} label="Prev / next chat" />
       </ShortcutGroup>

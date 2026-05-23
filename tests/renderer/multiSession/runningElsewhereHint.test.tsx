@@ -8,6 +8,8 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useChatStore } from '@renderer/store/useChatStore';
 import { useUiStore } from '@renderer/store/useUiStore';
+import { useConversationsStore } from '@renderer/store/useConversationsStore';
+import { useWorkspaceStore } from '@renderer/store/useWorkspaceStore';
 import { RunningElsewhereHint } from '@renderer/components/composer/runningElsewhere/RunningElsewhereHint';
 import {
   __resetChatRowRegistry,
@@ -31,9 +33,12 @@ beforeEach(() => {
   });
   useUiStore.setState({
     dockExpanded: false,
+    dockWidth: 260,
     collapsedWorkspaces: new Set<string>(),
     hydrated: true
   });
+  useWorkspaceStore.setState({ activeId: 'ws-active', list: [] } as never);
+  useConversationsStore.setState({ list: [], activeIdByWorkspace: {} } as never);
   __resetChatRowRegistry();
 });
 
@@ -95,7 +100,24 @@ describe('RunningElsewhereHint', () => {
     expect(screen.getByText('2 chats streaming elsewhere')).toBeInTheDocument();
   });
 
-  it('expands the dock and scrolls the first running row into view on Show click', () => {
+  it('expands the dock and scrolls the first running row into view on Show click', async () => {
+    useWorkspaceStore.setState({
+      activeId: 'ws-active',
+      list: [{ id: 'ws-active', label: 'Active', path: '/a' }]
+    } as never);
+    useConversationsStore.setState({
+      list: [
+        {
+          id: 'conv-bg-1',
+          title: 'Background',
+          workspaceId: 'ws-active',
+          createdAt: 0,
+          updatedAt: 0,
+          eventCount: 0
+        }
+      ],
+      activeIdByWorkspace: { 'ws-active': 'conv-active' }
+    } as never);
     useChatStore.setState({
       slices: {
         'conv-bg-1': chatSliceFixture({
@@ -113,25 +135,71 @@ describe('RunningElsewhereHint', () => {
       const ref = useChatRowFocus('conv-bg-1');
       return <div data-testid="row" ref={ref} />;
     };
-    render(<RegistrationProbe />);
+    render(
+      <>
+        <RegistrationProbe />
+        <RunningElsewhereHint />
+      </>
+    );
     const row = screen.getByTestId('row');
     const scrollSpy = vi.fn();
     row.scrollIntoView = scrollSpy;
 
-    render(<RunningElsewhereHint />);
     fireEvent.click(screen.getByRole('button', { name: /show/i }));
 
     // Dock expands.
     expect(useUiStore.getState().dockExpanded).toBe(true);
 
-    // scrollIntoView is deferred until after the dock expand re-render.
-    return new Promise<void>((resolve) => {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          expect(scrollSpy).toHaveBeenCalled();
-          resolve();
-        });
-      });
+    // scrollIntoView is deferred until after navigation + dock expand re-render.
+    await vi.waitFor(() => {
+      expect(scrollSpy).toHaveBeenCalled();
+    });
+  });
+
+  it('Show switches workspace and clears collapsed state for cross-workspace runs', async () => {
+    const setActive = vi.fn().mockResolvedValue(undefined);
+    const select = vi.fn().mockResolvedValue(undefined);
+    useWorkspaceStore.setState({
+      activeId: 'ws-active',
+      list: [
+        { id: 'ws-active', label: 'Active', path: '/a' },
+        { id: 'ws-other', label: 'Other', path: '/b' }
+      ],
+      setActive
+    } as never);
+    useConversationsStore.setState({
+      list: [
+        {
+          id: 'conv-bg-1',
+          title: 'Background',
+          workspaceId: 'ws-other',
+          createdAt: 0,
+          updatedAt: 0,
+          eventCount: 0
+        }
+      ],
+      activeIdByWorkspace: { 'ws-active': 'conv-active', 'ws-other': 'conv-other' },
+      select
+    } as never);
+    useUiStore.setState({ collapsedWorkspaces: new Set(['ws-other']) });
+    useChatStore.setState({
+      slices: {
+        'conv-bg-1': chatSliceFixture({
+          conversationId: 'conv-bg-1',
+          runId: 'run-bg-1',
+          isProcessing: true,
+          runStartedAt: 1
+        })
+      }
+    });
+
+    render(<RunningElsewhereHint />);
+    fireEvent.click(screen.getByRole('button', { name: /show/i }));
+
+    await vi.waitFor(() => {
+      expect(setActive).toHaveBeenCalledWith('ws-other');
+      expect(select).toHaveBeenCalledWith('conv-bg-1');
+      expect(useUiStore.getState().collapsedWorkspaces.has('ws-other')).toBe(false);
     });
   });
 });

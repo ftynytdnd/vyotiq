@@ -53,6 +53,18 @@ describe('registerSettingsIpc — SETTINGS_SET payload validation', () => {
     expect(setSettingsMock).not.toHaveBeenCalled();
   });
 
+  it('accepts dockWidth within 220–360', async () => {
+    await mockIpc.__invoke(IPC.SETTINGS_SET, { ui: { dockWidth: 300 } });
+    expect(setSettingsMock).toHaveBeenCalledOnce();
+  });
+
+  it('rejects dockWidth outside 220–360', async () => {
+    await expect(mockIpc.__invoke(IPC.SETTINGS_SET, { ui: { dockWidth: 400 } })).rejects.toThrow(
+      /dockWidth/
+    );
+    expect(setSettingsMock).not.toHaveBeenCalled();
+  });
+
   it('accepts gatePromptOnPendingByWorkspace per-workspace map', async () => {
     await mockIpc.__invoke(IPC.SETTINGS_SET, {
       ui: { gatePromptOnPendingByWorkspace: { 'ws-1': true, 'ws-2': false } }

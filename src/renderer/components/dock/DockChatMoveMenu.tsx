@@ -46,8 +46,9 @@ export function DockChatMoveMenu({ conversationId, currentWorkspaceId }: DockCha
         open={open}
         onClose={() => setOpen(false)}
         triggerRef={triggerRef}
-        align="start"
+        align="end"
         offset={6}
+        collisionPadding={{ right: 12 }}
         className="elev-1 min-w-[12rem] rounded-card bg-surface-overlay p-1"
       >
         <div className="px-2 py-1 text-meta text-text-faint">Move to workspace</div>

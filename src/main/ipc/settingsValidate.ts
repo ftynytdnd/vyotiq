@@ -5,6 +5,7 @@
 import type { AppSettings } from '@shared/types/ipc.js';
 import {
   assertBoolean,
+  assertNumber,
   assertObject,
   assertString,
   assertStringArray
@@ -19,6 +20,8 @@ const SETTINGS_TOP_KEYS = new Set([
 ]);
 
 const UI_BOOLEAN_KEYS = ['sidebarOpen', 'dockExpanded'] as const;
+
+const UI_NUMERIC_KEYS = ['dockWidth'] as const;
 
 const UI_RECORD_KEYS = [
   'expandedRows',
@@ -55,6 +58,7 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
   for (const key of Object.keys(ui)) {
     const allowed =
       (UI_BOOLEAN_KEYS as readonly string[]).includes(key) ||
+      (UI_NUMERIC_KEYS as readonly string[]).includes(key) ||
       (UI_RECORD_KEYS as readonly string[]).includes(key);
     if (!allowed) {
       throw new Error(`${channel}: patch.ui.${key} is not a recognized ui field`);
@@ -63,6 +67,11 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
   for (const k of UI_BOOLEAN_KEYS) {
     if (k in ui && ui[k] !== undefined) {
       assertBoolean(channel, `patch.ui.${k}`, ui[k]);
+    }
+  }
+  for (const k of UI_NUMERIC_KEYS) {
+    if (k in ui && ui[k] !== undefined) {
+      assertNumber(channel, `patch.ui.${k}`, ui[k], { integer: true, min: 220, max: 360 });
     }
   }
   if ('expandedRows' in ui && ui.expandedRows !== undefined) {
