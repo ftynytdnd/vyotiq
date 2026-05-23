@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { mkdtemp, rm, mkdir, writeFile, symlink } from 'node:fs/promises';
 import {
+  bashNeedsEscapeConfirm,
   isDestructiveCommand,
   isInsideWorkspace,
   realpathInsideWorkspace,
@@ -212,7 +213,25 @@ describe('isDestructiveCommand', () => {
     'find ./src -exec rm -rf {} +',
     // PowerShell pipeline variants that sidestep `-Recurse`.
     'Get-ChildItem -Recurse | Remove-Item -Force',
-    'gci | ri -Force'
+    'gci | ri -Force',
+    // Audit fix 2026-12-P2-2 — out-of-workspace write-redirection.
+    // `>` and `>>` to absolute paths must require confirmation;
+    // `/tmp/…` and `/dev/null` are deliberately allowed (see
+    // negative cases below).
+    'echo malicious > /etc/hosts',
+    'echo malicious >> /etc/passwd',
+    'cat foo > /var/log/wtmp',
+    'printf "" > C:\\Windows\\System32\\drivers\\etc\\hosts',
+    // `tee` to absolute paths — same threat shape as the
+    // redirection above, sudo or not.
+    'echo x | sudo tee /etc/hosts',
+    'echo x | tee /etc/hosts',
+    'echo x | tee -a /etc/hosts',
+    'echo x | tee C:\\Windows\\foo',
+    // chmod / chown / icacls rooted at `/`.
+    'chmod -R 777 /',
+    'chown -R root:root /',
+    'icacls / /T /grant Everyone:F'
   ])('flags %s as destructive', (cmd) => {
     expect(isDestructiveCommand(cmd)).toBe(true);
   });
@@ -224,8 +243,42 @@ describe('isDestructiveCommand', () => {
     'ls -la',
     'cat README.md',
     'Remove-Item ./tmp.txt',
-    'Get-ChildItem'
+    'Get-ChildItem',
+    // Audit fix 2026-12-P2-2 — negative cases that the new patterns
+    // MUST let through. `/tmp/…` and `/dev/null` are intentional
+    // negative-lookahead carve-outs because they are the canonical
+    // harmless redirect targets.
+    'echo done > /tmp/log.txt',
+    'echo done >> /tmp/log.txt',
+    'noisy-command > /dev/null',
+    'noisy-command 2>&1 > /dev/null',
+    'echo x | tee -a /tmp/log',
+    // File-scoped chmod must still pass — only the bare-root walk
+    // variant is destructive.
+    'chmod 644 ./src/main.ts',
+    'chmod -R 755 ./dist'
   ])('does NOT flag %s', (cmd) => {
     expect(isDestructiveCommand(cmd)).toBe(false);
+  });
+});
+
+describe('bashNeedsEscapeConfirm', () => {
+  it.each([
+    'echo x > ../outside.txt',
+    'echo x >> ..\\secret.log',
+    'Set-Content ..\\escape.txt -Value x',
+    'cat C:\\Windows\\System32\\drivers\\etc\\hosts',
+    'head /etc/passwd'
+  ])('flags %s', (cmd) => {
+    expect(bashNeedsEscapeConfirm(cmd).needed).toBe(true);
+  });
+
+  it.each([
+    'echo hello',
+    'ls -la src',
+    'cat README.md',
+    'echo done > ./out.log'
+  ])('does not flag %s', (cmd) => {
+    expect(bashNeedsEscapeConfirm(cmd).needed).toBe(false);
   });
 });

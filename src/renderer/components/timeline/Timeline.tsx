@@ -26,7 +26,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { useChatStore } from '../../store/useChatStore.js';
-import { deriveRows } from './reducer/deriveRows.js';
+import { deriveRows, type Row } from './reducer/deriveRows.js';
 import { UserPromptRow } from './rows/UserPromptRow.js';
 import { AssistantTextRow } from './rows/AssistantTextRow.js';
 import { ReasoningLineRow } from './rows/ReasoningLineRow.js';
@@ -39,7 +39,9 @@ import { FileEditGroupRow } from './rows/FileEditGroupRow.js';
 import { RunCompleteRow } from './rows/RunCompleteRow.js';
 import { ContextSummaryRow } from './rows/ContextSummaryRow.js';
 import { SubAgentTrace } from './subagent/SubAgentTrace.js';
+import { PendingChangesTimelineRow } from '../checkpoints/timeline/index.js';
 import { JumpToLatestChip } from './shared/JumpToLatestChip.js';
+import { TurnBlock, groupRowsIntoTurns } from './shared/TurnBlock.js';
 
 /**
  * Slack (px) allowed between scroll position and the tail before the
@@ -68,9 +70,11 @@ const AT_TOP_PX = 24;
 
 interface TimelineProps {
   model?: ModelSelection | null;
+  /** Opens Settings → Checkpoints (pending row usage pill). */
+  onOpenCheckpointSettings?: () => void;
 }
 
-export function Timeline({ model }: TimelineProps) {
+export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
   const events = useChatStore((s) => s.events);
   const isProcessing = useChatStore((s) => s.isProcessing);
   // Live partial-args snapshots — pulled in so `deriveRows` can
@@ -123,6 +127,9 @@ export function Timeline({ model }: TimelineProps) {
     () => deriveRows(events, { runActive: isProcessing, partialToolCallArgs, settledCallIds }),
     [events, isProcessing, partialToolCallArgs, settledCallIds]
   );
+
+  const turnSegments = useMemo(() => groupRowsIntoTurns(rows), [rows]);
+  const lastTurnIndex = turnSegments.length - 1;
 
   // Note: a `userPromptIndices` memo lived here previously. The `g j` /
   // `g k` keyboard navigator below uses
@@ -288,68 +295,21 @@ export function Timeline({ model }: TimelineProps) {
   };
 
   return (
-    <div ref={containerRef} className="flex flex-col gap-2.5 py-4">
-      {rows.map((r) => {
-        switch (r.kind) {
-          case 'user-prompt':
-            return (
-              <UserPromptRow
-                key={r.key}
-                id={r.id}
-                {...(r.runId ? { runId: r.runId } : {})}
-                content={r.content}
-              />
-            );
-          case 'assistant-text':
-            return <AssistantTextRow key={r.key} id={r.id} model={model} />;
-          case 'reasoning-line':
-            return <ReasoningLineRow key={r.key} id={r.id} />;
-          case 'agent-thought':
-            return (
-              <AgentThoughtRow
-                key={r.key}
-                content={r.content}
-                live={isProcessing}
-                seed={r.key}
-                {...(r.severity ? { severity: r.severity } : {})}
-              />
-            );
-          case 'phase':
-            return <PhaseDividerRow key={r.key} label={r.label} />;
-          case 'error':
-            return <ErrorRow key={r.key} message={r.message} />;
-          case 'subagent-line':
-            return <SubAgentTrace key={r.key} subagentId={r.subagentId} />;
-          case 'tool-group':
-            return (
-              <ToolGroupRow
-                key={r.key}
-                rowKey={r.key}
-                toolName={r.toolName}
-                items={r.children}
-              />
-            );
-          case 'file-edit-group':
-            return (
-              <FileEditGroupRow key={r.key} rowKey={r.key} items={r.children} />
-            );
-          case 'run-complete':
-            return <RunCompleteRow key={r.key} durationMs={r.durationMs} />;
-          case 'context-summary':
-            return (
-              <ContextSummaryRow
-                key={r.key}
-                summaryId={r.summaryId}
-                live={isProcessing}
-              />
-            );
-          default: {
-            const _exhaustive: never = r;
-            void _exhaustive;
-            return null;
-          }
-        }
+    <div ref={containerRef} className="flex flex-col gap-1 py-2">
+      {turnSegments.map((segment, segmentIndex) => {
+        const isLastTurn = segmentIndex === lastTurnIndex;
+        const liveTurn = isProcessing && isLastTurn;
+        const segmentKey = segment.map((r) => r.key).join(':');
+
+        return (
+          <TurnBlock key={segmentKey} live={liveTurn}>
+            {segment.map((r) => renderRow(r, model, isProcessing))}
+          </TurnBlock>
+        );
       })}
+      <PendingChangesTimelineRow
+        {...(onOpenCheckpointSettings ? { onOpenCheckpointSettings } : {})}
+      />
       <LiveStatusRow />
       <JumpToLatestChip
         visible={!sticky && isProcessing}
@@ -374,6 +334,78 @@ function findScrollParent(el: HTMLElement | null): HTMLElement | null {
     cur = cur.parentElement;
   }
   return null;
+}
+
+function renderRow(
+  r: Row,
+  model: ModelSelection | null | undefined,
+  isProcessing: boolean
+) {
+  switch (r.kind) {
+    case 'user-prompt':
+      return (
+        <UserPromptRow
+          key={r.key}
+          id={r.id}
+          {...(r.runId ? { runId: r.runId } : {})}
+          content={r.content}
+        />
+      );
+    case 'assistant-text':
+      return <AssistantTextRow key={r.key} id={r.id} model={model} />;
+    case 'reasoning-line':
+      return <ReasoningLineRow key={r.key} id={r.id} />;
+    case 'agent-thought':
+      return (
+        <AgentThoughtRow
+          key={r.key}
+          content={r.content}
+          live={isProcessing}
+          seed={r.key}
+          {...(r.severity ? { severity: r.severity } : {})}
+        />
+      );
+    case 'phase':
+      return <PhaseDividerRow key={r.key} label={r.label} />;
+    case 'error':
+      return <ErrorRow key={r.key} message={r.message} />;
+    case 'tool-group':
+      return (
+        <ToolGroupRow
+          key={r.key}
+          rowKey={r.key}
+          toolName={r.toolName}
+          items={r.children}
+        />
+      );
+    case 'file-edit-group':
+      return (
+        <FileEditGroupRow key={r.key} rowKey={r.key} items={r.children} />
+      );
+    case 'run-complete':
+      return (
+        <RunCompleteRow
+          key={r.key}
+          durationMs={r.durationMs}
+          {...(r.usage !== undefined ? { usage: r.usage } : {})}
+        />
+      );
+    case 'context-summary':
+      return (
+        <ContextSummaryRow
+          key={r.key}
+          summaryId={r.summaryId}
+          live={isProcessing}
+        />
+      );
+    case 'subagent-line':
+      return <SubAgentTrace key={r.key} subagentId={r.subagentId} />;
+    default: {
+      const _exhaustive: never = r;
+      void _exhaustive;
+      return null;
+    }
+  }
 }
 
 // Runtime guard lives in `reducer/runtimeGuards.ts` so non-UI callers

@@ -19,17 +19,25 @@
  */
 
 /** Wire dialects supported by the chat client. */
-export type ProviderDialect = 'openai' | 'ollama-native';
+export type ProviderDialect =
+  | 'openai'
+  | 'ollama-native'
+  | 'anthropic-native'
+  | 'gemini-native';
 
 /** Stable list of dialect values, in UI display order. */
 export const PROVIDER_DIALECTS: readonly ProviderDialect[] = [
   'openai',
+  'anthropic-native',
+  'gemini-native',
   'ollama-native'
 ] as const;
 
 /** Short, user-facing labels for the dialect switch in settings. */
 export const PROVIDER_DIALECT_LABELS: Record<ProviderDialect, string> = {
   'openai': 'OpenAI-compatible',
+  'anthropic-native': 'Anthropic (native)',
+  'gemini-native': 'Google Gemini (native)',
   'ollama-native': 'Ollama native'
 };
 
@@ -82,6 +90,69 @@ export interface ProviderConfig {
    * canonical homepage / app name later is a one-liner.
    */
   attribution?: ProviderAttribution;
+  /**
+   * Phase 10 (2026) — opt-in Anthropic beta headers, joined with `,`
+   * and sent as `anthropic-beta` on every `/v1/messages` request.
+   * Only meaningful for `anthropic-native` dialect providers; ignored
+   * elsewhere. Persisted alongside the rest of the record so the
+   * setting survives renderer reloads.
+   *
+   *   - `compact-2026-01-12`             → auto-compaction (Opus
+   *                                          4.6 / Sonnet 4.6 /
+   *                                          Opus 4.7).
+   *   - `model-context-window-exceeded-2025-08-26` → graceful overflow
+   *                                          (over-budget responses
+   *                                          stop cleanly instead of
+   *                                          400-ing).
+   *   - Other betas can be added at the call site without a code
+   *     change — the array is plumbed through verbatim.
+   *
+   * Stored sorted for stable diffing; the transport joins entries
+   * with `,` for the header value. An empty / absent array sends no
+   * beta header at all.
+   */
+  anthropicBetas?: string[];
+  /**
+   * Phase 9 (2026) — Gemini auth mode probe result. The 2026
+   * documented form is the `x-goog-api-key` request header; some
+   * self-hosted reverse proxies strip non-allowlisted headers, in
+   * which case we fall back to `?key=` query-string auth ONCE and
+   * persist the choice here so the probe doesn't repeat per call.
+   * Default behaviour (`undefined`) is "try header first".
+   */
+  geminiAuthMode?: 'header' | 'query';
+  /**
+   * Phase 8 (2026) — Anthropic extended-thinking opt-in. Off by
+   * default. When enabled, the `anthropic-native` transport injects a
+   * `thinking` block on every `/v1/messages` request whose model id
+   * matches a thinking-capable Claude model:
+   *
+   *   - Claude Opus 4.7 (claude-opus-4-7) → `{ type: 'adaptive' }`
+   *     (manual `type: 'enabled'` returns 400 on this model)
+   *   - Claude Opus 4.6 / Sonnet 4.6 → `{ type: 'adaptive' }`
+   *     (manual mode is deprecated but still functional)
+   *   - Claude Mythos Preview → `{ type: 'adaptive' }`
+   *     (default; honors `display: 'summarized'` for streaming)
+   *   - Older thinking-capable models (Sonnet 4.5, Sonnet 4, Opus 4,
+   *     Haiku 4.5) → `{ type: 'enabled', budget_tokens }` derived
+   *     from `effort` (low ≈ 2k, medium ≈ 8k, high ≈ 16k tokens).
+   *   - Non-thinking Anthropic models (older Haiku, etc.) → no
+   *     `thinking` block emitted (the field would be ignored or
+   *     rejected; we omit it to be safe).
+   *
+   * `effort` controls thinking depth on adaptive-mode models via the
+   * 2026 `effort` parameter and on legacy models via the
+   * `budget_tokens` derivation above. Default `effort: 'medium'`
+   * when enabled without an explicit choice.
+   *
+   * Ignored by every other dialect. Sources:
+   *   https://platform.claude.com/docs/en/docs/build-with-claude/extended-thinking
+   *   https://platform.claude.com/docs/en/docs/build-with-claude/adaptive-thinking
+   */
+  anthropicThinking?: {
+    enabled: boolean;
+    effort?: 'low' | 'medium' | 'high';
+  };
 }
 
 /**

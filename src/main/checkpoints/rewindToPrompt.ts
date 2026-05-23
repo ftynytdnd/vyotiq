@@ -46,7 +46,7 @@ import type {
   RewindResult
 } from '@shared/types/checkpoint.js';
 import type { TimelineEvent } from '@shared/types/chat.js';
-import { readTranscript, truncateTranscriptFrom } from '../conversations/conversationStore.js';
+import { readTranscript, truncateTranscriptFrom, drainAppendChain } from '../conversations/conversationStore.js';
 import { abortRunsForConversation } from '../orchestrator/AgentV.js';
 import {
   deleteRun as deleteRunPublic,
@@ -283,6 +283,11 @@ export async function rewindToPrompt(opts: {
       conversationId,
       aborted
     });
+    // Mirror `chat.ipc.ts` supersede: `abortRun` only flips the signal;
+    // tail `appendEvent` calls from the winding-down run may still be
+    // flushing. Drain before we revert files or trim JSONL so a late
+    // tail cannot resurrect events truncate just removed.
+    await drainAppendChain(conversationId);
   }
 
   // Recompute the preview against live disk state so a slightly

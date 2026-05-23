@@ -1,16 +1,10 @@
 /**
- * Context Inspector slide-over.
+ * Context Inspector panel for the secondary zone.
  *
- * Visual contract: borrows the exact shell pattern from
- * `CheckpointsView` so the two surfaces feel like the same product.
- *
- *   - Same `Modal` size="lg" wrapper.
- *   - Same `flex min-h-[420px] flex-col` body.
- *   - Same `mb-3 flex items-center gap-1` tab strip with the same
- *     `app-no-drag rounded-inner px-2.5 py-1 text-row` button shape
- *     and the right-aligned `text-meta text-text-muted` summary.
- *   - Same per-tab body container — no extra cards, no shadows; the
- *     content rows themselves are the structure.
+ * Visual contract: borrows the same shell pattern as
+ * `CheckpointsView` — `PanelFrame` in the secondary zone, dock-style
+ * tab strip, flat rows (no modal backdrop). Message rows and summary
+ * cards use nested `SurfaceShell` panels matching the timeline.
  *
  * Two tabs:
  *   - **Overview** — message list + manual trigger + (when present)
@@ -31,10 +25,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { History, Settings as SettingsIcon } from 'lucide-react';
-import { Modal } from '../ui/Modal.js';
+import { PanelFrame } from '../zone/PanelFrame.js';
+import { Notice } from '../ui/Notice.js';
 import { Spinner } from '../ui/Spinner.js';
+import { Tabs, type TabItem } from '../ui/Tabs.js';
 import { useChatStore } from '../../store/useChatStore.js';
 import { useContextSummaryStore } from '../../store/useContextSummaryStore.js';
+import { useSecondaryZoneStore } from '../../store/useSecondaryZoneStore.js';
 import { cn } from '../../lib/cn.js';
 import { formatTokenCount } from '../../lib/formatTokens.js';
 import { formatRatioPercent, ratioBand } from './inspectorFormat.js';
@@ -43,30 +40,66 @@ import { MessageList } from './MessageList.js';
 import { LiveStreamCard } from './LiveStreamCard.js';
 import { RawDiffView } from './RawDiffView.js';
 import { TriggerBar } from './TriggerBar.js';
+import { WireBreakdown } from './WireBreakdown.js';
+import type { ContextSummaryAcc } from '../timeline/reducer/types.js';
 
 type Tab = 'overview' | 'rules';
 
-export function ContextInspectorPanel() {
-  const isOpen = useContextSummaryStore((s) => s.isOpen);
-  const close = useContextSummaryStore((s) => s.close);
+/** Stable fallback — never allocate `{}` inside a Zustand selector. */
+const EMPTY_SUMMARIES: Record<string, ContextSummaryAcc> = {};
+
+/**
+ * Tab catalogue for the Inspector strip. Lifted to module scope so
+ * the `Tabs` primitive's child identity stays stable across renders
+ * — re-rendering for a different reason (snapshot refresh, etc.)
+ * won't reset the strip's internal focus tracking.
+ */
+const INSPECTOR_TABS: TabItem<Tab>[] = [
+  {
+    id: 'overview',
+    label: 'Overview',
+    icon: <History className="h-3.5 w-3.5" strokeWidth={2} />
+  },
+  {
+    id: 'rules',
+    label: 'Rules',
+    icon: <SettingsIcon className="h-3.5 w-3.5" strokeWidth={2} />
+  }
+];
+
+/** Inspector body for the secondary zone or modal shell. */
+export function ContextInspectorBody() {
   const snapshot = useContextSummaryStore((s) => s.snapshot);
   const rules = useContextSummaryStore((s) => s.rules);
+  const openContextSettings = useSecondaryZoneStore((s) => s.openSettings);
   const loading = useContextSummaryStore((s) => s.loading);
   const error = useContextSummaryStore((s) => s.error);
-  const mode = useContextSummaryStore((s) => s.mode);
-  const refresh = useContextSummaryStore((s) => s.refresh);
+  const boundConversationId = snapshot?.conversationId;
+  const peakUsage = useChatStore((s) =>
+    boundConversationId ? s.slices[boundConversationId]?.orchestratorUsage?.peak : undefined
+  );
+  const streamStartedAt = useChatStore((s) =>
+    boundConversationId
+      ? s.slices[boundConversationId]?.orchestratorUsage?.streamStartedAt
+      : undefined
+  );
+  const streamEndedAt = useChatStore((s) =>
+    boundConversationId
+      ? s.slices[boundConversationId]?.orchestratorUsage?.streamEndedAt
+      : undefined
+  );
 
   const [tab, setTab] = useState<Tab>('overview');
-  // Reset to Overview each time the panel re-opens so a previous
-  // session that ended on Rules doesn't surprise the user on the
-  // next open.
   useEffect(() => {
-    if (!isOpen) return;
+    if (!boundConversationId) return;
     setTab('overview');
-    void refresh();
-  }, [isOpen, refresh]);
+    void useContextSummaryStore.getState().refresh();
+  }, [boundConversationId]);
 
-  const summaries = useChatStore((s) => s.summaries);
+  const summaries = useChatStore((s) => {
+    if (!boundConversationId) return EMPTY_SUMMARIES;
+    return s.slices[boundConversationId]?.summaries ?? EMPTY_SUMMARIES;
+  });
   const latestCompletedSummaryId = useMemo(() => {
     let candidate: string | null = null;
     let candidateAt = 0;
@@ -81,107 +114,97 @@ export function ContextInspectorPanel() {
     return candidate;
   }, [summaries]);
 
-  if (!isOpen) return null;
-
   return (
-    <Modal open={isOpen} onClose={close} title="Context Inspector" size="lg">
-      <div className="flex min-h-[420px] flex-col">
-        {loading && !snapshot && (
-          <div className="flex items-center gap-2 text-row text-text-muted">
-            <Spinner size={14} />
-            <span>Loading inspector…</span>
+    <div className="flex min-h-0 flex-1 flex-col">
+      {loading && !snapshot && (
+        <div className="flex items-center gap-2 text-row text-text-muted">
+          <Spinner size={14} />
+          <span>Loading inspector…</span>
+        </div>
+      )}
+      {error && <Notice tone="danger">{error}</Notice>}
+      {snapshot && rules && (
+        <>
+          <div className="mb-3 flex min-w-0 flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-1">
+            <Tabs<Tab>
+              items={INSPECTOR_TABS}
+              value={tab}
+              onChange={setTab}
+              variant="strip"
+              ariaLabel="Context inspector view"
+            />
+            <UsageBadge snapshot={snapshot} className="sm:ml-auto" />
           </div>
-        )}
-        {error && (
-          <div
-            role="alert"
-            className="rounded-inner bg-danger/10 px-3 py-2 text-row text-danger"
-          >
-            {error}
-          </div>
-        )}
-        {snapshot && rules && (
-          <>
-            {/* Tab strip. Mirrors CheckpointsView exactly. */}
-            <div className="mb-3 flex items-center gap-1">
-              <TabButton active={tab === 'overview'} onClick={() => setTab('overview')}>
-                <History className="h-3.5 w-3.5" strokeWidth={2} />
-                Overview
-              </TabButton>
-              <TabButton active={tab === 'rules'} onClick={() => setTab('rules')}>
-                <SettingsIcon className="h-3.5 w-3.5" strokeWidth={2} />
-                Rules
-              </TabButton>
-              <UsageBadge snapshot={snapshot} />
-            </div>
 
-            {tab === 'overview' && (
-              <div className="flex flex-col">
+          {tab === 'overview' && (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="min-h-0 flex-1">
                 {snapshot.activeSummaryId && (
-                  <LiveStreamCard summaryId={snapshot.activeSummaryId} />
+                  <LiveStreamCard
+                    summaryId={snapshot.activeSummaryId}
+                    conversationId={snapshot.conversationId}
+                  />
                 )}
                 {!snapshot.activeSummaryId && latestCompletedSummaryId && (
                   <RawDiffView summaryId={latestCompletedSummaryId} />
                 )}
-                <div className="border-b border-border-subtle/30 py-3">
-                  <MessageList
-                    messages={snapshot.messages}
-                    conversationId={snapshot.conversationId}
-                  />
-                </div>
-                <TriggerBar snapshot={snapshot} rules={rules} mode={mode} />
+                <WireBreakdown
+                  snapshot={snapshot}
+                  peakUsage={peakUsage}
+                  streamStartedAt={streamStartedAt}
+                  streamEndedAt={streamEndedAt}
+                />
+                <MessageList
+                  messages={snapshot.messages}
+                  conversationId={snapshot.conversationId}
+                />
               </div>
-            )}
+              <div className="sticky bottom-0 shrink-0 border-t border-border-subtle/30 bg-surface-raised/95 backdrop-blur-sm">
+                <TriggerBar snapshot={snapshot} rules={rules} />
+              </div>
+            </div>
+          )}
 
-            {tab === 'rules' && (
-              <RulesHeader
-                rules={rules}
-                workspaceId={
-                  snapshot.workspaceId.length > 0 ? snapshot.workspaceId : null
-                }
-                defaultScope="workspace"
-              />
-            )}
-          </>
-        )}
-        {!loading && !snapshot && !error && (
-          <div className="text-row text-text-muted">
-            Couldn't read the orchestrator's context for this conversation.
-          </div>
-        )}
-      </div>
-    </Modal>
+          {tab === 'rules' && (
+            <RulesHeader
+              rules={rules}
+              workspaceId={
+                snapshot.workspaceId.length > 0 ? snapshot.workspaceId : null
+              }
+              defaultScope="workspace"
+              onOpenContextSettings={() => openContextSettings('context')}
+            />
+          )}
+        </>
+      )}
+      {!loading && !snapshot && !error && (
+        <div className="text-row text-text-muted">
+          Couldn't read the orchestrator's context for this conversation.
+        </div>
+      )}
+    </div>
   );
 }
 
-/**
- * Tab strip button — identical to `CheckpointsView.TabButton` so a
- * user moving between the two surfaces sees the same active /
- * inactive treatment.
- */
-function TabButton({
-  active,
-  onClick,
-  children
+/** Embedded inspector shell for the secondary zone. */
+export function ContextInspectorZonePanel({
+  onClose,
+  embedded: _embedded = false
 }: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
+  onClose: () => void;
+  embedded?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'app-no-drag inline-flex items-center gap-1.5 rounded-inner px-2.5 py-1 text-row',
-        'transition-colors duration-150',
-        active
-          ? 'bg-surface-overlay text-text-primary'
-          : 'text-text-muted hover:text-text-primary'
-      )}
+    <PanelFrame
+      title="Context Inspector"
+      onClose={onClose}
+      contentClassName="flex min-h-0 flex-col overflow-hidden p-0"
+      className="h-full"
     >
-      {children}
-    </button>
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-3">
+        <ContextInspectorBody />
+      </div>
+    </PanelFrame>
   );
 }
 
@@ -191,9 +214,11 @@ function TabButton({
  * exactly so the two surfaces feel symmetrical.
  */
 function UsageBadge({
-  snapshot
+  snapshot,
+  className
 }: {
   snapshot: import('@shared/types/contextSummary.js').ContextInspectorSnapshot;
+  className?: string;
 }) {
   const band = ratioBand(snapshot.currentRatio);
   const ratioLabel = formatRatioPercent(snapshot.currentRatio);
@@ -206,8 +231,9 @@ function UsageBadge({
   return (
     <div
       className={cn(
-        'ml-auto flex items-baseline gap-2 text-meta',
-        tone
+        'flex min-w-0 items-baseline gap-2 truncate text-meta',
+        tone,
+        className
       )}
     >
       <span className="font-mono">

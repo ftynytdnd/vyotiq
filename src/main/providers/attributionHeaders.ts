@@ -1,28 +1,36 @@
 /**
- * Resolves OpenRouter-style app-attribution headers for an outbound
- * request. Used by both `streamOpenAi` (per-message chat) and
- * `fetchOpenAiModels` (per-discovery model list). The Ollama-native
+ * Resolves provider-specific app-attribution + cache-hint headers for
+ * an outbound request. Used by both `streamOpenAi` (per-message chat)
+ * and `fetchOpenAiModels` (per-discovery model list). The Ollama-native
  * transport does not call this — Ollama Cloud has no equivalent
  * attribution surface.
  *
  * Single source of truth for:
  *
- *   - Which header names to send. Per
+ *   - **OpenRouter app attribution** (`HTTP-Referer` +
+ *     `X-OpenRouter-Title`). Per
  *     https://openrouter.ai/docs/api-reference/overview#headers the
  *     canonical names are `HTTP-Referer` + `X-OpenRouter-Title`. The
  *     legacy `X-Title` is still accepted by OpenRouter but the doc
  *     references the canonical form, so we send the canonical form.
  *
- *   - When to send them. ONLY when the target host is `openrouter.ai`
- *     (or when the user has explicitly stored an `attribution`
- *     override on the provider record). Sending them blindly to
- *     OpenAI / DeepSeek / Groq / etc. would be harmless (those servers
- *     reflect or ignore unknown request headers) but pointless.
+ *   - **xAI Grok 4.x prompt-cache attribution** (`x-grok-conv-id`).
+ *     Per `docs.x.ai/developers/advanced-api-usage/prompt-caching`
+ *     (2026), xAI performs prompt caching automatically; setting the
+ *     `x-grok-conv-id` header to a stable per-conversation id
+ *     maximizes the cache hit rate by binding successive turns of
+ *     the same conversation to the same KV cache. We attach it for
+ *     `api.x.ai` / `x.ai` hosts when the caller supplies a
+ *     `conversationId`.
  *
- *   - Per-header opt-out. The persisted shape lets a power user store
- *     `attribution: { referer: '' }` to suppress just `HTTP-Referer`
- *     while keeping the title default in place — see the
- *     `ProviderAttribution` doc on `ProviderConfig.attribution`.
+ *   - When to send each header. ONLY when the target host matches
+ *     the provider's class (OpenRouter / xAI) — sending blindly is
+ *     harmless on every server we know of, but pointless.
+ *
+ *   - Per-header opt-out for OpenRouter attribution. The persisted
+ *     `attribution` shape on `ProviderConfig` lets a power user
+ *     store `attribution: { referer: '' }` to suppress just
+ *     `HTTP-Referer` while keeping the title default in place.
  *
  *   - Defaults. We attribute as `Vyotiq` / `https://vyotiq.app`. The
  *     defaults live HERE so changing the project's canonical homepage
@@ -40,21 +48,50 @@ const DEFAULT_REFERER = 'https://vyotiq.app';
 const DEFAULT_TITLE = 'Vyotiq';
 
 /**
- * Returns `true` when the resolved URL's hostname is OpenRouter's
- * (`openrouter.ai` or its `www.` variant). Used as the trigger for the
- * "auto-attribute" branch.
+ * Host class for a provider's `baseUrl`. Gates which attribution
+ * headers we attach.
+ *   - `openrouter` → emits `HTTP-Referer` + `X-OpenRouter-Title`.
+ *   - `xai`        → emits `x-grok-conv-id` when a conversationId
+ *                    is supplied (no app-attribution for xAI).
+ *   - `other`      → no attribution headers.
+ *
+ * Match is case-insensitive on the hostname. Unparseable URLs
+ * resolve to `'other'` so a malformed `baseUrl` (already rejected
+ * at add-time by `describeBaseUrl`) can never accidentally trigger
+ * attribution.
  */
-function isOpenRouterHost(baseUrl: string): boolean {
+type AttributionHost = 'openrouter' | 'xai' | 'other';
+
+function classifyHost(baseUrl: string): AttributionHost {
   try {
     const host = new URL(baseUrl).hostname.toLowerCase();
-    return host === 'openrouter.ai' || host === 'www.openrouter.ai';
+    if (host === 'openrouter.ai' || host === 'www.openrouter.ai') return 'openrouter';
+    if (host === 'api.x.ai' || host === 'x.ai') return 'xai';
+    return 'other';
   } catch {
-    // A malformed `baseUrl` would already have been rejected at
-    // add-time by `describeBaseUrl`, but the runtime is defensive: we
-    // treat unparseable URLs as "not OpenRouter" so we never attach
-    // attribution to a request the user didn't intend.
-    return false;
+    return 'other';
   }
+}
+
+/** Legacy alias kept for callers that only need the OpenRouter check. */
+function isOpenRouterHost(baseUrl: string): boolean {
+  return classifyHost(baseUrl) === 'openrouter';
+}
+
+/**
+ * Optional opts the chat transport threads into the builder. Today
+ * only carries the active `conversationId` (Phase 7 — 2026) so the
+ * xAI branch can stamp `x-grok-conv-id`. Discovery callers
+ * (`fetchOpenAiModels`) don't pass this slot.
+ */
+export interface AttributionHeaderOpts {
+  /**
+   * Stable per-conversation id. When supplied AND the target host
+   * is xAI, the builder attaches `x-grok-conv-id: <conversationId>`
+   * so xAI's automatic prompt cache binds successive turns of the
+   * same conversation to the same KV cache. No-op for other hosts.
+   */
+  conversationId?: string;
 }
 
 /**
@@ -62,24 +99,36 @@ function isOpenRouterHost(baseUrl: string): boolean {
  * Returns an empty object when no attribution applies — callers can
  * unconditionally spread the result.
  *
- * Resolution rules per header (Referer + Title independently):
+ * Resolution rules per header:
  *
- *   1. If the provider has `attribution.<field>` set:
- *        - non-empty string ⇒ send verbatim.
- *        - empty string     ⇒ explicitly suppressed; do NOT send.
- *   2. Otherwise, if the host is OpenRouter, send the project default.
- *   3. Otherwise, do not send.
+ *   - **OpenRouter** (`HTTP-Referer` + `X-OpenRouter-Title`):
+ *       1. If the provider has `attribution.<field>` set:
+ *            - non-empty string ⇒ send verbatim.
+ *            - empty string     ⇒ explicitly suppressed; do NOT send.
+ *       2. Otherwise, if the host is OpenRouter, send the project
+ *          default.
+ *       3. Otherwise, do not send.
+ *
+ *   - **xAI** (`x-grok-conv-id`):
+ *       1. Sent ONLY when the host is xAI AND a non-empty
+ *          `conversationId` was passed.
+ *       2. No `attribution`-shape opt-out today (the field is a
+ *          cache hint, not user-visible branding); add a slot here
+ *          if a future user surface needs to suppress it.
  *
  * The function never throws.
  */
 export function buildAttributionHeaders(
-  provider: ProviderWithKey
+  provider: ProviderWithKey,
+  opts?: AttributionHeaderOpts
 ): Record<string, string> {
   const headers: Record<string, string> = {};
   const overrides = provider.attribution;
-  const isOpenRouter = isOpenRouterHost(provider.baseUrl);
+  const hostClass = classifyHost(provider.baseUrl);
+  const isOpenRouter = hostClass === 'openrouter';
+  const isXai = hostClass === 'xai';
 
-  // Referer
+  // OpenRouter — Referer
   if (overrides && Object.prototype.hasOwnProperty.call(overrides, 'referer')) {
     const v = overrides.referer ?? '';
     if (v.length > 0) headers['HTTP-Referer'] = v;
@@ -88,12 +137,21 @@ export function buildAttributionHeaders(
     headers['HTTP-Referer'] = DEFAULT_REFERER;
   }
 
-  // Title
+  // OpenRouter — Title
   if (overrides && Object.prototype.hasOwnProperty.call(overrides, 'title')) {
     const v = overrides.title ?? '';
     if (v.length > 0) headers['X-OpenRouter-Title'] = v;
   } else if (isOpenRouter) {
     headers['X-OpenRouter-Title'] = DEFAULT_TITLE;
+  }
+
+  // xAI — prompt-cache conversation id
+  if (
+    isXai &&
+    typeof opts?.conversationId === 'string' &&
+    opts.conversationId.length > 0
+  ) {
+    headers['x-grok-conv-id'] = opts.conversationId;
   }
 
   return headers;

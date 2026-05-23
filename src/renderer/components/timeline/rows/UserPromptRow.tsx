@@ -34,6 +34,11 @@ import { cn } from '../../../lib/cn.js';
 import { safeCopy } from '../../../lib/clipboard.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import { useRevertPrompt } from '../revert/RevertPromptContext.js';
+import {
+  SurfaceShell,
+  surfaceShellInnerClassName
+} from '../../ui/SurfaceShell.js';
+import { timelineActionPillClassName } from '../shared/rowStyles.js';
 
 interface UserPromptRowProps {
   /**
@@ -134,27 +139,32 @@ export function UserPromptRow({ id, runId, content }: UserPromptRowProps) {
     : undefined;
 
   return (
-    <div className="group flex flex-col items-end gap-1" data-row-kind="user-prompt">
-      <div className="relative max-w-[min(82%,38rem)]">
-        <div
-          ref={bubbleRef}
-          className={cn(
-            'whitespace-pre-wrap rounded-inner border-r border-border-subtle/40 bg-surface-raised/30 px-3 py-1.5 text-body leading-relaxed text-text-primary',
-            showToggle && !expanded && 'overflow-hidden',
-            showToggle && expanded && 'overflow-y-auto scrollbar-stealth pr-3'
-          )}
-          style={maxHeightPx !== undefined ? { maxHeight: maxHeightPx } : undefined}
-        >
-          {content}
+    <div className="group flex flex-col gap-1" data-row-kind="user-prompt">
+      <SurfaceShell className={surfaceShellInnerClassName('content')}>
+        <div className="mb-1 text-meta font-medium uppercase tracking-wider text-text-faint">
+          You
         </div>
-        {showToggle && !expanded && (
+        <div className="relative">
           <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-10 rounded-b-inner bg-gradient-to-t from-surface-raised/80 to-transparent"
-          />
-        )}
-      </div>
-      <div className="mr-0.5 flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+            ref={bubbleRef}
+            className={cn(
+              'whitespace-pre-wrap text-body leading-relaxed text-text-primary',
+              showToggle && !expanded && 'overflow-hidden',
+              showToggle && expanded && 'overflow-y-auto scrollbar-stealth max-h-80'
+            )}
+            style={maxHeightPx !== undefined ? { maxHeight: maxHeightPx } : undefined}
+          >
+            {content}
+          </div>
+          {showToggle && !expanded && (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-surface-raised/80 to-transparent"
+            />
+          )}
+        </div>
+      </SurfaceShell>
+      <div className="flex flex-wrap items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
         <PromptAction
           label="Copy"
           icon={<Copy className="h-3 w-3" strokeWidth={2.25} />}
@@ -285,11 +295,8 @@ function PromptAction({
       aria-disabled={disabled || undefined}
       disabled={disabled}
       className={cn(
-        'inline-flex items-center gap-1 rounded-inner px-1.5 py-0.5 text-row text-text-faint',
-        'transition-colors duration-150',
-        disabled
-          ? 'cursor-not-allowed opacity-40'
-          : 'hover:bg-surface-hover hover:text-text-primary'
+        timelineActionPillClassName,
+        disabled && 'cursor-not-allowed opacity-40'
       )}
       title={title ?? label}
     >

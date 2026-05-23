@@ -12,9 +12,10 @@
  */
 
 import { useState } from 'react';
-import { cn } from '../../lib/cn.js';
 import { useChatStore } from '../../store/useChatStore.js';
 import { Eyebrow } from '../ui/Eyebrow.js';
+import { SurfaceShell } from '../ui/SurfaceShell.js';
+import { Tabs, type TabItem } from '../ui/Tabs.js';
 import type { ContextSummaryAcc } from '../timeline/reducer/types.js';
 
 interface RawDiffViewProps {
@@ -23,7 +24,7 @@ interface RawDiffViewProps {
 
 type Tab = 'after' | 'before' | 'dropped';
 
-const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
+const TABS: TabItem<Tab>[] = [
   { id: 'after', label: 'Final summary' },
   { id: 'before', label: 'Replaced ids' },
   { id: 'dropped', label: 'Dropped ids' }
@@ -42,23 +43,13 @@ export function RawDiffView({ summaryId }: RawDiffViewProps) {
         <Eyebrow as="span" bold className="mr-2">
           Most recent summary
         </Eyebrow>
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            aria-pressed={tab === t.id}
-            className={cn(
-              'app-no-drag rounded-inner px-2.5 py-1 text-row',
-              'transition-colors duration-150',
-              tab === t.id
-                ? 'bg-surface-overlay text-text-primary'
-                : 'text-text-muted hover:text-text-primary'
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
+        <Tabs<Tab>
+          items={TABS}
+          value={tab}
+          onChange={setTab}
+          variant="strip"
+          ariaLabel="Summary diff view"
+        />
       </div>
       {tab === 'after' && (
         <div className="flex flex-col gap-1">
@@ -67,9 +58,11 @@ export function RawDiffView({ summaryId }: RawDiffViewProps) {
               {acc.reason ?? 'Summarization failed.'}
             </span>
           ) : (
-            <pre className="scrollbar-stealth max-h-[36vh] overflow-y-auto whitespace-pre-wrap break-words rounded-inner bg-surface-raised/60 p-2 font-mono text-log text-text-secondary">
-              {acc.finalText ?? acc.text}
-            </pre>
+            <SurfaceShell padded padding="nested">
+              <pre className="scrollbar-stealth max-h-[36vh] overflow-y-auto whitespace-pre-wrap break-words font-mono text-row text-text-secondary">
+                {acc.finalText ?? acc.text}
+              </pre>
+            </SurfaceShell>
           )}
         </div>
       )}
@@ -82,7 +75,8 @@ export function RawDiffView({ summaryId }: RawDiffViewProps) {
           {acc.replacedMessageIds.length === 0 ? (
             <span className="text-row text-text-muted">No messages were replaced.</span>
           ) : (
-            <ul className="scrollbar-stealth flex max-h-[24vh] flex-col gap-0.5 overflow-y-auto rounded-inner bg-surface-raised/60 p-2">
+            <SurfaceShell padded padding="nested" className="scrollbar-stealth max-h-[24vh] overflow-y-auto">
+              <ul className="flex flex-col gap-0.5">
               {acc.replacedMessageIds.map((id) => (
                 <li
                   key={id}
@@ -92,7 +86,8 @@ export function RawDiffView({ summaryId }: RawDiffViewProps) {
                   {id}
                 </li>
               ))}
-            </ul>
+              </ul>
+            </SurfaceShell>
           )}
         </div>
       )}
@@ -105,7 +100,8 @@ export function RawDiffView({ summaryId }: RawDiffViewProps) {
           {acc.droppedMessageIds.length === 0 ? (
             <span className="text-row text-text-muted">No messages were dropped.</span>
           ) : (
-            <ul className="scrollbar-stealth flex max-h-[24vh] flex-col gap-0.5 overflow-y-auto rounded-inner bg-surface-raised/60 p-2">
+            <SurfaceShell padded padding="nested" className="scrollbar-stealth max-h-[24vh] overflow-y-auto">
+              <ul className="flex flex-col gap-0.5">
               {acc.droppedMessageIds.map((id) => (
                 <li
                   key={id}
@@ -115,7 +111,8 @@ export function RawDiffView({ summaryId }: RawDiffViewProps) {
                   {id}
                 </li>
               ))}
-            </ul>
+              </ul>
+            </SurfaceShell>
           )}
         </div>
       )}

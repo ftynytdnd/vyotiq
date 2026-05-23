@@ -7,7 +7,7 @@
  *   - `secondary` — neutral surface, hover lifts to `surface-hover`.
  *   - `ghost`     — transparent, hover-only background.
  *   - `danger`    — destructive ghost (red text on transparent, hover
- *     paints `bg-danger/10`). Used by destructive icon buttons. Filled
+ *     paints `bg-danger-soft`). Used by destructive icon buttons. Filled
  *     destructive emphasis is achieved by composing this variant with
  *     a `confirm` step (see `ConfirmDialog`) rather than inventing a
  *     separate filled-red variant — that keeps the visual register
@@ -54,7 +54,7 @@ const variantClasses: Record<Variant, string> = {
   primary: 'bg-accent text-surface-base hover:bg-accent-strong',
   secondary: 'bg-surface-raised text-text-primary hover:bg-surface-hover',
   ghost: 'bg-transparent text-text-secondary hover:bg-surface-hover hover:text-text-primary',
-  danger: 'bg-transparent text-danger hover:bg-danger/10'
+  danger: 'bg-transparent text-danger hover:bg-danger-soft'
 };
 
 const sizeClasses: Record<Size, string> = {

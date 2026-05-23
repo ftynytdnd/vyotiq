@@ -29,6 +29,7 @@ import { logger } from '../logging/logger.js';
 import { classifyProviderError, ProviderError } from './providerError.js';
 import { acquire, markRateLimited, markSuccess } from './providerRateGuard.js';
 import { createInactivityWatch, isStreamInactivityError } from './streamInactivity.js';
+import { safeText } from './errorBody.js';
 
 const log = logger.child('providers/chat/ollama');
 
@@ -478,13 +479,6 @@ function* framesToDeltas(
   }
 }
 
-async function safeText(res: Response): Promise<string> {
-  try {
-    return (await res.text()).slice(0, 1000);
-  } catch {
-    return '';
-  }
-}
 
 /**
  * Heuristic — does a mid-stream provider error message look like a
@@ -635,7 +629,47 @@ function toOllamaMessage(m: ChatMessage): OllamaWireMessage {
  * on every fallback so a developer reading `vyotiq.log` can spot
  * the upstream cause without diffing wire captures. Hot path is
  * the happy `JSON.parse` branch which never logs.
+ *
+ * Audit fix 2026-05-P2-3: Ollama's tool-call protocol re-emits the
+ * SAME arguments JSON on every chunk of a streaming tool call, so a
+ * single mid-stream malformed payload would spam `log.warn` once per
+ * delta — typically dozens of identical lines per second. We dedup
+ * via a tiny hash → lastWarnTs cache: at most one warning per unique
+ * preview per `PARSE_WARN_COOLDOWN_MS`. Bounded to `PARSE_WARN_CACHE_MAX`
+ * entries so the map can't grow unbounded across long sessions.
  */
+const PARSE_WARN_COOLDOWN_MS = 60_000;
+const PARSE_WARN_CACHE_MAX = 64;
+const parseWarnCache = new Map<string, number>();
+
+function djb2(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = (((h << 5) + h) ^ s.charCodeAt(i)) | 0;
+  }
+  return String(h >>> 0);
+}
+
+function shouldWarnParseFailure(rawPreview: string, kind: 'parse' | 'shape'): boolean {
+  const sig = `${kind}:${djb2(rawPreview)}`;
+  const now = Date.now();
+  const last = parseWarnCache.get(sig);
+  if (last !== undefined && now - last < PARSE_WARN_COOLDOWN_MS) {
+    return false;
+  }
+  // Re-insert (delete+set) so this entry floats to the tail under the
+  // insertion-order LRU. Cheap O(1) on Map.
+  parseWarnCache.delete(sig);
+  parseWarnCache.set(sig, now);
+  // Evict the oldest (head) entry once over capacity. `.keys().next()`
+  // yields the insertion-order head.
+  if (parseWarnCache.size > PARSE_WARN_CACHE_MAX) {
+    const oldest = parseWarnCache.keys().next().value;
+    if (oldest !== undefined) parseWarnCache.delete(oldest);
+  }
+  return true;
+}
+
 function parseArgumentsToObject(raw: string): Record<string, unknown> {
   if (!raw || raw.trim().length === 0) return {};
   try {
@@ -643,15 +677,21 @@ function parseArgumentsToObject(raw: string): Record<string, unknown> {
     if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
       return parsed as Record<string, unknown>;
     }
-    log.warn('tool-call arguments parsed to a non-object; falling back to {}', {
-      rawPreview: raw.slice(0, 200),
-      parsedType: parsed === null ? 'null' : Array.isArray(parsed) ? 'array' : typeof parsed
-    });
+    const preview = raw.slice(0, 200);
+    if (shouldWarnParseFailure(preview, 'shape')) {
+      log.warn('tool-call arguments parsed to a non-object; falling back to {}', {
+        rawPreview: preview,
+        parsedType: parsed === null ? 'null' : Array.isArray(parsed) ? 'array' : typeof parsed
+      });
+    }
   } catch (err) {
-    log.warn('tool-call arguments JSON.parse failed; falling back to {}', {
-      rawPreview: raw.slice(0, 200),
-      err: err instanceof Error ? err.message : String(err)
-    });
+    const preview = raw.slice(0, 200);
+    if (shouldWarnParseFailure(preview, 'parse')) {
+      log.warn('tool-call arguments JSON.parse failed; falling back to {}', {
+        rawPreview: preview,
+        err: err instanceof Error ? err.message : String(err)
+      });
+    }
   }
   return {};
 }

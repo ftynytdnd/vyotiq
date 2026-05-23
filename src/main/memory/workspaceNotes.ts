@@ -55,7 +55,10 @@ export interface WorkspaceNote {
   updatedAt: number;
 }
 
-export async function listWorkspaceNotes(workspacePath?: string): Promise<WorkspaceNote[]> {
+export async function listWorkspaceNotes(
+  workspacePath?: string,
+  keysOnly = false
+): Promise<WorkspaceNote[]> {
   const ws = workspacePath ?? (await requireWorkspace());
   const dir = memoryDir(ws);
   let entries: string[];
@@ -71,7 +74,7 @@ export async function listWorkspaceNotes(workspacePath?: string): Promise<Worksp
     const full = join(dir, name);
     try {
       const stat = await fs.stat(full);
-      const content = await fs.readFile(full, 'utf8');
+      const content = keysOnly ? '' : await fs.readFile(full, 'utf8');
       // Strip the on-disk `.md` suffix so the model-facing key is
       // topic-only and matches what write/append return.
       notes.push({ key: publicKey(name), content, updatedAt: stat.mtimeMs });

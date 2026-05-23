@@ -62,7 +62,15 @@ export const ModelPickerTrigger = forwardRef<HTMLButtonElement, ModelPickerTrigg
         aria-expanded={open}
         title={tooltip}
         className={cn(
-          'app-no-drag inline-flex h-6 min-w-0 max-w-[190px] items-center gap-1 rounded-inner px-1.5 text-meta',
+          // `text-row` (11px) on the trigger, not `text-meta` (10px) —
+          // the model id is the only one of the composer's pill
+          // controls that holds arbitrary user-supplied text, and
+          // 10px was painfully small for long ids (`claude-sonnet-
+          // 4-5-20250929-thinking`). Sibling permission / attach /
+          // send buttons stay at `text-meta` because their labels
+          // are fixed-width app-controlled. The trigger pill height
+          // (`h-6`) is unchanged.
+          'app-no-drag inline-flex h-6 min-w-0 max-w-[190px] items-center gap-1 rounded-inner px-1.5 text-row',
           'bg-surface-overlay text-text-secondary transition-colors duration-150',
           'hover:bg-surface-hover hover:text-text-primary',
           open && 'bg-surface-hover text-text-primary'

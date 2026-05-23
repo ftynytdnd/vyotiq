@@ -1,6 +1,6 @@
 /**
- * Checkpoint settings panel — mounted inside the SettingsModal under
- * the "Checkpoints" tab.
+ * Checkpoint settings panel — Settings → Checkpoints tab in the
+ * secondary zone.
  *
  * Exposes:
  *   - Strict-approvals toggle (per active workspace).
@@ -14,13 +14,24 @@ import { Download, RotateCcw, Trash2 } from 'lucide-react';
 import { Button } from '../ui/Button.js';
 import { ConfirmDialog } from '../ui/ConfirmDialog.js';
 import { Eyebrow } from '../ui/Eyebrow.js';
+import { Switch } from '../ui/Switch.js';
 import { TextField } from '../ui/TextField.js';
 import { useCheckpointsStore } from '../../store/useCheckpointsStore.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
+import { useSecondaryZoneStore } from '../../store/useSecondaryZoneStore.js';
+import { cn } from '../../lib/cn.js';
+import { formatBytes } from './formatBytes.js';
 
-export function CheckpointSettingsPanel() {
+function settingsRowClass(compact: boolean): string {
+  return cn(
+    'border-b border-border-subtle/30 py-3',
+    compact ? 'flex flex-col gap-3' : 'flex items-start justify-between gap-4'
+  );
+}
+
+export function CheckpointSettingsPanel({ embedded = false }: { embedded?: boolean }) {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
   const workspaces = useWorkspaceStore((s) => s.list);
   const settings = useSettingsStore((s) => s.settings);
@@ -43,6 +54,7 @@ export function CheckpointSettingsPanel() {
   const exportArchive = useCheckpointsStore((s) => s.exportArchive);
   const prune = useCheckpointsStore((s) => s.prune);
   const showToast = useToastStore((s) => s.show);
+  const openCheckpointHistory = useSecondaryZoneStore((s) => s.openCheckpoints);
 
   const [pruneDays, setPruneDays] = useState('30');
   const [confirmClear, setConfirmClear] = useState(false);
@@ -130,7 +142,16 @@ export function CheckpointSettingsPanel() {
 
   return (
     <div className="flex flex-col">
-      <div className="flex items-start justify-between gap-4 border-b border-border-subtle/30 py-3">
+      <div className="border-b border-border-subtle/30 py-2">
+        <button
+          type="button"
+          onClick={() => openCheckpointHistory()}
+          className="text-row text-text-secondary transition-colors hover:text-text-primary"
+        >
+          View checkpoint history…
+        </button>
+      </div>
+      <div className={settingsRowClass(embedded)}>
         <div className="min-w-0 flex-1">
           <div className="text-body text-text-primary">Require approval before each edit</div>
           <div className="mt-0.5 text-row leading-relaxed text-text-muted">
@@ -142,12 +163,15 @@ export function CheckpointSettingsPanel() {
             apply optimistically and show up in the pending changes panel.
           </div>
         </div>
-        <Button size="sm" variant={strict ? 'primary' : 'secondary'} onClick={() => void setStrict(!strict)}>
-          {strict ? 'On' : 'Off'}
-        </Button>
+        <Switch
+          size="md"
+          value={strict}
+          onChange={(v) => void setStrict(v)}
+          ariaLabel="Require approval before each edit"
+        />
       </div>
 
-      <div className="flex items-start justify-between gap-4 border-b border-border-subtle/30 py-3">
+      <div className={settingsRowClass(embedded)}>
         <div className="min-w-0 flex-1">
           <div className="text-body text-text-primary">Gate next prompt on pending changes</div>
           <div className="mt-0.5 text-row leading-relaxed text-text-muted">
@@ -157,9 +181,12 @@ export function CheckpointSettingsPanel() {
             moves on (entries stay revertable from Checkpoints either way).
           </div>
         </div>
-        <Button size="sm" variant={gate ? 'primary' : 'secondary'} onClick={() => void setGate(!gate)}>
-          {gate ? 'On' : 'Off'}
-        </Button>
+        <Switch
+          size="md"
+          value={gate}
+          onChange={(v) => void setGate(v)}
+          ariaLabel="Gate next prompt on pending changes"
+        />
       </div>
 
       <div className="flex flex-col gap-2 border-b border-border-subtle/30 py-3">
@@ -181,7 +208,7 @@ export function CheckpointSettingsPanel() {
           Remove every checkpoint older than the given number of days. Snapshots no longer
           referenced are reclaimed automatically.
         </div>
-        <div className="flex items-center gap-2">
+        <div className={cn('flex items-center gap-2', embedded && 'flex-wrap')}>
           <TextField
             type="number"
             min={1}
@@ -250,8 +277,8 @@ export function CheckpointSettingsPanel() {
  * Cross-workspace overrides list for the two checkpoint toggles
  * (`strictApprovalsByWorkspace`, `gatePromptOnPendingByWorkspace`).
  *
- * Mirrors the existing `WorkspaceOverridesSection` in `SettingsModal`'s
- * Permissions tab: hidden entirely when no workspace has either flag
+ * Mirrors `WorkspaceOverridesSection` in Settings → Permissions —
+ * hidden entirely when no workspace has either flag
  * set (so the typical single-workspace user never sees it), and each
  * row exposes a single `Reset` ghost button that flips the offending
  * flag(s) back off via the dedicated store setters.
@@ -332,16 +359,4 @@ function WorkspaceCheckpointOverridesSection() {
       </ul>
     </div>
   );
-}
-
-function formatBytes(n: number): string {
-  if (n === 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let v = n;
-  let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2)} ${units[i]}`;
 }

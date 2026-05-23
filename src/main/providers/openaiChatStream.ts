@@ -17,6 +17,12 @@ import { classifyProviderError } from './providerError.js';
 import { acquire, markRateLimited, markSuccess } from './providerRateGuard.js';
 import { createInactivityWatch, isStreamInactivityError } from './streamInactivity.js';
 import { buildAttributionHeaders } from './attributionHeaders.js';
+import { readSseFrames, pickSseDataLine } from './sseFrameReader.js';
+import {
+  stripGeminiSignatures,
+  stripReasoningContentForStrictDialects
+} from './sanitizeMessages.js';
+import { safeText } from './errorBody.js';
 
 const log = logger.child('providers/chat/openai');
 
@@ -46,11 +52,31 @@ interface RawSseChunk {
    * content chunk, so we always check and emit once regardless of where
    * it lands. Anthropic's `/v1/messages` dialect uses a different event
    * stream entirely and is not handled here.
+   *
+   * 2026 fields supported across the OpenAI-compat family:
+   *
+   *   - `prompt_tokens_details.cached_tokens` — OpenAI prompt-cache
+   *     hits (gpt-4o+, GPT-5 family). xAI Grok 4.x reports the same.
+   *   - `completion_tokens_details.reasoning_tokens` — OpenAI o*,
+   *     DeepSeek V4 thinking, xAI Grok reasoning models.
+   *   - `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` —
+   *     DeepSeek V4 NON-STANDARD top-level fields (verified via
+   *     `api-docs.deepseek.com/api/create-chat-completion` and
+   *     `api-docs.deepseek.com/guides/kv_cache`, 2026). We
+   *     normalize these into `cachedPromptTokens` alongside the
+   *     OpenAI nested form so all dialects flow through the same
+   *     `TokenUsage` shape downstream.
    */
   usage?: {
     prompt_tokens?: number;
     completion_tokens?: number;
     total_tokens?: number;
+    /** OpenAI / xAI canonical: nested details. */
+    prompt_tokens_details?: { cached_tokens?: number };
+    completion_tokens_details?: { reasoning_tokens?: number };
+    /** DeepSeek V4 non-standard top-level cache fields. */
+    prompt_cache_hit_tokens?: number;
+    prompt_cache_miss_tokens?: number;
   };
 }
 
@@ -65,7 +91,31 @@ export async function* streamOpenAi(
   const url = `${provider.baseUrl}/v1/chat/completions`;
   const body: Record<string, unknown> = {
     model: req.model,
-    messages: req.messages,
+    // Strict-dialect sanitization at the transport edge. Two passes:
+    //
+    //   1. `stripGeminiSignatures` — drops the Gemini-only
+    //      `thoughtSignature` from any persisted assistant tool_calls
+    //      (Phase 9, 2026). OpenAI itself drops unknowns silently,
+    //      but strict OpenAI-compat providers (some Together / Groq
+    //      routes) reject the request.
+    //
+    //   2. `stripReasoningContentForStrictDialects` — drops the
+    //      DeepSeek-only `reasoning_content` field from outbound
+    //      assistant messages when the destination is NOT DeepSeek-
+    //      direct. Mistral hard-422s the field
+    //      (`extra_forbidden: body.messages.N.assistant.reasoning_content`)
+    //      and the retry loop spins forever until the conversation
+    //      is manually edited. DeepSeek-direct keeps the field
+    //      because thinking-mode round-trip requires it.
+    //
+    // Both passes are identity-preserving on the common path so the
+    // orchestrator's `messages[]` reference doesn't fan out unnecessary
+    // copies for the (large) majority of conversations that need
+    // neither sanitization.
+    messages: stripReasoningContentForStrictDialects(
+      stripGeminiSignatures(req.messages),
+      provider.baseUrl
+    ),
     stream: true,
     // Ask the provider to emit a final usage frame so we can surface real
     // prompt/completion/total token counts to the UI. Universal across
@@ -95,12 +145,17 @@ export async function* streamOpenAi(
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'text/event-stream',
-    // Attribution: only attached when the host is OpenRouter (or the
-    // user has stored an explicit override). Sent on every chat call
-    // — and on `/v1/models` discovery — so OpenRouter's public
-    // rankings page sees a single, consistent attribution. See
-    // `attributionHeaders.ts` for the resolution rules.
-    ...buildAttributionHeaders(provider)
+    // Attribution + cache-hint headers — see `attributionHeaders.ts`
+    // for the full resolution table. OpenRouter hosts get `HTTP-Referer`
+    // + `X-OpenRouter-Title`; xAI hosts get `x-grok-conv-id` when a
+    // conversationId is supplied (Phase 7 — 2026). Everywhere else
+    // this is a no-op.
+    ...buildAttributionHeaders(
+      provider,
+      req.conversationId !== undefined
+        ? { conversationId: req.conversationId }
+        : undefined
+    )
   };
   if (provider.apiKey) headers['Authorization'] = `Bearer ${provider.apiKey}`;
 
@@ -176,21 +231,12 @@ export async function* streamOpenAi(
     }
   }
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder('utf-8');
-  let buffer = '';
-
-  // Frame parser extracted so the same logic runs on both normal reads
-  // AND on the final buffer flush after the stream closes. Yields any
-  // deltas parsed from the frame; returns `true` if the payload was
-  // `[DONE]` (caller should stop iterating).
-  async function* parseFrame(frame: string): AsyncGenerator<ChatStreamDelta, boolean> {
-    const dataLine = frame
-      .split('\n')
-      .map((l) => l.trim())
-      .find((l) => l.startsWith('data:'));
-    if (!dataLine) return false;
-    const payload = dataLine.slice(5).trim();
+  // Frame parser. Yields any deltas parsed from a single SSE frame.
+  // Returns `true` if the payload was `[DONE]` (caller stops iterating
+  // and the shared reader cleanup cancels the body).
+  function* parseFrame(frame: string): Generator<ChatStreamDelta, boolean> {
+    const payload = pickSseDataLine(frame);
+    if (payload === null) return false;
     if (payload === '[DONE]') return true;
     let chunk: RawSseChunk;
     try {
@@ -204,11 +250,30 @@ export async function* streamOpenAi(
       const completion = typeof u.completion_tokens === 'number' ? u.completion_tokens : 0;
       const total =
         typeof u.total_tokens === 'number' ? u.total_tokens : prompt + completion;
+      // Phase 7 (2026) — normalize cached + reasoning across dialects.
+      //
+      // Cache hits:
+      //   - OpenAI / xAI canonical: `prompt_tokens_details.cached_tokens`.
+      //   - DeepSeek V4 non-standard: `prompt_cache_hit_tokens`.
+      // We prefer the OpenAI nested form when both are present (a
+      // defensive proxy might emit both — the nested form is the
+      // canonical contract).
+      const cachedFromOpenAi = u.prompt_tokens_details?.cached_tokens;
+      const cachedFromDeepSeek = u.prompt_cache_hit_tokens;
+      const cachedPromptTokens =
+        typeof cachedFromOpenAi === 'number'
+          ? cachedFromOpenAi
+          : typeof cachedFromDeepSeek === 'number'
+            ? cachedFromDeepSeek
+            : undefined;
+      const reasoningTokens = u.completion_tokens_details?.reasoning_tokens;
       yield {
         usage: {
           promptTokens: prompt,
           completionTokens: completion,
-          totalTokens: total
+          totalTokens: total,
+          ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
+          ...(typeof reasoningTokens === 'number' ? { reasoningTokens } : {})
         }
       };
     }
@@ -227,7 +292,8 @@ export async function* streamOpenAi(
           index: tc.index ?? 0
         };
         if (tc.id !== undefined) toolCallDelta.id = tc.id;
-        if (tc.function?.name !== undefined) toolCallDelta.name = tc.function.name;
+        const toolName = tc.function?.name ?? (tc as { name?: string }).name;
+        if (toolName !== undefined) toolCallDelta.name = toolName;
         if (tc.function?.arguments !== undefined) {
           // OpenAI spec types `arguments` as a string (a JSON-encoded
           // payload accumulated across deltas), but several "OpenAI-
@@ -253,123 +319,39 @@ export async function* streamOpenAi(
   }
 
   try {
-    while (true) {
-      let readResult: ReadableStreamReadResult<Uint8Array>;
-      try {
-        readResult = await reader.read();
-      } catch (err) {
-        if (isStreamInactivityError(err)) {
-          log.warn('provider stream inactive mid-read', {
-            url,
-            providerId: req.providerId
-          });
-        }
-        throw err;
+    // SSE byte → frame loop is now shared with the Anthropic and
+    // Gemini transports — see `sseFrameReader.ts`. The helper owns
+    // CRLF normalization, EOF flush, and inactivity-watchdog poke;
+    // we keep dialect-specific concerns (the `[DONE]` early-return,
+    // the JSON shape interpretation) right here so the helper stays
+    // dialect-agnostic.
+    for await (const frame of readSseFrames({
+      body: res.body,
+      watch,
+      onInactivity: () => {
+        log.warn('provider stream inactive mid-read', {
+          url,
+          providerId: req.providerId
+        });
       }
-      const { value, done } = readResult;
-      // Any read that returned something (even a zero-length chunk on
-      // some transports) counts as liveness.
-      if (value && value.length > 0) watch.poke();
-      if (done) {
-        // Flush any remaining buffered bytes (decoder's internal state
-        // plus any trailing partial frames) before exiting. Well-behaved
-        // servers terminate every frame with the separator, but a
-        // dropped connection mid-frame would otherwise silently lose
-        // the final usage report — or worse, a dropped connection
-        // between TWO already-terminated frames (e.g. last content
-        // chunk + final usage chunk) that are sitting in the buffer
-        // unseparated by a trailing `\n\n` at EOF.
-        //
-        // The previous implementation ran `parseFrame(tail)` exactly
-        // once on the whole buffer. `parseFrame` picks the FIRST
-        // `data:` line it finds, so a buffer holding
-        // `data: {chunk}\n\ndata: {usage}` (no trailing separator)
-        // yielded only `{chunk}` and silently dropped `{usage}`. We
-        // now run the same `\n\n` loop the hot path uses AND a final
-        // single-frame parse on whatever remains, so every pending
-        // frame is drained regardless of how the connection closed.
-        buffer += decoder.decode().replace(/\r\n/g, '\n');
-        let tailSep: number;
-        while ((tailSep = buffer.indexOf('\n\n')) !== -1) {
-          const frame = buffer.slice(0, tailSep);
-          buffer = buffer.slice(tailSep + 2);
-          const gen = parseFrame(frame);
-          let res = await gen.next();
-          while (!res.done) {
-            yield res.value;
-            res = await gen.next();
-          }
-          if (res.value === true) {
-            // `[DONE]` in the tail — mirror the hot-loop early return
-            // so we don't keep trying to parse the remaining buffer.
-            return;
-          }
-        }
-        const tail = buffer.trim();
-        if (tail.length > 0) {
-          const gen = parseFrame(tail);
-          let res = await gen.next();
-          while (!res.done) {
-            yield res.value;
-            res = await gen.next();
-          }
-        }
-        break;
+    })) {
+      const gen = parseFrame(frame);
+      let r = gen.next();
+      while (!r.done) {
+        yield r.value;
+        r = gen.next();
       }
-      // Normalize CRLF → LF at the byte-boundary to survive SSE streams
-      // that terminate frames with `\r\n\r\n` (RFC-compliant; emitted by
-      // several Windows-hosted providers — LM Studio, certain vLLM
-      // builds). A naive `indexOf('\n\n')` scan would never split a
-      // CRLF-style stream and `buffer` would grow unbounded until the
-      // caller aborted the run. Normalization is safe because the inner
-      // frame parser already trims each line.
-      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
-
-      // SSE frames are separated by a blank line (two LFs after the CRLF
-      // normalization above).
-      let sepIdx: number;
-      while ((sepIdx = buffer.indexOf('\n\n')) !== -1) {
-        const frame = buffer.slice(0, sepIdx);
-        buffer = buffer.slice(sepIdx + 2);
-        // Route the frame through the shared parser. `[DONE]` triggers
-        // an early return after cancelling the body; all other frames
-        // yield zero-or-more deltas through the generator.
-        const gen = parseFrame(frame);
-        let res = await gen.next();
-        while (!res.done) {
-          yield res.value;
-          res = await gen.next();
-        }
-        if (res.value === true) {
-          // `[DONE]` — proactively cancel the underlying body stream so
-          // the HTTP connection closes promptly instead of waiting for
-          // GC. `releaseLock()` in the `finally` block is not enough —
-          // it detaches the reader but leaves the response body open.
-          try {
-            await reader.cancel();
-          } catch {
-            /* noop */
-          }
-          return;
-        }
+      if (r.value === true) {
+        // `[DONE]` — return out of the for-await; the helper's
+        // generator-cleanup `finally` cancels the underlying body
+        // reader so the HTTP socket closes promptly.
+        return;
       }
     }
   } finally {
-    // Always dispose the watchdog FIRST so a post-stream teardown can't
-    // race a pending timer into an already-closed stream.
+    // Watchdog disposal MUST stay here (caller-owned). The shared
+    // helper handles the body-reader release; we own the watchdog.
     watch.dispose();
-    try {
-      reader.releaseLock();
-    } catch {
-      /* noop */
-    }
   }
 }
 
-async function safeText(res: Response): Promise<string> {
-  try {
-    return (await res.text()).slice(0, 1000);
-  } catch {
-    return '';
-  }
-}

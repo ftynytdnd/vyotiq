@@ -10,30 +10,46 @@
  *     one, or the first label by default); the rest are `tabIndex=-1`.
  *     Arrow-Left / Arrow-Right cycle focus across labels; Home / End
  *     jump to the first / last; Escape closes any open panel.
+ *   - Keyboard-driven opens (`ArrowDown` / `Enter` / `Space`, or
+ *     arrow-switching while a panel is already open) propagate
+ *     `openSource="keyboard"` to `Menu` so focus advances onto the
+ *     first menuitem inside the panel — completing the WAI-ARIA
+ *     menubar contract. Mouse-driven opens leave focus on the label.
  */
 
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { Menu } from './Menu.js';
+import { Menu, type MenuOpenSource } from './Menu.js';
 import { FileMenu, type FileMenuActions } from './menus/FileMenu.js';
 import { EditMenu } from './menus/EditMenu.js';
-import { ViewMenu } from './menus/ViewMenu.js';
+import { ViewMenu, type ViewMenuActions } from './menus/ViewMenu.js';
 
 type Which = 'file' | 'edit' | 'view' | null;
 
 interface MenuBarProps {
   fileActions: FileMenuActions;
+  viewActions: ViewMenuActions;
 }
 
 const ORDER: ReadonlyArray<Exclude<Which, null>> = ['file', 'edit', 'view'];
 
-export function MenuBar({ fileActions }: MenuBarProps) {
+export function MenuBar({ fileActions, viewActions }: MenuBarProps) {
   const [open, setOpen] = useState<Which>(null);
   const [focused, setFocused] = useState<Exclude<Which, null>>('file');
+  // Latest interaction modality. Tracked separately from `open` so the
+  // child `Menu` knows whether to advance focus into its panel on the
+  // next render. Keyed by the *last* open transition: arrow-switching
+  // between siblings while a panel is open inherits `'keyboard'`;
+  // hover-switching inherits `'mouse'`. Reset on close so a stale
+  // value doesn't leak into the next open.
+  const [openSource, setOpenSource] = useState<MenuOpenSource>('mouse');
   const close = () => setOpen(null);
   const handleHover = (which: Exclude<Which, null>) => {
     // Only auto-switch when SOMETHING is already open — the first click
     // must be intentional.
-    if (open !== null && open !== which) setOpen(which);
+    if (open !== null && open !== which) {
+      setOpenSource('mouse');
+      setOpen(which);
+    }
   };
 
   const refs = {
@@ -55,25 +71,40 @@ export function MenuBar({ fileActions }: MenuBarProps) {
           e.preventDefault();
           const next = ORDER[(idx + 1) % ORDER.length]!;
           focusAt(next);
-          if (open !== null) setOpen(next);
+          if (open !== null) {
+            setOpenSource('keyboard');
+            setOpen(next);
+          }
         } else if (e.key === 'ArrowLeft') {
           e.preventDefault();
           const next = ORDER[(idx - 1 + ORDER.length) % ORDER.length]!;
           focusAt(next);
-          if (open !== null) setOpen(next);
+          if (open !== null) {
+            setOpenSource('keyboard');
+            setOpen(next);
+          }
         } else if (e.key === 'Home') {
           e.preventDefault();
           focusAt(ORDER[0]!);
-          if (open !== null) setOpen(ORDER[0]!);
+          if (open !== null) {
+            setOpenSource('keyboard');
+            setOpen(ORDER[0]!);
+          }
         } else if (e.key === 'End') {
           e.preventDefault();
           focusAt(ORDER[ORDER.length - 1]!);
-          if (open !== null) setOpen(ORDER[ORDER.length - 1]!);
+          if (open !== null) {
+            setOpenSource('keyboard');
+            setOpen(ORDER[ORDER.length - 1]!);
+          }
         } else if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
-          // Pressing Down / Enter / Space on a closed label opens it; the
-          // panel itself owns inner navigation from there.
+          // Pressing Down / Enter / Space on a closed label opens it
+          // and tags the open as keyboard-driven so `Menu` advances
+          // focus into the panel. The panel itself owns inner
+          // navigation from there.
           if (open !== which) {
             e.preventDefault();
+            setOpenSource('keyboard');
             setOpen(which);
           }
         } else if (e.key === 'Escape') {
@@ -84,18 +115,24 @@ export function MenuBar({ fileActions }: MenuBarProps) {
         }
       };
 
+  // Click-driven open — always mouse modality. Toggling the same panel
+  // closed is fine; the next open from any source resets the tag.
+  const handleClickOpen = (which: Exclude<Which, null>) => {
+    setFocused(which);
+    setOpenSource('mouse');
+    setOpen(open === which ? null : which);
+  };
+
   return (
     <div role="menubar" aria-label="Application" className="flex items-stretch gap-0.5">
       <Menu
         ref={refs.file}
         label="File"
         open={open === 'file'}
+        openSource={openSource}
         tabIndex={focused === 'file' ? 0 : -1}
         onLabelKeyDown={handleKeyDown('file')}
-        onOpen={() => {
-          setFocused('file');
-          setOpen(open === 'file' ? null : 'file');
-        }}
+        onOpen={() => handleClickOpen('file')}
         onHover={() => handleHover('file')}
         onClose={close}
       >
@@ -105,12 +142,10 @@ export function MenuBar({ fileActions }: MenuBarProps) {
         ref={refs.edit}
         label="Edit"
         open={open === 'edit'}
+        openSource={openSource}
         tabIndex={focused === 'edit' ? 0 : -1}
         onLabelKeyDown={handleKeyDown('edit')}
-        onOpen={() => {
-          setFocused('edit');
-          setOpen(open === 'edit' ? null : 'edit');
-        }}
+        onOpen={() => handleClickOpen('edit')}
         onHover={() => handleHover('edit')}
         onClose={close}
       >
@@ -120,16 +155,14 @@ export function MenuBar({ fileActions }: MenuBarProps) {
         ref={refs.view}
         label="View"
         open={open === 'view'}
+        openSource={openSource}
         tabIndex={focused === 'view' ? 0 : -1}
         onLabelKeyDown={handleKeyDown('view')}
-        onOpen={() => {
-          setFocused('view');
-          setOpen(open === 'view' ? null : 'view');
-        }}
+        onOpen={() => handleClickOpen('view')}
         onHover={() => handleHover('view')}
         onClose={close}
       >
-        <ViewMenu onAfterAction={close} />
+        <ViewMenu actions={viewActions} onAfterAction={close} />
       </Menu>
     </div>
   );

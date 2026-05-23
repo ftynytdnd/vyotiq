@@ -23,6 +23,8 @@ import { TOOL_ONE_LINERS } from '@shared/types/toolDescriptions.js';
 import { useWorkspaceStore } from '../../../../store/useWorkspaceStore.js';
 import { openWorkspaceFile } from '../../../../lib/openPath.js';
 import { DetailPane } from '../../tools/shared/DetailPane.js';
+import { Eyebrow } from '../../../ui/Eyebrow.js';
+import { SurfaceShell } from '../../../ui/SurfaceShell.js';
 import { cn } from '../../../../lib/cn.js';
 
 interface SubAgentScopeListProps {
@@ -42,13 +44,13 @@ export function SubAgentScopeList({
 
   return (
     <DetailPane label="scope">
-      <div className="flex flex-col gap-2 rounded-inner border border-border-subtle/30 bg-surface-overlay/40 px-3 py-2">
+      <SurfaceShell padded padding="content">
         {hasTools && <ToolList tools={tools} />}
         {hasTools && hasFiles && (
           <div className="h-px w-full bg-border-subtle/30" aria-hidden="true" />
         )}
         {hasFiles && <FileList okFiles={okFiles} missingFiles={missingFiles} />}
-      </div>
+      </SurfaceShell>
     </DetailPane>
   );
 }
@@ -56,10 +58,10 @@ export function SubAgentScopeList({
 function ToolList({ tools }: { tools: readonly string[] }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <div className="mb-0.5 flex items-center gap-1.5 text-meta uppercase tracking-wider text-text-faint">
+      <Eyebrow as="span" className="mb-0.5 inline-flex items-center gap-1.5">
         <Wrench className="h-3 w-3" strokeWidth={2} />
         Granted tools
-      </div>
+      </Eyebrow>
       <ul className="flex flex-col gap-0.5">
         {tools.map((toolName) => {
           const liner = TOOL_ONE_LINERS[toolName as ToolName] ?? '';
@@ -99,10 +101,10 @@ function FileList({
 
   return (
     <div className="flex flex-col gap-0.5">
-      <div className="mb-0.5 flex items-center gap-1.5 text-meta uppercase tracking-wider text-text-faint">
+      <Eyebrow as="span" className="mb-0.5 inline-flex items-center gap-1.5">
         <FileCode2 className="h-3 w-3" strokeWidth={2} />
         Files in scope
-      </div>
+      </Eyebrow>
       <ul className="flex flex-col gap-0.5">
         {okFiles.map((filePath) => (
           <li

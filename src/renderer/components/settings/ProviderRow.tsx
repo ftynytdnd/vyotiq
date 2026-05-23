@@ -20,6 +20,7 @@ import {
 import { Button } from '../ui/Button.js';
 import { Eyebrow } from '../ui/Eyebrow.js';
 import { ConfirmDialog } from '../ui/ConfirmDialog.js';
+import { Switch } from '../ui/Switch.js';
 import { TextField } from '../ui/TextField.js';
 import { ModelList } from './ModelList.js';
 import { useProviderStore } from '../../store/useProviderStore.js';
@@ -29,7 +30,7 @@ interface ProviderRowProps {
   provider: ProviderConfig;
 }
 
-export function ProviderRow({ provider }: ProviderRowProps) {
+export function ProviderRow({ provider, embedded = false }: ProviderRowProps & { embedded?: boolean }) {
   const remove = useProviderStore((s) => s.remove);
   const discover = useProviderStore((s) => s.discover);
   const test = useProviderStore((s) => s.test);
@@ -39,7 +40,7 @@ export function ProviderRow({ provider }: ProviderRowProps) {
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   // Two-step removal so a misclicked trash icon doesn't wipe the
   // provider config + encrypted API key with no recovery. Mirrors
-  // the confirmation pattern used by the sidebar's conversation /
+  // the confirmation pattern used by the dock chat tab /
   // workspace deletes.
   const [removeOpen, setRemoveOpen] = useState(false);
 
@@ -68,21 +69,9 @@ export function ProviderRow({ provider }: ProviderRowProps) {
 
   return (
     <div className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-body font-semibold text-text-primary">{provider.name}</h3>
-            <span
-              className={cn(
-                'rounded-inner px-1.5 py-0.5 text-meta',
-                provider.enabled
-                  ? 'text-accent'
-                  : 'text-text-faint'
-              )}
-            >
-              {provider.enabled ? 'enabled' : 'disabled'}
-            </span>
-          </div>
+      <div className={cn('flex items-start justify-between gap-2', embedded && 'flex-col')}>
+        <div className="min-w-0">
+          <h3 className="text-body font-semibold text-text-primary">{provider.name}</h3>
           <div className="mt-0.5 truncate font-mono text-row text-text-muted">
             {provider.baseUrl}
           </div>
@@ -90,10 +79,13 @@ export function ProviderRow({ provider }: ProviderRowProps) {
             {PROVIDER_DIALECT_LABELS[provider.dialect ?? 'openai']}
           </Eyebrow>
         </div>
-        <div className="flex items-center gap-1">
-          <Button size="sm" variant="ghost" onClick={() => void update(provider.id, { enabled: !provider.enabled })}>
-            {provider.enabled ? 'Disable' : 'Enable'}
-          </Button>
+        <div className="flex items-center gap-2">
+          <Switch
+            size="sm"
+            value={provider.enabled}
+            onChange={(v) => void update(provider.id, { enabled: v })}
+            ariaLabel={`${provider.enabled ? 'Disable' : 'Enable'} provider ${provider.name}`}
+          />
           <Button
             size="sm"
             variant="danger"
@@ -105,7 +97,7 @@ export function ProviderRow({ provider }: ProviderRowProps) {
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className={cn('flex items-center gap-2', embedded && 'flex-wrap')}>
         <Button size="sm" variant="secondary" onClick={() => void onDiscover()} disabled={busy !== 'idle'}>
           <RefreshCcw className="h-3.5 w-3.5" strokeWidth={2.25} />
           {busy === 'discovering'
@@ -212,6 +204,16 @@ function AttributionSection({
   // Reset local edits when the persisted shape changes from the
   // outside. We compare against the snapshot we last saved against to
   // avoid clobbering an in-flight edit.
+  //
+  // The `if (…) setState(…)` inside the function body is the React-
+  // docs-sanctioned "derive state from props during render" pattern
+  // (see https://react.dev/reference/react/useState#storing-information-from-previous-renders).
+  // React detects the in-render setState on a stable parent component
+  // and re-runs THIS component immediately with the new state — no
+  // extra commit, no `useEffect`-driven flash. The `seedKey` guard
+  // makes the write idempotent so we don't loop. Do NOT migrate this
+  // to a `useEffect`: that would clobber a fast user edit between
+  // the outer store update and the effect flush.
   const [seedKey, setSeedKey] = useState(persistedKey);
   if (seedKey !== persistedKey) {
     setSeedKey(persistedKey);
@@ -262,7 +264,10 @@ function AttributionSection({
         <span className="text-text-faint">· {collapsedSummary}</span>
       </button>
       {expanded && (
-        <div className="flex flex-col gap-2 rounded-card bg-surface-base p-3">
+        // Same left-rail indent rhythm as `AddProviderForm`'s expanded
+        // body so nested expanders across the Providers tab share one
+        // visual hierarchy instead of one rail / one card surface.
+        <div className="flex flex-col gap-2 border-l border-border-subtle/40 py-1 pl-3">
           <p className="text-row text-text-muted">
             Optional. OpenRouter credits the calling app on its public rankings via these headers.
             Leave a field blank to send an empty value (suppress that header). Clear both to fall back

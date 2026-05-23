@@ -61,6 +61,8 @@ interface CheckpointsStore {
    * panel.
    */
   accept: (entryId: string, conversationId: string) => Promise<boolean>;
+  /** Accept every pending entry for a conversation in one IPC round-trip. */
+  acceptAll: (conversationId: string) => Promise<boolean>;
   /** Reject one pending entry (revert + drop). */
   reject: (entryId: string, conversationId: string) => Promise<CheckpointRevertResult>;
   /** Revert one entry (no pending interaction). */
@@ -237,6 +239,24 @@ export const useCheckpointsStore = create<CheckpointsStore>((setState, getState)
       return true;
     } catch (err) {
       log.warn('accept failed; refetching', { entryId, err });
+      await getState().refreshPending(conversationId);
+      return false;
+    }
+  },
+
+  acceptAll: async (conversationId) => {
+    setState((s) => ({
+      pendingByConversation: {
+        ...s.pendingByConversation,
+        [conversationId]: []
+      }
+    }));
+    try {
+      await vyotiq.checkpoints.acceptAll(conversationId);
+      await getState().refreshPending(conversationId);
+      return true;
+    } catch (err) {
+      log.warn('acceptAll failed; refetching', { conversationId, err });
       await getState().refreshPending(conversationId);
       return false;
     }

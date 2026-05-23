@@ -24,6 +24,7 @@ import { Check, ClipboardList, Copy } from 'lucide-react';
 import { stripEmoji } from '@shared/text/emoji.js';
 import { MarkdownBody } from '../../markdown/MarkdownBody.js';
 import { DetailPane } from '../../tools/shared/DetailPane.js';
+import { SurfaceShell } from '../../../ui/SurfaceShell.js';
 import { cn } from '../../../../lib/cn.js';
 import { safeCopy } from '../../../../lib/clipboard.js';
 
@@ -83,7 +84,7 @@ export function SubAgentTaskBlock({ task }: SubAgentTaskBlockProps) {
 
   return (
     <DetailPane label="task">
-      <div className="group/task relative rounded-inner border border-border-subtle/40 bg-surface-overlay/60 px-3 py-2">
+      <SurfaceShell padded padding="content" className="group/task relative">
         <button
           type="button"
           onClick={onCopy}
@@ -109,7 +110,7 @@ export function SubAgentTaskBlock({ task }: SubAgentTaskBlockProps) {
           />
           <MarkdownBody
             text={displayed}
-            className="min-w-0 flex-1 text-log leading-relaxed text-text-secondary"
+            className="min-w-0 flex-1 text-row leading-relaxed text-text-secondary"
           />
         </div>
         {isClipped && !showAll && (
@@ -139,7 +140,7 @@ export function SubAgentTaskBlock({ task }: SubAgentTaskBlockProps) {
             Show less
           </button>
         )}
-      </div>
+      </SurfaceShell>
     </DetailPane>
   );
 }

@@ -16,6 +16,16 @@ const nodeExternals: (string | RegExp)[] = [
   new RegExp(`^(${prodDeps.join('|')})\\/`)
 ];
 
+// Audit fix 2026-01-P3-1 / 16-P3-1: emit `hidden` source maps for every
+// build target. `'hidden'` produces the `.map` files (so a crash report
+// or production-only bug can be deobfuscated) without writing the
+// `//# sourceMappingURL=` reference into the bundle — keeping users'
+// devtools / view-source clean of the sourcemap pointer that would
+// otherwise leak the original file paths. The maps live next to the
+// emitted JS in `out/{main,preload,renderer}/` and are pulled into the
+// crash-reporter pipeline by the (out-of-scope) packaging step.
+const SOURCEMAP: 'hidden' = 'hidden';
+
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
@@ -27,6 +37,7 @@ export default defineConfig({
     },
     ssr: { noExternal: [], external: prodDeps },
     build: {
+      sourcemap: SOURCEMAP,
       lib: {
         entry: resolve(__dirname, 'src/main/index.ts'),
         formats: ['cjs']
@@ -44,6 +55,7 @@ export default defineConfig({
     },
     ssr: { noExternal: [], external: prodDeps },
     build: {
+      sourcemap: SOURCEMAP,
       lib: {
         entry: resolve(__dirname, 'src/main/preload/preload.ts'),
         formats: ['cjs']
@@ -64,6 +76,9 @@ export default defineConfig({
       }
     },
     build: {
+      sourcemap: SOURCEMAP,
+      // Drop stale hashed lazy chunks when rebuilding while preview is open.
+      emptyOutDir: true,
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/renderer/index.html') }
       }

@@ -59,6 +59,7 @@ export function SearchInvocation({ call, result, dense, rowKey }: SearchInvocati
       Icon={mode === 'web' ? Globe : Search}
       title={mode === 'web' ? 'web search' : 'search'}
       summary={summary}
+      mono
       ok={result ? result.ok : null}
       {...(errorHint ? { errorHint } : {})}
       {...(detail !== undefined ? { detail } : {})}

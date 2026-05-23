@@ -1,7 +1,7 @@
 /**
  * Counts processing slices that are NOT the active conversation, plus
  * the first such id (so a "Show" affordance can scroll the right
- * sidebar row into view).
+ * dock chat tab into view.
  *
  * The active slice is excluded because the composer's own Stop button
  * already covers it — surfacing it again as "running elsewhere" would

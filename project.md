@@ -89,6 +89,31 @@ The harness must define a continuous, self-governing loop that dictates how Agen
 The harness must contain explicit plain-English rules for managing its own context window dynamically:
 - **Context Injection:** Rules for when to automatically pull in environmental data (e.g., current directory structure, recent errors).
 
+### Run lifecycle: abort, stop, and rehydrate (implementation contract)
+Vyotiq supports multiple concurrent chats (one orchestrator run per conversation, possibly across workspaces). The main process and renderer must agree on how **stop** and **reload** behave so events are never dropped mid-wind-down.
+
+**Main process (`AgentV` / `activeRuns`)**
+- Every in-flight `chat:send` registers an `AbortController` in an in-memory `activeRuns` map keyed by `runId`.
+- **`abortRun` only signals abort** (`abort.abort()`). It does **not** remove the map entry early. Removal happens in `startRun`’s `finally` after the orchestrator loop exits (success, error, or abort). That way `listActiveRuns()` still reports winding-down runs until they actually finish.
+- Bulk helpers (`abortRunsForConversation`, `abortRunsForWorkspace`, `abortRunsForProvider`) follow the same rule: signal every matching run, count how many were aborted, delete only when each run’s `finally` runs.
+- **`listActiveRuns` IPC** returns `{ runId, conversationId?, workspaceId?, startedAt }[]` for all entries still in `activeRuns`. Used after renderer reload (F5 / HMR) to rebuild routing.
+
+**Renderer (`useChatStore` + `chatChannel`)**
+- On **Stop run**, the store clears `isProcessing` on the affected slice immediately (optimistic UI), then calls `chat:abort(runId)`. Late timeline events for that `runId` still apply until main emits terminal IPC.
+- **`bootstrapChatChannel` must await `listActiveRuns()` before subscribing to `chat:event`**, so early events after reload are not lost to an empty `runId → conversationId` table. `rehydrateActiveRuns` replaces the map from main’s snapshot (prunes stale ids, does not layer indefinitely).
+- **`setTranscript` / `prewarmSlice`** only mirror into the active conversation when `mirrorOf` targets the same `conversationId` as the slice being updated (sibling chats must not overwrite the visible timeline).
+
+**Terminal IPC (orchestrator failures)**
+- On a terminal loop error, main emits **`chat:error` then `chat:done`** for the same `runId`. The renderer handles both distinctly so the run indicator clears and the error row still lands.
+
+**Context summarizer (two stop controls in Inspector)**
+- **Cancel summary** — aborts the live summarizer stream (`CONTEXT_SUMMARY_ABORT_LIVE`); does not stop the orchestrator run.
+- **Stop run** — aborts the orchestrator via `abortRun` as above.
+
+**Envelope cache (memory retrieval)**
+- LRU key is `(conversationId, workspaceId, workspacePath)` so per-iteration query churn does not zero out hit rate.
+- On cache hit, a **`queryFingerprint`** (trimmed rolling query, capped length) must match; otherwise the entry is treated as stale and memory retrieval rebuilds.
+
 ## 3. Local Memory & Note-Taking System
 The agent must have a localized, persistent memory governed by natural language triggers:
 - **Taking Notes:** Define rules for when the agent should proactively write markdown notes about user preferences, project structures, or recurring bugs.
@@ -144,7 +169,7 @@ The design must be extremely clean, minimalist, frameless, and stealthy, ensurin
 ## 1. Global Theme & Color Palette
 - **Backgrounds:** Use a "stealth" dark mode. Do not use pure black (#000000). 
   - Main App Background: Extremely dark, matte gray (e.g., #18181A or Tailwind bg-neutral-900).
-  - Elevated Surfaces (Sidebar, Composer, Cards): Slightly lighter gray (e.g., #262628 or Tailwind bg-neutral-800).
+  - Elevated Surfaces (Dock, Composer, Cards): Slightly lighter gray (e.g., #262628 or Tailwind bg-neutral-800).
 - **Typography:**
   - Font Family: Clean, modern Sans-Serif (Inter, SF Pro Display, or system-ui).
   - Primary Text: High-contrast pure white (text-white) or very light gray (text-neutral-100).
@@ -155,9 +180,7 @@ The design must be extremely clean, minimalist, frameless, and stealthy, ensurin
 
 ## 2. Layout Structure
 - **Frameless Window:** The app must have a custom, thin top title bar that blends perfectly into the base background, containing standard File/Edit menus on the left and window controls on the right.
-- **Left Sidebar:**
-  - Width: ~250px.
-  - Content: Navigational items and chat history with subtle, non-intrusive icons. "Settings" and "Provider Configurations" must be fixed at the absolute bottom.
+- **Bottom Dock:** Workspace-scoped chat tabs, search, and run indicators live in a collapsible bottom dock (not a left sidebar). Settings, checkpoint history, and the Context Inspector open in a **right-hand SecondaryZone** panel beside the conversation surface.
 - **Main Content Area:** The central chat and composer area must be strictly **center-aligned** with a constrained maximum width (e.g., max-w-3xl) to prevent eye fatigue from scanning wide text lines.
 
 ## 3. The "Composer" (Input Box) UI
@@ -169,10 +192,10 @@ The Composer is the central hub for interacting with Agent V.
   - Left side: A + icon for attachments and a "Permissions" dropdown.
   - Right side: Model selector dropdown (to switch between local/cloud models), a microphone icon, and the Send Button.
 - **Send Button:** A distinct circular button. Active state = solid background with an UP arrow (↑). Processing state = Stop icon (Square ■).
-- **Action Suggestions:** Render a seamless list attached below the input box containing quick-start project suggestions or commands, complete with subtle hover effects.
 
 ## 4. Agent Interaction UI
 Do not use traditional chat bubbles. Render a clean timeline of actions.
+- **Sub-agents:** Delegated workers render inline in the timeline (`SubAgentTrace`) — expandable traces with briefing, tool steps, and results. No separate sub-agents panel.
 - **User Prompts:** Simple, clean, right-aligned or inline plain text.
 - **Agent Status/Thoughts:** Use tiny, muted text indicating background work (e.g., "Agent V is thinking..." or "Reading workspace directory..."). Separate phases with a subtle horizontal line (border-t border-neutral-700).
 - **File Modification Cards:** When Agent V creates or edits a file, render a beautiful, elevated Card:

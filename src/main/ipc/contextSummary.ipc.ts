@@ -28,28 +28,59 @@ import type {
   ContextMessageOverride,
   ContextSummaryRules
 } from '@shared/types/contextSummary.js';
-import { resolveContextSummaryRules } from '@shared/types/contextSummary.js';
+import {
+  CONTEXT_MESSAGE_OVERRIDES,
+  resolveContextSummaryRules
+} from '@shared/types/contextSummary.js';
 import type { AppSettings } from '@shared/types/ipc.js';
 import type { TimelineEvent } from '@shared/types/chat.js';
 import {
   applyOverrideEvent,
-  getOverrides
+  getInspectorSnapshot,
+  getOverrides,
+  replayOverrideEvents
 } from '../orchestrator/contextSummarizer/index.js';
 import {
+  abortIdleSummary,
+  getIdleActiveSummaryId,
+  triggerIdleSummary,
+  undoIdleSummary
+} from '../orchestrator/contextSummarizer/idleSummaryRuntime.js';
+import {
   findActiveRunByConversation,
-  getRunContext
+  getRunContext,
+  listActiveRunContexts
 } from '../orchestrator/runContextRegistry.js';
 import {
   appendEvent,
-  getConversationMeta
+  getConversationMeta,
+  readTranscript
 } from '../conversations/conversationStore.js';
+import { getProspectiveMessages } from '../orchestrator/prospectiveMessages.js';
+import { selectEffectiveContextWindow } from '@shared/providers/contextWindow.js';
+import { listProviders } from '../providers/providerStore.js';
+import { listWorkspaces } from '../workspace/workspaceState.js';
 import { getSettings, setSettings } from '../settings/settingsStore.js';
-import { getMainWindow } from '../window/getMainWindow.js';
+import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import { probeWorkspaceOverridePresent } from '../harness/probeOverride.js';
 import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
+// Audit fix 2026-06-P2-1 — id-and-shape gates for the contextSummary
+// channels. Rules-patch payloads get an `assertObject` guard, per-
+// message overrides route through `assertEnum` against the
+// `CONTEXT_MESSAGE_OVERRIDES` allow-list, and scope strings route
+// through the `'global' | 'workspace'` enum.
+import {
+  assertString,
+  assertObject,
+  assertOptionalString,
+  assertEnum
+} from './validate.js';
+import { assertContextSummaryRulesPatch } from './contextSummaryValidate.js';
 
 const log = logger.child('ipc/contextSummary');
+
+const CONTEXT_SUMMARY_SCOPES = ['global', 'workspace'] as const;
 
 /**
  * Broadcast a `CONTEXT_SUMMARY_SNAPSHOT_CHANGED` event for the
@@ -58,42 +89,48 @@ const log = logger.child('ipc/contextSummary');
  *
  * Safe to call when the renderer is gone (mid-reload, window torn
  * down) — the send is a no-op behind a destroyed-window guard.
+ *
+ * Exported so the orchestrator's `runLoop` can call it on every
+ * authoritative `token-usage` frame (Phase 5/2026 real-time
+ * sync) — the inspector and the composer pill stay in lockstep
+ * during a live run instead of waiting for the next manual
+ * trigger / undo / override edit.
  */
-function broadcastSnapshotChanged(runId: string): void {
-  try {
-    const win = getMainWindow();
-    if (!win || win.isDestroyed()) return;
-    const wc = win.webContents;
-    if (!wc || wc.isDestroyed()) return;
-    wc.send(IPC.CONTEXT_SUMMARY_SNAPSHOT_CHANGED, runId);
-  } catch (err) {
-    log.debug('snapshot-changed broadcast failed', { runId, err });
-  }
+export function broadcastSnapshotChanged(runId: string): void {
+  // Routes through the shared `safeWebContentsSend` helper so the
+  // destroyed-window guard + try/catch live in one place. The helper
+  // logs at debug under its own scope; we keep the runId in a single
+  // log line through the helper's structured `{ channel, err }`
+  // breadcrumb (no extra logging needed here). Audit P3-3.
+  safeWebContentsSend(IPC.CONTEXT_SUMMARY_SNAPSHOT_CHANGED, runId);
 }
 
 /**
  * Build the inspector snapshot for a conversation that has NO
- * active run. Falls back to the persisted initial-messages state
- * by replaying the transcript through `replayTranscript` +
- * `replayCompression`. Returns `null` when the conversation can't
- * be located (a closed window's stale conversationId).
+ * active run. Delegates message-building to `getProspectiveMessages`
+ * — the SAME builder the composer pill uses — so the Wire Breakdown
+ * and the pill always count the same prospective payload (system
+ * prompt + harness + envelopes + replayed history + tool schemas)
+ * and therefore always render the same "% of context window used"
+ * reading.
  *
- * Implementation: lazy-imports the orchestrator helpers to avoid a
- * circular module load between `chat.ipc` (which imports this) and
- * the orchestrator's `AgentV`. Cheap on first call, cached after.
+ * Returns `null` when the conversation can't be located (a closed
+ * window's stale conversationId).
+ *
+ * Implementation note (2026): an earlier version lazy-imported
+ * `readTranscript` / `getInspectorSnapshot` / `getProspectiveMessages`
+ * to dodge a circular module load between `chat.ipc` and the
+ * orchestrator's `AgentV`. That cycle no longer exists — `chat.ipc`
+ * doesn't import this module — so the imports are static now and
+ * the `await import()` microtask tax is gone. Bundler stops warning
+ * about "dynamic import will not move module into another chunk"
+ * for the same reason: main-process is a single chunk.
  */
 async function snapshotForIdleConversation(
   conversationId: string
 ): Promise<ContextInspectorSnapshot | null> {
   const meta = await getConversationMeta(conversationId);
   if (!meta) return null;
-  const { readTranscript } = await import('../conversations/conversationStore.js');
-  const { replayTranscript } = await import('../orchestrator/replay/index.js');
-  const {
-    getInspectorSnapshot,
-    replayCompression,
-    replayOverrideEvents
-  } = await import('../orchestrator/contextSummarizer/index.js');
   let priorTranscript: TimelineEvent[];
   try {
     priorTranscript = await readTranscript(conversationId);
@@ -104,27 +141,15 @@ async function snapshotForIdleConversation(
     });
     return null;
   }
-  // Hydrate overrides + summaries the same way `buildInitialMessages`
-  // does at run start, so the idle-snapshot view matches what the
-  // next run will see.
+  // Hydrate the per-conversation override store from persisted
+  // `context-override-set` events so the inspector's per-message
+  // Keep/Summarize/Drop toggles reflect the user's prior choices.
+  // Mirrors `buildInitialMessages`'s hydration in `AgentV.ts`.
   const overrideEvents = priorTranscript.filter(
     (e): e is Extract<TimelineEvent, { kind: 'context-override-set' }> =>
       e.kind === 'context-override-set'
   );
   replayOverrideEvents(conversationId, overrideEvents);
-  const messages = replayTranscript(priorTranscript);
-  const summaryEvents = priorTranscript.filter(
-    (e): e is Extract<
-      TimelineEvent,
-      | { kind: 'context-summary-pending' }
-      | { kind: 'context-summary-end' }
-      | { kind: 'context-summary-undone' }
-    > =>
-      e.kind === 'context-summary-pending' ||
-      e.kind === 'context-summary-end' ||
-      e.kind === 'context-summary-undone'
-  );
-  if (summaryEvents.length > 0) replayCompression(messages, summaryEvents);
 
   // Resolve rules + ceiling for the snapshot's footer/gauge.
   const settings = await getSettings();
@@ -141,10 +166,6 @@ async function snapshotForIdleConversation(
   const modelId = meta.lastModelId ?? '';
   if (meta.lastProviderId && meta.lastModelId) {
     try {
-      const { selectEffectiveContextWindow } = await import(
-        '@shared/providers/contextWindow.js'
-      );
-      const { listProviders } = await import('../providers/providerStore.js');
       const providers = await listProviders();
       ceiling = selectEffectiveContextWindow(
         providers,
@@ -167,7 +188,6 @@ async function snapshotForIdleConversation(
   let workspacePath: string | undefined;
   if (meta.workspaceId) {
     try {
-      const { listWorkspaces } = await import('../workspace/workspaceState.js');
       const wsState = await listWorkspaces();
       const entry = wsState.workspaces.find((w) => w.id === meta.workspaceId);
       workspacePath = entry?.path;
@@ -176,14 +196,34 @@ async function snapshotForIdleConversation(
     }
   }
   const workspaceOverridePresent = await probeWorkspaceOverridePresent(workspacePath);
+  // When an idle summary is in flight for this conversation,
+  // surface its active summaryId on the snapshot so the Inspector
+  // can subscribe to the streaming `summaries[id]` accumulator
+  // immediately. The Inspector's `LiveStreamCard` renders from
+  // that field; the renderer reducer populates the accumulator
+  // from `context-summary-pending` events that ride the same
+  // `CHAT_EVENT` channel, so the two views stay in lockstep.
+  const activeIdleSummaryId = getIdleActiveSummaryId(conversationId);
+
+  // Single source of truth — `getProspectiveMessages` builds the
+  // exact prospective `messages[]` the next request would carry
+  // (system prompt + harness + envelopes + replayed history with
+  // any persisted summary splices applied) and the same `tools[]`
+  // catalogue the orchestrator emits on the wire. This is the
+  // payload the composer pill tokenizes; the inspector consumes
+  // the same builder so its Wire Breakdown is consistent with the
+  // pill by construction.
+  const prospect = await getProspectiveMessages(conversationId);
   return getInspectorSnapshot({
     conversationId,
     workspaceId: wsId,
-    messages,
+    messages: prospect.messages,
+    tools: prospect.tools,
     rules,
     workspaceOverridePresent,
     modelId,
-    ...(ceiling !== undefined ? { ceiling } : {})
+    ...(ceiling !== undefined ? { ceiling } : {}),
+    ...(activeIdleSummaryId !== undefined ? { activeSummaryId: activeIdleSummaryId } : {})
   });
 }
 
@@ -195,6 +235,7 @@ export function registerContextSummaryIpc(): void {
       _event,
       runId: string
     ): Promise<ContextInspectorSnapshot | null> => {
+      assertString('contextSummary:inspect', 'runId', runId);
       const handle = getRunContext(runId);
       if (handle) {
         try {
@@ -220,15 +261,45 @@ export function registerContextSummaryIpc(): void {
     IPC.CONTEXT_SUMMARY_TRIGGER_MANUAL,
     async (
       _event,
-      runId: string
+      idOrConversationId: string,
+      idleRunId?: string
     ): Promise<
-      | { ok: true; summaryId: string }
+      | { ok: true; summaryId: string; idleRunId?: string }
       | { ok: false; reason: string }
     > => {
-      const handle = getRunContext(runId);
-      if (!handle) return { ok: false, reason: 'No active run for this id' };
-      const result = await handle.triggerManual();
-      if (result.ok) broadcastSnapshotChanged(runId);
+      assertString('contextSummary:triggerManual', 'idOrConversationId', idOrConversationId);
+      assertOptionalString('contextSummary:triggerManual', 'idleRunId', idleRunId);
+      // Live path: the id resolves to an active orchestrator run.
+      // Behaviour is identical to the original handler — the
+      // synchronous in-flight gate inside `runLoop`'s
+      // `triggerManual` callback rejects double-clicks cleanly.
+      const handle = getRunContext(idOrConversationId);
+      if (handle) {
+        const result = await handle.triggerManual();
+        if (result.ok) broadcastSnapshotChanged(idOrConversationId);
+        return result;
+      }
+      // Idle path: no active run for the id, so treat it as a
+      // conversationId and run the summarizer off-line. The
+      // caller (renderer store) supplied `idleRunId` and has
+      // already registered the synthetic runId in its dispatch
+      // table so the upcoming `CHAT_EVENT` broadcasts route into
+      // the right slice.
+      if (typeof idleRunId !== 'string' || idleRunId.length === 0) {
+        return {
+          ok: false,
+          reason: 'No active run for this id'
+        };
+      }
+      const result = await triggerIdleSummary(idOrConversationId, idleRunId);
+      if (result.ok) {
+        // Snapshot-changed broadcasts route by `runId`; we want
+        // the open Inspector (bound to the conversationId in
+        // idle mode) to refresh too. Sending the conversationId
+        // matches the bound id the Inspector subscribed against.
+        broadcastSnapshotChanged(idOrConversationId);
+        return { ok: true, summaryId: result.summaryId, idleRunId: result.runId };
+      }
       return result;
     }
   );
@@ -238,14 +309,42 @@ export function registerContextSummaryIpc(): void {
     IPC.CONTEXT_SUMMARY_UNDO,
     async (
       _event,
-      runId: string,
+      runIdOrConversationId: string,
       summaryId: string
-    ): Promise<{ ok: boolean }> => {
+    ): Promise<{ ok: boolean; event?: TimelineEvent }> => {
+      assertString('contextSummary:undo', 'runIdOrConversationId', runIdOrConversationId);
+      assertString('contextSummary:undo', 'summaryId', summaryId);
+      const handle = getRunContext(runIdOrConversationId);
+      if (handle) {
+        const result = await handle.undo(summaryId);
+        if (result.ok) broadcastSnapshotChanged(runIdOrConversationId);
+        return result;
+      }
+      const meta = await getConversationMeta(runIdOrConversationId);
+      if (!meta) return { ok: false };
+      const result = await undoIdleSummary(runIdOrConversationId, summaryId);
+      if (result.ok) broadcastSnapshotChanged(runIdOrConversationId);
+      return result;
+    }
+  );
+
+  // ── abort idle summary ────────────────────────────────────────────
+  wrapIpcHandler(
+    IPC.CONTEXT_SUMMARY_ABORT_IDLE,
+    async (_event, conversationId: string): Promise<{ ok: boolean }> => {
+      assertString('contextSummary:abortIdle', 'conversationId', conversationId);
+      return { ok: abortIdleSummary(conversationId) };
+    }
+  );
+
+  // ── abort live-run summary (orchestrator only) ────────────────────
+  wrapIpcHandler(
+    IPC.CONTEXT_SUMMARY_ABORT_LIVE,
+    async (_event, runId: string): Promise<{ ok: boolean }> => {
+      assertString('contextSummary:abortLive', 'runId', runId);
       const handle = getRunContext(runId);
       if (!handle) return { ok: false };
-      const result = await handle.undo(summaryId);
-      if (result.ok) broadcastSnapshotChanged(runId);
-      return result;
+      return { ok: handle.abortSummary() };
     }
   );
 
@@ -258,6 +357,26 @@ export function registerContextSummaryIpc(): void {
       messageId: string,
       override: ContextMessageOverride | null
     ): Promise<void> => {
+      assertString('contextSummary:setMessageOverride', 'conversationId', conversationId);
+      // `messageId` may be the reset-all sentinel `'*'` so we accept
+      // any non-empty string; the body-level check below catches the
+      // `(messageId === '*' && override !== null)` misuse.
+      assertString('contextSummary:setMessageOverride', 'messageId', messageId);
+      // `override` is the string-literal union `'keep' | 'summarize' | 'drop'`
+      // (or `null` to clear). Earlier audit-fix iteration used
+      // `assertObject` here, which is incorrect for a primitive
+      // payload and rejected every legitimate Inspector toggle with
+      // `override must be a non-null object`. Source-of-truth list
+      // lives in `CONTEXT_MESSAGE_OVERRIDES` so the renderer toggle,
+      // the type system, and this validator stay in lockstep.
+      if (override !== null) {
+        assertEnum(
+          'contextSummary:setMessageOverride',
+          'override',
+          override,
+          CONTEXT_MESSAGE_OVERRIDES
+        );
+      }
       // M1: reject the `(messageId === '*', override !== null)`
       // corner the `overrideStore` doc-block claims is "rejected
       // upstream by the IPC handler". The store defensively
@@ -305,6 +424,7 @@ export function registerContextSummaryIpc(): void {
   wrapIpcHandler(
     IPC.CONTEXT_SUMMARY_RESET_MESSAGE_OVERRIDES,
     async (_event, conversationId: string): Promise<void> => {
+      assertString('contextSummary:resetMessageOverrides', 'conversationId', conversationId);
       const event: TimelineEvent = {
         kind: 'context-override-set',
         id: randomUUID(),
@@ -333,6 +453,12 @@ export function registerContextSummaryIpc(): void {
       _event,
       workspaceId: string | null
     ): Promise<ContextSummaryRules> => {
+      // `workspaceId` is the resolve key for per-workspace overrides;
+      // `null` selects the global resolution. Validate the non-null
+      // case only.
+      if (workspaceId !== null) {
+        assertString('contextSummary:getRules', 'workspaceId', workspaceId);
+      }
       const settings = await getSettings();
       const global = settings.contextSummary;
       const workspace = workspaceId
@@ -351,6 +477,10 @@ export function registerContextSummaryIpc(): void {
       patch: Partial<ContextSummaryRules>,
       workspaceId?: string
     ): Promise<AppSettings> => {
+      assertEnum('contextSummary:updateRules', 'scope', scope, CONTEXT_SUMMARY_SCOPES);
+      assertObject('contextSummary:updateRules', 'patch', patch);
+      assertContextSummaryRulesPatch('contextSummary:updateRules', patch);
+      assertOptionalString('contextSummary:updateRules', 'workspaceId', workspaceId);
       const current = await getSettings();
       let next: Partial<AppSettings>;
       if (scope === 'global') {
@@ -384,11 +514,6 @@ export function registerContextSummaryIpc(): void {
       // workspace (or every run when scope:'global'). Lets any
       // open Inspector refresh against the new rules without a
       // manual reload.
-      // Lazy import to avoid the registry's listing API forming a
-      // circular through contextSummarizer/index.
-      const { listActiveRunContexts } = await import(
-        '../orchestrator/runContextRegistry.js'
-      );
       for (const { runId } of listActiveRunContexts()) {
         const handle = getRunContext(runId);
         if (!handle) continue;

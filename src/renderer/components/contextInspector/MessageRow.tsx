@@ -1,21 +1,5 @@
 /**
- * Single message row in the Context Inspector's MessageList.
- *
- * Visual contract: matches the row pattern used in
- * `WorkspaceOverridesSection` and `WorkspaceCheckpointOverridesSection`
- * — flat list under a `border-b border-border-subtle/30 py-2`
- * separator, label + meta on the left, action surface on the right.
- * No card-in-card chrome. Toggle controls reuse the shared
- * `Button size="sm" variant={...}` primitive instead of bespoke
- * pills so the typography + hover behavior stays in lockstep with
- * the rest of the app.
- *
- * Three toggle states:
- *   - Click an INACTIVE option → set that override.
- *   - Click the ACTIVE option (when an override is set) → clear
- *     the override (fall back to the per-kind policy).
- *   - Click while no override is set on the active policy match
- *     → no-op (state is already what the user is asking for).
+ * MessageRow — single row in the Context Inspector message list.
  */
 
 import { Layers } from 'lucide-react';
@@ -25,9 +9,11 @@ import type {
   ContextInspectorMessage,
   ContextMessageOverride
 } from '@shared/types/contextSummary.js';
-import { Button } from '../ui/Button.js';
+import { Tabs } from '../ui/Tabs.js';
+import { cn } from '../../lib/cn.js';
 import { formatTokenCount } from '../../lib/formatTokens.js';
-import { labelForDecision, labelForKind } from './inspectorFormat.js';
+import { labelForKind } from './inspectorFormat.js';
+import { SurfaceShell, surfaceShellInnerClassName } from '../ui/SurfaceShell.js';
 
 interface MessageRowProps {
   message: ContextInspectorMessage;
@@ -36,33 +22,35 @@ interface MessageRowProps {
 
 const TOGGLE_OPTIONS: ReadonlyArray<{
   value: ContextMessageOverride;
+  label: string;
   description: string;
 }> = [
-    {
-      value: 'keep',
-      description: 'Preserve verbatim — never summarize or drop.'
-    },
-    {
-      value: 'summarize',
-      description: 'Always include in the summarizable range.'
-    },
-    {
-      value: 'drop',
-      description: 'Never send to the model. Preserved in the audit trail.'
-    }
-  ];
+  {
+    value: 'keep',
+    label: 'Keep',
+    description: 'Preserve verbatim — never summarize or drop.'
+  },
+  {
+    value: 'summarize',
+    label: 'Sum',
+    description: 'Always include in the summarizable range.'
+  },
+  {
+    value: 'drop',
+    label: 'Drop',
+    description: 'Never send to the model. Preserved in the audit trail.'
+  }
+];
 
 export function MessageRow({ message, conversationId }: MessageRowProps) {
   const liveOverride = useChatStore(
-    (s) => s.messageOverrides[message.messageId]
+    (s) => s.slices[conversationId]?.messageOverrides[message.messageId]
   );
   const setMessageOverride = useContextSummaryStore((s) => s.setMessageOverride);
-  // Prefer the live mirror — it reflects the streaming state of the
-  // run. Fall back to the snapshot-supplied value (idle inspector,
-  // pre-mirror IPC race).
   const override: ContextMessageOverride | undefined =
     liveOverride ?? message.override;
   const effective = message.effectiveDecision;
+  const activeValue: ContextMessageOverride = override ?? effective;
 
   const onSelect = (next: ContextMessageOverride) => {
     if (override === next) {
@@ -74,7 +62,13 @@ export function MessageRow({ message, conversationId }: MessageRowProps) {
   };
 
   return (
-    <li className="flex items-start justify-between gap-4 border-b border-border-subtle/30 py-2 last:border-b-0">
+    <li>
+      <SurfaceShell
+        className={cn(
+          surfaceShellInnerClassName('compact'),
+          'flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3'
+        )}
+      >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           {message.kind === 'system-summary' && message.fromSummary && (
@@ -84,7 +78,7 @@ export function MessageRow({ message, conversationId }: MessageRowProps) {
             {message.originLabel}
           </span>
         </div>
-        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-meta text-text-faint">
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-meta text-text-muted">
           <span>{labelForKind(message.kind)}</span>
           <span className="font-mono">{formatTokenCount(message.tokenEstimate)} tok</span>
           <span className="font-mono">{formatTokenCount(message.charCount)} chr</span>
@@ -95,24 +89,20 @@ export function MessageRow({ message, conversationId }: MessageRowProps) {
           )}
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-1">
-        {TOGGLE_OPTIONS.map((opt) => {
-          const isActive =
-            override === opt.value ||
-            (override === undefined && effective === opt.value);
-          return (
-            <Button
-              key={opt.value}
-              size="sm"
-              variant={isActive ? 'primary' : 'ghost'}
-              onClick={() => onSelect(opt.value)}
-              title={opt.description}
-            >
-              {labelForDecision(opt.value)}
-            </Button>
-          );
-        })}
-      </div>
+      <Tabs
+        variant="segmented"
+        size="sm"
+        ariaLabel={`Override policy for ${message.originLabel}`}
+        className="shrink-0 self-start"
+        items={TOGGLE_OPTIONS.map((opt) => ({
+          id: opt.value,
+          label: opt.label,
+          panelId: undefined
+        }))}
+        value={activeValue}
+        onChange={onSelect}
+      />
+      </SurfaceShell>
     </li>
   );
 }

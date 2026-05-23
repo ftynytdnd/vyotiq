@@ -7,6 +7,7 @@ import { FolderTree, Folder, FileText } from 'lucide-react';
 import type { ToolCall, ToolResult } from '@shared/types/tool.js';
 import { InvocationShell } from './shared/InvocationShell.js';
 import { DetailPane } from './shared/DetailPane.js';
+import { SurfaceShell } from '../../ui/SurfaceShell.js';
 
 interface LsInvocationProps {
   call?: ToolCall;
@@ -33,7 +34,7 @@ export function LsInvocation({ call, result, dense, rowKey }: LsInvocationProps)
 
   const detail = data ? (
     <DetailPane label={`listing (depth ${data.depth})`}>
-      <div className="scrollbar-stealth flex max-h-52 flex-col overflow-auto rounded-inner bg-surface-raised/60 px-2 py-1.5">
+      <SurfaceShell padded padding="nested" className="scrollbar-stealth max-h-52 overflow-auto">
         {data.entries.slice(0, MAX_ENTRIES_VISIBLE).map((e) => (
           <div
             key={e.rel}
@@ -54,7 +55,7 @@ export function LsInvocation({ call, result, dense, rowKey }: LsInvocationProps)
             … {data.entries.length - MAX_ENTRIES_VISIBLE} more
           </div>
         )}
-      </div>
+      </SurfaceShell>
     </DetailPane>
   ) : result && !result.ok ? (
     // Defect 2 fix: surface the actionable message (`result.output`)

@@ -71,7 +71,7 @@ function ToastRow({ toast, onDismiss, onPause, onResume }: ToastRowProps) {
       )}
     >
       <Icon className={cn('mt-0.5 h-3.5 w-3.5 shrink-0', toneClass)} strokeWidth={2.25} />
-      <div className="min-w-0 flex-1 text-log leading-relaxed text-text-primary">
+      <div className="min-w-0 flex-1 text-row leading-relaxed text-text-primary">
         {toast.message}
       </div>
       <button

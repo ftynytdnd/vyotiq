@@ -45,6 +45,8 @@ export interface AgentVDeps {
 }
 
 interface ActiveRun {
+  /** Monotonic per `runId` — `finally` only deletes when generation matches. */
+  generation: number;
   abort: AbortController;
   /**
    * The conversation this run is writing events into. Tracked so we can
@@ -80,7 +82,10 @@ export function abortRun(runId: string): void {
   const run = activeRuns.get(runId);
   if (!run) return;
   run.abort.abort();
-  activeRuns.delete(runId);
+  // Keep the registry entry until `startRun`'s `finally` drops it.
+  // Deleting here made `listActiveRuns` / rehydrate miss in-flight
+  // runs that were still winding down, so late events were routed
+  // to the wrong slice or dropped entirely.
 }
 
 /**
@@ -140,10 +145,9 @@ export function listActiveRuns(): ActiveRunInfo[] {
  */
 export function abortRunsForConversation(conversationId: string): number {
   let aborted = 0;
-  for (const [runId, run] of activeRuns) {
+  for (const run of activeRuns.values()) {
     if (run.conversationId === conversationId) {
       run.abort.abort();
-      activeRuns.delete(runId);
       aborted += 1;
     }
   }
@@ -166,10 +170,9 @@ export function abortRunsForConversation(conversationId: string): number {
  */
 export function abortRunsForWorkspace(workspaceId: string): number {
   let aborted = 0;
-  for (const [runId, run] of activeRuns) {
+  for (const run of activeRuns.values()) {
     if (run.workspaceId === workspaceId) {
       run.abort.abort();
-      activeRuns.delete(runId);
       aborted += 1;
     }
   }
@@ -185,10 +188,9 @@ export function abortRunsForWorkspace(workspaceId: string): number {
  */
 export function abortRunsForProvider(providerId: string): number {
   let aborted = 0;
-  for (const [runId, run] of activeRuns) {
+  for (const run of activeRuns.values()) {
     if (run.providerId === providerId) {
       run.abort.abort();
-      activeRuns.delete(runId);
       aborted += 1;
     }
   }
@@ -205,13 +207,21 @@ export function abortRunsForProvider(providerId: string): number {
  *                         turns of this conversation. Replayed into the
  *                         model's `messages` so the agent has memory.
  */
+function removeActiveRunIfCurrent(runId: string, generation: number): void {
+  const entry = activeRuns.get(runId);
+  if (entry?.generation === generation) activeRuns.delete(runId);
+}
+
 export async function startRun(
   input: ChatSendInput,
   deps: AgentVDeps,
   priorTranscript?: TimelineEvent[]
 ): Promise<void> {
   const abort = new AbortController();
+  const prior = activeRuns.get(input.runId);
+  const generation = (prior?.generation ?? 0) + 1;
   activeRuns.set(input.runId, {
+    generation,
     abort,
     conversationId: input.conversationId,
     workspaceId: input.workspaceId,
@@ -255,7 +265,7 @@ export async function startRun(
     const msg = err instanceof Error ? err.message : String(err);
     emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: msg });
     deps.onError(msg);
-    activeRuns.delete(input.runId);
+    removeActiveRunIfCurrent(input.runId, generation);
     return;
   }
 
@@ -323,7 +333,11 @@ export async function startRun(
       input,
       workspacePath,
       priorTranscript,
-      promptEventId
+      promptEventId,
+      // Audit fix 2026-08-P2-1 / 13-P2-1 — pipe the run's abort
+      // signal into the prompt-assembly phase so an aborted run
+      // stops paying FS cost during the `inlineFiles` step.
+      abort.signal
     );
     // Surface the replay shape for triage. A non-fresh conversation MUST
     // produce `priorEventCount > 0` AND `replayedMessageCount > 0`; a
@@ -348,7 +362,7 @@ export async function startRun(
     // Do NOT re-add a pre-loop emit — if a future change needs to
     // surface a phase before iteration 0 (e.g. envelope-refresh wait)
     // pick a distinct `phase` label, not `connecting`.
-    await runOrchestratorLoop({
+    const loopResult = await runOrchestratorLoop({
       input,
       workspacePath,
       workspaceId: resolvedWorkspaceId,
@@ -359,13 +373,17 @@ export async function startRun(
       permissions: input.permissions,
       strictApprovals
     });
+    if (loopResult.terminalError) {
+      deps.onError(loopResult.terminalError);
+    }
     deps.onDone();
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: msg });
     deps.onError(msg);
+    deps.onDone();
   } finally {
-    activeRuns.delete(input.runId);
+    removeActiveRunIfCurrent(input.runId, generation);
     // Clear the "Accept all remaining edits in this run" latch the
     // user may have flipped during this run. The map keys on `runId`
     // so cross-run leakage is impossible, but we still drop the
@@ -403,7 +421,15 @@ async function buildInitialMessages(
    * current prompt isn't double-counted, without dropping prior
    * identical prompts (e.g. the user typing `"yes"` twice).
    */
-  currentPromptId?: string
+  currentPromptId?: string,
+  /**
+   * Audit fix 2026-08-P2-1 / 13-P2-1: optional run-scoped abort signal.
+   * Threaded into `inlineFiles` below so a user who aborts a long
+   * `chat:send` (50-file delegate spec, 5 MB attached log) stops paying
+   * FS cost mid-prompt-assembly. Optional so direct callers / tests
+   * keep the legacy four-arg shape.
+   */
+  signal?: AbortSignal
 ): Promise<ChatMessage[]> {
   // Audit fix M-09: single-pass partition of the prior transcript.
   // Previously this site walked `priorTranscript` THREE times — once
@@ -474,7 +500,10 @@ async function buildInitialMessages(
     input.attachments && input.attachments.length > 0
       ? wrapXml(
         'attached_files',
-        await inlineFiles(workspacePath, input.attachments),
+        // Audit fix 2026-08-P2-1 / 13-P2-1: pass the run signal into
+        // `inlineFiles` so a long-running attachment read aborts
+        // alongside the rest of the orchestrator pipeline.
+        await inlineFiles(workspacePath, input.attachments, undefined, signal),
         undefined,
         { escape: true }
       )

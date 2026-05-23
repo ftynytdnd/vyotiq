@@ -4,10 +4,12 @@
  * Layout matches `CheckpointsView`'s `RunsTab` / `FilesTab` pattern:
  * a small `Eyebrow` header above a max-height scroll surface using
  * the shared `scrollbar-stealth` utility. No card chrome around the
- * list itself — each row is a flat `border-b` row from `MessageRow`.
+ * list itself — each row is a compact `SurfaceShell` from `MessageRow`.
  */
 
 import { Eyebrow } from '../ui/Eyebrow.js';
+import { cn } from '../../lib/cn.js';
+import { surfaceListClassName } from '../ui/SurfaceShell.js';
 import { MessageRow } from './MessageRow.js';
 import type { ContextInspectorMessage } from '@shared/types/contextSummary.js';
 
@@ -34,7 +36,7 @@ export function MessageList({ messages, conversationId }: MessageListProps) {
           {messages.length} {messages.length === 1 ? 'entry' : 'entries'}
         </span>
       </div>
-      <ul className="scrollbar-stealth flex max-h-[44vh] flex-col overflow-y-auto pr-1">
+      <ul className={cn('scrollbar-stealth flex max-h-[32vh] flex-col overflow-y-auto pr-1', surfaceListClassName)}>
         {messages.map((m) => (
           <MessageRow key={m.messageId} message={m} conversationId={conversationId} />
         ))}

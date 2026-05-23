@@ -7,22 +7,23 @@ import {
   workspaceHasPermissionOverride
 } from '../../store/useSettingsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
+import { useSecondaryZoneStore } from '../../store/useSecondaryZoneStore.js';
 import { Popover } from '../ui/Popover.js';
 import { Eyebrow } from '../ui/Eyebrow.js';
+import { Switch } from '../ui/Switch.js';
 
 /**
- * PermissionsMenu — composer toolbar control that gates writes / bash /
- * web search. Renders the dropdown body via the portal-based `Popover`
- * primitive so it escapes the composer's `overflow-hidden` clip (the
- * earlier inline `absolute bottom-full` block hid the top toggle rows
- * behind the composer's rounded panel).
+ * PermissionsMenu — composer toolbar control for the per-workspace
+ * Fully Auto Mode toggle. Renders the dropdown body via the
+ * portal-based `Popover` primitive so it escapes the composer's
+ * `overflow-hidden` clip.
  *
  * Permissions resolve PER-WORKSPACE — toggling here writes a
  * `permissionsByWorkspace[activeWorkspaceId]` override on top of the
  * global `settings.permissions` block. The user's mental model is
- * "this folder is sandboxed / safe / unsafe", a property of the
- * workspace itself. The Settings→Permissions tab is where the user
- * adjusts the global default that workspaces inherit.
+ * "I trust this folder" (or not), a property of the workspace itself.
+ * The Settings→Permissions tab is where the user adjusts the global
+ * default that workspaces inherit.
  */
 export function PermissionsMenu() {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
@@ -37,16 +38,15 @@ export function PermissionsMenu() {
     (s) => s.clearWorkspacePermissions
   );
   const setPermissions = useSettingsStore((s) => s.setPermissions);
+  const openGlobalPermissions = useSecondaryZoneStore((s) => s.openSettings);
 
   const perms = selectEffectivePermissions(activeWorkspaceId, settings);
   const hasOverride = workspaceHasPermissionOverride(activeWorkspaceId, settings);
-  const allOn = perms.allowFileWrites && perms.allowBash && perms.allowWebSearch;
-  const allOff = !perms.allowFileWrites && !perms.allowBash && !perms.allowWebSearch;
 
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const summary = allOn ? 'Full access' : allOff ? 'Locked' : 'Custom';
+  const summary = perms.allowAuto ? 'Auto' : 'Confirm';
 
   // Toggle handler routes to the per-workspace override when a
   // workspace is active; otherwise it falls through to the global
@@ -69,7 +69,7 @@ export function PermissionsMenu() {
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={`Permissions: ${summary}`}
+        title={`Permissions: ${perms.allowAuto ? 'Fully Auto Mode on' : 'Confirm each gated action'}`}
         className={cn(
           'app-no-drag inline-flex h-6 shrink-0 items-center gap-1 rounded-inner px-1.5 text-meta',
           'bg-surface-overlay text-text-muted transition-colors duration-150',
@@ -77,10 +77,10 @@ export function PermissionsMenu() {
           open && 'bg-surface-hover text-text-primary'
         )}
       >
-        {allOff ? (
-          <ShieldAlert className="h-3 w-3" strokeWidth={2.25} />
-        ) : (
+        {perms.allowAuto ? (
           <ShieldCheck className="h-3 w-3" strokeWidth={2.25} />
+        ) : (
+          <ShieldAlert className="h-3 w-3" strokeWidth={2.25} />
         )}
         <span>{summary}</span>
         <ChevronDown className="h-2.5 w-2.5 shrink-0" strokeWidth={2.25} />
@@ -102,23 +102,32 @@ export function PermissionsMenu() {
               {activeWorkspaceLabel}
             </Eyebrow>
           )}
+          {/*
+            Single toggle replaces the legacy three-flag PermissionsMenu
+            (writes / bash / web search). When ON, gated tool calls run
+            without confirmation; when OFF, each one prompts the user.
+          */}
           <Toggle
-            label="Allow file writes (edit)"
-            value={perms.allowFileWrites}
-            onChange={(v) => onToggle({ allowFileWrites: v })}
-          />
-          <Toggle
-            label="Allow shell commands (bash)"
-            value={perms.allowBash}
-            onChange={(v) => onToggle({ allowBash: v })}
-          />
-          <Toggle
-            label="Allow web search"
-            value={perms.allowWebSearch}
-            onChange={(v) => onToggle({ allowWebSearch: v })}
+            label="Trust this workspace (Fully Auto Mode)"
+            value={perms.allowAuto}
+            onChange={(v) => onToggle({ allowAuto: v })}
           />
           <div className="mt-2 px-2 text-meta text-text-faint">
-            Disabled tools will trigger a confirmation prompt instead of running.
+            {perms.allowAuto
+              ? 'Edits, deletes, shell commands, web search, and reports run without asking.'
+              : 'Edits, deletes, shell commands, web search, and reports prompt for confirmation.'}
+          </div>
+          <div className="mt-2 border-t border-border-subtle/40 px-2 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                openGlobalPermissions('permissions');
+              }}
+              className="text-row text-text-secondary transition-colors duration-150 hover:text-text-primary"
+            >
+              Open global permissions settings…
+            </button>
           </div>
           {/*
             "Reset to global" — only surfaces when the active workspace
@@ -152,28 +161,10 @@ function Toggle({
   value: boolean;
   onChange: (v: boolean) => void;
 }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!value)}
-      role="switch"
-      aria-checked={value}
-      className="flex w-full items-center justify-between rounded-inner px-2 py-1.5 text-row text-text-secondary transition-colors duration-150 hover:bg-surface-hover"
-    >
-      <span>{label}</span>
-      <span
-        className={cn(
-          'relative h-4 w-7 rounded-full transition-colors duration-150',
-          value ? 'bg-accent' : 'bg-border-strong'
-        )}
-      >
-        <span
-          className={cn(
-            'absolute top-0.5 h-3 w-3 rounded-full bg-surface-base transition-all duration-150',
-            value ? 'left-3.5' : 'left-0.5'
-          )}
-        />
-      </span>
-    </button>
-  );
+  // `Switch` in inline-row mode renders the entire row as a single
+  // `<button role="switch">` — label on the left, pill on the right,
+  // hover-affordance on the whole surface. That matches the legacy
+  // hand-rolled control byte-for-byte while centralizing the
+  // visual + a11y semantics inside the shared primitive.
+  return <Switch size="sm" label={label} value={value} onChange={onChange} />;
 }

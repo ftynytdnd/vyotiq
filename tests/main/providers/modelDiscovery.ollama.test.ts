@@ -162,16 +162,54 @@ describe('detectDialect — auto-probe', () => {
     expect(openaiCalls.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('falls back to "ollama-native" when /v1/models is 404 but /api/tags is 200', async () => {
+  it('falls back to "ollama-native" when /v1/models is 404 but /api/tags is 200 (non-well-known host)', async () => {
+    // Phase 8/9 (2026): well-known hosts (api.anthropic.com,
+    // generativelanguage.googleapis.com, ollama.com) short-circuit
+    // the probe race via `classifyKnownHost`. This test exercises the
+    // probe-race fallback path that ALL OTHER hosts still take — we
+    // use a self-hosted Ollama daemon URL to keep the assertion
+    // meaningful.
     const { calls } = mockFetchSequence([
       () => new Response('not found', { status: 404, statusText: 'Not Found' }),
       () => jsonResponse(200, { models: [] })
     ]);
-    const dialect = await detectDialect('https://ollama.com', 'k');
+    const dialect = await detectDialect('http://localhost:11434', 'k');
     expect(dialect).toBe('ollama-native');
     expect(calls).toHaveLength(2);
     expect(calls[0]!.url).toContain('/v1/models');
     expect(calls[1]!.url).toContain('/api/tags');
+  });
+
+  it('short-circuits to "ollama-native" for Ollama Cloud without probing', async () => {
+    // Phase 8/9 (2026): `https://ollama.com` is in the well-known
+    // host table, so detectDialect returns the dialect directly
+    // without any HTTP traffic — saves a roundtrip per add and
+    // avoids the false-negative outcome where a transient 5xx on
+    // ollama.com pushes the user through the probe race and
+    // persists a wrong dialect.
+    const { calls } = mockFetchSequence([]);
+    const dialect = await detectDialect('https://ollama.com', 'k');
+    expect(dialect).toBe('ollama-native');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('short-circuits to "anthropic-native" for api.anthropic.com without probing', async () => {
+    // Phase 8 (2026) — same well-known short-circuit, Anthropic side.
+    const { calls } = mockFetchSequence([]);
+    const dialect = await detectDialect('https://api.anthropic.com', 'sk-ant-…');
+    expect(dialect).toBe('anthropic-native');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('short-circuits to "gemini-native" for generativelanguage.googleapis.com without probing', async () => {
+    // Phase 9 (2026) — same well-known short-circuit, Gemini side.
+    const { calls } = mockFetchSequence([]);
+    const dialect = await detectDialect(
+      'https://generativelanguage.googleapis.com',
+      'AIza…'
+    );
+    expect(dialect).toBe('gemini-native');
+    expect(calls).toHaveLength(0);
   });
 
   it('throws when neither endpoint is reachable', async () => {
@@ -195,33 +233,38 @@ describe('detectDialect — auto-probe', () => {
     expect(dialect).toBe('ollama-native');
   });
 
-  it('normalizes a trailing /api on the user-supplied base URL before probing (Ollama Cloud)', async () => {
-    // Regression: PROVIDERS_ADD ran `detectDialect(rawUrl, …)` BEFORE
-    // any normalization had a chance to remove a trailing dialect
-    // suffix. So a user pasting `https://ollama.com/api` got probed
-    // and persisted with mismatched URLs. The current dialect-aware
-    // path normalizes the probe URL against EACH dialect:
+  it('normalizes a trailing /api on the user-supplied base URL before probing (self-hosted)', async () => {
+    // Regression (originally for Ollama Cloud): PROVIDERS_ADD ran
+    // `detectDialect(rawUrl, …)` BEFORE any normalization had a
+    // chance to remove a trailing dialect suffix. So a user pasting
+    // `<host>/api` got probed and persisted with mismatched URLs.
+    // The current dialect-aware path normalizes the probe URL
+    // against EACH dialect:
     //
     //   - OpenAI probe URL: `normalizeBaseUrl(raw, 'openai')` strips
-    //     only `/v1`, so `https://ollama.com/api` is preserved and
-    //     the probe goes to `https://ollama.com/api/v1/models`.
-    //     This 404s on Ollama Cloud (it doesn't speak OpenAI), which
-    //     is exactly what we want — the probe falls through to:
+    //     only `/v1`, so `<host>/api` is preserved and the probe
+    //     goes to `<host>/api/v1/models`. This 404s on a native-
+    //     only daemon, which is exactly what we want — the probe
+    //     falls through to:
     //   - Ollama-native probe URL: `normalizeBaseUrl(raw,
     //     'ollama-native')` strips `/api`, so the probe goes to
-    //     `https://ollama.com/api/tags` (the canonical native
-    //     endpoint), which returns 200 and locks the dialect.
+    //     `<host>/api/tags` (the canonical native endpoint), which
+    //     returns 200 and locks the dialect.
     //
-    // The "doubled `/api/api`" bug the old path was vulnerable to is
-    // structurally impossible with the dialect-aware rule.
+    // The "doubled `/api/api`" bug the old path was vulnerable to
+    // is structurally impossible with the dialect-aware rule.
+    //
+    // Phase 8/9 (2026): we use a self-hosted host (`ollama.local`)
+    // instead of `ollama.com` to bypass the well-known short-circuit
+    // and actually exercise the probe race.
     const { calls } = mockFetchSequence([
       () => new Response('not found', { status: 404, statusText: 'Not Found' }),
       () => jsonResponse(200, { models: [] })
     ]);
-    const dialect = await detectDialect('https://ollama.com/api', 'k');
+    const dialect = await detectDialect('https://ollama.local/api', 'k');
     expect(dialect).toBe('ollama-native');
-    expect(calls[0]!.url).toBe('https://ollama.com/api/v1/models');
-    expect(calls[1]!.url).toBe('https://ollama.com/api/tags');
+    expect(calls[0]!.url).toBe('https://ollama.local/api/v1/models');
+    expect(calls[1]!.url).toBe('https://ollama.local/api/tags');
   });
 
   it('preserves a trailing /api on the OpenAI probe (OpenRouter regression)', async () => {

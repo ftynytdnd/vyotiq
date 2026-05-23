@@ -16,7 +16,7 @@
  * this component just calls into it.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Plus, RefreshCcw, Save, FilePlus2, FolderOpen } from 'lucide-react';
 import type { MemoryEntry } from '@shared/types/ipc.js';
 import { vyotiq } from '../../lib/ipc.js';
@@ -26,6 +26,7 @@ import { ConfirmDialog } from '../ui/ConfirmDialog.js';
 import { PromptDialog } from '../ui/PromptDialog.js';
 import { TextField } from '../ui/TextField.js';
 import { Eyebrow } from '../ui/Eyebrow.js';
+import { Tabs, type TabItem } from '../ui/Tabs.js';
 import { MarkdownBody } from '../timeline/markdown/MarkdownBody.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
@@ -34,18 +35,29 @@ import { cn } from '../../lib/cn.js';
 type Scope = 'global' | 'workspace';
 type ViewMode = 'edit' | 'preview';
 
+const SCOPE_TABS: TabItem<Scope>[] = [
+  { id: 'global', label: 'Global meta-rules' },
+  { id: 'workspace', label: 'Workspace notes' }
+];
+
+const VIEW_MODE_TABS: TabItem<ViewMode>[] = [
+  { id: 'edit', label: 'Edit' },
+  { id: 'preview', label: 'Preview' }
+];
+
 interface DraftState {
   key: string;
   content: string;
   dirty: boolean;
 }
 
-export function MemoryPanel() {
+export function MemoryPanel({ layout = 'split' }: { layout?: 'split' | 'stack' }) {
   const ws = useWorkspaceStore((s) => s.info);
   const showToast = useToastStore((s) => s.show);
   const [scope, setScope] = useState<Scope>('global');
   const [list, setList] = useState<MemoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [contentLoading, setContentLoading] = useState(false);
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftState | null>(null);
   const [appendDraft, setAppendDraft] = useState('');
@@ -56,8 +68,22 @@ export function MemoryPanel() {
   const workspaceReady = !!ws.path;
   const isWorkspaceScope = scope === 'workspace';
 
-  const refresh = useMemo(
-    () => async (preserveKey?: string) => {
+  const loadEntry = useCallback(async (key: string) => {
+    setContentLoading(true);
+    try {
+      const entry = await vyotiq.memory.read(scope, key);
+      if (!entry) {
+        setDraft(null);
+        return;
+      }
+      setDraft({ key: entry.key, content: entry.content, dirty: false });
+    } finally {
+      setContentLoading(false);
+    }
+  }, [scope]);
+
+  const refresh = useCallback(
+    async (preserveKey?: string) => {
       if (isWorkspaceScope && !workspaceReady) {
         setList([]);
         setActiveKey(null);
@@ -66,17 +92,15 @@ export function MemoryPanel() {
       }
       setLoading(true);
       try {
-        const entries = await vyotiq.memory.list(scope);
+        const entries = await vyotiq.memory.list(
+          scope,
+          isWorkspaceScope ? { keysOnly: true } : undefined
+        );
         setList(entries);
         const next = preserveKey ?? entries[0]?.key ?? null;
         setActiveKey(next);
         if (next) {
-          const found = entries.find((e) => e.key === next);
-          if (found) {
-            setDraft({ key: found.key, content: found.content, dirty: false });
-          } else {
-            setDraft(null);
-          }
+          await loadEntry(next);
         } else {
           setDraft(null);
         }
@@ -84,7 +108,7 @@ export function MemoryPanel() {
         setLoading(false);
       }
     },
-    [scope, isWorkspaceScope, workspaceReady]
+    [scope, isWorkspaceScope, workspaceReady, loadEntry]
   );
 
   useEffect(() => {
@@ -97,8 +121,7 @@ export function MemoryPanel() {
       return;
     }
     setActiveKey(key);
-    const found = list.find((e) => e.key === key);
-    if (found) setDraft({ key: found.key, content: found.content, dirty: false });
+    void loadEntry(key);
   };
 
   const confirmSelect = () => {
@@ -106,8 +129,7 @@ export function MemoryPanel() {
     setPendingSelectKey(null);
     if (!key) return;
     setActiveKey(key);
-    const found = list.find((e) => e.key === key);
-    if (found) setDraft({ key: found.key, content: found.content, dirty: false });
+    void loadEntry(key);
   };
 
   const onSave = async () => {
@@ -172,8 +194,13 @@ export function MemoryPanel() {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <ScopeTab label="Global meta-rules" active={scope === 'global'} onClick={() => setScope('global')} />
-        <ScopeTab label="Workspace notes" active={scope === 'workspace'} onClick={() => setScope('workspace')} />
+        <Tabs<Scope>
+          items={SCOPE_TABS}
+          value={scope}
+          onChange={setScope}
+          variant="strip"
+          ariaLabel="Memory scope"
+        />
         <div className="ml-auto flex items-center gap-2">
           <Button size="sm" variant="ghost" onClick={() => void refresh(activeKey ?? undefined)} disabled={loading}>
             <RefreshCcw className="h-3.5 w-3.5" strokeWidth={2.25} />
@@ -187,8 +214,18 @@ export function MemoryPanel() {
           Pick a workspace first. Workspace notes live inside <span className="font-mono">.vyotiq/memory/</span>.
         </div>
       ) : (
-        <div className="grid grid-cols-[180px_1fr] gap-3">
-          <div className="flex max-h-[420px] flex-col gap-1 overflow-y-auto rounded-card bg-surface-overlay p-2">
+        <div
+          className={cn(
+            'gap-3',
+            layout === 'stack' ? 'flex flex-col' : 'grid grid-cols-[180px_1fr]'
+          )}
+        >
+          <div
+            className={cn(
+              'flex flex-col gap-1 overflow-y-auto rounded-card bg-surface-overlay p-2',
+              layout === 'stack' ? 'max-h-36' : 'max-h-[420px]'
+            )}
+          >
             {loading && (
               <div className="flex items-center gap-2 px-2 py-1 text-row text-text-muted">
                 <Spinner /> Loading…
@@ -236,12 +273,19 @@ export function MemoryPanel() {
           <div className="flex flex-col gap-2">
             {draft ? (
               <>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="truncate font-mono text-row text-text-secondary">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0 truncate font-mono text-row text-text-secondary">
                     {draft.key}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <ViewModeToggle value={viewMode} onChange={setViewMode} />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Tabs<ViewMode>
+                      items={VIEW_MODE_TABS}
+                      value={viewMode}
+                      onChange={setViewMode}
+                      variant="segmented"
+                      size="sm"
+                      ariaLabel="Note view mode"
+                    />
                     <Button
                       size="sm"
                       variant="ghost"
@@ -270,15 +314,17 @@ export function MemoryPanel() {
                     }
                     spellCheck={false}
                     className={cn(
-                      'h-[360px] w-full resize-none rounded-inner bg-surface-base p-3',
+                      'w-full resize-none rounded-inner bg-surface-base p-3',
                       'font-mono text-row leading-relaxed text-text-primary',
-                      'outline-none focus:outline-none'
+                      'outline-none focus:outline-none',
+                      layout === 'stack' ? 'h-[240px]' : 'h-[360px]'
                     )}
                   />
                 ) : (
                   <div
                     className={cn(
-                      'scrollbar-stealth h-[360px] w-full overflow-y-auto rounded-inner bg-surface-base p-3'
+                      'scrollbar-stealth w-full overflow-y-auto rounded-inner bg-surface-base p-3',
+                      layout === 'stack' ? 'h-[240px]' : 'h-[360px]'
                     )}
                   >
                     {draft.content.trim().length === 0 ? (
@@ -295,9 +341,9 @@ export function MemoryPanel() {
                     <Eyebrow as="span" size="row">
                       Append a new rule (date-stamped)
                     </Eyebrow>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                       <TextField
-                        className="flex-1"
+                        className="min-w-0 flex-1"
                         value={appendDraft}
                         onChange={(e) => setAppendDraft(e.target.value)}
                         placeholder='e.g. "Prefer TypeScript over JavaScript."'
@@ -317,7 +363,7 @@ export function MemoryPanel() {
               </>
             ) : (
               <div className="rounded-card bg-surface-overlay px-4 py-6 text-center text-row text-text-muted">
-                {loading ? 'Loading…' : 'Select an entry on the left.'}
+                {loading || contentLoading ? 'Loading…' : 'Select an entry above.'}
               </div>
             )}
           </div>
@@ -360,71 +406,3 @@ export function MemoryPanel() {
   );
 }
 
-function ViewModeToggle({
-  value,
-  onChange
-}: {
-  value: ViewMode;
-  onChange: (next: ViewMode) => void;
-}) {
-  return (
-    <div className="inline-flex items-center rounded-inner bg-surface-overlay p-0.5">
-      <ViewModeButton active={value === 'edit'} onClick={() => onChange('edit')}>
-        Edit
-      </ViewModeButton>
-      <ViewModeButton active={value === 'preview'} onClick={() => onChange('preview')}>
-        Preview
-      </ViewModeButton>
-    </div>
-  );
-}
-
-function ViewModeButton({
-  active,
-  onClick,
-  children
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'rounded-line px-2 py-0.5 text-row transition-colors duration-150',
-        active
-          ? 'bg-surface-raised text-text-primary'
-          : 'text-text-muted hover:text-text-primary'
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function ScopeTab({
-  label,
-  active,
-  onClick
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'rounded-inner px-2.5 py-1 text-row transition-colors duration-150',
-        active
-          ? 'bg-surface-overlay text-text-primary'
-          : 'text-text-muted hover:bg-surface-hover hover:text-text-primary'
-      )}
-    >
-      {label}
-    </button>
-  );
-}

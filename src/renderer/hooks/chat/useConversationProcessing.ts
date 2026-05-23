@@ -4,9 +4,9 @@
  * Returns the `{ isProcessing, runId }` for the slice keyed by `id`,
  * subscribing with a tuple-equality comparator so unrelated slice
  * mutations (events landing in OTHER conversations) never re-render
- * the consumer. This is the building block for any sidebar / composer
- * affordance that mirrors a conversation's run state without driving
- * the whole timeline through it.
+ * the consumer. Building block for dock tabs and composer affordances
+ * that mirror a conversation's run state without driving the whole
+ * timeline through them.
  *
  * Returns `{ isProcessing: false, runId: null }` for an unknown id —
  * callers can render an "idle" branch unconditionally without a guard

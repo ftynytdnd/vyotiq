@@ -31,9 +31,7 @@ import type { ChatPermissions } from '@shared/types/chat';
 import { bashTool } from '@main/tools/bash.tool';
 
 const PERM_ALLOW: ChatPermissions = {
-  allowFileWrites: true,
-  allowBash: true,
-  allowWebSearch: false
+  allowAuto: true
 };
 
 function makeCtx(workspacePath: string) {

@@ -31,6 +31,7 @@ import { isTimelineEvent } from '../components/timeline/reducer/runtimeGuards.js
 import { createRafBatcher } from '../lib/rafBatch.js';
 import { logger } from '../lib/logger.js';
 import { PartialJsonParser } from '@shared/text/partialJsonParser.js';
+import { tokenizeForModel } from '@shared/text/tokenizeForModel.js';
 
 const log = logger.child('chatChannel');
 
@@ -115,6 +116,73 @@ function textBatchKey(
  * tests without breaking the IIFE encapsulation contract.
  */
 const textDeltaAccumulators = new Map<string, TextDeltaAccumulator>();
+
+/**
+ * Synthetic mid-stream completion-token counter state (Phase 3, 2026).
+ *
+ * Tracks the cumulative completion-stream chars (text + reasoning)
+ * per `(runId, owner)` since the last authoritative `token-usage`
+ * event. Each RAF drain of the text-delta accumulator above also
+ * tokenizes the running total and dispatches a `synthetic-usage-update`
+ * event into the reducer so the composer pill / Inspector chip can
+ * grow live during long generations.
+ *
+ * Reset triggers:
+ *   - Authoritative `token-usage` event for the same owner (the
+ *     reducer already clears `inFlight`; we mirror that here so the
+ *     next delta starts from 0).
+ *   - `agent-text-end` / `agent-text-aborted` / `agent-reasoning-end`
+ *     for the same id (matches the text-delta accumulator lifecycle).
+ *   - Run termination (`chat:done`, `chat:error`).
+ *   - HMR teardown.
+ *
+ * `owner` is the synthetic discriminator `'orc'` for orchestrator
+ * deltas and the literal `subagentId` for sub-agent deltas, mirroring
+ * the same convention used by the parser pool's surrogate callId
+ * keys (`pending:${owner}:${index}`).
+ *
+ * Each entry tracks `charsTotal` (cumulative chars since the last
+ * reset). On each drain we call `tokenizeForModel(modelId, '...')`
+ * and emit the resulting count. We DO NOT cache the tokenized count
+ * here because the model id can change across runs and the
+ * tokenization is O(chars) anyway.
+ */
+interface SyntheticUsageEntry {
+  runId: string;
+  /** `'orc'` for orchestrator turns, or the sub-agent's id. */
+  owner: string;
+  /** Cumulative completion-stream chars since the last reset. */
+  charsTotal: number;
+  /** First-delta timestamp; reused as the synthetic event's `ts`. */
+  firstSeenTs: number;
+  /** Stable event id for the synthetic-usage-update sequence; lets the
+   *  reducer's appendEvent dedup logic see a consistent stream. */
+  syntheticId: string;
+  /**
+   * Audit fix 2026-13-P2-2: incremental tokenization state. Pre-fix
+   * `drainSyntheticUsage` re-tokenized the FULL `'a'.repeat(charsTotal)`
+   * on every RAF drain — O(n²) work over a long stream
+   * (1k → 2k → 3k → … each call retokenizes the whole window). The
+   * pair below caches the last `(charsTotal, tokens)` snapshot so each
+   * drain only pays for the new delta:
+   *
+   *   delta = charsTotal - lastTokenizedChars
+   *   tokens = lastTokenizedTokens + tokenizeForModel(model, 'a'.repeat(delta))
+   *
+   * For BPE-encoded synthetic chars this is approximately additive; any
+   * boundary drift is washed out within one turn boundary by the
+   * authoritative `token-usage` event the reducer applies at end-of-
+   * turn.
+   */
+  lastTokenizedChars: number;
+  lastTokenizedTokens: number;
+}
+const SYNTHETIC_USAGE_SEP = '\u0000';
+function syntheticUsageKey(runId: string, owner: string): string {
+  return `${runId}${SYNTHETIC_USAGE_SEP}${owner}`;
+}
+const syntheticUsageAccumulators = new Map<string, SyntheticUsageEntry>();
+let syntheticUsageEventCounter = 0;
 
 /**
  * Per-`(runId, callId)` parser pool. Keys are `${runId}\u0000${callId}`
@@ -214,7 +282,7 @@ function reconcileToolCallParser(
   if (lowestKey !== null) parserPool.delete(lowestKey);
 }
 
-export function bootstrapChatChannel(): void {
+export async function bootstrapChatChannel(): Promise<void> {
   if (typeof window === 'undefined' || !window.vyotiq) return;
 
   // Tear down any previous subscriptions (HMR).
@@ -225,6 +293,18 @@ export function bootstrapChatChannel(): void {
     // Wipe the parser pool too — the previous boot's parsers reference
     // closures from the prior module instance and would leak otherwise.
     parserPool.clear();
+  }
+
+  // Rehydrate BEFORE subscribing so events from in-flight main-process
+  // runs are not dropped while `runIdToConv` is still empty.
+  try {
+    const infos = await vyotiq.chat.listActiveRuns();
+    if (Array.isArray(infos) && infos.length > 0) {
+      log.info('rehydrating active runs from main', { count: infos.length });
+      useChatStore.getState().rehydrateActiveRuns(infos);
+    }
+  } catch (err) {
+    log.debug('listActiveRuns failed during boot rehydration', { err });
   }
 
   const unsub: Array<() => void> = [];
@@ -306,9 +386,127 @@ export function bootstrapChatChannel(): void {
     }
   };
 
+  /**
+   * Synthetic-usage helpers. Called from both `enqueueTextDelta` (to
+   * grow the running char total) and `drainTextDeltas` (to dispatch
+   * the resulting token count into the reducer). Boundary / terminal
+   * flushers reset the per-owner counter.
+   */
+  const ownerOfDelta = (event: { subagentId?: string }): string =>
+    event.subagentId ?? 'orc';
+
+  /** Add `chars` to the running counter for `(runId, owner)`. */
+  const bumpSyntheticUsage = (
+    runId: string,
+    owner: string,
+    chars: number,
+    ts: number
+  ): void => {
+    if (chars <= 0) return;
+    const key = syntheticUsageKey(runId, owner);
+    const cur = syntheticUsageAccumulators.get(key);
+    if (cur) {
+      cur.charsTotal += chars;
+    } else {
+      syntheticUsageAccumulators.set(key, {
+        runId,
+        owner,
+        charsTotal: chars,
+        firstSeenTs: ts,
+        // Stable id keeps the synthetic event identifiable across
+        // frames; the reducer doesn't use it for dedup (the event
+        // isn't appended to `events`), but it makes test traces and
+        // dev logs less noisy.
+        syntheticId: `syn-${++syntheticUsageEventCounter}`,
+        // Audit fix 2026-13-P2-2 — incremental tokenizer state seeds
+        // at zero so the first drain tokenizes the full `charsTotal`
+        // exactly once; subsequent drains pay only for the delta.
+        lastTokenizedChars: 0,
+        lastTokenizedTokens: 0
+      });
+    }
+  };
+
+  /**
+   * Dispatch synthetic-usage-update events for every `(runId, owner)`
+   * with non-zero accumulated chars. Tokenizes via `tokenizeForModel`
+   * using the runId's model (looked up from `useChatStore.runIdToModel`)
+   * — falls back to chars/3.8 inside the tokenizer when the model is
+   * unknown (rehydrated runs).
+   *
+   * Pure dispatch — does NOT reset `charsTotal` on its own. Resets
+   * happen on authoritative `token-usage` / `agent-text-end` /
+   * `agent-text-aborted` / `agent-reasoning-end` / terminal run
+   * events. This is important: a long generation must emit a
+   * monotonically-growing running total, not a per-frame delta.
+   */
+  const drainSyntheticUsage = (): void => {
+    if (syntheticUsageAccumulators.size === 0) return;
+    const store = useChatStore.getState();
+    for (const entry of syntheticUsageAccumulators.values()) {
+      const modelId = store.runIdToModel[entry.runId] ?? '';
+      // Audit fix 2026-13-P2-2: tokenize ONLY the delta since the last
+      // drain, not the full accumulated window. Pre-fix this site
+      // re-tokenized 'a'.repeat(charsTotal) on every drain, producing
+      // O(n²) work over a long stream. Now each drain pays for the
+      // new chars only and adds the result to the cached running
+      // total — bringing the total work back to O(n).
+      //
+      // The text content remains a placeholder ('a' repeated): the
+      // streamed prose already flowed into the reducer via
+      // `flushTextEntry`, and the synthetic estimate is replaced by
+      // the authoritative `token-usage` event at end-of-turn anyway,
+      // so we don't need byte-perfect tokenization here.
+      let completionTokens: number;
+      const deltaChars = entry.charsTotal - entry.lastTokenizedChars;
+      if (deltaChars <= 0) {
+        completionTokens = entry.lastTokenizedTokens;
+      } else {
+        const deltaTokens = tokenizeForModel(modelId, 'a'.repeat(deltaChars));
+        completionTokens = entry.lastTokenizedTokens + deltaTokens;
+        entry.lastTokenizedChars = entry.charsTotal;
+        entry.lastTokenizedTokens = completionTokens;
+      }
+      const event = {
+        kind: 'synthetic-usage-update' as const,
+        id: entry.syntheticId,
+        ts: entry.firstSeenTs,
+        completionTokens,
+        ...(entry.owner === 'orc' ? {} : { subagentId: entry.owner })
+      };
+      try {
+        store.applyEvent(entry.runId, event);
+      } catch (err) {
+        log.warn('synthetic-usage dispatch threw', { runId: entry.runId, err });
+      }
+    }
+  };
+
+  /** Reset the synthetic counter for one `(runId, owner)` slot. The
+   *  next delta on the same owner starts from zero. */
+  const resetSyntheticForOwner = (runId: string, owner: string): void => {
+    syntheticUsageAccumulators.delete(syntheticUsageKey(runId, owner));
+  };
+
+  /** Reset every synthetic counter for `runId`. Called on terminal
+   *  events (`chat:done`, `chat:error`) and on certain run-wide
+   *  boundaries. */
+  const resetSyntheticForRun = (runId: string): void => {
+    const prefix = `${runId}${SYNTHETIC_USAGE_SEP}`;
+    for (const key of syntheticUsageAccumulators.keys()) {
+      if (key.startsWith(prefix)) syntheticUsageAccumulators.delete(key);
+    }
+  };
+
   const drainTextDeltas = () => {
     textDeltaRafHandle = null;
-    if (textDeltaAccumulators.size === 0) return;
+    if (textDeltaAccumulators.size === 0) {
+      // Even without text deltas to drain we may have a pending
+      // synthetic update — e.g. a late RAF after the last flush.
+      // Cheap no-op when empty.
+      drainSyntheticUsage();
+      return;
+    }
     for (const [k, entry] of textDeltaAccumulators) {
       flushTextEntry(entry);
       // Keep the entry around with an empty `buf` so the next delta
@@ -323,6 +521,10 @@ export function bootstrapChatChannel(): void {
         textDeltaAccumulators.delete(k);
       }
     }
+    // Synthetic usage runs AFTER the text dispatch so the reducer's
+    // visible state has both the latest text AND the matching
+    // inFlight token estimate applied in the same React commit.
+    drainSyntheticUsage();
   };
 
   const scheduleTextDrain = (): void => {
@@ -335,6 +537,10 @@ export function bootstrapChatChannel(): void {
    * first sight; subsequent deltas just append to `buf`. The first
    * scheduling request flips `textDeltaRafHandle` so we get at
    * most one frame callback per `(runId, id, kind)` family.
+   *
+   * Also bumps the synthetic-usage char counter for the matching
+   * `(runId, owner)` so the next RAF drain can emit an updated
+   * `synthetic-usage-update` event.
    */
   const enqueueTextDelta = (
     runId: string,
@@ -354,6 +560,7 @@ export function bootstrapChatChannel(): void {
         buf: event.delta
       });
     }
+    bumpSyntheticUsage(runId, ownerOfDelta(event), event.delta.length, event.ts);
     scheduleTextDrain();
   };
 
@@ -445,11 +652,31 @@ export function bootstrapChatChannel(): void {
           event.kind === 'agent-text-aborted'
         ) {
           flushTextForId(runId, event.id);
+          // Phase 3 (2026): the synthetic counter for this owner
+          // closes alongside the text stream so the next turn (or
+          // sub-agent iteration) starts from zero. `agent-text-end`
+          // marks the canonical close; `-aborted` is an early stop;
+          // `agent-reasoning-end` typically precedes a still-open
+          // text stream, so we DON'T reset on it (the text stream
+          // is still alive and its own `-end` will close us). For
+          // simplicity + correctness we still reset on `-end` and
+          // `-aborted` only.
+          if (event.kind !== 'agent-reasoning-end') {
+            resetSyntheticForOwner(runId, event.subagentId ?? 'orc');
+          }
         } else {
           // Any other event kind is an implicit boundary for ALL
           // in-flight text/reasoning streams in this run. Matches
           // the main-side coalescer's implicit-boundary rule.
           flushAllTextForRun(runId);
+        }
+        // Phase 3 (2026): authoritative `token-usage` arrival
+        // supersedes our synthetic estimate. The reducer's
+        // `foldTokenUsage` already drops `inFlight`; we drop the
+        // per-owner char counter in lockstep so the next delta
+        // (for the next turn) starts from zero.
+        if (event.kind === 'token-usage') {
+          resetSyntheticForOwner(runId, event.subagentId ?? 'orc');
         }
         // Phase 1.1: prune the parser pool on lifecycle events so
         // it never grows without bound across long sessions.
@@ -468,6 +695,7 @@ export function bootstrapChatChannel(): void {
         } else if (
           event.kind === 'subagent-status' &&
           (event.status === 'done' ||
+            event.status === 'partial' ||
             event.status === 'failed' ||
             event.status === 'aborted')
         ) {
@@ -501,6 +729,12 @@ export function bootstrapChatChannel(): void {
         // Drop all parsers for this run before the store flushes the
         // run state — keeps the pool size bounded across long sessions.
         dropAllParsersForRun(runId);
+        // Phase 3 (2026): wipe the synthetic-usage counters for this
+        // run. The reducer-side `inFlight` slot already gets dropped
+        // by `foldTokenUsage` on the final `token-usage`, but the
+        // local counters need their own cleanup so they don't survive
+        // the run termination into a potential next session.
+        resetSyntheticForRun(runId);
         useChatStore.getState().finishRun(runId);
       } catch (err) {
         log.warn('chat:done listener threw', { runId, err });
@@ -514,6 +748,7 @@ export function bootstrapChatChannel(): void {
         // leak buffered deltas onto the next event the user sees.
         flushAllTextForRun(runId);
         dropAllParsersForRun(runId);
+        resetSyntheticForRun(runId);
         useChatStore.getState().errorRun(runId, message);
       } catch (err) {
         log.warn('chat:error listener threw', { runId, err });
@@ -535,29 +770,13 @@ export function bootstrapChatChannel(): void {
     }
     textDeltaAccumulators.clear();
     parserPool.clear();
+    // Phase 3 (2026): clear the synthetic-usage counters too so an
+    // HMR reload doesn't carry stale accumulator state into a
+    // freshly-bound store.
+    syntheticUsageAccumulators.clear();
   });
 
   globalsRef.__vyotiqChatChannelUnsub = unsub;
-
-  // Rehydrate `runIdToConv` from main's snapshot of in-flight runs.
-  // Without this, a renderer reload (HMR / F5) leaves the dispatch
-  // table empty while orchestrator loops in main keep streaming
-  // events with `runId`s the renderer no longer recognises — they'd
-  // be silently dropped by `applyEvent`. Best-effort: a rejection
-  // (e.g. main not yet ready, IPC bridge missing) is logged and
-  // ignored; subsequent fresh sends still register their own
-  // mappings via `useChatStore.send`.
-  void vyotiq.chat
-    .listActiveRuns()
-    .then((infos) => {
-      if (Array.isArray(infos) && infos.length > 0) {
-        log.info('rehydrating active runs from main', { count: infos.length });
-        useChatStore.getState().rehydrateActiveRuns(infos);
-      }
-    })
-    .catch((err) => {
-      log.debug('listActiveRuns failed during boot rehydration', { err });
-    });
 }
 
 /**
@@ -579,8 +798,17 @@ export const __vyotiqChatChannelInternal = {
   // dispatches.
   textDeltaAccumulatorSize: () => textDeltaAccumulators.size,
   textDeltaAccumulatorKeys: () => Array.from(textDeltaAccumulators.keys()),
+  // Phase 3 (2026) — synthetic-usage accumulator introspection. Lets
+  // tests assert that the counter wiped on terminal events, that
+  // sub-agent owners are keyed separately from the orchestrator, etc.
+  syntheticUsageSize: () => syntheticUsageAccumulators.size,
+  syntheticUsageKeys: () => Array.from(syntheticUsageAccumulators.keys()),
+  syntheticUsageChars: (runId: string, owner: string): number =>
+    syntheticUsageAccumulators.get(`${runId}${SYNTHETIC_USAGE_SEP}${owner}`)
+      ?.charsTotal ?? 0,
   resetForTest: () => {
     parserPool.clear();
     textDeltaAccumulators.clear();
+    syntheticUsageAccumulators.clear();
   }
 };

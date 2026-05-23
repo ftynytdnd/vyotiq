@@ -8,6 +8,7 @@
 
 import { MenuItem } from '../MenuItem.js';
 import { MenuSeparator } from '../MenuSeparator.js';
+import { formatPlatformShortcut } from '../../../shortcuts/ShortcutsPanel.js';
 
 export interface FileMenuActions {
   newConversation: () => void;
@@ -17,6 +18,8 @@ export interface FileMenuActions {
    *  network paths). */
   setWorkspacePath: () => void;
   openSettings: () => void;
+  openCheckpoints: () => void;
+  openContextInspector: () => void;
   quit: () => void;
 }
 
@@ -25,13 +28,13 @@ export function FileMenu({ actions, onAfterAction }: { actions: FileMenuActions;
     <>
       <MenuItem
         label="New Conversation"
-        shortcut="Ctrl+N"
+        shortcut={formatPlatformShortcut('Ctrl+N')}
         onSelect={actions.newConversation}
         onAfterAction={onAfterAction}
       />
       <MenuItem
         label="Open Workspace…"
-        shortcut="Ctrl+O"
+        shortcut={formatPlatformShortcut('Ctrl+O')}
         onSelect={actions.openWorkspace}
         onAfterAction={onAfterAction}
       />
@@ -43,8 +46,20 @@ export function FileMenu({ actions, onAfterAction }: { actions: FileMenuActions;
       <MenuSeparator />
       <MenuItem
         label="Settings…"
-        shortcut="Ctrl+,"
+        shortcut={formatPlatformShortcut('Ctrl+,')}
         onSelect={actions.openSettings}
+        onAfterAction={onAfterAction}
+      />
+      <MenuItem
+        label="Checkpoint history…"
+        shortcut={formatPlatformShortcut('Ctrl+Shift+H')}
+        onSelect={actions.openCheckpoints}
+        onAfterAction={onAfterAction}
+      />
+      <MenuItem
+        label="Context Inspector"
+        shortcut={formatPlatformShortcut('Ctrl+Shift+C')}
+        onSelect={actions.openContextInspector}
         onAfterAction={onAfterAction}
       />
       <MenuSeparator />

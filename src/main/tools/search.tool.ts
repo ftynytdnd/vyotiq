@@ -2,8 +2,10 @@
  * `search` tool — dual-mode.
  *
  *   mode: "local"  → fast-glob + line-grep across the workspace.
- *   mode: "web"    → optional, only when `allowWebSearch` is true. Calls a
- *                    user-configured search endpoint. Disabled by default.
+ *   mode: "web"    → calls the user-configured search endpoint. When
+ *                    `allowAuto` is off (default), the user is asked
+ *                    to confirm each outbound query. A workspace-path
+ *                    leak in the query is a hard refusal, prompt-or-no.
  *
  * The harness controls when to invoke web search. Local search is the default
  * to honor "Offline first" and the privacy directive.
@@ -13,8 +15,9 @@ import { promises as fs } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import fg from 'fast-glob';
 import type { Tool } from './types.js';
+import { describeConfirmFailure } from './types.js';
 import type { SearchMatch, ToolResult } from '@shared/types/tool.js';
-import { resolveInsideWorkspace, workspaceRelative } from './sandbox.js';
+import { realpathInsideWorkspace, workspaceRelative } from './sandbox.js';
 import { getSettings } from '../settings/settingsStore.js';
 
 interface SearchArgs {
@@ -50,7 +53,7 @@ Web:
 
 **WHEN to trigger it.**
 - Use \`local\` first whenever you need to find a symbol or string in the project.
-- Only fall back to \`web\` if \`allowWebSearch\` is on AND local context is insufficient.
+- Only fall back to \`web\` when the local codebase is genuinely insufficient. When \`allowAuto\` is off (default), the user will be asked to confirm the web search.
 - NEVER pass file contents into \`web\` queries — only the user's question.`,
   schema: {
     type: 'function',
@@ -77,16 +80,21 @@ Web:
     if (typeof a.query !== 'string' || !a.query.trim()) {
       return fail(id, started, 'Error: `query` is required.', 'missing query');
     }
+    if (a.mode !== 'local' && a.mode !== 'web') {
+      return fail(
+        id,
+        started,
+        `Error: unknown search mode "${String(a.mode)}" — use "local" or "web".`,
+        'invalid mode'
+      );
+    }
     const max = typeof a.maxResults === 'number' ? Math.max(1, Math.min(200, a.maxResults)) : 50;
 
     if (a.mode === 'web') {
-      if (!ctx.permissions.allowWebSearch) {
-        return fail(id, started, 'Web search is disabled. Enable it in permissions.', 'permission denied');
-      }
-      // Privacy guard: never let a workspace-derived path leak through a
-      // web search query. The harness already forbids this, but the host
-      // enforces it too — defense in depth for the "no file contents
-      // outbound" rule.
+      // Privacy guard FIRST, before the consent prompt. A workspace-path
+      // leak is a hard refusal — we do NOT want to ask the user "are
+      // you sure you want to send /home/me/project/src/main.ts to a
+      // search endpoint?" because the leak itself is the bug.
       const ws = ctx.workspacePath?.trim();
       if (ws && a.query.includes(ws)) {
         return fail(
@@ -97,13 +105,25 @@ Web:
           'workspace leak'
         );
       }
+      if (!ctx.permissions.allowAuto) {
+        const outcome = await ctx.confirm(
+          `Agent V wants to run a web search:\n\n"${a.query}"\n\nAllow?`
+        );
+        if (!outcome.approved) {
+          // Audit fix H-04: surface the precise failure reason instead of
+          // always claiming the user denied — the prompt may have timed
+          // out, been aborted, or had no UI to surface against.
+          const desc = describeConfirmFailure(outcome.reason, 'run web search');
+          return fail(id, started, desc.output, desc.error);
+        }
+      }
       return await runWebSearch(id, started, a.query, max, ctx.signal);
     }
 
     // local
     let rootAbs: string;
     try {
-      rootAbs = resolveInsideWorkspace(ctx.workspacePath, a.path ?? '.');
+      rootAbs = await realpathInsideWorkspace(ctx.workspacePath, a.path ?? '.');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return fail(id, started, `Sandbox error: ${msg}`, msg);
@@ -283,10 +303,19 @@ async function runWebSearch(id: string, started: number, query: string, max: num
       return fail(id, started, `Web search HTTP ${res.status}.`, `http ${res.status}`);
     }
     const contentType = res.headers.get('content-type') ?? '';
+    // Audit fix 2026-04-P2-3: stream-read the response body with a hard
+    // 1 MB cap. The previous shape called `res.text()` / `res.json()`,
+    // which buffer the ENTIRE upstream body into memory before slicing
+    // to 4 000 chars — a misconfigured (or hostile) endpoint replying
+    // with a 1 GB JSON payload would OOM the main process. Streaming
+    // with cancellation keeps the buffer bounded and aborts the rest
+    // of the body fetch the moment we hit the cap.
+    const RAW_BODY_CAP = 1024 * 1024;
+    const raw = await readBodyWithCap(res, RAW_BODY_CAP);
     let body: string;
     if (contentType.includes('application/json')) {
       try {
-        const json = (await res.json()) as unknown;
+        const json = JSON.parse(raw) as unknown;
         // Many search APIs return { data: [...] } / { results: [...] } /
         // { items: [...] }. Honor `max` by truncating that array if present.
         let trimmed: unknown = json;
@@ -302,10 +331,14 @@ async function runWebSearch(id: string, started: number, query: string, max: num
         }
         body = JSON.stringify(trimmed, null, 2).slice(0, 4000);
       } catch {
-        body = (await res.text()).slice(0, 4000);
+        // The cap may have truncated mid-token, leaving JSON.parse
+        // unable to finish. Fall back to the raw text view, sliced
+        // to the result cap. We DO NOT re-fetch the body: the cap
+        // is structural, not a retry signal.
+        body = raw.slice(0, 4000);
       }
     } else {
-      body = (await res.text()).slice(0, 4000);
+      body = raw.slice(0, 4000);
     }
     return {
       id,
@@ -330,6 +363,62 @@ async function runWebSearch(id: string, started: number, query: string, max: num
 
 function fail(id: string, started: number, output: string, error: string): ToolResult {
   return { id, name: 'search', ok: false, output, error, durationMs: Date.now() - started };
+}
+
+/**
+ * Stream-read a `fetch` response body into a UTF-8 string, hard-capped
+ * at `maxBytes`. Once the cap is hit the underlying reader is cancelled
+ * so the rest of the upstream body is dropped on the floor — important
+ * for the audit-fix 2026-04-P2-3 contract: a 1 GB JSON reply from a
+ * mis-configured search endpoint must NOT pin the main thread until it
+ * finishes downloading.
+ *
+ * Falls back to `res.text()` (with a defensive slice) when `res.body`
+ * is unavailable. That branch is only hit by exotic Response objects
+ * (custom mocks, HEAD-shaped responses) — Node 22 / undici always
+ * exposes `.body` for non-empty replies.
+ *
+ * The TextDecoder runs in stream mode so multi-byte UTF-8 codepoints
+ * straddling a chunk boundary aren't replaced with U+FFFD; the final
+ * `decoder.decode()` flushes the trailing state.
+ */
+async function readBodyWithCap(res: Response, maxBytes: number): Promise<string> {
+  const reader = res.body?.getReader();
+  if (!reader) {
+    const text = await res.text();
+    return text.length > maxBytes ? text.slice(0, maxBytes) : text;
+  }
+  const decoder = new TextDecoder('utf-8');
+  let total = 0;
+  let out = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      const room = maxBytes - total;
+      if (value.byteLength <= room) {
+        total += value.byteLength;
+        out += decoder.decode(value, { stream: true });
+        continue;
+      }
+      // Cap hit — decode only the bytes that fit, then cancel.
+      if (room > 0) {
+        out += decoder.decode(value.subarray(0, room), { stream: true });
+        total += room;
+      }
+      try {
+        await reader.cancel();
+      } catch {
+        /* cancel failures are safe to ignore — body bytes still drop */
+      }
+      break;
+    }
+  } finally {
+    // Flush any pending multi-byte tail held by the streaming decoder.
+    out += decoder.decode();
+  }
+  return out;
 }
 
 /**

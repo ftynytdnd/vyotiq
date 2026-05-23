@@ -5,7 +5,7 @@
  *     uppercase tracking-wider text-text-faint
  *
  * substring shared by ~10 call sites across the renderer (workspace
- * group header in the sidebar, group titles in the model picker /
+ * group header in the dock, group titles in the model picker /
  * dropdown, web-search endpoint label in Settings, dialect tag in
  * ProviderRow, Shortcuts panel header, attachment-picker mention
  * breadcrumb, etc.).

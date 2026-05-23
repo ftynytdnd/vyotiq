@@ -1,11 +1,19 @@
 /**
  * Top-level error row. Surfaces IPC / provider / loop failures inline in
- * the timeline as a flush log-line — no heavy card chrome, just a
- * single hairline `border-l` rail in the danger tone so multi-line
- * failures still read as a single unit.
+ * the timeline as a flush log-line. Backed by the shared `Notice`
+ * primitive (size="sm") so the timeline's error chrome stays in lock-
+ * step with the modal-side error callouts in Settings and the Context
+ * Inspector — one tonal vocabulary across the whole renderer.
+ *
+ * `AlertTriangle` is passed explicitly to override Notice's default
+ * `AlertCircle` glyph: the triangle is the long-standing convention
+ * for timeline-level failures and other places (AgentThoughtRow
+ * `warn`, sub-agent header `message`) still ship it.
  */
 
 import { AlertTriangle } from 'lucide-react';
+import { SurfaceShell } from '../../ui/SurfaceShell.js';
+import { Notice } from '../../ui/Notice.js';
 
 interface ErrorRowProps {
   message: string;
@@ -13,12 +21,10 @@ interface ErrorRowProps {
 
 export function ErrorRow({ message }: ErrorRowProps) {
   return (
-    <div className="flex items-start gap-2 border-l border-danger/50 pl-3 pr-1 py-1">
-      <AlertTriangle
-        className="mt-[2px] h-3.5 w-3.5 shrink-0 text-danger/90"
-        strokeWidth={2.25}
-      />
-      <div className="whitespace-pre-wrap text-log text-danger/90">{message}</div>
-    </div>
+    <SurfaceShell>
+      <Notice tone="danger" size="sm" icon={AlertTriangle} className="border-0 bg-transparent">
+        <div className="whitespace-pre-wrap">{message}</div>
+      </Notice>
+    </SurfaceShell>
   );
 }

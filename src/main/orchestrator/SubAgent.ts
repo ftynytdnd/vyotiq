@@ -19,6 +19,7 @@ import { streamChat } from '../providers/chatClient.js';
 import { toolSchemasFor } from '../tools/registry.js';
 import { validateSubagentToolset } from '../tools/policy/index.js';
 import { buildSubagentSystemPrompt } from '../harness/harnessLoader.js';
+import { buildHostEnvironmentXml } from './loop/buildHostEnvironment.js';
 import { inlineFiles, type InlineFileCache } from './contextManager.js';
 import { backoff } from './retry.js';
 import { isAbortError } from './abortSignal.js';
@@ -158,7 +159,15 @@ export interface SubAgentDeps {
   onTextEnd?: (assistantMsgId: string, subagentId: string) => void;
   onTextAborted?: (assistantMsgId: string, subagentId: string) => void;
   onReasoningDelta?: (delta: string, assistantMsgId: string, subagentId: string) => void;
-  onReasoningEnd?: (assistantMsgId: string, subagentId: string) => void;
+  /**
+   * Phase 8 (2026): the optional `signature` arg carries the Anthropic
+   * thinking-block signature accumulated during the closing reasoning
+   * stream. Forwarded into the `agent-reasoning-end` timeline event so
+   * the JSONL transcript can replay it onto the matching assistant
+   * `ChatMessage.reasoning_signature`. `undefined` for non-Anthropic
+   * dialects.
+   */
+  onReasoningEnd?: (assistantMsgId: string, subagentId: string, signature?: string) => void;
   /**
    * Streaming partial-args preview for an in-flight tool call inside
    * this worker. Mirrors the orchestrator's surface (see
@@ -195,7 +204,15 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
     modelId: deps.selection.modelId
   });
 
-  const filesBlock = await inlineFiles(deps.workspacePath, spec.files, deps.inlineCache);
+  // Audit fix 2026-08-P2-1 / 13-P2-1: thread the run's abort signal
+  // through so a multi-file delegate spec stops paying FS cost the
+  // moment the user (or the orchestrator) aborts the round.
+  const filesBlock = await inlineFiles(
+    deps.workspacePath,
+    spec.files,
+    deps.inlineCache,
+    deps.signal
+  );
 
   // Audit fix A4: pre-seed this worker's read-cache with a synthetic
   // hit for every file we just inlined. The first `read({ path })`
@@ -294,6 +311,19 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
 
   let attempt = 0;
   let lastAction: SubagentLastAction = 'none';
+  // One-shot recovery flag for the "model emitted final prose without
+  // a `<result>…</result>` envelope" pathology (production failure
+  // shape: conversation `35caa9dc-…jsonl` sub-agent D2). The wrap-up
+  // turn at `SUBAGENT_WRAPUP_ITER` enforces `tool_choice: 'none'` for
+  // slow workers — but a fast worker that finishes on iteration 1
+  // with a missing envelope (e.g. emits the work narration in plain
+  // prose, having already run its `edit` tool) had no recovery path
+  // and got reported as `'malformed'` even though the underlying
+  // edit had landed. We give the worker exactly ONE re-prompt to
+  // wrap its already-emitted content in `<result>` before accepting
+  // the malformed terminus. Capped at one re-prompt per worker so
+  // we cannot ping-pong against a model that ignores the nudge.
+  let textNoResultNudged = false;
 
   for (let iter = 0; iter < SUBAGENT_MAX_ITERATIONS; iter++) {
     if (deps.signal.aborted) {
@@ -310,11 +340,15 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
     // visible in the prompt as well as enforced in the request body.
     const isWrapUpTurn = iter === SUBAGENT_WRAPUP_ITER;
 
-    // Rebuild the system prompt with a fresh `<run_state>` envelope.
-    // The static portion (directives + harness body + tool catalogue +
-    // limits + task) is identical across iterations; only the trailing
-    // run-state block changes. See `buildSubagentSystemPrompt` for the
-    // layered shape.
+    // Rebuild the system prompt with a fresh `<run_state>` envelope
+    // and a fresh `<host_environment>` snapshot. The static portion
+    // (directives + harness body + tool catalogue + limits + task) is
+    // identical across iterations; only the trailing dynamic blocks
+    // change. See `buildSubagentSystemPrompt` for the layered shape.
+    //
+    // Host environment is built per-iteration (not cached) because
+    // real-time is the whole point — same rationale as the
+    // orchestrator's runLoop.ts. Cost is microsecond-cheap.
     const runStateXml = buildSubagentRunStateXml({
       iteration: iter,
       allowedTools: allowed,
@@ -322,18 +356,34 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
       consecutiveErrors: attempt,
       wrapUpPending: isWrapUpTurn
     });
+    const hostEnvironmentXml = buildHostEnvironmentXml();
     messages[0] = {
       role: 'system',
       content: buildSubagentSystemPrompt({
         task: spec.task,
         allowedTools: allowed,
-        runState: runStateXml
+        runState: runStateXml,
+        hostEnvironment: hostEnvironmentXml
       })
     };
 
     let assistantText = '';
     let reasoningText = '';
-    let partialToolCalls: Array<{ id?: string; name?: string; argumentsBuf: string }> = [];
+    // Phase 8 (2026): Anthropic thinking signature for the closing
+    // turn — empty string when absent (non-Anthropic dialect or no
+    // thinking block emitted). The variable lives at iteration scope
+    // because the post-stream tool-call/text branches both consume it
+    // when minting the assistant `ChatMessage`.
+    let reasoningSignature = '';
+    // Phase 9 (2026): widened so each partial can carry an optional
+    // `thoughtSignature` from the Gemini transport. Anthropic doesn't
+    // populate the field; OpenAI-compat providers don't either.
+    let partialToolCalls: Array<{
+      id?: string;
+      name?: string;
+      argumentsBuf: string;
+      thoughtSignature?: string;
+    }> = [];
     let lastError: unknown;
 
     // Per-iteration assistant message id. Drives the renderer's
@@ -416,13 +466,13 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
           : {}),
         ...(deps.onReasoningEnd
           ? {
-            onReasoningEnd: () => {
+            onReasoningEnd: (signature) => {
               // Emit only if reasoning was actually opened on this
               // iteration. `consumeChatStream` already gates the hook
               // (see `maybeCloseReasoning`), so this is defensive.
               if (!reasoningOpened) return;
               reasoningEndedDuringStream = true;
-              deps.onReasoningEnd?.(assistantMsgId, spec.id);
+              deps.onReasoningEnd?.(assistantMsgId, spec.id, signature);
             }
           }
           : {}),
@@ -442,6 +492,11 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
       assistantText = consumed.assistantText;
       reasoningText = consumed.reasoningText;
       partialToolCalls = consumed.partialToolCalls;
+      // Phase 8 (2026): hoist the Anthropic thinking signature to outer
+      // scope so the post-stream tool-call / text branches can persist
+      // it onto the assistant `ChatMessage`. Empty string falsy-check
+      // below maps to the absent field.
+      reasoningSignature = consumed.reasoningSignature ?? '';
       // Surface per-iteration token usage to the pool so the UI can
       // aggregate latest / peak / cumulative views per sub-agent. Fires
       // at most once per iteration; providers that ignore the
@@ -534,7 +589,16 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
     // turn was pure reasoning with no follow-up content (rare).
     if (textOpened) deps.onTextEnd?.(assistantMsgId, spec.id);
     if (reasoningOpened && !reasoningEndedDuringStream) {
-      deps.onReasoningEnd?.(assistantMsgId, spec.id);
+      // Pure-reasoning fallback path: the stream ended without a
+      // content/tool-call follow-up so `consumeChatStream` never fired
+      // its mid-stream `onReasoningEnd`. Forward the signature from the
+      // result so a thinking-only Anthropic turn still round-trips its
+      // signature through the timeline.
+      deps.onReasoningEnd?.(
+        assistantMsgId,
+        spec.id,
+        reasoningSignature.length > 0 ? reasoningSignature : undefined
+      );
     }
 
     // If there are tool calls, execute them and loop.
@@ -549,10 +613,22 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
         // Canonical OpenAI shape: null content when only tool_calls are emitted.
         content: assistantText.length === 0 ? null : assistantText,
         ...(reasoningText.length > 0 ? { reasoning_content: reasoningText } : {}),
+        // Phase 8 (2026): persist the Anthropic thinking signature on
+        // the assistant message so the next request includes the
+        // `{type:'thinking', thinking, signature}` block unchanged.
+        // Required for plan continuity on Claude thinking-capable
+        // models. Other dialects leave `reasoningSignature` empty and
+        // the field stays absent.
+        ...(reasoningSignature.length > 0
+          ? { reasoning_signature: reasoningSignature }
+          : {}),
         tool_calls: finishedCalls.map((tc) => ({
           id: tc.id!,
           type: 'function' as const,
-          function: { name: tc.name ?? 'unknown', arguments: tc.argumentsBuf || '{}' }
+          function: { name: tc.name ?? 'unknown', arguments: tc.argumentsBuf || '{}' },
+          ...(typeof tc.thoughtSignature === 'string' && tc.thoughtSignature.length > 0
+            ? { thoughtSignature: tc.thoughtSignature }
+            : {})
         }))
       };
       messages.push(assistantMsg);
@@ -628,23 +704,115 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
     messages.push({
       role: 'assistant',
       content: assistantText,
-      ...(reasoningText.length > 0 ? { reasoning_content: reasoningText } : {})
+      ...(reasoningText.length > 0 ? { reasoning_content: reasoningText } : {}),
+      // Phase 8 (2026): same Anthropic signature persistence rule as
+      // the tool-call branch above. The terminal text-only turn still
+      // wants the thinking signature attached so a follow-up turn (a
+      // user reply on the same conversation) round-trips it.
+      ...(reasoningSignature.length > 0
+        ? { reasoning_signature: reasoningSignature }
+        : {})
     });
 
     const status = inferResultStatus(assistantText);
+
+    // Missing-envelope recovery (one-shot per worker). The harness
+    // mandates that the worker's LAST action MUST be a
+    // `<result>…</result>` envelope. The wrap-up turn enforces it at
+    // the wire (`tool_choice: 'none'`) for slow workers, but a fast
+    // worker that finishes on iter 1 with substantive prose and a
+    // landed `edit` would otherwise be marked `'malformed'`
+    // immediately — even though one short re-prompt is enough to fix
+    // the wrap. Re-prompt exactly once per worker; subsequent
+    // missing-envelope turns accept the malformed terminus and exit.
+    //
+    // Special-cases the D3 production shape too: a worker that
+    // emitted only `<delegate>` directives (sub-agents cannot
+    // delegate) lands here with substantive text, no `<result>`, no
+    // tool calls, and no edits. The recovery message tells the
+    // worker that delegation is forbidden AND that it must wrap its
+    // intent in `<result>`.
+    //
+    // T0-2 — hopeless-shot short-circuit. When the model produced
+    // zero text AND zero tool results, there is genuinely nothing
+    // to wrap in a `<result>` envelope. The recovery message would
+    // just consume one of the worker's iterations to ask for a
+    // wrap-up of empty content; the next iteration would loop back
+    // here with the same shape. Mirrors the orchestrator-side
+    // hopeless-reasoning short-circuit in `handleNoToolNoDelegate.ts`
+    // and saves a wasted provider call.
+    const hasNothingToWrap =
+      assistantText.trim().length === 0 && allResults.length === 0;
+    if (status === 'malformed' && hasNothingToWrap) {
+      log.warn('sub-agent emitted empty malformed turn; skipping recovery', {
+        id: spec.id,
+        iter
+      });
+      return {
+        id: spec.id,
+        task: spec.task,
+        output: assistantText,
+        toolResults: allResults,
+        status: 'failed',
+        error:
+          'sub-agent emitted no text, no tool calls, and no <result> envelope ' +
+          '— nothing to wrap; treating as failed without recovery prompt'
+      };
+    }
+    if (status === 'malformed' && !textNoResultNudged && iter < SUBAGENT_MAX_ITERATIONS - 1) {
+      textNoResultNudged = true;
+      lastAction = 'text-no-result';
+      log.info('sub-agent missing-envelope recovery prompt', {
+        id: spec.id,
+        iter,
+        cleanTextLen: assistantText.length,
+        toolResults: allResults.length
+      });
+      messages.push({
+        role: 'user',
+        content:
+          'Your last turn ended without a `<result>…</result>` envelope. The host treats ' +
+          'an envelope-less worker output as `malformed` and reports the round as ' +
+          'failed even when the underlying work succeeded. Re-emit your final answer ' +
+          'wrapped in the canonical envelope:\n\n' +
+          '```\n' +
+          '<result>\n' +
+          '<status>success|partial|failed</status>\n' +
+          '<summary>One sentence: what you did or attempted.</summary>\n' +
+          '<details>\n' +
+          '- Specific finding or change.\n' +
+          '</details>\n' +
+          '<artifacts>\n' +
+          '- Path or symbol you produced/modified.\n' +
+          '</artifacts>\n' +
+          '</result>\n' +
+          '```\n\n' +
+          'Sub-agents cannot emit `<delegate ... />` directives — only the orchestrator ' +
+          'can. If your previous turn contained delegation directives, replace them with ' +
+          'the actual work or report `<status>failed</status>` with the reason.'
+      });
+      continue;
+    }
+
     log.info('sub-agent finished', {
       id: spec.id,
       iter,
       status,
       toolResults: allResults.length,
+      nudged: textNoResultNudged,
       ms: Date.now() - startedAt
     });
+    const error =
+      status === 'malformed'
+        ? 'No <result> envelope — host requires <result><status>…</status></result>'
+        : undefined;
     return {
       id: spec.id,
       task: spec.task,
       output: assistantText,
       toolResults: allResults,
-      status
+      status,
+      ...(error ? { error } : {})
     };
   }
 

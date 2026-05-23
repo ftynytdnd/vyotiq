@@ -1,6 +1,12 @@
 /**
  * Workspace IPC. Pick / get / set / list-tree (single-active back-compat)
  * + the multi-workspace registry surface (`workspaces:*`).
+ *
+ * Legacy single-workspace channels (`workspace:get`, `workspace:pick`,
+ * `workspace:set`) remain exposed on the preload bridge for internal
+ * tooling and automated tests. The renderer's primary navigation path
+ * uses `workspaces:*` instead; do not build new product UI on the
+ * legacy trio without an explicit migration plan.
  */
 
 import { dialog } from 'electron';
@@ -13,6 +19,7 @@ import {
   listWorkspaces,
   removeWorkspace,
   renameWorkspace,
+  requireWorkspaceById,
   retryWorkspaceReachability,
   setActiveWorkspace,
   setWorkspace
@@ -21,8 +28,24 @@ import { bulkRemoveOrReparentByWorkspace } from '../conversations/conversationSt
 import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 import { IpcCancelledError } from './ipcCancelledError.js';
+// Audit fix 2026-06-P2-1 — runtime shape gates for workspace-channel
+// payloads. Path strings are capped at 4 KB (well above any
+// realistic OS path) and id strings keep the default 1 KB cap.
+import {
+  assertString,
+  assertOptionalString,
+  assertObject,
+  assertNumber,
+  assertBoolean
+} from './validate.js';
 
 const log = logger.child('ipc/workspace');
+
+// Hard cap on filesystem paths arriving over IPC. Windows PATH_MAX is
+// 32 767 chars in long-path mode but no legitimate workspace root
+// ever approaches that — capping at 4 KB matches the `providers`
+// baseUrl ceiling and forecloses pathological inputs.
+const MAX_PATH_BYTES = 4096;
 
 export function registerWorkspaceIpc(): void {
   wrapIpcHandler(IPC.WORKSPACE_GET, async () => getWorkspace());
@@ -48,12 +71,18 @@ export function registerWorkspaceIpc(): void {
     return setWorkspace(result.filePaths[0]!);
   });
 
-  wrapIpcHandler(IPC.WORKSPACE_SET, async (_event, path: string) => setWorkspace(path));
+  wrapIpcHandler(IPC.WORKSPACE_SET, async (_event, path: string) => {
+    assertString('workspace:set', 'path', path, { maxBytes: MAX_PATH_BYTES });
+    return setWorkspace(path);
+  });
 
   // ---- Multi-workspace registry ---------------------------------------
   wrapIpcHandler(IPC.WORKSPACES_LIST, async () => listWorkspaces());
 
   wrapIpcHandler(IPC.WORKSPACES_ADD, async (_event, path?: string) => {
+    // `path` is optional — when omitted the dialog runs. Validate only
+    // the populated case so a folder picker call still passes.
+    assertOptionalString('workspaces:add', 'path', path, { maxBytes: MAX_PATH_BYTES });
     let resolved = path;
     if (!resolved) {
       const result = await dialog.showOpenDialog({
@@ -74,15 +103,23 @@ export function registerWorkspaceIpc(): void {
     return addWorkspace(resolved);
   });
 
-  wrapIpcHandler(IPC.WORKSPACES_SET_ACTIVE, async (_event, id: string) => setActiveWorkspace(id));
+  wrapIpcHandler(IPC.WORKSPACES_SET_ACTIVE, async (_event, id: string) => {
+    assertString('workspaces:setActive', 'id', id);
+    return setActiveWorkspace(id);
+  });
 
-  wrapIpcHandler(IPC.WORKSPACES_RETRY_REACHABILITY, async (_event, id: string) =>
-    retryWorkspaceReachability(id)
-  );
+  wrapIpcHandler(IPC.WORKSPACES_RETRY_REACHABILITY, async (_event, id: string) => {
+    assertString('workspaces:retryReachability', 'id', id);
+    return retryWorkspaceReachability(id);
+  });
 
-  wrapIpcHandler(IPC.WORKSPACES_RENAME, async (_event, id: string, label: string) =>
-    renameWorkspace(id, label)
-  );
+  wrapIpcHandler(IPC.WORKSPACES_RENAME, async (_event, id: string, label: string) => {
+    assertString('workspaces:rename', 'id', id);
+    // Sidebar labels cap visually at ~30 chars; 256 B keeps room for
+    // unicode without rejecting any legitimate input.
+    assertString('workspaces:rename', 'label', label, { maxBytes: 256 });
+    return renameWorkspace(id, label);
+  });
 
   wrapIpcHandler(
     IPC.WORKSPACES_REMOVE,
@@ -91,6 +128,14 @@ export function registerWorkspaceIpc(): void {
       id: string,
       opts: { deleteConversations: boolean }
     ) => {
+      assertString('workspaces:remove', 'id', id);
+      assertObject('workspaces:remove', 'opts', opts);
+      if ('deleteConversations' in opts && opts.deleteConversations !== undefined) {
+        assertBoolean('workspaces:remove', 'opts.deleteConversations', opts.deleteConversations);
+      }
+      // `opts.deleteConversations` IS allowed to be undefined / other
+      // shapes inside the body below (it short-circuits to the
+      // reparent branch). No further validation needed.
       // Cascade conversations FIRST so the renderer's subsequent
       // `conversations.list()` reflects the post-cascade state. When
       // `deleteConversations: false` we reparent into the surviving
@@ -126,12 +171,44 @@ export function registerWorkspaceIpc(): void {
 
   wrapIpcHandler(
     IPC.WORKSPACE_LIST_TREE,
-    async (_event, opts?: { depth?: number }): Promise<WorkspaceTreeResult> => {
-      const ws = await getWorkspace();
-      if (!ws.path) return { entries: [], truncated: false, total: 0 };
+    async (_event, opts?: { depth?: number; workspaceId?: string }): Promise<WorkspaceTreeResult> => {
+      // `opts` is optional; only inspect when present. Cap depth at 6
+      // — the same hard ceiling the body below enforces via Math.min,
+      // restated here so a hand-crafted malformed `depth` (NaN,
+      // Infinity, negative) rejects at the boundary instead of
+      // silently clamping inside the handler.
+      if (opts !== undefined) {
+        assertObject('workspace:listTree', 'opts', opts);
+        if (opts.depth !== undefined) {
+          assertNumber('workspace:listTree', 'opts.depth', opts.depth, {
+            integer: true,
+            min: 1,
+            max: 6
+          });
+        }
+        if (opts.workspaceId !== undefined) {
+          assertString('workspace:listTree', 'opts.workspaceId', opts.workspaceId);
+        }
+      }
+      let wsPath: string | null = null;
+      if (opts?.workspaceId) {
+        try {
+          wsPath = await requireWorkspaceById(opts.workspaceId);
+        } catch (err: unknown) {
+          log.warn('workspace:listTree unknown workspaceId', {
+            workspaceId: opts.workspaceId,
+            err: err instanceof Error ? err.message : String(err)
+          });
+          return { entries: [], truncated: false, total: 0 };
+        }
+      } else {
+        const ws = await getWorkspace();
+        wsPath = ws.path;
+      }
+      if (!wsPath) return { entries: [], truncated: false, total: 0 };
       const depth = Math.max(1, Math.min(6, opts?.depth ?? 3));
       const raw = await fg('**/*', {
-        cwd: ws.path,
+        cwd: wsPath,
         ignore: ['**/node_modules/**', '**/.git/**', '**/dist/**', '**/out/**', '**/.next/**'],
         onlyFiles: false,
         markDirectories: true,

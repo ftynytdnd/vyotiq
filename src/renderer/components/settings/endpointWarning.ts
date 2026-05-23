@@ -1,6 +1,6 @@
 /**
  * Live validation helper for the Web Search endpoint setting. Pulled
- * out of `SettingsModal.tsx` so it can be unit-tested without
+ * out of `SettingsPanel.tsx` so it can be unit-tested without
  * mounting the modal. Returns a user-facing message string when the
  * persisted endpoint would be refused at runtime by `runWebSearch`,
  * or `null` when the configuration is fine.
@@ -11,12 +11,12 @@
  */
 
 export function describeEndpointWarning(
-  allowWebSearch: boolean,
+  webSearchReachable: boolean,
   persisted: string
 ): string | null {
   const trimmed = persisted.trim();
-  if (allowWebSearch && !trimmed) {
-    return 'Web search is enabled but no endpoint is configured. Calls to `search` (mode: web) will fail until you set one.';
+  if (webSearchReachable && !trimmed) {
+    return 'Web search is reachable (Fully Auto Mode is on for this workspace, or the user can approve outbound queries) but no endpoint is configured. Calls to `search` (mode: web) will fail until you set one.';
   }
   if (!trimmed) return null;
   let url: URL;

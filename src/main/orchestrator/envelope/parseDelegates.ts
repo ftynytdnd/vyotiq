@@ -7,21 +7,36 @@
  * spawns the swarm in parallel, and feeds verified results back into the
  * orchestrator's context.
  *
- * Fenced-code guard (review finding H1): the harness explicitly forbids
- * emitting directives inside markdown code fences ("never inside a code
- * fence and never as a quoted preview"), but soft rules degrade. Two
- * failure modes the host now enforces structurally:
+ * Fenced-code guard (review finding H1, updated 2026-05-17): the
+ * harness forbids `<delegate />` *examples* inside markdown fences,
+ * but the model regularly wraps its REAL directives in ```xml … ```
+ * for syntax highlighting and the host MUST honor those. The two
+ * failure modes the host enforces structurally are:
  *   1. Model narrates *"I'll send: \`\`\`xml\n<delegate ... />\n\`\`\`"*
- *      → without this guard, the host spawns a real worker for what was
- *      meant as illustration.
- *   2. Replay surface: a prior turn fenced a `<delegate>` example.
- *      On a subsequent send the model echoes the example back → spawn.
+ *      with PROSE inside the fence body alongside the directive →
+ *      the body strips to non-empty under the `<delegate>`-only
+ *      strip, so we drop the whole fence and no spawn fires.
+ *   2. Replay surface: a prior turn fenced a `<delegate>` example
+ *      with surrounding prose. On a subsequent send the model
+ *      echoes the example back → still classified as illustration
+ *      → still dropped.
+ * A fence whose body is EXCLUSIVELY one or more `<delegate />`
+ * directives is recognised as pure-orchestration: the body is
+ * unwrapped (preserved verbatim) and `DELEGATE_RE` matches the
+ * directives normally. This restores the conversation captured in
+ * `679f5c3c-…jsonl` where four real directives wrapped in ```xml
+ * produced zero spawns under the prior aggressive strip. The
+ * decision is mirrored on the renderer side by
+ * `dropOrchestrationOnlyFences` so display and parse stay in
+ * lockstep.
  *
- * Both are closed by stripping fenced code blocks via `stripFencedCode`
- * BEFORE running `DELEGATE_RE`. The strip is streaming-safe (a
- * trailing OPEN fence at end-of-buffer is removed too) so the
- * mid-stream `subagent-pending` detection never fires inside an
- * unclosed fence.
+ * Both behaviours are implemented inside `stripFencedCode` (called
+ * BEFORE `DELEGATE_RE`) so the directive scan only ever sees
+ * unwrapped pure-orchestration bodies and bare directives. The
+ * strip is streaming-safe — a trailing OPEN pure-orchestration
+ * fence at end-of-buffer is unwrapped too so the mid-stream
+ * `subagent-pending` detection fires the instant a directive
+ * closes, even before the matching ``` delimiter arrives.
  */
 
 import { stripFencedCode } from '@shared/text/strip.js';
@@ -146,12 +161,16 @@ export function parseDelegatesWithDuplicates(text: string): ParseDelegatesResult
   // in `duplicates` so the call site can surface the drop instead of
   // discarding it silently (review finding B1).
   const seenIds = new Set<string>();
-  // Fenced-code guard (review finding H1). Strip closed AND trailing-
-  // open fences from the input BEFORE running the directive scan, so
-  // a `<delegate />` quoted inside ``` (or pasted back on replay
-  // from a prior fenced example) never spawns. The strip is a no-op
-  // on text without fences, so the steady-state cost is one regex
-  // miss per call.
+  // Fenced-code guard (review finding H1, updated 2026-05-17).
+  // Strip illustration fences (prose + directive in the same body)
+  // BEFORE running the directive scan, but UNWRAP pure-
+  // orchestration fences (body is exclusively `<delegate />`
+  // markup) so the directives inside actually spawn. Without the
+  // unwrap branch the model wrapping its real directives in
+  // ```xml … ``` for syntax highlighting produces zero spawns —
+  // the failure mode captured in `679f5c3c-…jsonl`. The strip is
+  // a no-op on text without fences, so the steady-state cost is
+  // one regex miss per call.
   const scanText = stripFencedCode(text);
   let m: RegExpExecArray | null;
   DELEGATE_RE.lastIndex = 0;

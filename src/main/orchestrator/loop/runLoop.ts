@@ -44,6 +44,7 @@ import {
 } from '../../providers/providerStore.js';
 import { getSettings } from '../../settings/settingsStore.js';
 import {
+  MAX_DELEGATION_BAD_ROUNDS,
   MAX_SELF_CORRECTION_ATTEMPTS,
   MAX_TOTAL_ITERATIONS
 } from '@shared/constants.js';
@@ -62,6 +63,7 @@ import {
   unregisterRunContext,
   type RunContextHandle
 } from '../runContextRegistry.js';
+import { broadcastSnapshotChanged } from '../../ipc/contextSummary.ipc.js';
 
 import { buildSystemPrompt } from './buildSystemPrompt.js';
 import { buildOrchestratorRequest } from './buildOrchestratorRequest.js';
@@ -87,6 +89,7 @@ import {
   createRunStateAccumulator,
   snapshotRunState
 } from './buildRunState.js';
+import { buildHostEnvironmentXml } from './buildHostEnvironment.js';
 
 const log = logger.child('orch/runLoop');
 
@@ -108,7 +111,13 @@ interface RunLoopOpts {
   strictApprovals: boolean;
 }
 
-export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
+/** Outcome of a completed orchestrator loop (success, halt, or user abort). */
+export interface RunLoopResult {
+  /** Set when the loop emitted a terminal `error` timeline row. */
+  terminalError?: string;
+}
+
+export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopResult> {
   const harness = buildOrchestratorSystemPrompt();
   const messages = opts.initialMessages;
   let query = opts.initialQuery;
@@ -166,13 +175,44 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
   // the top of each trigger and cleared in `finally` so both
   // success and failure paths release it.
   let summarizationStarting = false;
+  /** Aborts only the summarizer fetch; the orchestrator run continues. */
+  let summaryAbort: AbortController | null = null;
+
+  opts.signal.addEventListener(
+    'abort',
+    () => {
+      summaryAbort?.abort();
+    },
+    { once: true }
+  );
+
+  const bindSummarySignal = (): AbortSignal => {
+    summaryAbort?.abort();
+    const ac = new AbortController();
+    summaryAbort = ac;
+    if (opts.signal.aborted) ac.abort();
+    return ac.signal;
+  };
+
+  const releaseSummarySignal = (): void => {
+    summaryAbort = null;
+  };
 
   // Single `emit` everything in the loop uses. Forwards to
   // `opts.emit` verbatim while side-channel-capturing the bits the
   // summarizer needs (latest usage, summary lifecycle markers).
+  //
+  // Phase 5 (2026) — every authoritative `token-usage` frame also
+  // triggers a `CONTEXT_SUMMARY_SNAPSHOT_CHANGED` broadcast so an
+  // open Context Inspector pulls a fresh wire-breakdown
+  // synchronously with the composer pill. Pre-fix, the inspector
+  // refreshed only on rules / override / manual-trigger / undo
+  // events — its "% of context window used" reading would lag the
+  // pill by entire iterations during a live run.
   const emit = (event: TimelineEvent): void => {
     if (event.kind === 'token-usage') {
       latestUsage = event.usage;
+      broadcastSnapshotChanged(opts.input.runId);
     } else if (event.kind === 'context-summary-pending') {
       activeSummaryId = event.summaryId;
     } else if (
@@ -252,6 +292,31 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
      * banner and is gone).
      */
     const spin = createSpinSignatureBuffer();
+    /**
+     * Run-scoped set of delegate ids the orchestrator has already
+     * emitted `subagent-pending` events for (T0-7). Hoisted from
+     * `handleAssistantTurn` per-turn scope so a sub-iteration that
+     * emits two assistant turns (rare provider behavior — return,
+     * then continue) cannot re-emit a pending row for an id the
+     * first turn already surfaced. The renderer reducer dedupes at
+     * `subagent-spawn` time, so the previous duplication produced
+     * a brief flicker rather than a corrupt state — but emitting
+     * fewer redundant events is strictly better for the timeline.
+     */
+    const runScopedSeenDelegateIds = new Set<string>();
+    /**
+     * T0-6 — high-water mark for orphan-stub injections seen in this
+     * run. The defensive sanitizer (`sanitizeToolCallPairingWithStats`)
+     * walks `messages[]` every iteration; when a transcript carries a
+     * stable orphan (a corrupted JSONL line that re-materialises on
+     * every replay-then-rebuild path), the previous code emitted a
+     * `phase` event PER iteration with the same N. The water-mark
+     * gate below emits exactly ONE phase event per "new" orphan
+     * detected — subsequent iterations that re-encounter the SAME
+     * stable orphan stay silent on the timeline. Fresh orphans
+     * (typically zero in practice) still emit a top-up phase event.
+     */
+    let injectedStubsHighWater = 0;
     let consecutiveErrors = 0;
     /**
      * Consecutive orchestrator iterations whose tool round attempted at
@@ -271,16 +336,21 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
     const runStateAcc = createRunStateAccumulator();
 
     /**
-     * Provider display name resolved ONCE at run start. Surfaced into the
-     * `Connecting to <name>…` and `Awaiting first token from <model>…`
-     * status labels so the user sees a human-readable provider instead
-     * of the raw `providerId` UUID (e.g. `ba60a0a3-2625-4e08-…`). When
-     * the provider record can't be loaded (deleted between send and run
-     * start, encrypted-store read failure) we fall back to the providerId
-     * — better than a blank label, and the same surface the renderer
-     * pre-rate-guard transports already used.
+     * Provider display name with per-iteration freshness (T0-1).
+     *
+     * Resolved lazily at the top of every iteration so a mid-run
+     * provider rename is reflected in the next `Connecting to <name>…`
+     * status label, instead of pinning the name captured at run start.
+     * One lookup per iteration is plenty — multiple status events
+     * inside the same iteration share the cached value via this `let`
+     * binding, and the underlying provider-store decrypt is itself
+     * memoized.
+     *
+     * Falls back to the raw `providerId` UUID when the provider
+     * record can't be loaded (deleted mid-run, decrypt failure) so
+     * the user still sees a stable label rather than a blank one.
      */
-    const providerName = await resolveProviderName(opts.input.selection.providerId);
+    let providerName = await resolveProviderName(opts.input.selection.providerId);
 
     // Register this run's context for the contextSummary IPC handlers
     // and the inspector. Holds a live REFERENCE to `messages`; the
@@ -289,6 +359,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
     // the `finally` block below regardless of how the loop exits.
     const runHandle: RunContextHandle = {
       runId: opts.input.runId,
+      generation: 0,
       conversationId: opts.input.conversationId ?? '',
       workspaceId: opts.workspaceId,
       workspacePath: opts.workspacePath,
@@ -327,7 +398,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
             trigger: 'manual',
             originalPrompt: opts.input.prompt,
             ...(latestRunStateXml !== undefined ? { runStateXml: latestRunStateXml } : {}),
-            signal: opts.signal,
+            signal: bindSummarySignal(),
             emit
           });
           if (result.ok) return { ok: true, summaryId: result.summaryId };
@@ -337,10 +408,19 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
           log.warn('manual summarization failed', { runId: opts.input.runId, reason });
           return { ok: false, reason };
         } finally {
+          releaseSummarySignal();
           summarizationStarting = false;
         }
       },
+      abortSummary: () => {
+        if (!summarizationStarting && activeSummaryId === undefined) return false;
+        summaryAbort?.abort();
+        return true;
+      },
       undo: async (summaryId: string) => {
+        if (summarizationStarting || activeSummaryId !== undefined) {
+          return { ok: false };
+        }
         const snapshot = getUndoSnapshot(opts.input.runId, summaryId);
         if (!snapshot) return { ok: false };
         revertSummary({
@@ -371,11 +451,58 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
         const workspaceOverridePresent = await probeWorkspaceOverridePresent(
           opts.workspacePath
         );
+        // ── Pre-iter-0 race fix ───────────────────────────────────
+        // `buildInitialMessages` seeds `messages[0]` as a placeholder
+        // `{ role: 'system', content: '' }` that the loop body fills
+        // with the real `buildSystemPrompt(harness, env, runStateXml)`
+        // on each iteration (see ~L553 below). There's a window
+        // between `registerRunContext` (just above) and the iter-0
+        // body where an Inspector IPC firing `runHandle.snapshot()`
+        // would observe the empty placeholder and report
+        // `systemPromptTokens === 0` — exactly the bug the idle path
+        // had pre-fix. Detect the empty placeholder and build a
+        // representative system prompt locally for the snapshot
+        // view (without mutating the live array, which the loop
+        // owns and will overwrite on its own schedule).
+        let snapshotMessages: ChatMessage[] = messages;
+        if (
+          messages.length > 0 &&
+          messages[0]?.role === 'system' &&
+          (messages[0].content ?? '') === ''
+        ) {
+          try {
+            const env = await refreshEnvelopes(
+              query,
+              opts.input.conversationId ?? '',
+              opts.workspacePath,
+              opts.input.workspaceId
+            );
+            const stateXml =
+              latestRunStateXml ??
+              buildRunStateXml(
+                snapshotRunState(runStateAcc, counters, nudges, spin, consecutiveBadToolRounds)
+              );
+            // `<host_environment>` is rebuilt FRESH on every snapshot —
+            // there is no per-run cache because the timestamp is the
+            // entire point. The cost is microsecond-cheap (one Date +
+            // a handful of synchronous os/process reads).
+            const hostEnvXml = buildHostEnvironmentXml();
+            const sysContent = buildSystemPrompt(harness, env, stateXml, hostEnvXml);
+            snapshotMessages = [
+              { role: 'system', content: sysContent },
+              ...messages.slice(1)
+            ];
+          } catch (err) {
+            log.debug('snapshot system-prompt rebuild failed; using live array', {
+              err: err instanceof Error ? err.message : String(err)
+            });
+          }
+        }
         const snap = await getInspectorSnapshot({
           runId: opts.input.runId,
           conversationId: opts.input.conversationId ?? '',
           workspaceId: opts.workspaceId,
-          messages,
+          messages: snapshotMessages,
           rules: summaryRules,
           workspaceOverridePresent,
           modelId: opts.input.selection.modelId,
@@ -385,11 +512,31 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
         return snap;
       }
     };
-    registerRunContext(runHandle);
+    const runContextGeneration = registerRunContext(runHandle);
 
     for (let iter = 0; iter < MAX_TOTAL_ITERATIONS; iter++) {
-      if (opts.signal.aborted) return;
+      if (opts.signal.aborted) return {};
       const iterStartedAt = Date.now();
+
+      // T0-1: refresh the provider name once per iteration so a
+      // mid-run rename lands in the next status label. Cheap (the
+      // provider store decrypt is itself cached). Skip on iter 0 — the
+      // value resolved at run start is already authoritative for the
+      // first iteration and a redundant lookup just adds latency to
+      // the first `Connecting to…` row.
+      if (iter > 0) {
+        try {
+          providerName = await resolveProviderName(
+            opts.input.selection.providerId
+          );
+        } catch (err) {
+          log.debug('per-iter provider name refresh failed; keeping prior', {
+            providerId: opts.input.selection.providerId,
+            iter,
+            err: err instanceof Error ? err.message : String(err)
+          });
+        }
+      }
 
       // H2: re-resolve `summaryRules` per iteration. Resolving only
       // once at run start meant a Settings → Context edit mid-run
@@ -448,7 +595,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
             trigger: 'auto',
             originalPrompt: opts.input.prompt,
             ...(latestRunStateXml !== undefined ? { runStateXml: latestRunStateXml } : {}),
-            signal: opts.signal,
+            signal: bindSummarySignal(),
             emit
           });
         } catch (err) {
@@ -463,11 +610,12 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
             err: err instanceof Error ? err.message : String(err)
           });
         } finally {
+          releaseSummarySignal();
           summarizationStarting = false;
         }
         // Re-check abort state — the streamer's `await` may have
         // observed a Stop click while we were compressing.
-        if (opts.signal.aborted) return;
+        if (opts.signal.aborted) return {};
       }
 
       // Refresh envelopes and rebuild the system message in-place. The
@@ -475,7 +623,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
       // with title + prior-turn count so the agent can anchor short
       // continuation prompts to the current session instead of misreading
       // an empty `<recent_memory>` as a freshness signal (see screenshots
-      // §4 / harness 03-context-management.md).
+      // harness/02-context-and-memory.md).
       // Workspace-pinned envelopes. Passing both `workspacePath` (for the
       // top-level listing + memory retrieval) and `workspaceId` (for
       // `<prior_conversations>` filtering) keeps cross-workspace context
@@ -500,10 +648,18 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
       // call). Updated even on iterations where no summarization
       // fires so a later click sees the freshest snapshot.
       latestRunStateXml = runStateXml;
+      // Real-time host context (date/time + OS facts) — rebuilt every
+      // iteration so the model never sees a stale timestamp. NOT
+      // folded into `refreshEnvelopes` because that path has a 3s TTL
+      // cache; real-time is the whole point of this surface. Cost is
+      // microsecond-cheap (one Date + a handful of synchronous os/
+      // process reads), so a per-iteration rebuild is well under
+      // any noticeable latency budget.
+      const hostEnvXml = buildHostEnvironmentXml();
       if (messages.length > 0 && messages[0]?.role === 'system') {
-        messages[0] = { role: 'system', content: buildSystemPrompt(harness, env, runStateXml) };
+        messages[0] = { role: 'system', content: buildSystemPrompt(harness, env, runStateXml, hostEnvXml) };
       } else {
-        messages.unshift({ role: 'system', content: buildSystemPrompt(harness, env, runStateXml) });
+        messages.unshift({ role: 'system', content: buildSystemPrompt(harness, env, runStateXml, hostEnvXml) });
       }
 
       // Defensive sanitizer (audit follow-up): replay and prior run aborts
@@ -524,19 +680,34 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
       // not per stub — count is enough.
       const sanitized = sanitizeToolCallPairingWithStats(messages);
       const candidateMessages = sanitized.messages;
-      if (sanitized.stats.injectedStubs > 0) {
+      // T0-6: emit the recovery `phase` event only when the run has
+      // seen a NEW orphan since the last emission. A stable orphan
+      // (e.g. a corrupted JSONL line that re-materialises on every
+      // replay-then-rebuild) used to spam one identical phase row
+      // per iteration; the high-water gate below collapses that to
+      // exactly one row per increment.
+      if (sanitized.stats.injectedStubs > injectedStubsHighWater) {
+        const newCount = sanitized.stats.injectedStubs - injectedStubsHighWater;
+        injectedStubsHighWater = sanitized.stats.injectedStubs;
         emit({
           kind: 'phase',
           id: randomUUID(),
           ts: Date.now(),
-          label: `Recovered ${sanitized.stats.injectedStubs} orphan tool_call(s) from history; the agent will re-issue if needed.`
+          label: `Recovered ${newCount} orphan tool_call(s) from history; the agent will re-issue if needed.`
         });
       }
 
       const req = buildOrchestratorRequest({
         selection: opts.input.selection,
         messages: candidateMessages,
-        signal: opts.signal
+        signal: opts.signal,
+        // Phase 7 (2026): thread the conversation id so xAI Grok 4.x
+        // hosts get a stable `x-grok-conv-id` for prompt-cache
+        // attribution. Other dialects ignore the field — see
+        // `attributionHeaders.ts` for the resolution rule.
+        ...(opts.input.conversationId !== undefined
+          ? { conversationId: opts.input.conversationId }
+          : {})
       });
 
       // Three-phase wait surface so the user can tell where the latency
@@ -583,7 +754,12 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
         );
       };
 
-      const turn = await handleAssistantTurn(req, emit, argsDeltaTap);
+      const turn = await handleAssistantTurn(
+        req,
+        emit,
+        argsDeltaTap,
+        runScopedSeenDelegateIds
+      );
 
       if (turn.error) {
         // User-initiated Stop (or the run-scoped signal firing for any
@@ -601,7 +777,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
           if (turn.hadText || turn.hadReasoning) {
             emit({ kind: 'agent-text-aborted', id: turn.assistantMsgId, ts: Date.now() });
           }
-          return;
+          return {};
         }
         consecutiveErrors += 1;
         // Provider-level errors (402 billing, 401 auth, 429 rate-limit, etc.)
@@ -631,7 +807,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
             ts: Date.now(),
             message: `Provider failed ${consecutiveErrors} times in a row: ${msg}`
           });
-          return;
+          return { terminalError: `Provider failed ${consecutiveErrors} times in a row: ${msg}` };
         }
         emit({
           kind: 'agent-thought',
@@ -657,7 +833,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
         try {
           await backoff(consecutiveErrors, { signal: opts.signal });
         } catch {
-          return;
+          return {};
         }
         runStateAcc.lastAction = 'retry';
         continue;
@@ -676,7 +852,19 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
       // later turn-end one, which would bloat the "Thought for Ns" label
       // with the time spent streaming the post-reasoning answer.
       if (turn.hadReasoning && !turn.reasoningEndEmitted) {
-        emit({ kind: 'agent-reasoning-end', id: turn.assistantMsgId, ts: Date.now() });
+        // Pure-reasoning fallback: the stream ended without a content/
+        // tool-call follow-up so `consumeChatStream` never fired the
+        // mid-stream `onReasoningEnd`. Forward the Anthropic thinking
+        // signature (when present) so a thinking-only Claude turn
+        // round-trips its plan signature on the next request.
+        emit({
+          kind: 'agent-reasoning-end',
+          id: turn.assistantMsgId,
+          ts: Date.now(),
+          ...(typeof turn.reasoningSignature === 'string' && turn.reasoningSignature.length > 0
+            ? { signature: turn.reasoningSignature }
+            : {})
+        });
       }
       if (turn.hadText) {
         emit({ kind: 'agent-text-end', id: turn.assistantMsgId, ts: Date.now() });
@@ -713,6 +901,14 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
         role: 'assistant',
         content: assistantContent,
         ...(turn.reasoningText.length > 0 ? { reasoning_content: turn.reasoningText } : {}),
+        // Phase 8 (2026): persist the Anthropic thinking signature on
+        // the assistant turn so the next request echoes the
+        // `{type:'thinking', thinking, signature}` block back unchanged.
+        // Required by Claude thinking-capable models for plan
+        // continuity across turns; ignored by every other dialect.
+        ...(typeof turn.reasoningSignature === 'string' && turn.reasoningSignature.length > 0
+          ? { reasoning_signature: turn.reasoningSignature }
+          : {}),
         ...(finishedToolCalls.length > 0
           ? {
             tool_calls: finishedToolCalls.map((tc) => ({
@@ -721,7 +917,14 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
               function: {
                 name: tc.name ?? 'unknown',
                 arguments: tc.argumentsBuf || '{}'
-              }
+              },
+              // Phase 9 (2026): persist Gemini's per-call
+              // `thoughtSignature` so the next request round-trips
+              // it onto the matching `functionCall` part. Other
+              // dialects emit no signature; the field stays absent.
+              ...(typeof tc.thoughtSignature === 'string' && tc.thoughtSignature.length > 0
+                ? { thoughtSignature: tc.thoughtSignature }
+                : {})
             }))
           }
           : {})
@@ -758,7 +961,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
         });
         // If the user aborted while the tools were running, exit before we
         // burn another iteration on a stale stream request.
-        if (opts.signal.aborted) return;
+        if (opts.signal.aborted) return {};
         runStateAcc.directToolRoundsTotal += 1;
         runStateAcc.childRedelegationsTotal += summary.childRedelegations;
         runStateAcc.lastAction = 'direct-tool';
@@ -777,7 +980,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
           // Keep the original user prompt as the anchor and append the
           // fresh exploration signal. Bounded by `MAX_QUERY_CHARS` so
           // long ls-tree paths don't bloat downstream retrieval cost.
-          query = clampQuery(`${opts.input.prompt} ${directQuery}`);
+          // T0-4: the clamp now reserves a stable head for the prompt
+          // so the goal verb is never dropped on long prompts.
+          query = clampQuery(`${opts.input.prompt} ${directQuery}`, opts.input.prompt);
         }
 
         // Three-strike rule for direct tool failures. Only counts when at
@@ -805,7 +1010,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
               message:
                 `${MAX_SELF_CORRECTION_ATTEMPTS} consecutive tool rounds failed — escalating to user.`
             });
-            return;
+            return {
+              terminalError: `${MAX_SELF_CORRECTION_ATTEMPTS} consecutive tool rounds failed — escalating to user.`
+            };
           }
         } else {
           consecutiveBadToolRounds = 0;
@@ -943,15 +1150,24 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
             onToolCallSettled
           }
         );
-        if (outcome === 'halt') return;
+        if (outcome === 'halt') {
+          return {
+            terminalError: `${MAX_DELEGATION_BAD_ROUNDS} consecutive sub-agent rounds failed verification — escalating to user.`
+          };
+        }
         // If the user aborted during the swarm, don't loop again.
-        if (opts.signal.aborted) return;
+        if (opts.signal.aborted) return {};
         runStateAcc.delegateRoundsTotal += 1;
         runStateAcc.lastAction = 'delegate';
         // Refresh the rolling memory-query with a synopsis of delegated
         // work. Clamped through the same `MAX_QUERY_CHARS` bound the
         // direct-tool branch uses so both paths cannot blow past it.
-        query = clampQuery(delegates.map((d) => d.task).join(' '));
+        // T0-4: the clamp now reserves a stable head for the prompt
+        // so the goal verb survives long delegate-task lists.
+        query = clampQuery(
+          delegates.map((d) => d.task).join(' '),
+          opts.input.prompt
+        );
         continue;
       }
 
@@ -991,7 +1207,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
         // 8 trailing code units to avoid pathological inputs); when no
         // meaningful char is found, we still fall through to `'answer'`.
         runStateAcc.lastAction = endsWithQuestionMark(cleanText) ? 'clarify' : 'answer';
-        return;
+        return {};
       }
     }
 
@@ -1006,6 +1222,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
       ts: Date.now(),
       message: `Iteration cap (${MAX_TOTAL_ITERATIONS}) reached.`
     });
+    return { terminalError: `Iteration cap (${MAX_TOTAL_ITERATIONS}) reached.` };
   } finally {
     // Phase 2 — guarantee disposal of the run-level diff streamer +
     // the partial-JSON parser pool. Runs on every exit from the
@@ -1040,7 +1257,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
       });
     }
     try {
-      unregisterRunContext(opts.input.runId);
+      unregisterRunContext(opts.input.runId, runContextGeneration);
     } catch (err) {
       log.debug('unregisterRunContext threw during runLoop cleanup', {
         runId: opts.input.runId,
@@ -1048,6 +1265,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
       });
     }
   }
+  return {};
 }
 
 /**
@@ -1059,17 +1277,54 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<void> {
 const MAX_QUERY_CHARS = 600;
 
 /**
- * Cap a rolling-query string to `MAX_QUERY_CHARS`. We keep the LATEST
- * trailing window because the tail carries the freshest exploration
- * signal — the user prompt is preserved verbatim at the head when the
- * caller composes `${prompt} ${directQuery}`, but if even that
- * combined string overshoots we accept losing the prompt's tail
- * rather than truncating the fresh signal.
+ * Reserved head budget for the original user prompt (T0-4).
+ *
+ * The clamp used to keep a single trailing window of `MAX_QUERY_CHARS`,
+ * which dropped the user-prompt head whenever the prompt itself was
+ * longer than the budget. Memory retrieval then keyed on exploration
+ * signal alone and lost the actual goal verb.
+ *
+ * The fix splits the budget into a stable head reserved for the
+ * prompt and a trailing window for the freshest exploration signal.
+ * The two slices are recombined with a single space so keyword
+ * tokenization treats them as one stream. When the prompt is shorter
+ * than the head budget, the trailing window grows to absorb the
+ * leftover budget.
  */
-function clampQuery(s: string): string {
+const PROMPT_HEAD_BUDGET = 200;
+
+/**
+ * Cap a rolling-query string to `MAX_QUERY_CHARS` while preserving the
+ * caller-supplied prompt head (T0-4).
+ *
+ * `originalPrompt` is the user's original prompt — its first
+ * `PROMPT_HEAD_BUDGET` chars are reserved at the head of the output so
+ * the goal verb is never dropped. The remaining budget is filled from
+ * the trailing tail of `s`, which carries the freshest exploration
+ * signal. When `s` is already short enough, returns it unchanged.
+ *
+ * Pure / no-throw — exported via the symbol below for the dedicated
+ * unit test.
+ */
+function clampQuery(s: string, originalPrompt: string): string {
   if (s.length <= MAX_QUERY_CHARS) return s;
-  return s.slice(s.length - MAX_QUERY_CHARS);
+  const head = originalPrompt.slice(0, PROMPT_HEAD_BUDGET);
+  const tailBudget = MAX_QUERY_CHARS - head.length - 1; // -1 for the joining space
+  if (tailBudget <= 0) return head.slice(0, MAX_QUERY_CHARS);
+  // Drop the prefix that overlaps with `head` so we don't double-
+  // count the prompt body in the tail window.
+  const remainder = s.startsWith(originalPrompt)
+    ? s.slice(originalPrompt.length)
+    : s;
+  const tail = remainder.length <= tailBudget
+    ? remainder
+    : remainder.slice(remainder.length - tailBudget);
+  const trimmedTail = tail.trimStart();
+  return trimmedTail.length > 0 ? `${head} ${trimmedTail}` : head;
 }
+
+/** Test-only export so the head-preservation invariant is pinnable. */
+export const __test_clampQuery = clampQuery;
 
 /**
  * Per-call cap on individual string-arg values folded into the

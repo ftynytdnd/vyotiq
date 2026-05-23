@@ -75,7 +75,7 @@ describe('registerAppIpc — APP_REVEAL_PATH', () => {
       // renderer (or a typo in a future call site) is the threat this
       // guard exists for.
       mockIpc.__invoke(IPC.APP_REVEAL_PATH, 'arbitrary-evil-path' as unknown as AppRevealTarget)
-    ).rejects.toThrow(/Unknown reveal target/);
+    ).rejects.toThrow(/target must be one of: userData, settings, log/);
 
     expect(showSpy).not.toHaveBeenCalled();
   });

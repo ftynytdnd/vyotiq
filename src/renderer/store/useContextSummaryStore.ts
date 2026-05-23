@@ -26,6 +26,8 @@ import type {
   ContextSummaryRules
 } from '@shared/types/contextSummary.js';
 import { logger } from '../lib/logger.js';
+import { vyotiq } from '../lib/ipc.js';
+import { useChatStore } from './useChatStore.js';
 
 const log = logger.child('useContextSummaryStore');
 
@@ -36,10 +38,9 @@ const log = logger.child('useContextSummaryStore');
  *   - `live`  — the bound id is a `runId` for a still-streaming
  *     orchestrator. Manual trigger / Undo are enabled. `summaries`
  *     in the chat store paints the live card.
- *   - `idle`  — the bound id is a `conversationId`; no run is in
- *     flight. Manual trigger / Undo are disabled (gated on a live
- *     run). The panel still surfaces the persisted rules and the
- *     compressed-or-not state of the existing transcript.
+ *   - `idle`  — the bound id is a `conversationId`; no orchestrator
+ *     run is in flight. Manual trigger and cancel route through the
+ *     idle summarizer runtime; undo works against persisted splices.
  *
  * Internal to this store; `open()` accepts the literal union
  * directly so external callers don't need to import the alias.
@@ -47,10 +48,7 @@ const log = logger.child('useContextSummaryStore');
 type InspectorMode = 'live' | 'idle';
 
 interface ContextSummaryState {
-  /** True when the slide-over panel is mounted in the DOM. */
-  isOpen: boolean;
-  /** What identifier `snapshot` was fetched against. `null` until
-   *  the user opens the panel for the first time. */
+  /** What identifier `snapshot` was fetched against. `null` when closed. */
   boundId: string | null;
   mode: InspectorMode;
   /** Most recent fetched snapshot. `null` while pending or after
@@ -93,7 +91,13 @@ interface ContextSummaryActions {
     | { ok: false; reason: string }
   >;
   /** Fire `vyotiq.contextSummary.undo`. Re-pulls on success. */
-  undo(summaryId: string): Promise<{ ok: boolean }>;
+  undo(
+    summaryId: string,
+    targetId?: string
+  ): Promise<{ ok: boolean }>;
+  /** Cancel an in-flight idle summarization for the bound conversation. */
+  abortIdle(): Promise<{ ok: boolean }>;
+  abortLiveSummary(): Promise<{ ok: boolean }>;
   /** Persist a per-message override and refresh. */
   setMessageOverride(
     conversationId: string,
@@ -113,7 +117,6 @@ interface ContextSummaryActions {
 type Store = ContextSummaryState & ContextSummaryActions;
 
 const initialState: ContextSummaryState = {
-  isOpen: false,
   boundId: null,
   mode: 'live',
   snapshot: null,
@@ -138,21 +141,15 @@ export const useContextSummaryStore = create<Store>()((set, get) => ({
     // Subscribe AFTER the open path resolves so the first refetch
     // is deterministic; broadcasts that race the open simply
     // schedule the refresh against the live store.
-    const unsubscribe = window.vyotiq.contextSummary.onSnapshotChanged(
+    const unsubscribe = vyotiq.contextSummary.onSnapshotChanged(
       (runId: string) => {
         const cur = get();
-        // Only refresh when we're bound to the runId the
-        // broadcast names. Idle-mode panels (bound to a
-        // conversationId) are not interested in run-scoped
-        // broadcasts.
-        if (!cur.isOpen) return;
-        if (cur.mode !== 'live') return;
+        if (!cur.boundId) return;
         if (cur.boundId !== runId) return;
         void get().refresh();
       }
     );
     set({
-      isOpen: true,
       boundId: id,
       mode,
       snapshot: null,
@@ -173,10 +170,10 @@ export const useContextSummaryStore = create<Store>()((set, get) => ({
 
   refresh: async () => {
     const cur = get();
-    if (!cur.isOpen || !cur.boundId) return;
+    if (!cur.boundId) return;
     set({ loading: true, error: null });
     try {
-      const snap = await window.vyotiq.contextSummary.inspect(cur.boundId);
+      const snap = await vyotiq.contextSummary.inspect(cur.boundId);
       // Rules read in parallel — the snapshot already carries a
       // `rules` field, but it reflects the rules in effect for
       // the snapshot's workspace at the moment of the inspect()
@@ -184,9 +181,16 @@ export const useContextSummaryStore = create<Store>()((set, get) => ({
       // settings change between the inspect and the panel render
       // is honored. Cheap (memoized settings cache).
       const rules = snap
-        ? await window.vyotiq.contextSummary.getRules(snap.workspaceId || null)
+        ? await vyotiq.contextSummary.getRules(snap.workspaceId || null)
         : null;
-      set({ snapshot: snap, rules, loading: false });
+      set({
+        snapshot: snap,
+        rules,
+        loading: false,
+        error: snap
+          ? null
+          : "Couldn't read the orchestrator's context for this conversation."
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       log.warn('refresh failed', { err: msg });
@@ -196,35 +200,97 @@ export const useContextSummaryStore = create<Store>()((set, get) => ({
 
   triggerManual: async () => {
     const cur = get();
-    if (cur.mode !== 'live' || !cur.boundId) {
-      return { ok: false, reason: 'No live run to summarize' };
+    if (!cur.boundId) {
+      return { ok: false, reason: 'No active conversation' };
     }
     set({ busy: true, error: null });
+    let idleRunId: string | null = null;
     try {
-      const result = await window.vyotiq.contextSummary.triggerManual(
-        cur.boundId
+      if (cur.mode === 'live') {
+        // Live path — bound id is a runId. The IPC routes through
+        // the orchestrator's `runContextRegistry` handle.
+        const result = await vyotiq.contextSummary.triggerManual(cur.boundId);
+        set({ busy: false, ...(result.ok ? {} : { error: result.reason }) });
+        return result;
+      }
+      // Idle path — bound id is a conversationId. Mint a synthetic
+      // runId, register the route in `useChatStore.runIdToConv`
+      // BEFORE calling the IPC so the upcoming `CHAT_EVENT`
+      // broadcasts route into the right slice. The matching
+      // `chat:done` from main prunes the route entry on settle.
+      idleRunId = `idle-summary-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+      useChatStore.getState().beginSideRun(idleRunId, cur.boundId);
+      const result = await vyotiq.contextSummary.triggerManual(
+        cur.boundId,
+        idleRunId
       );
-      // The matching `onSnapshotChanged` will re-pull; we don't
-      // need to schedule a refresh here.
+      if (!result.ok) {
+        useChatStore.getState().finishRun(idleRunId);
+      }
       set({ busy: false, ...(result.ok ? {} : { error: result.reason }) });
       return result;
     } catch (err) {
+      if (idleRunId) {
+        useChatStore.getState().finishRun(idleRunId);
+      }
       const msg = err instanceof Error ? err.message : String(err);
       set({ busy: false, error: msg });
       return { ok: false, reason: msg };
     }
   },
 
-  undo: async (summaryId) => {
+  undo: async (summaryId, targetId) => {
+    const cur = get();
+    const chat = useChatStore.getState();
+    const id =
+      targetId ?? cur.boundId ?? chat.runId ?? chat.conversationId;
+    if (!id) return { ok: false };
+    set({ busy: true });
+    try {
+      const result = await vyotiq.contextSummary.undo(id, summaryId);
+      if (result.ok && result.event && chat.conversationId) {
+        useChatStore
+          .getState()
+          .applyConversationEvent(chat.conversationId, result.event);
+      }
+      if (result.ok && cur.boundId) void get().refresh();
+      set({ busy: false });
+      return { ok: result.ok };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      set({ busy: false, error: msg });
+      return { ok: false };
+    }
+  },
+
+  abortIdle: async () => {
+    const cur = get();
+    const conversationId =
+      cur.mode === 'idle'
+        ? cur.boundId
+        : useChatStore.getState().conversationId;
+    if (!conversationId) return { ok: false };
+    set({ busy: true });
+    try {
+      const result = await vyotiq.contextSummary.abortIdle(conversationId);
+      set({ busy: false });
+      if (result.ok && cur.boundId) void get().refresh();
+      return result;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      set({ busy: false, error: msg });
+      return { ok: false };
+    }
+  },
+
+  abortLiveSummary: async () => {
     const cur = get();
     if (cur.mode !== 'live' || !cur.boundId) return { ok: false };
     set({ busy: true });
     try {
-      const result = await window.vyotiq.contextSummary.undo(
-        cur.boundId,
-        summaryId
-      );
+      const result = await vyotiq.contextSummary.abortLive(cur.boundId);
       set({ busy: false });
+      if (result.ok) void get().refresh();
       return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -235,7 +301,7 @@ export const useContextSummaryStore = create<Store>()((set, get) => ({
 
   setMessageOverride: async (conversationId, messageId, override) => {
     try {
-      await window.vyotiq.contextSummary.setMessageOverride(
+      await vyotiq.contextSummary.setMessageOverride(
         conversationId,
         messageId,
         override
@@ -253,7 +319,7 @@ export const useContextSummaryStore = create<Store>()((set, get) => ({
 
   resetMessageOverrides: async (conversationId) => {
     try {
-      await window.vyotiq.contextSummary.resetMessageOverrides(conversationId);
+      await vyotiq.contextSummary.resetMessageOverrides(conversationId);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       log.warn('resetMessageOverrides failed', { err: msg });
@@ -263,14 +329,14 @@ export const useContextSummaryStore = create<Store>()((set, get) => ({
 
   updateRules: async (scope, patch, workspaceId) => {
     try {
-      await window.vyotiq.contextSummary.updateRules(scope, patch, workspaceId);
+      await vyotiq.contextSummary.updateRules(scope, patch, workspaceId);
       // Re-pull the rules slot immediately — the snapshot-changed
       // broadcast covers active runs, but a Settings → Context
       // edit on an idle conversation won't fire one. Cheap: the
       // settings store's getter is memoized.
       const cur = get();
       if (cur.snapshot) {
-        const rules = await window.vyotiq.contextSummary.getRules(
+        const rules = await vyotiq.contextSummary.getRules(
           cur.snapshot.workspaceId || null
         );
         set({ rules });

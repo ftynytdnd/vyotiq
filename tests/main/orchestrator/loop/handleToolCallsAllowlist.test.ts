@@ -61,7 +61,7 @@ const baseOpts = {
   workspaceId: 'ws-1',
   runId: 'run-1',
   conversationId: 'conv-1',
-  permissions: { allowFileWrites: true, allowBash: true, allowWebSearch: false },
+  permissions: { allowAuto: true },
   strictApprovals: false,
   signal: new AbortController().signal
 };
@@ -170,6 +170,27 @@ describe('handleToolCalls — orchestrator allowlist enforcement', () => {
     for (const m of messages) {
       expect(m.content).not.toContain('not callable from the orchestrator');
     }
+  });
+
+  it('emits one consolidated phase row when delegate is refused in parallel', async () => {
+    const messages: ChatMessage[] = [];
+    const emit = vi.fn<(e: TimelineEvent) => void>();
+    const calls = Array.from({ length: 8 }, (_, i) =>
+      makePartialCall('delegate', JSON.stringify({ id: `A${i + 1}` }), `c${i}`)
+    );
+    const summary = await handleToolCalls(
+      calls,
+      messages,
+      emit,
+      { ...baseOpts, allowlist: ORCHESTRATOR_TOOLS }
+    );
+    expect(summary.childRedelegations).toBe(8);
+    const phases = emit.mock.calls
+      .map(([e]) => e)
+      .filter((e) => e.kind === 'phase');
+    expect(phases).toHaveLength(1);
+    expect(phases[0]!.label).toContain('8 times');
+    expect(phases[0]!.label).toContain('<delegate');
   });
 
   it('keeps the concise sub-agent refusal copy when subagentId is set', async () => {

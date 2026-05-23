@@ -116,11 +116,24 @@ const ORCHESTRATION_TAG_NAMES = [
   'run_state',
   'tool_calls',
   'system_instructions',
-  'current_workspace_context',
+  // Workspace-listing envelope built by `contextManager.refreshEnvelopes`
+  // — the wrap is `<workspace_context>…</workspace_context>` (no
+  // `current_` prefix). The pre-fix entry was `current_workspace_context`
+  // which matches no actual `wrapXml(...)` call in the codebase, so a
+  // model echoing the real envelope name in prose would slip past the
+  // strip. See `contextManager.ts:269`.
+  'workspace_context',
   'recent_memory',
   'meta_rules',
   'session_context',
   'prior_conversations',
+  // Real-time host snapshot envelope (`buildHostEnvironmentXml`) —
+  // injected on every iteration by `runLoop` between `<meta_rules>` and
+  // `<workspace_context>`. Listed here so a model echoing the envelope
+  // back in user-facing prose ("`<host_environment> now_utc: …`") is
+  // stripped at render time, same defense-in-depth pattern as the other
+  // envelope tags above.
+  'host_environment',
   // Inline chain-of-thought wrappers some models emit when prompted to
   // reason but lacking a native `reasoning_content` channel (Qwen-3,
   // GPT-OSS, R1 distilled variants behind generic OpenAI-compat shims,
@@ -279,39 +292,117 @@ function withFencedRegionsMasked(
  * fenced body to a subsequent regex pass.
  *
  * Capture group 1 is the leading `^|\n` so the replacement can
- * preserve paragraph spacing without re-anchoring.
+ * preserve paragraph spacing without re-anchoring. Capture group 3
+ * is the body after the info-line (may be undefined when only the
+ * opener has arrived); preserved so the pure-orchestration-fence
+ * unwrap can also fire mid-stream.
  */
-const TRAILING_OPEN_FENCE_RE = /(^|\n)(```|~~~)[^\n]*(?:\n[\s\S]*)?$/;
+const TRAILING_OPEN_FENCE_RE = /(^|\n)(```|~~~)[^\n]*(?:\n([\s\S]*))?$/;
 
 /**
- * Drop every fenced markdown code block from `text`. Closed fences
- * (``` ... ``` and ~~~ ... ~~~) are removed entirely; a trailing OPEN
- * fence (no closing delimiter at end-of-buffer, common during streaming)
- * is also removed so a partial fence body cannot leak into a
- * subsequent regex pass.
+ * Drop every fenced markdown code block from `text`, EXCEPT fences whose
+ * body is exclusively `<delegate ... />` markup (whitespace tolerated).
+ * Closed fences (``` ... ``` and ~~~ ... ~~~) are removed entirely; a
+ * trailing OPEN fence (no closing delimiter at end-of-buffer, common
+ * during streaming) is also removed so a partial fence body cannot
+ * leak into a subsequent regex pass.
  *
  * Used by `parseDelegates` so a `<delegate />` directive emitted as a
  * code example inside ``` is NEVER parsed as a real spawn directive.
- * The harness explicitly forbids fenced directives
- * (`01-orchestration-loop.md` §A Phase 4 "never inside a code fence
- * and never as a quoted preview"), but soft rules degrade — the host
- * now enforces the boundary structurally.
+ * The harness explicitly forbids `<delegate />` *examples* inside a
+ * fence (`01-orchestration-loop.md` §A Phase 4 "never inside a code
+ * fence and never as a quoted preview"), but soft rules degrade —
+ * the host enforces the boundary structurally.
+ *
+ * Pure-orchestration fences (the model wraps its real
+ * `<delegate ... />` directives in ```xml … ``` for syntax-
+ * highlighting purposes) are an EXCEPTION: those fences contain only
+ * the directives themselves, no prose, no other code. The display-
+ * side `dropOrchestrationOnlyFences` already recognises this shape
+ * and drops the fence so raw XML never reaches the user; the parser
+ * here mirrors that recognition so the directives inside actually
+ * spawn workers. Without this exception the chat shows a plan but
+ * nothing executes — the failure mode captured in the
+ * `679f5c3c-…jsonl` conversation: the model emitted four
+ * `<delegate />` directives wrapped in a single ```xml fence,
+ * `parseDelegates` saw zero, the loop terminated cleanly, and zero
+ * sub-agents ran.
+ *
+ * Detection heuristic for "pure-orchestration fence": run the body
+ * through `<delegate ... />` strip; if the result trims to empty,
+ * every character of the body was a directive. Replace the fence
+ * with the bare body (plus its leading newline, if any) so
+ * `DELEGATE_RE` can match. Any prose, language code, or other
+ * markup INSIDE the fence collapses the body to non-empty after the
+ * strip, the fence stays an example, and the body is dropped.
  *
  * Streaming safety: the trailing-open-fence pass means a model that
  * narrates *"I'll send: \`\`\`xml\n<delegate ... />"* and pauses
  * mid-stream will NOT trigger a spurious mid-stream `subagent-pending`
- * event. Once the closing delimiter arrives the body is already
- * masked by the closed-fence pass.
+ * event for the still-incomplete body. Once the closing delimiter
+ * arrives the body is recognised as pure-orchestration and parsed.
  *
  * Returns the input unchanged if no fences are present.
  */
 export function stripFencedCode(text: string): string {
-  // Order matters: strip closed fences FIRST so the trailing-open
-  // sweep cannot interpret the opener of a closed fence as the
-  // start of a partial. After this pass, any remaining ``` or ~~~
+  // Order matters: process closed fences FIRST. For each closed
+  // fence, decide whether the body is a real-spawn pure-
+  // orchestration fence (preserve body) or a prose / illustration
+  // fence (drop body). After this pass, any remaining ``` or ~~~
   // at line-start MUST be an unclosed opener.
-  const noClosed = text.replace(FENCE_RE, (_match, leading: string) => leading);
-  return noClosed.replace(TRAILING_OPEN_FENCE_RE, '$1');
+  const noClosed = text.replace(
+    FENCE_BODY_RE,
+    (_match, leading: string, _delim: string, body: string) => {
+      const stripped = body
+        .replace(DELEGATE_PAIR_RE, '')
+        .replace(DELEGATE_SELFCLOSE_RE, '')
+        .trim();
+      if (stripped.length === 0 && body.trim().length > 0) {
+        // Pure-orchestration fence: preserve the body verbatim so
+        // `DELEGATE_RE` can match the directives inside. Reset the
+        // global regex state used in the test (`lastIndex` would
+        // otherwise stick across `.replace` invocations because
+        // `DELEGATE_*_RE` are `g`-flagged) before returning.
+        DELEGATE_PAIR_RE.lastIndex = 0;
+        DELEGATE_SELFCLOSE_RE.lastIndex = 0;
+        // Body usually ends with a trailing `\n` from the closing
+        // delimiter line; preserve the leading newline so paragraph
+        // spacing around the unwrapped block matches the original.
+        return `${leading}${body}`;
+      }
+      DELEGATE_PAIR_RE.lastIndex = 0;
+      DELEGATE_SELFCLOSE_RE.lastIndex = 0;
+      // Illustration / prose fence — drop the body. Preserve the
+      // leading newline (if any) for paragraph spacing.
+      return leading;
+    }
+  );
+  return noClosed.replace(
+    TRAILING_OPEN_FENCE_RE,
+    (_match, leading: string, _delim: string, body: string | undefined) => {
+      // No body yet (just the opener line) — drop the opener and
+      // preserve only the leading newline.
+      if (typeof body !== 'string') return leading;
+      const stripped = body
+        .replace(DELEGATE_PAIR_RE, '')
+        .replace(DELEGATE_SELFCLOSE_RE, '')
+        .trim();
+      DELEGATE_PAIR_RE.lastIndex = 0;
+      DELEGATE_SELFCLOSE_RE.lastIndex = 0;
+      // Pure-orchestration body so far: preserve it so the streaming
+      // mid-stream parser can emit `subagent-pending` events for
+      // each complete directive without waiting for the closing
+      // fence delimiter to arrive. A partial / unfinished directive
+      // at the buffer tail (e.g. `<delegate id="A1" task="...`)
+      // also strips to empty under `DELEGATE_SELFCLOSE_RE`'s
+      // anchor — `DELEGATE_RE` in `parseDelegates` requires the
+      // closing `/?>` so the partial is silently ignored anyway.
+      if (stripped.length === 0 && body.trim().length > 0) {
+        return `${leading}${body}`;
+      }
+      return leading;
+    }
+  );
 }
 
 /**

@@ -97,7 +97,7 @@ const api: VyotiqApi = {
   },
 
   memory: {
-    list: (scope) => ipcRenderer.invoke(IPC.MEMORY_LIST, scope),
+    list: (scope, opts) => ipcRenderer.invoke(IPC.MEMORY_LIST, scope, opts),
     read: (scope, key) => ipcRenderer.invoke(IPC.MEMORY_READ, scope, key),
     write: (scope, key, content, mode) =>
       ipcRenderer.invoke(IPC.MEMORY_WRITE, scope, key, content, mode),
@@ -148,10 +148,18 @@ const api: VyotiqApi = {
   contextSummary: {
     inspect: (runId: string) =>
       ipcRenderer.invoke(IPC.CONTEXT_SUMMARY_INSPECT, runId),
-    triggerManual: (runId: string) =>
-      ipcRenderer.invoke(IPC.CONTEXT_SUMMARY_TRIGGER_MANUAL, runId),
+    triggerManual: (runId: string, idleRunId?: string) =>
+      ipcRenderer.invoke(
+        IPC.CONTEXT_SUMMARY_TRIGGER_MANUAL,
+        runId,
+        idleRunId
+      ),
     undo: (runId: string, summaryId: string) =>
       ipcRenderer.invoke(IPC.CONTEXT_SUMMARY_UNDO, runId, summaryId),
+    abortIdle: (conversationId: string) =>
+      ipcRenderer.invoke(IPC.CONTEXT_SUMMARY_ABORT_IDLE, conversationId),
+    abortLive: (runId: string) =>
+      ipcRenderer.invoke(IPC.CONTEXT_SUMMARY_ABORT_LIVE, runId),
     setMessageOverride: (conversationId, messageId, override) =>
       ipcRenderer.invoke(
         IPC.CONTEXT_SUMMARY_SET_MESSAGE_OVERRIDE,

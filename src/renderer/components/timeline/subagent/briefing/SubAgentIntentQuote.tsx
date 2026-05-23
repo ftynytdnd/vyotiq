@@ -38,6 +38,7 @@ import { stripDelegatesForDisplay } from '@shared/text/strip.js';
 import { useChatStore } from '../../../../store/useChatStore.js';
 import { MarkdownBody } from '../../markdown/MarkdownBody.js';
 import { DetailPane } from '../../tools/shared/DetailPane.js';
+import { SurfaceShell } from '../../../ui/SurfaceShell.js';
 import { deriveDelegateContext } from './deriveDelegateContext.js';
 
 interface SubAgentIntentQuoteProps {
@@ -82,16 +83,18 @@ export function SubAgentIntentQuote({ subagentId }: SubAgentIntentQuoteProps) {
 
   return (
     <DetailPane label="orchestrator intent">
-      <div className="flex items-start gap-2 rounded-inner border-l-2 border-accent/60 bg-surface-overlay/40 px-3 py-2">
-        <Quote
-          className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent/80"
-          strokeWidth={2}
-        />
-        <MarkdownBody
-          text={cleaned}
-          className="min-w-0 flex-1 text-log italic leading-relaxed text-text-secondary"
-        />
-      </div>
+      <SurfaceShell padded padding="content">
+        <div className="flex items-start gap-2">
+          <Quote
+            className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent/80"
+            strokeWidth={2}
+          />
+          <MarkdownBody
+            text={cleaned}
+            className="min-w-0 flex-1 text-row italic leading-relaxed text-text-secondary"
+          />
+        </div>
+      </SurfaceShell>
     </DetailPane>
   );
 }

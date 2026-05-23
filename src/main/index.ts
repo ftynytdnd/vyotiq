@@ -15,8 +15,64 @@ import { flushAll as flushConversations } from './conversations/conversationStor
 import { flushAll as flushCheckpoints } from './checkpoints/index.js';
 import { flushWorkspaceState } from './workspace/workspaceState.js';
 import { clearAllPending as drainPendingConfirms } from './orchestrator/confirmBus.js';
+import { abortRun, listActiveRuns } from './orchestrator/AgentV.js';
+import { abortAllIdleSummaries } from './orchestrator/contextSummarizer/idleSummaryRuntime.js';
 
 const log = logger.child('boot');
+
+// Single-instance lock. Vyotiq is an always-on desktop agent that owns
+// several `<userData>/vyotiq/...` files (conversation JSONL transcripts,
+// the conversations index, run manifests + checkpoint blob store, the
+// global meta-rules markdown, the encrypted settings blob). Each main
+// process maintains its OWN in-memory cache + write chain for those
+// stores; two processes racing on the same files cannot serialize.
+// Real failure modes prevented here: torn `index.json` writes
+// overwriting each other's flushes, interleaved JSONL appends from
+// concurrent orchestrator runs, conflicting `safeStorage` decrypt /
+// encrypt cycles for provider keys, both processes flipping the
+// `removedIds` tombstone Map independently, and dangling renderer
+// `webContents.send` from the loser process.
+//
+// Behaviour matches the standard Electron lifecycle pattern: the
+// FIRST instance acquires the lock and proceeds to bootstrap; any
+// SECOND launch (double-clicking the launcher, AppX side-launch,
+// running `npm run dev` while a prior instance is alive, etc.) fails
+// the lock and exits immediately. The first instance receives a
+// `second-instance` event and focuses its existing window so the
+// user's click feels like "the app came to the front" rather than
+// silently doing nothing.
+//
+// CLI args are intentionally NOT forwarded today — the
+// `additionalData` slot stays empty. A future feature that wants to
+// open a workspace via `vyotiq path/to/workspace` would extend the
+// `second-instance` payload here; until then `--no-args` is strict so
+// the IPC-validation surface that protects every other channel
+// (`wrapIpcHandler`, `validate.ts`) isn't bypassed by a CLI flow.
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  log.info('another instance is already running; quitting');
+  app.quit();
+  // `app.quit` is asynchronous — block further bootstrap synchronously
+  // so we don't double-register IPC handlers / window-open guards.
+  // `process.exit` is the right call here: the IPC channel on which
+  // the "second-instance" event lands has already been wired into
+  // Electron's internal main bus by `requestSingleInstanceLock`, so
+  // the user's click will reach the first instance regardless of how
+  // quickly we exit.
+  process.exit(0);
+}
+app.on('second-instance', () => {
+  // A user invoked Vyotiq while a prior instance was already running.
+  // Restore + focus the existing window so the click "wakes" the app
+  // instead of silently being swallowed. We deliberately ignore the
+  // event's `argv` / `workingDirectory` / `additionalData` slots —
+  // see the lock-acquisition comment above for the rationale.
+  const wins = BrowserWindow.getAllWindows();
+  const win = wins.find((w) => !w.isDestroyed());
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.focus();
+});
 
 async function bootstrap() {
   installCrashHandlers();
@@ -49,6 +105,10 @@ app.on('window-all-closed', () => {
 let isShuttingDown = false;
 app.on('before-quit', (event) => {
   drainPendingConfirms();
+  for (const info of listActiveRuns()) {
+    abortRun(info.runId);
+  }
+  abortAllIdleSummaries();
   if (isShuttingDown) return;
   isShuttingDown = true;
   event.preventDefault();
@@ -67,9 +127,31 @@ app.on('before-quit', (event) => {
     .finally(() => app.quit());
 });
 
-// Harden: never allow opening external windows from links inside the app.
+// Harden: never allow opening external windows from links inside the app,
+// AND never allow in-place navigation away from the bundled renderer
+// (audit fix 2026-01-P1-2). `setWindowOpenHandler` only intercepts
+// `target=_blank` / `window.open` paths; an in-place navigation via
+// `window.location = '…'` would replace the loaded `index.html` with a
+// remote page that inherits the preload's `contextBridge` surface —
+// exposing the entire `window.vyotiq` API to the attacker page. The
+// `will-navigate` listener allows ONLY the dev-server URL (when running
+// `electron-vite dev`) and the bundled `file://` URL; everything else
+// is hard-denied. `will-attach-webview` is a belt-and-suspenders gate
+// against future `<webview>` introduction; the renderer doesn't use any
+// today.
 app.on('web-contents-created', (_event, contents) => {
   contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  contents.on('will-navigate', (event, url) => {
+    const allowed = process.env['ELECTRON_RENDERER_URL'];
+    if (allowed && url.startsWith(allowed)) return;
+    if (url.startsWith('file://')) return;
+    log.warn('blocked in-place navigation attempt', { url });
+    event.preventDefault();
+  });
+  contents.on('will-attach-webview', (event) => {
+    log.warn('blocked <webview> attach attempt');
+    event.preventDefault();
+  });
 });
 
 bootstrap().catch((err) => {

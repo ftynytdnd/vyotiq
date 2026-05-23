@@ -38,7 +38,7 @@ beforeEach(async () => {
           'ws-B': { providerId: 'p', modelId: 'm2' }
         },
         permissionsByWorkspace: {
-          'ws-A': { allowBash: false }
+          'ws-A': { allowAuto: true }
         }
       }
     },

@@ -22,13 +22,25 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 // the test that created them, which previously left `Promise<void>`
 // instances dangling on the GC heap and made the file the noisiest
 // source of unhandled-promise warnings during a `--silent` run.
-const pendingLoopResolvers = new Set<() => void>();
+const pendingLoopResolvers: Array<() => void> = [];
 
 vi.mock('@main/orchestrator/loop/index.js', () => ({
   runOrchestratorLoop: vi.fn(
-    () =>
+    ({ signal }: { signal: AbortSignal }) =>
       new Promise<void>((resolve) => {
-        pendingLoopResolvers.add(resolve);
+        if (signal.aborted) {
+          resolve();
+          return;
+        }
+        const onAbort = () => {
+          signal.removeEventListener('abort', onAbort);
+          resolve();
+        };
+        signal.addEventListener('abort', onAbort);
+        pendingLoopResolvers.push(() => {
+          signal.removeEventListener('abort', onAbort);
+          resolve();
+        });
       })
   )
 }));
@@ -71,6 +83,13 @@ vi.mock('@main/orchestrator/contextManager.js', () => ({
 vi.mock('@main/orchestrator/replay/index.js', () => ({
   replayTranscript: vi.fn(() => [])
 }));
+vi.mock('@main/checkpoints/index.js', () => ({
+  openRun: vi.fn(async () => undefined),
+  finalizeRun: vi.fn(async () => undefined)
+}));
+vi.mock('@main/settings/settingsStore.js', () => ({
+  getSettings: vi.fn(async () => ({ ui: {} }))
+}));
 
 import {
   abortRun,
@@ -89,34 +108,31 @@ function makeInput(over: Partial<ChatSendInput> = {}): ChatSendInput {
     conversationId: 'c1',
     workspaceId: 'w1',
     selection: { providerId: 'p1', modelId: 'm1' },
-    permissions: { allowFileWrites: false, allowBash: false, allowWebSearch: false },
+    permissions: { allowAuto: false },
     ...over
   };
 }
 
 beforeEach(() => {
-  pendingLoopResolvers.clear();
+  pendingLoopResolvers.length = 0;
 });
 
-afterEach(async () => {
-  // Drain every loop resolver captured during the test so the mocked
-  // promises actually settle. Without this, a pending Promise per
-  // `startRun` call would outlive the test (the orchestrator's
-  // `signal.addEventListener('abort', resolve)` wiring is bypassed
-  // by our mock, so `abortRun(...)` alone doesn't release the
-  // promise). We yield a microtask after draining so any
-  // `.finally()` chained inside `startRun` resolves before the next
-  // test starts.
+async function settleActiveRuns(): Promise<void> {
   for (const resolve of pendingLoopResolvers) {
     try {
       resolve();
     } catch {
-      /* a resolve fn throwing is impossible per Promise spec, but
-         we keep the loop defensive anyway. */
+      /* defensive */
     }
   }
-  pendingLoopResolvers.clear();
-  await Promise.resolve();
+  pendingLoopResolvers.length = 0;
+  for (let i = 0; i < 20 && listActiveRuns().length > 0; i += 1) {
+    await new Promise<void>((r) => setImmediate(r));
+  }
+}
+
+afterEach(async () => {
+  await settleActiveRuns();
 });
 
 describe('listActiveRuns / abort surfaces', () => {
@@ -153,11 +169,11 @@ describe('listActiveRuns / abort surfaces', () => {
       expect(r.startedAt!).toBeGreaterThan(0);
     }
 
-    // Tear down both runs by aborting (resolves the loop body's
-    // closure — but our stub never reads the signal; explicit
-    // cleanup keeps the activeRuns map empty for sibling tests).
+    // Abort only flips the signal — entries stay until the loop settles.
     abortRun('r1');
     abortRun('r2');
+    expect(listActiveRuns().map((r) => r.runId).sort()).toEqual(['r1', 'r2']);
+    await settleActiveRuns();
     expect(listActiveRuns()).toEqual([]);
   });
 
@@ -173,11 +189,13 @@ describe('listActiveRuns / abort surfaces', () => {
 
     const aborted = abortRunsForConversation('cX');
     expect(aborted).toBe(1);
-    expect(findAllActiveRunsForConversation('cX')).toEqual([]);
-    // The sibling run for cY is untouched.
+    // Registry entry remains until `startRun` finally — lookup still works.
+    expect(findAllActiveRunsForConversation('cX')).toEqual(['r1']);
     expect(findAllActiveRunsForConversation('cY')).toEqual(['r2']);
 
-    abortRun('r2'); // cleanup
+    for (const resolve of pendingLoopResolvers) resolve();
+    await Promise.resolve();
+    await Promise.resolve();
   });
 
   it('findAllActiveRunsForConversation returns every match — defense for the multi-run leak', async () => {
@@ -199,9 +217,7 @@ describe('listActiveRuns / abort surfaces', () => {
     // Sibling conversation untouched in the result set.
     expect(findAllActiveRunsForConversation('cOther')).toEqual(['rB1']);
 
-    abortRun('rA1');
-    abortRun('rA2');
-    abortRun('rB1');
+    await settleActiveRuns();
   });
 
   it('abortRunsForWorkspace aborts every run pinned to that workspace', async () => {
@@ -209,20 +225,69 @@ describe('listActiveRuns / abort surfaces', () => {
     void startRun(makeInput({ runId: 'r1', conversationId: 'cA', workspaceId: 'wA' }), deps);
     void startRun(makeInput({ runId: 'r2', conversationId: 'cB', workspaceId: 'wA' }), deps);
     void startRun(makeInput({ runId: 'r3', conversationId: 'cC', workspaceId: 'wB' }), deps);
-    await Promise.resolve();
-    await Promise.resolve();
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    expect(listActiveRuns().map((r) => r.runId).sort()).toEqual(['r1', 'r2', 'r3']);
 
     const aborted = abortRunsForWorkspace('wA');
     expect(aborted).toBe(2);
-    const ids = listActiveRuns().map((r) => r.runId);
-    expect(ids).toEqual(['r3']);
+    await Promise.resolve();
+    expect(listActiveRuns().map((r) => r.runId)).toEqual(['r3']);
 
-    abortRun('r3'); // cleanup
+    abortRun('r3');
+    await settleActiveRuns();
+    expect(listActiveRuns()).toEqual([]);
+  });
+
+  it('abortRun signals abort but keeps the registry entry until the loop settles', async () => {
+    const deps = { emit: vi.fn(), onDone: vi.fn(), onError: vi.fn() };
+    void startRun(makeInput({ runId: 'r-abort' }), deps);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    abortRun('r-abort');
+    expect(listActiveRuns().map((r) => r.runId)).toEqual(['r-abort']);
+
+    await settleActiveRuns();
+    expect(listActiveRuns()).toEqual([]);
   });
 
   it('returns empty when no runs are in flight', () => {
     expect(listActiveRuns()).toEqual([]);
     expect(abortRunsForConversation('nope')).toBe(0);
     expect(abortRunsForWorkspace('nope')).toBe(0);
+  });
+
+  it('generation-safe teardown: reused runId keeps the superseding run registered', async () => {
+    const deps = { emit: vi.fn(), onDone: vi.fn(), onError: vi.fn() };
+    void startRun(
+      makeInput({ runId: 'reuse', conversationId: 'c-old', workspaceId: 'wA' }),
+      deps
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    void startRun(
+      makeInput({ runId: 'reuse', conversationId: 'c-new', workspaceId: 'wA' }),
+      deps
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(listActiveRuns()).toEqual([
+      expect.objectContaining({ runId: 'reuse', conversationId: 'c-new' })
+    ]);
+
+    const settleFirst = pendingLoopResolvers[0];
+    expect(settleFirst).toBeTypeOf('function');
+    settleFirst!();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(listActiveRuns()).toEqual([
+      expect.objectContaining({ runId: 'reuse', conversationId: 'c-new' })
+    ]);
+
+    pendingLoopResolvers[1]?.();
+    await settleActiveRuns();
+    expect(listActiveRuns()).toEqual([]);
   });
 });

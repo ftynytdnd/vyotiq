@@ -18,6 +18,8 @@ import { DiffStatsBadge } from '../timeline/tools/shared/DiffStatsBadge.js';
 import { PendingChangeDiff } from './PendingChangeDiff.js';
 import { formatTimestamp } from './formatTimestamp.js';
 import { cn } from '../../lib/cn.js';
+import { SurfaceShell } from '../ui/SurfaceShell.js';
+import { timelineRowHeaderClassName } from '../timeline/shared/rowStyles.js';
 
 interface RunCheckpointCardProps {
   workspaceId: string;
@@ -108,8 +110,8 @@ export function RunCheckpointCard({ workspaceId, runHead }: RunCheckpointCardPro
     manifest!.entries.every((e) => e.reverted === true);
 
   return (
-    <div className="group flex flex-col rounded-inner bg-surface-raised/60">
-      <div className="log-line flex items-center gap-2 px-3 py-2">
+    <SurfaceShell className="group flex flex-col gap-1">
+      <div className={timelineRowHeaderClassName}>
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
@@ -134,14 +136,14 @@ export function RunCheckpointCard({ workspaceId, runHead }: RunCheckpointCardPro
           </div>
         </div>
         {manifest && (
-          <DiffStatsBadge additions={additions} deletions={deletions} className="w-16 shrink-0 justify-end" />
+          <DiffStatsBadge additions={additions} deletions={deletions} minWidth="badge" />
         )}
         <Button
           size="sm"
           variant="ghost"
           onClick={() => setConfirmRevert(true)}
           disabled={everyReverted}
-          className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+          className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
         >
           <RotateCcw className="h-3 w-3" strokeWidth={2.25} />
           Revert run
@@ -151,7 +153,7 @@ export function RunCheckpointCard({ workspaceId, runHead }: RunCheckpointCardPro
           variant="ghost"
           onClick={() => setConfirmDelete(true)}
           title="Delete this run from the checkpoint store"
-          className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+          className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
         >
           <Trash2 className="h-3 w-3" strokeWidth={2.25} />
           Delete
@@ -189,7 +191,7 @@ export function RunCheckpointCard({ workspaceId, runHead }: RunCheckpointCardPro
         onConfirm={() => void onDeleteRun()}
         onCancel={() => setConfirmDelete(false)}
       />
-    </div>
+    </SurfaceShell>
   );
 }
 
@@ -211,7 +213,7 @@ function EntryRow({
   const [open, setOpen] = useState(false);
   return (
     <li className="group flex flex-col">
-      <div className="log-line flex items-center gap-2 px-2 py-1">
+      <div className={timelineRowHeaderClassName}>
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -228,9 +230,9 @@ function EntryRow({
           className={cn(
             'shrink-0 rounded-inner px-1 font-mono text-meta uppercase',
             entry.kind === 'create'
-              ? 'bg-success/10 text-success'
+              ? 'bg-success-soft text-success'
               : entry.kind === 'delete'
-                ? 'bg-danger/10 text-danger'
+                ? 'bg-danger-soft text-danger'
                 : 'bg-surface-overlay text-text-muted'
           )}
         >
@@ -239,7 +241,7 @@ function EntryRow({
         <span
           className={cn(
             'min-w-0 flex-1 truncate font-mono text-row',
-            entry.reverted ? 'text-text-faint line-through' : 'text-text-secondary'
+            entry.reverted ? 'text-text-faint line-through decoration-text-faint/60' : 'text-text-secondary'
           )}
           title={entry.filePath}
         >
@@ -248,14 +250,14 @@ function EntryRow({
         <DiffStatsBadge
           additions={entry.additions}
           deletions={entry.deletions}
-          className="w-16 shrink-0 justify-end"
+          minWidth="badge"
         />
         <Button
           size="sm"
           variant="ghost"
           onClick={onRevert}
           disabled={entry.reverted === true}
-          className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+          className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
         >
           Revert
         </Button>

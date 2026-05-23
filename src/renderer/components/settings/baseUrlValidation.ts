@@ -99,6 +99,8 @@ export function describeBaseUrl(
 
   const host = parsed.hostname.toLowerCase();
   const isOllamaCloud = host === 'ollama.com' || host === 'www.ollama.com';
+  const isAnthropic = host === 'api.anthropic.com';
+  const isGemini = host === 'generativelanguage.googleapis.com';
 
   // Cloud hosts the native API at /api only — no /v1 shim.
   if (isOllamaCloud && dialect === 'openai') {
@@ -123,6 +125,52 @@ export function describeBaseUrl(
         normalized: null
       };
     }
+  }
+
+  // Phase 8 (2026): Anthropic's `api.anthropic.com` does NOT speak
+  // the OpenAI dialect — `/v1/chat/completions` returns 404 (the
+  // canonical endpoint is `/v1/messages` with a structured-blocks
+  // wire format). Steer users onto the dedicated dialect so
+  // thinking signatures round-trip correctly.
+  if (isAnthropic && dialect !== 'anthropic-native') {
+    return {
+      severity: 'warn',
+      message:
+        'api.anthropic.com requires the "Anthropic native" dialect. The OpenAI shim path does not preserve thinking signatures and breaks multi-turn extended thinking.',
+      normalized: null
+    };
+  }
+
+  // Phase 9 (2026): Gemini's `generativelanguage.googleapis.com` has
+  // an OpenAI-compat surface but it does NOT round-trip
+  // `thoughtSignature`, so multi-call function-calling 400s on the
+  // second turn. Steer users onto the dedicated dialect.
+  if (isGemini && dialect !== 'gemini-native') {
+    return {
+      severity: 'warn',
+      message:
+        'generativelanguage.googleapis.com requires the "Gemini native" dialect for thoughtSignature round-trip. The OpenAI shim breaks multi-turn function calling on Gemini 3.x.',
+      normalized: null
+    };
+  }
+
+  // The reverse — flag a non-Anthropic / non-Gemini host that's
+  // configured for the native dialect, since 99% of those are typos.
+  if (dialect === 'anthropic-native' && !isAnthropic) {
+    return {
+      severity: 'warn',
+      message:
+        'Anthropic native dialect is usually paired with api.anthropic.com. Double-check this host.',
+      normalized: null
+    };
+  }
+  if (dialect === 'gemini-native' && !isGemini) {
+    return {
+      severity: 'warn',
+      message:
+        'Gemini native dialect is usually paired with generativelanguage.googleapis.com. Double-check this host.',
+      normalized: null
+    };
   }
 
   return null;

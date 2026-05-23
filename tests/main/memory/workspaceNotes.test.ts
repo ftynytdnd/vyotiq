@@ -74,6 +74,14 @@ describe('workspaceNotes', () => {
     expect(list[1]?.key).toBe('older');
   });
 
+  it('list with keysOnly skips reading file bodies', async () => {
+    await writeWorkspaceNote('lightweight', 'heavy-body-content');
+    const list = await listWorkspaceNotes(undefined, true);
+    expect(list).toHaveLength(1);
+    expect(list[0]?.key).toBe('lightweight');
+    expect(list[0]?.content).toBe('');
+  });
+
   it('sanitizes keys with disallowed characters but keeps the returned key topic-only', async () => {
     const note = await writeWorkspaceNote('weird key  with spaces!', 'x');
     // Spaces and `!` collapse to `-`; the returned key must NOT carry

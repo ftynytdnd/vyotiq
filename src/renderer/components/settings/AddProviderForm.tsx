@@ -4,6 +4,7 @@ import { Button } from '../ui/Button.js';
 import { Chip } from '../ui/Chip.js';
 import { Eyebrow } from '../ui/Eyebrow.js';
 import { TextField } from '../ui/TextField.js';
+import { Tabs, type TabItem } from '../ui/Tabs.js';
 import { useProviderStore } from '../../store/useProviderStore.js';
 import { cn } from '../../lib/cn.js';
 import {
@@ -12,6 +13,11 @@ import {
   type ProviderDialect
 } from '@shared/types/provider.js';
 import { describeBaseUrl } from './baseUrlValidation.js';
+
+const DIALECT_TABS: TabItem<ProviderDialect>[] = PROVIDER_DIALECTS.map((d) => ({
+  id: d,
+  label: PROVIDER_DIALECT_LABELS[d]
+}));
 
 interface AddProviderFormProps {
   onAdded?: () => void;
@@ -25,6 +31,19 @@ interface Preset {
 
 const PRESETS: Preset[] = [
   { label: 'OpenAI', baseUrl: 'https://api.openai.com', dialect: 'openai' },
+  // Anthropic native — REQUIRES the dedicated `anthropic-native`
+  // dialect; the shim path through OpenAI does NOT preserve thinking
+  // signatures, so multi-turn extended-thinking would lose its plan.
+  // Phase 8 (2026).
+  { label: 'Anthropic', baseUrl: 'https://api.anthropic.com', dialect: 'anthropic-native' },
+  // Gemini AI Studio — REQUIRES the `gemini-native` dialect for
+  // `thoughtSignature` round-trip. Without it, Gemini 3.x returns
+  // 400 on the second turn of any multi-call sequence. Phase 9 (2026).
+  {
+    label: 'Gemini (AI Studio)',
+    baseUrl: 'https://generativelanguage.googleapis.com',
+    dialect: 'gemini-native'
+  },
   // OpenRouter is OpenAI-compatible; the canonical base is
   // `https://openrouter.ai/api` (the chat client appends `/v1/...`
   // itself). The base-URL normalizer is dialect-aware so the `/api`
@@ -115,7 +134,7 @@ export function AddProviderForm({ onAdded }: AddProviderFormProps) {
 
   if (!open) {
     return (
-      <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
+      <Button variant="primary" size="sm" onClick={() => setOpen(true)}>
         <Plus className="h-3.5 w-3.5" strokeWidth={2.25} /> Add provider
       </Button>
     );
@@ -191,26 +210,14 @@ function DialectSwitch({
   return (
     <label className="flex flex-col gap-1">
       <Eyebrow as="span" size="row">Dialect</Eyebrow>
-      <div className="flex overflow-hidden rounded-inner bg-surface-base">
-        {PROVIDER_DIALECTS.map((d) => {
-          const active = d === value;
-          return (
-            <button
-              key={d}
-              type="button"
-              onClick={() => onChange(d)}
-              className={cn(
-                'flex-1 px-3 py-1.5 text-row transition-colors duration-150',
-                active
-                  ? 'bg-surface-hover text-text-primary'
-                  : 'text-text-muted hover:text-text-primary'
-              )}
-            >
-              {PROVIDER_DIALECT_LABELS[d]}
-            </button>
-          );
-        })}
-      </div>
+      <Tabs<ProviderDialect>
+        items={DIALECT_TABS}
+        value={value}
+        onChange={onChange}
+        variant="segmented"
+        size="md"
+        ariaLabel="Provider dialect"
+      />
     </label>
   );
 }

@@ -6,7 +6,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useChatStore } from '@renderer/store/useChatStore';
-import { RunStopButton } from '@renderer/components/sidebar/runIndicators/RunStopButton';
+import { RunStopButton } from '@renderer/components/runIndicators/RunStopButton';
 
 beforeEach(() => {
   useChatStore.setState({

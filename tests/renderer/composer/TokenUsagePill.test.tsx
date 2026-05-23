@@ -46,10 +46,13 @@ describe('TokenUsagePill — no-ceiling state', () => {
         onOpenInspector={onOpenInspector}
       />
     );
-    // Pill renders the `no ctx` label so the user sees the missing
-    // ceiling but can still reach the Inspector.
+    // Pill renders the `set ceiling` CTA so the user sees both the
+    // missing ceiling AND the action that resolves it; primary click
+    // takes them to the Inspector where the editor + summarize tools
+    // live. The earlier `no ctx` literal read as "no context" and
+    // confused first-time users.
     const btn = getByRole('button', { name: /Open Context Inspector/i });
-    expect(btn.textContent?.toLowerCase()).toContain('no ctx');
+    expect(btn.textContent?.toLowerCase()).toContain('set ceiling');
     fireEvent.click(btn);
     expect(onOpenInspector).toHaveBeenCalledTimes(1);
     // Editor must NOT have opened — that lives behind the dedicated
@@ -155,6 +158,132 @@ describe('TokenUsagePill — active state', () => {
     expect(text).toContain('64k');
     expect(text).toContain('128k');
     expect(text).toContain('50%');
+  });
+
+  // Phase 4 (2026) tooltip breakdown tests ─────────────────────────
+  it('exposes the prompt + completion breakdown on the title attribute when usage is set', () => {
+    const { container } = render(
+      <TokenUsagePill
+        used={20_000}
+        ceiling={128_000}
+        estimated={false}
+        onCeilingChange={noopCeilingChange}
+        usage={{
+          promptTokens: 18_200,
+          completionTokens: 1_700,
+          totalTokens: 19_900
+        }}
+      />
+    );
+    const title = container.querySelector('button')?.getAttribute('title') ?? '';
+    expect(title).toContain('Prompt: 18.2k');
+    expect(title).toContain('Completion: 1.7k');
+    // No cached / reasoning / cache-write lines when those fields are
+    // absent (keeps the tooltip focused).
+    expect(title).not.toContain('cached');
+    expect(title).not.toContain('reasoning');
+    expect(title).not.toContain('cache write');
+  });
+
+  it('surfaces cached prompt tokens when the provider reported them', () => {
+    const { container } = render(
+      <TokenUsagePill
+        used={20_000}
+        ceiling={128_000}
+        estimated={false}
+        onCeilingChange={noopCeilingChange}
+        usage={{
+          promptTokens: 18_200,
+          completionTokens: 1_700,
+          totalTokens: 19_900,
+          cachedPromptTokens: 4_200
+        }}
+      />
+    );
+    const title = container.querySelector('button')?.getAttribute('title') ?? '';
+    expect(title).toContain('· cached: 4.2k');
+  });
+
+  it('surfaces reasoning tokens when reasoning models reported them', () => {
+    const { container } = render(
+      <TokenUsagePill
+        used={20_000}
+        ceiling={128_000}
+        estimated={false}
+        onCeilingChange={noopCeilingChange}
+        usage={{
+          promptTokens: 18_200,
+          completionTokens: 2_300,
+          totalTokens: 20_500,
+          reasoningTokens: 580
+        }}
+      />
+    );
+    const title = container.querySelector('button')?.getAttribute('title') ?? '';
+    expect(title).toContain('· reasoning: 580');
+  });
+
+  it('surfaces cache-write tokens (Anthropic-only) when reported', () => {
+    const { container } = render(
+      <TokenUsagePill
+        used={20_000}
+        ceiling={128_000}
+        estimated={false}
+        onCeilingChange={noopCeilingChange}
+        usage={{
+          promptTokens: 18_200,
+          completionTokens: 1_700,
+          totalTokens: 19_900,
+          cacheCreationTokens: 1_100
+        }}
+      />
+    );
+    const title = container.querySelector('button')?.getAttribute('title') ?? '';
+    expect(title).toContain('· cache write: 1.1k');
+  });
+
+  it('shows the pre-flight baseline + draft split when no real usage has landed', () => {
+    const { container } = render(
+      <TokenUsagePill
+        used={21_742}
+        ceiling={128_000}
+        estimated
+        onCeilingChange={noopCeilingChange}
+        baseline={{
+          total: 21_600,
+          systemPrompt: 18_500,
+          history: 0,
+          tools: 3_100
+        }}
+        draftTokens={142}
+      />
+    );
+    const title = container.querySelector('button')?.getAttribute('title') ?? '';
+    expect(title).toContain('Pre-flight: 21.6k baseline + 142 draft');
+    expect(title).toContain('· system prompt: 18.5k');
+    expect(title).toContain('· tools: 3.1k');
+    expect(title).toContain('· history: 0');
+  });
+
+  it('hides the baseline section once authoritative usage is available', () => {
+    const { container } = render(
+      <TokenUsagePill
+        used={20_000}
+        ceiling={128_000}
+        estimated={false}
+        onCeilingChange={noopCeilingChange}
+        usage={{
+          promptTokens: 18_200,
+          completionTokens: 1_700,
+          totalTokens: 19_900
+        }}
+        baseline={{ total: 21_600, systemPrompt: 18_500, history: 0, tools: 3_100 }}
+        draftTokens={142}
+      />
+    );
+    const title = container.querySelector('button')?.getAttribute('title') ?? '';
+    expect(title).not.toContain('Pre-flight:');
+    expect(title).toContain('Prompt: 18.2k');
   });
 
   it('shows `<1%` rather than `0%` for tiny but non-zero ratios', () => {

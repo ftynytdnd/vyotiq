@@ -20,7 +20,7 @@
  *   - `raised`      — sits on `surface-base`.
  *   - `overlay`     — sits on `surface-raised` panels.
  *   - `transparent` — for inputs nested inside a coloured row
- *     (sidebar search, model picker).
+ *     (dock search, model picker).
  */
 
 import React from 'react';

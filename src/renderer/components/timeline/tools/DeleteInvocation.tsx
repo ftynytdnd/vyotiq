@@ -120,7 +120,7 @@ export function DeleteInvocation({
     );
   } else if (result && !result.ok) {
     detail = (
-      <div className="rounded-inner bg-danger/5 px-2 py-1 font-mono text-row text-danger">
+      <div className="rounded-inner bg-danger-soft px-2 py-1 font-mono text-row text-danger">
         {errorBody}
       </div>
     );

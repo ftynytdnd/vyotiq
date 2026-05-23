@@ -31,6 +31,8 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { PendingChange } from '@shared/types/checkpoint.js';
 import { PendingChangeRow } from '../PendingChangeRow.js';
 import { groupByRun, type RunBucket } from './groupPendingByPath.js';
+import { timelineRowHeaderClassName } from '../../timeline/shared/rowStyles.js';
+import { cn } from '../../../lib/cn.js';
 
 const VIRTUALIZATION_THRESHOLD = 60;
 
@@ -79,7 +81,7 @@ function RunGroup({
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="log-line app-no-drag flex w-full items-center gap-2 px-2 py-1 text-left transition-colors duration-150"
+        className={cn(timelineRowHeaderClassName, 'text-left')}
         aria-label={expanded ? 'Collapse run group' : 'Expand run group'}
         aria-expanded={expanded}
       >
@@ -161,7 +163,7 @@ function LazyMountRow({ children }: { children: ReactNode }) {
   }, [shouldMount]);
 
   return (
-    <div ref={ref} className="min-h-[28px]">
+    <div ref={ref} className="min-h-7">
       {shouldMount ? children : null}
     </div>
   );

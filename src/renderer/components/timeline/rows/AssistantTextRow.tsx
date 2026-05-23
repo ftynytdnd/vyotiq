@@ -22,6 +22,8 @@ import { stripDelegatesForDisplay } from '../../../lib/text.js';
 import { MarkdownBody } from '../markdown/MarkdownBody.js';
 import { cn } from '../../../lib/cn.js';
 import { safeCopy } from '../../../lib/clipboard.js';
+import { SurfaceShell, surfaceShellInnerClassName } from '../../ui/SurfaceShell.js';
+import { timelineActionPillClassName } from '../shared/rowStyles.js';
 
 interface AssistantTextRowProps {
   id: string;
@@ -83,17 +85,15 @@ export function AssistantTextRow({ id, model }: AssistantTextRowProps) {
   };
 
   return (
-    <div className="group relative py-0.5">
-      <MarkdownBody text={cleaned} className="px-1.5" />
-      <div className="mt-1 flex items-center gap-1 px-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+    <div className="group flex flex-col gap-1">
+      <SurfaceShell className={surfaceShellInnerClassName('content')}>
+        <MarkdownBody text={cleaned} />
+      </SurfaceShell>
+      <div className="flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
         <button
           type="button"
           onClick={handleCopy}
-          className={cn(
-            'inline-flex items-center gap-1 rounded-inner px-1.5 py-0.5 text-row text-text-faint',
-            'transition-colors duration-150',
-            'hover:bg-surface-hover hover:text-text-primary'
-          )}
+          className={timelineActionPillClassName}
           title={copied ? 'Copied' : 'Copy'}
         >
           {copied ? (
@@ -108,9 +108,7 @@ export function AssistantTextRow({ id, model }: AssistantTextRowProps) {
           disabled={!canRegenerate}
           onClick={handleRegenerate}
           className={cn(
-            'inline-flex items-center gap-1 rounded-inner px-1.5 py-0.5 text-row text-text-faint',
-            'transition-colors duration-150',
-            'hover:bg-surface-hover hover:text-text-primary',
+            timelineActionPillClassName,
             !canRegenerate && 'cursor-not-allowed opacity-40'
           )}
           title={canRegenerate ? 'Regenerate response' : 'Regenerate unavailable'}

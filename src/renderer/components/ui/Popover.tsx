@@ -15,7 +15,7 @@
  *   - Re-anchors on window `resize`, scroll (capture so inner scroll
  *     containers fire too), trigger `ResizeObserver`, and any `revision`
  *     prop bump (callers use this to force a measurement after layout
- *     changes — e.g. sidebar toggle animations).
+ *     changes — e.g. secondary-zone width transitions).
  *   - Outside-click and Escape close the popover. The host owns `open`.
  *
  * The host wires `triggerRef` to its anchor element and renders the
@@ -29,6 +29,13 @@ import { cn } from '../../lib/cn.js';
 type PopoverSide = 'top' | 'bottom';
 type PopoverAlign = 'start' | 'end';
 
+export interface PopoverCollisionPadding {
+  top?: number;
+  bottom?: number;
+  left?: number;
+  right?: number;
+}
+
 interface PopoverProps {
   open: boolean;
   onClose: () => void;
@@ -37,10 +44,14 @@ interface PopoverProps {
   offset?: number;
   /** Horizontal alignment relative to the trigger. */
   align?: PopoverAlign;
+  /** Extra viewport margins when clamping position. */
+  collisionPadding?: PopoverCollisionPadding;
+  /** Force opening above/below the trigger when space allows. */
+  preferSide?: PopoverSide | 'auto';
   /**
    * Bumping this number forces a re-measurement on the next frame. Hosts
    * use it to react to layout changes outside of resize/scroll (e.g. the
-   * sidebar-toggle CSS transition).
+   * secondary-zone width CSS transition).
    */
   revision?: number;
   className?: string;
@@ -59,16 +70,33 @@ function measure(
   trigger: HTMLElement,
   popover: HTMLElement | null,
   offset: number,
-  align: PopoverAlign
+  align: PopoverAlign,
+  collisionPadding: PopoverCollisionPadding = {},
+  preferSide: PopoverSide | 'auto' = 'auto'
 ): PopoverPosition {
   const rect = trigger.getBoundingClientRect();
   const viewportH = window.innerHeight;
   const viewportW = window.innerWidth;
-  // Open upward when the trigger is in the bottom 40% of the viewport.
-  const side: PopoverSide = rect.top > viewportH * 0.6 ? 'top' : 'bottom';
+  const padTop = collisionPadding.top ?? 8;
+  const padBottom = collisionPadding.bottom ?? 8;
+  const padLeft = collisionPadding.left ?? 8;
+  const padRight = collisionPadding.right ?? 8;
 
   const popH = popover?.offsetHeight ?? 0;
   const popW = popover?.offsetWidth ?? 0;
+
+  let side: PopoverSide;
+  if (preferSide !== 'auto') {
+    side = preferSide;
+  } else {
+    side = rect.top > viewportH * 0.55 ? 'top' : 'bottom';
+  }
+  // Flip when preferred side doesn't fit.
+  if (side === 'top' && rect.top - offset - popH < padTop) {
+    side = 'bottom';
+  } else if (side === 'bottom' && rect.bottom + offset + popH > viewportH - padBottom) {
+    side = 'top';
+  }
 
   let top: number;
   if (side === 'top') {
@@ -76,8 +104,7 @@ function measure(
   } else {
     top = rect.bottom + offset;
   }
-  // Clamp vertically inside the viewport with an 8 px margin.
-  top = Math.max(8, Math.min(top, viewportH - popH - 8));
+  top = Math.max(padTop, Math.min(top, viewportH - popH - padBottom));
 
   let left: number;
   if (align === 'end') {
@@ -85,8 +112,7 @@ function measure(
   } else {
     left = rect.left;
   }
-  // Clamp horizontally with an 8 px margin.
-  left = Math.max(8, Math.min(left, viewportW - popW - 8));
+  left = Math.max(padLeft, Math.min(left, viewportW - popW - padRight));
 
   return { top, left, side, triggerWidth: rect.width };
 }
@@ -97,6 +123,8 @@ export function Popover({
   triggerRef,
   offset = 8,
   align = 'end',
+  collisionPadding,
+  preferSide = 'auto',
   revision = 0,
   className,
   children
@@ -113,16 +141,16 @@ export function Popover({
     }
     const trigger = triggerRef.current;
     if (!trigger) return;
-    setPos(measure(trigger, popoverRef.current, offset, align));
+    setPos(measure(trigger, popoverRef.current, offset, align, collisionPadding, preferSide));
     // We may need a second measurement once the popover has rendered (so
     // its height is known) — schedule an rAF re-measure.
     const raf = requestAnimationFrame(() => {
       const t = triggerRef.current;
       if (!t) return;
-      setPos(measure(t, popoverRef.current, offset, align));
+      setPos(measure(t, popoverRef.current, offset, align, collisionPadding, preferSide));
     });
     return () => cancelAnimationFrame(raf);
-  }, [open, revision, offset, align, triggerRef]);
+  }, [open, revision, offset, align, collisionPadding, preferSide, triggerRef]);
 
   // Re-anchor on window resize, any scroll (capture catches inner
   // containers), and trigger size changes.
@@ -134,7 +162,7 @@ export function Popover({
     const reposition = () => {
       const t = triggerRef.current;
       if (!t) return;
-      setPos(measure(t, popoverRef.current, offset, align));
+      setPos(measure(t, popoverRef.current, offset, align, collisionPadding, preferSide));
     };
 
     window.addEventListener('resize', reposition);
@@ -148,7 +176,7 @@ export function Popover({
       window.removeEventListener('scroll', reposition, true);
       ro.disconnect();
     };
-  }, [open, offset, align, triggerRef]);
+  }, [open, offset, align, collisionPadding, preferSide, triggerRef]);
 
   // Outside-click + Escape close. Click on the trigger is also "outside"
   // from the popover's POV, so the host's toggle handler runs and closes

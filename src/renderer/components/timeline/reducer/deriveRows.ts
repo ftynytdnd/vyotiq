@@ -12,11 +12,12 @@
  *   - Consecutive `file-edit` events (non-sub-agent) fold into a single
  *     `file-edit-group` row with an expanded list of per-file cards.
  *   - Reasoning becomes a single `reasoning-line` row (`Thought for Ns`).
- *   - Each sub-agent becomes a single `subagent-line` row.
  *
  * Breakers that close any in-flight group: different tool/kind, assistant
  * text delta, reasoning delta, phase, subagent-spawn, user-prompt,
  * agent-thought, file-edit, error, subagent status/result.
+ *
+ *   - Each sub-agent becomes a single `subagent-line` row.
  *
  * Sub-agent tool-call/-result events (tagged with `subagentId`) are not
  * emitted as top-level rows — they remain nested inside the sub-agent
@@ -26,7 +27,9 @@
 import type { TimelineEvent } from '@shared/types/chat.js';
 import type { ToolCall, ToolName, ToolResult } from '@shared/types/tool.js';
 import { computeDiffOps } from '@shared/text/diff/computeDiffHunks.js';
-import type { DiffStreamSnapshot, PartialToolCallArgs } from './types.js';
+import type { DiffStreamSnapshot, PartialToolCallArgs, TokenUsageAggregate } from './types.js';
+import { foldTokenUsage } from './types.js';
+import { shouldSynthesizePartialToolEntry } from './partialToolVisibility.js';
 
 /** Tool names recognised at the orchestrator + sub-agent level. Used
  *  for surrogate-call name lookup. Keep in sync with `ToolName`. */
@@ -118,7 +121,7 @@ export type Row =
     key: string;
     children: FileEditGroupChild[];
   }
-  | { kind: 'run-complete'; key: string; durationMs: number }
+  | { kind: 'run-complete'; key: string; durationMs: number; usage?: TokenUsageAggregate }
   /**
    * Inline marker that a context-summarization event lifecycle
    * exists at this position in the timeline. The row component
@@ -144,7 +147,7 @@ export interface DeriveRowsOptions {
    * present, the deriver synthesises in-flight `tool-group` rows so
    * users see a streaming preview (path label, live diff, query) as
    * the arguments stream in. Sub-agent partials live on the matching
-   * snapshot and are wired in by `SubAgentSteps`, not here. Pass `{}`
+   * snapshot and are wired in by `SubAgentRunFlow`, not here. Pass `{}`
    * (or omit) for transcript rebuilds; the live timeline forwards the
    * mirror's `partialToolCallArgs` from `useChatStore`.
    */
@@ -188,18 +191,78 @@ export function deriveRows(
   // wall-clock total. The trailing run is closed at end-of-input only
   // when `opts.runActive` is false.
   let openRun: { promptId: string; promptTs: number; lastTs: number } | null = null;
+  let openRunUsage: {
+    orchestrator?: TokenUsageAggregate;
+    subagents: Record<string, TokenUsageAggregate>;
+  } | null = null;
+
+  const combineRunUsage = (): TokenUsageAggregate | undefined => {
+    if (!openRunUsage) return undefined;
+    const parts: TokenUsageAggregate[] = [];
+    if (openRunUsage.orchestrator) parts.push(openRunUsage.orchestrator);
+    for (const id of Object.keys(openRunUsage.subagents).sort()) {
+      const usage = openRunUsage.subagents[id];
+      if (usage) parts.push(usage);
+    }
+    if (parts.length === 0) return undefined;
+    if (parts.length === 1) return parts[0];
+    let latest = parts[0]!.latest;
+    let peak = parts[0]!.peak;
+    let cumulative = parts[0]!.cumulative;
+    let samples = parts[0]!.samples;
+    let streamStartedAt = parts[0]!.streamStartedAt;
+    let streamEndedAt = parts[0]!.streamEndedAt;
+    for (let i = 1; i < parts.length; i++) {
+      const o = parts[i]!;
+      latest = {
+        promptTokens: latest.promptTokens + o.latest.promptTokens,
+        completionTokens: latest.completionTokens + o.latest.completionTokens,
+        totalTokens: latest.totalTokens + o.latest.totalTokens
+      };
+      cumulative = {
+        promptTokens: cumulative.promptTokens + o.cumulative.promptTokens,
+        completionTokens: cumulative.completionTokens + o.cumulative.completionTokens,
+        totalTokens: cumulative.totalTokens + o.cumulative.totalTokens
+      };
+      peak = {
+        promptTokens: Math.max(peak.promptTokens, o.peak.promptTokens),
+        completionTokens: Math.max(peak.completionTokens, o.peak.completionTokens),
+        totalTokens: Math.max(peak.totalTokens, o.peak.totalTokens)
+      };
+      samples += o.samples;
+      if (typeof o.streamStartedAt === 'number') {
+        streamStartedAt =
+          typeof streamStartedAt === 'number'
+            ? Math.min(streamStartedAt, o.streamStartedAt)
+            : o.streamStartedAt;
+      }
+      if (typeof o.streamEndedAt === 'number') {
+        streamEndedAt =
+          typeof streamEndedAt === 'number'
+            ? Math.max(streamEndedAt, o.streamEndedAt)
+            : o.streamEndedAt;
+      }
+    }
+    const out: TokenUsageAggregate = { latest, peak, cumulative, samples };
+    if (typeof streamStartedAt === 'number') out.streamStartedAt = streamStartedAt;
+    if (typeof streamEndedAt === 'number') out.streamEndedAt = streamEndedAt;
+    return out;
+  };
 
   const flushRun = () => {
     if (!openRun) return;
     const durationMs = openRun.lastTs - openRun.promptTs;
     if (durationMs > 0) {
+      const usage = combineRunUsage();
       out.push({
         kind: 'run-complete',
         key: `done:${openRun.promptId}`,
-        durationMs
+        durationMs,
+        ...(usage !== undefined ? { usage } : {})
       });
     }
     openRun = null;
+    openRunUsage = null;
   };
 
   const closeGroups = () => {
@@ -211,25 +274,8 @@ export function deriveRows(
    * Defensive fail-soft for sub-agent visibility. The `subagent-line`
    * row is normally emitted by the `subagent-pending` / `subagent-spawn`
    * branch below — but if either of those events is missing or arrives
-   * out of order (lost in IPC, dropped by the reducer's
-   * `subagent-pending` no-op when a tool event auto-created a `running`
-   * snapshot first, or simply never emitted because the orchestrator
-   * bypassed the delegate path), every sub-agent-scoped `tool-call`
-   * / `tool-result` / `file-edit` would be rendered as an
-   * "if (subagentId) break;" no-op and the worker's entire activity
-   * would be invisible to the user (visible end-state in the
-   * "Nothing between text and panel" symptom).
-   *
-   * This helper synthesises the row the FIRST time we observe any
-   * sub-agent-scoped event for a given id. The matching snapshot
-   * already exists in `state.subagents` (created by
-   * `ensureSnapshot` in `applyTimelineEvent`), so `SubAgentTrace`
-   * has data to render even without an authoritative spawn.
-   *
-   * Ordering: closes any open orchestrator-level tool/file-edit
-   * group first — same contract as the authoritative
-   * `subagent-pending` / `subagent-spawn` branch — so a sub-agent
-   * row never splits a preceding tool-group into two halves.
+   * out of order, every sub-agent-scoped `tool-call` / `tool-result` /
+   * `file-edit` would be invisible without this synthesis.
    */
   const ensureSubagentLine = (subagentId: string | undefined): void => {
     if (!subagentId) return;
@@ -331,14 +377,6 @@ export function deriveRows(
 
       case 'subagent-pending':
       case 'subagent-spawn':
-        // Either event opens the sub-agent's row. We dedup by `subagentId`
-        // so the matching `subagent-spawn` after a `subagent-pending`
-        // does NOT produce a second row — the snapshot in the chat store
-        // transitions from `pending` → `running` and the existing row
-        // re-renders. The fail-soft helper below ALSO opens the row
-        // when nested tool / file-edit events arrive without a preceding
-        // spawn (defense-in-depth), so we go through the same code path
-        // here to keep dedup semantics in one place.
         ensureSubagentLine(e.subagentId);
         break;
 
@@ -350,14 +388,6 @@ export function deriveRows(
 
       case 'tool-call': {
         if (e.subagentId) {
-          // Fail-soft sub-agent row synthesis: ensure the worker's
-          // `subagent-line` exists before we drop into the nested
-          // `SubAgentTrace` render path. Without this, a missing or
-          // out-of-order `subagent-spawn` / `subagent-pending` would
-          // leave the worker's tool calls completely invisible. The
-          // matching snapshot in the chat store is auto-created by
-          // `applyTimelineEvent`'s `ensureSnapshot`, so `SubAgentTrace`
-          // can render — we just need to surface the row.
           ensureSubagentLine(e.subagentId);
           break; // nested inside sub-agent trace
         }
@@ -405,8 +435,6 @@ export function deriveRows(
 
       case 'tool-result': {
         if (e.subagentId) {
-          // Same fail-soft as the `tool-call` branch — sub-agent
-          // visibility must survive a missing spawn event.
           ensureSubagentLine(e.subagentId);
           break;
         }
@@ -453,12 +481,6 @@ export function deriveRows(
 
       case 'file-edit': {
         if (e.subagentId) {
-          // Same fail-soft as the `tool-call` / `tool-result`
-          // branches — sub-agent visibility must survive a missing
-          // spawn event. The file-edit metadata itself flows into
-          // the snapshot's `fileEdits` array via
-          // `applyTimelineEvent`, so once the row is open it
-          // renders the per-file chips correctly.
           ensureSubagentLine(e.subagentId);
           break; // rendered inside sub-agent trace
         }
@@ -530,10 +552,24 @@ export function deriveRows(
         break;
 
       case 'token-usage':
-        // Usage reports are consumed via the dedicated aggregates on
-        // `TimelineState.orchestratorUsage` / `SubAgentSnapshot.usage`
-        // and are intentionally invisible as timeline rows. No group
-        // close either — they're metadata, not content.
+        if (openRun) {
+          openRun.lastTs = e.ts;
+          if (!openRunUsage) openRunUsage = { subagents: {} };
+          const ownerKey = e.subagentId ?? 'orc';
+          if (ownerKey === 'orc') {
+            openRunUsage.orchestrator = foldTokenUsage(
+              openRunUsage.orchestrator,
+              e.usage,
+              e.ts
+            );
+          } else {
+            openRunUsage.subagents[ownerKey] = foldTokenUsage(
+              openRunUsage.subagents[ownerKey],
+              e.usage,
+              e.ts
+            );
+          }
+        }
         break;
 
       case 'run-status':
@@ -563,7 +599,7 @@ export function deriveRows(
       case 'checkpoint-revert':
       case 'checkpoint-bash-mutation':
         // Checkpoint events are surfaced via the dedicated
-        // PendingChangesPanel and Checkpoints view (driven by
+        // PendingChangesTimelineRow and Checkpoints view (driven by
         // `useCheckpointsStore`), not as timeline rows. The
         // existing `tool-result` and `file-edit` events already
         // paint the diff in-line; layering a fourth row per edit
@@ -605,6 +641,14 @@ export function deriveRows(
         // surfaces it; timeline does not render a row for the
         // toggle itself (the only visible side-effect is that
         // the next summarization splices a different range).
+        break;
+
+      case 'synthetic-usage-update':
+        // Phase 3 (2026): renderer-local mid-stream completion-token
+        // estimate. Surfaces ONLY on the composer pill / Inspector
+        // chip via the aggregate's `inFlight` slot; no inline
+        // timeline row. Same treatment as `run-status` /
+        // `token-usage` — pure telemetry, never a row.
         break;
 
       default: {
@@ -673,6 +717,7 @@ function appendSynthesizedPartialRows(
   // Reuse the trailing group when its tool name matches the next
   // partial entry — same grouping rule as live events.
   for (const p of entries) {
+    if (!shouldSynthesizePartialToolEntry(p, KNOWN_TOOL_NAMES)) continue;
     // Phase 2: when a diff-stream snapshot has landed before the
     // first args-delta seeded a parsed name, prefer the
     // diff-stream's tool field so the synthesized child renders

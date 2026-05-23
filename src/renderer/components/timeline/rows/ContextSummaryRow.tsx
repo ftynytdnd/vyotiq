@@ -33,6 +33,9 @@ import { shimmerStyle, shimmerText } from '../../../lib/shimmer.js';
 import type { ContextSummaryAcc } from '../reducer/types.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import { useContextSummaryStore } from '../../../store/useContextSummaryStore.js';
+import { useSecondaryZoneStore } from '../../../store/useSecondaryZoneStore.js';
+import { SurfaceShell, surfaceShellInnerClassName } from '../../ui/SurfaceShell.js';
+import { DetailShell } from '../shared/DetailShell.js';
 
 interface ContextSummaryRowProps {
   summaryId: string;
@@ -74,18 +77,21 @@ function pickToneClasses(acc: ContextSummaryAcc): {
   switch (acc.status) {
     case 'pending':
     case 'streaming':
-      return { dot: 'bg-warning/80', text: 'text-text-secondary' };
+      return { dot: 'bg-warning-strong', text: 'text-text-secondary' };
     case 'ended':
-      return { dot: 'bg-success/80', text: 'text-text-secondary' };
+      return { dot: 'bg-success-strong', text: 'text-text-secondary' };
     case 'aborted':
-      return { dot: 'bg-danger/80', text: 'text-danger' };
+      return { dot: 'bg-danger-strong', text: 'text-danger' };
   }
 }
 
 export function ContextSummaryRow({ summaryId, live = false }: ContextSummaryRowProps) {
   const acc = useChatStore((s) => s.summaries[summaryId]);
+  const conversationId = useChatStore((s) => s.conversationId);
+  const runId = useChatStore((s) => s.runId);
   const undo = useContextSummaryStore((s) => s.undo);
   const busy = useContextSummaryStore((s) => s.busy);
+  const openInspector = useSecondaryZoneStore((s) => s.openInspector);
   const [expanded, setExpanded] = useState(false);
 
   // Defensive: a `context-summary-end` could land before its
@@ -102,19 +108,29 @@ export function ContextSummaryRow({ summaryId, live = false }: ContextSummaryRow
   const previewLines = previewBody.split('\n').slice(0, PREVIEW_LINES);
   const hasMoreLines = previewBody.split('\n').length > PREVIEW_LINES;
   const canExpand = acc.status === 'ended' || acc.status === 'streaming';
-  const isShimmering = live && (acc.status === 'pending' || acc.status === 'streaming');
-  const showUndoButton =
-    live &&
+  const isStreamingSummary =
+    acc.status === 'pending' || acc.status === 'streaming';
+  const isShimmering =
+    (live || isStreamingSummary) &&
+    (acc.status === 'pending' || acc.status === 'streaming');
+  const showUndoButton = acc.status === 'ended' && !acc.undone;
+  const showInspectButton =
     acc.status === 'ended' &&
-    !acc.undone;
+    (conversationId !== null || runId !== null);
+
+  const onOpenInspector = () => {
+    const id = runId ?? conversationId;
+    if (!id) return;
+    openInspector(id, runId ? 'live' : 'idle');
+  };
 
   return (
-    <div className="rounded-inner px-1 py-1">
+    <SurfaceShell className={surfaceShellInnerClassName('compact')}>
       <div className="flex items-start gap-1.5">
         <span
           aria-hidden
           className={cn(
-            'mt-[5px] inline-block h-1.5 w-1.5 shrink-0 rounded-full',
+            'mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full',
             tone.dot
           )}
         />
@@ -137,8 +153,8 @@ export function ContextSummaryRow({ summaryId, live = false }: ContextSummaryRow
                 acc.status === 'aborted'
                   ? acc.reason ?? 'Summarization failed'
                   : `${acc.beforeTokens.toLocaleString()} → ${(
-                      acc.afterTokens ?? 0
-                    ).toLocaleString()} tokens`
+                    acc.afterTokens ?? 0
+                  ).toLocaleString()} tokens`
               }
             >
               {canExpand && (
@@ -167,10 +183,26 @@ export function ContextSummaryRow({ summaryId, live = false }: ContextSummaryRow
                 {acc.beforeTokens.toLocaleString()} → {acc.afterTokens.toLocaleString()} tok
               </span>
             )}
+            {showInspectButton && (
+              <button
+                type="button"
+                onClick={onOpenInspector}
+                title="Open context inspector for this conversation"
+                className={cn(
+                  'inline-flex items-center gap-0.5 rounded-inner bg-surface-overlay px-1.5 py-0.5 text-meta',
+                  'text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary'
+                )}
+              >
+                Inspect
+              </button>
+            )}
             {showUndoButton && (
               <button
                 type="button"
-                onClick={() => void undo(summaryId)}
+                onClick={() => {
+                  const targetId = runId ?? conversationId ?? undefined;
+                  void undo(summaryId, targetId);
+                }}
                 disabled={busy}
                 title="Restore the messages this summary replaced. Only valid until the next user prompt."
                 className={cn(
@@ -196,7 +228,7 @@ export function ContextSummaryRow({ summaryId, live = false }: ContextSummaryRow
               SOMETHING to preview — empty pending state stays
               clean. */}
           {previewBody.length > 0 && !expanded && (
-            <pre className="mt-1 whitespace-pre-wrap break-words text-log text-text-muted">
+            <pre className="mt-1 whitespace-pre-wrap break-words text-row text-text-muted">
               {previewLines.join('\n')}
               {hasMoreLines && '\n…'}
             </pre>
@@ -205,15 +237,17 @@ export function ContextSummaryRow({ summaryId, live = false }: ContextSummaryRow
               the headline. Same prose tone as the preview but
               with the entire compressed body. */}
           {expanded && previewBody.length > 0 && (
-            <pre className="mt-1 max-h-[480px] overflow-y-auto whitespace-pre-wrap break-words rounded-inner bg-surface-raised/60 p-2 text-log text-text-secondary">
-              {previewBody}
-            </pre>
+            <DetailShell>
+              <pre className="max-h-[480px] overflow-y-auto whitespace-pre-wrap break-words text-row text-text-secondary">
+                {previewBody}
+              </pre>
+            </DetailShell>
           )}
           {acc.status === 'aborted' && acc.reason && (
-            <div className="mt-0.5 text-meta text-danger/80">{acc.reason}</div>
+            <div className="mt-0.5 text-meta text-danger-strong">{acc.reason}</div>
           )}
         </div>
       </div>
-    </div>
+    </SurfaceShell>
   );
 }

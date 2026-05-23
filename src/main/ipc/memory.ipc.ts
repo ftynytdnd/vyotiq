@@ -20,29 +20,66 @@ import {
   writeWorkspaceNote
 } from '../memory/workspaceNotes.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
+// Audit fix 2026-06-P2-1 — shape gates so `memory:write` can't be
+// fed a non-string `content` (would corrupt the persisted markdown)
+// or a `mode` value outside the documented enum.
+import {
+  assertString,
+  assertEnum,
+  assertObject,
+  assertBoolean
+} from './validate.js';
+
+// Hard cap on memory bodies. The renderer's MemoryPanel doesn't enforce
+// this on the textarea, but a malformed / out-of-band caller pushing a
+// 50 MB note would otherwise pin the main process on the atomic write.
+// 256 KB is comfortably above any human-written meta-rule and well below
+// the orchestrator envelope's 32 KB-per-file inline cap.
+const MAX_MEMORY_CONTENT_BYTES = 256 * 1024;
+
+const MEMORY_SCOPES = ['global', 'workspace'] as const;
+const MEMORY_WRITE_MODES = ['set', 'append'] as const;
 
 export function registerMemoryIpc(): void {
-  wrapIpcHandler(IPC.MEMORY_LIST, async (_event, scope: 'global' | 'workspace') => {
-    if (scope === 'global') {
-      const content = await readGlobalMetaRules();
-      const entry: MemoryEntry = {
-        scope,
-        key: 'meta-rules.md',
-        content,
-        updatedAt: Date.now()
-      };
-      return [entry];
+  wrapIpcHandler(
+    IPC.MEMORY_LIST,
+    async (_event, scope: 'global' | 'workspace', opts?: { keysOnly?: boolean }) => {
+      assertEnum('memory:list', 'scope', scope, MEMORY_SCOPES);
+      if (opts !== undefined) {
+        assertObject('memory:list', 'opts', opts);
+        if (opts.keysOnly !== undefined) {
+          assertBoolean('memory:list', 'opts.keysOnly', opts.keysOnly);
+        }
+      }
+      const keysOnly = opts?.keysOnly === true;
+      if (scope === 'global') {
+        const content = await readGlobalMetaRules();
+        const entry: MemoryEntry = {
+          scope,
+          key: 'meta-rules.md',
+          content,
+          updatedAt: Date.now()
+        };
+        return [entry];
+      }
+      const notes = await listWorkspaceNotes(undefined, keysOnly);
+      return notes.map<MemoryEntry>((n) => ({
+        scope: 'workspace',
+        key: n.key,
+        content: n.content,
+        updatedAt: n.updatedAt
+      }));
     }
-    const notes = await listWorkspaceNotes();
-    return notes.map<MemoryEntry>((n) => ({
-      scope: 'workspace',
-      key: n.key,
-      content: n.content,
-      updatedAt: n.updatedAt
-    }));
-  });
+  );
 
   wrapIpcHandler(IPC.MEMORY_READ, async (_event, scope: 'global' | 'workspace', key: string) => {
+    assertEnum('memory:read', 'scope', scope, MEMORY_SCOPES);
+    assertString('memory:read', 'key', key);
+    if (scope === 'global' && key !== 'meta-rules.md' && key !== 'meta-rules') {
+      throw new Error(
+        'memory:read: global scope only supports key "meta-rules.md" (meta-rules)'
+      );
+    }
     if (scope === 'global') {
       const content = await readGlobalMetaRules();
       const entry: MemoryEntry = { scope, key, content, updatedAt: Date.now() };
@@ -71,6 +108,18 @@ export function registerMemoryIpc(): void {
       // `mode: 'append'` and use a real key.
       mode?: 'set' | 'append'
     ) => {
+      assertEnum('memory:write', 'scope', scope, MEMORY_SCOPES);
+      assertString('memory:write', 'key', key);
+      // `content` can be empty (user clearing a note), so disable the
+      // nonEmpty default. Cap to prevent a malformed call from
+      // pinning the atomic-write path on a multi-MB payload.
+      assertString('memory:write', 'content', content, {
+        nonEmpty: false,
+        maxBytes: MAX_MEMORY_CONTENT_BYTES
+      });
+      if (mode !== undefined) {
+        assertEnum('memory:write', 'mode', mode, MEMORY_WRITE_MODES);
+      }
       if (scope === 'global') {
         const isAppend = mode === 'append' || (mode === undefined && key === 'append');
         if (isAppend) {
@@ -110,6 +159,8 @@ export function registerMemoryIpc(): void {
   wrapIpcHandler(
     IPC.MEMORY_REVEAL,
     async (_event, scope: 'global' | 'workspace', key: string) => {
+      assertEnum('memory:reveal', 'scope', scope, MEMORY_SCOPES);
+      assertString('memory:reveal', 'key', key);
       let file: string | null;
       if (scope === 'global') {
         // Trigger the seed write if missing so `showItemInFolder` has a

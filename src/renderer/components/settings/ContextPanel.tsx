@@ -7,10 +7,9 @@
  * per-workspace overrides section underneath uses the SAME
  * `WorkspaceOverridesSection` shape as the Permissions tab does.
  *
- * Per-workspace overrides are managed from the Inspector
- * slide-over (whose `RulesHeader` defaults to `'workspace'`
- * scope). This tab's job is the global default + showing what's
- * overridden.
+ * Per-workspace overrides are managed from the Context Inspector
+ * (whose `RulesHeader` defaults to `'workspace'` scope). This tab's
+ * job is the global default + showing what's overridden.
  */
 
 import { useEffect, useState } from 'react';
@@ -28,7 +27,7 @@ import {
   type ContextSummaryRules
 } from '@shared/types/contextSummary.js';
 
-export function ContextPanel() {
+export function ContextPanel({ embedded = false }: { embedded?: boolean }) {
   const settings = useSettingsStore((s) => s.settings);
   const settingsLoading = useSettingsStore((s) => s.loading);
 
@@ -53,6 +52,7 @@ export function ContextPanel() {
         rules={resolvedGlobal}
         workspaceId={null}
         defaultScope="global"
+        compact={embedded}
       />
       <WorkspaceContextOverridesSection />
     </div>
@@ -61,7 +61,7 @@ export function ContextPanel() {
 
 /**
  * Per-workspace overrides list. Visually matches
- * `WorkspaceOverridesSection` in `SettingsModal` exactly — same
+ * `WorkspaceOverridesSection` in Settings → Context — same
  * `border-t border-border-subtle/40 pt-4` separator, same
  * `Eyebrow` header, same compact diff summary, same `Reset` ghost
  * button row. Hidden entirely when no workspace has any override.

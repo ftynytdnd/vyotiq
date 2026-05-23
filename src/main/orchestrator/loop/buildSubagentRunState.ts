@@ -41,21 +41,21 @@ import {
  *   - `tool-round:failed`    — a tool round ran and ALL calls failed.
  *   - `retry`                — provider transport error triggered backoff.
  *   - `refused-by-allowlist` — model tried a tool outside its allowlist.
- *
- * NOTE: an earlier draft included a `'text-no-result'` variant for the
- * "model emitted text without a `<result>` envelope and we re-poll"
- * branch. That branch was deliberately removed in the audit pass — the
- * sub-agent loop now terminates the moment the model emits text
- * without tools, and the verifier marks any `<result>`-less output as
- * `malformed`. Keeping a dead enum value would mislead future readers
- * about the loop's actual shape, so it was dropped from the union.
+ *   - `text-no-result`       — model emitted final prose but skipped the
+ *                              `<result>…</result>` wrap. The host gives
+ *                              the worker EXACTLY ONE recovery turn to
+ *                              re-emit the same content inside the
+ *                              envelope before declaring `'malformed'`.
+ *                              See `SubAgent.ts:textNoResultRetries` for
+ *                              the budget.
  */
 export type SubagentLastAction =
   | 'none'
   | 'tool-round:ok'
   | 'tool-round:failed'
   | 'retry'
-  | 'refused-by-allowlist';
+  | 'refused-by-allowlist'
+  | 'text-no-result';
 
 export interface SubagentRunStateView {
   /** Zero-indexed iteration the worker is ABOUT to enter. */

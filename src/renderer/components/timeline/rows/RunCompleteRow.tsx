@@ -1,25 +1,36 @@
 /**
- * Trailing run closer. Emitted exactly once per completed run by
- * `deriveRows` (see `reducer/deriveRows.ts`) carrying the wall-clock
- * span between the opening `user-prompt` and the final event of the
- * turn.
- *
- * Styled as a thin divider — matching `PhaseDividerRow` — so the
- * timeline gets a quiet end-of-turn marker instead of a card.
+ * Trailing run closer — quiet label without horizontal rules so the
+ * timeline doesn't sprawl a hairline into the footer gap.
  */
+
+import { formatTokenCount } from '../../../lib/formatTokens.js';
+import type { TokenUsageAggregate } from '../reducer/types.js';
 
 interface RunCompleteRowProps {
   durationMs: number;
+  usage?: TokenUsageAggregate;
 }
 
-export function RunCompleteRow({ durationMs }: RunCompleteRowProps) {
+export function RunCompleteRow({ durationMs, usage }: RunCompleteRowProps) {
+  const tokenLabel =
+    usage && usage.cumulative.totalTokens > 0
+      ? formatTokenCount(usage.cumulative.totalTokens)
+      : null;
+
   return (
-    <div className="flex items-center gap-2 py-2">
-      <span className="h-px flex-1 bg-border-subtle/45" />
-      <span className="text-meta text-text-faint">
-        done in {formatDuration(durationMs)}
-      </span>
-      <span className="h-px flex-1 bg-border-subtle/45" />
+    <div
+      className="py-0.5 text-center text-meta text-text-faint"
+      aria-label={`Run completed in ${formatDuration(durationMs)}${tokenLabel ? `, ${tokenLabel} tokens` : ''}`}
+    >
+      done in {formatDuration(durationMs)}
+      {tokenLabel !== null && (
+        <>
+          <span aria-hidden className="mx-1.5 text-text-faint/50">
+            ·
+          </span>
+          <span className="font-mono">{tokenLabel} tok</span>
+        </>
+      )}
     </div>
   );
 }

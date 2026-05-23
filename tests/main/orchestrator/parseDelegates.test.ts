@@ -263,53 +263,116 @@ describe('parseDelegatesWithDuplicates', () => {
     expect(out[0]?.task).toBe('first');
   });
 
-  // Review finding H1: the harness explicitly forbids fenced
-  // directives ("never inside a code fence and never as a quoted
-  // preview"), but soft rules degrade. The parser MUST refuse to
-  // match `<delegate />` inside ``` / ~~~ fences so a model that
-  // narrates *"I'll send: \`\`\`xml\n<delegate ... />\n\`\`\`"*
-  // doesn't accidentally spawn a real worker.
-  describe('fenced-code guard (H1)', () => {
-    it('does not parse a directive inside a closed ``` fence', () => {
+  // The host's fence policy: pure-orchestration fences (a fence
+  // body that is *exclusively* `<delegate ... />` markup) are
+  // unwrapped by `stripFencedCode` and the directives spawn — the
+  // model commonly wraps real directives in ```xml … ``` for
+  // syntax highlighting and the host MUST honor those. Mixed
+  // prose + directive fences are still treated as illustrations
+  // and dropped, so a model narrating *"I'll send something
+  // like…"* and then quoting the directive does not accidentally
+  // spawn a worker.
+  //
+  // This restores the failure mode captured in the
+  // `679f5c3c-…jsonl` conversation (the model emitted four
+  // `<delegate />` directives wrapped in ```xml, the parser saw
+  // zero, the loop terminated cleanly, no sub-agents ran). The
+  // renderer-side `dropOrchestrationOnlyFences` already used the
+  // same heuristic for the display strip; the parser now agrees.
+  describe('fenced-code guard — pure-orchestration vs illustration', () => {
+    it('SPAWNS a directive whose ``` fence body is exclusively the directive', () => {
+      // Pure-orchestration fence: the body strips to empty under
+      // the `<delegate>`-only strip → unwrap and spawn. Surrounding
+      // prose is preserved by the strip but the directives parse.
       const input =
-        'Here is the directive shape:\n' +
+        '## Plan\n' +
         '```xml\n' +
-        '<delegate id="A1" task="should-not-spawn" />\n' +
+        '<delegate id="A1" task="real spawn" files="x.ts" tools="read" />\n' +
         '```\n' +
-        'I will send the real one separately.';
-      expect(parseDelegates(input)).toEqual([]);
+        'Continuing.';
+      const out = parseDelegates(input);
+      expect(out).toHaveLength(1);
+      expect(out[0]?.id).toBe('A1');
+      expect(out[0]?.task).toBe('real spawn');
     });
 
-    it('does not parse a directive inside a closed ~~~ fence', () => {
+    it('SPAWNS multiple directives stacked inside a single ```xml fence', () => {
+      // The exact shape captured in the production
+      // `679f5c3c-…jsonl` failure: four `<delegate />` directives
+      // wrapped in one ```xml block. Pre-fix this was 0 spawns;
+      // post-fix every directive must spawn.
       const input =
-        'Example:\n' +
+        'I am launching four agents:\n' +
+        '```xml\n' +
+        '<delegate id="A1" task="t1" files="a.ts" tools="read" />\n' +
+        '<delegate id="A2" task="t2" files="" tools="read,ls" />\n' +
+        '<delegate id="A3" task="t3" files="" tools="read,search" />\n' +
+        '<delegate id="A4" task="t4" files="" tools="read" />\n' +
+        '```';
+      const out = parseDelegates(input);
+      expect(out.map((d) => d.id)).toEqual(['A1', 'A2', 'A3', 'A4']);
+    });
+
+    it('SPAWNS a directive inside a ~~~ fence whose body is purely the directive', () => {
+      const input =
         '~~~\n' +
-        '<delegate id="A1" task="nope" />\n' +
+        '<delegate id="A1" task="real" />\n' +
         '~~~';
-      expect(parseDelegates(input)).toEqual([]);
+      const out = parseDelegates(input);
+      expect(out).toHaveLength(1);
+      expect(out[0]?.id).toBe('A1');
     });
 
-    it('does not parse a directive inside a TRAILING OPEN fence (mid-stream)', () => {
-      // Streaming case: the model has emitted the opener but the
-      // closing delimiter hasn't arrived yet. Without the guard the
-      // mid-stream `parseDelegates(accumulated)` call in
-      // `handleAssistantTurn` would emit `subagent-pending` for a
-      // directive the model intends as illustration.
+    it('SPAWNS a directive inside a trailing OPEN ``` fence (mid-stream pure body)', () => {
+      // Streaming case: the closing delimiter has not yet arrived,
+      // but the body so far is exclusively the directive. The host
+      // must let the mid-stream `subagent-pending` event fire
+      // immediately so the renderer paints the row instantly.
       const input =
-        'I will spawn one like:\n' +
+        '## Spawning workers\n' +
         '```xml\n' +
-        '<delegate id="A1" task="not-yet" />';
-      expect(parseDelegates(input)).toEqual([]);
+        '<delegate id="A1" task="streaming" files="x.ts" tools="read" />';
+      const out = parseDelegates(input);
+      expect(out).toHaveLength(1);
+      expect(out[0]?.id).toBe('A1');
     });
 
-    it('still parses a real directive after a closed fence', () => {
-      // Mixed case: example fence followed by a real directive. The
-      // example must stay non-spawning AND the real directive must
-      // still parse cleanly.
+    it('does NOT spawn a directive inside a fence whose body mixes prose with the directive', () => {
+      // Illustration case: prose + directive in the same fence body.
+      // The body does NOT strip to empty under the `<delegate>`-only
+      // strip → drop the body. The model narrating *"send something
+      // like this:"* and quoting the directive must stay non-
+      // spawning so callers can show the user a literal example.
       const input =
-        'Example:\n' +
         '```xml\n' +
+        '<!-- example shape, do not run -->\n' +
         '<delegate id="EX" task="example" />\n' +
+        '```';
+      expect(parseDelegates(input)).toEqual([]);
+    });
+
+    it('does NOT spawn a directive inside a fence with surrounding language code', () => {
+      // The body has a non-orchestration code line alongside the
+      // directive — clearly an illustration. Drop the whole fence.
+      const input =
+        '```xml\n' +
+        '<root>\n' +
+        '  <delegate id="EX" task="nope" />\n' +
+        '</root>\n' +
+        '```';
+      expect(parseDelegates(input)).toEqual([]);
+    });
+
+    it('still parses a real directive after an illustration fence', () => {
+      // Mixed run: an illustration fence (prose + directive) MUST
+      // stay non-spawning AND the real directive after the fence
+      // must still parse cleanly.
+      const input =
+        'Example shape:\n' +
+        '```xml\n' +
+        '<example>\n' +
+        '  <delegate id="EX" task="example" />\n' +
+        '</example>\n' +
         '```\n' +
         '<delegate id="A1" task="real spawn" files="src/x.ts" tools="read" />';
       const out = parseDelegates(input);
@@ -318,33 +381,29 @@ describe('parseDelegatesWithDuplicates', () => {
       expect(out[0]?.task).toBe('real spawn');
     });
 
-    it('still parses a real directive BEFORE an open fence', () => {
-      // Real directive precedes the start of an example fence the
-      // model started typing. The real one must still spawn.
+    it('still parses a real directive BEFORE an open fence with prose body', () => {
+      // Real directive precedes the start of an illustration fence
+      // the model started typing. The real one must still spawn.
       const input =
         '<delegate id="A1" task="real" files="x.ts" tools="read" />\n' +
-        'For reference, here is the shape:\n' +
+        'For reference, here is an example with prose:\n' +
         '```xml\n' +
-        '<delegate id="EX" task="example';
+        '<example>partial example';
       const out = parseDelegates(input);
       expect(out).toHaveLength(1);
       expect(out[0]?.id).toBe('A1');
     });
 
-    it('handles indented fence info-string without leaking', () => {
-      // CommonMark allows up to 3 spaces of indent before a fence.
-      // The strip uses line-start anchoring (^|\n) so an indented
-      // fence is technically NOT recognised as a fence — but the
-      // directive inside still has to be parsed-or-dropped
-      // consistently with how the renderer treats it. Today the
-      // renderer follows ReactMarkdown which renders 4+ space
-      // indents as code blocks but 1-3 as paragraphs. Lock the
-      // current behaviour: a leading-space fence (paragraph) IS
-      // parsed; a real \n```xml fence is NOT. Both branches
-      // exercised here.
-      const realFence =
-        'Look:\n```xml\n<delegate id="EX" task="t" />\n```';
-      expect(parseDelegates(realFence)).toEqual([]);
+    it('SPAWNS a real directive after a pure-orchestration fence (both spawn)', () => {
+      // Both fences contain only `<delegate>` markup → both spawn.
+      // The real directive after the fence is also picked up.
+      const input =
+        '```xml\n' +
+        '<delegate id="A1" task="first" files="a.ts" tools="read" />\n' +
+        '```\n' +
+        '<delegate id="A2" task="second" files="b.ts" tools="read" />';
+      const out = parseDelegates(input);
+      expect(out.map((d) => d.id)).toEqual(['A1', 'A2']);
     });
   });
 

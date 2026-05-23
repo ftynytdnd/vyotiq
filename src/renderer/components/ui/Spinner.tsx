@@ -2,7 +2,7 @@
  * Spinner — minimal 12px-default loading indicator. Used inline next
  * to row-sized labels (`text-row` / `text-meta`), inside `Button`'s
  * `loading` slot, and in the empty-state hints across Settings,
- * the Inspector, and the sidebar.
+ * the Inspector, and the dock.
  *
  * The default size was tightened from 14 → 12 because every recent
  * caller passed `size={12}` to match the surrounding `text-row`

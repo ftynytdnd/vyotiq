@@ -49,7 +49,16 @@ const DIALECT_SUFFIX: Record<ProviderDialect, RegExp> = {
   // We MUST NOT strip `/v1` here — a hypothetical native Ollama
   // deployment under `/v1` is non-existent today, but stripping would
   // also collide if the path ever became meaningful.
-  'ollama-native': /\/api\/?$/i
+  'ollama-native': /\/api\/?$/i,
+  // Anthropic native appends `/v1/messages`. The persisted base URL
+  // therefore ends at `https://api.anthropic.com`; strip a trailing
+  // `/v1[/]` only when the user pasted the full inference path.
+  'anthropic-native': /\/v1\/?$/i,
+  // Gemini native appends `/v1beta/models/{modelId}:streamGenerateContent`.
+  // Strip a trailing `/v1beta[/]` only — `/v1` alone could conceivably
+  // be meaningful on a future endpoint, so we anchor to the canonical
+  // `/v1beta` 2026 path.
+  'gemini-native': /\/v1beta\/?$/i
 };
 
 /**

@@ -11,6 +11,8 @@ const log = logger.child('settings-store');
 interface SettingsStore {
   settings: AppSettings;
   loading: boolean;
+  /** True after the first `refresh()` attempt completes (success or failure). */
+  initialLoadDone: boolean;
   refresh: () => Promise<void>;
   setDefaultModel: (sel: ModelSelection) => Promise<void>;
   setPermissions: (patch: Partial<ChatPermissions>) => Promise<void>;
@@ -128,9 +130,15 @@ export function workspaceHasPermissionOverride(
   return entry !== undefined && Object.keys(entry).length > 0;
 }
 
+/** Gate UI hydration until disk settings have been read at least once. */
+export function selectSettingsReady(state: Pick<SettingsStore, 'loading' | 'initialLoadDone'>): boolean {
+  return state.initialLoadDone && !state.loading;
+}
+
 export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
   settings: { permissions: DEFAULT_PERMISSIONS },
   loading: false,
+  initialLoadDone: false,
 
   refresh: async () => {
     setState({ loading: true });
@@ -141,7 +149,8 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
           ...settings,
           permissions: { ...DEFAULT_PERMISSIONS, ...(settings.permissions ?? {}) }
         },
-        loading: false
+        loading: false,
+        initialLoadDone: true
       });
     } catch (err) {
       // F-014: the pre-fix code left `loading: true` stuck on state
@@ -153,7 +162,7 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
       // renders normally; the next successful `refresh` (e.g. user hits
       // Settings again) repopulates.
       log.error('settings.get failed; keeping defaults', { err });
-      setState({ loading: false });
+      setState({ loading: false, initialLoadDone: true });
     }
   },
 

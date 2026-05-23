@@ -18,9 +18,8 @@ import { reportTool } from '@main/tools/report.tool';
 import type { ConfirmOutcome, ToolContext } from '@main/tools/types';
 
 interface CtxOverrides {
-  allowFileWrites?: boolean;
-  allowBash?: boolean;
-  allowWebSearch?: boolean;
+  /** Defaults to `true` so the happy-path tests never trigger a prompt. */
+  allowAuto?: boolean;
   // Audit fix H-04: ConfirmOutcome shape (replaces the legacy
   // `Promise<boolean>` return type).
   confirm?: (msg: string) => Promise<ConfirmOutcome>;
@@ -33,9 +32,7 @@ function makeCtx(workspacePath: string, overrides: CtxOverrides = {}): ToolConte
     runId: 'test-run',
     conversationId: 'test-conv',
     permissions: {
-      allowFileWrites: overrides.allowFileWrites ?? true,
-      allowBash: overrides.allowBash ?? true,
-      allowWebSearch: overrides.allowWebSearch ?? false
+      allowAuto: overrides.allowAuto ?? true
     },
     strictApprovals: false,
     signal: new AbortController().signal,
@@ -177,10 +174,10 @@ describe('reportTool — permission gating', () => {
     await rm(workspace, { recursive: true, force: true });
   });
 
-  it('asks for confirmation when allowFileWrites is false; denial → !ok and no file', async () => {
+  it('asks for confirmation when allowAuto is false; denial → !ok and no file', async () => {
     let confirmCalledWith: string | null = null;
     const ctx = makeCtx(workspace, {
-      allowFileWrites: false,
+      allowAuto: false,
       // Audit fix H-04: ConfirmOutcome shape — denial reports
       // `reason: 'denied'` so the tool surfaces the legacy
       // "permission denied" wording.
@@ -199,9 +196,9 @@ describe('reportTool — permission gating', () => {
     await expect(readFile(join(workspace, '.vyotiq', 'reports'))).rejects.toThrow();
   });
 
-  it('writes the file when allowFileWrites is false but the user confirms', async () => {
+  it('writes the file when allowAuto is false but the user confirms', async () => {
     const ctx = makeCtx(workspace, {
-      allowFileWrites: false,
+      allowAuto: false,
       // Audit fix H-04: ConfirmOutcome shape.
       confirm: async () => ({ approved: true, reason: 'approved' as const })
     });

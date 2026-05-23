@@ -21,7 +21,7 @@ function ctxFor(workspacePath: string): ToolContext {
     workspaceId: 'ws',
     runId: 'r',
     conversationId: 'c',
-    permissions: { allowFileWrites: false, allowBash: false, allowWebSearch: false },
+    permissions: { allowAuto: false },
     strictApprovals: false,
     emit: () => undefined,
     signal: new AbortController().signal,

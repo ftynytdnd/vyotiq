@@ -74,6 +74,8 @@ type SnapshotFn = () => Promise<
 
 export interface RunContextHandle {
   runId: string;
+  /** Matches the generation assigned at `registerRunContext` — used for safe teardown. */
+  generation: number;
   conversationId: string;
   workspaceId: string;
   workspacePath: string;
@@ -107,41 +109,42 @@ export interface RunContextHandle {
   triggerManual: ManualTriggerFn;
   undo: UndoFn;
   snapshot: SnapshotFn;
+  /** Abort only the in-flight summarizer stream (not the whole run). */
+  abortSummary: () => boolean;
 }
 
 const handles = new Map<string, RunContextHandle>();
+const generations = new Map<string, number>();
 
 /**
  * Register a run's handle. Called once by `runLoop` on entry. The
  * passed object is held by reference — the loop is expected to
  * mutate fields like `latestUsage` and `activeSummaryId` in place.
  *
- * M6: warn-log on collision. The IPC layer keys lookups on
- * `runId`; silently overwriting an existing handle would orphan
- * the prior run's `triggerManual` / `undo` / `snapshot` callbacks
- * (the IPC layer would route subsequent invocations to the NEW
- * run, even though the old run might still be streaming). The
- * `activeRuns` map in `AgentV.ts` has the same overwrite shape
- * but is gated by the `chat:send` supersede path; the registry
- * has no such gate today. A collision here means the supersede
- * path missed an entry — surface it loudly so the regression is
- * triagable.
+ * Returns the assigned `generation` for generation-safe `unregister`.
  */
-export function registerRunContext(handle: RunContextHandle): void {
+export function registerRunContext(handle: RunContextHandle): number {
   if (handles.has(handle.runId)) {
     log.warn('registerRunContext: handle already exists for runId — overwriting', {
       runId: handle.runId,
       conversationId: handle.conversationId
     });
   }
+  const generation = (generations.get(handle.runId) ?? 0) + 1;
+  generations.set(handle.runId, generation);
+  handle.generation = generation;
   handles.set(handle.runId, handle);
+  return generation;
 }
 
 /**
- * Drop the run's handle. Called from `runLoop`'s `finally` block
- * regardless of how the loop exited.
+ * Drop the run's handle when `generation` still matches registration.
+ * Skips delete when a superseding run reused the same `runId`.
  */
-export function unregisterRunContext(runId: string): void {
+export function unregisterRunContext(runId: string, generation: number): void {
+  const entry = handles.get(runId);
+  if (!entry || entry.generation !== generation) return;
+  if (generations.get(runId) === generation) generations.delete(runId);
   handles.delete(runId);
 }
 

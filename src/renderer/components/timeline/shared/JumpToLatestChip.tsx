@@ -24,6 +24,7 @@
 
 import { ArrowDown, ArrowUpToLine } from 'lucide-react';
 import { cn } from '../../../lib/cn.js';
+import { SurfaceShell } from '../../ui/SurfaceShell.js';
 
 interface JumpToLatestChipProps {
   /**
@@ -59,15 +60,16 @@ export function JumpToLatestChip({ visible, onClick, onJumpToTop }: JumpToLatest
       )}
     >
       {onJumpToTop && (
-        <button
+        <SurfaceShell
+          as="button"
           type="button"
           onClick={onJumpToTop}
           tabIndex={visible ? 0 : -1}
           className={cn(
-            'elev-1 pointer-events-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1',
-            'bg-surface-raised text-row text-text-secondary',
+            'pointer-events-auto inline-flex items-center gap-1.5 rounded-inner px-3 py-1',
+            'text-row text-text-secondary',
             'transition-[opacity,transform,color,background-color] duration-150 ease-out',
-            'hover:bg-surface-hover hover:text-text-primary',
+            'hover:bg-surface-hover/60 hover:text-text-primary',
             visible
               ? 'pointer-events-auto translate-y-0 opacity-100'
               : 'pointer-events-none translate-y-1 opacity-0'
@@ -75,17 +77,18 @@ export function JumpToLatestChip({ visible, onClick, onJumpToTop }: JumpToLatest
         >
           <ArrowUpToLine className="h-3 w-3" strokeWidth={2.25} />
           <span>Top</span>
-        </button>
+        </SurfaceShell>
       )}
-      <button
+      <SurfaceShell
+        as="button"
         type="button"
         onClick={onClick}
         tabIndex={visible ? 0 : -1}
         className={cn(
-          'elev-1 pointer-events-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1',
-          'bg-surface-raised text-row text-text-secondary',
+          'pointer-events-auto inline-flex items-center gap-1.5 rounded-inner px-3 py-1',
+          'text-row text-text-secondary',
           'transition-[opacity,transform,color,background-color] duration-150 ease-out',
-          'hover:bg-surface-hover hover:text-text-primary',
+          'hover:bg-surface-hover/60 hover:text-text-primary',
           visible
             ? 'pointer-events-auto translate-y-0 opacity-100'
             : 'pointer-events-none translate-y-1 opacity-0'
@@ -93,7 +96,7 @@ export function JumpToLatestChip({ visible, onClick, onJumpToTop }: JumpToLatest
       >
         <ArrowDown className="h-3 w-3" strokeWidth={2.25} />
         <span>Jump to latest</span>
-      </button>
+      </SurfaceShell>
     </div>
   );
 }

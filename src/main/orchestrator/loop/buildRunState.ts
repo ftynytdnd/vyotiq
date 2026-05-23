@@ -30,8 +30,7 @@ import { escapeXmlBody } from '../envelope/escapeXmlBody.js';
 import type { DelegationCounters } from './handleDelegates.js';
 import type { NudgeState } from './handleNoToolNoDelegate.js';
 import type { SpinSignatureBuffer } from './toolSpinSignature.js';
-import { MAX_NUDGES_PER_RUN } from './handleNoToolNoDelegate.js';
-import { MAX_TOTAL_ITERATIONS } from '@shared/constants.js';
+import { MAX_NUDGES_PER_RUN, MAX_TOTAL_ITERATIONS } from '@shared/constants.js';
 
 /**
  * Last meaningful action the loop performed. Mirrors the iteration

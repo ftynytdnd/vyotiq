@@ -18,6 +18,7 @@
 import { AlertTriangle } from 'lucide-react';
 import { cn } from '../../../lib/cn.js';
 import { shimmerStyle, shimmerText } from '../../../lib/shimmer.js';
+import { SurfaceShell, surfaceShellInnerClassName } from '../../ui/SurfaceShell.js';
 
 interface AgentThoughtRowProps {
   content: string;
@@ -44,23 +45,25 @@ export function AgentThoughtRow({
 }: AgentThoughtRowProps) {
   if (severity === 'warn') {
     return (
-      <div className="flex items-start gap-1.5 rounded-inner px-1 py-0.5">
-        <AlertTriangle
-          className="mt-[3px] h-3 w-3 shrink-0 text-warning/90"
-          strokeWidth={2.25}
-        />
-        <span className="text-log text-warning/90">{content}</span>
-      </div>
+      <SurfaceShell className={surfaceShellInnerClassName('compact')}>
+        <div className="flex items-start gap-1.5">
+          <AlertTriangle
+            className="mt-[3px] h-3 w-3 shrink-0 text-warning-strong"
+            strokeWidth={2.25}
+          />
+          <span className="text-row text-warning-strong">{content}</span>
+        </div>
+      </SurfaceShell>
     );
   }
   return (
-    <div>
+    <SurfaceShell className={surfaceShellInnerClassName('compact')}>
       <span
-        className={shimmerText(live, cn('text-log italic text-text-muted'))}
+        className={shimmerText(live, cn('text-row italic text-text-muted'))}
         style={live ? shimmerStyle(seed ?? `thought:${content}`) : undefined}
       >
         {content}
       </span>
-    </div>
+    </SurfaceShell>
   );
 }

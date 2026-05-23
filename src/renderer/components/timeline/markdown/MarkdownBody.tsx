@@ -124,8 +124,14 @@ function PreWithCopy({ children }: { children?: ReactNode }) {
         onClick={onCopy}
         className={cn(
           'app-no-drag absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-inner',
-          'bg-surface-raised text-text-muted opacity-0 transition-opacity duration-150',
-          'group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-surface-hover hover:text-text-primary'
+          // `bg-surface-overlay` matches the `<pre>` background (see
+          // `.vyotiq-md pre` in `index.css`) so the button reads as
+          // part of the fence chrome rather than a foreign chip
+          // floating above it. Hover lifts to `bg-surface-hover` to
+          // surface the affordance against the fence's own surface.
+          'bg-surface-overlay text-text-muted opacity-0 transition-opacity duration-150',
+          'group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100',
+          'hover:bg-surface-hover hover:text-text-primary'
         )}
         aria-label="Copy code"
         title={copied ? 'Copied' : 'Copy'}

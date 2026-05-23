@@ -23,7 +23,6 @@ import { listTools } from '../tools/registry.js';
 import { wrapXml } from '../orchestrator/envelope/index.js';
 import { escapeXmlBody } from '../orchestrator/envelope/escapeXmlBody.js';
 import { ORCHESTRATOR_TOOLS } from '../tools/policy/index.js';
-import { MAX_NUDGES_PER_RUN } from '../orchestrator/loop/handleNoToolNoDelegate.js';
 import {
   BASE_BACKOFF_MS,
   CONTEXT_SUMMARY_DEFAULT_KEEP_RECENT_TURNS,
@@ -34,7 +33,9 @@ import {
   CONTEXT_SUMMARY_OVERRIDE_FILENAME,
   MAX_BACKOFF_MS,
   MAX_DELEGATION_BAD_ROUNDS,
+  MAX_NUDGES_PER_RUN,
   MAX_PARALLEL_SUBAGENTS,
+  MAX_PER_TASK_BAD_STREAK,
   MAX_SELF_CORRECTION_ATTEMPTS,
   MAX_TOOL_OUTPUT_CHARS,
   MAX_TOTAL_ITERATIONS,
@@ -78,16 +79,22 @@ function buildRuntimeLimitsBlock(): string {
   //     makes the harness §C statement "the host enforces three
   //     parallel strike counters" honest at the prompt layer too.
   //
-  //   - `MAX_NUDGES_PER_RUN` lives next to its consumer in
-  //     `handleNoToolNoDelegate.ts`; we re-export the live value here
-  //     rather than redeclaring it so a future tuning bump cannot
-  //     drift from the actual enforced cap.
+  //   - `MAX_NUDGES_PER_RUN` was promoted from
+  //     `handleNoToolNoDelegate.ts` into `@shared/constants.ts` (T1-5)
+  //     so every `MAX_*` knob has a single home. The matching consumer
+  //     re-exports the shared symbol for backward compatibility.
   return wrapXml(
     'runtime_limits',
     [
       `MAX_TOTAL_ITERATIONS=${MAX_TOTAL_ITERATIONS}`,
       `MAX_SELF_CORRECTION_ATTEMPTS=${MAX_SELF_CORRECTION_ATTEMPTS}`,
       `MAX_DELEGATION_BAD_ROUNDS=${MAX_DELEGATION_BAD_ROUNDS}`,
+      // Per-task soft pivot signal (T1-2). Surfaced in
+      // `<run_state>.failing_tasks` when any decomposition's bad-verdict
+      // streak crosses `MAX_PER_TASK_BAD_STREAK - 1`. A pure observability
+      // signal — does NOT halt the run; the round-level
+      // `MAX_DELEGATION_BAD_ROUNDS` halt remains the only delegation halt.
+      `MAX_PER_TASK_BAD_STREAK=${MAX_PER_TASK_BAD_STREAK}`,
       `MAX_PARALLEL_SUBAGENTS=${MAX_PARALLEL_SUBAGENTS}`,
       // `MAX_ORCHESTRATOR_SPIN_NUDGES` was removed in the
       // subtraction-pass: the host no longer enforces a spin nudge or
@@ -342,6 +349,16 @@ export function buildSubagentSystemPrompt(opts: {
   task: string;
   allowedTools: string[];
   runState?: string;
+  /**
+   * Optional `<host_environment>` envelope (real-time host snapshot —
+   * see `buildHostEnvironmentXml`). Appended OUTSIDE the cache key
+   * because the timestamp inside changes every call. Ordering mirrors
+   * the orchestrator's system prompt: harness body → host environment
+   * → run state, so a `bash` worker on Windows reads "what OS am I on"
+   * before "what iteration am I on". Omitted entirely when undefined,
+   * keeping the existing fixture-based tests unchanged.
+   */
+  hostEnvironment?: string;
 }): string {
   // Sort the allowlist so semantically equal sets ([read,bash] ==
   // [bash,read]) produce one cache entry, not two. NUL separator
@@ -370,8 +387,18 @@ export function buildSubagentSystemPrompt(opts: {
     subagentBodyCache.delete(key);
     subagentBodyCache.set(key, staticBody);
   }
+  // Dynamic per-iteration suffix. Both blocks are appended OUTSIDE the
+  // static-body cache so a fresh timestamp / counter snapshot never
+  // poisons a future cache hit. Order matches the orchestrator's:
+  // host environment (slow-changing) before run state (per-iteration).
+  const hostEnvironmentBlock = opts.hostEnvironment
+    ? `\n\n---\n\n${opts.hostEnvironment}`
+    : '';
   const runStateBlock = opts.runState ? `\n\n---\n\n${opts.runState}` : '';
-  return wrapXml('system_instructions', `${staticBody}${runStateBlock}`);
+  return wrapXml(
+    'system_instructions',
+    `${staticBody}${hostEnvironmentBlock}${runStateBlock}`
+  );
 }
 
 /**

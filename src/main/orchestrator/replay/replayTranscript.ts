@@ -36,6 +36,13 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
   let curAssistantId: string | null = null;
   let curText = '';
   let curReasoning = '';
+  // Phase 8 (2026): Anthropic thinking signature carried by the matching
+  // `agent-reasoning-end` event. Persisted onto the replayed assistant
+  // `ChatMessage.reasoning_signature` so the next request echoes the
+  // `{type:'thinking', thinking, signature}` block back unchanged. Empty
+  // for non-Anthropic transcripts and for older runs persisted before
+  // the field was wired.
+  let curReasoningSignature = '';
   let curToolCalls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> = [];
   // We must emit the assistant message BEFORE the matching tool-result rows,
   // and we must keep a mapping of call id -> name for the role:'tool' rows.
@@ -89,11 +96,20 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
       content: curText.length === 0 && curToolCalls.length > 0 ? null : curText
     };
     if (curReasoning.length > 0) msg.reasoning_content = curReasoning;
+    // Phase 8 (2026): persist the Anthropic thinking signature when the
+    // closing `agent-reasoning-end` carried one. Anthropic's API
+    // requires the signature to round-trip unchanged on the next
+    // request for thinking-capable models; transcripts persisted
+    // before this field was wired simply leave it empty and the
+    // field stays absent (the API auto-filters legacy thinking
+    // blocks for older Sonnet/Haiku classes anyway).
+    if (curReasoningSignature.length > 0) msg.reasoning_signature = curReasoningSignature;
     if (curToolCalls.length > 0) msg.tool_calls = curToolCalls;
     messages.push(msg);
     curAssistantId = null;
     curText = '';
     curReasoning = '';
+    curReasoningSignature = '';
     curToolCalls = [];
   };
 
@@ -175,6 +191,11 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
           curAssistantId = null;
           curText = '';
           curReasoning = '';
+          // Phase 8 (2026): drop any thinking signature collected for
+          // this aborted turn — the orchestrator never persisted the
+          // assistant message, so the signature would dangle without
+          // a parent to attach to.
+          curReasoningSignature = '';
           // Tool calls collected for the SAME assistant id stay valid only
           // if they were already paired with results (rare case for an
           // aborted text turn). Drop them to be safe.
@@ -194,22 +215,46 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
         break;
       }
       case 'agent-text-end':
-      case 'agent-reasoning-end':
-        // Pure markers — no model-side effect. The text already lives in
+        // Pure marker — no model-side effect. The text already lives in
         // the buffers; we keep accumulating until the next non-streaming
         // event arrives. Sub-agent-scoped markers (Audit fix §1.1) are
         // similarly invisible to the model — the orchestrator only sees
         // the worker's final `<result>` envelope.
         break;
+      case 'agent-reasoning-end':
+        // Sub-agent-scoped markers stay UI-only. Audit fix §1.1.
+        if (e.subagentId) break;
+        // Phase 8 (2026): capture the Anthropic thinking signature when
+        // present. The matching `agent-reasoning-delta` events have
+        // already populated `curReasoning`; we attach the signature to
+        // the same in-progress assistant turn so the eventual
+        // `flushAssistant` writes BOTH fields onto the replayed
+        // `ChatMessage`. Older transcripts without this field leave
+        // `curReasoningSignature` at '' (the field stays absent, which
+        // matches pre-Phase-8 behaviour).
+        if (typeof e.signature === 'string' && e.signature.length > 0) {
+          curReasoningSignature = e.signature;
+        }
+        break;
       case 'tool-call': {
         if (e.subagentId) break; // sub-agent internals are isolated
         // Tool calls belong to the in-progress assistant turn.
         if (curAssistantId === null) curAssistantId = `call-anchor-${e.id}`;
-        curToolCalls.push({
+        const tc: NonNullable<ChatMessage['tool_calls']>[number] = {
           id: e.call.id,
           type: 'function',
           function: { name: e.call.name, arguments: JSON.stringify(e.call.args ?? {}) }
-        });
+        };
+        // Phase 9 (2026): Gemini's per-call thoughtSignature, when the
+        // closing `tool-call` event carried one, lands on the
+        // replayed `tool_calls[i]` slot so the next request can
+        // round-trip it onto the matching `functionCall` part.
+        // Older transcripts persisted before signature plumbing
+        // landed simply leave it absent.
+        if (typeof e.call.thoughtSignature === 'string' && e.call.thoughtSignature.length > 0) {
+          tc.thoughtSignature = e.call.thoughtSignature;
+        }
+        curToolCalls.push(tc);
         toolCallMeta.set(e.call.id, { name: e.call.name });
         pendingCallIds.push(e.call.id);
         break;

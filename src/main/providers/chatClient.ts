@@ -19,6 +19,8 @@ import type { ChatMessage, TokenUsage } from '@shared/types/chat.js';
 import { getProviderWithKey } from './providerStore.js';
 import { streamOpenAi } from './openaiChatStream.js';
 import { streamOllama } from './ollamaChatStream.js';
+import { streamAnthropic } from './anthropicChatStream.js';
+import { streamGemini } from './geminiChatStream.js';
 
 export interface ChatStreamRequest {
   providerId: string;
@@ -37,6 +39,17 @@ export interface ChatStreamRequest {
   temperature?: number;
   maxTokens?: number;
   signal?: AbortSignal;
+  /**
+   * Phase 7 (2026) — stable conversation id for provider-side
+   * prompt-cache attribution. The xAI Grok 4.x family uses this on
+   * the `x-grok-conv-id` request header to maximize cache hit rate
+   * across successive turns of the same conversation
+   * (`docs.x.ai/developers/advanced-api-usage/prompt-caching`).
+   * Other providers ignore the field. Optional so existing callers
+   * (and tests) don't need to thread it everywhere — the xAI cache
+   * still works without it, just with lower hit rates.
+   */
+  conversationId?: string;
   /**
    * Optional callback fired exactly once per request, the moment the
    * HTTP response headers have been received but before any SSE chunk
@@ -66,12 +79,44 @@ export interface ChatStreamDelta {
    * any provider that emits `delta.reasoning_content` will surface here.
    */
   reasoningDelta?: string;
+  /**
+   * Anthropic-only: terminal signature for the just-closed thinking block.
+   * Emitted exactly ONCE per `thinking` content block — at
+   * `content_block_stop` — and carries the cumulative bytes accumulated
+   * across all preceding `signature_delta` events for that block.
+   *
+   * The `consumeChatStream` consumer concatenates these onto the
+   * `reasoningSignature` result field; the orchestrator then persists
+   * the value via `agent-reasoning-end.signature` (transcript) and
+   * `assistantMessage.reasoning_signature` (in-memory). Anthropic's API
+   * REQUIRES the signature to be passed back unchanged on the next turn
+   * for thinking-capable models, otherwise the model loses its plan.
+   *
+   * Other dialects do not surface a sibling signature on the wire;
+   * this field stays `undefined` for them.
+   *
+   * Source: https://platform.claude.com/docs/en/docs/build-with-claude/streaming
+   *         https://platform.claude.com/docs/en/docs/build-with-claude/extended-thinking
+   */
+  reasoningSignature?: string;
   /** Incremental tool-call piece. */
   toolCallDelta?: {
     index: number;
     id?: string;
     name?: string;
     argumentsDelta?: string;
+    /**
+     * Gemini-only: opaque thoughtSignature attached to a `functionCall`
+     * part. Surfaced on the SAME delta that delivers the call's name
+     * (Gemini sends complete function-call parts in one chunk; we emit
+     * one synthetic `toolCallDelta` per part). The orchestrator
+     * persists it via `ToolCall.thoughtSignature` for round-trip on
+     * the next request — Gemini 3 returns 400 when missing on the
+     * "Current Turn".
+     *
+     * Source: https://ai.google.dev/gemini-api/docs/thought-signatures
+     */
+    thoughtSignature?: string;
   };
   /** Set on the FINAL chunk only. */
   finishReason?: 'stop' | 'tool_calls' | 'length' | 'error' | string;
@@ -100,6 +145,14 @@ export async function* streamChat(req: ChatStreamRequest): AsyncGenerator<ChatSt
   const dialect = provider.dialect ?? 'openai';
   if (dialect === 'ollama-native') {
     yield* streamOllama(req, provider);
+    return;
+  }
+  if (dialect === 'anthropic-native') {
+    yield* streamAnthropic(req, provider);
+    return;
+  }
+  if (dialect === 'gemini-native') {
+    yield* streamGemini(req, provider);
     return;
   }
   yield* streamOpenAi(req, provider);

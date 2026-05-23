@@ -73,6 +73,57 @@ describe('checkpoints/pendingChanges', () => {
     expect(afterAccept).toHaveLength(0);
   });
 
+  it('persists subagentId and source on pending rows', async () => {
+    const workspaceId = `ws-${randomUUID()}`;
+    const runId = `run-${randomUUID()}`;
+    const conversationId = `conv-${randomUUID()}`;
+
+    await openRun({
+      runId,
+      conversationId,
+      workspaceId,
+      label: 'attribution',
+      startedAt: Date.now()
+    });
+
+    await recordChange({
+      runId,
+      conversationId,
+      workspaceId,
+      filePath: 'delegated.ts',
+      kind: 'modify',
+      preContent: 'a',
+      postContent: 'b',
+      additions: 1,
+      deletions: 1,
+      source: 'edit',
+      subagentId: 'A1',
+      emit: () => {}
+    });
+    await recordChange({
+      runId,
+      conversationId,
+      workspaceId,
+      filePath: 'shell.sh',
+      kind: 'modify',
+      preContent: 'x',
+      postContent: 'y',
+      additions: 1,
+      deletions: 1,
+      source: 'bash',
+      emit: () => {}
+    });
+
+    const listed = await listPending(conversationId, [workspaceId]);
+    expect(listed.find((e) => e.filePath === 'delegated.ts')).toMatchObject({
+      subagentId: 'A1',
+      source: 'edit'
+    });
+    expect(listed.find((e) => e.filePath === 'shell.sh')).toMatchObject({
+      source: 'bash'
+    });
+  });
+
   it('acceptAll with knownWorkspaceIds drops on-disk entries that the cache has not yet promoted', async () => {
     // Reproduces the cold-start auto-accept bug (review finding M3).
     // Step 1 in the host process: an earlier session writes pending

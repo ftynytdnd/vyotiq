@@ -16,10 +16,16 @@ import { FileCode, ChevronDown, ChevronRight } from 'lucide-react';
 import type { FileEditGroupChild } from '../reducer/deriveRows.js';
 import { FileEditRow } from './FileEditRow.js';
 import { DiffStatsBadge } from '../tools/shared/DiffStatsBadge.js';
-import { NestedDetailRail } from '../shared/NestedDetailRail.js';
+import { DetailShell } from '../shared/DetailShell.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import { useTimelineUiStore } from '../../../store/useTimelineUiStore.js';
 import { cn } from '../../../lib/cn.js';
+import { SurfaceShell } from '../../ui/SurfaceShell.js';
+import {
+  timelineRowChevronClassName,
+  timelineRowHeaderClassName,
+  timelineRowIconClassName
+} from '../shared/rowStyles.js';
 
 interface FileEditGroupRowProps {
   rowKey: string;
@@ -54,24 +60,24 @@ export function FileEditGroupRow({ rowKey, items }: FileEditGroupRowProps) {
   };
 
   return (
-    <div className="vyotiq-stepfade flex flex-col">
+    <SurfaceShell className="flex flex-col gap-1">
       <button
         type="button"
         onClick={onToggle}
         disabled={!conversationId}
         aria-expanded={expanded}
         className={cn(
-          'log-line app-no-drag flex w-full items-center gap-2 px-2 py-1 text-left',
+          timelineRowHeaderClassName,
           conversationId ? 'cursor-pointer' : 'cursor-default'
         )}
       >
         {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-chevron" strokeWidth={2} />
+          <ChevronDown className={timelineRowChevronClassName} strokeWidth={2} />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-chevron" strokeWidth={2} />
+          <ChevronRight className={timelineRowChevronClassName} strokeWidth={2} />
         )}
-        <FileCode className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} />
-        <div className="min-w-0 flex-1 truncate text-log text-text-secondary">
+        <FileCode className={cn(timelineRowIconClassName, 'text-accent')} strokeWidth={2} />
+        <div className="min-w-0 flex-1 truncate text-row text-text-secondary">
           <span className="font-medium text-text-primary">Edited</span>{' '}
           <span className="font-mono">{primary}</span>
           {suffix && <span className="text-text-muted">{suffix}</span>}
@@ -80,7 +86,7 @@ export function FileEditGroupRow({ rowKey, items }: FileEditGroupRowProps) {
       </button>
 
       {expanded && (
-        <NestedDetailRail gap="gap-1">
+        <DetailShell gap="gap-1">
           {items.map((c) => (
             <FileEditRow
               key={c.key}
@@ -89,8 +95,8 @@ export function FileEditGroupRow({ rowKey, items }: FileEditGroupRowProps) {
               deletions={c.deletions}
             />
           ))}
-        </NestedDetailRail>
+        </DetailShell>
       )}
-    </div>
+    </SurfaceShell>
   );
 }

@@ -46,6 +46,11 @@ import { emitRunStatus } from './emitRunStatus.js';
 import { logger } from '../../logging/logger.js';
 import type { ArgsDeltaTap } from './handleAssistantTurn.js';
 import { validateSubagentToolsetDetailed } from '../../tools/policy/index.js';
+import { malformedReasonFromAttrs, isReadOnlyShardTask } from '../malformedReason.js';
+import {
+  verifyDelegateArtifacts,
+  formatHostVerificationXml
+} from '../verifyDelegateArtifacts.js';
 
 const log = logger.child('orch/delegates');
 
@@ -245,6 +250,27 @@ export async function handleDelegates(
     { delegates: delegates.length }
   );
 
+  const readShardCount = delegates.filter((d) => isReadOnlyShardTask(d.task)).length;
+  if (delegates.length > 4) {
+    emit({
+      kind: 'phase',
+      id: randomUUID(),
+      ts: Date.now(),
+      label:
+        `Large delegate batch (${delegates.length}) — prefer fewer, meaningful sub-tasks ` +
+        'with file content inlined via files= rather than many parallel read-only workers.'
+    });
+  } else if (delegates.length > 0 && readShardCount / delegates.length > 0.5) {
+    emit({
+      kind: 'phase',
+      id: randomUUID(),
+      ts: Date.now(),
+      label:
+        `${readShardCount}/${delegates.length} delegates look like read-only line-range shards — ` +
+        'orchestrator should read via ls/search and delegate one create/edit task with files= inline.'
+    });
+  }
+
   // Pull every pending checkpoint change for this conversation —
   // these are the file mutations the orchestrator's tool rounds have
   // performed so far that the user has not yet Accepted or Rejected.
@@ -433,12 +459,17 @@ export async function handleDelegates(
           subagentId
         });
       },
-      onReasoningEnd: (assistantMsgId, subagentId) => {
+      onReasoningEnd: (assistantMsgId, subagentId, signature) => {
         emit({
           kind: 'agent-reasoning-end',
           id: assistantMsgId,
           ts: Date.now(),
-          subagentId
+          subagentId,
+          // Phase 8 (2026): the Anthropic thinking signature, when
+          // present, lands on the timeline event so transcript replay
+          // can fan it back onto the matching sub-agent assistant
+          // message's `reasoning_signature` slot.
+          ...(signature !== undefined ? { signature } : {})
         });
       },
       // Live partial-args preview for in-flight worker tool calls. Per
@@ -466,19 +497,45 @@ export async function handleDelegates(
         });
       },
       onResult: (run) => {
+        // T1-6: pass `partial` through as a distinct lifecycle status
+        // instead of collapsing it to `done`. The worker's
+        // `<status>partial</status>` is real progress that didn't fully
+        // satisfy the verification criterion — the orchestrator's
+        // harness now reasons about it semantically (see
+        // `04-subagent-prompt.md` "Output format") and the renderer
+        // surfaces it with a softer-tone badge.
+        const verdict = verifySubagentOutput(run.output);
+        const structuralMsg = malformedReasonFromAttrs(verdict.attrs);
+        const wireStatus =
+          run.status === 'success'
+            ? 'done'
+            : run.status === 'partial'
+              ? 'partial'
+              : run.status === 'aborted'
+                ? 'aborted'
+                : run.status === 'malformed' || verdict.structural === 'malformed'
+                  ? 'malformed'
+                  : 'failed';
         emit({
           kind: 'subagent-status',
           id: randomUUID(),
           ts: Date.now(),
           subagentId: run.id,
-          status:
-            run.status === 'success' || run.status === 'partial'
-              ? 'done'
-              : run.status === 'aborted'
-                ? 'aborted'
-                : 'failed',
-          ...(run.error ? { message: run.error } : {})
+          status: wireStatus,
+          ...((run.error ?? structuralMsg)
+            ? { message: run.error ?? structuralMsg }
+            : {})
         });
+        // T0-3: skip the `subagent-result` emission when the worker
+        // aborted. An aborted worker carries `output: ''`, so the
+        // event would persist an empty `<result>...` envelope into
+        // the JSONL and force the renderer reducer to filter it on
+        // every replay. The matching `subagent-status` (with
+        // `status: 'aborted'`) already conveys the outcome; the
+        // result row is purely a transcript artefact and skipping
+        // it on abort keeps replays + the renderer's
+        // empty-state branch honest.
+        if (run.status === 'aborted') return;
         // Persist ONLY the `<result>...</result>` envelope, not the
         // worker's preceding chain-of-thought / scratch text. The
         // verifier already extracts the inner body cleanly; we
@@ -513,12 +570,21 @@ export async function handleDelegates(
   });
   const verified = runs.map((run) => {
     const verdict = verifySubagentOutput(run.output);
-    return { id: run.id, attrs: verdict.attrs, inner: verdict.inner, structural: verdict.structural };
+    return {
+      id: run.id,
+      status: run.status,
+      attrs: verdict.attrs,
+      inner: verdict.inner,
+      structural: verdict.structural
+    };
   });
 
-  const allBad = verified.length > 0 && verified.every(
-    (v) => v.structural === 'self-failed' || v.structural === 'malformed'
-  );
+  const countable = verified.filter((v) => v.status !== 'aborted');
+  const allBad =
+    countable.length > 0 &&
+    countable.every(
+      (v) => v.structural === 'self-failed' || v.structural === 'malformed'
+    );
   if (allBad) {
     counters.consecutiveBadRounds += 1;
   } else {
@@ -543,7 +609,7 @@ export async function handleDelegates(
   // so a mixed-signature spec (rare but possible if the model reuses
   // the same task description) clears the streak deterministically.
   const okSignaturesThisRound = new Set<string>();
-  for (const v of verified) {
+  for (const v of countable) {
     const spec = specsById.get(v.id);
     if (!spec) continue;
     if (v.structural === 'ok') {
@@ -553,7 +619,7 @@ export async function handleDelegates(
   // Map of signature → ids attributed in THIS round (for the
   // escalation surface).
   const idsBySignatureThisRound = new Map<string, string[]>();
-  for (const v of verified) {
+  for (const v of countable) {
     const spec = specsById.get(v.id);
     if (!spec) continue;
     const key = taskSignature(spec.task, spec.files);
@@ -578,19 +644,40 @@ export async function handleDelegates(
         ids: e.ids
       }))
     });
-    // One phase divider per escalated task so the timeline carries a
-    // human-readable pivot signal next to the next iteration's nudge
-    // / pivot from the model. Truncating the key for display — the
-    // structured log above already has the full signature for
-    // triage.
-    for (const e of newlyEscalated) {
-      const display = e.key.split('|')[0]!.slice(0, 80);
+    // T1-7: coalesce phase events when more than two tasks escalate
+    // in the same round. A round of 8 sub-agents all hitting the
+    // threshold used to spam 8 near-identical timeline rows; the
+    // batched form below keeps single-task escalation verbose
+    // (most common case) but degrades gracefully on burst rounds.
+    if (newlyEscalated.length <= 2) {
+      // 1- or 2-task escalation — keep the per-task verbose form so
+      // the user gets the streak count + signature head per task.
+      for (const e of newlyEscalated) {
+        const display = e.key.split('|')[0]!.slice(0, 80);
+        emit({
+          kind: 'phase',
+          id: randomUUID(),
+          ts: Date.now(),
+          label:
+            `Task failing ${e.streak} rounds in a row — pivot decomposition: ${display}`
+        });
+      }
+    } else {
+      // 3+ tasks escalating in one round — one summary row with
+      // the count and the highest streak, plus a comma-joined
+      // signature head list. The structured log above has the
+      // full data for triage.
+      const maxStreak = newlyEscalated.reduce((m, e) => Math.max(m, e.streak), 0);
+      const heads = newlyEscalated
+        .map((e) => e.key.split('|')[0]!.slice(0, 40))
+        .join(', ');
       emit({
         kind: 'phase',
         id: randomUUID(),
         ts: Date.now(),
         label:
-          `Task failing ${e.streak} rounds in a row — pivot decomposition: ${display}`
+          `${newlyEscalated.length} tasks failing (max ${maxStreak} rounds) — ` +
+          `pivot decomposition: ${heads}`
       });
     }
   }
@@ -605,13 +692,21 @@ export async function handleDelegates(
   // round — a small but real fidelity gap. The verdicts go in for
   // every outcome (continue / halt), and the halt-vs-continue
   // decision is made strictly afterward.
+  const hostLines = await verifyDelegateArtifacts(delegates, opts.workspacePath);
+  const hostXml = formatHostVerificationXml(hostLines);
+  let resultsBody = buildSubagentResultsEnvelope(
+    verified.map((v) => ({ id: v.id, attrs: v.attrs, inner: v.inner }))
+  );
+  if (hostXml.length > 0) {
+    resultsBody = resultsBody.replace(
+      '</subagent_results>',
+      `\n${hostXml}\n</subagent_results>`
+    );
+  }
   messages.push({
     role: 'user',
-    content: buildSubagentResultsEnvelope(
-      verified.map((v) => ({ id: v.id, attrs: v.attrs, inner: v.inner }))
-    )
+    content: resultsBody
   });
-
   if (counters.consecutiveBadRounds >= MAX_DELEGATION_BAD_ROUNDS) {
     log.warn('delegation three-strike halt', {
       consecutiveBadRounds: counters.consecutiveBadRounds,

@@ -3,7 +3,27 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src *;" />
+    <!--
+      Content-Security-Policy — explicit pinning per audit fix 2026-01-P2-1.
+
+      `connect-src *` is intentional: Vyotiq is provider-agnostic (any HTTPS
+      base URL can be configured via Settings → Providers, including local
+      Ollama on http://localhost:11434), so the renderer cannot derive a
+      tight allowlist at build time. Cross-listed as 12-P2-1.
+
+      Everything else is pinned: `script-src 'self'` makes inline-script
+      injection structurally impossible, `object-src 'none'` blocks legacy
+      plugin embedding, `base-uri 'self'` blocks an XSS from rewriting
+      `<base>` (which would silently redirect every relative URL), and `form-action 'none'`
+      kills the `<form action="…">` exfil channel. `style-src 'unsafe-inline'`
+      stays — Tailwind v4 + react-markdown emit inline styles; tightening
+      that needs nonces threaded through Vite, out of scope here.
+
+      `frame-ancestors` is intentionally omitted here — browsers ignore
+      it in `<meta>` CSP (DevTools warning). Electron frame embedding is
+      governed by the main-process window model, not document CSP meta.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src *; object-src 'none'; base-uri 'self'; form-action 'none';" />
     <title>Vyotiq — Agent V</title>
   </head>
   <body>

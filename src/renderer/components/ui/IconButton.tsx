@@ -7,12 +7,12 @@
  * Sizing follows the same rhythm as the rest of the renderer: 32px
  * (`h-8 w-8`) for dialog headers and similar destination surfaces
  * where hit-area generosity matters; smaller inline icon affordances
- * (sidebar trash, composer attachment count) compose plain `<button>`
+ * (dock tab actions, composer attachment count) compose plain `<button>`
  * with the local hover-reveal opacity pattern instead.
  *
  * `active` paints the same `bg-surface-hover` tint the rest of the
  * codebase uses for "open / pressed" states so toggle-style icon
- * buttons stay coherent with `PermissionsMenu` and the sidebar
+ * buttons stay coherent with `PermissionsMenu` and the dock
  * toolbar buttons.
  */
 import React from 'react';

@@ -66,7 +66,7 @@ interface TimelineUiStore {
 // reset to `null`, losing any in-flight debounce. The `beforeunload`
 // flush in `main.tsx` handles the production teardown path; HMR only
 // fires in dev where a lost toggle is paid for by the next click.
-// Same trade-off applies to `useUiStore`'s sidebar/collapsed
+// Same trade-off applies to `useUiStore`'s layout/collapsed
 // persisters (introduced under F-016).
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingExpanded: Record<string, Set<string>> | null = null;

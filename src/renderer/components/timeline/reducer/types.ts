@@ -53,9 +53,23 @@ export interface ReasoningTextAcc {
  * - `running`: the sub-agent has spawned and is executing. Most live
  *   telemetry (`tool-call`, `tool-result`, `file-edit`, `token-usage`)
  *   accumulates against snapshots in this state.
- * - `done` / `failed` / `aborted`: terminal states reported by the host.
+ * - `done`: worker reported `<status>success</status>` and the verifier
+ *   accepted it.
+ * - `partial`: worker reported `<status>partial</status>` (T1-6). Real
+ *   progress landed but the task is not complete. Distinct from `done`
+ *   so the UI can surface it with a softer-tone badge.
+ * - `failed`: worker reported `<status>failed</status>`, emitted a
+ *   malformed envelope, or the host gave up.
+ * - `aborted`: user Stop or supersede.
  */
-type SubAgentStatus = 'pending' | 'running' | 'done' | 'failed' | 'aborted';
+type SubAgentStatus =
+  | 'pending'
+  | 'running'
+  | 'done'
+  | 'partial'
+  | 'failed'
+  | 'malformed'
+  | 'aborted';
 
 export interface SubAgentStep {
   callId: string;
@@ -133,6 +147,14 @@ export interface DiffStreamSnapshot {
  * `peak` is the running maximum of `promptTokens` seen across turns —
  * the high-water mark. `cumulative` sums every prompt+completion
  * reported across iterations — the billing / cost view.
+ *
+ * `inFlight` is a synthetic, locally-tokenized estimate of the tokens
+ * generated since the last authoritative `token-usage` event landed
+ * (Phase 3 — `synthetic-usage-update`). It lets the composer pill grow
+ * during long generations on providers whose `usage` only arrives at
+ * end-of-turn. Cleared the instant a real `token-usage` event lands and
+ * also on terminal events (`agent-text-end`, abort, run done/error).
+ * Never persisted; never folded into `peak` or `cumulative`.
  */
 export interface TokenUsageAggregate {
   latest: TokenUsage;
@@ -140,6 +162,40 @@ export interface TokenUsageAggregate {
   cumulative: TokenUsage;
   /** Count of usage events folded in. Useful for empty-state checks. */
   samples: number;
+  /**
+   * Synthetic in-flight estimate (Phase 3). Only `completionTokens` is
+   * populated by the synthetic counter; the prompt side stays
+   * authoritative from the last real `latest`.
+   */
+  inFlight?: TokenUsage;
+  /**
+   * Phase 12 (2026) — wall-clock anchor for tok/s throughput:
+   *
+   *   - `streamStartedAt`: timestamp of the FIRST `agent-text-delta`
+   *     or `agent-reasoning-delta` for this owner (orchestrator or
+   *     sub-agent). Stamped once and never overwritten so a long
+   *     multi-turn run reports the run-level throughput, not the
+   *     last turn alone.
+   *   - `streamEndedAt`: timestamp of the LATEST `token-usage` event
+   *     for this owner. Advances on every authoritative usage frame
+   *     so the renderer's "tok/s" pill keeps creeping up as more
+   *     turns complete.
+   *
+   * Both fields are wall-clock milliseconds (Date.now() / event.ts).
+   * The renderer derives `tok/s = completion_tokens / ((end - start)
+   * / 1000)` for the visible-output throughput. Hidden chain-of-
+   * thought tokens are NOT included — `peak.completionTokens` already
+   * counts only visible output on dialects we support, and a user-
+   * facing tok/s that mixed in reasoning would understate the
+   * apparent typing speed they perceive in the stream.
+   *
+   * Both undefined until the first delta lands; both stay undefined
+   * for non-streaming providers that report usage in a single shot
+   * with no preceding text deltas (so the renderer hides the pill
+   * rather than divide-by-zero).
+   */
+  streamStartedAt?: number;
+  streamEndedAt?: number;
 }
 
 /**
@@ -256,6 +312,8 @@ export interface TimelineState {
    * `run-status` branch). Audit fix §3.2.1.
    */
   latestOrchestratorRunStatus?: Extract<TimelineEvent, { kind: 'run-status' }>;
+  /** Workers with `startedAt >=` this timestamp count toward batch-scoped stats. */
+  lastDelegationPhaseTs?: number;
   /**
    * Id of the most-recent `user-prompt` event. Maintained by the
    * reducer so `Timeline`'s "snap on send" effect can depend on a
@@ -404,17 +462,37 @@ export const INITIAL_TIMELINE_STATE: TimelineState = {
  * Folds a single `TokenUsage` report into a running aggregate.
  * Pure; returns a new aggregate when the prior is undefined or when
  * any field changes.
+ *
+ * Authoritative usage events ALWAYS clear `inFlight` — the synthetic
+ * mid-stream counter is by definition stale the moment the real frame
+ * lands. The caller never has to drop `inFlight` manually.
+ *
+ * 2026: optional `reasoningTokens` / `cachedPromptTokens` /
+ * `cacheCreationTokens` are folded with the same Math.max / sum
+ * semantics as the primary fields. Missing on the `next` side means
+ * the wire didn't report the breakdown — we preserve the prior peak
+ * but skip the cumulative bump (the underlying primary token is
+ * already counted in `promptTokens` / `completionTokens`).
  */
 export function foldTokenUsage(
   prior: TokenUsageAggregate | undefined,
-  next: TokenUsage
+  next: TokenUsage,
+  /**
+   * Phase 12 (2026) — wall-clock timestamp of THIS usage event,
+   * forwarded so the aggregate can advance `streamEndedAt`. Optional
+   * for legacy callers (tests, etc.); when omitted the timestamp
+   * slot is left untouched and tok/s simply doesn't refresh on this
+   * fold.
+   */
+  ts?: number
 ): TokenUsageAggregate {
   if (!prior) {
     return {
       latest: next,
       peak: next,
       cumulative: next,
-      samples: 1
+      samples: 1,
+      ...(typeof ts === 'number' ? { streamEndedAt: ts } : {})
     };
   }
   const peak: TokenUsage = {
@@ -422,15 +500,122 @@ export function foldTokenUsage(
     completionTokens: Math.max(prior.peak.completionTokens, next.completionTokens),
     totalTokens: Math.max(prior.peak.totalTokens, next.totalTokens)
   };
+  const peakReasoning = maxOpt(prior.peak.reasoningTokens, next.reasoningTokens);
+  if (peakReasoning !== undefined) peak.reasoningTokens = peakReasoning;
+  const peakCached = maxOpt(prior.peak.cachedPromptTokens, next.cachedPromptTokens);
+  if (peakCached !== undefined) peak.cachedPromptTokens = peakCached;
+  const peakCacheCreation = maxOpt(prior.peak.cacheCreationTokens, next.cacheCreationTokens);
+  if (peakCacheCreation !== undefined) peak.cacheCreationTokens = peakCacheCreation;
+
   const cumulative: TokenUsage = {
     promptTokens: prior.cumulative.promptTokens + next.promptTokens,
     completionTokens: prior.cumulative.completionTokens + next.completionTokens,
     totalTokens: prior.cumulative.totalTokens + next.totalTokens
   };
-  return {
+  const cumReasoning = sumOpt(prior.cumulative.reasoningTokens, next.reasoningTokens);
+  if (cumReasoning !== undefined) cumulative.reasoningTokens = cumReasoning;
+  const cumCached = sumOpt(prior.cumulative.cachedPromptTokens, next.cachedPromptTokens);
+  if (cumCached !== undefined) cumulative.cachedPromptTokens = cumCached;
+  const cumCacheCreation = sumOpt(
+    prior.cumulative.cacheCreationTokens,
+    next.cacheCreationTokens
+  );
+  if (cumCacheCreation !== undefined) cumulative.cacheCreationTokens = cumCacheCreation;
+
+  // Note: `inFlight` is intentionally dropped — authoritative usage
+  // supersedes any synthetic mid-stream estimate.
+  const out: TokenUsageAggregate = {
     latest: next,
     peak,
     cumulative,
     samples: prior.samples + 1
   };
+  // Phase 12 (2026): preserve the prior stream-start anchor (so a
+  // multi-turn run reports run-level throughput, not last-turn-only),
+  // and advance `streamEndedAt` to this usage event's timestamp.
+  if (typeof prior.streamStartedAt === 'number') {
+    out.streamStartedAt = prior.streamStartedAt;
+  }
+  if (typeof ts === 'number') out.streamEndedAt = ts;
+  else if (typeof prior.streamEndedAt === 'number') out.streamEndedAt = prior.streamEndedAt;
+  return out;
+}
+
+/**
+ * Phase 12 (2026) — stamp the run's `streamStartedAt` anchor on first
+ * delta. Idempotent: if the field is already set, returns `prior`
+ * unchanged (object identity preserved so React selectors don't churn
+ * on every subsequent delta). Creates an empty-shaped aggregate when
+ * called BEFORE any authoritative `token-usage` event lands, so the
+ * tok/s pill can still anchor against the right start time the moment
+ * usage starts flowing.
+ */
+export function stampUsageStart(
+  prior: TokenUsageAggregate | undefined,
+  ts: number
+): TokenUsageAggregate {
+  if (prior && typeof prior.streamStartedAt === 'number') return prior;
+  const zero: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  if (!prior) {
+    return {
+      latest: zero,
+      peak: zero,
+      cumulative: zero,
+      samples: 0,
+      streamStartedAt: ts
+    };
+  }
+  return { ...prior, streamStartedAt: ts };
+}
+
+/** Max of two optional non-negative integers; `undefined` when both are missing. */
+function maxOpt(a: number | undefined, b: number | undefined): number | undefined {
+  if (typeof a === 'number' && typeof b === 'number') return Math.max(a, b);
+  if (typeof a === 'number') return a;
+  if (typeof b === 'number') return b;
+  return undefined;
+}
+
+/** Sum of two optional non-negative integers; `undefined` when both are missing. */
+function sumOpt(a: number | undefined, b: number | undefined): number | undefined {
+  if (typeof a === 'number' && typeof b === 'number') return a + b;
+  if (typeof a === 'number') return a;
+  if (typeof b === 'number') return b;
+  return undefined;
+}
+
+/**
+ * Updates the `inFlight` slot on an aggregate. Mid-stream synthetic
+ * counter (Phase 3): the orchestrator never reports these — they're
+ * computed in the renderer from streamed `agent-text-delta` /
+ * `agent-reasoning-delta` events tokenized locally. `latest` and the
+ * peak/cumulative aggregates are untouched.
+ *
+ * Pass `undefined` for `next` to clear the slot (e.g. on `agent-text-end`,
+ * abort, or run termination).
+ */
+export function setInFlightUsage(
+  prior: TokenUsageAggregate | undefined,
+  next: TokenUsage | undefined
+): TokenUsageAggregate {
+  if (!prior) {
+    // No prior aggregate yet — establish a zero base so the renderer
+    // has a non-null `latest` to read alongside the in-flight estimate.
+    const zero: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    return {
+      latest: zero,
+      peak: zero,
+      cumulative: zero,
+      samples: 0,
+      ...(next !== undefined ? { inFlight: next } : {})
+    };
+  }
+  const out: TokenUsageAggregate = {
+    latest: prior.latest,
+    peak: prior.peak,
+    cumulative: prior.cumulative,
+    samples: prior.samples
+  };
+  if (next !== undefined) out.inFlight = next;
+  return out;
 }

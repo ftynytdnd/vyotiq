@@ -11,11 +11,14 @@ export const AGENT_NAME = 'Agent V';
  * Default chat permissions. Single source of truth — both the renderer
  * settings store and the main settings blob seed from this constant so
  * the wire defaults stay in lockstep.
+ *
+ * `allowAuto` defaults to `false` on a fresh install so first-time
+ * users see a confirm prompt for every gated tool call (edits, deletes,
+ * shell commands, web search, reports). Users opt into the unattended
+ * path per-workspace via the composer's "Trust this workspace" toggle.
  */
 export const DEFAULT_PERMISSIONS: ChatPermissions = {
-  allowFileWrites: true,
-  allowBash: true,
-  allowWebSearch: false
+  allowAuto: false
 };
 
 /**
@@ -161,6 +164,23 @@ export const MAX_FILES_PER_DELEGATE = 32;
 export const MAX_PER_TASK_BAD_STREAK = 3;
 
 /**
+ * Planning-without-action nudge budget (T1-5).
+ *
+ * Cap on the number of times the host injects a `role:'user'` nudge
+ * when the orchestrator emits a turn of pure reasoning (no output
+ * text, no tool call, no `<delegate />` directive). Lifted to the
+ * shared constants module so the harness `<runtime_limits>` block
+ * and the run-state surface read from one place — the previous
+ * location next to its consumer in `handleNoToolNoDelegate.ts` was
+ * the only `MAX_*` knob NOT in this file, breaking the single-
+ * source-of-truth contract every other cap honors.
+ *
+ * `handleNoToolNoDelegate.ts` re-exports this constant for
+ * backward compatibility with existing test/import sites.
+ */
+export const MAX_NUDGES_PER_RUN = 2;
+
+/**
  * Sub-agent loop limits.
  *
  * Hard cap on a single sub-agent's iteration count. The audit-pass
@@ -278,8 +298,13 @@ export const CONTEXT_SUMMARY_MAX_FINAL_CHARS = 32_000;
  */
 export const MAX_USER_PROMPT_BYTES = 1_048_576; // 1 MiB
 
+/** Max attachment paths per `chat:send` / token-estimate request. */
+export const MAX_CHAT_ATTACHMENTS = 32;
+
 /** Tool execution. */
 export const BASH_TIMEOUT_MS = 30_000;
+/** Upper bound for per-invocation `timeoutMs` overrides from the model. */
+export const BASH_MAX_TIMEOUT_MS = 30 * 60 * 1000;
 export const READ_MAX_BYTES = 512 * 1024; // 512 KB
 
 /**
@@ -400,6 +425,14 @@ export const IPC = {
    * snapshot is GC'd and the IPC returns `{ ok: false }`.
    */
   CONTEXT_SUMMARY_UNDO: 'context-summary:undo',
+  /**
+   * Cancel an in-flight idle-mode summarization for a conversation.
+   * Routes through `idleSummaryRuntime.abortIdleSummary`; the
+   * streaming path emits a persisted `context-summary-aborted` event.
+   */
+  CONTEXT_SUMMARY_ABORT_IDLE: 'context-summary:abort-idle',
+  /** Cancel in-flight summarization on an active orchestrator run only. */
+  CONTEXT_SUMMARY_ABORT_LIVE: 'context-summary:abort-live',
   /**
    * Set / clear a per-message override on a conversation. Persisted
    * as a `context-override-set` TimelineEvent in the JSONL so

@@ -111,6 +111,10 @@ export interface PendingChange {
   additions: number;
   deletions: number;
   createdAt: number;
+  /** Sub-agent attribution when the change came from a delegated worker. */
+  subagentId?: string;
+  /** Tool that produced the pending row — mirrors `CheckpointEntry.source`. */
+  source?: 'edit' | 'delete' | 'bash';
 }
 
 /**

@@ -19,6 +19,31 @@ import { DiffStatsBadge } from '../timeline/tools/shared/DiffStatsBadge.js';
 import { PendingChangeDiff } from './PendingChangeDiff.js';
 import { openWorkspaceFile } from '../../lib/openPath.js';
 import { cn } from '../../lib/cn.js';
+import { timelineRowHeaderClassName } from '../timeline/shared/rowStyles.js';
+
+function PendingChangeAttribution({ change }: { change: PendingChange }) {
+  if (change.source !== 'bash' && !change.subagentId) return null;
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1">
+      {change.source === 'bash' && (
+        <span
+          className="rounded-inner bg-surface-overlay px-1 font-mono text-meta uppercase text-text-muted"
+          title="Recovered from a bash command"
+        >
+          bash
+        </span>
+      )}
+      {change.subagentId && (
+        <span
+          className="rounded-inner bg-surface-overlay/60 px-1 font-mono text-meta text-text-faint"
+          title={`Sub-agent ${change.subagentId}`}
+        >
+          {change.subagentId}
+        </span>
+      )}
+    </span>
+  );
+}
 
 interface PendingChangeRowProps {
   change: PendingChange;
@@ -84,7 +109,7 @@ export function PendingChangeRow({
 
   return (
     <div className="vyotiq-stepfade group flex flex-col">
-      <div className="log-line flex items-center gap-2 px-2 py-1">
+      <div className={timelineRowHeaderClassName}>
         {!alwaysExpanded && (
           <button
             type="button"
@@ -116,10 +141,11 @@ export function PendingChangeRow({
           {dirName && <span className="font-mono text-text-faint">{dirName}</span>}
           <span className="font-mono text-text-secondary">{fileName}</span>
         </div>
+        <PendingChangeAttribution change={change} />
         <DiffStatsBadge
           additions={change.additions}
           deletions={change.deletions}
-          className="w-16 shrink-0 justify-end"
+          minWidth="badge"
         />
         <div
           className={cn(

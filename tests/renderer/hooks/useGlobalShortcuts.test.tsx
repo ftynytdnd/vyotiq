@@ -1,23 +1,18 @@
 /**
- * `useGlobalShortcuts` tests. Verify Ctrl+N / Ctrl+O / Ctrl+, route
- * to the configured callbacks, and that other modifier combinations
- * are NOT intercepted.
+ * `useGlobalShortcuts` tests. Verify Ctrl+N / Ctrl+O / Ctrl+, /
+ * Ctrl+R / Ctrl+Shift+I route to the configured callbacks, and that
+ * other modifier combinations are NOT intercepted.
  */
 
 import { describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
-import { useGlobalShortcuts } from '@renderer/hooks/useGlobalShortcuts';
+import {
+  useGlobalShortcuts,
+  type GlobalShortcutActions
+} from '@renderer/hooks/useGlobalShortcuts';
 
-function Harness({
-  newConversation,
-  openWorkspace,
-  openSettings
-}: {
-  newConversation: () => void;
-  openWorkspace: () => void;
-  openSettings: () => void;
-}) {
-  useGlobalShortcuts({ newConversation, openWorkspace, openSettings });
+function Harness(actions: GlobalShortcutActions) {
+  useGlobalShortcuts(actions);
   return <div data-testid="harness" />;
 }
 
@@ -133,5 +128,89 @@ describe('useGlobalShortcuts', () => {
     fireKey('n', { ctrlKey: true });
     expect(a).toHaveBeenCalledOnce();
     expect(b).toHaveBeenCalledOnce();
+  });
+
+  // ──────────────────────────────────────────────────────────────────
+  // View-menu shortcuts (Ctrl+R / Ctrl+Shift+I).
+  // ──────────────────────────────────────────────────────────────────
+
+  it('fires reload on Ctrl+R', () => {
+    const reload = vi.fn();
+    render(
+      <Harness
+        newConversation={() => { }}
+        openWorkspace={() => { }}
+        openSettings={() => { }}
+        reload={reload}
+      />
+    );
+    fireKey('r', { ctrlKey: true });
+    expect(reload).toHaveBeenCalledOnce();
+  });
+
+  it('does NOT fire reload on Ctrl+Alt+R', () => {
+    const reload = vi.fn();
+    render(
+      <Harness
+        newConversation={() => { }}
+        openWorkspace={() => { }}
+        openSettings={() => { }}
+        reload={reload}
+      />
+    );
+    fireKey('r', { ctrlKey: true, altKey: true });
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('fires toggleDevTools on Ctrl+Shift+I', () => {
+    const toggleDevTools = vi.fn();
+    render(
+      <Harness
+        newConversation={() => { }}
+        openWorkspace={() => { }}
+        openSettings={() => { }}
+        toggleDevTools={toggleDevTools}
+      />
+    );
+    // Windows / Chromium delivers `I` (uppercase) when Shift is held;
+    // the hook lowercases the key for the comparison so either casing
+    // must work.
+    fireKey('I', { ctrlKey: true, shiftKey: true });
+    expect(toggleDevTools).toHaveBeenCalledOnce();
+  });
+
+  it('does NOT fire toggleDevTools on plain Ctrl+I', () => {
+    const toggleDevTools = vi.fn();
+    render(
+      <Harness
+        newConversation={() => { }}
+        openWorkspace={() => { }}
+        openSettings={() => { }}
+        toggleDevTools={toggleDevTools}
+      />
+    );
+    fireKey('i', { ctrlKey: true });
+    expect(toggleDevTools).not.toHaveBeenCalled();
+  });
+
+  it('silently ignores Ctrl+R / Ctrl+Shift+I when handlers are undefined', () => {
+    // Sibling handlers must NOT be invoked either — the keystrokes
+    // should be a no-op when the optional reload / toggleDevTools
+    // callbacks are not provided.
+    const onNew = vi.fn();
+    const onOpen = vi.fn();
+    const onSettings = vi.fn();
+    render(
+      <Harness
+        newConversation={onNew}
+        openWorkspace={onOpen}
+        openSettings={onSettings}
+      />
+    );
+    fireKey('r', { ctrlKey: true });
+    fireKey('I', { ctrlKey: true, shiftKey: true });
+    expect(onNew).not.toHaveBeenCalled();
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(onSettings).not.toHaveBeenCalled();
   });
 });

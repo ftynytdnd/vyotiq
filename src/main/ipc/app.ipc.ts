@@ -21,6 +21,9 @@ import { join } from 'node:path';
 import { IPC, SETTINGS_FILE } from '@shared/constants.js';
 import type { AppInfo, AppRevealTarget } from '@shared/types/ipc.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
+import { assertEnum } from './validate.js';
+
+const REVEAL_TARGETS = ['userData', 'settings', 'log'] as const;
 
 /**
  * Resolves the same three paths the About tab surfaces. Kept inside a
@@ -58,6 +61,7 @@ export function registerAppIpc(): void {
   wrapIpcHandler(
     IPC.APP_REVEAL_PATH,
     async (_event, target: AppRevealTarget): Promise<void> => {
+      assertEnum('app:revealPath', 'target', target, REVEAL_TARGETS);
       const { userDataDir, settingsFile, logDir } = resolvePaths();
       // Enum mapping — anything else (typo, malicious payload) rejects
       // with a structured error rather than silently revealing whatever

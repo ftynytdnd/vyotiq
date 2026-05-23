@@ -103,7 +103,7 @@ export async function runSubAgentPool(specs: SubAgentSpec[], deps: PoolDeps): Pr
           ? { onReasoningDelta: (delta, mid, sid) => deps.onReasoningDelta?.(delta, mid, sid) }
           : {}),
         ...(deps.onReasoningEnd
-          ? { onReasoningEnd: (mid, sid) => deps.onReasoningEnd?.(mid, sid) }
+          ? { onReasoningEnd: (mid, sid, signature) => deps.onReasoningEnd?.(mid, sid, signature) }
           : {}),
         // Streaming partial-args preview for in-flight worker tool
         // calls. Forwarded through verbatim so `handleDelegates` can

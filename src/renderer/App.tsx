@@ -1,53 +1,33 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { TitleBar } from './components/titlebar/TitleBar.js';
-import { Sidebar } from './components/sidebar/Sidebar.js';
-import { EdgeHandle } from './components/sidebar/EdgeHandle.js';
+import { SecondaryZone } from './components/zone/index.js';
 import { ChatPage } from './pages/ChatPage.js';
 import { ToastHost } from './components/toast/ToastHost.js';
-// Lazy-loaded panels. None of these are needed for first paint:
-//   - `SettingsModal` only mounts when the user invokes File → Settings
-//     (or the configure-provider empty state), and it carries the
-//     entire memory + providers + permissions surface (largest single
-//     subtree in the renderer).
-//   - `ConfirmHost` only mounts when a tool requests confirmation.
-//   - `PromptDialog` only mounts on the rare File → Set workspace by
-//     path flow.
-// Splitting these out drops ~hundreds of KB from the eager bundle and
-// silences the vite single-chunk warning (1.69 MB → smaller initial +
-// async chunks). Each Suspense boundary uses a `null` fallback so the
-// surrounding tree never visibly reflows; the panels themselves
-// already carry their own open/closed gating logic, so an in-flight
-// chunk fetch with `open=false` simply renders nothing.
-const SettingsModal = lazy(() =>
-  import('./components/settings/SettingsModal.js').then((m) => ({ default: m.SettingsModal }))
-);
+// Lazy-loaded overlays. ConfirmHost and PromptDialog are the only
+// modal surfaces left at the app root — Settings, Checkpoints, and
+// Context Inspector live in the right-hand SecondaryZone.
 const ConfirmHost = lazy(() =>
   import('./components/confirm/ConfirmHost.js').then((m) => ({ default: m.ConfirmHost }))
 );
 const PromptDialog = lazy(() =>
   import('./components/ui/PromptDialog.js').then((m) => ({ default: m.PromptDialog }))
 );
-const CheckpointsView = lazy(() =>
-  import('./components/checkpoints/CheckpointsView.js').then((m) => ({
-    default: m.CheckpointsView
-  }))
-);
-const ContextInspectorPanel = lazy(() =>
-  import('./components/contextInspector/index.js').then((m) => ({
-    default: m.ContextInspectorPanel
-  }))
-);
 import { useProviderStore } from './store/useProviderStore.js';
 import { useWorkspaceStore } from './store/useWorkspaceStore.js';
-import { useSettingsStore } from './store/useSettingsStore.js';
+import { useSettingsStore, selectSettingsReady } from './store/useSettingsStore.js';
+import { useToastStore } from './store/useToastStore.js';
 import { useConversationsStore } from './store/useConversationsStore.js';
 import { useChatStore } from './store/useChatStore.js';
 import { useUiStore } from './store/useUiStore.js';
 import { useTimelineUiStore } from './store/useTimelineUiStore.js';
 import { useCheckpointsStore } from './store/useCheckpointsStore.js';
+import {
+  useSecondaryZoneStore,
+  type SettingsTabId
+} from './store/useSecondaryZoneStore.js';
 import { vyotiq } from './lib/ipc.js';
-import { cn } from './lib/cn.js';
 import { logger } from './lib/logger.js';
+import { openContextInspectorForActiveChat } from './lib/openContextInspector.js';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts.js';
 
 const log = logger.child('app');
@@ -60,6 +40,7 @@ export default function App() {
   const providers = useProviderStore((s) => s.providers);
   const discoverCached = useProviderStore((s) => s.discoverCached);
   const settings = useSettingsStore((s) => s.settings);
+  const settingsReady = useSettingsStore(selectSettingsReady);
   const hydrateUi = useUiStore((s) => s.hydrate);
   const uiHydrated = useUiStore((s) => s.hydrated);
   const hydrateTimelineUi = useTimelineUiStore((s) => s.hydrate);
@@ -71,12 +52,11 @@ export default function App() {
   const activeIdByWorkspace = useConversationsStore((s) => s.activeIdByWorkspace);
   const [activeMapHydrated, setActiveMapHydrated] = useState(false);
 
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'providers' | 'permissions' | 'context' | 'checkpoints' | 'memory' | 'about'>('providers');
   const [workspacePathOpen, setWorkspacePathOpen] = useState(false);
   const [workspacePathError, setWorkspacePathError] = useState<string | null>(null);
-  const [checkpointsOpen, setCheckpointsOpen] = useState(false);
   const initCheckpoints = useCheckpointsStore((s) => s.initOnce);
+  const openSecondarySettings = useSecondaryZoneStore((s) => s.openSettings);
+  const openSecondaryCheckpoints = useSecondaryZoneStore((s) => s.openCheckpoints);
 
   // Foundational data: providers, workspace, settings, conversations.
   useEffect(() => {
@@ -94,42 +74,48 @@ export default function App() {
     return initCheckpoints();
   }, [initCheckpoints]);
 
-  // Hydrate UI prefs (sidebar open/closed + per-workspace collapse
+  // Hydrate UI prefs (bottom dock expand state + per-workspace collapse
   // state) from persisted settings exactly once, after the settings
   // refresh has resolved. Subsequent toggles self-persist via the ui
   // store.
   useEffect(() => {
-    if (uiHydrated) return;
-    const persisted = settings.ui?.sidebarOpen;
+    if (!settingsReady || uiHydrated) return;
     const collapsed = settings.ui?.collapsedWorkspaces;
-    if (typeof persisted === 'boolean') {
-      hydrateUi({ sidebarOpen: persisted, collapsedWorkspaces: collapsed });
-    } else if (settings.permissions !== undefined) {
-      // Settings have loaded but no ui.sidebarOpen field exists yet — mark
-      // hydrated so future toggles persist. Default to open.
-      hydrateUi({ sidebarOpen: true, collapsedWorkspaces: collapsed });
+    const dockExpanded =
+      settings.ui?.dockExpanded ??
+      (settings.ui?.sidebarOpen !== undefined ? settings.ui.sidebarOpen : false);
+    hydrateUi({ dockExpanded, collapsedWorkspaces: collapsed });
+    if (
+      settings.ui?.sidebarOpen !== undefined &&
+      settings.ui?.dockExpanded === undefined
+    ) {
+      void vyotiq.settings.set({
+        ui: {
+          ...(settings.ui ?? {}),
+          dockExpanded,
+          sidebarOpen: undefined
+        }
+      });
     }
-  }, [settings, uiHydrated, hydrateUi]);
+  }, [settings, settingsReady, uiHydrated, hydrateUi]);
 
   // Hydrate persisted timeline expand/collapse state exactly once after
   // the first settings refresh resolves. Cheap — just a
   // Record<string, string[]> snapshot.
   useEffect(() => {
-    if (timelineUiHydrated) return;
-    if (settings.permissions === undefined) return; // still loading
+    if (!settingsReady || timelineUiHydrated) return;
     hydrateTimelineUi(settings.ui?.expandedRows);
-  }, [settings, timelineUiHydrated, hydrateTimelineUi]);
+  }, [settings, settingsReady, timelineUiHydrated, hydrateTimelineUi]);
 
   // Hydrate the per-workspace last-active conversation map from
   // persisted settings exactly once after the first settings refresh
   // resolves. Subsequent edits self-persist via
   // `useConversationsStore.persistActiveMap`.
   useEffect(() => {
-    if (activeMapHydrated) return;
-    if (settings.permissions === undefined) return; // still loading
+    if (!settingsReady || activeMapHydrated) return;
     hydrateActiveByWorkspace(settings.ui?.activeConversationByWorkspace ?? {});
     setActiveMapHydrated(true);
-  }, [settings, activeMapHydrated, hydrateActiveByWorkspace]);
+  }, [settings, settingsReady, activeMapHydrated, hydrateActiveByWorkspace]);
 
   // Pre-warm sibling transcripts after first idle so the FIRST
   // switch into ANY persisted-active workspace's last conversation is
@@ -258,12 +244,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providers.map((p) => `${p.id}:${p.enabled ? 1 : 0}`).join(',')]);
 
-  const openSettings = (tab: typeof settingsTab = 'providers') => {
-    setSettingsTab(tab);
-    setSettingsOpen(true);
+  const openSettings = (tab?: SettingsTabId) => {
+    openSecondarySettings(tab);
   };
 
-  const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const newConversation = useConversationsStore((s) => s.newConversation);
   const pickWorkspace = useWorkspaceStore((s) => s.pick);
   const setWorkspace = useWorkspaceStore((s) => s.set);
@@ -282,6 +266,14 @@ export default function App() {
     }
   };
 
+  const openContextInspector = () => {
+    if (!openContextInspectorForActiveChat()) {
+      useToastStore
+        .getState()
+        .show('Open a chat or start a run to inspect context.', 'info');
+    }
+  };
+
   // File menu actions are wired here (the only place that knows the
   // settings modal opener) and threaded down into the title bar.
   const fileActions = {
@@ -291,50 +283,53 @@ export default function App() {
       setWorkspacePathError(null);
       setWorkspacePathOpen(true);
     },
-    openSettings: () => openSettings('providers'),
-    openCheckpoints: () => setCheckpointsOpen(true),
+    openSettings: () => openSettings(),
+    openCheckpoints: () => openSecondaryCheckpoints(),
+    openContextInspector,
     quit: () => void vyotiq.window.close()
   };
 
-  // Bind window-level accelerators that match the labels in `FileMenu`.
-  // Without this hook, the menu's `Ctrl+N` / `Ctrl+O` / `Ctrl+,`
-  // hints would be decorative-only.
+  const viewActions = {
+    openContextInspector
+  };
+
+  // Bind window-level accelerators that match the labels in
+  // `FileMenu` and `ViewMenu`. Without this hook the menu's `Ctrl+N`
+  // / `Ctrl+O` / `Ctrl+,` / `Ctrl+R` / `Ctrl+Shift+I` hints would be
+  // decorative-only — Electron's built-in defaults cover Reload /
+  // DevTools in development but vanish in packaged builds where the
+  // menu role isn't `'reload'` / `'toggleDevTools'`. The reload /
+  // devtools handlers go through the same `vyotiq.window.*` IPC the
+  // `MenuItem` row does, so menu click and keyboard shortcut share
+  // one wire path.
   useGlobalShortcuts({
     newConversation: fileActions.newConversation,
     openWorkspace: fileActions.openWorkspace,
-    openSettings: fileActions.openSettings
+    openSettings: fileActions.openSettings,
+    openCheckpoints: fileActions.openCheckpoints,
+    openContextInspector: fileActions.openContextInspector,
+    reload: () => void vyotiq.window.reload(),
+    toggleDevTools: () => void vyotiq.window.toggleDevTools()
   });
 
   return (
     <div className="flex h-full flex-col bg-surface-base">
-      <TitleBar fileActions={fileActions} />
-      <div className="relative flex flex-1 overflow-hidden">
-        <div
-          aria-hidden={!sidebarOpen}
-          className={cn(
-            'min-w-0 flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-out',
-            sidebarOpen ? 'w-[250px]' : 'w-0 pointer-events-none'
-          )}
-        >
-          <Sidebar
-            onOpenSettings={() => openSettings('permissions')}
-          />
+      <TitleBar
+        fileActions={fileActions}
+        viewActions={viewActions}
+        onOpenSettings={() => openSettings()}
+      />
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <main className="min-h-0 flex-1 overflow-hidden bg-surface-base">
+            <ChatPage
+              onOpenProviders={() => openSettings('providers')}
+              onOpenCheckpointSettings={() => openSettings('checkpoints')}
+            />
+          </main>
         </div>
-        <EdgeHandle />
-        <main className="min-w-0 flex-1 overflow-hidden bg-surface-base">
-          <ChatPage
-            onOpenProviders={() => openSettings('providers')}
-            onOpenCheckpoints={() => setCheckpointsOpen(true)}
-          />
-        </main>
+        <SecondaryZone />
       </div>
-      <Suspense fallback={null}>
-        <SettingsModal
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          initialTab={settingsTab}
-        />
-      </Suspense>
       <Suspense fallback={null}>
         <PromptDialog
           open={workspacePathOpen}
@@ -360,12 +355,6 @@ export default function App() {
       </Suspense>
       <Suspense fallback={null}>
         <ConfirmHost />
-      </Suspense>
-      <Suspense fallback={null}>
-        <CheckpointsView open={checkpointsOpen} onClose={() => setCheckpointsOpen(false)} />
-      </Suspense>
-      <Suspense fallback={null}>
-        <ContextInspectorPanel />
       </Suspense>
       <ToastHost />
     </div>

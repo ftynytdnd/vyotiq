@@ -14,8 +14,15 @@ import {
 } from '../workspace/workspaceState.js';
 import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
+import {
+  assertConfirmResponse,
+  assertOptionalString,
+  assertString
+} from './validate.js';
 
 const log = logger.child('ipc/tools');
+
+const MAX_RELATIVE_PATH_BYTES = 4096;
 
 export function registerToolsIpc(): void {
   // `workspaceId` is optional; when supplied, the path is resolved
@@ -25,6 +32,8 @@ export function registerToolsIpc(): void {
   // silently lands on a different workspace's same-relative path
   // after the active workspace has drifted.
   wrapIpcHandler(IPC.TOOLS_OPEN_PATH, async (_event, path: string, workspaceId?: string) => {
+    assertString('tools:openPath', 'path', path, { maxBytes: MAX_RELATIVE_PATH_BYTES });
+    assertOptionalString('tools:openPath', 'workspaceId', workspaceId);
     const ws = workspaceId
       ? await requireWorkspaceById(workspaceId)
       : await requireWorkspace();
@@ -56,6 +65,8 @@ export function registerToolsIpc(): void {
   wrapIpcHandler(
     IPC.TOOLS_CONFIRM_RESPONSE,
     async (_event, id: string, reply: ConfirmResponse) => {
+      assertString('tools:confirmResponse', 'id', id);
+      assertConfirmResponse('tools:confirmResponse', 'reply', reply);
       // Legacy callers send a bare boolean; `EditApprovalDialog` sends
       // `{ approved, acceptAllRemaining }`. `settleConfirm` normalizes
       // both shapes.

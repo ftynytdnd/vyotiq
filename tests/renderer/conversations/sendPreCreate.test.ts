@@ -37,7 +37,7 @@ import { useConversationsStore } from '@renderer/store/useConversationsStore';
 import { useWorkspaceStore } from '@renderer/store/useWorkspaceStore';
 
 const baseSelection = { providerId: 'p1', modelId: 'm1' };
-const basePerms = { allowFileWrites: false, allowBash: false, allowWebSearch: false };
+const basePerms = { allowAuto: false };
 
 beforeEach(() => {
   useChatStore.setState({

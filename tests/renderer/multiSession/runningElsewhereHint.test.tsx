@@ -10,9 +10,9 @@ import { useChatStore } from '@renderer/store/useChatStore';
 import { useUiStore } from '@renderer/store/useUiStore';
 import { RunningElsewhereHint } from '@renderer/components/composer/runningElsewhere/RunningElsewhereHint';
 import {
-  __resetSidebarRowRegistry,
-  useSidebarRowFocus
-} from '@renderer/hooks/sidebar';
+  __resetChatRowRegistry,
+  useChatRowFocus
+} from '@renderer/hooks/chat/useChatRowFocus';
 import { chatSliceFixture } from '../../_fixtures/chatSlice';
 
 beforeEach(() => {
@@ -30,11 +30,11 @@ beforeEach(() => {
     runStartedAt: null
   });
   useUiStore.setState({
-    sidebarOpen: false,
+    dockExpanded: false,
     collapsedWorkspaces: new Set<string>(),
     hydrated: true
   });
-  __resetSidebarRowRegistry();
+  __resetChatRowRegistry();
 });
 
 describe('RunningElsewhereHint', () => {
@@ -95,7 +95,7 @@ describe('RunningElsewhereHint', () => {
     expect(screen.getByText('2 chats streaming elsewhere')).toBeInTheDocument();
   });
 
-  it('opens the sidebar and scrolls the first running row into view on Show click', () => {
+  it('expands the dock and scrolls the first running row into view on Show click', () => {
     useChatStore.setState({
       slices: {
         'conv-bg-1': chatSliceFixture({
@@ -110,7 +110,7 @@ describe('RunningElsewhereHint', () => {
     // Register a fake row element under the running id so `focusRow`
     // resolves it and dispatches scrollIntoView.
     const RegistrationProbe = () => {
-      const ref = useSidebarRowFocus('conv-bg-1');
+      const ref = useChatRowFocus('conv-bg-1');
       return <div data-testid="row" ref={ref} />;
     };
     render(<RegistrationProbe />);
@@ -121,12 +121,17 @@ describe('RunningElsewhereHint', () => {
     render(<RunningElsewhereHint />);
     fireEvent.click(screen.getByRole('button', { name: /show/i }));
 
-    // Sidebar opens.
-    expect(useUiStore.getState().sidebarOpen).toBe(true);
+    // Dock expands.
+    expect(useUiStore.getState().dockExpanded).toBe(true);
 
-    // scrollIntoView is dispatched via queueMicrotask — flush.
-    return Promise.resolve().then(() => {
-      expect(scrollSpy).toHaveBeenCalled();
+    // scrollIntoView is deferred until after the dock expand re-render.
+    return new Promise<void>((resolve) => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          expect(scrollSpy).toHaveBeenCalled();
+          resolve();
+        });
+      });
     });
   });
 });

@@ -1,47 +1,47 @@
 /**
- * UI store — small per-renderer slice for global UI toggles (e.g. sidebar
- * visibility). Keeps app-level state out of component trees so any feature
- * (TitleBar menus, keyboard shortcuts, etc.) can flip them.
+ * UI store — small per-renderer slice for global UI toggles (e.g. bottom
+ * dock visibility). Keeps app-level state out of component trees so any
+ * feature (TitleBar menus, keyboard shortcuts, etc.) can flip them.
  *
- * Sidebar visibility is persisted via the settings IPC. `hydrate` is called
+ * Dock expansion is persisted via the settings IPC. `hydrate` is called
  * once at boot from `App.tsx` after `useSettingsStore.refresh()` resolves;
  * subsequent toggles fire-and-forget a settings patch so state survives a
  * restart. The persistence call is intentionally not awaited so a slow disk
  * never delays UI feedback.
  *
  * F-016: persistence is debounced (`PERSIST_DEBOUNCE_MS`) so a user
- * rapidly clicking the sidebar toggle or expanding/collapsing many
- * workspace entries in sequence coalesces into one settings.json write
- * per affected key. The flusher is exposed via `flushUiPersistence` and
- * wired to `beforeunload` in `App.tsx` so a fast Cmd+Q before the
- * debounce fires still persists the latest values.
+ * rapidly toggling the dock or expanding/collapsing many workspace entries
+ * in sequence coalesces into one settings.json write per affected key. The
+ * flusher is exposed via `flushUiPersistence` and wired to `beforeunload`
+ * in `App.tsx` so a fast Cmd+Q before the debounce fires still persists
+ * the latest values.
  */
 
 import { create } from 'zustand';
 import { vyotiq } from '../lib/ipc.js';
 
 /**
- * Debounce window for sidebar / collapsed-workspaces persisters.
+ * Debounce window for dock / collapsed-workspaces persisters.
  * 200ms swallows a click-storm without making the persisted value
  * lag noticeably behind a single deliberate toggle.
  */
 const PERSIST_DEBOUNCE_MS = 200;
 
-let sidebarPersistTimer: ReturnType<typeof setTimeout> | null = null;
-let pendingSidebarOpen: boolean | null = null;
+let dockPersistTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingDockExpanded: boolean | null = null;
 
 let collapsedPersistTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingCollapsed: Set<string> | null = null;
 
-function flushSidebarOpenNow(): void {
-  if (sidebarPersistTimer !== null) {
-    clearTimeout(sidebarPersistTimer);
-    sidebarPersistTimer = null;
+function flushDockExpandedNow(): void {
+  if (dockPersistTimer !== null) {
+    clearTimeout(dockPersistTimer);
+    dockPersistTimer = null;
   }
-  if (pendingSidebarOpen === null) return;
-  const next = pendingSidebarOpen;
-  pendingSidebarOpen = null;
-  void vyotiq.settings.set({ ui: { sidebarOpen: next } }).catch(() => {
+  if (pendingDockExpanded === null) return;
+  const next = pendingDockExpanded;
+  pendingDockExpanded = null;
+  void vyotiq.settings.set({ ui: { dockExpanded: next } }).catch(() => {
     /* noop */
   });
 }
@@ -66,62 +66,56 @@ function flushCollapsedNow(): void {
  * debounce window persists the latest values rather than losing them.
  */
 export function flushUiPersistence(): void {
-  flushSidebarOpenNow();
+  flushDockExpandedNow();
   flushCollapsedNow();
 }
 
 interface UiStore {
-  sidebarOpen: boolean;
+  dockExpanded: boolean;
   /**
-   * Per-workspace collapsed flag for the sidebar's workspace tree.
+   * Per-workspace collapsed flag for workspace groups in the dock.
    * Open is the default — absence in this set means "expanded". Keyed
    * by `WorkspaceEntry.id`. Persisted under
    * `AppSettings.ui.collapsedWorkspaces` via the same fire-and-forget
-   * pattern as `sidebarOpen`.
+   * pattern as `dockExpanded`.
    */
   collapsedWorkspaces: Set<string>;
   /** True once `hydrate` has been called; suppresses persistence before then. */
   hydrated: boolean;
-  toggleSidebar: () => void;
-  setSidebarOpen: (open: boolean) => void;
-  /** Toggle a workspace's collapse state in the sidebar tree. */
+  toggleDock: () => void;
+  setDockExpanded: (expanded: boolean) => void;
+  /** Toggle a workspace's collapse state in the dock tree. */
   toggleWorkspaceCollapsed: (workspaceId: string) => void;
   clearWorkspaceCollapsed: (workspaceId: string) => void;
   /** Initialize from persisted AppSettings.ui at boot. */
-  hydrate: (init: { sidebarOpen: boolean; collapsedWorkspaces?: string[] }) => void;
+  hydrate: (init: { dockExpanded: boolean; collapsedWorkspaces?: string[] }) => void;
 }
 
-function persistSidebarOpen(open: boolean): void {
-  // F-016: schedule, don't fire. The flusher coalesces a click-storm
-  // into a single IPC. Errors inside the flusher are swallowed so a
-  // transient settings.json write failure can't break the UI.
-  pendingSidebarOpen = open;
-  if (sidebarPersistTimer !== null) clearTimeout(sidebarPersistTimer);
-  sidebarPersistTimer = setTimeout(flushSidebarOpenNow, PERSIST_DEBOUNCE_MS);
+function persistDockExpanded(expanded: boolean): void {
+  pendingDockExpanded = expanded;
+  if (dockPersistTimer !== null) clearTimeout(dockPersistTimer);
+  dockPersistTimer = setTimeout(flushDockExpandedNow, PERSIST_DEBOUNCE_MS);
 }
 
 function persistCollapsedWorkspaces(set: Set<string>): void {
-  // F-016: clone the set into the pending slot so subsequent in-place
-  // mutations of the caller's set (the store keeps building new ones,
-  // but defensive) cannot retroactively change the value we'd persist.
   pendingCollapsed = new Set(set);
   if (collapsedPersistTimer !== null) clearTimeout(collapsedPersistTimer);
   collapsedPersistTimer = setTimeout(flushCollapsedNow, PERSIST_DEBOUNCE_MS);
 }
 
 export const useUiStore = create<UiStore>((set, get) => ({
-  sidebarOpen: true,
+  dockExpanded: false,
   collapsedWorkspaces: new Set<string>(),
   hydrated: false,
-  toggleSidebar: () => {
-    const next = !get().sidebarOpen;
-    set({ sidebarOpen: next });
-    if (get().hydrated) persistSidebarOpen(next);
+  toggleDock: () => {
+    const next = !get().dockExpanded;
+    set({ dockExpanded: next });
+    if (get().hydrated) persistDockExpanded(next);
   },
-  setSidebarOpen: (open) => {
-    if (get().sidebarOpen === open) return;
-    set({ sidebarOpen: open });
-    if (get().hydrated) persistSidebarOpen(open);
+  setDockExpanded: (expanded) => {
+    if (get().dockExpanded === expanded) return;
+    set({ dockExpanded: expanded });
+    if (get().hydrated) persistDockExpanded(expanded);
   },
   toggleWorkspaceCollapsed: (workspaceId) => {
     const current = get().collapsedWorkspaces;
@@ -139,9 +133,9 @@ export const useUiStore = create<UiStore>((set, get) => ({
     set({ collapsedWorkspaces: next });
     if (get().hydrated) persistCollapsedWorkspaces(next);
   },
-  hydrate: ({ sidebarOpen, collapsedWorkspaces }) =>
+  hydrate: ({ dockExpanded, collapsedWorkspaces }) =>
     set({
-      sidebarOpen,
+      dockExpanded,
       collapsedWorkspaces: new Set(collapsedWorkspaces ?? []),
       hydrated: true
     })

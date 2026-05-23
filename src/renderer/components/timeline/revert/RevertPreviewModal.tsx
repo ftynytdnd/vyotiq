@@ -26,7 +26,6 @@
 
 import { useEffect, useMemo, useRef, useState, forwardRef } from 'react';
 import {
-  AlertTriangle,
   FileWarning,
   History,
   MessageSquare,
@@ -41,6 +40,7 @@ import type { ModelSelection } from '@shared/types/provider.js';
 import { Modal } from '../../ui/Modal.js';
 import { Button } from '../../ui/Button.js';
 import { Eyebrow } from '../../ui/Eyebrow.js';
+import { Notice } from '../../ui/Notice.js';
 import { useCheckpointsStore } from '../../../store/useCheckpointsStore.js';
 import { useToastStore } from '../../../store/useToastStore.js';
 import { useChatStore } from '../../../store/useChatStore.js';
@@ -278,38 +278,30 @@ export function RevertPreviewModal({
     >
       <div className="space-y-4">
         {phase.kind === 'loading' && (
-          <div className="rounded-inner bg-surface-overlay px-3 py-2 text-row text-text-faint">
-            Computing impact…
-          </div>
+          <Notice tone="info">Computing impact…</Notice>
         )}
 
         {phase.kind === 'error' && (
-          <div className="flex items-start gap-2 rounded-inner bg-surface-overlay px-3 py-2 text-row text-text-secondary">
-            <AlertTriangle
-              className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning"
-              strokeWidth={2}
-            />
-            <div className="min-w-0 flex-1">
-              <div className="font-medium text-text-primary">
-                {isEdit
-                  ? 'Could not prepare the edit preview'
-                  : 'Could not compute revert preview'}
-              </div>
-              <div className="mt-0.5 whitespace-pre-wrap text-text-muted">
-                {phase.message}
-              </div>
-            </div>
-          </div>
+          <Notice
+            tone="warning"
+            title={
+              isEdit
+                ? 'Could not prepare the edit preview'
+                : 'Could not compute revert preview'
+            }
+          >
+            <span className="whitespace-pre-wrap">{phase.message}</span>
+          </Notice>
         )}
 
         {(phase.kind === 'reverting' || phase.kind === 'sending') && (
-          <div className="rounded-inner bg-surface-overlay px-3 py-2 text-row text-text-faint">
+          <Notice tone="info">
             {phase.kind === 'reverting'
               ? isEdit
                 ? 'Rewinding before sending…'
                 : 'Reverting…'
               : 'Sending edited message…'}
-          </div>
+          </Notice>
         )}
 
         {phase.kind === 'ready' && totals && (
@@ -340,28 +332,21 @@ export function RevertPreviewModal({
             )}
 
             {totals.everyAlreadyReverted && (
-              <div className="flex items-start gap-2 rounded-inner bg-surface-overlay px-3 py-2 text-row text-text-muted">
-                <Undo2
-                  className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-muted"
-                  strokeWidth={2}
-                />
-                <div className="min-w-0 flex-1">
-                  All file changes from this turn were already reverted
-                  manually.{' '}
-                  {isEdit
-                    ? 'Confirming will only trim the conversation transcript before sending the edited message.'
-                    : 'Confirming will only trim the conversation transcript.'}
-                </div>
-              </div>
+              <Notice tone="info" icon={Undo2}>
+                All file changes from this turn were already reverted manually.{' '}
+                {isEdit
+                  ? 'Confirming will only trim the conversation transcript before sending the edited message.'
+                  : 'Confirming will only trim the conversation transcript.'}
+              </Notice>
             )}
 
             {phase.preview.files.length === 0 ? (
-              <div className="rounded-inner bg-surface-overlay px-3 py-2 text-row text-text-muted">
+              <Notice tone="info">
                 No file changes were recorded for this run.{' '}
                 {isEdit
                   ? 'Confirming will trim the conversation transcript and send the edited message.'
                   : 'Confirming will only rewind the conversation transcript.'}
-              </div>
+              </Notice>
             ) : (
               <div className="scrollbar-stealth flex max-h-[36vh] flex-col overflow-y-auto rounded-inner bg-surface-overlay/60">
                 {phase.preview.files.map((f) => (

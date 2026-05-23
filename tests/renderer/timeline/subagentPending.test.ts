@@ -1,15 +1,6 @@
 /**
- * Tests for the `subagent-pending` reducer branch and the matching
- * `subagent-line` row dedup in `deriveRows`.
- *
- * AUDIT §11.A — the headline live-visibility fix. A `subagent-pending`
- * event arrives mid-stream (the moment the orchestrator emits a
- * `<delegate />` directive); the matching `subagent-spawn` follows
- * later when the pool actually launches the worker. The renderer must:
- *   - materialise a snapshot in `pending` status on `subagent-pending`,
- *   - transition it to `running` on `subagent-spawn` without losing
- *     accumulated state,
- *   - emit a single `subagent-line` row dedup'd by `subagentId`.
+ * Tests for the `subagent-pending` reducer branch and inline
+ * `subagent-line` timeline rows rendered by `SubAgentTrace`.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -57,7 +48,6 @@ describe('applyTimelineEvent — subagent-pending', () => {
       status: 'running',
       task: 'Read src/index.ts'
     });
-    // startedAt was set by the pending event; spawn must not regress it.
     expect(afterSpawn.subagents['A1']?.startedAt).toBe(PENDING.ts);
   });
 
@@ -67,19 +57,19 @@ describe('applyTimelineEvent — subagent-pending', () => {
   });
 });
 
-describe('deriveRows — subagent-line dedup across pending and spawn', () => {
-  it('emits a single subagent-line for one id even with both events', () => {
+describe('deriveRows — subagent-line rows', () => {
+  it('emits one subagent-line row for pending + spawn events', () => {
     const rows = deriveRows([
       { kind: 'user-prompt', id: 'u1', ts: 0, content: 'hi' },
       PENDING,
       SPAWN
     ]);
-    const lines = rows.filter((r) => r.kind === 'subagent-line');
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatchObject({ kind: 'subagent-line', subagentId: 'A1' });
+    const subRows = rows.filter((r) => r.kind === 'subagent-line');
+    expect(subRows).toHaveLength(1);
+    expect(subRows[0]).toMatchObject({ subagentId: 'A1', key: 'sub:A1' });
   });
 
-  it('emits one row even for a pending without a spawn (fail-soft)', () => {
+  it('emits subagent-line for pending without spawn', () => {
     const rows = deriveRows([
       { kind: 'user-prompt', id: 'u1', ts: 0, content: 'hi' },
       PENDING

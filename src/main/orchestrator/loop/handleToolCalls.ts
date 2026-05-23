@@ -179,6 +179,7 @@ export async function handleToolCalls(
   let failed = 0;
   let refused = 0;
   let childRedelegations = 0;
+  let orchestratorDelegateRefusals = 0;
   for (const tc of finishedToolCalls) {
     // Honor `opts.signal.aborted` between tool calls so a supersede
     // (new `chat:send` on the same conversation) or explicit Stop
@@ -218,24 +219,18 @@ export async function handleToolCalls(
       const isDelegateAttempt = tc.name === 'delegate';
       if (isDelegateAttempt) {
         childRedelegations += 1;
-        // Pivot-pressure surface: the model tried to spawn a sub-agent
-        // through the function-calling channel instead of via the
-        // `<delegate ... />` directive in its assistant text. The
-        // allowlist already refuses the call — this phase event
-        // surfaces the attempt so the timeline shows a clear
-        // narrative when the model repeatedly mis-channels its
-        // delegations. The label intentionally names the actor so
-        // sub-agent re-delegation reads differently from an
-        // orchestrator-level mistake.
-        emit({
-          kind: 'phase',
-          id: randomUUID(),
-          ts: Date.now(),
-          label:
-            opts.subagentId !== undefined
-              ? `Sub-agent attempted re-delegation (refused — use <result>)`
-              : `Agent called \`delegate\` as a tool (refused — use the XML directive)`
-        });
+        if (opts.subagentId === undefined) {
+          orchestratorDelegateRefusals += 1;
+        } else {
+          // Sub-agent re-delegation attempts are rare — surface each
+          // one individually so the trace stays legible.
+          emit({
+            kind: 'phase',
+            id: randomUUID(),
+            ts: Date.now(),
+            label: 'Sub-agent attempted re-delegation (refused — use <result>)'
+          });
+        }
       }
       log.warn('allowlist refusal', {
         tool: tc.name,
@@ -281,7 +276,19 @@ export async function handleToolCalls(
       kind: 'tool-call',
       id: randomUUID(),
       ts: Date.now(),
-      call: { id: callId, name: tc.name as ToolName, args: parsed },
+      call: {
+        id: callId,
+        name: tc.name as ToolName,
+        args: parsed,
+        // Phase 9 (2026): forward Gemini's per-call thoughtSignature
+        // onto the persisted tool-call event so transcript replay
+        // can re-attach it to the matching `tool_calls[i]` slot on
+        // the assistant message. Other dialects emit no signature;
+        // the field stays absent (the spread is conditional).
+        ...(typeof tc.thoughtSignature === 'string' && tc.thoughtSignature.length > 0
+          ? { thoughtSignature: tc.thoughtSignature }
+          : {})
+      },
       ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
     });
     // Short-circuit on structural argument parse failure (review
@@ -375,6 +382,22 @@ export async function handleToolCalls(
       tool_call_id: callId,
       name: tc.name,
       content: result.output
+    });
+  }
+  if (orchestratorDelegateRefusals > 0) {
+    // One phase row per round — parallel `delegate` tool calls in a
+    // single batch previously emitted N identical dividers (observed
+    // live when the model tried to spawn eight sub-agents via
+    // function-calling instead of XML directives).
+    const n = orchestratorDelegateRefusals;
+    emit({
+      kind: 'phase',
+      id: randomUUID(),
+      ts: Date.now(),
+      label:
+        n === 1
+          ? 'Agent called `delegate` as a tool (refused — use the XML directive)'
+          : `Agent called \`delegate\` as a tool ${n} times (refused — emit \`<delegate ... />\` directives in your text)`
     });
   }
   log.debug('tool round summary', {

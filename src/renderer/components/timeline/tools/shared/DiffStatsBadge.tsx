@@ -11,6 +11,8 @@
 import { cn } from '../../../../lib/cn.js';
 import { shimmerStyle, shimmerText } from '../../../../lib/shimmer.js';
 
+type DiffStatsBadgeMinWidth = 'auto' | 'badge';
+
 interface DiffStatsBadgeProps {
   additions: number;
   deletions: number;
@@ -21,6 +23,20 @@ interface DiffStatsBadgeProps {
   /** Stable token used as the shimmer animation key when `pending`.
    *  Falls back to the badge's own coordinates if not provided. */
   shimmerKey?: string;
+  /**
+   * Min-width / alignment hint for fixed-column layouts.
+   *
+   *   - `'auto'` (default) — inline-tight, follows content width.
+   *     Used by the timeline `EditInvocation` / `FileEditGroupRow`
+   *     headers where the badge sits at the end of a flex row.
+   *   - `'badge'` — pins to `w-16 shrink-0 justify-end` so the
+   *     numerals align cleanly across a vertical list of rows
+   *     (`PendingChangeRow`, `RunCheckpointCard.EntryRow`,
+   *     `FileHistoryList.HistoryRow`, `RevertFileRow`). Centralised
+   *     here so every call site stops hand-rolling the same class
+   *     string.
+   */
+  minWidth?: DiffStatsBadgeMinWidth;
 }
 
 export function DiffStatsBadge({
@@ -28,13 +44,18 @@ export function DiffStatsBadge({
   deletions,
   className,
   pending,
-  shimmerKey
+  shimmerKey,
+  minWidth = 'auto'
 }: DiffStatsBadgeProps) {
   const shimmer = pending === true;
   const key = shimmerKey ?? `diff:${additions}:${deletions}`;
   return (
     <span
-      className={cn('inline-flex items-center gap-1.5', className)}
+      className={cn(
+        'inline-flex items-center gap-1.5',
+        minWidth === 'badge' && 'w-16 shrink-0 justify-end',
+        className
+      )}
       // Announce the live count politely while streaming so a screen
       // reader user hears "+12 -3" updates without the row hijacking
       // focus. Static once the stats settle (no role/aria-live).

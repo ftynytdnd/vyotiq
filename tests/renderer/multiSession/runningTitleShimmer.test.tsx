@@ -7,7 +7,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { useChatStore } from '@renderer/store/useChatStore';
-import { RunningTitle } from '@renderer/components/sidebar/runIndicators/RunningTitle';
+import { RunningTitle } from '@renderer/components/runIndicators/RunningTitle';
 import { chatSliceFixture } from '../../_fixtures/chatSlice';
 
 beforeEach(() => {

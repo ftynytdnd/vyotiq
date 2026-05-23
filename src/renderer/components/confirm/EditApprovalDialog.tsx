@@ -37,6 +37,7 @@ import { CodeBlock } from '../timeline/tools/shared/CodeBlock.js';
 import { synthesizeCreateHunks } from '../timeline/tools/edit/synthesizeDiffPreview.js';
 import { computeDiffHunksClient } from '../checkpoints/diffClient.js';
 import { cn } from '../../lib/cn.js';
+import { timelineRowHeaderClassName } from '../timeline/shared/rowStyles.js';
 
 interface EditApprovalDialogProps {
   open: boolean;
@@ -62,9 +63,9 @@ export function EditApprovalDialog({
     operation === 'create' ? 'CREATE' : operation === 'delete' ? 'DELETE' : 'MODIFY';
   const verbToneClass =
     operation === 'delete'
-      ? 'bg-danger/10 text-danger'
+      ? 'bg-danger-soft text-danger'
       : operation === 'create'
-        ? 'bg-success/10 text-success'
+        ? 'bg-success-soft text-success'
         : 'bg-surface-overlay text-text-muted';
 
   const title =
@@ -88,7 +89,7 @@ export function EditApprovalDialog({
     <Modal open={open} onClose={onDeny} title={title} size="lg">
       <div className="flex flex-col gap-3">
         {/* Header row: kind badge + path + diff stats */}
-        <div className="log-line flex items-center gap-2">
+        <div className={timelineRowHeaderClassName}>
           <span
             className={cn(
               'shrink-0 rounded-inner px-1.5 py-0.5 font-mono text-meta uppercase tracking-wider',

@@ -5,6 +5,19 @@
  *   1. The harness (built once at boot from the markdown files).
  *   2. The freshly-refreshed dynamic envelopes:
  *        - `<meta_rules>`           — user preferences (highest authority).
+ *        - `<host_environment>`     — real-time host snapshot: ISO UTC
+ *                                     timestamp, local time + IANA
+ *                                     timezone + offset, weekday, OS
+ *                                     platform / release / arch, Node
+ *                                     and Electron versions, locale.
+ *                                     Rebuilt FRESH every iteration
+ *                                     (deliberately NOT folded into
+ *                                     `refreshEnvelopes`'s 3-second
+ *                                     TTL cache — real-time is the
+ *                                     whole point). Sits at the top of
+ *                                     the data plane so the agent reads
+ *                                     "what machine, what time" before
+ *                                     "what project on this machine".
  *        - `<workspace_context>`    — current project state (file listing).
  *        - `<session_context>`      — conversation title + prior-turn
  *                                     count + last model. Anchors short
@@ -40,11 +53,13 @@ import type { ContextEnvelopes } from '../contextManager.js';
 export function buildSystemPrompt(
   harness: string,
   env: ContextEnvelopes,
-  runStateXml: string
+  runStateXml: string,
+  hostEnvironmentXml: string
 ): string {
   return [
     harness,
     env.metaRulesXml,
+    hostEnvironmentXml,
     env.workspaceXml,
     env.sessionXml,
     runStateXml,

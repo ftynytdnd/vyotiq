@@ -65,6 +65,14 @@ export interface AssistantTurnResult {
    * reasoning-end timestamp with a much later turn-end one.
    */
   reasoningEndEmitted: boolean;
+  /**
+   * Phase 8 (2026): Anthropic thinking signature accumulated across the
+   * turn's `signature_delta` SSE events. Forwarded by the runLoop into
+   * the assistant `ChatMessage.reasoning_signature` slot AND the
+   * fallback `agent-reasoning-end.signature` event. Empty / undefined
+   * for non-Anthropic dialects.
+   */
+  reasoningSignature?: string;
   finishReason?: string;
   /** Provider-reported token usage for this turn (when available). */
   usage?: TokenUsage;
@@ -74,7 +82,17 @@ export interface AssistantTurnResult {
 export async function handleAssistantTurn(
   req: ChatStreamRequest,
   emit: (event: TimelineEvent) => void,
-  argsDeltaTap?: ArgsDeltaTap
+  argsDeltaTap?: ArgsDeltaTap,
+  /**
+   * T0-7: Set of delegate ids the orchestrator has ALREADY emitted
+   * `subagent-pending` events for during the current run. When supplied,
+   * this turn's mid-stream parser dedupes against it so two assistant
+   * turns inside the same iteration (rare — provider returns then
+   * continues) cannot emit duplicate `subagent-pending` rows for the
+   * same id. Optional for backward compatibility with the per-turn
+   * scope every existing caller (sub-agent path, tests) still uses.
+   */
+  seenDelegateIds: Set<string> = new Set()
 ): Promise<AssistantTurnResult> {
   const assistantMsgId = randomUUID();
   // Mirror state so the caller can still see whether text/reasoning had
@@ -83,11 +101,6 @@ export async function handleAssistantTurn(
   // `agent-text-aborted` and clean the renderer's open accumulator.
   let hadText = false;
   let hadReasoning = false;
-
-  // Tracks delegate directives we've already emitted `subagent-pending`
-  // for during this turn so a single directive only produces one row no
-  // matter how the model's text was chunked across deltas.
-  const seenDelegateIds = new Set<string>();
 
   try {
     const stream = streamChat(req);
@@ -147,11 +160,16 @@ export async function handleAssistantTurn(
       // rather than at end-of-turn — lets the renderer's reasoning panel
       // collapse the moment reasoning is truly done, instead of waiting
       // for the full text + tool-call tail to finish streaming.
-      onReasoningEnd: () => {
+      // The Anthropic thinking signature, when present, rides this
+      // event so the JSONL transcript can replay it onto the matching
+      // assistant message's `reasoning_signature` slot — required for
+      // multi-turn coherence on Claude thinking-capable models.
+      onReasoningEnd: (signature) => {
         emit({
           kind: 'agent-reasoning-end',
           id: assistantMsgId,
-          ts: Date.now()
+          ts: Date.now(),
+          ...(signature !== undefined ? { signature } : {})
         });
       },
       // Emit a `token-usage` timeline event as soon as the final usage

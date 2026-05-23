@@ -61,10 +61,10 @@ export function SubAgentResult({ output }: SubAgentResultProps) {
             className={cn(
               'rounded-inner px-1.5 py-0.5 text-meta font-medium capitalize',
               status === 'success'
-                ? 'bg-success/10 text-success'
+                ? 'bg-success-soft text-success'
                 : status === 'partial'
-                  ? 'bg-warning/10 text-warning'
-                  : 'bg-danger/10 text-danger'
+                  ? 'bg-warning-soft text-warning'
+                  : 'bg-danger-soft text-danger'
             )}
           >
             {status}
@@ -73,12 +73,12 @@ export function SubAgentResult({ output }: SubAgentResultProps) {
       )}
       {summary && (
         <DetailPane label="summary">
-          <MarkdownBody text={summary} className="text-log leading-relaxed text-text-secondary" />
+          <MarkdownBody text={summary} className="text-row leading-relaxed text-text-secondary" />
         </DetailPane>
       )}
       {details && (
         <DetailPane label="details">
-          <MarkdownBody text={details} className="text-log leading-relaxed text-text-secondary" />
+          <MarkdownBody text={details} className="text-row leading-relaxed text-text-secondary" />
         </DetailPane>
       )}
       {artifacts && (

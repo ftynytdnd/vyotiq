@@ -22,7 +22,7 @@
  *     covered in detail by `workspacePermissions.test.ts`. We re-cover
  *     them here at the "single IPC + cache merge + identity-skip"
  *     level so this file alone is enough to detect a regression.
- *   - The debounced `ui.sidebarOpen` / `ui.collapsedWorkspaces` /
+ *   - The debounced `ui.dockExpanded` / `ui.collapsedWorkspaces` /
  *     `ui.expandedRows` writers are flushed explicitly via the
  *     `flushUiPersistence` / `flushTimelineUiPersistence` exports so we
  *     can assert against the IPC mock without sleeping.
@@ -51,7 +51,7 @@ beforeEach(() => {
     loading: false
   });
   useUiStore.setState({
-    sidebarOpen: true,
+    dockExpanded: true,
     collapsedWorkspaces: new Set<string>(),
     hydrated: true
   });
@@ -83,13 +83,13 @@ describe('AppSettings — top-level fields persist via useSettingsStore', () => 
   });
 
   it('permissions: single IPC, cache merge, default-merged value reflected', async () => {
-    await useSettingsStore.getState().setPermissions({ allowBash: false });
+    await useSettingsStore.getState().setPermissions({ allowAuto: true });
 
     expect(setSpy()).toHaveBeenCalledTimes(1);
     expect(setSpy()).toHaveBeenCalledWith({
-      permissions: { ...DEFAULT_PERMISSIONS, allowBash: false }
+      permissions: { ...DEFAULT_PERMISSIONS, allowAuto: true }
     });
-    expect(useSettingsStore.getState().settings.permissions?.allowBash).toBe(false);
+    expect(useSettingsStore.getState().settings.permissions?.allowAuto).toBe(true);
   });
 
   it('webSearchEndpoint: single IPC, cache merge, value reflected', async () => {
@@ -137,13 +137,13 @@ describe('AppSettings.ui — per-workspace maps persist via useSettingsStore', (
   it('permissionsByWorkspace: single IPC, identity-skip on same patch', async () => {
     await useSettingsStore
       .getState()
-      .setPermissionsForWorkspace('ws-A', { allowBash: false });
+      .setPermissionsForWorkspace('ws-A', { allowAuto: true });
     expect(setSpy()).toHaveBeenCalledTimes(1);
 
     setSpy().mockClear();
     await useSettingsStore
       .getState()
-      .setPermissionsForWorkspace('ws-A', { allowBash: false });
+      .setPermissionsForWorkspace('ws-A', { allowAuto: true });
     expect(setSpy()).not.toHaveBeenCalled();
   });
 
@@ -167,16 +167,13 @@ describe('AppSettings.ui — per-workspace maps persist via useSettingsStore', (
 });
 
 describe('AppSettings.ui — debounced fields persist via useUiStore + flush', () => {
-  it('sidebarOpen: toggleSidebar schedules a flush, flushUiPersistence drains it', async () => {
-    // Toggle on then off so we have a settled value to assert against.
-    useUiStore.getState().toggleSidebar();
-    useUiStore.getState().toggleSidebar();
+  it('dockExpanded: toggleDock schedules a flush, flushUiPersistence drains it', async () => {
+    useUiStore.getState().toggleDock();
+    useUiStore.getState().toggleDock();
     flushUiPersistence();
 
-    // The debounced writer collapses the storm into one final write
-    // carrying the latest value (`true` after the second toggle).
     expect(setSpy()).toHaveBeenCalledTimes(1);
-    expect(setSpy()).toHaveBeenCalledWith({ ui: { sidebarOpen: true } });
+    expect(setSpy()).toHaveBeenCalledWith({ ui: { dockExpanded: true } });
   });
 
   it('collapsedWorkspaces: toggleWorkspaceCollapsed schedules a flush, flushUiPersistence drains it', () => {
@@ -219,7 +216,7 @@ describe('purgeWorkspaceFromUi: single IPC sweeps every per-workspace map', () =
         ui: {
           activeConversationByWorkspace: { 'ws-A': 'c1' },
           lastModelByWorkspace: { 'ws-A': { providerId: 'p', modelId: 'm' } },
-          permissionsByWorkspace: { 'ws-A': { allowBash: false } },
+          permissionsByWorkspace: { 'ws-A': { allowAuto: true } },
           strictApprovalsByWorkspace: { 'ws-A': true },
           gatePromptOnPendingByWorkspace: { 'ws-A': true },
           collapsedWorkspaces: ['ws-A']

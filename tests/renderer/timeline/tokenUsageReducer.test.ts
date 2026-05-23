@@ -15,6 +15,7 @@ import { applyTimelineEvent } from '@renderer/components/timeline/reducer/applyT
 import {
   INITIAL_TIMELINE_STATE,
   foldTokenUsage,
+  stampUsageStart,
   type TimelineState
 } from '@renderer/components/timeline/reducer/types';
 import type { TimelineEvent } from '@shared/types/chat';
@@ -145,5 +146,175 @@ describe('applyTimelineEvent: token-usage', () => {
   it('appends token-usage events into the events array so transcripts persist them', () => {
     const s = applyTimelineEvent(INITIAL_TIMELINE_STATE, usageEvent({}));
     expect(s.events.some((e) => e.kind === 'token-usage')).toBe(true);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// Phase 12 (2026) — tok/s anchors (`streamStartedAt`, `streamEndedAt`)
+// ────────────────────────────────────────────────────────────────────
+
+describe('stampUsageStart', () => {
+  it('creates a zero-valued aggregate with streamStartedAt when prior is undefined', () => {
+    const out = stampUsageStart(undefined, 1234);
+    expect(out.streamStartedAt).toBe(1234);
+    expect(out.samples).toBe(0);
+    expect(out.latest).toEqual({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
+  });
+
+  it('is idempotent — subsequent calls preserve object identity', () => {
+    // Object identity matters here: the renderer relies on
+    // `orchestratorUsage !== state.orchestratorUsage` to decide
+    // whether to dispatch a state update. Re-stamping on every
+    // delta would churn React selectors needlessly.
+    const first = stampUsageStart(undefined, 1234);
+    const second = stampUsageStart(first, 9999);
+    expect(second).toBe(first);
+    expect(second.streamStartedAt).toBe(1234);
+  });
+
+  it('preserves existing latest/peak/cumulative on an established aggregate', () => {
+    const seeded = foldTokenUsage(undefined, {
+      promptTokens: 100,
+      completionTokens: 25,
+      totalTokens: 125
+    });
+    const stamped = stampUsageStart(seeded, 5000);
+    expect(stamped.streamStartedAt).toBe(5000);
+    expect(stamped.latest.promptTokens).toBe(100);
+    expect(stamped.samples).toBe(1);
+  });
+});
+
+describe('foldTokenUsage — timestamp plumbing', () => {
+  it('records streamEndedAt on the first fold', () => {
+    const agg = foldTokenUsage(
+      undefined,
+      { promptTokens: 100, completionTokens: 25, totalTokens: 125 },
+      9_999
+    );
+    expect(agg.streamEndedAt).toBe(9_999);
+    // streamStartedAt is untouched — that's the `stampUsageStart`
+    // contract, not the fold's.
+    expect(agg.streamStartedAt).toBeUndefined();
+  });
+
+  it('advances streamEndedAt on each subsequent fold while preserving streamStartedAt', () => {
+    let agg = stampUsageStart(undefined, 1_000);
+    agg = foldTokenUsage(
+      agg,
+      { promptTokens: 100, completionTokens: 25, totalTokens: 125 },
+      3_500
+    );
+    agg = foldTokenUsage(
+      agg,
+      { promptTokens: 50, completionTokens: 50, totalTokens: 100 },
+      7_500
+    );
+    expect(agg.streamStartedAt).toBe(1_000);
+    expect(agg.streamEndedAt).toBe(7_500);
+  });
+
+  it('leaves both timestamps untouched when `ts` is omitted', () => {
+    // Legacy callers (the reducer's `rebuildTimelineState` batch
+    // replay path passes events through `applyTimelineEvent`,
+    // which DOES forward `ts`, so the omission path is rare).
+    const seeded = stampUsageStart(undefined, 1_000);
+    const out = foldTokenUsage(seeded, {
+      promptTokens: 100,
+      completionTokens: 25,
+      totalTokens: 125
+    });
+    expect(out.streamStartedAt).toBe(1_000);
+    expect(out.streamEndedAt).toBeUndefined();
+  });
+});
+
+describe('applyTimelineEvent — tok/s anchor plumbing', () => {
+  it('stamps streamStartedAt on the first agent-text-delta for the orchestrator', () => {
+    const s = applyTimelineEvent(INITIAL_TIMELINE_STATE, {
+      kind: 'agent-text-delta',
+      id: 'msg-1',
+      ts: 2_500,
+      delta: 'Hello'
+    });
+    expect(s.orchestratorUsage?.streamStartedAt).toBe(2_500);
+  });
+
+  it('does NOT advance streamStartedAt on subsequent deltas', () => {
+    let s = applyTimelineEvent(INITIAL_TIMELINE_STATE, {
+      kind: 'agent-text-delta',
+      id: 'msg-1',
+      ts: 2_500,
+      delta: 'Hello'
+    });
+    s = applyTimelineEvent(s, {
+      kind: 'agent-text-delta',
+      id: 'msg-1',
+      ts: 9_999,
+      delta: ' world'
+    });
+    expect(s.orchestratorUsage?.streamStartedAt).toBe(2_500);
+  });
+
+  it('stamps streamStartedAt on the first agent-reasoning-delta for the orchestrator', () => {
+    const s = applyTimelineEvent(INITIAL_TIMELINE_STATE, {
+      kind: 'agent-reasoning-delta',
+      id: 'msg-2',
+      ts: 1_000,
+      delta: 'thinking...'
+    });
+    expect(s.orchestratorUsage?.streamStartedAt).toBe(1_000);
+  });
+
+  it('forwards token-usage.ts as streamEndedAt on the orchestrator aggregate', () => {
+    let s = applyTimelineEvent(INITIAL_TIMELINE_STATE, {
+      kind: 'agent-text-delta',
+      id: 'msg-1',
+      ts: 1_000,
+      delta: 'Hi'
+    });
+    s = applyTimelineEvent(
+      s,
+      usageEvent({
+        id: 'u1',
+        ts: 3_500,
+        usage: { promptTokens: 100, completionTokens: 25, totalTokens: 125 }
+      })
+    );
+    expect(s.orchestratorUsage?.streamStartedAt).toBe(1_000);
+    expect(s.orchestratorUsage?.streamEndedAt).toBe(3_500);
+  });
+
+  it('stamps and folds anchors on the matching sub-agent snapshot', () => {
+    let s: TimelineState = INITIAL_TIMELINE_STATE;
+    s = applyTimelineEvent(s, {
+      kind: 'subagent-spawn',
+      id: 'spawn',
+      ts: 100,
+      subagentId: 'sa-1',
+      task: 't',
+      files: [],
+      tools: []
+    });
+    s = applyTimelineEvent(s, {
+      kind: 'agent-text-delta',
+      id: 'iter-1',
+      ts: 1_000,
+      delta: 'starting',
+      subagentId: 'sa-1'
+    });
+    s = applyTimelineEvent(
+      s,
+      usageEvent({
+        id: 'u-sa',
+        ts: 5_000,
+        subagentId: 'sa-1',
+        assistantMsgId: 'sa-1',
+        usage: { promptTokens: 200, completionTokens: 100, totalTokens: 300 }
+      })
+    );
+    const u = s.subagents['sa-1']?.usage;
+    expect(u?.streamStartedAt).toBe(1_000);
+    expect(u?.streamEndedAt).toBe(5_000);
   });
 });

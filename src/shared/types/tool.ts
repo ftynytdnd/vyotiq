@@ -42,6 +42,22 @@ export interface ToolCall {
   name: ToolName;
   /** Free-form structured arguments. Each tool validates its own shape. */
   args: Record<string, unknown>;
+  /**
+   * Gemini-only: opaque encrypted signature attached to a `functionCall`
+   * part. Gemini 3 enforces strict round-trip on the "Current Turn"
+   * (every model functionCall step since the last user-text message); a
+   * missing signature on the first functionCall part of any step in the
+   * current turn causes a 400 "thought_signature is missing" error.
+   *
+   * Only populated by the `gemini-native` transport. The `anthropic-native`
+   * dialect attaches its analogous signature to the assistant message via
+   * `ChatMessage.reasoning_signature`, NOT per tool call (Anthropic's
+   * `thinking` block is sibling to `tool_use`, not embedded inside it).
+   *
+   * Source: https://ai.google.dev/gemini-api/docs/thought-signatures
+   *         https://ai.google.dev/gemini-api/docs/gemini-3
+   */
+  thoughtSignature?: string;
 }
 
 /** One entry in an `ls` listing. */

@@ -43,7 +43,7 @@ export function PendingChangesReviewMode({
   // Track the active entry by stable `entryId` rather than by
   // position. The parent's `entries` is a fresh useMemo array on
   // every pending-set change — when ANY entry's status flips from
-  // another renderer surface (sidebar accept, IPC `pending-changed`
+  // another renderer surface (pending-changes accept, IPC `pending-changed`
   // broadcast, …) the parent re-derives and the reference changes.
   // Pre-fix, an index-tracked `useEffect(setActiveIdx(0), [open,
   // entries])` jumped the user back to entry #0 every time the

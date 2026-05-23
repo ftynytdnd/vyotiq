@@ -7,11 +7,11 @@ import { flushTimelineUiPersistence } from './store/useTimelineUiStore.js';
 import { flushUiPersistence } from './store/useUiStore.js';
 import './index.css';
 
-bootstrapChatChannel();
+void bootstrapChatChannel();
 
 // Best-effort flush of any debounced UI persisters before the renderer
 // tears down, so a toggle made within the last debounce window survives
-// an app close. F-016 added the second call (sidebar / collapsed
+// an app close. F-016 added the second call (layout chrome / collapsed
 // workspaces); the timeline-ui flush has been here since the original
 // expanded-rows persister landed.
 window.addEventListener('beforeunload', () => {

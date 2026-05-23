@@ -15,14 +15,16 @@
     "start": "electron-vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "knip": "knip",
+    "flip-fuses": "node scripts/flipFuses.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",
     "fast-glob": "^3.3.3",
     "gpt-tokenizer": "^3.4.0",
     "highlight.js": "^11.11.1",
-    "lucide-react": "^1.14.0",
+    "lucide-react": "^1.16.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-markdown": "^10.1.0",
@@ -31,6 +33,7 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@electron/fuses": "^2.1.1",
     "@tailwindcss/vite": "^4.2.4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

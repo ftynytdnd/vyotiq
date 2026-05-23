@@ -286,20 +286,33 @@ const ENVELOPE_TTL_MS = 3_000;
  */
 const ENVELOPE_CACHE_MAX = 8;
 
+/** Rolling-query fingerprint cap — long enough to distinguish
+ *  materially different memory-retrieval prompts without bloating
+ *  the LRU entry. */
+const ENVELOPE_QUERY_FP_MAX = 600;
+
+function envelopeQueryFingerprint(query: string): string {
+  const trimmed = query.trim();
+  if (trimmed.length <= ENVELOPE_QUERY_FP_MAX) return trimmed;
+  return trimmed.slice(0, ENVELOPE_QUERY_FP_MAX);
+}
+
 interface EnvelopeCacheEntry {
   expiresAt: number;
   value: ContextEnvelopes;
+  /** Last `query` used to build this entry — compared on hit so a
+   *  changed rolling query within the same conv/workspace cannot
+   *  serve stale memory retrieval (audit B1 follow-up). */
+  queryFingerprint: string;
 }
 
 /**
  * Insertion-order Map used as a tiny LRU. On hit we re-insert the entry
  * so it floats to the tail; eviction drops the head (oldest) entry once
- * the size exceeds `ENVELOPE_CACHE_MAX`. The key shape joins the
- * memory-retrieval `query`, the active `conversationId`, and the run's
- * `workspaceId` so two consecutive turns of the SAME conversation under
- * the same query still hit, but switching conversations OR workspaces
- * invalidates. Parts are NUL-separated (`\u0000`) to defeat
- * concatenation collisions.
+ * the size exceeds `ENVELOPE_CACHE_MAX`. The key is
+ * (conversationId, workspaceId, workspacePath); `query` is NOT part of
+ * the key (audit B1) but IS compared via `queryFingerprint` on hit.
+ * Parts are NUL-separated (`\u0000`) to defeat concatenation collisions.
  */
 const envelopeCache = new Map<string, EnvelopeCacheEntry>();
 
@@ -329,8 +342,9 @@ export async function refreshEnvelopes(
     `${conversationId ?? ''}\u0000` +
     `${workspaceId ?? ''}\u0000` +
     `${workspacePath ?? ''}`;
+  const queryFingerprint = envelopeQueryFingerprint(query);
   const hit = envelopeCache.get(key);
-  if (hit && hit.expiresAt > now) {
+  if (hit && hit.expiresAt > now && hit.queryFingerprint === queryFingerprint) {
     // Re-insert so this key is now the tail (most-recently-used). The
     // delete + set pair is cheap on Map and is the canonical insertion-
     // order LRU trick.
@@ -338,9 +352,13 @@ export async function refreshEnvelopes(
     envelopeCache.set(key, hit);
     return hit.value;
   }
-  if (hit) envelopeCache.delete(key); // expired — drop
+  if (hit) envelopeCache.delete(key); // expired or stale query — drop
   const value = await buildContextEnvelope(query, conversationId, workspacePath, workspaceId);
-  envelopeCache.set(key, { expiresAt: now + ENVELOPE_TTL_MS, value });
+  envelopeCache.set(key, {
+    expiresAt: now + ENVELOPE_TTL_MS,
+    value,
+    queryFingerprint
+  });
   // Evict the oldest (head) entry once over capacity. A `for..of` over
   // a Map yields keys in insertion order, so the first iteration's key
   // is the LRU entry.
@@ -433,10 +451,33 @@ export function createInlineFileCache(): InlineFileCache {
  */
 const INLINE_FILES_CONCURRENCY = 4;
 
+/**
+ * Marker emitted in place of a file body when the run's abort signal
+ * fires before / during the inline read. Surfaces the abort to
+ * downstream prompt assembly so the model never sees a truncated body
+ * masquerading as a complete file. Audit fix 2026-08-P2-1 / 13-P2-1.
+ */
+const INLINE_ABORTED_MARKER = '(aborted before read)';
+
 export async function inlineFiles(
   workspacePath: string,
   files: string[],
-  cache?: InlineFileCache
+  cache?: InlineFileCache,
+  /**
+   * Audit fix 2026-08-P2-1 / 13-P2-1: optional abort signal threaded
+   * from the orchestrator run's `AbortController`. When the signal
+   * fires (user aborts mid-prompt-assembly with a 50-file delegate
+   * spec), every still-pending slot collapses to a cheap aborted
+   * marker INSIDE the existing concurrent-pool drain — no new
+   * fs.readFile is started, in-flight reads still drain (Node's
+   * `fs.readFile` doesn't take an `AbortSignal` directly, but the
+   * whole delegate's outer `AbortController` will reject anyway,
+   * so the worst case is one extra file finishing on a 32 KB cap).
+   *
+   * Optional so direct callers / tests retain the legacy two-arg
+   * shape.
+   */
+  signal?: AbortSignal
 ): Promise<string> {
   if (files.length === 0) return '';
   // Pre-sized output slots so concurrent workers can write directly
@@ -451,6 +492,14 @@ export async function inlineFiles(
     // Same story for `msg` on the error branch. Both are escaped through
     // `escapeXmlAttr` so the envelope stays well-formed for every path.
     const safeRel = escapeXmlAttr(rel);
+    // Audit fix 2026-08-P2-1 / 13-P2-1: bail out immediately if the
+    // run's abort fired before this slot started. The pool's outer
+    // workers also re-check below so an abort mid-batch collapses
+    // every queued slot to the aborted marker without any FS I/O.
+    if (signal?.aborted) {
+      slots[idx] = `<file path="${safeRel}" error="${INLINE_ABORTED_MARKER}" />`;
+      return;
+    }
     // PRIVACY BOUNDARY — route every path through the workspace sandbox
     // BEFORE touching the filesystem. `ChatSendInput.attachments` is
     // renderer-controlled; without this guard, `path.join(workspacePath,
@@ -489,8 +538,18 @@ export async function inlineFiles(
         return;
       }
     }
+    // Re-check the abort right before the FS read so a signal that
+    // fired during the realpath await still collapses this slot
+    // before paying the file-read cost.
+    if (signal?.aborted) {
+      slots[idx] = `<file path="${safeRel}" error="${INLINE_ABORTED_MARKER}" />`;
+      return;
+    }
     try {
-      const txt = await fs.readFile(abs, 'utf8');
+      // Pass the signal into `fs.readFile` so a long read of a large
+      // file (think a 5 MB attached log) gets cancelled the moment
+      // the orchestrator aborts the run.
+      const txt = await fs.readFile(abs, { encoding: 'utf8', signal });
       // Surface the truncation explicitly. Silent slicing was a
       // hallucination surface: workers reported on content they
       // never actually saw. The marker lives INSIDE the `<file>`
@@ -503,6 +562,14 @@ export async function inlineFiles(
       if (cache) cache.set(abs, body);
       slots[idx] = `<file path="${safeRel}">\n${body}\n</file>`;
     } catch (err: unknown) {
+      // `fs.readFile` rejects with `AbortError` when the signal
+      // fires mid-read; we surface that distinctly so the caller's
+      // log stream can tell "the run aborted" from "the file is
+      // unreadable".
+      if ((err as NodeJS.ErrnoException)?.name === 'AbortError') {
+        slots[idx] = `<file path="${safeRel}" error="${INLINE_ABORTED_MARKER}" />`;
+        return;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       slots[idx] = `<file path="${safeRel}" error="${escapeXmlAttr(msg)}" />`;
     }
@@ -516,6 +583,17 @@ export async function inlineFiles(
   let cursor = 0;
   const worker = async (): Promise<void> => {
     while (cursor < files.length) {
+      // Fast-fail every queued index once the run aborts. Each worker
+      // still finishes its CURRENT in-flight `inlineOne`; subsequent
+      // pulls write the aborted marker without touching the FS.
+      if (signal?.aborted) {
+        const idx = cursor++;
+        const rel = files[idx];
+        if (rel !== undefined) {
+          slots[idx] = `<file path="${escapeXmlAttr(rel)}" error="${INLINE_ABORTED_MARKER}" />`;
+        }
+        continue;
+      }
       const idx = cursor++;
       await inlineOne(files[idx]!, idx);
     }

@@ -1,8 +1,8 @@
 /**
  * Flat rules form for the Context Inspector / Settings → Context tab.
  *
- * Visual contract: STRICTLY mirrors the row pattern in
- * `SettingsModal`'s `PermissionsTab` and `CheckpointSettingsPanel` —
+ * Visual contract: mirrors the row pattern in Settings → Permissions
+ * and `CheckpointSettingsPanel` —
  *
  *     <div className="flex items-start justify-between gap-4
  *                     border-b border-border-subtle/30 py-3">
@@ -42,6 +42,7 @@ import type { ModelSelection } from '@shared/types/provider.js';
 import { Button } from '../ui/Button.js';
 import { Dropdown, type DropdownItem } from '../ui/Dropdown.js';
 import { Eyebrow } from '../ui/Eyebrow.js';
+import { Switch } from '../ui/Switch.js';
 import { TextField } from '../ui/TextField.js';
 import { useContextSummaryStore } from '../../store/useContextSummaryStore.js';
 import { useProviderStore } from '../../store/useProviderStore.js';
@@ -77,12 +78,18 @@ interface RulesHeaderProps {
    *  Context binds to `'global'`. Each row auto-persists through
    *  this scope on change. */
   defaultScope: 'global' | 'workspace';
+  /** When true, stacks label and control vertically for narrow panels. */
+  compact?: boolean;
+  /** Opens Settings → Context (inspector cross-link). */
+  onOpenContextSettings?: () => void;
 }
 
 export function RulesHeader({
   rules,
   workspaceId,
-  defaultScope
+  defaultScope,
+  compact = false,
+  onOpenContextSettings
 }: RulesHeaderProps) {
   const updateRules = useContextSummaryStore((s) => s.updateRules);
   const showToast = useToastStore((s) => s.show);
@@ -199,17 +206,30 @@ export function RulesHeader({
 
   return (
     <div className="flex flex-col">
+      {onOpenContextSettings && (
+        <div className="border-b border-border-subtle/30 py-2">
+          <button
+            type="button"
+            onClick={onOpenContextSettings}
+            className="text-row text-text-secondary transition-colors hover:text-text-primary"
+          >
+            Open global context settings…
+          </button>
+        </div>
+      )}
       <ToggleRow
         label="Enable context summarization"
         description="Master kill switch. When off, neither the auto-trigger nor the manual button does anything."
         value={draft.enabled}
         onChange={(v) => setField('enabled', v)}
+        compact={compact}
       />
       <RatioRow
         label="Auto-trigger ratio"
         description="Fire summarization when prompt-token usage crosses this fraction of the model's context window."
         value={draft.autoTriggerRatio}
         onChange={(v) => setField('autoTriggerRatio', v)}
+        compact={compact}
       />
       <NumberRow
         label="Keep recent turns"
@@ -218,6 +238,7 @@ export function RulesHeader({
         min={0}
         max={50}
         onChange={(v) => setField('keepRecentTurns', v)}
+        compact={compact}
       />
       <NumberRow
         label="Min messages to summarize"
@@ -226,6 +247,7 @@ export function RulesHeader({
         min={1}
         max={50}
         onChange={(v) => setField('minMessagesToSummarize', v)}
+        compact={compact}
       />
       <NumberRow
         label="Max retries"
@@ -234,27 +256,32 @@ export function RulesHeader({
         min={0}
         max={5}
         onChange={(v) => setField('maxRetries', v)}
+        compact={compact}
       />
       <ToggleRow
         label="Always preserve user prompts"
         description="Never summarize a role:'user' message even when the per-kind policy would. Recommended ON — silently rewriting user history is a confusing loss of trust."
         value={draft.preserveUserPromptsAlways}
         onChange={(v) => setField('preserveUserPromptsAlways', v)}
+        compact={compact}
       />
       <ToggleRow
         label="Always preserve first system message"
         description="The orchestrator rebuilds the first system slot per iteration, so summarizing it would be a no-op anyway."
         value={draft.preserveFirstSystem}
         onChange={(v) => setField('preserveFirstSystem', v)}
+        compact={compact}
       />
       <DroppedMarkerRow
         value={draft.droppedMarkerStyle}
         onChange={(v) => setField('droppedMarkerStyle', v)}
+        compact={compact}
       />
       <SummarizerModelRow
         items={summarizerItems}
         value={resolvedSummarizerValue}
         onChange={setSummarizer}
+        compact={compact}
       />
       <div className="flex flex-col gap-2 border-b border-border-subtle/30 py-3">
         <Eyebrow as="span" bold>
@@ -270,7 +297,10 @@ export function RulesHeader({
           {KIND_ROWS.map((kind) => (
             <li
               key={kind}
-              className="flex items-center justify-between gap-3 py-1.5"
+              className={cn(
+                'gap-3 py-1.5',
+                compact ? 'flex flex-col items-start' : 'flex items-center justify-between'
+              )}
             >
               <span className="text-row text-text-secondary">
                 {labelForKind(kind)}
@@ -306,36 +336,39 @@ export function RulesHeader({
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Row primitives. Each one mirrors the structure of `SettingsModal`'s
+// Row primitives. Each one mirrors the structure of `SettingsPanel`'s
 // `Row` exactly — same wrapper, same body typography, same separator.
 // ─────────────────────────────────────────────────────────────────────
+
+function settingsRowClass(compact: boolean): string {
+  return cn(
+    'border-b border-border-subtle/30 py-3',
+    compact ? 'flex flex-col gap-3' : 'flex items-start justify-between gap-4'
+  );
+}
 
 function ToggleRow({
   label,
   description,
   value,
-  onChange
+  onChange,
+  compact = false
 }: {
   label: string;
   description: string;
   value: boolean;
   onChange: (v: boolean) => void;
+  compact?: boolean;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-border-subtle/30 py-3">
+    <div className={settingsRowClass(compact)}>
       <div className="min-w-0 flex-1">
         <div className="text-body text-text-primary">{label}</div>
         <div className="mt-0.5 text-row leading-relaxed text-text-muted">
           {description}
         </div>
       </div>
-      <Button
-        size="sm"
-        variant={value ? 'primary' : 'secondary'}
-        onClick={() => onChange(!value)}
-      >
-        {value ? 'On' : 'Off'}
-      </Button>
+      <Switch size="md" value={value} onChange={onChange} ariaLabel={label} />
     </div>
   );
 }
@@ -346,7 +379,8 @@ function NumberRow({
   value,
   min,
   max,
-  onChange
+  onChange,
+  compact = false
 }: {
   label: string;
   description: string;
@@ -354,6 +388,7 @@ function NumberRow({
   min: number;
   max: number;
   onChange: (v: number) => void;
+  compact?: boolean;
 }) {
   const [draft, setDraft] = useState(String(value));
   useEffect(() => setDraft(String(value)), [value]);
@@ -368,7 +403,7 @@ function NumberRow({
     if (clamped !== value) onChange(clamped);
   };
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-border-subtle/30 py-3">
+    <div className={settingsRowClass(compact)}>
       <div className="min-w-0 flex-1">
         <div className="text-body text-text-primary">{label}</div>
         <div className="mt-0.5 text-row leading-relaxed text-text-muted">
@@ -390,7 +425,7 @@ function NumberRow({
             commit(draft);
           }
         }}
-        className="w-16 text-right font-mono"
+        className={cn('font-mono text-right', compact ? 'w-full' : 'w-16')}
       />
     </div>
   );
@@ -400,23 +435,25 @@ function RatioRow({
   label,
   description,
   value,
-  onChange
+  onChange,
+  compact = false
 }: {
   label: string;
   description: string;
   value: number;
   onChange: (v: number) => void;
+  compact?: boolean;
 }) {
   const pct = Math.round(value * 100);
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-border-subtle/30 py-3">
+    <div className={settingsRowClass(compact)}>
       <div className="min-w-0 flex-1">
         <div className="text-body text-text-primary">{label}</div>
         <div className="mt-0.5 text-row leading-relaxed text-text-muted">
           {description}
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-2">
+      <div className={cn('flex shrink-0 items-center gap-2', compact && 'w-full')}>
         <input
           type="range"
           min={0}
@@ -428,7 +465,7 @@ function RatioRow({
             if (!Number.isFinite(next)) return;
             onChange(Math.max(0, Math.min(1, next / 100)));
           }}
-          className="w-32 accent-accent"
+          className={cn('accent-accent', compact ? 'min-w-0 flex-1' : 'w-32')}
           aria-label={label}
         />
         <span className="w-10 text-right font-mono text-meta text-text-faint">
@@ -441,13 +478,15 @@ function RatioRow({
 
 function DroppedMarkerRow({
   value,
-  onChange
+  onChange,
+  compact = false
 }: {
   value: DroppedMarkerStyle;
   onChange: (v: DroppedMarkerStyle) => void;
+  compact?: boolean;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-border-subtle/30 py-3">
+    <div className={settingsRowClass(compact)}>
       <div className="min-w-0 flex-1">
         <div className="text-body text-text-primary">Dropped-message marker</div>
         <div className="mt-0.5 text-row leading-relaxed text-text-muted">
@@ -456,7 +495,7 @@ function DroppedMarkerRow({
           something used to be there.
         </div>
       </div>
-      <div className="flex items-center gap-1">
+      <div className={cn('flex items-center gap-1', compact && 'flex-wrap')}>
         {(['omit', 'placeholder'] as DroppedMarkerStyle[]).map((opt) => (
           <Button
             key={opt}
@@ -475,14 +514,16 @@ function DroppedMarkerRow({
 function SummarizerModelRow({
   items,
   value,
-  onChange
+  onChange,
+  compact = false
 }: {
   items: DropdownItem<string>[];
   value: string;
   onChange: (composed: string) => void;
+  compact?: boolean;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-border-subtle/30 py-3">
+    <div className={settingsRowClass(compact)}>
       <div className="min-w-0 flex-1">
         <div className="text-body text-text-primary">Summarizer model</div>
         <div className="mt-0.5 text-row leading-relaxed text-text-muted">
@@ -491,12 +532,13 @@ function SummarizerModelRow({
           model.
         </div>
       </div>
-      <div className={cn('shrink-0')}>
+      <div className={cn(compact ? 'w-full' : 'shrink-0')}>
         <Dropdown<string>
           items={items}
           value={value}
           onChange={onChange}
           placeholder="Select model…"
+          className={compact ? 'w-full' : undefined}
         />
       </div>
     </div>

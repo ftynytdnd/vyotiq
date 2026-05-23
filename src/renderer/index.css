@@ -44,9 +44,32 @@
   --color-danger: oklch(0.70 0.20 25);
   --color-warning: oklch(0.82 0.15 80);
 
+  /* Semantic state soft / strong variants
+     --------------------------------------------------------------------
+     Replaces the previous scatter of `bg-{tone}/{5|10}` washes and
+     `text-{tone}/{80|90}` ad-hoc darkenings with two canonical alphas
+     per tone. Soft = background wash for Notice / pill chrome;
+     Strong = brightest readable text + dot fills. Centralizing the
+     alphas through tokens means a future palette tweak is a single-
+     line change and the renderer no longer carries five different
+     opacity literals on `text-warning`. */
+  --color-warning-soft: oklch(0.82 0.15 80 / 0.10);
+  --color-warning-strong: oklch(0.82 0.15 80 / 0.90);
+  --color-danger-soft: oklch(0.70 0.20 25 / 0.10);
+  --color-danger-strong: oklch(0.70 0.20 25 / 0.90);
+  --color-success-soft: oklch(0.78 0.16 150 / 0.12);
+  --color-success-strong: oklch(0.78 0.16 150 / 0.85);
+
   /* Diff */
   --color-diff-add: oklch(0.78 0.16 150);
   --color-diff-del: oklch(0.70 0.20 25);
+
+  /* Canonical divider tint
+     --------------------------------------------------------------------
+     Single tone used by `PhaseDividerRow` and `RunCompleteRow` so the
+     two timeline interstitials read at the same weight. Previously they
+     drifted between `border-strong/50` and `border-subtle/45`. */
+  --color-border-divider: oklch(0.30 0.005 260 / 0.45);
 
   /* Radii */
   --radius-card: 12px;
@@ -67,8 +90,8 @@
      neutral sizing; prefer the named tokens on meta/row/body surfaces.
 
        text-meta   10px  uppercase eyebrows, timestamps, hint rows
-       text-row    11px  timeline row labels, sidebar items
-       text-log    12px  tool/reasoning/subagent log lines
+       text-row    11px  timeline row labels, dock tabs, compact UI
+       text-log    12px  legacy compact lines (checkpoints / diffs); prefer text-row in new UI
        text-body   14px  assistant text, prompts, primary copy
   */
   --text-meta: 10px;
@@ -142,7 +165,7 @@ body,
 
 /* Focus ring (subtle two-stop halo) — applied only to interactive
    controls. Form inputs (textarea / input / select) sit inside their
-   own visually-distinct containers (composer card, sidebar search
+   own visually-distinct containers (composer card, dock search
    row, picker popover) so the ring is suppressed on them to avoid a
    double affordance.
 
@@ -461,7 +484,7 @@ textarea {
 /* ---------------------------------------------------------------------------
    Stealth-thin scrollbar — scoped opt-in via `.scrollbar-stealth`. The
    global scrollbar (10 px) stays as-is for body scroll surfaces; only
-   sidebar-internal scroll regions need this finer treatment.
+   panel-internal scroll regions need this finer treatment.
    --------------------------------------------------------------------------- */
 .scrollbar-stealth::-webkit-scrollbar {
   width: 6px;
@@ -686,8 +709,31 @@ textarea {
 }
 
 /* ---------------------------------------------------------------------------
+   Surface shell — shared composer/dock/timeline bordered inset chrome.
+   Mirrors SurfaceShell.tsx tokens for non-React call sites.
+   --------------------------------------------------------------------------- */
+.surface-shell {
+  overflow: hidden;
+  border-radius: var(--radius-inner);
+  border: 1px solid oklch(0.30 0.005 260 / 0.18);
+  background: oklch(0.22 0.005 260 / 0.10);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.025);
+}
+
+.surface-shell-focus {
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.surface-shell-focus:focus-within {
+  border-color: oklch(0.30 0.005 260 / 0.35);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+/* ---------------------------------------------------------------------------
    Timeline log-line utility
-   A flat, flush row used by the Cascade-style tool/reasoning/subagent rows.
+   Legacy hover row — prefer SurfaceShell for new surfaces.
    --------------------------------------------------------------------------- */
 .log-line {
   transition: background-color 150ms ease;

@@ -6,7 +6,7 @@
  * behave identically — they read/write the active entry.
  *
  * The registry shape is intentionally minimal: full list + active id +
- * a derived `info`. The sidebar tree filters conversations against
+ * a derived `info`. The bottom dock filters conversations against
  * each workspace's id; the title-bar / Composer / picker continue to
  * read `s.info` and never need to know about the registry.
  */
@@ -63,7 +63,7 @@ interface WorkspaceStore {
   remove: (id: string, opts: { deleteConversations: boolean }) => Promise<void>;
   /**
    * Re-stat a workspace's path. If the mount has come back, the
-   * registry's `unreachable` flag clears and the sidebar's warning
+   * registry's `unreachable` flag clears and the dock's warning
    * chip disappears. Used by the per-group retry affordance.
    */
   retryReachability: (id: string) => Promise<void>;
@@ -123,7 +123,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((setState, getState) => 
     setState({ loading: true });
     try {
       const entry = await vyotiq.workspace.add(path);
-      // Optimistic registry update so the sidebar tree paints the new
+      // Optimistic registry update so the dock paints the new
       // group without waiting for the round-trip refresh. The main-
       // side `add` already activated the entry.
       const next = await vyotiq.workspace.list();
@@ -158,7 +158,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((setState, getState) => 
     // Optimistic flip: paint the new active workspace IMMEDIATELY.
     // The IPC awaits a settings.json disk write that on slow mounts
     // (OneDrive sync) can take hundreds of ms — without the optimism
-    // the sidebar group highlight + the chat mirror's downstream
+    // the dock workspace highlight + the chat mirror's downstream
     // reactions would all stall behind that fsync. We mirror main's
     // post-condition (active entry → derived `info`) up-front and
     // roll back if the persistence call rejects.
@@ -186,7 +186,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((setState, getState) => 
     } catch (err) {
       log.error('workspace.setActive failed; rolling back optimistic flip', { err, id });
       // Roll back to whatever we showed BEFORE the optimistic flip so a
-      // disk-write failure doesn't strand the sidebar advertising an
+      // disk-write failure doesn't strand the dock advertising an
       // active workspace that was never persisted. F-012: NO second
       // `maybeInvalidate(info, prev.info)` here. The optimistic flip at
       // line 160 already invalidated the tree cache; on rollback the

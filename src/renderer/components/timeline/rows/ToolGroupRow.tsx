@@ -52,11 +52,17 @@ import {
 import { StatusIcon } from '../tools/shared/StatusIcon.js';
 import { DiffStatsBadge } from '../tools/shared/DiffStatsBadge.js';
 import { ToolInvocation } from '../tools/ToolInvocation.js';
-import { NestedDetailRail } from '../shared/NestedDetailRail.js';
+import { DetailShell } from '../shared/DetailShell.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import { useTimelineUiStore } from '../../../store/useTimelineUiStore.js';
 import { cn } from '../../../lib/cn.js';
 import { shimmerStyle, shimmerText } from '../../../lib/shimmer.js';
+import { SurfaceShell } from '../../ui/SurfaceShell.js';
+import {
+  timelineRowChevronClassName,
+  timelineRowHeaderClassName,
+  timelineRowIconClassName
+} from '../shared/rowStyles.js';
 
 interface ToolGroupRowProps {
   rowKey: string;
@@ -168,27 +174,27 @@ export function ToolGroupRow({ rowKey, toolName, items }: ToolGroupRowProps) {
   const running = status === 'running';
 
   return (
-    <div className="vyotiq-stepfade flex flex-col">
+    <SurfaceShell className="flex flex-col gap-1">
       <button
         type="button"
         onClick={onToggle}
         disabled={!conversationId}
         aria-expanded={expanded}
         className={cn(
-          'log-line app-no-drag flex w-full items-center gap-2 px-2 py-1 text-left',
+          timelineRowHeaderClassName,
           conversationId ? 'cursor-pointer' : 'cursor-default'
         )}
       >
         {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-chevron" strokeWidth={2} />
+          <ChevronDown className={timelineRowChevronClassName} strokeWidth={2} />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-chevron" strokeWidth={2} />
+          <ChevronRight className={timelineRowChevronClassName} strokeWidth={2} />
         )}
-        <Icon className="h-3.5 w-3.5 shrink-0 text-text-faint" strokeWidth={2} />
+        <Icon className={cn(timelineRowIconClassName, 'text-text-faint')} strokeWidth={2} />
         <div
           className={shimmerText(
             running,
-            'min-w-0 flex-1 truncate text-log text-text-secondary'
+            'min-w-0 flex-1 truncate text-row text-text-secondary'
           )}
           style={running ? shimmerStyle(rowKey) : undefined}
         >
@@ -215,7 +221,7 @@ export function ToolGroupRow({ rowKey, toolName, items }: ToolGroupRowProps) {
       </button>
 
       {expanded && (
-        <NestedDetailRail gap="gap-1">
+        <DetailShell gap="gap-1">
           {items.map((c) => (
             <ToolInvocation
               key={c.callId}
@@ -227,9 +233,9 @@ export function ToolGroupRow({ rowKey, toolName, items }: ToolGroupRowProps) {
               {...(c.diffStream ? { diffStream: c.diffStream } : {})}
             />
           ))}
-        </NestedDetailRail>
+        </DetailShell>
       )}
-    </div>
+    </SurfaceShell>
   );
 }
 

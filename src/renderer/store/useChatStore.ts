@@ -30,9 +30,6 @@
  */
 
 import { create } from 'zustand';
-import type { TimelineEvent, ChatPermissions } from '@shared/types/chat.js';
-import type { ActiveRunInfo } from '@shared/types/ipc.js';
-import type { ModelSelection } from '@shared/types/provider.js';
 import { vyotiq } from '../lib/ipc.js';
 import { logger } from '../lib/logger.js';
 import { randomId } from '../lib/ids.js';
@@ -43,231 +40,19 @@ import { useToastStore } from './useToastStore.js';
 import { useCheckpointsStore } from './useCheckpointsStore.js';
 import {
   applyTimelineEvent,
-  rebuildTimelineState,
-  type ApplyEventOptions
+  rebuildTimelineState
 } from '../components/timeline/reducer/applyTimelineEvent.js';
 import {
-  INITIAL_TIMELINE_STATE,
-  type TimelineState,
-  type TokenUsageAggregate,
-  foldTokenUsage
-} from '../components/timeline/reducer/types.js';
+  type ChatSlice,
+  type ChatStore,
+  EMPTY_MIRROR,
+  emptySlice
+} from './chatStoreTypes.js';
+import { mirrorOf } from './chatStoreMirror.js';
+
+export { __resetTotalRunUsageCacheForTests } from './chatStoreTotalRunUsage.js';
 
 const log = logger.child('chat-store');
-
-/**
- * Per-conversation slice. Mirrors what the old singleton store carried,
- * but keyed by `conversationId` so multiple slices can be live at once.
- *
- * Module-internal: every consumer reads through the active mirror's
- * surfaced fields (`s.events`, `s.runId`, etc.) rather than the slice
- * shape directly. Kept as a type for readability inside this file.
- */
-interface ChatSlice extends TimelineState {
-  conversationId: string;
-  runId: string | null;
-  isProcessing: boolean;
-  runStartedAt: number | null;
-  draft: string;
-}
-
-function emptySlice(conversationId: string): ChatSlice {
-  return {
-    ...INITIAL_TIMELINE_STATE,
-    conversationId,
-    runId: null,
-    isProcessing: false,
-    runStartedAt: null,
-    draft: ''
-  };
-}
-
-/**
- * Shape of the active-slice mirror surfaced at the top of the store.
- * Kept identical to the pre-multi-session shape so existing selector
- * hooks (`useChatStore((s) => s.events)`) need no rewrites.
- */
-interface ActiveMirror extends TimelineState {
-  conversationId: string | null;
-  runId: string | null;
-  isProcessing: boolean;
-  runStartedAt: number | null;
-  draft: string;
-  /**
-   * Aggregated usage across the orchestrator's own turns PLUS every
-   * sub-agent in the active slice. Computed on mirror refresh so the
-   * composer pill can show a "total run" token count.
-   */
-  totalRunUsage?: TokenUsageAggregate;
-}
-
-const EMPTY_MIRROR: ActiveMirror = {
-  ...INITIAL_TIMELINE_STATE,
-  // `INITIAL_TIMELINE_STATE` leaves `orchestratorUsage` off by omission;
-  // explicit `undefined` here keeps the mirror's shape stable so a
-  // partial Zustand merge never leaks the previous slice's aggregate
-  // through.
-  orchestratorUsage: undefined,
-  totalRunUsage: undefined,
-  conversationId: null,
-  runId: null,
-  isProcessing: false,
-  runStartedAt: null,
-  draft: ''
-};
-
-function mirrorOf(slice: ChatSlice): ActiveMirror {
-  let totalRunUsage = slice.orchestratorUsage;
-  for (const id in slice.subagents) {
-    const sa = slice.subagents[id];
-    if (sa?.usage) {
-      totalRunUsage = foldTokenUsage(totalRunUsage, sa.usage.latest);
-    }
-  }
-  return {
-    events: slice.events,
-    assistantTexts: slice.assistantTexts,
-    reasoningTexts: slice.reasoningTexts,
-    subagents: slice.subagents,
-    // Mirror the orchestrator-scoped live partial-args map. Sub-agent
-    // partials live on the matching snapshot inside `subagents` above.
-    partialToolCallArgs: slice.partialToolCallArgs,
-    // Audit fix H3 — settled-callId guard travels with the rest of
-    // the reducer state so the renderer-side late-delta race check
-    // works through the mirror selectors.
-    settledCallIds: slice.settledCallIds,
-    orchestratorUsage: slice.orchestratorUsage,
-    // Propagate the orchestrator-scoped run-status slot. Without this,
-    // `LiveStatusRow` would never see phase transitions because the
-    // mirror is the surface every selector hook reads. Audit fix
-    // §3.2.1 — the slot replaced an `events.push` walk and must travel
-    // with the rest of the timeline state.
-    latestOrchestratorRunStatus: slice.latestOrchestratorRunStatus,
-    // Carries the latest `user-prompt` id so `Timeline`'s snap-on-send
-    // effect depends on a primitive that flips ONLY at submit time
-    // (audit fix §3.2.2). Without the propagation the mirror's
-    // selector hook would never observe the value and the effect
-    // would degrade back to scanning `events` on every delta.
-    lastUserPromptId: slice.lastUserPromptId,
-    // Content of the most-recent prompt; the regenerate affordance
-    // reads this directly instead of walking the events list (audit
-    // fix C2). Mirror-only — selectors that already key on
-    // `lastUserPromptId` don't churn when this slot updates.
-    lastUserPromptContent: slice.lastUserPromptContent,
-    // Per-runId file-edit counts — drives the inline numeric badge on
-    // `UserPromptRow`'s Revert button so users can see how many files
-    // a turn touched without opening the rewind preview modal. Selectors
-    // pluck a single bucket via `(s) => s.runIdToFileEditCount[runId]`
-    // so re-renders are bounded by the affected prompt row, not the
-    // whole timeline.
-    runIdToFileEditCount: slice.runIdToFileEditCount,
-    // Context-summarization streaming + lifecycle state. Mirrored
-    // verbatim from the slice so per-row selectors
-    // `(s) => s.summaries[summaryId]` re-render only the matching
-    // `ContextSummaryRow`. The `messageOverrides` map flows through
-    // the same path so the Inspector panel can read the live
-    // toggle state without an IPC round-trip.
-    summaries: slice.summaries,
-    messageOverrides: slice.messageOverrides,
-    totalRunUsage,
-    conversationId: slice.conversationId,
-    runId: slice.runId,
-    isProcessing: slice.isProcessing,
-    runStartedAt: slice.runStartedAt,
-    draft: slice.draft
-  };
-}
-
-interface ChatStore extends ActiveMirror {
-  /** Per-conversation slices. The "registry" the plan describes. */
-  slices: Record<string, ChatSlice>;
-  /**
-   * `runId → conversationId` dispatch table. Populated by `send()`
-   * BEFORE awaiting the IPC so even instant streaming events have a
-   * destination, and pruned by `finishRun` / `errorRun` after the
-   * matching terminal event arrives. Late events for an unmapped
-   * runId are dropped with a debug log (mirrors the old runId
-   * guard).
-   */
-  runIdToConv: Record<string, string>;
-
-  /**
-   * Dispatch a single event through the reducer (used by chatChannel).
-   * `opts.preParsedArgs` lets the bridge inject a pool-cached parse of
-   * a `tool-call-args-delta` event so the reducer skips its own
-   * one-shot `safeParsePartial`. Phase 1.1.
-   */
-  applyEvent: (runId: string, event: TimelineEvent, opts?: ApplyEventOptions) => void;
-  /** Mark a run finished (from the IPC `done` channel). */
-  finishRun: (runId: string) => void;
-  /** Record a run-level error (from the IPC `error` channel). */
-  errorRun: (runId: string, message: string) => void;
-  /**
-   * Materialise / replace the slice for a conversation. Used by
-   * `useConversationsStore.select` after a transcript read, and by
-   * `newConversation` to seed an empty slice.
-   */
-  setTranscript: (conversationId: string | null, events: TimelineEvent[]) => void;
-  /**
-   * Switch the active mirror to a different conversation slice WITHOUT
-   * touching its in-flight state. Auto-creates an empty slice when
-   * none exists yet. `null` clears the mirror entirely (used by
-   * `clear()` and post-remove flows).
-   */
-  setActiveConversation: (conversationId: string | null) => void;
-  /**
-   * Drop a conversation's slice and prune any dangling runId
-   * mappings. Called when a conversation is removed so memory
-   * doesn't accumulate ghost slices forever. The mirror is also
-   * cleared when the dropped slice was active.
-   */
-  dropConversation: (conversationId: string) => void;
-  /** Kick off a send through IPC. Guards against concurrent taps. */
-  send: (
-    prompt: string,
-    selection: ModelSelection,
-    permissions: ChatPermissions,
-    options?: { attachments?: string[] }
-  ) => Promise<void>;
-  /** Abort the in-flight run on the ACTIVE slice (if any). */
-  abort: () => Promise<void>;
-  /**
-   * Abort a specific run by id. Used by the sidebar's per-row abort
-   * affordance so a sibling conversation's run can be stopped without
-   * first switching to it. The matching slice's `isProcessing` is
-   * flipped immediately for snappy feedback; the authoritative
-   * `done` / `error` event still arrives via the IPC channel and
-   * cleans up `runId` / mapping as usual.
-   */
-  abortRun: (runId: string) => Promise<void>;
-  /**
-   * Rehydrate `runIdToConv` + per-slice `runId / isProcessing /
-   * runStartedAt` from main's snapshot of in-flight runs. Called once
-   * at boot from `bootstrapChatChannel` so a renderer reload (HMR /
-   * F5) can re-attach to live runs in main rather than dropping their
-   * subsequent events as "ghosts". Idempotent: entries whose runId is
-   * already mapped are left untouched.
-   */
-  rehydrateActiveRuns: (infos: ActiveRunInfo[]) => void;
-  /**
-   * Pre-warm a slice with persisted transcript events WITHOUT touching
-   * the active mirror or in-flight `runId / isProcessing` fields.
-   * Used by the boot-time sibling-transcript pre-warm so the FIRST
-   * switch into any persisted-active workspace's last conversation is
-   * instant. Re-pre-warming an already-hydrated slice is a no-op.
-   */
-  prewarmSlice: (conversationId: string, events: TimelineEvent[]) => void;
-  /**
-   * Write the composer's unsent draft for a specific conversation.
-   * Persisted across conversation switches so a user can leave a
-   * half-typed message in one chat, switch elsewhere, and return to
-   * find it intact. The Composer's hydration effect re-syncs `text`
-   * from this slot whenever the active conversation flips.
-   */
-  setDraft: (conversationId: string, text: string) => void;
-  /** Reset only the active slice. Used by "New conversation" flows. */
-  clear: () => void;
-}
 
 /**
  * In-place slice mutation helper. Returns a new `slices` map with
@@ -289,6 +74,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   ...EMPTY_MIRROR,
   slices: {},
   runIdToConv: {},
+  runIdToModel: {},
 
   applyEvent: (runId, event, opts) => {
     const convId = get().runIdToConv[runId];
@@ -311,6 +97,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // event.
       if (s.conversationId === convId) {
         return { ...s, slices: nextSlices, ...mirrorOf(nextSlices[convId]!) };
+      }
+      return { ...s, slices: nextSlices };
+    });
+  },
+
+  applyConversationEvent: (conversationId, event) => {
+    set((s) => {
+      const nextSlices = updateSlice(s.slices, conversationId, (prev) => ({
+        ...prev,
+        ...applyTimelineEvent(prev, event)
+      }));
+      if (s.conversationId === conversationId) {
+        return { ...s, slices: nextSlices, ...mirrorOf(nextSlices[conversationId]!) };
       }
       return { ...s, slices: nextSlices };
     });
@@ -351,10 +150,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       );
       // Prune the mapping so subsequent late events don't keep
       // resurrecting the dispatch path — and `runIdToConv` doesn't
-      // grow unboundedly across long sessions.
+      // grow unboundedly across long sessions. The parallel
+      // `runIdToModel` map is pruned in lockstep.
       const nextMap: Record<string, string> = { ...s.runIdToConv };
       delete nextMap[runId];
-      const patch = { slices: nextSlices, runIdToConv: nextMap };
+      const nextModelMap: Record<string, string> = { ...s.runIdToModel };
+      delete nextModelMap[runId];
+      const patch = {
+        slices: nextSlices,
+        runIdToConv: nextMap,
+        runIdToModel: nextModelMap
+      };
       if (s.conversationId === convId) {
         return { ...s, ...patch, ...mirrorOf(nextSlices[convId]!) };
       }
@@ -378,7 +184,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // delivered the error row.
     //
     // `message` is still passed to this action so a future
-    // observability surface (e.g. a "last error" badge on the sidebar
+    // observability surface (e.g. a "last error" badge on the dock
     // row) can read it without parsing the timeline. For now we just
     // log it so a renderer reload that lost a chat:event but still
     // received chat:error can be triaged from the renderer console.
@@ -400,7 +206,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       });
       const nextMap: Record<string, string> = { ...s.runIdToConv };
       delete nextMap[runId];
-      const patch = { slices: nextSlices, runIdToConv: nextMap };
+      const nextModelMap: Record<string, string> = { ...s.runIdToModel };
+      delete nextModelMap[runId];
+      const patch = {
+        slices: nextSlices,
+        runIdToConv: nextMap,
+        runIdToModel: nextModelMap
+      };
       if (s.conversationId === convId) {
         return { ...s, ...patch, ...mirrorOf(nextSlices[convId]!) };
       }
@@ -464,7 +276,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         draft: prior?.draft ?? ''
       };
       const nextSlices = { ...s.slices, [conversationId]: nextSlice };
-      return { ...s, slices: nextSlices, ...mirrorOf(nextSlice) };
+      // Only flip the active mirror when this transcript IS the one
+      // the user is viewing. Background reads (checkpoint rewind,
+      // prewarm for a sibling tab) must not clobber the visible timeline.
+      if (s.conversationId === conversationId) {
+        return { ...s, slices: nextSlices, ...mirrorOf(nextSlice) };
+      }
+      return { ...s, slices: nextSlices };
     });
   },
 
@@ -502,15 +320,53 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // Only the active slice's `isProcessing` gates new sends.
     if (get().isProcessing) return;
     const runId = randomId();
-    // Resolve the active workspace id so the IPC call lands the run
-    // (and any auto-created conversation) in the right workspace.
-    // The store is a pure ref read here — no IPC.
-    const workspaceId = useWorkspaceStore.getState().activeId ?? undefined;
+    const activeWorkspaceId = useWorkspaceStore.getState().activeId;
     const startedAt = Date.now();
 
     // Pre-create before IPC so the first synchronous `user-prompt` event
     // already has a conversation mapping and workspace binding.
     let conversationId = get().conversationId ?? undefined;
+    if (conversationId) {
+      const meta = useConversationsStore
+        .getState()
+        .list.find((m) => m.id === conversationId);
+      // Block sends while the dock has switched workspaces but the chat
+      // mirror hasn't caught up to that workspace's conversation yet.
+      if (
+        meta?.workspaceId &&
+        activeWorkspaceId &&
+        meta.workspaceId !== activeWorkspaceId
+      ) {
+        log.warn('send blocked during workspace switch', {
+          conversationId,
+          conversationWorkspaceId: meta.workspaceId,
+          activeWorkspaceId
+        });
+        set((s) => {
+          const next = applyTimelineEvent(s, {
+            kind: 'error',
+            id: randomId(),
+            ts: Date.now(),
+            message:
+              'Workspace is switching — wait a moment for the chat to sync, then try again.'
+          });
+          return { ...s, ...next };
+        });
+        return;
+      }
+    }
+
+    // Pin the run to the conversation's workspace when known — not the
+    // transient active tab — so a mid-switch send can't stamp the wrong id.
+    const workspaceId = (() => {
+      if (conversationId) {
+        const meta = useConversationsStore
+          .getState()
+          .list.find((m) => m.id === conversationId);
+        if (meta?.workspaceId) return meta.workspaceId;
+      }
+      return activeWorkspaceId ?? undefined;
+    })();
     if (!conversationId) {
       if (!workspaceId) {
         // Surface the failure on the mirror so the user sees why their
@@ -557,13 +413,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     set((s) => {
       const nextMap = { ...s.runIdToConv, [runId]: boundId };
+      const nextModelMap = { ...s.runIdToModel, [runId]: selection.modelId };
       const nextSlices = updateSlice(s.slices, boundId, (prev) => ({
         ...prev,
         runId,
         isProcessing: true,
         runStartedAt: startedAt
       }));
-      return { ...s, slices: nextSlices, runIdToConv: nextMap, ...mirrorOf(nextSlices[boundId]!) };
+      return {
+        ...s,
+        slices: nextSlices,
+        runIdToConv: nextMap,
+        runIdToModel: nextModelMap,
+        ...mirrorOf(nextSlices[boundId]!)
+      };
     });
 
     try {
@@ -587,11 +450,40 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // run — we just unwind the optimistic slice flag, refresh the
       // pending list so the panel appears, and surface a toast.
       if (reply.ok === false) {
+        if (reply.kind === 'unknown-conversation') {
+          useToastStore
+            .getState()
+            .show(
+              'That chat no longer exists. Start a new conversation or pick another tab.',
+              'danger'
+            );
+          set((s) => {
+            const nextMap: Record<string, string> = { ...s.runIdToConv };
+            delete nextMap[runId];
+            const nextModelMap: Record<string, string> = { ...s.runIdToModel };
+            delete nextModelMap[runId];
+            const nextSlices = updateSlice(s.slices, boundId, (prev) => ({
+              ...prev,
+              runId: null,
+              isProcessing: false,
+              runStartedAt: null
+            }));
+            const patch = {
+              slices: nextSlices,
+              runIdToConv: nextMap,
+              runIdToModel: nextModelMap
+            };
+            return s.conversationId === boundId
+              ? { ...s, ...patch, ...mirrorOf(nextSlices[boundId]!) }
+              : { ...s, ...patch };
+          });
+          return;
+        }
         if (reply.kind === 'pending-checkpoints') {
           useToastStore
             .getState()
             .show(
-              `Resolve ${reply.count} pending change${reply.count === 1 ? '' : 's'} before sending — Accept or Reject each row in the panel below.`,
+              `Resolve ${reply.count} pending change${reply.count === 1 ? '' : 's'} before sending — Accept or Reject each row in the pending changes row in the timeline.`,
               'danger'
             );
           void useCheckpointsStore.getState().refreshPending(reply.conversationId);
@@ -601,15 +493,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           set((s) => {
             const nextMap: Record<string, string> = { ...s.runIdToConv };
             delete nextMap[runId];
+            const nextModelMap: Record<string, string> = { ...s.runIdToModel };
+            delete nextModelMap[runId];
             const nextSlices = updateSlice(s.slices, boundId, (prev) => ({
               ...prev,
               runId: null,
               isProcessing: false,
               runStartedAt: null
             }));
+            const patch = {
+              slices: nextSlices,
+              runIdToConv: nextMap,
+              runIdToModel: nextModelMap
+            };
             return s.conversationId === boundId
-              ? { ...s, slices: nextSlices, runIdToConv: nextMap, ...mirrorOf(nextSlices[boundId]!) }
-              : { ...s, slices: nextSlices, runIdToConv: nextMap };
+              ? { ...s, ...patch, ...mirrorOf(nextSlices[boundId]!) }
+              : { ...s, ...patch };
           });
           return;
         }
@@ -657,12 +556,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const targetId = s.runIdToConv[runId];
         const nextMap: Record<string, string> = { ...s.runIdToConv };
         delete nextMap[runId];
+        const nextModelMap: Record<string, string> = { ...s.runIdToModel };
+        delete nextModelMap[runId];
         if (targetId) {
           const nextSlices = updateSlice(s.slices, targetId, (prev) => {
             const next = applyTimelineEvent(prev, errEvent);
             return { ...prev, ...next, runId: null, isProcessing: false, runStartedAt: null };
           });
-          const patch = { slices: nextSlices, runIdToConv: nextMap };
+          const patch = {
+            slices: nextSlices,
+            runIdToConv: nextMap,
+            runIdToModel: nextModelMap
+          };
           return s.conversationId === targetId
             ? { ...s, ...patch, ...mirrorOf(nextSlices[targetId]!) }
             : { ...s, ...patch };
@@ -670,7 +575,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         // Auto-create that never bound — surface the error on the
         // mirror so the user sees it, but there's no slice to update.
         const next = applyTimelineEvent(s, errEvent);
-        return { ...s, ...next, runIdToConv: nextMap, runId: null, isProcessing: false, runStartedAt: null };
+        return {
+          ...s,
+          ...next,
+          runIdToConv: nextMap,
+          runIdToModel: nextModelMap,
+          runId: null,
+          isProcessing: false,
+          runStartedAt: null
+        };
       });
     }
   },
@@ -788,6 +701,37 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
   },
 
+  registerIdleRoute: (runId, conversationId) => {
+    set((s) => {
+      // Idempotent — re-registering the same pair is a no-op.
+      if (s.runIdToConv[runId] === conversationId) return s;
+      const nextMap = { ...s.runIdToConv, [runId]: conversationId };
+      return { ...s, runIdToConv: nextMap };
+    });
+  },
+
+  beginSideRun: (runId, conversationId) => {
+    const startedAt = Date.now();
+    set((s) => {
+      const nextMap = { ...s.runIdToConv, [runId]: conversationId };
+      const nextSlices = updateSlice(s.slices, conversationId, (prev) => ({
+        ...prev,
+        runId,
+        isProcessing: true,
+        runStartedAt: startedAt
+      }));
+      if (s.conversationId === conversationId) {
+        return {
+          ...s,
+          slices: nextSlices,
+          runIdToConv: nextMap,
+          ...mirrorOf(nextSlices[conversationId]!)
+        };
+      }
+      return { ...s, slices: nextSlices, runIdToConv: nextMap };
+    });
+  },
+
   setDraft: (conversationId, text) => {
     set((s) => {
       const nextSlices = updateSlice(s.slices, conversationId, (prev) => ({
@@ -822,6 +766,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           : {}),
         summaries: rebuilt.summaries,
         messageOverrides: rebuilt.messageOverrides,
+        ...(rebuilt.lastUserPromptId !== undefined
+          ? { lastUserPromptId: rebuilt.lastUserPromptId }
+          : {}),
+        ...(rebuilt.lastUserPromptContent !== undefined
+          ? { lastUserPromptContent: rebuilt.lastUserPromptContent }
+          : {}),
+        runIdToFileEditCount: rebuilt.runIdToFileEditCount,
         // Preserve any in-flight fields that may have been set by a
         // racing `rehydrateActiveRuns` for this same conversation.
         runId: existing?.runId ?? null,
@@ -837,28 +788,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         return { ...s, slices: nextSlices, ...mirrorOf(fresh) };
       }
       return { ...s, slices: nextSlices };
-    });
-  },
-
-  clear: () => {
-    // Reset only the ACTIVE slice. Sibling slices (in-flight runs in
-    // other conversations) are intentionally untouched.
-    const convId = get().conversationId;
-    if (!convId) {
-      set((s) => ({ ...s, ...EMPTY_MIRROR, slices: s.slices, runIdToConv: s.runIdToConv }));
-      return;
-    }
-    set((s) => {
-      const fresh = emptySlice(convId);
-      const nextSlices = { ...s.slices, [convId]: fresh };
-      // Prune any runIds pointing at this conversation — clearing the
-      // slice while a runId mapping survives would resurrect a half-
-      // started run on the next event.
-      const nextMap: Record<string, string> = {};
-      for (const [rid, cid] of Object.entries(s.runIdToConv)) {
-        if (cid !== convId) nextMap[rid] = cid;
-      }
-      return { ...s, slices: nextSlices, runIdToConv: nextMap, ...mirrorOf(fresh) };
     });
   }
 }));

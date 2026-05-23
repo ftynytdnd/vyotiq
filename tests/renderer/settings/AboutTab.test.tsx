@@ -1,5 +1,5 @@
 /**
- * `SettingsModal` → About tab — verifies that the read-only `AppInfo`
+ * `SettingsPanel` → About tab — verifies that the read-only `AppInfo`
  * snapshot from `vyotiq.app.info()` renders into the Build + On-disk
  * paths sections, and that each Reveal button calls `revealPath` with
  * the matching whitelisted target enum (`'userData'` | `'settings'` |
@@ -13,7 +13,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { SettingsModal } from '@renderer/components/settings/SettingsModal';
+import { SettingsPanel } from '@renderer/components/settings/SettingsPanel';
 import type { AppInfo } from '@shared/types/ipc';
 
 const fixture: AppInfo = {
@@ -31,10 +31,10 @@ function stubAppInfo(): void {
   window.vyotiq.app.info = vi.fn(async () => fixture) as never;
 }
 
-describe('SettingsModal → About tab', () => {
+describe('SettingsPanel → About tab', () => {
   it('renders version, electron, and node lines from app.info()', async () => {
     stubAppInfo();
-    render(<SettingsModal open onClose={() => undefined} initialTab="about" />);
+    render(<SettingsPanel initialTab="about" />);
 
     // Each `<dt>` ↔ `<dd>` pair lives inside a definition list; we
     // assert on the visible value rather than the label so the test
@@ -51,7 +51,7 @@ describe('SettingsModal → About tab', () => {
     const revealSpy = vi.fn(async () => undefined);
     window.vyotiq.app.revealPath = revealSpy as never;
 
-    render(<SettingsModal open onClose={() => undefined} initialTab="about" />);
+    render(<SettingsPanel initialTab="about" />);
 
     await waitFor(() => {
       expect(screen.getByText(fixture.userDataDir)).toBeInTheDocument();
@@ -79,7 +79,7 @@ describe('SettingsModal → About tab', () => {
       throw new Error('userData unavailable');
     }) as never;
 
-    render(<SettingsModal open onClose={() => undefined} initialTab="about" />);
+    render(<SettingsPanel initialTab="about" />);
 
     await waitFor(() => {
       expect(

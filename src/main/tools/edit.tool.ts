@@ -97,7 +97,7 @@ Create a new file:
 - \`oldString\` MUST match exactly, including whitespace.
 - If \`oldString\` is not unique you MUST set \`replaceAll: true\` or expand the context until it IS unique.
 - \`create: true\` requires the file to NOT already exist.
-- Without \`allowFileWrites\` permission, the user will be asked to confirm.`,
+- When \`allowAuto\` is off (default), the user will be asked to confirm each write.`,
   schema: {
     type: 'function',
     function: {
@@ -164,11 +164,12 @@ Create a new file:
     }
 
     // Approval gate. Two layers feed it:
-    //   1. `permissions.allowFileWrites === false` (the legacy global
-    //      gate) — prompt the user once per call.
+    //   1. `permissions.allowAuto === false` (the default) — prompt
+    //      the user once per call via the text-only confirm.
     //   2. `ctx.strictApprovals === true` (per-workspace toggle) —
     //      every edit/delete pauses the run and asks for a full diff
-    //      approval, regardless of the permission flag.
+    //      approval, REGARDLESS of `allowAuto`. The strict path always
+    //      wins.
     //
     // Under `strictApprovals`, we route through `ctx.confirmEdit` so
     // the renderer shows the full diff (`EditApprovalDialog`) instead
@@ -176,10 +177,9 @@ Create a new file:
     // from the same buffers the modify/create branch will write, so
     // the user sees byte-identical content to what would land.
     //
-    // The legacy `allowFileWrites === false` gate keeps the text-only
-    // confirm — its only purpose is to let a user who blanket-
-    // disabled writes re-approve a single call without sending the
-    // full diff round-trip.
+    // The `allowAuto === false` text-only confirm exists for the
+    // non-strict workspace path: the user opted out of full auto so
+    // every write asks "Allow?" without the full diff round-trip.
     if (ctx.strictApprovals) {
       // Build the structured preview eagerly. For `modify` we need to
       // read the existing file body up-front to compute hunks +
@@ -202,7 +202,7 @@ Create a new file:
       // Stash any pre-read body the synthesizer already did so the
       // MODIFY branch below can skip a second `fs.readFile`.
       preReadOriginal = previewResult.preReadOriginal;
-    } else if (!ctx.permissions.allowFileWrites) {
+    } else if (!ctx.permissions.allowAuto) {
       const verb = a.create ? 'create' : 'modify';
       const outcome = await ctx.confirm(
         `Agent V wants to ${verb} ${a.path}. Allow?`

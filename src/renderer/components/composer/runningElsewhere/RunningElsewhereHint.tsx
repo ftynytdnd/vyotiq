@@ -1,17 +1,17 @@
 /**
  * Muted hint surfaced above the textarea when one or more conversations
  * other than the active one are streaming. Lets the user know that
- * background work is in progress without forcing them to open the
- * sidebar to find out.
+ * background work is in progress without forcing them to expand the
+ * dock to find out.
  *
  *   "2 chats streaming elsewhere · Show"
  *
  * Hidden entirely when there are zero background runs — no chrome ever
  * paints in the idle state.
  *
- * "Show" opens the sidebar (if collapsed) and scrolls the first
- * running row into view via `focusRow`. The row registry is populated
- * by `ChatHistoryList` on mount.
+ * "Show" expands the bottom dock (if collapsed) and scrolls the first
+ * running chat tab into view via `focusRow`. Tabs register refs through
+ * `useChatRowFocus` in `DockChatStrip`.
  *
  * Visual rhythm reuses existing tokens (`text-row text-text-muted`,
  * `app-no-drag`, `transition-colors`) — no new surfaces, no card
@@ -20,7 +20,7 @@
 
 import { cn } from '../../../lib/cn.js';
 import { useBackgroundRuns } from '../../../hooks/chat/index.js';
-import { focusRow } from '../../../hooks/sidebar/index.js';
+import { focusRow } from '../../../hooks/chat/useChatRowFocus.js';
 
 export function RunningElsewhereHint({ className }: { className?: string }) {
   const { count, firstRunningId } = useBackgroundRuns();

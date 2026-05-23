@@ -11,6 +11,7 @@ import { ArrowUpRight, FileCode } from 'lucide-react';
 import { vyotiq } from '../../../lib/ipc.js';
 import { DiffStatsBadge } from '../tools/shared/DiffStatsBadge.js';
 import { cn } from '../../../lib/cn.js';
+import { timelineRowHeaderClassName, timelineActionPillClassName } from '../shared/rowStyles.js';
 import { useToastStore } from '../../../store/useToastStore.js';
 import { logger } from '../../../lib/logger.js';
 
@@ -36,10 +37,10 @@ export function FileEditRow({ filePath, additions, deletions }: FileEditRowProps
   };
 
   return (
-    <div className="group log-line flex items-center gap-2 px-2 py-1">
+    <div className={cn('group', timelineRowHeaderClassName)}>
       <FileCode className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} />
       <div
-        className="min-w-0 flex-1 truncate font-mono text-log text-text-primary"
+        className="min-w-0 flex-1 truncate font-mono text-row text-text-primary"
         title={filePath}
       >
         {filePath}
@@ -53,9 +54,8 @@ export function FileEditRow({ filePath, additions, deletions }: FileEditRowProps
         type="button"
         onClick={() => void handleOpen()}
         className={cn(
-          'app-no-drag inline-flex items-center gap-1 rounded-inner px-1.5 py-0.5 text-row shrink-0',
-          'text-text-muted transition-colors duration-150',
-          'hover:bg-surface-hover hover:text-text-primary opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100'
+          timelineActionPillClassName,
+          'shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100'
         )}
       >
         Open

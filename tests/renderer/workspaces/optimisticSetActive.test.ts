@@ -24,7 +24,7 @@ beforeEach(() => {
   });
   useToastStore.setState({ toasts: [] });
   useUiStore.setState({
-    sidebarOpen: true,
+    dockExpanded: true,
     collapsedWorkspaces: new Set<string>(),
     hydrated: true
   });

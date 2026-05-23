@@ -64,7 +64,7 @@ The \`body\` is an HTML FRAGMENT, not a full document. Do NOT include \`<html>\`
 **Rules.**
 - \`title\` required, \u2264 200 chars.
 - \`body\` required, \u2264 ${(MAX_REPORT_HTML_BYTES / (1024 * 1024)).toFixed(0)} MB.
-- Without \`allowFileWrites\` permission the user is asked to confirm.
+- When \`allowAuto\` is off (default) the user is asked to confirm.
 - Path is auto-generated; you cannot pick the filename.`,
   schema: {
     type: 'function',
@@ -135,7 +135,7 @@ The \`body\` is an HTML FRAGMENT, not a full document. Do NOT include \`<html>\`
     }
     const relForDisplay = workspaceRelative(ctx.workspacePath, abs);
 
-    if (!ctx.permissions.allowFileWrites) {
+    if (!ctx.permissions.allowAuto) {
       const outcome = await ctx.confirm(
         `Agent V wants to write a report at ${relForDisplay}. Allow?`
       );

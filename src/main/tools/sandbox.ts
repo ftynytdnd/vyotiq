@@ -173,7 +173,7 @@ export function workspaceRelative(workspaceRoot: string, abs: string): string {
 
 /**
  * Patterns that look catastrophically destructive and require explicit
- * confirmation before executing — even with `allowBash: true`.
+ * confirmation before executing — even with `allowAuto: true`.
  */
 const DESTRUCTIVE_PATTERNS: RegExp[] = [
   // Absolute-rooted recursive remove (`rm -rf /...`). The previous
@@ -191,8 +191,8 @@ const DESTRUCTIVE_PATTERNS: RegExp[] = [
   // Workspace-root wipe variants. The bash tool spawns with `cwd` set to
   // the workspace root, so these resolve INSIDE the sandbox — the
   // absolute-path regex above never fires. Without this line a sub-agent
-  // running with default permissions (`allowBash + allowFileWrites`) can
-  // destroy the user's entire working tree in one call.
+  // running with `allowAuto: true` can destroy the user's entire working
+  // tree in one call.
   //
   // Pattern breakdown (alternatives):
   //   `\.(?:\/\S*|(?=\s|$))`   → `.`, `./`, `./src`, `./node_modules/...`
@@ -231,9 +231,80 @@ const DESTRUCTIVE_PATTERNS: RegExp[] = [
   /\bgit\s+(reset\s+--hard|clean\s+-fdx|push\s+--force|branch\s+-D|reflog\s+expire)/i,
   /:\(\)\s*\{\s*:\|:&\s*\}/, // fork bomb
   /shutdown\b|reboot\b/i,
-  /\bDel\b\s+\/[fqsr]+\s+[A-Z]:\\/i
+  /\bDel\b\s+\/[fqsr]+\s+[A-Z]:\\/i,
+  // Audit fix 2026-12-P2-2: out-of-workspace write redirection. The
+  // bash tool spawns with cwd pinned to the workspace, but `>` /
+  // `>>` redirections to ABSOLUTE paths bypass that lexical sandbox
+  // and can land on `/etc/hosts`, `/var/log/*`, or `C:\Windows\…`.
+  // The harness's "Containment" Prime Directive expects bash to be
+  // workspace-bounded; this closes the gap.
+  //
+  // Negative-lookahead: `/tmp/…` and `/dev/null` are common and
+  // benign (logs, fire-and-forget output) so we let them through.
+  // The PowerShell drive-letter form `>> C:\Windows\…` is folded
+  // into the same regex via the alternation.
+  /(?:>|>>)\s*(?:\/(?!tmp\b|dev\/null\b)|[A-Z]:\\)/i,
+  // `tee` over absolute paths (sudo or not). Same threat shape as
+  // the redirection above — bypasses the `rm`-rooted regexes
+  // because no remove command runs. `-a` (append) is allowed in
+  // the regex so `echo line | tee -a /tmp/log` still slides; the
+  // negative-lookahead on `/tmp` matches the redirection rule's
+  // shape so the two patterns stay symmetric.
+  /\btee\b\s+(?:-a\s+)?(?:\/(?!tmp\b)|[A-Z]:\\)/i,
+  // `chmod` / `chown` / `icacls` rooted at `/`. `chmod -R 777 /`
+  // (and the Windows `icacls C:\\ /T /grant Everyone:F` variant)
+  // are catastrophic — they loosen permissions on every file the
+  // process can reach. The trailing `\s|$` excludes `chmod 644 /
+  // foo` (where `/` is followed by content) — only the bare-root
+  // arg matches.
+  /\b(?:chmod|chown|icacls)\b[^|]*\s\/(?:\s|$)/i
 ];
 
 export function isDestructiveCommand(command: string): boolean {
   return DESTRUCTIVE_PATTERNS.some((re) => re.test(command));
+}
+
+/** Relative shell redirection that escapes the workspace cwd (`../`). */
+const RELATIVE_REDIRECT_ESCAPE =
+  /(?:>|>>)\s*(?:\.\.(?:[\\/]|$)|\.\.[\\/])/i;
+
+/** PowerShell write cmdlets targeting a parent path. */
+const PS_PARENT_WRITE =
+  /\b(?:Out-File|Set-Content|Add-Content|tee)\b[^|]*(?:\.\.[\\/]|>>\s*\.\.)/i;
+
+/**
+ * Absolute POSIX path (excluding benign `/tmp` and `/dev/null`) or a
+ * Windows drive-letter path. Used to gate bash with a confirm prompt.
+ */
+const ABSOLUTE_PATH_REF =
+  /(?:^|[\s;&|'"`])\/(?!tmp(?:\/|$)|dev\/null(?:\s|$))[^\s;&|'"`]*/i;
+
+const WINDOWS_DRIVE_REF = /(?:^|[\s;&|'"`])[A-Za-z]:\\[^\s;&|'"`]*/;
+
+export interface BashEscapeConfirm {
+  needed: boolean;
+  reason?: string;
+}
+
+/**
+ * Returns whether a shell command should require an extra user
+ * confirm beyond the generic bash gate — absolute-path I/O or
+ * workspace-relative redirects that escape via `../`.
+ */
+export function bashNeedsEscapeConfirm(command: string): BashEscapeConfirm {
+  if (RELATIVE_REDIRECT_ESCAPE.test(command) || PS_PARENT_WRITE.test(command)) {
+    return {
+      needed: true,
+      reason:
+        'Command redirects output outside the workspace via a parent path (../). Confirm only if you intend to write outside the project folder.'
+    };
+  }
+  if (ABSOLUTE_PATH_REF.test(command) || WINDOWS_DRIVE_REF.test(command)) {
+    return {
+      needed: true,
+      reason:
+        'Command references an absolute filesystem path outside the workspace sandbox. Confirm only if you intend to read or write outside the project folder.'
+    };
+  }
+  return { needed: false };
 }

@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Composer } from '../components/composer/Composer.js';
 import { Timeline } from '../components/timeline/Timeline.js';
 import { RevertPromptProvider } from '../components/timeline/revert/RevertPromptContext.js';
-import { PendingChangesPanel } from '../components/checkpoints/PendingChangesPanel.js';
+import { ChatFooter } from './ChatFooter.js';
 import { useChatStore } from '../store/useChatStore.js';
 import { useProviderStore } from '../store/useProviderStore.js';
 import { useSettingsStore } from '../store/useSettingsStore.js';
@@ -10,29 +9,32 @@ import { useConversationsStore, useActiveConversationId } from '../store/useConv
 import type { ModelSelection } from '@shared/types/provider.js';
 import { useWorkspaceStore } from '../store/useWorkspaceStore.js';
 import { Button } from '../components/ui/Button.js';
+import { SurfaceShell, surfaceShellInnerClassName } from '../components/ui/SurfaceShell.js';
 import { FolderOpen } from 'lucide-react';
 import { AGENT_NAME } from '@shared/constants.js';
+import { cn } from '../lib/cn.js';
+import { useSecondaryZoneStore } from '../store/useSecondaryZoneStore.js';
 
 interface ChatPageProps {
   onOpenProviders: () => void;
-  /**
-   * Opens the Checkpoints modal. Threaded down so the
-   * `PendingChangesPanel` can offer a "View history" link inside its
-   * empty-state row and a disk-usage pill in its header without
-   * needing to know how the modal is mounted.
-   */
-  onOpenCheckpoints: () => void;
+  /** Opens checkpoint settings (Settings → Checkpoints tab). */
+  onOpenCheckpointSettings: () => void;
 }
 
-export function ChatPage({ onOpenProviders, onOpenCheckpoints }: ChatPageProps) {
+export function ChatPage({
+  onOpenProviders,
+  onOpenCheckpointSettings
+}: ChatPageProps) {
   const events = useChatStore((s) => s.events);
   const providers = useProviderStore((s) => s.providers);
   const workspaceInfo = useWorkspaceStore((s) => s.info);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
   const pickWorkspace = useWorkspaceStore((s) => s.pick);
   const settings = useSettingsStore((s) => s.settings);
+  const setLastModelByWorkspace = useSettingsStore((s) => s.setLastModelByWorkspace);
   const activeConversationId = useActiveConversationId();
   const conversationList = useConversationsStore((s) => s.list);
+  const zoneOpen = useSecondaryZoneStore((s) => s.panel !== null);
 
   const [model, setModel] = useState<ModelSelection | null>(null);
 
@@ -101,18 +103,126 @@ export function ChatPage({ onOpenProviders, onOpenCheckpoints }: ChatPageProps) 
     conversationList
   ]);
 
+  // Force-apply Settings → Default model the moment the user picks it.
+  //
+  // The resolver effect above bails on `if (model) return;`, so any
+  // post-boot change to `settings.defaultModel` would otherwise never
+  // propagate to the composer — the user sees their pick land in
+  // settings.json but the active model never flips. This is the
+  // exact "I selected the default but nothing changed" failure mode.
+  //
+  // We treat a defaultModel change as a strong, intentional user
+  // action: apply it to the composer immediately AND align
+  // `lastModelByWorkspace[active]` so the priority chain agrees on
+  // the next boot (otherwise a previously-sent message's lastUsed
+  // would re-claim priority and the freshly-picked default would
+  // appear to "not persist").
+  //
+  // Boot handling: we capture the FIRST non-empty `defaultModelKey`
+  // (i.e. the value `useSettingsStore.refresh` hydrated from disk)
+  // without applying. The resolver chain above already considers
+  // `defaultModel` at boot — we don't want to clobber a workspace's
+  // legitimate last-used model just because settings.json finished
+  // loading. Only USER-driven changes after boot trigger the apply.
+  const defaultModelKey = settings.defaultModel
+    ? `${settings.defaultModel.providerId}::${settings.defaultModel.modelId}`
+    : '';
+  const prevDefaultKeyRef = useRef<string | undefined>(undefined);
+  // Tracks whether we've observed at least one non-empty defaultModel
+  // value. The first non-empty observation is the boot hydration —
+  // captured silently. Every subsequent change (including a clear
+  // back to empty, then re-set) is treated as a user action.
+  const defaultBootCapturedRef = useRef(false);
+  useEffect(() => {
+    const prev = prevDefaultKeyRef.current;
+    prevDefaultKeyRef.current = defaultModelKey;
+    // Initial render before settings have hydrated — wait.
+    if (prev === undefined && defaultModelKey === '') return;
+    // First non-empty value after boot — capture but do not apply.
+    if (!defaultBootCapturedRef.current && defaultModelKey !== '') {
+      defaultBootCapturedRef.current = true;
+      return;
+    }
+    // No actual change.
+    if (prev === defaultModelKey) return;
+    // User cleared the default — leave the active model alone.
+    if (defaultModelKey === '') return;
+    const def = settings.defaultModel;
+    if (!def) return;
+    const p = providers.find((p) => p.id === def.providerId && p.enabled);
+    if (!p?.models?.some((m) => m.id === def.modelId)) return;
+    setModel(def);
+    if (activeWorkspaceId) {
+      void setLastModelByWorkspace(activeWorkspaceId, def);
+    }
+  }, [
+    defaultModelKey,
+    settings.defaultModel,
+    providers,
+    activeWorkspaceId,
+    setLastModelByWorkspace
+  ]);
+
+  // Wrap onModelChange so a composer-side pick persists immediately
+  // (instead of waiting for the next send). Without this, a user who
+  // picks a model and closes the app loses the choice on restart —
+  // the priority chain falls back to whatever was sent last. Writing
+  // through to `lastModelByWorkspace[active]` here makes the picker
+  // a first-class persistent preference and matches the user's
+  // mental model: "what I see in the composer is what I'll get next
+  // time."
+  //
+  // The setter identity-skips a same-value re-write (see the matching
+  // guard inside `useSettingsStore.setLastModelByWorkspace`) so a
+  // misclick that lands on the current value doesn't churn
+  // settings.json.
+  const handleModelChange = (sel: ModelSelection) => {
+    setModel(sel);
+    if (activeWorkspaceId) {
+      void setLastModelByWorkspace(activeWorkspaceId, sel);
+    }
+  };
+
   const isFresh = events.length === 0;
   const hasProviders = useMemo(() => providers.some((p) => p.enabled && (p.models?.length ?? 0) > 0), [providers]);
+  // Pick the empty-state height based on whether we actually have a
+  // CTA to surface. A title-only hero at 64vh leaves an awkward
+  // empty gap above the composer; collapsing to 40vh when no setup
+  // row is present keeps the heading near the eye-line. When a
+  // setup row IS present (`!workspaceInfo.path` or `!hasProviders`)
+  // we keep the original 64vh so the title + CTA breathe.
+  const needsSetup = !workspaceInfo.path || !hasProviders;
+  const emptyMinH = needsSetup ? 'min-h-[48vh]' : 'min-h-[24vh]';
+  /** Adaptive reading width — narrows when the secondary zone is open. */
+  const contentWidth = zoneOpen ? 'max-w-2xl' : 'max-w-3xl';
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="scrollbar-stealth flex-1 overflow-y-auto px-6 pb-2">
-        <div className="mx-auto w-full max-w-3xl">
+      <div className="scrollbar-stealth flex-1 overflow-y-auto px-6 pb-1">
+        <div className={cn('mx-auto w-full transition-[max-width] duration-200 ease-out', contentWidth)}>
           {isFresh && (
-            <div className="flex min-h-[64vh] flex-col items-center justify-center px-2 pb-8 pt-8 text-center">
-              <div className="text-body font-semibold tracking-[-0.01em] text-text-primary">
-                What can {AGENT_NAME} help you with today?
-              </div>
+            <div className={cn('flex flex-col items-start justify-center px-2 pb-8 pt-10', emptyMinH)}>
+              {workspaceInfo.path ? (
+                <>
+                  <div className="text-body font-semibold tracking-[-0.01em] text-text-primary">
+                    What should {AGENT_NAME} work on here?
+                  </div>
+                  {!needsSetup && (
+                    <div className="mt-2 max-w-md text-row text-text-muted">
+                      Describe a task in the composer below.
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="text-body font-semibold tracking-[-0.01em] text-text-primary">
+                    Open a workspace to begin
+                  </div>
+                  <div className="mt-2 max-w-md text-row text-text-muted">
+                    Agent V runs inside a folder on your machine. Pick one to sandbox tools and memory.
+                  </div>
+                </>
+              )}
 
               {/*
                 Empty-state setup rows stay flush and minimal: muted text
@@ -120,53 +230,49 @@ export function ChatPage({ onOpenProviders, onOpenCheckpoints }: ChatPageProps) 
                 chrome or suggestion grid.
               */}
               {!workspaceInfo.path && (
-                <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-                  <span className="text-row text-text-muted">
-                    Pick a workspace to begin.
-                  </span>
-                  <Button variant="primary" size="sm" onClick={() => void pickWorkspace()}>
-                    <FolderOpen className="h-3 w-3" strokeWidth={2.25} />
-                    Open workspace…
-                  </Button>
-                </div>
+                <SurfaceShell className={cn('mt-6', surfaceShellInnerClassName('compact'))}>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-row text-text-muted">
+                      Pick a workspace to begin.
+                    </span>
+                    <Button variant="primary" size="sm" onClick={() => void pickWorkspace()}>
+                      <FolderOpen className="h-3 w-3" strokeWidth={2.25} />
+                      Open workspace…
+                    </Button>
+                  </div>
+                </SurfaceShell>
               )}
 
               {workspaceInfo.path && !hasProviders && (
-                <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-                  <span className="text-row text-text-muted">
-                    No AI provider configured yet.
-                  </span>
-                  <Button variant="primary" size="sm" onClick={onOpenProviders}>
-                    Configure provider
-                  </Button>
-                </div>
+                <SurfaceShell className={cn('mt-6', surfaceShellInnerClassName('compact'))}>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-row text-text-muted">
+                      No AI provider configured yet.
+                    </span>
+                    <Button variant="primary" size="sm" onClick={onOpenProviders}>
+                      Configure provider
+                    </Button>
+                  </div>
+                </SurfaceShell>
               )}
             </div>
           )}
 
           <RevertPromptProvider model={model}>
-            <Timeline model={model} />
+            <Timeline
+              model={model}
+              onOpenCheckpointSettings={onOpenCheckpointSettings}
+            />
           </RevertPromptProvider>
         </div>
       </div>
 
-      <div className="px-6 pt-2 pb-2">
-        <div className="mx-auto w-full max-w-3xl">
-          {/* Pending checkpoint changes for the active conversation. The
-              panel auto-hides when the list is empty so the chat surface
-              stays clean. Mounted ABOVE the Composer so it sits naturally
-              between the timeline tail and the input. */}
-          <PendingChangesPanel
-            conversationId={activeConversationId}
-            onOpenCheckpoints={onOpenCheckpoints}
-          />
-          <Composer
-            model={model}
-            onModelChange={setModel}
-            onOpenProviders={onOpenProviders}
-          />
-        </div>
-      </div>
+      <ChatFooter
+        contentWidth={contentWidth}
+        model={model}
+        onModelChange={handleModelChange}
+        onOpenProviders={onOpenProviders}
+      />
     </div>
   );
 }

@@ -142,6 +142,22 @@ export function registerIpc(): void {
     };
   }
 
+  // Audit fix 2026-06-P2-2 / 12-P2-4: validate `level` against an
+  // explicit allow-list before routing into winston. Pre-fix the
+  // `default` arm of the switch silently mapped any unknown level
+  // into `log.error`, which (a) corrupts log-level statistics if the
+  // renderer ships e.g. `'crash'` instead of `'error'`, and (b)
+  // gives a malicious or buggy renderer a way to forge fake
+  // error-level log lines that look authoritative. The `Set` lookup
+  // is O(1) and we surface the rejection on a single warn line so a
+  // legitimate level-name regression is still triageable.
+  const ALLOWED_LOG_LEVELS = new Set<'debug' | 'info' | 'warn' | 'error'>([
+    'debug',
+    'info',
+    'warn',
+    'error'
+  ]);
+
   wrapIpcHandler(
     IPC.RENDERER_LOG,
     async (
@@ -163,12 +179,25 @@ export function registerIpc(): void {
       const safeFields = clampFields(
         fields && typeof fields === 'object' ? fields : undefined
       );
-      switch (level) {
+      const safeLevel: 'debug' | 'info' | 'warn' | 'error' =
+        typeof level === 'string' && ALLOWED_LOG_LEVELS.has(level as never)
+          ? (level as 'debug' | 'info' | 'warn' | 'error')
+          : 'warn';
+      if (safeLevel !== level) {
+        // Surface the rejection ONCE per call so a legitimate typo
+        // is triageable, but route the original message at the
+        // safe-fallback level instead of silently promoting it to
+        // `error`. The audit fix's contract is "never let an
+        // unknown level look like a crash".
+        log.warn('renderer log relay rejected unknown level', {
+          received: typeof level === 'string' ? level.slice(0, 40) : typeof level
+        });
+      }
+      switch (safeLevel) {
         case 'debug': log.debug(safeMsg, safeFields); break;
         case 'info': log.info(safeMsg, safeFields); break;
         case 'warn': log.warn(safeMsg, safeFields); break;
-        case 'error':
-        default: log.error(safeMsg, safeFields); break;
+        case 'error': log.error(safeMsg, safeFields); break;
       }
     }
   );

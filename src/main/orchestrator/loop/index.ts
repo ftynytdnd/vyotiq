@@ -2,4 +2,4 @@
  * Loop module — public surface used by `AgentV.startRun`.
  */
 
-export { runOrchestratorLoop } from './runLoop.js';
+export { runOrchestratorLoop, type RunLoopResult } from './runLoop.js';

@@ -58,24 +58,19 @@ describe('refreshEnvelopes — bounded LRU (audit A2)', () => {
     vi.mocked(listConversations).mockResolvedValue([]);
   });
 
-  // Audit fix B1: the cache key no longer includes `query` — it is
-  // (conversationId, workspaceId, workspacePath). The per-iteration
-  // `query` mutates inside the run loop, so including it collapsed
-  // hit-rate to ~0% across a multi-iteration run. These tests pin
-  // the post-B1 keying contract: cache identity is anchored to the
-  // run's pinned conversation + workspace, NOT the rolling query.
-  it('hits the cache on a repeated (conv, ws) key — query is irrelevant', async () => {
+  // Audit fix B1: LRU key is (conversationId, workspaceId, workspacePath).
+  // `query` is compared via `queryFingerprint` on hit so memory retrieval
+  // cannot serve a stale envelope when the rolling query changes.
+  it('hits the cache when conv, workspace, and query are unchanged', async () => {
     await refreshEnvelopes('q1', 'conv-1', undefined, 'ws-A');
-    // Same conv+ws, DIFFERENT query — must still hit (audit B1).
-    await refreshEnvelopes('q-different', 'conv-1', undefined, 'ws-A');
-    // `retrieveRelevantMemory` runs exactly once per miss (it has no
-    // sibling caller inside `buildContextEnvelope`), so 1 invocation
-    // proves the second `refreshEnvelopes` call short-circuited via the
-    // LRU. We don't pin `listConversations` here because the builder
-    // calls it from BOTH `sessionContextBody` AND
-    // `priorConversationsBody` (so a miss is 2 invocations, not 1)
-    // — `retrieveRelevantMemory` is the cleanest hit/miss oracle.
+    await refreshEnvelopes('q1', 'conv-1', undefined, 'ws-A');
     expect(retrieveRelevantMemory).toHaveBeenCalledTimes(1);
+  });
+
+  it('misses when the query changes for the same conv and workspace', async () => {
+    await refreshEnvelopes('q1', 'conv-1', undefined, 'ws-A');
+    await refreshEnvelopes('q-different', 'conv-1', undefined, 'ws-A');
+    expect(retrieveRelevantMemory).toHaveBeenCalledTimes(2);
   });
 
   it('keeps two parallel-run keys (different workspaceId) both cached', async () => {

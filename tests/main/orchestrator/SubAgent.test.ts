@@ -60,7 +60,7 @@ const baseDeps = {
   runId: 'run-test',
   conversationId: 'conv-test',
   strictApprovals: false,
-  permissions: { allowFileWrites: false, allowBash: false, allowWebSearch: false },
+  permissions: { allowAuto: false },
   signal: new AbortController().signal
 };
 
@@ -111,6 +111,41 @@ describe('runSubAgent — post-audit', () => {
     // (17 turns including wrap-up)" — assert that legacy phrasing is
     // GONE so the new flat cap is unambiguously the contract.
     expect(run.error).not.toContain('wrap-up');
+  });
+
+  it('persists thoughtSignature on assistant tool_calls for Gemini round-trip', async () => {
+    let call = 0;
+    vi.mocked(streamChat).mockImplementation((req) => {
+      call += 1;
+      if (call === 1) {
+        return streamOf([
+          {
+            toolCallDelta: {
+              index: 0,
+              id: 'call-gem',
+              name: 'read',
+              argumentsDelta: '{}',
+              thoughtSignature: 'OPAQUE_SIG_SUB'
+            }
+          },
+          { finishReason: 'tool_calls' }
+        ]);
+      }
+      const assistant = req.messages.find(
+        (m) => m.role === 'assistant' && (m.tool_calls?.length ?? 0) > 0
+      );
+      expect(assistant?.tool_calls?.[0]).toMatchObject({
+        thoughtSignature: 'OPAQUE_SIG_SUB'
+      });
+      return streamOf([
+        { contentDelta: '<result><status>success</status></result>' },
+        { finishReason: 'stop' }
+      ]);
+    });
+
+    const run = await runSubAgent(baseSpec, baseDeps);
+    expect(run.status).toBe('success');
+    expect(streamChat).toHaveBeenCalledTimes(2);
   });
 
   it('returns aborted status when the signal is already aborted at entry', async () => {
@@ -245,5 +280,108 @@ describe('runSubAgent — post-audit', () => {
     expect(events.some((e) => e.phase === 'connecting')).toBe(true);
     // Every emitted event must carry the worker's id in `detail.subagentId`.
     expect(events.every((e) => e.subagentId === 'A1')).toBe(true);
+  });
+});
+
+/**
+ * Missing-envelope recovery (production failure shape: conversation
+ * `35caa9dc-…jsonl` sub-agent D2). The worker emitted a final
+ * narration in plain prose AFTER successfully running an `edit`
+ * tool, but skipped the `<result>…</result>` wrap. Pre-fix the host
+ * reported the round as `'malformed'` (rendered as red `failed` in
+ * the timeline) even though the underlying edit had landed.
+ *
+ * Post-fix: the loop offers ONE recovery turn. If the model takes
+ * it and emits a clean `<result>` on the retry, the worker is
+ * reported as the inferred status. If the second turn ALSO lacks
+ * the envelope, the worker is reported as `'malformed'` exactly
+ * as before — the recovery is one-shot, not an open loop.
+ */
+describe('runSubAgent — missing-envelope recovery (one-shot)', () => {
+  it('grants ONE recovery turn when the worker emits text without <result>', async () => {
+    let call = 0;
+    vi.mocked(streamChat).mockImplementation(() => {
+      call += 1;
+      if (call === 1) {
+        // First turn: substantive prose, NO `<result>` wrap.
+        return streamOf([
+          {
+            contentDelta:
+              'I have updated `ResponseCard.tsx` to detect and render structured file lists. Detection logic added; styling uses var(--mono).'
+          },
+          { finishReason: 'stop' }
+        ]);
+      }
+      // Recovery turn: clean envelope.
+      return streamOf([
+        {
+          contentDelta:
+            '<result>\n<status>success</status>\n<summary>Updated ResponseCard.tsx.</summary>\n</result>'
+        },
+        { finishReason: 'stop' }
+      ]);
+    });
+
+    const run = await runSubAgent(baseSpec, baseDeps);
+    expect(run.status).toBe('success');
+    expect(run.output).toContain('<result>');
+    expect(streamChat).toHaveBeenCalledTimes(2);
+  });
+
+  it('still returns malformed when the worker ignores the recovery prompt', async () => {
+    // The recovery is one-shot. A worker that emits text-only on
+    // BOTH turns lands as malformed and exits without ping-ponging
+    // through the rest of the iteration cap.
+    vi.mocked(streamChat).mockImplementation(() =>
+      streamOf([
+        { contentDelta: 'Just plain prose, no envelope here either.' },
+        { finishReason: 'stop' }
+      ])
+    );
+
+    const run = await runSubAgent(baseSpec, baseDeps);
+    expect(run.status).toBe('malformed');
+    // Two provider calls: original + one recovery attempt. NOT 14
+    // (no spin against the cap).
+    expect(streamChat).toHaveBeenCalledTimes(2);
+  });
+
+  it('does NOT trigger the recovery when the first turn already has a <result> envelope', async () => {
+    // Sanity check: the recovery branch must only fire when the
+    // status is 'malformed'. A clean envelope on the first turn
+    // exits in one provider call — not two.
+    vi.mocked(streamChat).mockImplementationOnce(() =>
+      streamOf([
+        { contentDelta: '<result><status>partial</status><summary>Partial.</summary></result>' },
+        { finishReason: 'stop' }
+      ])
+    );
+
+    const run = await runSubAgent(baseSpec, baseDeps);
+    expect(run.status).toBe('partial');
+    expect(streamChat).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * T0-2 — hopeless-shot short-circuit. When the first turn produces
+   * zero text AND zero tool results AND no `<result>` envelope, the
+   * worker has nothing to wrap. The recovery prompt would just burn
+   * one more iteration on empty input. Skip the recovery, return
+   * `failed` with an explicit reason, and exit in ONE provider call.
+   */
+  it('skips the recovery prompt when there is nothing to wrap (T0-2)', async () => {
+    // Empty content + finish reason. No tool calls, no text — the
+    // hopeless shape.
+    vi.mocked(streamChat).mockImplementation(() =>
+      streamOf([{ finishReason: 'stop' }])
+    );
+
+    const run = await runSubAgent(baseSpec, baseDeps);
+    expect(run.status).toBe('failed');
+    expect(run.error).toContain('no text');
+    expect(run.error).toContain('no tool calls');
+    // Critically: only ONE provider call. The recovery would have
+    // produced two; the short-circuit stops at one.
+    expect(streamChat).toHaveBeenCalledTimes(1);
   });
 });

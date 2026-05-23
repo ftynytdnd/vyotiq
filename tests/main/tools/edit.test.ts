@@ -64,7 +64,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     workspaceId: 'ws-1',
     runId: 'run-1',
     conversationId: 'conv-1',
-    permissions: { allowFileWrites: true, allowBash: false, allowWebSearch: false },
+    permissions: { allowAuto: true },
     strictApprovals: false,
     signal: new AbortController().signal,
     // Audit fix H-04: ConfirmOutcome shape.

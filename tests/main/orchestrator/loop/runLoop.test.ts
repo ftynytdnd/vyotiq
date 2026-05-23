@@ -100,7 +100,7 @@ const baseInput = {
   runId: 'run-1',
   prompt: 'hi',
   selection: { providerId: 'p', modelId: 'm' },
-  permissions: { allowFileWrites: false, allowBash: false, allowWebSearch: false }
+  permissions: { allowAuto: false }
 } as const;
 
 describe('runOrchestratorLoop — abort vs retriable error', () => {

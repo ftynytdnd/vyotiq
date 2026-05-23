@@ -18,6 +18,7 @@ import {
   flushAll,
   listConversations,
   readTranscript,
+  readConversation,
   removeConversation,
   renameConversation,
   setLastModel
@@ -106,6 +107,65 @@ describe('conversationStore', () => {
     const after = (await listConversations()).find((c) => c.id === meta.id);
     expect(after?.lastProviderId).toBe('openai');
     expect(after?.lastModelId).toBe('gpt-4');
+  });
+
+  it('appendEvent tracks peak orchestrator prompt tokens on meta', async () => {
+    const meta = await createConversation('ws-test');
+    const usageEvent = (promptTokens: number): TimelineEvent => ({
+      id: `usage-${promptTokens}`,
+      kind: 'token-usage',
+      ts: Date.now(),
+      assistantMsgId: 'asst-1',
+      usage: { promptTokens, completionTokens: 1, totalTokens: promptTokens + 1 }
+    });
+    await appendEvent(meta.id, usageEvent(12_000));
+    await appendEvent(meta.id, usageEvent(48_000));
+    await appendEvent(meta.id, usageEvent(36_000));
+    await flushAll();
+    const after = (await listConversations()).find((c) => c.id === meta.id);
+    expect(after?.peakPromptTokens).toBe(48_000);
+  });
+
+  it('appendEvent ignores sub-agent token usage for peak meta', async () => {
+    const meta = await createConversation('ws-test');
+    await appendEvent(meta.id, {
+      id: 'usage-sub',
+      kind: 'token-usage',
+      ts: Date.now(),
+      assistantMsgId: 'asst-1',
+      subagentId: 'worker-1',
+      usage: { promptTokens: 99_000, completionTokens: 1, totalTokens: 99_001 }
+    });
+    await flushAll();
+    const after = (await listConversations()).find((c) => c.id === meta.id);
+    expect(after?.peakPromptTokens).toBeUndefined();
+  });
+
+  it('readConversation backfills peakPromptTokens from transcript when meta lacks it', async () => {
+    const meta = await createConversation('ws-test');
+    const { app } = await import('electron');
+    const { join } = await import('node:path');
+    const transcriptFile = join(
+      app.getPath('userData'),
+      'vyotiq',
+      'conversations',
+      `${meta.id}.jsonl`
+    );
+    const usageEvent: TimelineEvent = {
+      id: 'usage-legacy',
+      kind: 'token-usage',
+      ts: Date.now(),
+      assistantMsgId: 'asst-1',
+      usage: { promptTokens: 72_000, completionTokens: 1, totalTokens: 72_001 }
+    };
+    await fs.appendFile(transcriptFile, JSON.stringify(usageEvent) + '\n', 'utf8');
+
+    const conv = await readConversation(meta.id);
+    expect(conv?.peakPromptTokens).toBe(72_000);
+
+    await flushAll();
+    const after = (await listConversations()).find((c) => c.id === meta.id);
+    expect(after?.peakPromptTokens).toBe(72_000);
   });
 
   it('removeConversation drops the meta and unlinks the transcript', async () => {

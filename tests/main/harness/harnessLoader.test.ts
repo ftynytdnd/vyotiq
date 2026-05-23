@@ -15,7 +15,9 @@ import {
 } from '@main/harness/harnessLoader';
 import {
   MAX_DELEGATION_BAD_ROUNDS,
+  MAX_NUDGES_PER_RUN,
   MAX_PARALLEL_SUBAGENTS,
+  MAX_PER_TASK_BAD_STREAK,
   MAX_SELF_CORRECTION_ATTEMPTS,
   MAX_TOOL_OUTPUT_CHARS,
   MAX_TOTAL_ITERATIONS,
@@ -23,7 +25,9 @@ import {
   SUBAGENT_MAX_ITERATIONS,
   SUBAGENT_WRAPUP_ITER
 } from '@shared/constants';
-import { MAX_NUDGES_PER_RUN } from '@main/orchestrator/loop/handleNoToolNoDelegate';
+// T1-5 import compatibility: re-export from `handleNoToolNoDelegate`
+// must remain so legacy import sites keep working unchanged.
+import { MAX_NUDGES_PER_RUN as MAX_NUDGES_PER_RUN_REEXPORT } from '@main/orchestrator/loop/handleNoToolNoDelegate';
 
 describe('buildOrchestratorSystemPrompt', () => {
   const prompt = buildOrchestratorSystemPrompt();
@@ -81,6 +85,29 @@ describe('buildOrchestratorSystemPrompt', () => {
       `MAX_DELEGATION_BAD_ROUNDS=${MAX_DELEGATION_BAD_ROUNDS}`
     );
     expect(prompt).toContain(`MAX_NUDGES_PER_RUN=${MAX_NUDGES_PER_RUN}`);
+  });
+
+  /**
+   * T1-2 — the per-task soft-pivot threshold (`MAX_PER_TASK_BAD_STREAK`)
+   * was promoted into `<runtime_limits>` so the harness §C strike
+   * enumeration has a numeric handle for the soft signal it now
+   * documents alongside the hard halts.
+   */
+  it('exposes MAX_PER_TASK_BAD_STREAK so harness §C can name a numeric soft threshold', () => {
+    expect(prompt).toContain(
+      `MAX_PER_TASK_BAD_STREAK=${MAX_PER_TASK_BAD_STREAK}`
+    );
+  });
+
+  /**
+   * T1-5 — `MAX_NUDGES_PER_RUN` was promoted into `@shared/constants.ts`
+   * to align with every other `MAX_*` knob. The legacy re-export from
+   * `handleNoToolNoDelegate.ts` must keep returning the SAME value as
+   * the shared definition so existing import sites (tests + runtime)
+   * stay byte-identical.
+   */
+  it('keeps the handleNoToolNoDelegate re-export aligned with the shared constant (T1-5)', () => {
+    expect(MAX_NUDGES_PER_RUN_REEXPORT).toBe(MAX_NUDGES_PER_RUN);
   });
 
   /**
@@ -257,6 +284,45 @@ describe('buildSubagentSystemPrompt', () => {
   });
 
   /**
+   * T1-3 — `04-subagent-prompt.md` documents the `<recent_mutations>`
+   * block that `SubAgent.ts` injects into the worker's user message
+   * when the orchestrator's run has previously-changed files. The
+   * documentation is load-bearing: workers without the section
+   * routinely tried to `read` paths that had already been deleted
+   * earlier in the run. Pin the section so a future copy-paste rewrite
+   * cannot silently regress it.
+   */
+  it('documents the <recent_mutations> block in the sub-agent harness (T1-3)', () => {
+    const prompt = buildSubagentSystemPrompt({ task: 't', allowedTools: [] });
+    expect(prompt).toContain('Recent mutations');
+    expect(prompt).toContain('<recent_mutations>');
+    // The three kinds the orchestrator can surface.
+    expect(prompt).toContain('delete:');
+    expect(prompt).toContain('modify:');
+    expect(prompt).toContain('create:');
+  });
+
+  /**
+   * T1-6 — the `<status>` semantics block in `04-subagent-prompt.md`
+   * was extended to spell out the difference between `success`,
+   * `partial`, and `failed`. Pin the new prose so the worker sees
+   * the contract clearly and the orchestrator's harness has a
+   * stable referent in §C.
+   */
+  it('documents partial vs success vs failed status semantics (T1-6)', () => {
+    const prompt = buildSubagentSystemPrompt({ task: 't', allowedTools: [] });
+    // The semantics list lives under the Output format section. Each
+    // bullet wraps across multiple lines, so the regex uses
+    // `[\s\S]*?` to span the markdown linebreaks.
+    expect(prompt).toMatch(/`partial`[\s\S]*?real progress/i);
+    expect(prompt).toMatch(/`success`[\s\S]*?completed the task in full/i);
+    expect(prompt).toMatch(/`failed`[\s\S]*?could not deliver/i);
+    // The non-failure carve-out is critical for the strike counter:
+    // workers must know `partial` does not count toward the cap.
+    expect(prompt).toContain('MAX_DELEGATION_BAD_ROUNDS');
+  });
+
+  /**
    * Sub-agents now receive their own `<runtime_limits>` envelope so they
    * can self-budget against the iteration cap. Pin the contents and the
    * intentional EXCLUSION of orchestrator-only knobs (the worker should
@@ -328,5 +394,93 @@ describe('buildSubagentSystemPrompt', () => {
     const taskCloseIdx = prompt.indexOf('</task>');
     const runStateAfterTask = prompt.indexOf('<run_state>', taskCloseIdx);
     expect(runStateAfterTask).toBe(-1);
+  });
+
+  /**
+   * Host-environment envelope (real-time host snapshot — date / time /
+   * OS facts) was added to the sub-agent prompt so a delegated `bash`
+   * worker on Windows can pick the right shell idiom and a `report`
+   * worker can read the date without an extra probe round-trip. The
+   * four assertions below pin the contract:
+   *   1. The envelope embeds inside the outer `<system_instructions>`
+   *      (same boundary as runState).
+   *   2. It sits BEFORE the run-state block, so the sub-agent reads
+   *      "what machine, what time" before "what iteration am I on" —
+   *      mirrors the orchestrator's envelope ordering.
+   *   3. Omitted entirely when `hostEnvironment` is undefined; the
+   *      existing fixture-based tests above (which pass no
+   *      hostEnvironment) keep working with no payload bleeding in.
+   *   4. The payload does NOT participate in the static-body cache:
+   *      two calls with the same (task, tools) but different
+   *      hostEnvironment values produce distinct prompts. This
+   *      proves a stale timestamp from a cache hit cannot leak into
+   *      a later call.
+   */
+  it('embeds the optional <host_environment> envelope inside <system_instructions>, before <run_state>', () => {
+    const hostEnvironment =
+      '<host_environment>now_utc: 2026-05-19T02:00:00.000Z\nplatform: win32\nlocale: en-US</host_environment>';
+    const runState =
+      '<run_state>iteration: 1 of 14\nlast_action: none</run_state>';
+    const prompt = buildSubagentSystemPrompt({
+      task: 't',
+      allowedTools: [],
+      runState,
+      hostEnvironment
+    });
+    const openIdx = prompt.indexOf('<system_instructions>');
+    const closeIdx = prompt.lastIndexOf('</system_instructions>');
+    const heIdx = prompt.indexOf('now_utc: 2026-05-19T02:00:00.000Z');
+    const rsIdx = prompt.indexOf('last_action: none');
+    // Both blocks land inside <system_instructions>.
+    expect(heIdx).toBeGreaterThan(openIdx);
+    expect(heIdx).toBeLessThan(closeIdx);
+    expect(rsIdx).toBeGreaterThan(openIdx);
+    expect(rsIdx).toBeLessThan(closeIdx);
+    // host_environment precedes run_state — orchestrator ordering parity.
+    expect(heIdx).toBeLessThan(rsIdx);
+    // Both appear AFTER the task close.
+    const taskCloseIdx = prompt.indexOf('</task>');
+    expect(heIdx).toBeGreaterThan(taskCloseIdx);
+  });
+
+  it('omits the <host_environment> payload when not provided', () => {
+    const prompt = buildSubagentSystemPrompt({ task: 't', allowedTools: [] });
+    // Same precise-contract logic as the runState omit test: the tag
+    // name appears once in harness prose; we pin that no second
+    // appearance shows up after the task close (which is where a
+    // rendered envelope would land).
+    const taskCloseIdx = prompt.indexOf('</task>');
+    const heAfterTask = prompt.indexOf('<host_environment>', taskCloseIdx);
+    expect(heAfterTask).toBe(-1);
+  });
+
+  it('does NOT participate in the static-body cache', () => {
+    // Two calls with the same (task, tools) but different
+    // hostEnvironment payloads must produce distinct prompts. If the
+    // cache key included the hostEnvironment OR if the dynamic block
+    // were elided after the first build, a stale snapshot would leak.
+    const heA =
+      '<host_environment>now_utc: 2026-05-19T02:00:00.000Z</host_environment>';
+    const heB =
+      '<host_environment>now_utc: 2026-05-19T03:00:00.000Z</host_environment>';
+    const a = buildSubagentSystemPrompt({
+      task: 'shared-task',
+      allowedTools: ['read'],
+      hostEnvironment: heA
+    });
+    const b = buildSubagentSystemPrompt({
+      task: 'shared-task',
+      allowedTools: ['read'],
+      hostEnvironment: heB
+    });
+    expect(a).not.toBe(b);
+    expect(a).toContain('2026-05-19T02:00:00.000Z');
+    expect(b).toContain('2026-05-19T03:00:00.000Z');
+    // Sanity: the static portion (everything before the first `---`
+    // separator, where the dynamic blocks attach) is identical — proving
+    // only the dynamic suffix differs and the cache key was a hit.
+    const staticA = a.slice(0, a.indexOf('\n\n---\n\n'));
+    const staticB = b.slice(0, b.indexOf('\n\n---\n\n'));
+    expect(staticA).toBe(staticB);
   });
 });

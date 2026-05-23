@@ -52,7 +52,8 @@ function keyFor(workspaceKey: string, depth: number): string {
  */
 export async function getWorkspaceTree(
   workspaceKey: string,
-  depth: number
+  depth: number,
+  workspaceId?: string
 ): Promise<WorkspaceTreeResult> {
   const k = keyFor(workspaceKey, depth);
   const now = Date.now();
@@ -65,7 +66,10 @@ export async function getWorkspaceTree(
 
   const promise = (async () => {
     try {
-      const value = await vyotiq.workspace.listTree({ depth });
+      const value = await vyotiq.workspace.listTree({
+        depth,
+        ...(workspaceId ? { workspaceId } : {})
+      });
       cache.set(k, { workspaceKey, depth, expiresAt: Date.now() + TTL_MS, value });
       return value;
     } finally {

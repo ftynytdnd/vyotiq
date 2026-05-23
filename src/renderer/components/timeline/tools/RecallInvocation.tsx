@@ -60,6 +60,7 @@ export function RecallInvocation({ call, result, dense, rowKey }: RecallInvocati
       Icon={History}
       title="recall"
       summary={summary}
+      mono
       ok={result ? result.ok : null}
       {...(errorHint ? { errorHint } : {})}
       {...(detail !== undefined ? { detail } : {})}

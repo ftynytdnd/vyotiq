@@ -14,7 +14,7 @@
  * checkpoint store's `setCheckpointsBroadcaster` hook.
  */
 
-import { IPC } from '@shared/constants.js';
+import { IPC, READ_MAX_BYTES } from '@shared/constants.js';
 import type {
   CheckpointRevertResult,
   CheckpointsSummary,
@@ -50,11 +50,26 @@ import {
 import { realpathInsideWorkspace } from '../tools/sandbox.js';
 import { promises as fs } from 'node:fs';
 import { appendEvent as appendConversationEvent } from '../conversations/conversationStore.js';
-import { getMainWindow } from '../window/getMainWindow.js';
+import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
+// Audit fix 2026-06-P2-1 — every id-bearing channel below now
+// asserts the id is a non-empty string before reaching the
+// checkpoint store. The store layer already handles unknown ids
+// gracefully but it does NOT defend against e.g. `null` or numeric
+// payloads that a hand-crafted invoke could send.
+import {
+  assertString,
+  assertObject,
+  assertNumber
+} from './validate.js';
 
 const log = logger.child('ipc/checkpoints');
+
+// Hard cap on file paths arriving over the checkpoints channels. Same
+// 4 KB ceiling the workspace ipc uses — well above any realistic
+// repo path while still rejecting pathological inputs.
+const MAX_CHECKPOINT_PATH_BYTES = 4096;
 
 /**
  * Wire the broadcaster ONCE so the checkpoint store can push
@@ -62,16 +77,10 @@ const log = logger.child('ipc/checkpoints');
  * cycle. Idempotent — subsequent calls overwrite the previous hook.
  */
 function wireBroadcaster(): void {
+  // Routes through `safeWebContentsSend` so the destroyed-window guard
+  // + try/catch live in one place. Audit P3-3 (2026-05).
   setCheckpointsBroadcaster((workspaceId: string) => {
-    try {
-      const win = getMainWindow();
-      if (!win || win.isDestroyed()) return;
-      const wc = win.webContents;
-      if (!wc || wc.isDestroyed()) return;
-      wc.send(IPC.CHECKPOINTS_CHANGED, workspaceId);
-    } catch (err) {
-      log.debug('failed to broadcast checkpoints change', { workspaceId, err });
-    }
+    safeWebContentsSend(IPC.CHECKPOINTS_CHANGED, workspaceId);
   });
 }
 
@@ -97,20 +106,14 @@ function persistEvent(conversationId: string | undefined, event: TimelineEvent):
     log.warn('appendEvent for revert failed', { conversationId, kind: event.kind, err })
   );
   // Mirror to renderer so live timeline picks it up immediately.
-  try {
-    const win = getMainWindow();
-    if (!win || win.isDestroyed()) return;
-    const wc = win.webContents;
-    if (!wc || wc.isDestroyed()) return;
-    // We don't have a runId binding for revert events that fire
-    // outside an active run. The chat:event channel takes (runId,
-    // event) — so synthesize a stable id pinned to the conversation.
-    // The renderer's `applyEvent` keys off conversation, not runId,
-    // so a stable per-conversation id is sufficient for routing.
-    wc.send(IPC.CHAT_EVENT, `manual:${conversationId}`, event);
-  } catch (err) {
-    log.debug('failed to broadcast revert event', { conversationId, err });
-  }
+  // We don't have a runId binding for revert events that fire
+  // outside an active run. The chat:event channel takes (runId,
+  // event) — so synthesize a stable id pinned to the conversation.
+  // The renderer's `applyEvent` keys off conversation, not runId,
+  // so a stable per-conversation id is sufficient for routing.
+  // Routes through the shared `safeWebContentsSend` helper.
+  // Audit P3-3 (2026-05).
+  safeWebContentsSend(IPC.CHAT_EVENT, `manual:${conversationId}`, event);
 }
 
 export function registerCheckpointsIpc(): void {
@@ -119,6 +122,7 @@ export function registerCheckpointsIpc(): void {
   wrapIpcHandler(
     IPC.CHECKPOINTS_SUMMARY,
     async (_event, workspaceId: string): Promise<CheckpointsSummary> => {
+      assertString('checkpoints:summary', 'workspaceId', workspaceId);
       return getSummary(workspaceId);
     }
   );
@@ -126,6 +130,8 @@ export function registerCheckpointsIpc(): void {
   wrapIpcHandler(
     IPC.CHECKPOINTS_READ_RUN,
     async (_event, workspaceId: string, runId: string) => {
+      assertString('checkpoints:readRun', 'workspaceId', workspaceId);
+      assertString('checkpoints:readRun', 'runId', runId);
       return getRunManifest(workspaceId, runId);
     }
   );
@@ -133,6 +139,10 @@ export function registerCheckpointsIpc(): void {
   wrapIpcHandler(
     IPC.CHECKPOINTS_READ_FILE_HISTORY,
     async (_event, workspaceId: string, filePath: string): Promise<FileHistoryRow[]> => {
+      assertString('checkpoints:readFileHistory', 'workspaceId', workspaceId);
+      assertString('checkpoints:readFileHistory', 'filePath', filePath, {
+        maxBytes: MAX_CHECKPOINT_PATH_BYTES
+      });
       return getFileHistory(workspaceId, filePath);
     }
   );
@@ -140,18 +150,21 @@ export function registerCheckpointsIpc(): void {
   wrapIpcHandler(
     IPC.CHECKPOINTS_LIST_PENDING,
     async (_event, conversationId: string): Promise<PendingChange[]> => {
+      assertString('checkpoints:listPending', 'conversationId', conversationId);
       const ids = await knownWorkspaceIds();
       return listPending(conversationId, ids);
     }
   );
 
   wrapIpcHandler(IPC.CHECKPOINTS_ACCEPT, async (_event, entryId: string) => {
+    assertString('checkpoints:accept', 'entryId', entryId);
     await acceptEntry(entryId);
   });
 
   wrapIpcHandler(
     IPC.CHECKPOINTS_ACCEPT_ALL,
     async (_event, conversationId: string) => {
+      assertString('checkpoints:acceptAll', 'conversationId', conversationId);
       // Forward the live workspace id list so `acceptAll` warms
       // every workspace's pending bucket before the scan. Mirrors
       // the `chat:send` auto-accept path; without it a cold-start
@@ -165,6 +178,7 @@ export function registerCheckpointsIpc(): void {
   wrapIpcHandler(
     IPC.CHECKPOINTS_REJECT,
     async (_event, entryId: string): Promise<CheckpointRevertResult> => {
+      assertString('checkpoints:reject', 'entryId', entryId);
       // Resolve the entry's conversation up-front so the synthesized
       // `checkpoint-revert` event lands on the right transcript.
       // Fast path: the in-memory `lookupEntryLocation` map is O(1)
@@ -198,6 +212,7 @@ export function registerCheckpointsIpc(): void {
   wrapIpcHandler(
     IPC.CHECKPOINTS_REVERT_ENTRY,
     async (_event, entryId: string): Promise<CheckpointRevertResult> => {
+      assertString('checkpoints:revertEntry', 'entryId', entryId);
       // Fast path first — see notes above on the `REJECT` handler for
       // why the in-memory index is warm for every entry the running
       // process has ever recorded or read.
@@ -229,6 +244,7 @@ export function registerCheckpointsIpc(): void {
   wrapIpcHandler(
     IPC.CHECKPOINTS_REVERT_RUN,
     async (_event, runId: string): Promise<CheckpointRevertResult> => {
+      assertString('checkpoints:revertRun', 'runId', runId);
       // We need workspaceId; scan workspaces to find the manifest.
       const ids = await knownWorkspaceIds();
       for (const wsId of ids) {
@@ -251,6 +267,13 @@ export function registerCheckpointsIpc(): void {
       filePath: string,
       hash: string
     ): Promise<CheckpointRevertResult> => {
+      assertString('checkpoints:revertFileToHash', 'workspaceId', workspaceId);
+      assertString('checkpoints:revertFileToHash', 'filePath', filePath, {
+        maxBytes: MAX_CHECKPOINT_PATH_BYTES
+      });
+      // Hashes are content-addressed SHA-256 hex strings (64 chars).
+      // Cap small so a malformed payload can't pin the blob lookup.
+      assertString('checkpoints:revertFileToHash', 'hash', hash, { maxBytes: 256 });
       // No conversation context for file-history reverts (the user is
       // standing in the Checkpoints view, not a chat). The revert
       // event still fires through the broadcaster so live UIs refresh.
@@ -265,6 +288,8 @@ export function registerCheckpointsIpc(): void {
   wrapIpcHandler(
     IPC.CHECKPOINTS_READ_BLOB,
     async (_event, workspaceId: string, hash: string): Promise<string | null> => {
+      assertString('checkpoints:readBlob', 'workspaceId', workspaceId);
+      assertString('checkpoints:readBlob', 'hash', hash, { maxBytes: 256 });
       return readBlobBody(workspaceId, hash);
     }
   );
@@ -276,6 +301,10 @@ export function registerCheckpointsIpc(): void {
       workspaceId: string,
       filePath: string
     ): Promise<string | null> => {
+      assertString('checkpoints:readCurrentFile', 'workspaceId', workspaceId);
+      assertString('checkpoints:readCurrentFile', 'filePath', filePath, {
+        maxBytes: MAX_CHECKPOINT_PATH_BYTES
+      });
       // Sandbox-resolve INSIDE the requested workspace, not the
       // currently-active one — historical comparisons should target
       // the file's owning workspace even if the user has since
@@ -297,8 +326,13 @@ export function registerCheckpointsIpc(): void {
         return null;
       }
       try {
-        const body = await fs.readFile(abs, 'utf8');
-        return body;
+        const buf = await fs.readFile(abs);
+        const truncated = buf.length > READ_MAX_BYTES;
+        const slice = truncated ? buf.subarray(0, READ_MAX_BYTES) : buf;
+        const body = slice.toString('utf8');
+        return truncated
+          ? `${body}\n\n[truncated at ${READ_MAX_BYTES} bytes]`
+          : body;
       } catch (err: unknown) {
         if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return null;
         log.warn('readCurrentFile: read failed', { filePath, err });
@@ -310,6 +344,7 @@ export function registerCheckpointsIpc(): void {
   wrapIpcHandler(
     IPC.CHECKPOINTS_EXPORT_ARCHIVE,
     async (_event, workspaceId: string) => {
+      assertString('checkpoints:exportArchive', 'workspaceId', workspaceId);
       return exportArchiveForWorkspace(workspaceId);
     }
   );
@@ -317,6 +352,15 @@ export function registerCheckpointsIpc(): void {
   wrapIpcHandler(
     IPC.CHECKPOINTS_PRUNE,
     async (_event, workspaceId: string, days: number) => {
+      assertString('checkpoints:prune', 'workspaceId', workspaceId);
+      // `days` MUST be a positive integer below a sane upper bound
+      // (a billion-day prune call is malice or a bug — and the
+      // store-side date math would silently saturate without this).
+      assertNumber('checkpoints:prune', 'days', days, {
+        integer: true,
+        min: 0,
+        max: 36_500
+      });
       return prune(workspaceId, days);
     }
   );
@@ -324,6 +368,8 @@ export function registerCheckpointsIpc(): void {
   wrapIpcHandler(
     IPC.CHECKPOINTS_DELETE_RUN,
     async (_event, workspaceId: string, runId: string) => {
+      assertString('checkpoints:deleteRun', 'workspaceId', workspaceId);
+      assertString('checkpoints:deleteRun', 'runId', runId);
       return deleteRun(workspaceId, runId);
     }
   );
@@ -334,6 +380,10 @@ export function registerCheckpointsIpc(): void {
       _event,
       input: { conversationId: string; workspaceId: string; promptEventId: string }
     ): Promise<RewindPreviewResult> => {
+      assertObject('checkpoints:previewRewind', 'input', input);
+      assertString('checkpoints:previewRewind', 'input.conversationId', input.conversationId);
+      assertString('checkpoints:previewRewind', 'input.workspaceId', input.workspaceId);
+      assertString('checkpoints:previewRewind', 'input.promptEventId', input.promptEventId);
       return previewRewind(input);
     }
   );
@@ -344,35 +394,22 @@ export function registerCheckpointsIpc(): void {
       _event,
       input: { conversationId: string; workspaceId: string; promptEventId: string }
     ): Promise<RewindResult> => {
+      assertObject('checkpoints:rewindToPrompt', 'input', input);
+      assertString('checkpoints:rewindToPrompt', 'input.conversationId', input.conversationId);
+      assertString('checkpoints:rewindToPrompt', 'input.workspaceId', input.workspaceId);
+      assertString('checkpoints:rewindToPrompt', 'input.promptEventId', input.promptEventId);
       // Hand the rewind helper concrete broadcast functions so the
       // unit can stay free of an Electron import.
       return rewindToPrompt({
         ...input,
         broadcasters: {
+          // Both broadcasts route through the shared `safeWebContentsSend`
+          // helper. Audit P3-3 (2026-05).
           checkpointsChanged: (workspaceId: string) => {
-            try {
-              const win = getMainWindow();
-              if (!win || win.isDestroyed()) return;
-              const wc = win.webContents;
-              if (!wc || wc.isDestroyed()) return;
-              wc.send(IPC.CHECKPOINTS_CHANGED, workspaceId);
-            } catch (err) {
-              log.debug('failed to broadcast checkpoints change after rewind', {
-                workspaceId,
-                err
-              });
-            }
+            safeWebContentsSend(IPC.CHECKPOINTS_CHANGED, workspaceId);
           },
           transcriptRewound: (conversationId: string) => {
-            try {
-              const win = getMainWindow();
-              if (!win || win.isDestroyed()) return;
-              const wc = win.webContents;
-              if (!wc || wc.isDestroyed()) return;
-              wc.send(IPC.CONVERSATION_TRANSCRIPT_REWOUND, conversationId);
-            } catch (err) {
-              log.debug('failed to broadcast transcript rewind', { conversationId, err });
-            }
+            safeWebContentsSend(IPC.CONVERSATION_TRANSCRIPT_REWOUND, conversationId);
           }
         }
       });

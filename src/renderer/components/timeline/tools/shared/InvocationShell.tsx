@@ -18,7 +18,12 @@ import { ChevronDown, ChevronRight, type LucideIcon } from 'lucide-react';
 import { cn } from '../../../../lib/cn.js';
 import { shimmerStyle, shimmerText } from '../../../../lib/shimmer.js';
 import { StatusIcon } from './StatusIcon.js';
-import { NestedDetailRail } from '../../shared/NestedDetailRail.js';
+import { DetailShell } from '../../shared/DetailShell.js';
+import {
+  timelineRowChevronClassName,
+  timelineRowHeaderClassName,
+  timelineRowIconClassName
+} from '../../shared/rowStyles.js';
 import { useChatStore } from '../../../../store/useChatStore.js';
 import { useTimelineUiStore } from '../../../../store/useTimelineUiStore.js';
 
@@ -119,7 +124,7 @@ export function InvocationShell({
   };
 
   const iconBox = dense ? 'h-3 w-3' : 'h-3.5 w-3.5';
-  const summaryText = dense ? 'text-row' : 'text-log';
+  const summaryText = 'text-row';
   const padY = dense ? 'py-0.5' : 'py-1';
   const running = ok === null;
 
@@ -138,21 +143,21 @@ export function InvocationShell({
         disabled={!canExpand}
         aria-expanded={canExpand ? open : undefined}
         className={cn(
-          'log-line app-no-drag flex w-full items-center gap-2 px-2 text-left',
+          timelineRowHeaderClassName,
           padY,
           canExpand ? 'cursor-pointer' : 'cursor-default'
         )}
       >
         {canExpand ? (
           open ? (
-            <ChevronDown className={cn('shrink-0 text-chevron', iconBox)} strokeWidth={2} />
+            <ChevronDown className={cn(timelineRowChevronClassName, dense && 'h-3 w-3')} strokeWidth={2} />
           ) : (
-            <ChevronRight className={cn('shrink-0 text-chevron', iconBox)} strokeWidth={2} />
+            <ChevronRight className={cn(timelineRowChevronClassName, dense && 'h-3 w-3')} strokeWidth={2} />
           )
         ) : (
           <span className={cn('shrink-0', iconBox)} />
         )}
-        <Icon className={cn('shrink-0 text-text-faint', iconBox)} strokeWidth={2} />
+        <Icon className={cn(timelineRowIconClassName, 'text-text-faint', dense && 'h-3 w-3')} strokeWidth={2} />
         <div className="min-w-0 flex-1 flex items-center gap-1.5">
           <span className={cn('font-medium text-text-primary', summaryText)}>{title}</span>
           <span
@@ -172,7 +177,7 @@ export function InvocationShell({
         </div>
         {inlineErrorHint && (
           <span
-            className="max-w-[14rem] shrink-0 truncate rounded-inner bg-danger/10 px-1.5 py-0.5 text-meta text-danger"
+            className="max-w-[14rem] shrink-0 truncate rounded-inner bg-danger-soft px-1.5 py-0.5 text-meta text-danger"
             title={errorHint}
           >
             {errorHint}
@@ -191,7 +196,7 @@ export function InvocationShell({
       )}
 
       {open && canExpand && (
-        <NestedDetailRail {...(dense ? { gap: 'gap-1' } : {})}>{detail}</NestedDetailRail>
+        <DetailShell {...(dense ? { gap: 'gap-1' } : {})}>{detail}</DetailShell>
       )}
     </div>
   );

@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { APP_NAME, IPC } from '@shared/constants.js';
+import { safeWebContentsSend } from './safeWebContentsSend.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -26,15 +27,37 @@ export async function createMainWindow(): Promise<BrowserWindow> {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      // Audit fix 2026-01-P1-1: enable Chromium's process sandbox.
+      // The preload only imports `contextBridge` + `ipcRenderer` (both
+      // sandbox-compatible) and the renderer talks to main exclusively
+      // through `invoke` / typed events — no preload code path needs raw
+      // Node access. Flipping this to `true` confines a renderer-side
+      // exploit (e.g. via react-markdown / rehype-highlight) to a
+      // stripped-down OS sandbox instead of inheriting the main-process
+      // privilege of the Electron child. Defense-in-depth for the
+      // always-on agent that streams remote model output and renders
+      // untrusted markdown.
+      sandbox: true
     }
   });
 
   win.once('ready-to-show', () => win.show());
 
   // Forward window state changes to the renderer so the title bar can update.
+  // Audit fix 2026-01-P2-2 + audit P3-3: routes through the shared
+  // `safeWebContentsSend` helper so the destroyed-window guard +
+  // try/catch live in one place. Electron occasionally fires a
+  // `maximize` event during teardown; without the guard the
+  // synchronous send throws against a destroyed webContents. We do
+  // not detach the listeners explicitly because `BrowserWindow#close`
+  // runs `removeAllListeners` automatically once the native handle
+  // is gone. We DO check `win.isDestroyed()` before calling
+  // `win.isMaximized()` (which would throw on a destroyed handle) —
+  // the helper guards the send itself but `isMaximized()` is the
+  // caller's responsibility to gate.
   const sendState = () => {
-    win.webContents.send(IPC.WINDOW_STATE_CHANGED, {
+    if (win.isDestroyed()) return;
+    safeWebContentsSend(IPC.WINDOW_STATE_CHANGED, {
       isMaximized: win.isMaximized()
     });
   };

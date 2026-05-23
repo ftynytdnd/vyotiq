@@ -29,6 +29,7 @@ import { MarkdownBody } from '../markdown/MarkdownBody.js';
 import { cn } from '../../../lib/cn.js';
 import { shimmerStyle, shimmerText } from '../../../lib/shimmer.js';
 import { formatReasoningLabel } from '../../../lib/reasoningLabel.js';
+import { timelineRowChevronClassName, timelineRowHeaderClassName } from '../shared/rowStyles.js';
 import { stripDelegatesForDisplay } from '../../../lib/text.js';
 
 /** Cap on rendered reasoning body height — same rhythm as
@@ -111,19 +112,19 @@ export function ReasoningPanel({
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
-        className="log-line app-no-drag flex w-full cursor-pointer items-center gap-2 rounded-inner px-2 py-0.5 text-left transition-colors duration-150"
+        className={cn(timelineRowHeaderClassName, 'cursor-pointer py-0.5')}
       >
         {expanded ? (
-          <ChevronDown className="h-3 w-3 shrink-0 text-chevron" strokeWidth={2} />
+          <ChevronDown className={timelineRowChevronClassName} strokeWidth={2} />
         ) : (
-          <ChevronRight className="h-3 w-3 shrink-0 text-chevron" strokeWidth={2} />
+          <ChevronRight className={timelineRowChevronClassName} strokeWidth={2} />
         )}
         <Brain className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} />
         <span
           className={shimmerText(
             streaming,
             cn(
-              'min-w-0 flex-1 truncate text-log italic',
+              'min-w-0 flex-1 truncate text-row italic',
               done ? 'text-text-muted' : 'text-text-secondary'
             )
           )}
@@ -137,7 +138,7 @@ export function ReasoningPanel({
           ref={bodyRef}
           onScroll={onBodyScroll}
           className={cn(
-            'whitespace-pre-wrap overflow-y-auto pl-7 pr-2 text-log italic leading-relaxed text-text-muted',
+            'whitespace-pre-wrap overflow-y-auto pl-7 pr-2 text-row italic leading-relaxed text-text-muted',
             REASONING_BODY_MAX_H
           )}
         >
@@ -274,7 +275,7 @@ export function TextPanel({ subagentId: _subagentId, iterationId: _iterationId, 
     >
       <MarkdownBody
         text={cleaned}
-        className="text-log leading-relaxed text-text-secondary"
+        className="text-row leading-relaxed text-text-secondary"
       />
     </div>
   );

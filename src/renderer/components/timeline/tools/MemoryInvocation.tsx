@@ -8,6 +8,7 @@ import type { ToolCall, ToolResult } from '@shared/types/tool.js';
 import { InvocationShell } from './shared/InvocationShell.js';
 import { DetailPane } from './shared/DetailPane.js';
 import { CodeBlock } from './shared/CodeBlock.js';
+import { useSecondaryZoneStore } from '../../../store/useSecondaryZoneStore.js';
 
 interface MemoryInvocationProps {
   call?: ToolCall;
@@ -17,6 +18,7 @@ interface MemoryInvocationProps {
 }
 
 export function MemoryInvocation({ call, result, dense, rowKey }: MemoryInvocationProps) {
+  const openMemorySettings = useSecondaryZoneStore((s) => s.openSettings);
   const data = result?.data?.tool === 'memory' ? result.data : null;
   const action =
     (typeof call?.args?.['action'] === 'string'
@@ -53,15 +55,27 @@ export function MemoryInvocation({ call, result, dense, rowKey }: MemoryInvocati
   }
 
   return (
-    <InvocationShell
-      Icon={Brain}
-      title="memory"
-      summary={summary}
-      ok={result ? result.ok : null}
-      {...(errorHint ? { errorHint } : {})}
-      {...(detail !== undefined ? { detail } : {})}
-      {...(dense ? { dense } : {})}
-      {...(rowKey ? { rowKey } : {})}
-    />
+    <div className="flex flex-col gap-0.5">
+      <InvocationShell
+        Icon={Brain}
+        title="memory"
+        summary={summary}
+        mono
+        ok={result ? result.ok : null}
+        {...(errorHint ? { errorHint } : {})}
+        {...(detail !== undefined ? { detail } : {})}
+        {...(dense ? { dense } : {})}
+        {...(rowKey ? { rowKey } : {})}
+      />
+      {result?.ok && (
+        <button
+          type="button"
+          onClick={() => openMemorySettings('memory')}
+          className="ml-5 text-meta text-text-muted transition-colors hover:text-text-primary"
+        >
+          Open memory settings…
+        </button>
+      )}
+    </div>
   );
 }

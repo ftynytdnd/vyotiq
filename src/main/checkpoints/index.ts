@@ -251,7 +251,9 @@ export async function recordChange(opts: RecordChangeOpts): Promise<CheckpointEn
     ...(postHash ? { postHash } : {}),
     additions: opts.additions,
     deletions: opts.deletions,
-    createdAt: ts
+    createdAt: ts,
+    ...(opts.subagentId ? { subagentId: opts.subagentId } : {}),
+    source: opts.source
   };
   await addPending(pending);
 

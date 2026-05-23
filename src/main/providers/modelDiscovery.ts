@@ -27,6 +27,7 @@ import { normalizeBaseUrl } from '@shared/providers/normalizeBaseUrl.js';
 import { getProviderWithKey, updateProvider } from './providerStore.js';
 import { classifyProviderError, isProviderError } from './providerError.js';
 import { buildAttributionHeaders } from './attributionHeaders.js';
+import { safeText as safeTextShared } from './errorBody.js';
 
 /**
  * GET wrapper that bounds the fetch at `MODEL_DISCOVERY_TIMEOUT_MS`.
@@ -131,22 +132,64 @@ export async function discoverModels(providerId: string, force = false): Promise
 
   if (cacheFresh) return provider.models!;
 
-  const models =
-    effectiveDialect(provider) === 'ollama-native'
-      ? await fetchOllamaTags(provider)
-      : await fetchOpenAiModels(provider);
+  const dialect = effectiveDialect(provider);
+  let models: ModelInfo[];
+  switch (dialect) {
+    case 'ollama-native':
+      models = await fetchOllamaTags(provider);
+      break;
+    case 'anthropic-native':
+      models = await fetchAnthropicModels(provider);
+      break;
+    case 'gemini-native':
+      models = await fetchGeminiModels(provider);
+      break;
+    default:
+      models = await fetchOpenAiModels(provider);
+      break;
+  }
   await updateProvider(providerId, { models, lastDiscoveredAt: Date.now() });
   return models;
 }
 
 /**
+ * Map well-known provider hostnames to their canonical dialect, so the
+ * Add-Provider auto-detect can short-circuit the parallel-probe step
+ * when the user pasted an obvious URL. Hostnames are matched case-
+ * insensitively against the parsed `URL.hostname`. Returns `null` for
+ * any host we can't classify confidently — the caller falls through to
+ * the probe race.
+ *
+ * Sources verified May 2026:
+ *   - https://platform.claude.com/docs/en/api/models-list  (Anthropic)
+ *   - https://ai.google.dev/api/models                     (Gemini)
+ *   - https://ollama.com                                   (Ollama Cloud)
+ *
+ * Pure / synchronous; no I/O. Exported for testability.
+ */
+export function classifyKnownHost(baseUrl: string): ProviderDialect | null {
+  let host: string;
+  try {
+    host = new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+  if (host === 'api.anthropic.com') return 'anthropic-native';
+  if (host === 'generativelanguage.googleapis.com') return 'gemini-native';
+  if (host === 'ollama.com' || host === 'www.ollama.com') return 'ollama-native';
+  return null;
+}
+
+/**
  * Probe the provider's base URL to decide which dialect it speaks.
  *
- *   1. Try `GET /v1/models`.        200 → `'openai'`.
- *   2. On 404, try `GET /api/tags`. 200 → `'ollama-native'`.
- *   3. Neither reachable            → throw (IPC caller logs a warn;
- *                                      the provider is persisted with
- *                                      the user-supplied hint anyway).
+ *   1. If the host is a well-known provider (Anthropic / Gemini /
+ *      Ollama Cloud) → short-circuit to its canonical dialect (no
+ *      network probe required).
+ *   2. Otherwise, race `GET /v1/models` (OpenAI dialect) and
+ *      `GET /api/tags` (Ollama-native dialect). First 200 wins.
+ *   3. Neither reachable → throw (IPC caller logs a warn; the
+ *      provider is persisted with the user-supplied hint anyway).
  *
  * Called from the PROVIDERS_ADD IPC handler only, so it's off the
  * hot path. Callers that already know the dialect (explicit hint
@@ -156,6 +199,12 @@ export async function detectDialect(
   baseUrl: string,
   apiKey: string
 ): Promise<ProviderDialect> {
+  // Phase 8 / 9 (2026): well-known hosts skip the probe entirely.
+  // Saves an HTTP roundtrip per add AND avoids the false-negative
+  // outcome where a transient 5xx on the well-known host would push
+  // the user through the probe race and persist a wrong dialect.
+  const known = classifyKnownHost(baseUrl);
+  if (known !== null) return known;
   // Probe each dialect against the URL the persisted record would use
   // for that dialect — i.e. the dialect-aware normalization. Crucial
   // for OpenRouter: the user pastes `https://openrouter.ai/api`, the
@@ -340,12 +389,213 @@ async function fetchOllamaTags(provider: ProviderWithKey): Promise<ModelInfo[]> 
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
-async function safeText(res: Response): Promise<string> {
+/**
+ * Phase 8 (2026) — Anthropic Models API.
+ *
+ * `GET /v1/models` returns:
+ *   {
+ *     "data": [
+ *       {
+ *         "type": "model",
+ *         "id": "claude-opus-4-7-20260101",
+ *         "display_name": "Claude Opus 4.7",
+ *         "created_at": "...",
+ *         "max_input_tokens": 1000000,   // (when capabilities are exposed)
+ *         "max_tokens": 128000,          // synchronous Messages API output cap
+ *         "capabilities": { ... }
+ *       },
+ *       ...
+ *     ],
+ *     "has_more": false,
+ *     "first_id": "...",
+ *     "last_id": "..."
+ *   }
+ *
+ * Fields verified May 2026 against `platform.claude.com/docs/en/api/models-list`.
+ * `max_input_tokens` is exposed inconsistently across model snapshots; we
+ * map it to `ModelInfo.contextWindow` when present and fall back to the
+ * user override path otherwise.
+ *
+ * Auth: `x-api-key: <KEY>` + the mandatory `anthropic-version` header.
+ */
+interface RawAnthropicModel {
+  type?: string;
+  id?: string;
+  display_name?: string;
+  /** Anthropic 2026: total input-token ceiling for the model. */
+  max_input_tokens?: number;
+  /** Synchronous Messages API output ceiling. NOT used as `contextWindow`. */
+  max_tokens?: number;
+}
+interface RawAnthropicModelsResponse {
+  data?: RawAnthropicModel[];
+  has_more?: boolean;
+  /** Pagination cursor for `before_id` / `after_id`; we don't paginate yet. */
+  first_id?: string;
+  last_id?: string;
+}
+
+async function fetchAnthropicModels(provider: ProviderWithKey): Promise<ModelInfo[]> {
+  const url = `${provider.baseUrl}/v1/models`;
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'x-api-key': provider.apiKey,
+    'anthropic-version': '2023-06-01'
+  };
+
+  let res: Response;
   try {
-    return (await res.text()).slice(0, 500);
-  } catch {
-    return '';
+    res = await fetchWithTimeout(url, headers);
+  } catch (err: unknown) {
+    throw new Error(describeNetworkError(err, url));
   }
+
+  if (!res.ok) {
+    const body = await safeText(res);
+    throw classifyProviderError({
+      status: res.status,
+      statusText: res.statusText,
+      url,
+      body,
+      surface: 'discovery',
+      providerId: provider.id,
+      providerName: provider.name
+    });
+  }
+
+  const json = (await res.json()) as RawAnthropicModelsResponse;
+  const list = Array.isArray(json.data) ? json.data : [];
+  return list
+    .map((m) => {
+      const id = m.id;
+      if (!id) return null;
+      const info: ModelInfo = { id };
+      if (typeof m.display_name === 'string' && m.display_name.length > 0 && m.display_name !== id) {
+        info.label = m.display_name;
+      }
+      if (typeof m.max_input_tokens === 'number' && m.max_input_tokens > 0) {
+        info.contextWindow = m.max_input_tokens;
+      }
+      return info;
+    })
+    .filter((m): m is ModelInfo => m !== null)
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/**
+ * Phase 9 (2026) — Gemini Models API.
+ *
+ * `GET /v1beta/models` returns:
+ *   {
+ *     "models": [
+ *       {
+ *         "name": "models/gemini-3.1-pro-preview",
+ *         "displayName": "Gemini 3.1 Pro Preview",
+ *         "description": "...",
+ *         "inputTokenLimit": 1048576,
+ *         "outputTokenLimit": 65536,
+ *         "supportedGenerationMethods": ["generateContent", "countTokens"],
+ *         ...
+ *       },
+ *       ...
+ *     ],
+ *     "nextPageToken": "..."
+ *   }
+ *
+ * Fields verified May 2026 against `ai.google.dev/api/models`.
+ *
+ * We:
+ *   - filter to models that support `generateContent` (skip embedding-
+ *     only / TTS-only / etc. surfaces),
+ *   - strip the `models/` prefix from `name` to keep canonical ids
+ *     short (`gemini-3.1-pro-preview` instead of `models/gemini-3.1-pro-preview`),
+ *   - map `inputTokenLimit` → `ModelInfo.contextWindow` so the composer
+ *     pill shows a real ceiling out of the box (no `set ctx` CTA needed
+ *     for Gemini providers).
+ *
+ * Auth: `x-goog-api-key: <KEY>` request header (2026 documented form).
+ * The transport layer (Phase 9 streamGemini) handles the query-string
+ * fallback for self-hosted proxies that strip non-allowlisted headers;
+ * discovery here uses the header form unconditionally — discovery
+ * failure on a header-stripping proxy surfaces a clear 401 the user
+ * can troubleshoot.
+ */
+interface RawGeminiModel {
+  name?: string;
+  displayName?: string;
+  description?: string;
+  inputTokenLimit?: number;
+  outputTokenLimit?: number;
+  supportedGenerationMethods?: string[];
+}
+interface RawGeminiModelsResponse {
+  models?: RawGeminiModel[];
+  nextPageToken?: string;
+}
+
+async function fetchGeminiModels(provider: ProviderWithKey): Promise<ModelInfo[]> {
+  const url = `${provider.baseUrl}/v1beta/models`;
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (provider.apiKey) headers['x-goog-api-key'] = provider.apiKey;
+
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(url, headers);
+  } catch (err: unknown) {
+    throw new Error(describeNetworkError(err, url));
+  }
+
+  if (!res.ok) {
+    const body = await safeText(res);
+    throw classifyProviderError({
+      status: res.status,
+      statusText: res.statusText,
+      url,
+      body,
+      surface: 'discovery',
+      providerId: provider.id,
+      providerName: provider.name
+    });
+  }
+
+  const json = (await res.json()) as RawGeminiModelsResponse;
+  const list = Array.isArray(json.models) ? json.models : [];
+  return list
+    .map((m) => {
+      const rawName = m.name;
+      if (typeof rawName !== 'string' || rawName.length === 0) return null;
+      // Strip the canonical `models/` prefix; keep everything after it
+      // verbatim (preview / dated / image suffixes all stay).
+      const id = rawName.startsWith('models/') ? rawName.slice('models/'.length) : rawName;
+      // Filter out non-chat surfaces. `generateContent` is the canonical
+      // chat method; embedding-only / TTS-only / robotics-only models
+      // declare different methods and would error on `:streamGenerateContent`.
+      const methods = Array.isArray(m.supportedGenerationMethods)
+        ? m.supportedGenerationMethods
+        : [];
+      if (methods.length > 0 && !methods.includes('generateContent')) {
+        return null;
+      }
+      const info: ModelInfo = { id };
+      if (typeof m.displayName === 'string' && m.displayName.length > 0 && m.displayName !== id) {
+        info.label = m.displayName;
+      }
+      if (typeof m.inputTokenLimit === 'number' && m.inputTokenLimit > 0) {
+        info.contextWindow = m.inputTokenLimit;
+      }
+      return info;
+    })
+    .filter((m): m is ModelInfo => m !== null)
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+// Audit fix 2026-05-P2-1: thin wrapper around the shared `safeText`
+// helper that preserves the model-discovery 500-char preview cap.
+// The chat transports keep the default 1 000-char cap because their
+// error bodies ("messages" arrays, validation errors) are typically
+// richer than discovery's bare HTTP shape.
+async function safeText(res: Response): Promise<string> {
+  return safeTextShared(res, 500);
 }
 
 /** Lightweight connectivity test — used by the "Test" button in settings. */

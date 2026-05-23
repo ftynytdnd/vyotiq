@@ -77,7 +77,7 @@ const baseInput = {
   runId: 'run-pe',
   prompt: 'hi',
   selection: { providerId: 'p', modelId: 'm' },
-  permissions: { allowFileWrites: false, allowBash: false, allowWebSearch: false }
+  permissions: { allowAuto: false }
 } as const;
 
 describe('runOrchestratorLoop — ProviderError handling', () => {

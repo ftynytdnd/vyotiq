@@ -32,7 +32,7 @@ export function verifySubagentOutput(text: string): SubagentVerdict {
     return {
       structural: 'malformed',
       inner: text.slice(0, 4000),
-      attrs: { malformed: 'true' }
+      attrs: { malformed: 'true', reason: 'missing-envelope' }
     };
   }
   // Missing `<status>` is malformed — the harness mandates an explicit

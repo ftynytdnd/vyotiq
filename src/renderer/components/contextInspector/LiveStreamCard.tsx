@@ -13,16 +13,29 @@
 
 import { cn } from '../../lib/cn.js';
 import { useChatStore } from '../../store/useChatStore.js';
+import { useContextSummaryStore } from '../../store/useContextSummaryStore.js';
+import { useToastStore } from '../../store/useToastStore.js';
+import { Button } from '../ui/Button.js';
 import { Eyebrow } from '../ui/Eyebrow.js';
+import { SurfaceShell } from '../ui/SurfaceShell.js';
 import { shimmerStyle, shimmerText } from '../../lib/shimmer.js';
 import { formatTokenCount } from '../../lib/formatTokens.js';
 
 interface LiveStreamCardProps {
   summaryId: string;
+  conversationId: string;
 }
 
-export function LiveStreamCard({ summaryId }: LiveStreamCardProps) {
-  const acc = useChatStore((s) => s.summaries[summaryId]);
+export function LiveStreamCard({ summaryId, conversationId }: LiveStreamCardProps) {
+  const acc = useChatStore(
+    (s) => s.slices[conversationId]?.summaries[summaryId] ?? s.summaries[summaryId]
+  );
+  const inspectorMode = useContextSummaryStore((s) => s.mode);
+  const boundId = useContextSummaryStore((s) => s.boundId);
+  const abortIdle = useContextSummaryStore((s) => s.abortIdle);
+  const abortLiveSummary = useContextSummaryStore((s) => s.abortLiveSummary);
+  const busy = useContextSummaryStore((s) => s.busy);
+  const showToast = useToastStore((s) => s.show);
   if (!acc) return null;
   const isShimmering = acc.status === 'pending' || acc.status === 'streaming';
   const headline = (() => {
@@ -46,11 +59,11 @@ export function LiveStreamCard({ summaryId }: LiveStreamCardProps) {
     switch (acc.status) {
       case 'pending':
       case 'streaming':
-        return 'bg-warning/80';
+        return 'bg-warning-strong';
       case 'ended':
-        return 'bg-success/80';
+        return 'bg-success-strong';
       case 'aborted':
-        return 'bg-danger/80';
+        return 'bg-danger-strong';
     }
   })();
   const body = acc.status === 'ended' && acc.finalText ? acc.finalText : acc.text;
@@ -86,7 +99,8 @@ export function LiveStreamCard({ summaryId }: LiveStreamCardProps) {
       {acc.reasoningText.length > 0 && acc.status !== 'aborted' && (
         <div className="flex flex-col gap-1">
           <Eyebrow as="span">Reasoning</Eyebrow>
-          <pre className="whitespace-pre-wrap break-words font-mono text-log italic text-text-faint">
+          <SurfaceShell padded padding="nested">
+            <pre className="whitespace-pre-wrap break-words font-mono text-row italic text-text-faint">
             {acc.reasoningText}
             {isShimmering && (
               <span
@@ -94,7 +108,8 @@ export function LiveStreamCard({ summaryId }: LiveStreamCardProps) {
                 className="vyotiq-stream-cursor ml-0.5 inline-block h-3 w-[6px] align-middle"
               />
             )}
-          </pre>
+            </pre>
+          </SurfaceShell>
         </div>
       )}
       {body.length > 0 && acc.status !== 'aborted' && (
@@ -102,7 +117,8 @@ export function LiveStreamCard({ summaryId }: LiveStreamCardProps) {
           <Eyebrow as="span">
             {acc.status === 'ended' ? 'Compressed body' : 'Live body'}
           </Eyebrow>
-          <pre className="scrollbar-stealth max-h-[28vh] overflow-y-auto whitespace-pre-wrap break-words rounded-inner bg-surface-raised/60 p-2 font-mono text-log text-text-secondary">
+          <SurfaceShell padded padding="nested">
+            <pre className="scrollbar-stealth max-h-[28vh] overflow-y-auto whitespace-pre-wrap break-words font-mono text-row text-text-secondary">
             {body}
             {isShimmering && (
               <span
@@ -110,11 +126,32 @@ export function LiveStreamCard({ summaryId }: LiveStreamCardProps) {
                 className="vyotiq-stream-cursor ml-0.5 inline-block h-3 w-[6px] align-middle"
               />
             )}
-          </pre>
+            </pre>
+          </SurfaceShell>
         </div>
       )}
       {acc.status === 'aborted' && acc.reason && (
         <div className="text-row text-danger">{acc.reason}</div>
+      )}
+      {isShimmering && (
+        <div className="flex justify-end">
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={busy}
+            onClick={() => {
+              const cancel =
+                inspectorMode === 'live' && boundId
+                  ? abortLiveSummary()
+                  : abortIdle();
+              void cancel.then((result) => {
+                if (result.ok) showToast('Summarization cancelled.', 'success');
+              });
+            }}
+          >
+            Cancel summary
+          </Button>
+        </div>
       )}
     </div>
   );

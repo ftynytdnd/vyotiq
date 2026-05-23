@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { IPC } from '@shared/constants.js';
 import type { EditApprovalPayload, ConfirmResponse } from '@shared/types/ipc.js';
 import { getMainWindow } from '../window/getMainWindow.js';
+import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child('confirm');
@@ -95,16 +96,11 @@ function finalize(
   // did NOT originate there. Without this, a server-side timeout (or a
   // shutdown drain) would leave the modal rendered until the user clicks
   // Deny — by which point we'd already have resolved the request and the
-  // click would fall on a dead handler.
+  // click would fall on a dead handler. Routes through the shared
+  // `safeWebContentsSend` helper (audit P3-3, 2026-05) so the
+  // destroyed-window guard + try/catch live in one place.
   if (reason !== 'renderer-reply') {
-    try {
-      const win = getMainWindow();
-      if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
-        win.webContents.send(IPC.TOOLS_CANCEL_CONFIRM, id);
-      }
-    } catch (err) {
-      log.warn('failed to broadcast confirm:cancel', { id, reason, err });
-    }
+    safeWebContentsSend(IPC.TOOLS_CANCEL_CONFIRM, id);
   }
   try {
     entry.resolve(result);
@@ -224,18 +220,12 @@ export function requestConfirm(
       signal.addEventListener('abort', onAbort, { once: true });
     }
     pending.set(id, entry);
-    try {
-      win.webContents.send(IPC.TOOLS_REQUEST_CONFIRM, {
-        id,
-        message,
-        ...(payload ? { payload } : {})
-      });
-    } catch (err) {
-      // Window died between the liveness check above and the send —
-      // unwind the pending entry and fail closed with the no-ui
-      // reason so the tool surfaces "host could not show the prompt"
-      // instead of "user denied permission".
-      log.warn('failed to send confirm request; failing closed', { id, err });
+    const sent = safeWebContentsSend(IPC.TOOLS_REQUEST_CONFIRM, {
+      id,
+      message,
+      ...(payload ? { payload } : {})
+    });
+    if (!sent) {
       const cur = pending.get(id);
       if (cur) finalize(id, cur, noUiResult, 'send-failed');
     }

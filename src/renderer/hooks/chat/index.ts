@@ -8,3 +8,8 @@
 export { useConversationProcessing } from './useConversationProcessing.js';
 export { useWorkspaceHasActiveRun } from './useWorkspaceHasActiveRun.js';
 export { useBackgroundRuns } from './useBackgroundRuns.js';
+export {
+  useChatRowFocus,
+  focusRow,
+  __resetChatRowRegistry
+} from './useChatRowFocus.js';

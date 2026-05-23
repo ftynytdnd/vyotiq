@@ -105,4 +105,64 @@ describe('describeBaseUrl', () => {
   it('does not warn for ollama-native pointed at 127.0.0.1', () => {
     expect(describeBaseUrl('http://127.0.0.1:11434', 'ollama-native')).toBeNull();
   });
+
+  // ──────────────────────────────────────────────────────────────────
+  // Phase 8 (2026) — Anthropic native dialect
+  // ──────────────────────────────────────────────────────────────────
+
+  it('passes through api.anthropic.com when the dialect is anthropic-native', () => {
+    expect(describeBaseUrl('https://api.anthropic.com', 'anthropic-native')).toBeNull();
+  });
+
+  it('warns when api.anthropic.com is paired with the OpenAI dialect', () => {
+    const r = describeBaseUrl('https://api.anthropic.com', 'openai');
+    expect(r?.severity).toBe('warn');
+    expect(r?.message).toMatch(/Anthropic native/);
+  });
+
+  it('warns when anthropic-native is paired with a non-Anthropic host', () => {
+    const r = describeBaseUrl('https://api.openai.com', 'anthropic-native');
+    expect(r?.severity).toBe('warn');
+    expect(r?.message).toMatch(/Anthropic native dialect is usually paired/);
+  });
+
+  it('strips a trailing /v1 on Anthropic and keeps it info-level', () => {
+    const r = describeBaseUrl('https://api.anthropic.com/v1', 'anthropic-native');
+    expect(r?.severity).toBe('info');
+    expect(r?.normalized).toBe('https://api.anthropic.com');
+  });
+
+  // ──────────────────────────────────────────────────────────────────
+  // Phase 9 (2026) — Gemini native dialect
+  // ──────────────────────────────────────────────────────────────────
+
+  it('passes through generativelanguage.googleapis.com when the dialect is gemini-native', () => {
+    expect(
+      describeBaseUrl('https://generativelanguage.googleapis.com', 'gemini-native')
+    ).toBeNull();
+  });
+
+  it('warns when generativelanguage.googleapis.com is paired with the OpenAI dialect', () => {
+    const r = describeBaseUrl(
+      'https://generativelanguage.googleapis.com',
+      'openai'
+    );
+    expect(r?.severity).toBe('warn');
+    expect(r?.message).toMatch(/Gemini native/);
+  });
+
+  it('warns when gemini-native is paired with a non-Gemini host', () => {
+    const r = describeBaseUrl('https://api.openai.com', 'gemini-native');
+    expect(r?.severity).toBe('warn');
+    expect(r?.message).toMatch(/Gemini native dialect is usually paired/);
+  });
+
+  it('strips a trailing /v1beta on Gemini and keeps it info-level', () => {
+    const r = describeBaseUrl(
+      'https://generativelanguage.googleapis.com/v1beta',
+      'gemini-native'
+    );
+    expect(r?.severity).toBe('info');
+    expect(r?.normalized).toBe('https://generativelanguage.googleapis.com');
+  });
 });

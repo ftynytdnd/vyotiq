@@ -3,9 +3,10 @@
  *
  * Responsibilities (the only place dialog chrome lives):
  *   - Render via React portal to `document.body` so `position: fixed`
- *     escapes ancestor containment (sidebar `overflow-hidden`, chats
- *     list `mask-image`, etc.). Nested consumers (`ConfirmDialog`
- *     inside a sidebar row) would otherwise render invisibly.
+ *     escapes ancestor containment (dock / panel `overflow-hidden`,
+ *     scroll-region `mask-image`, etc.). Nested consumers
+ *     (`ConfirmDialog` inside a dock tab row) would otherwise render
+ *     invisibly.
  *   - Lock body scroll while a modal is open so the underlying page
  *     can't drift while the user reads the dialog. Reference-counted
  *     so stacked modals (Settings → ConfirmDialog from inside it)
@@ -154,7 +155,7 @@ export function Modal({
       previouslyFocusedRef.current = null;
       // Restore focus only if the previously-focused element is still
       // in the DOM. Defensive: a destroyed trigger (e.g. a removed
-      // sidebar row after delete) would otherwise throw on `.focus()`.
+      // dock tab row after delete) would otherwise throw on `.focus()`.
       if (prev && document.contains(prev)) {
         prev.focus();
       }

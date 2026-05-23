@@ -42,6 +42,16 @@ export interface PartialToolCall {
   id?: string;
   name?: string;
   argumentsBuf: string;
+  /**
+   * Gemini-only: thoughtSignature attached to a streamed `functionCall`
+   * part. Captured on the same delta that names the call so the
+   * orchestrator can persist it onto `ToolCall.thoughtSignature` after
+   * argument JSON parses, ready to be echoed back on the next request.
+   * Anthropic's signature lives on the assistant message
+   * (`reasoning_signature`), not per tool call, so it stays absent for
+   * the `anthropic-native` path.
+   */
+  thoughtSignature?: string;
 }
 
 export interface StreamConsumeResult {
@@ -60,6 +70,15 @@ export interface StreamConsumeResult {
    * emitting the closing marker in that case.
    */
   reasoningEndEmitted: boolean;
+  /**
+   * Anthropic-only: cumulative thinking-block signature concatenated
+   * across every `reasoningSignature` delta the transport yielded for
+   * this turn. The orchestrator persists this onto
+   * `ChatMessage.reasoning_signature` so the next request echoes it
+   * back unchanged (required by Claude thinking models for plan
+   * continuity). Other dialects leave it `undefined`.
+   */
+  reasoningSignature?: string;
   finishReason?: string;
   /**
    * Provider-reported token usage for the turn. Present iff the upstream
@@ -68,6 +87,37 @@ export interface StreamConsumeResult {
    * that ignore the flag — callers must handle `undefined` gracefully.
    */
   usage?: TokenUsage;
+}
+
+/**
+ * Resolve which `partialToolCalls[]` slot a streaming delta belongs in.
+ *
+ * OpenAI-class transports splice argument fragments by `index`. Some
+ * OpenAI-compat backends (observed with parallel tool calls on DeepSeek-
+ * class and Ollama-Cloud routes) emit each *new* call in its own SSE
+ * frame while reusing `index: 0`. Feeding those into slot 0 merges
+ * unrelated calls, executes only the survivor, and leaves orphan
+ * partial UI rows that render as "Unknown tool: (unspecified)".
+ */
+function resolveToolCallIndex(
+  partialToolCalls: PartialToolCall[],
+  proposedIndex: number,
+  incomingId: string | undefined
+): number {
+  let idx = proposedIndex;
+  const occupant = partialToolCalls[idx];
+  if (occupant === undefined) return idx;
+  if (incomingId === undefined || occupant.id === undefined || occupant.id === incomingId) {
+    return idx;
+  }
+  const hasPriorContent =
+    occupant.argumentsBuf.length > 0 ||
+    occupant.name !== undefined ||
+    occupant.id !== undefined;
+  if (!hasPriorContent) return idx;
+  idx = partialToolCalls.length;
+  while (partialToolCalls[idx] !== undefined) idx++;
+  return idx;
 }
 
 export interface StreamConsumeHooks {
@@ -86,11 +136,20 @@ export interface StreamConsumeHooks {
    * when the turn is pure reasoning with no content/tool follow-up
    * (the caller is responsible for the closing marker in that case).
    *
+   * The optional `signature` arg carries the Anthropic thinking-block
+   * signature that closed the reasoning stream — concatenated across
+   * all `reasoningSignature` frames that landed during the reasoning
+   * phase. Anthropic order guarantees every `signature_delta` lands
+   * inside its parent `content_block_delta` range (i.e. before
+   * `content_block_stop`, which itself precedes the first downstream
+   * `text_delta`); the value is therefore already settled by the
+   * time `onReasoningEnd` fires. Other dialects pass `undefined`.
+   *
    * This exists so the renderer's reasoning panel can collapse the
    * instant reasoning is truly done, without waiting for the full
    * turn (including long tool-call tails) to finish streaming.
    */
-  onReasoningEnd?: () => void;
+  onReasoningEnd?: (signature?: string) => void;
   /**
    * Fired when the final usage frame arrives. Called at most once per
    * turn; not called at all for providers that ignore
@@ -144,6 +203,12 @@ export async function consumeChatStream(
   let reasoningEndEmitted = false;
   let finishReason: string | undefined;
   let usage: TokenUsage | undefined;
+  // Anthropic thinking-block signature. The transport may yield multiple
+  // `reasoningSignature` frames per turn (one per closing thinking block);
+  // we concatenate so a multi-block thinking turn round-trips faithfully.
+  // Empty string stays `undefined` on the result so non-Anthropic dialects
+  // don't pollute downstream `ChatMessage.reasoning_signature`.
+  let reasoningSignature = '';
 
   // Inline-thinking router: reclassifies `<think>` / `<thinking>` blocks
   // emitted on the *content* channel into the reasoning channel. See
@@ -158,11 +223,14 @@ export async function consumeChatStream(
   // tool-call delta lands. Split into a helper so the call sites below
   // stay symmetric — if a future delta shape (e.g. structured citations)
   // also counts as "reasoning is done", it only has to call this in one
-  // place.
+  // place. Forwards the cumulative Anthropic thinking signature when
+  // present — empty string maps to `undefined` so the renderer's
+  // `agent-reasoning-end` event omits the field for non-Anthropic turns
+  // and stays a clean no-op on the JSONL transcript.
   const maybeCloseReasoning = (): void => {
     if (!hadReasoning || reasoningEndEmitted) return;
     reasoningEndEmitted = true;
-    hooks?.onReasoningEnd?.();
+    hooks?.onReasoningEnd?.(reasoningSignature.length > 0 ? reasoningSignature : undefined);
   };
 
   // Funnels a chunk's text portion (post-router) through the same
@@ -200,13 +268,32 @@ export async function consumeChatStream(
       hadReasoning = true;
       hooks?.onReasoningDelta?.(delta.reasoningDelta, reasoningText);
     }
+    if (typeof delta.reasoningSignature === 'string' && delta.reasoningSignature.length > 0) {
+      // Anthropic emits the signature once per closing thinking block.
+      // Concatenate so a turn with multiple thinking blocks round-trips
+      // every signature; the consumer of the result (orchestrator /
+      // sub-agent) treats it as opaque bytes regardless of structure.
+      reasoningSignature += delta.reasoningSignature;
+    }
     if (delta.toolCallDelta) {
       maybeCloseReasoning();
-      const idx = delta.toolCallDelta.index ?? 0;
+      const idx = resolveToolCallIndex(
+        partialToolCalls,
+        delta.toolCallDelta.index ?? 0,
+        delta.toolCallDelta.id
+      );
       if (!partialToolCalls[idx]) partialToolCalls[idx] = { argumentsBuf: '' };
       const tc = partialToolCalls[idx]!;
       if (delta.toolCallDelta.id !== undefined) tc.id = delta.toolCallDelta.id;
       if (delta.toolCallDelta.name !== undefined) tc.name = delta.toolCallDelta.name;
+      // Gemini-only: capture the thoughtSignature on whichever delta
+      // carries it. The transport attaches it to the same delta as the
+      // call's `name` (Gemini sends complete function-call parts in one
+      // chunk). We persist on the partial so later JSON parsing can
+      // mint the final `ToolCall` with the signature attached.
+      if (typeof delta.toolCallDelta.thoughtSignature === 'string' && delta.toolCallDelta.thoughtSignature.length > 0) {
+        tc.thoughtSignature = delta.toolCallDelta.thoughtSignature;
+      }
       let bufChanged = false;
       if (delta.toolCallDelta.argumentsDelta !== undefined) {
         tc.argumentsBuf += delta.toolCallDelta.argumentsDelta;
@@ -248,6 +335,7 @@ export async function consumeChatStream(
     hadText,
     hadReasoning,
     reasoningEndEmitted,
+    ...(reasoningSignature.length > 0 ? { reasoningSignature } : {}),
     ...(finishReason !== undefined ? { finishReason } : {}),
     ...(usage !== undefined ? { usage } : {})
   };

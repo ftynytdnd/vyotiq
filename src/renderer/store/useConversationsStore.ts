@@ -1,11 +1,11 @@
 /**
  * Conversations slice. Mirrors the persistent JSONL transcripts on the main
- * side. Owns the sidebar history list, the per-workspace active-conversation
+ * side. Owns the conversation list, the per-workspace active-conversation
  * map, and the load/select/rename/remove flows.
  *
  * Multi-workspace model:
- *   - `list` is the FULL cross-workspace history. The sidebar tree
- *     groups by `meta.workspaceId`; the orchestrator's
+ *   - `list` is the FULL cross-workspace history. The bottom dock
+ *     filters by `meta.workspaceId`; the orchestrator's
  *     `<prior_conversations>` envelope filters via the main-side
  *     `listConversations(workspaceId)` overload so this list never
  *     leaks across workspaces inside a run.
@@ -34,7 +34,7 @@ import { useWorkspaceStore } from './useWorkspaceStore.js';
 import { useSettingsStore } from './useSettingsStore.js';
 // Static-import the toast store. Previously lazy-imported inside
 // `move()` to "keep it off the hot path", but the toast store is
-// already in the eager bundle (ToastHost / sidebar / FileEditRow all
+// already in the eager bundle (ToastHost / dock / FileEditRow all
 // statically import it), so the dynamic-only edge created a vite
 // chunking warning without yielding a real bundle savings.
 import { useToastStore } from './useToastStore.js';
@@ -49,6 +49,18 @@ const log = logger.child('conversations');
  * Mirrors the constant in `src/main/conversations/conversationStore.ts`.
  */
 const PLACEHOLDER_TITLE = 'New conversation';
+
+/** Merge a backfilled peak from `conversations.read` into the list mirror. */
+function patchListPeak(
+  list: ConversationMeta[],
+  id: string,
+  peak?: number
+): ConversationMeta[] {
+  if (typeof peak !== 'number' || peak <= 0) return list;
+  return list.map((m) =>
+    m.id === id && (m.peakPromptTokens ?? 0) < peak ? { ...m, peakPromptTokens: peak } : m
+  );
+}
 
 interface ConversationsStore {
   list: ConversationMeta[];
@@ -81,7 +93,7 @@ interface ConversationsStore {
    * Variant of `newConversation` targeted at a specific workspace.
    * Activates the workspace first if it isn't already active, then
    * creates the conversation under it. Used by the per-workspace
-   * "+ new chat" button on the sidebar tree so users can start a
+   * "+ new chat" button on the dock so users can start a
    * fresh chat under any group with a single click instead of
    * "activate group → click toolbar New".
    */
@@ -120,7 +132,7 @@ interface ConversationsStore {
   /**
    * Called by chat when a run binds (or auto-creates) the active
    * conversation id. Updates the workspace's slot and refreshes the
-   * list so the auto-derived title shows up in the sidebar.
+   * list so the auto-derived title shows up in the dock.
    */
   bindActive: (id: string, workspaceId?: string) => void;
   /**
@@ -180,7 +192,7 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
   refresh: async () => {
     set({ loading: true });
     try {
-      // Always fetch the FULL list — the sidebar tree groups by
+      // Always fetch the FULL list — the dock groups by
       // `meta.workspaceId` itself. The orchestrator's per-run
       // filtering happens main-side via `listConversations(wsId)`.
       const list = await vyotiq.conversations.list();
@@ -351,9 +363,13 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
     useChatStore.getState().setActiveConversation(id);
 
     let events: TimelineEvent[] = [];
+    let peakPromptTokens: number | undefined;
     try {
       const conv = await vyotiq.conversations.read(id);
-      if (conv) events = conv.events;
+      if (conv) {
+        events = conv.events;
+        peakPromptTokens = conv.peakPromptTokens;
+      }
     } catch (err) {
       log.error('conversations.read failed', { err });
     }
@@ -368,7 +384,10 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
     set((s) => {
       const nextHydrated = new Set(s.hydratedIds);
       nextHydrated.add(id);
-      return { hydratedIds: nextHydrated };
+      return {
+        hydratedIds: nextHydrated,
+        list: patchListPeak(s.list, id, peakPromptTokens)
+      };
     });
     useChatStore.getState().setTranscript(id, events);
   },
@@ -376,9 +395,13 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
   prewarm: async (id) => {
     if (get().hydratedIds.has(id)) return;
     let events: TimelineEvent[] = [];
+    let peakPromptTokens: number | undefined;
     try {
       const conv = await vyotiq.conversations.read(id);
-      if (conv) events = conv.events;
+      if (conv) {
+        events = conv.events;
+        peakPromptTokens = conv.peakPromptTokens;
+      }
     } catch (err) {
       log.warn('prewarm: conversations.read failed', { err, id });
       return;
@@ -390,7 +413,10 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
     set((s) => {
       const nextHydrated = new Set(s.hydratedIds);
       nextHydrated.add(id);
-      return { hydratedIds: nextHydrated };
+      return {
+        hydratedIds: nextHydrated,
+        list: patchListPeak(s.list, id, peakPromptTokens)
+      };
     });
     useChatStore.getState().prewarmSlice(id, events);
   },
@@ -471,7 +497,7 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
 
     // Drop the chat slice for this conversation if it was the active
     // mirror's source workspace's slot — without it the chat mirror
-    // would keep showing this transcript even though the sidebar's
+    // would keep showing this transcript even though the dock's
     // group highlight has flipped away. The slice itself stays alive
     // in the registry by id so a follow-up `select(id)` is instant.
     if (useChatStore.getState().conversationId === id && sourceWorkspaceId) {
@@ -485,7 +511,7 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
       const updated = await vyotiq.conversations.move(id, targetWorkspaceId);
       // Reconcile: replace the optimistic meta with main's authoritative
       // copy (workspaceId + updatedAt). No tree-cache invalidation
-      // beyond the normal sidebar list rerender — the picker cache
+      // beyond the normal conversation list rerender — the picker cache
       // keys on workspace path, not conversation id.
       set((s) => ({
         list: s.list.map((m) => (m.id === id ? updated : m))
@@ -578,7 +604,7 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
     //   (a) the bound id isn't in the list yet (auto-create path), or
     //   (b) the persisted title is still the placeholder — main may
     //       have derived a title from the first prompt and we need to
-    //       fetch it for the sidebar.
+    //       fetch it for the dock.
     // Re-sending in an already-titled chat becomes a zero-IPC update,
     // which matters for long lists + multi-session where a chatty user
     // would otherwise refire the full `conversations.list` IPC on every

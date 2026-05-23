@@ -64,6 +64,64 @@ describe('consumeChatStream', () => {
     });
   });
 
+  /**
+   * Regression: some OpenAI-compat providers (DeepSeek-class parallel
+   * tool rounds, Ollama-Cloud-style chunking) emit each parallel call
+   * in its own delta frame while reusing `index: 0`. Without slot
+   * reassignment, `consumeChatStream` merges unrelated calls into
+   * slot 0 — only the last survives execution and orphan partial UI
+   * rows render as "Unknown tool: (unspecified)".
+   */
+  it('routes parallel tool calls that reuse index 0 into separate slots', async () => {
+    const out = await consumeChatStream(
+      makeStream([
+        {
+          toolCallDelta: {
+            index: 0,
+            id: 'call-a',
+            name: 'read',
+            argumentsDelta: '{"path":"index.html"}'
+          }
+        },
+        {
+          toolCallDelta: {
+            index: 0,
+            id: 'call-b',
+            name: 'read',
+            argumentsDelta: '{"path":"package.json"}'
+          }
+        }
+      ])
+    );
+    expect(out.partialToolCalls).toHaveLength(2);
+    expect(out.partialToolCalls[0]).toEqual({
+      id: 'call-a',
+      name: 'read',
+      argumentsBuf: '{"path":"index.html"}'
+    });
+    expect(out.partialToolCalls[1]).toEqual({
+      id: 'call-b',
+      name: 'read',
+      argumentsBuf: '{"path":"package.json"}'
+    });
+  });
+
+  it('still splices argument fragments for the same call id at one index', async () => {
+    const out = await consumeChatStream(
+      makeStream([
+        { toolCallDelta: { index: 0, id: 'call-1', name: 'bash' } },
+        { toolCallDelta: { index: 0, argumentsDelta: '{"command":' } },
+        { toolCallDelta: { index: 0, id: 'call-1', argumentsDelta: '"ls"}' } }
+      ])
+    );
+    expect(out.partialToolCalls).toHaveLength(1);
+    expect(out.partialToolCalls[0]).toEqual({
+      id: 'call-1',
+      name: 'bash',
+      argumentsBuf: '{"command":"ls"}'
+    });
+  });
+
   it('invokes onTextDelta and onReasoningDelta hooks with running totals', async () => {
     const onText = vi.fn();
     const onReasoning = vi.fn();

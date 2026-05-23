@@ -18,6 +18,7 @@ import type { RewindFileChange } from '@shared/types/checkpoint.js';
 import { PendingChangeDiff } from '../../checkpoints/PendingChangeDiff.js';
 import { DiffStatsBadge } from '../tools/shared/DiffStatsBadge.js';
 import { cn } from '../../../lib/cn.js';
+import { timelineRowHeaderClassName } from '../shared/rowStyles.js';
 
 interface RevertFileRowProps {
   change: RewindFileChange;
@@ -44,7 +45,7 @@ export function RevertFileRow({ change }: RevertFileRowProps) {
 
   return (
     <div className="vyotiq-stepfade flex flex-col">
-      <div className="log-line flex items-center gap-2 px-2 py-1">
+      <div className={timelineRowHeaderClassName}>
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
@@ -89,7 +90,7 @@ export function RevertFileRow({ change }: RevertFileRowProps) {
         <DiffStatsBadge
           additions={change.additions}
           deletions={change.deletions}
-          className="w-16 shrink-0 justify-end"
+          minWidth="badge"
         />
       </div>
       {expanded && (

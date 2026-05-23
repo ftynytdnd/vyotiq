@@ -133,4 +133,48 @@ describe('inlineFiles — sandbox', () => {
       await fs.rm(join(workspace, 'sub', 'medium.txt'), { force: true });
     }
   });
+
+  /**
+   * Abort-signal regression (audit fix 2026-08-P2-1 / 13-P2-1).
+   *
+   * Pre-fix `inlineFiles` ignored the run's abort signal — a user who
+   * aborted a `chat:send` with a 50-file delegate spec would still pay
+   * the full FS cost of reading every attachment before the prompt
+   * assembly bailed out. The post-fix contract: when the signal is
+   * pre-aborted (or fires during the realpath/read), every still-
+   * pending slot collapses to a cheap `(aborted before read)` marker
+   * without touching the FS.
+   */
+  it('emits the aborted marker for every slot when the signal is pre-aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const out = await inlineFiles(
+      workspace,
+      ['sub/ok.txt', 'sub/ok.txt'],
+      undefined,
+      controller.signal
+    );
+    // Both slots must render the aborted marker; NEITHER must contain
+    // the file body — otherwise we paid the FS cost we were trying
+    // to avoid.
+    expect(out).not.toContain('inside-contents');
+    const markerCount = (out.match(/aborted before read/g) ?? []).length;
+    expect(markerCount).toBe(2);
+  });
+
+  it('still resolves cleanly when an unaborted signal is passed', async () => {
+    // Belt-and-suspenders — passing a NON-aborted signal must behave
+    // identically to omitting it. Without this, the abort wiring could
+    // silently degrade the happy path.
+    const controller = new AbortController();
+    const out = await inlineFiles(
+      workspace,
+      ['sub/ok.txt'],
+      undefined,
+      controller.signal
+    );
+    expect(out).toContain('<file path="sub/ok.txt">');
+    expect(out).toContain('inside-contents');
+    expect(out).not.toContain('aborted before read');
+  });
 });

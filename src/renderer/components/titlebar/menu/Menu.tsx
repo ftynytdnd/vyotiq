@@ -6,10 +6,18 @@
  * Stealth dark theme: surface-overlay panel, no visible borders, soft
  * shadow. Items inside should use the `MenuItem` primitive for consistent
  * spacing and hover behavior.
+ *
+ * Keyboard-driven opens (`ArrowDown` / `Enter` / `Space`) advance focus
+ * to the first enabled `[role="menuitem"]` inside the panel — this is
+ * the WAI-ARIA menubar contract. Mouse-driven opens leave focus alone
+ * so a click + immediate move-to-item doesn't fight the user's pointer.
+ * The discriminator comes through `openSource`.
  */
 
 import { forwardRef, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { cn } from '../../../lib/cn.js';
+
+export type MenuOpenSource = 'mouse' | 'keyboard';
 
 interface MenuProps {
   label: string;
@@ -33,14 +41,22 @@ interface MenuProps {
    * `End` and move focus across the strip without owning the button DOM.
    */
   onLabelKeyDown?: (e: ReactKeyboardEvent<HTMLButtonElement>) => void;
+  /**
+   * How the panel was opened. `'keyboard'` triggers an auto-focus of
+   * the first enabled menuitem on the next frame (WAI-ARIA menubar
+   * pattern). `'mouse'` (the default) leaves focus on the label so a
+   * click doesn't yank focus away from the user's pointer.
+   */
+  openSource?: MenuOpenSource;
   children: React.ReactNode;
 }
 
 export const Menu = forwardRef<HTMLButtonElement, MenuProps>(function Menu(
-  { label, open, onOpen, onHover, onClose, tabIndex, onLabelKeyDown, children },
+  { label, open, onOpen, onHover, onClose, tabIndex, onLabelKeyDown, openSource = 'mouse', children },
   ref
 ) {
   const wrapRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -57,6 +73,31 @@ export const Menu = forwardRef<HTMLButtonElement, MenuProps>(function Menu(
       document.removeEventListener('keydown', onKey);
     };
   }, [open, onClose]);
+
+  // Keyboard-driven opens advance focus into the panel on the next
+  // frame so the just-rendered menuitems are queryable. We deliberately
+  // skip the focus for mouse-driven opens — moving focus there would
+  // fight the pointer (and trip outside-click close in unusual layouts).
+  // The rAF + open guard lets the effect tear down cleanly if the user
+  // closes the menu before the frame lands.
+  useEffect(() => {
+    if (!open) return;
+    if (openSource !== 'keyboard') return;
+    let cancelled = false;
+    const raf = requestAnimationFrame(() => {
+      if (cancelled) return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      const first = panel.querySelector<HTMLElement>(
+        '[role="menuitem"]:not([disabled])'
+      );
+      first?.focus();
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+    };
+  }, [open, openSource]);
 
   return (
     <div ref={wrapRef} className="relative app-no-drag">
@@ -82,6 +123,7 @@ export const Menu = forwardRef<HTMLButtonElement, MenuProps>(function Menu(
       </button>
       {open && (
         <div
+          ref={panelRef}
           role="menu"
           className={cn(
             'elev-1 absolute left-0 top-full z-[80] mt-1 min-w-50 rounded-card p-1',

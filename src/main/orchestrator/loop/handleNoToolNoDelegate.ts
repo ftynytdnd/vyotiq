@@ -36,6 +36,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { ChatMessage, TimelineEvent } from '@shared/types/chat.js';
+import { MAX_NUDGES_PER_RUN } from '@shared/constants.js';
 import {
   classifyPlanningWithoutAction,
   type PlanningOutcome
@@ -45,7 +46,14 @@ import { logger } from '../../logging/logger.js';
 
 const log = logger.child('orch/terminus');
 
-export const MAX_NUDGES_PER_RUN = 2;
+/**
+ * Re-export of the shared `MAX_NUDGES_PER_RUN` constant (T1-5). The
+ * authoritative definition lives in `@shared/constants.ts` so the
+ * harness `<runtime_limits>` block and every other `MAX_*` consumer
+ * read from a single source. Re-exported here so existing test +
+ * runtime import sites keep working unchanged.
+ */
+export { MAX_NUDGES_PER_RUN };
 
 /**
  * Nudge for reasoning-only empty turns. Reasoning content (DeepSeek

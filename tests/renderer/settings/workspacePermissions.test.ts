@@ -40,43 +40,36 @@ describe('selectEffectivePermissions — layered fallback', () => {
 
   it('layers global over defaults', () => {
     const got = selectEffectivePermissions(null, {
-      permissions: { ...DEFAULT_PERMISSIONS, allowFileWrites: false }
+      permissions: { ...DEFAULT_PERMISSIONS, allowAuto: true }
     });
-    expect(got.allowFileWrites).toBe(false);
-    expect(got.allowBash).toBe(DEFAULT_PERMISSIONS.allowBash);
-    expect(got.allowWebSearch).toBe(DEFAULT_PERMISSIONS.allowWebSearch);
+    expect(got.allowAuto).toBe(true);
   });
 
   it('layers per-workspace over global', () => {
     const settings: AppSettings = {
-      permissions: { ...DEFAULT_PERMISSIONS, allowBash: false },
+      permissions: { ...DEFAULT_PERMISSIONS, allowAuto: false },
       ui: {
         permissionsByWorkspace: {
-          'ws-A': { allowBash: true, allowWebSearch: true }
+          'ws-A': { allowAuto: true }
         }
       }
     };
-    // ws-A: allowBash flipped back on, allowWebSearch promoted to true,
-    // allowFileWrites still inherits from default (true).
+    // ws-A: allowAuto flipped on by the per-workspace override.
     const wsA = selectEffectivePermissions('ws-A', settings);
-    expect(wsA).toEqual({
-      allowFileWrites: true,
-      allowBash: true,
-      allowWebSearch: true
-    });
-    // ws-B has no override — inherits from global (allowBash: false).
+    expect(wsA).toEqual({ allowAuto: true });
+    // ws-B has no override — inherits from global (allowAuto: false).
     const wsB = selectEffectivePermissions('ws-B', settings);
-    expect(wsB.allowBash).toBe(false);
+    expect(wsB.allowAuto).toBe(false);
     // null skips the per-workspace layer entirely.
     const fallback = selectEffectivePermissions(null, settings);
-    expect(fallback.allowBash).toBe(false);
+    expect(fallback.allowAuto).toBe(false);
   });
 
   it('workspaceHasPermissionOverride is true only for ids with non-empty entries', () => {
     const settings: AppSettings = {
       ui: {
         permissionsByWorkspace: {
-          'ws-A': { allowBash: false },
+          'ws-A': { allowAuto: true },
           'ws-empty': {}
         }
       }
@@ -95,7 +88,7 @@ describe('setPermissionsForWorkspace / clearWorkspacePermissions', () => {
         permissions: { ...DEFAULT_PERMISSIONS },
         ui: {
           permissionsByWorkspace: {
-            'ws-other': { allowWebSearch: true }
+            'ws-other': { allowAuto: true }
           }
         }
       },
@@ -104,19 +97,24 @@ describe('setPermissionsForWorkspace / clearWorkspacePermissions', () => {
 
     await useSettingsStore
       .getState()
-      .setPermissionsForWorkspace('ws-A', { allowBash: false });
+      .setPermissionsForWorkspace('ws-A', { allowAuto: true });
 
     const map = useSettingsStore.getState().settings.ui?.permissionsByWorkspace ?? {};
-    expect(map['ws-A']).toEqual({ allowBash: false });
-    expect(map['ws-other']).toEqual({ allowWebSearch: true });
+    expect(map['ws-A']).toEqual({ allowAuto: true });
+    expect(map['ws-other']).toEqual({ allowAuto: true });
   });
 
-  it('merges into an existing override rather than replacing it', async () => {
+  it('overwrites an existing override with the new value', async () => {
+    // The single-flag shape collapses what used to be a partial-merge
+    // contract: there's only one key now, so a follow-up write is
+    // always an overwrite of `allowAuto`. Locking that here so a
+    // future re-introduction of partial fields makes the test fail
+    // loudly rather than silently breaking the merge.
     useSettingsStore.setState({
       settings: {
         permissions: { ...DEFAULT_PERMISSIONS },
         ui: {
-          permissionsByWorkspace: { 'ws-A': { allowBash: false } }
+          permissionsByWorkspace: { 'ws-A': { allowAuto: true } }
         }
       },
       loading: false
@@ -124,10 +122,10 @@ describe('setPermissionsForWorkspace / clearWorkspacePermissions', () => {
 
     await useSettingsStore
       .getState()
-      .setPermissionsForWorkspace('ws-A', { allowFileWrites: false });
+      .setPermissionsForWorkspace('ws-A', { allowAuto: false });
 
     const entry = useSettingsStore.getState().settings.ui?.permissionsByWorkspace?.['ws-A'];
-    expect(entry).toEqual({ allowBash: false, allowFileWrites: false });
+    expect(entry).toEqual({ allowAuto: false });
   });
 
   it('skips the IPC entirely when the merge is a no-op', async () => {
@@ -135,7 +133,7 @@ describe('setPermissionsForWorkspace / clearWorkspacePermissions', () => {
       settings: {
         permissions: { ...DEFAULT_PERMISSIONS },
         ui: {
-          permissionsByWorkspace: { 'ws-A': { allowBash: false } }
+          permissionsByWorkspace: { 'ws-A': { allowAuto: true } }
         }
       },
       loading: false
@@ -144,12 +142,12 @@ describe('setPermissionsForWorkspace / clearWorkspacePermissions', () => {
     const setSpy = window.vyotiq.settings.set as unknown as ReturnType<typeof vi.fn>;
     setSpy.mockClear();
 
-    // Toggle allowBash to its CURRENT value — the store's identity-skip
+    // Toggle allowAuto to its CURRENT value — the store's identity-skip
     // branch must short-circuit so we don't churn settings.json on a
     // misclick that lands on the same value.
     await useSettingsStore
       .getState()
-      .setPermissionsForWorkspace('ws-A', { allowBash: false });
+      .setPermissionsForWorkspace('ws-A', { allowAuto: true });
 
     expect(setSpy).not.toHaveBeenCalled();
   });
@@ -160,8 +158,8 @@ describe('setPermissionsForWorkspace / clearWorkspacePermissions', () => {
         permissions: { ...DEFAULT_PERMISSIONS },
         ui: {
           permissionsByWorkspace: {
-            'ws-A': { allowBash: false },
-            'ws-B': { allowWebSearch: true }
+            'ws-A': { allowAuto: true },
+            'ws-B': { allowAuto: false }
           }
         }
       },
@@ -172,7 +170,7 @@ describe('setPermissionsForWorkspace / clearWorkspacePermissions', () => {
 
     const map = useSettingsStore.getState().settings.ui?.permissionsByWorkspace ?? {};
     expect('ws-A' in map).toBe(false);
-    expect(map['ws-B']).toEqual({ allowWebSearch: true });
+    expect(map['ws-B']).toEqual({ allowAuto: false });
   });
 
   it('clearWorkspacePermissions is a no-op for unknown ids (does not call set)', async () => {
@@ -204,8 +202,8 @@ describe('purgeWorkspaceFromUi — cascade on workspace.remove', () => {
             'ws-B': { providerId: 'p', modelId: 'm2' }
           },
           permissionsByWorkspace: {
-            'ws-A': { allowBash: false },
-            'ws-B': { allowWebSearch: true }
+            'ws-A': { allowAuto: true },
+            'ws-B': { allowAuto: false }
           },
           strictApprovalsByWorkspace: { 'ws-A': true, 'ws-B': false },
           gatePromptOnPendingByWorkspace: { 'ws-A': true, 'ws-B': true },
@@ -237,7 +235,7 @@ describe('purgeWorkspaceFromUi — cascade on workspace.remove', () => {
       providerId: 'p',
       modelId: 'm2'
     });
-    expect((ui.permissionsByWorkspace ?? {})['ws-B']).toEqual({ allowWebSearch: true });
+    expect((ui.permissionsByWorkspace ?? {})['ws-B']).toEqual({ allowAuto: false });
     expect((ui.strictApprovalsByWorkspace ?? {})['ws-B']).toBe(false);
     expect((ui.gatePromptOnPendingByWorkspace ?? {})['ws-B']).toBe(true);
     expect(ui.collapsedWorkspaces ?? []).toContain('ws-B');

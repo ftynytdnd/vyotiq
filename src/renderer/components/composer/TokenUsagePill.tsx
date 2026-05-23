@@ -6,11 +6,15 @@
  * Three visual states:
  *
  *   1. **No ceiling pinned** — provider didn't expose `context_length`
- *      and the user hasn't set an override. Pill renders as a
- *      single-click action `Set ctx` so the user can pin a ceiling
- *      right here, without digging into the model picker. Once they
- *      hit Enter the pill flips into the active state on the next
- *      render.
+ *      and the user hasn't set an override. Pill renders as a CTA:
+ *      `set ceiling` (Inspector wired) or `set ctx` (legacy editor
+ *      wired) so the user can pin one without digging into the model
+ *      picker. Once they hit Enter the pill flips into the active
+ *      state on the next render. The two labels distinguish the
+ *      surface where the click lands — `set ceiling` opens the
+ *      Context Inspector panel (where the editor + summarize live);
+ *      `set ctx` is the legacy inline-editor flow used by the
+ *      Settings preview.
  *
  *   2. **Active (estimated)** — pre-flight BPE estimate, before the
  *      provider's real `usage` frame lands. Slash is italic to
@@ -21,13 +25,27 @@
  *      90 %. A 1-px progress bar spans the bottom of the pill. Pencil
  *      affordance on hover lets the user retune the ceiling inline.
  *
+ * Phase 4 (2026): the hover tooltip surfaces the per-part breakdown
+ *   - Prompt (with optional cached / cache-write detail)
+ *   - Completion (with optional reasoning detail)
+ *   - Pre-flight estimate (baseline + draft) when the run hasn't
+ *     reported authoritative usage yet
+ *
  * No card UI. Stealth dark tokens only.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { BarChart2, Pencil } from 'lucide-react';
+import type { TokenUsage } from '@shared/types/chat.js';
 import { cn } from '../../lib/cn.js';
 import { formatTokenCount, parseTokenCount } from '../../lib/formatTokens.js';
+
+export interface TokenUsagePillBaseline {
+  total: number;
+  systemPrompt: number;
+  history: number;
+  tools: number;
+}
 
 interface TokenUsagePillProps {
   used: number;
@@ -42,7 +60,7 @@ interface TokenUsagePillProps {
   onCeilingChange: (value: number | null) => void;
   /**
    * When provided, the pill's primary click opens the Context
-   * Inspector slide-over instead of the inline ceiling editor.
+   * Context Inspector panel instead of the inline ceiling editor.
    * The pencil affordance remains as a dedicated entry point for
    * the editor (visible on hover, click stops propagation so it
    * doesn't double-fire the inspector). When omitted (e.g. the
@@ -50,6 +68,23 @@ interface TokenUsagePillProps {
    * — primary click opens the editor.
    */
   onOpenInspector?: () => void;
+  /**
+   * Phase 4 (2026): authoritative usage from the latest streamed
+   * turn — used for the hover tooltip breakdown (cached / reasoning /
+   * cache-write fields). Optional so the Settings preview surface
+   * can omit it without rendering an empty tooltip.
+   */
+  usage?: TokenUsage;
+  /**
+   * Phase 4 (2026): pre-flight estimate breakdown for the prospective
+   * payload (harness + envelopes + tools + replayed history). When
+   * present alongside `draftTokens`, the tooltip surfaces the
+   * `baseline + draft` split so the user understands where their
+   * pre-Send token count is coming from.
+   */
+  baseline?: TokenUsagePillBaseline;
+  /** Draft + attachments tokens (Phase 4). Same surface as `baseline`. */
+  draftTokens?: number;
 }
 
 export function TokenUsagePill({
@@ -57,7 +92,10 @@ export function TokenUsagePill({
   ceiling,
   estimated,
   onCeilingChange,
-  onOpenInspector
+  onOpenInspector,
+  usage,
+  baseline,
+  draftTokens
 }: TokenUsagePillProps) {
   const hasCeiling = typeof ceiling === 'number' && ceiling > 0;
 
@@ -151,49 +189,52 @@ export function TokenUsagePill({
       (onOpenInspector
         ? 'Click to open the Context Inspector (manual summarize, per-message overrides, set ceiling).'
         : 'Click to set a ceiling (e.g. 128k, 1M).');
+    const pillClass = cn(
+      'group relative inline-flex h-6 shrink-0 items-center gap-1 rounded-inner bg-surface-overlay px-1.5 text-meta',
+      'text-warning transition-colors duration-150 hover:bg-surface-hover'
+    );
+    if (onOpenInspector) {
+      return (
+        <div className={pillClass}>
+          <button
+            type="button"
+            onClick={primaryAction}
+            aria-label={primaryLabel}
+            title={primaryTitle}
+            className="inline-flex items-center gap-1 hover:bg-transparent"
+          >
+            <BarChart2 className="h-3 w-3" strokeWidth={2} />
+            <span className="font-mono">{formatTokenCount(used)} / </span>
+            <span className="font-mono">set ceiling</span>
+          </button>
+          <button
+            type="button"
+            onClick={openEditor}
+            aria-label="Set context window ceiling"
+            title="Set ceiling (e.g. 128k, 1M)"
+            className="ml-0.5 inline-flex items-center opacity-0 transition-opacity group-hover:opacity-70 hover:opacity-100 focus-visible:opacity-100"
+          >
+            <Pencil className="h-2.5 w-2.5" strokeWidth={2} />
+          </button>
+        </div>
+      );
+    }
     return (
       <button
         type="button"
         onClick={primaryAction}
         aria-label={primaryLabel}
         title={primaryTitle}
-        className={cn(
-          'group relative inline-flex h-6 shrink-0 items-center gap-1 rounded-inner bg-surface-overlay px-1.5 text-meta',
-          'text-warning transition-colors duration-150 hover:bg-surface-hover'
-        )}
+        className={pillClass}
       >
         <BarChart2 className="h-3 w-3" strokeWidth={2} />
         <span className="font-mono">{formatTokenCount(used)} / </span>
-        <span className="font-mono">
-          {onOpenInspector ? 'no ctx' : 'set ctx'}
-        </span>
-        {onOpenInspector ? (
-          <span
-            role="button"
-            tabIndex={0}
-            aria-label="Set context window ceiling"
-            title="Set ceiling (e.g. 128k, 1M)"
-            onClick={(e) => {
-              e.stopPropagation();
-              openEditor();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.stopPropagation();
-                e.preventDefault();
-                openEditor();
-              }
-            }}
-            className="ml-0.5 inline-flex cursor-pointer items-center opacity-0 transition-opacity group-hover:opacity-70 hover:opacity-100"
-          >
-            <Pencil className="h-2.5 w-2.5" strokeWidth={2} />
-          </span>
-        ) : (
-          <Pencil
-            className="h-2.5 w-2.5 opacity-0 group-hover:opacity-70"
-            strokeWidth={2}
-          />
-        )}
+        <span className="font-mono">set ctx</span>
+        <Pencil
+          className="h-2.5 w-2.5 opacity-0 group-hover:opacity-70"
+          strokeWidth={2}
+          aria-hidden
+        />
       </button>
     );
   }
@@ -213,15 +254,19 @@ export function TokenUsagePill({
   const barClass =
     ratio >= 0.9 ? 'bg-danger/70' : ratio >= 0.7 ? 'bg-warning/70' : 'bg-accent/60';
 
-  const title =
-    `${used.toLocaleString()} / ${ceiling!.toLocaleString()} tokens — ` +
-    `${pct}% of context window used` +
-    `${estimated ? ' (pre-flight estimate; the provider will replace it with the real count once the next turn streams)' : ''}. ` +
-    `Click to retune.`;
+  const title = buildBreakdownTitle({
+    used,
+    ceiling: ceiling!,
+    pct,
+    estimated,
+    usage,
+    baseline,
+    draftTokens
+  });
 
   // Primary click: open the Inspector when wired, otherwise fall
   // back to the inline ceiling editor (legacy behaviour for any
-  // surface that hasn't wired the slide-over yet).
+  // surface that hasn't wired the inspector panel yet).
   const primaryAction = onOpenInspector ?? openEditor;
   const primaryLabel = onOpenInspector
     ? 'Open Context Inspector'
@@ -230,18 +275,13 @@ export function TokenUsagePill({
     ? `${title} Click to open the Context Inspector.`
     : `${title}`;
 
-  return (
-    <button
-      type="button"
-      onClick={primaryAction}
-      aria-label={primaryLabel}
-      className={cn(
-        'group relative inline-flex h-6 shrink-0 items-center gap-1 overflow-hidden rounded-inner bg-surface-overlay px-1.5 text-meta',
-        'transition-colors duration-150 hover:bg-surface-hover',
-        toneClass
-      )}
-      title={primaryTitle}
-    >
+  const activePillClass = cn(
+    'group relative inline-flex h-6 shrink-0 items-center gap-1 overflow-hidden rounded-inner bg-surface-overlay px-1.5 text-meta',
+    'transition-colors duration-150 hover:bg-surface-hover',
+    toneClass
+  );
+  const activeLabel = (
+    <>
       <BarChart2 className="h-3 w-3" strokeWidth={2} />
       <span className="font-mono">
         {formatTokenCount(used)}
@@ -254,45 +294,124 @@ export function TokenUsagePill({
         {formatTokenCount(ceiling!)}
       </span>
       <span className="font-mono text-text-faint">{pctLabel}</span>
-      {/*
-        Pencil — dedicated ceiling-edit affordance. Only shown
-        when the Inspector hijacks the primary click; otherwise
-        the primary click already opens the editor and a separate
-        button would be redundant. `stopPropagation` keeps the
-        outer button's click from firing alongside.
-      */}
-      {onOpenInspector ? (
-        <span
-          role="button"
-          tabIndex={0}
+    </>
+  );
+  const progressBar = (
+    <span
+      aria-hidden
+      className={cn('absolute bottom-0 left-0 h-[1px] transition-[width]', barClass)}
+      style={{ width: barWidth }}
+    />
+  );
+
+  if (onOpenInspector) {
+    return (
+      <div className={activePillClass} title={primaryTitle}>
+        <button
+          type="button"
+          onClick={primaryAction}
+          aria-label={primaryLabel}
+          className="inline-flex items-center gap-1"
+        >
+          {activeLabel}
+        </button>
+        <button
+          type="button"
+          onClick={openEditor}
           aria-label="Edit context window ceiling"
           title="Edit ceiling"
-          onClick={(e) => {
-            e.stopPropagation();
-            openEditor();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.stopPropagation();
-              e.preventDefault();
-              openEditor();
-            }
-          }}
-          className="ml-0.5 inline-flex cursor-pointer items-center opacity-0 transition-opacity group-hover:opacity-70 hover:opacity-100"
+          className="relative z-[1] ml-0.5 inline-flex items-center opacity-0 transition-opacity group-hover:opacity-70 hover:opacity-100 focus-visible:opacity-100"
         >
           <Pencil className="h-2.5 w-2.5" strokeWidth={2} />
-        </span>
-      ) : (
-        <Pencil
-          className="h-2.5 w-2.5 opacity-0 group-hover:opacity-70"
-          strokeWidth={2}
-        />
-      )}
-      <span
+        </button>
+        {progressBar}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={primaryAction}
+      aria-label={primaryLabel}
+      className={activePillClass}
+      title={primaryTitle}
+    >
+      {activeLabel}
+      <Pencil
+        className="h-2.5 w-2.5 opacity-0 group-hover:opacity-70"
+        strokeWidth={2}
         aria-hidden
-        className={cn('absolute bottom-0 left-0 h-[1px] transition-[width]', barClass)}
-        style={{ width: barWidth }}
       />
+      {progressBar}
     </button>
   );
+}
+
+/**
+ * Phase 4 (2026): builds the hover-tooltip body for the active-state
+ * pill. Surfaces:
+ *
+ *   - The headline `used / ceiling pct%` line every pill has shown
+ *     since v1.
+ *   - Prompt + completion split when authoritative `usage` has
+ *     landed.
+ *   - Cached / cache-write / reasoning sub-lines when the provider
+ *     reported them (2026 providers — see the plan's reference
+ *     matrix).
+ *   - The pre-flight `baseline + draft` split when no authoritative
+ *     usage has landed yet (helps the user understand why their
+ *     "before sending" count is what it is).
+ *
+ * Output is a single `\n`-joined string so it can land directly in
+ * the `title=` attribute (which is what the existing pill uses).
+ * The HTML `title` attribute supports literal newlines on every
+ * major browser as of 2026.
+ *
+ * Pure / synchronous — no IO, no React state.
+ */
+function buildBreakdownTitle(args: {
+  used: number;
+  ceiling: number;
+  pct: number;
+  estimated: boolean;
+  usage?: TokenUsage;
+  baseline?: TokenUsagePillBaseline;
+  draftTokens?: number;
+}): string {
+  const { used, ceiling, pct, estimated, usage, baseline, draftTokens } = args;
+  const lines: string[] = [];
+  lines.push(`${used.toLocaleString()} / ${ceiling.toLocaleString()} tokens — ${pct}% of context window used`);
+  if (estimated) {
+    lines.push('(pre-flight estimate — the provider will replace it with the real count once the next turn streams)');
+  }
+  if (usage && (usage.promptTokens > 0 || usage.completionTokens > 0)) {
+    lines.push('');
+    if (usage.promptTokens > 0) {
+      lines.push(`Prompt: ${formatTokenCount(usage.promptTokens)}`);
+      if (typeof usage.cachedPromptTokens === 'number' && usage.cachedPromptTokens > 0) {
+        lines.push(`  · cached: ${formatTokenCount(usage.cachedPromptTokens)}`);
+      }
+      if (typeof usage.cacheCreationTokens === 'number' && usage.cacheCreationTokens > 0) {
+        lines.push(`  · cache write: ${formatTokenCount(usage.cacheCreationTokens)}`);
+      }
+    }
+    if (usage.completionTokens > 0) {
+      lines.push(`Completion: ${formatTokenCount(usage.completionTokens)}`);
+      if (typeof usage.reasoningTokens === 'number' && usage.reasoningTokens > 0) {
+        lines.push(`  · reasoning: ${formatTokenCount(usage.reasoningTokens)}`);
+      }
+    }
+  } else if (baseline && typeof draftTokens === 'number') {
+    // Pre-flight only — no real usage yet. Show the baseline + draft
+    // split so the user understands the headline number.
+    lines.push('');
+    lines.push(`Pre-flight: ${formatTokenCount(baseline.total)} baseline + ${formatTokenCount(draftTokens)} draft`);
+    lines.push(`  · system prompt: ${formatTokenCount(baseline.systemPrompt)}`);
+    lines.push(`  · tools: ${formatTokenCount(baseline.tools)}`);
+    lines.push(`  · history: ${formatTokenCount(baseline.history)}`);
+  }
+  lines.push('');
+  lines.push('Click to retune.');
+  return lines.join('\n');
 }

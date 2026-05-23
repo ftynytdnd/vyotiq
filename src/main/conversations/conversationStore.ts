@@ -59,8 +59,18 @@ const appendChains: Map<string, Promise<void>> = new Map();
  * outlasts the longest realistic in-flight append (streaming tool results,
  * provider retries with backoff, etc.) so the tombstone is still in place
  * when a racing event lands.
+ *
+ * Audit fix 2026-07-P2-1: bumped from 60 s to 5 minutes to cover the
+ * worst-case in-flight chain (bash 30 s × 3 retries × `MAX_BACKOFF_MS`
+ * headroom across the orchestrator + sub-agent fan-out). At 60 s a
+ * very long-running tool call could outlive the tombstone, race
+ * `removeConversation`, and resurrect the deleted conversation via
+ * the `appendEvent` auto-recovery branch. `removeConversation` also
+ * RE-STAMPS the tombstone after draining the appendChain so the TTL
+ * clock starts at the moment we know no in-flight append can land
+ * — defense in depth on top of the bumped TTL.
  */
-const REMOVED_IDS_TTL_MS = 60_000;
+const REMOVED_IDS_TTL_MS = 5 * 60_000;
 const removedIds = new Map<string, number>();
 
 /**
@@ -406,6 +416,17 @@ export async function removeConversation(id: string): Promise<void> {
     }
     appendChains.delete(id);
   }
+  // Audit fix 2026-07-P2-1: re-stamp the tombstone after the drain.
+  // The drain may have taken longer than `REMOVED_IDS_TTL_MS` (a long
+  // queued tool call + retries can run minutes), so the tombstone we
+  // set at the top of this function may already be expired by the
+  // time we reach the actual unlink. Restamping ensures the
+  // tombstone is at-least `REMOVED_IDS_TTL_MS` fresh from THIS point
+  // onward — covering the post-delete window when fresh `appendEvent`
+  // calls (e.g. the trailing `chat:done` from an aborted run) might
+  // still land on the wire.
+  removedIds.set(id, Date.now());
+  pruneRemovedIds();
   const list = indexCache!;
   const idx = list.findIndex((m) => m.id === id);
   if (idx >= 0) list.splice(idx, 1);
@@ -509,6 +530,12 @@ export async function appendEvent(id: string, event: TimelineEvent): Promise<voi
         await fs.writeFile(file, '', 'utf8');
       }
       await fs.appendFile(file, JSON.stringify(event) + '\n', 'utf8');
+      if (event.kind === 'token-usage' && !event.subagentId) {
+        const prompt = event.usage.promptTokens;
+        if (typeof prompt === 'number' && prompt > 0) {
+          meta.peakPromptTokens = Math.max(meta.peakPromptTokens ?? 0, prompt);
+        }
+      }
       bumpMeta(meta);
       scheduleIndexFlush();
     } catch (err) {
@@ -741,6 +768,20 @@ export async function readTranscript(id: string): Promise<TimelineEvent[]> {
   return out;
 }
 
+/**
+ * Highest orchestrator prompt-token count in a transcript slice.
+ * Ignores sub-agent `token-usage` rows (same rule as `appendEvent`).
+ */
+export function peakOrchestratorPromptTokens(events: TimelineEvent[]): number {
+  let peak = 0;
+  for (const e of events) {
+    if (e.kind !== 'token-usage' || e.subagentId) continue;
+    const prompt = e.usage.promptTokens;
+    if (typeof prompt === 'number' && prompt > peak) peak = prompt;
+  }
+  return peak;
+}
+
 export async function readConversation(id: string): Promise<Conversation | null> {
   await loadIndex();
   const meta = findMeta(id);
@@ -754,6 +795,11 @@ export async function readConversation(id: string): Promise<Conversation | null>
   // in the renderer's timeline. Review finding H3.
   const rawEvents = await readTranscript(id);
   const events = dropOrphanPendingSubagents(rawEvents);
+  const peak = peakOrchestratorPromptTokens(events);
+  if (peak > (meta.peakPromptTokens ?? 0)) {
+    meta.peakPromptTokens = peak;
+    scheduleIndexFlush();
+  }
   return { ...meta, events };
 }
 

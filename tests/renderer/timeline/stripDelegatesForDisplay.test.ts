@@ -159,6 +159,91 @@ describe('stripDelegatesForDisplay', () => {
     expect(out).toBe('a\n\nb');
   });
 
+  // The remaining context envelopes the host injects on every iteration
+  // (`<workspace_context>`, `<meta_rules>`, `<session_context>`,
+  // `<prior_conversations>`, `<recent_memory>`, `<host_environment>`)
+  // must also be stripped if the model ever echoes them back inside
+  // user-facing prose. Regression: pre-fix, `strip.ts` listed the
+  // literal `current_workspace_context` — a name no `wrapXml(...)` call
+  // in the codebase actually emits — so a model echoing the real
+  // `<workspace_context>` envelope back would render raw XML. Each case
+  // below proves the canonical envelope name is now on the allowlist.
+  it('strips a paired `<workspace_context>` envelope', () => {
+    const out = stripDelegatesForDisplay(
+      'pre\n<workspace_context>src/\n  index.ts</workspace_context>\npost'
+    );
+    expect(out).toBe('pre\n\npost');
+  });
+
+  it('strips a paired `<host_environment>` envelope', () => {
+    const out = stripDelegatesForDisplay(
+      'pre\n<host_environment>now_utc: 2026-05-19T02:00:00.000Z\nlocale: en-US</host_environment>\npost'
+    );
+    expect(out).toBe('pre\n\npost');
+  });
+
+  it('strips a paired `<meta_rules>` envelope', () => {
+    const out = stripDelegatesForDisplay(
+      'pre\n<meta_rules>- prefer terse output</meta_rules>\npost'
+    );
+    expect(out).toBe('pre\n\npost');
+  });
+
+  it('strips a paired `<session_context>` envelope', () => {
+    const out = stripDelegatesForDisplay(
+      'pre\n<session_context>title="planning"</session_context>\npost'
+    );
+    expect(out).toBe('pre\n\npost');
+  });
+
+  it('strips a paired `<prior_conversations>` envelope', () => {
+    const out = stripDelegatesForDisplay(
+      'pre\n<prior_conversations>(none yet)</prior_conversations>\npost'
+    );
+    expect(out).toBe('pre\n\npost');
+  });
+
+  it('strips a paired `<recent_memory>` envelope', () => {
+    const out = stripDelegatesForDisplay(
+      'pre\n<recent_memory>(no persistent notes matched)</recent_memory>\npost'
+    );
+    expect(out).toBe('pre\n\npost');
+  });
+
+  // Tail-partial coverage for the two envelope tags most likely to
+  // appear at a mid-stream buffer boundary: `<host_environment>` (long
+  // body, host-injected every iteration) and `<workspace_context>`
+  // (same). Matches the existing `<run_state` partial test below — the
+  // strip's tail-partial contract triggers ONLY on an opening tag that
+  // hasn't been closed with `>` yet (mid-body partials past `>` are
+  // out-of-contract because the renderer can't safely guess where the
+  // closing tag would have landed).
+  it('strips a partial `<host_environment` at the buffer tail', () => {
+    const out = stripDelegatesForDisplay(
+      'narrate\n<host_environment'
+    );
+    expect(out).toBe('narrate');
+  });
+
+  it('strips a partial `<workspace_context` at the buffer tail', () => {
+    const out = stripDelegatesForDisplay(
+      'narrate\n<workspace_context'
+    );
+    expect(out).toBe('narrate');
+  });
+
+  // The OLD literal — `<current_workspace_context>` — was on the
+  // pre-fix allowlist but no code path emits it. We DO NOT add it
+  // back to the allowlist (any model legitimately quoting the
+  // string would be a user-prose mention, not an echoed envelope).
+  // This test pins that the strip leaves it alone.
+  it('leaves the stale literal `<current_workspace_context>` untouched', () => {
+    const out = stripDelegatesForDisplay(
+      'I think the renamed envelope is `<current_workspace_context>` — historical.'
+    );
+    expect(out).toContain('<current_workspace_context>');
+  });
+
   it('strips a partial `<run_state` at the buffer tail', () => {
     const out = stripDelegatesForDisplay(
       'streaming text continues\n<run_state iter="3"'

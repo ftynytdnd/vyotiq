@@ -2,10 +2,11 @@
  * Renderer-side structured logger.
  *
  * Mirrors the main-process `logger.ts` shape (`debug | info | warn | error`
- * + `child(scope)`) so log call-sites read the same on both processes. The
- * renderer cannot write to userData files; sink is `console` only. Setting
- * `window.__VYOTIQ_LOG_LEVEL` to `'debug'` unlocks debug output for in-app
- * triage without requiring a rebuild.
+ * + `child(scope)`) so log call-sites read the same on both processes.
+ * Each emit writes to the devtools console and, when the preload bridge is
+ * available, relays to `<userData>/vyotiq/logs/vyotiq.log` via
+ * `vyotiq.log`. Setting `window.__VYOTIQ_LOG_LEVEL` to `'debug'` unlocks
+ * debug output for in-app triage without requiring a rebuild.
  */
 
 import type { LogLevel, Logger } from '@shared/types/logger.js';
@@ -35,6 +36,21 @@ function head(scope: string, level: LogLevel): string {
   return `[${ts}] ${level.toUpperCase().padEnd(5)} ${scope}`;
 }
 
+function forwardToMain(
+  level: LogLevel,
+  scope: string,
+  msg: string,
+  fields?: Record<string, unknown>
+): void {
+  try {
+    const bridge = typeof window !== 'undefined' ? window.vyotiq : undefined;
+    if (!bridge?.log) return;
+    void bridge.log(level, `[${scope}] ${msg}`, fields);
+  } catch {
+    /* bridge unavailable outside Electron */
+  }
+}
+
 function emit(level: LogLevel, scope: string, msg: string, fields?: Record<string, unknown>): void {
   if (!shouldLog(level)) return;
   const text = `${head(scope, level)} ${msg}`;
@@ -54,6 +70,7 @@ function emit(level: LogLevel, scope: string, msg: string, fields?: Record<strin
       console.error(...args);
       break;
   }
+  forwardToMain(level, scope, msg, fields);
 }
 
 function makeLogger(scope: string): Logger {

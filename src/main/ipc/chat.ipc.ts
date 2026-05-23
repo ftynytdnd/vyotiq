@@ -8,7 +8,7 @@
  *   - Derive a short title from the first user prompt.
  */
 
-import { IPC, MAX_USER_PROMPT_BYTES, PERSIST_DELTA_COALESCE_CHARS } from '@shared/constants.js';
+import { IPC, PERSIST_DELTA_COALESCE_CHARS } from '@shared/constants.js';
 import type {
   ChatSendInput,
   ChatSendReply,
@@ -20,7 +20,12 @@ import {
   listActiveRuns,
   startRun
 } from '../orchestrator/AgentV.js';
-import { getMainWindow } from '../window/getMainWindow.js';
+import {
+  abortIdleSummary as abortIdleSummaryFor,
+  awaitIdleSummary as awaitIdleSummaryFor,
+  hasIdleSummary as hasIdleSummaryFor
+} from '../orchestrator/contextSummarizer/idleSummaryRuntime.js';
+import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import {
   appendEvent,
   createConversation,
@@ -39,6 +44,8 @@ import { listWorkspaces } from '../workspace/workspaceState.js';
 import { getSettings } from '../settings/settingsStore.js';
 import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
+import { assertString } from './validate.js';
+import { assertChatSendInput } from './chatValidate.js';
 
 const log = logger.child('ipc/chat');
 
@@ -155,94 +162,35 @@ function isPersistentEvent(event: TimelineEvent): boolean {
   //     superseded by the final `tool-call` event.
   //   - `diff-stream` — Phase 2 FS-aware live diff superseded by the
   //     authoritative `tool-result.data.hunks` once the tool runs.
+  //   - `synthetic-usage-update` — Phase 3 renderer-side mid-stream
+  //     token estimate. The authoritative `token-usage` event lands
+  //     at end-of-turn and restores the same final aggregate; the
+  //     synthetic stream is pure live telemetry. Also intentionally
+  //     never crosses IPC (it originates in chatChannel and stays
+  //     in the renderer process), but we list it here defensively
+  //     in case the main process ever produces one via a future
+  //     emit path.
   return (
     event.kind !== 'run-status' &&
     event.kind !== 'tool-call-args-delta' &&
-    event.kind !== 'diff-stream'
+    event.kind !== 'diff-stream' &&
+    event.kind !== 'synthetic-usage-update'
   );
 }
 
 /**
- * Safe wrapper around `webContents.send`. `getMainWindow()` is resolved
- * per-emit rather than captured at handler entry so a mid-run reload /
- * teardown can't turn the cached `BrowserWindow` reference into a hot
- * `isDestroyed`-throws landmine. Any throw from the IPC send path is
- * swallowed (logged at debug) — a renderer that's gone is not a reason
- * to take down the orchestrator loop that's still producing events.
+ * Local alias for the shared `safeWebContentsSend` helper. Kept so the
+ * call-site shape inside this file (`safeSend(channel, ...args)`) stays
+ * stable across the consolidation; the helper resolves `getMainWindow()`
+ * per-emit and swallows destroyed-window throws — same contract this
+ * function used to implement inline. See `window/safeWebContentsSend.ts`
+ * for the canonical implementation. Audit P3-3 (2026-05).
  */
-function safeSend(channel: string, ...args: unknown[]): void {
-  try {
-    const win = getMainWindow();
-    if (!win || win.isDestroyed()) return;
-    // `webContents` itself may already be torn down even while the
-    // window instance lingers for GC; check before dispatching.
-    const wc = win.webContents;
-    if (!wc || wc.isDestroyed()) return;
-    wc.send(channel, ...args);
-  } catch (err) {
-    log.debug('webContents.send failed; renderer likely gone', { channel, err });
-  }
-}
+const safeSend = safeWebContentsSend;
 
 export function registerChatIpc(): void {
   wrapIpcHandler(IPC.CHAT_SEND, async (_event, input: ChatSendInput): Promise<ChatSendReply> => {
-
-    // Audit fix M-03: shape-validate the input BEFORE doing anything
-    // else. The renderer enforces composer-side limits, but a direct-
-    // IPC caller (test, future integration, malicious script) could
-    // otherwise push:
-    //   - a non-string `prompt` (passes through to `appendEvent` and
-    //     corrupts the transcript's `user-prompt.content` slot —
-    //     `applyTimelineEvent` then concatenates undefined into the
-    //     persisted assistant view),
-    //   - a megabyte-scale prompt that bloats every transcript reload
-    //     for the conversation's lifetime,
-    //   - a missing / non-string `runId` that races the route map,
-    //   - a missing / mis-typed `selection` object that crashes the
-    //     orchestrator after the conversation is already created.
-    //
-    // We throw a structured Error here so `wrapIpcHandler` surfaces
-    // it as a renderer-facing rejection instead of leaving the run
-    // half-created.
-    if (input === null || typeof input !== 'object') {
-      throw new Error('chat:send: input must be an object');
-    }
-    if (typeof input.runId !== 'string' || input.runId.length === 0) {
-      throw new Error('chat:send: runId is required (string)');
-    }
-    if (typeof input.prompt !== 'string') {
-      throw new Error('chat:send: prompt must be a string');
-    }
-    // Byte-cap rather than char-cap so multi-byte unicode prompts are
-    // measured by what actually lands on disk.
-    const promptBytes = Buffer.byteLength(input.prompt, 'utf8');
-    if (promptBytes > MAX_USER_PROMPT_BYTES) {
-      throw new Error(
-        `chat:send: prompt exceeds the ${MAX_USER_PROMPT_BYTES.toLocaleString()}-byte cap ` +
-        `(received ${promptBytes.toLocaleString()} bytes). Split the prompt into smaller messages.`
-      );
-    }
-    if (input.selection === null || typeof input.selection !== 'object') {
-      throw new Error('chat:send: selection must be a ModelSelection object');
-    }
-    if (typeof input.selection.providerId !== 'string' || typeof input.selection.modelId !== 'string') {
-      throw new Error('chat:send: selection.providerId and selection.modelId must both be strings');
-    }
-    if (input.permissions === null || typeof input.permissions !== 'object') {
-      throw new Error('chat:send: permissions must be a ChatPermissions object');
-    }
-    // `conversationId` / `workspaceId` / `attachments` are optional and
-    // each branch below already handles undefined; type-check them
-    // only if present so a stray `null` doesn't slip through.
-    if (input.conversationId !== undefined && typeof input.conversationId !== 'string') {
-      throw new Error('chat:send: conversationId must be a string when set');
-    }
-    if (input.workspaceId !== undefined && typeof input.workspaceId !== 'string') {
-      throw new Error('chat:send: workspaceId must be a string when set');
-    }
-    if (input.attachments !== undefined && !Array.isArray(input.attachments)) {
-      throw new Error('chat:send: attachments must be an array when set');
-    }
+    assertChatSendInput(input);
 
     // Resolve the workspace for this run. Priority:
     //   1. `input.workspaceId` from the renderer (the active workspace's id).
@@ -291,8 +239,12 @@ export function registerChatIpc(): void {
       // meta exist for this id?", which is exactly `getConversationMeta`.
       const known = (await getConversationMeta(conversationId)) !== null;
       if (!known) {
-        log.warn('chat:send referenced unknown conversation; creating new', { conversationId });
-        conversationId = (await createConversation(workspaceIdForRun)).id;
+        log.warn('chat:send rejected unknown conversationId', { conversationId });
+        return {
+          ok: false as const,
+          kind: 'unknown-conversation' as const,
+          conversationId
+        };
       }
     }
     const cid = conversationId;
@@ -343,6 +295,24 @@ export function registerChatIpc(): void {
       // still be flushing to disk when we hit `readTranscript` below.
       // The drain is per-conversation and is a no-op when no chain
       // exists, so this is microsecond-cheap on the happy path.
+      await drainAppendChain(cid);
+    }
+
+    // Idle-summary supersede (review finding for idle parity). An
+    // in-flight idle-mode manual summarization writes
+    // `context-summary-*` events into the SAME JSONL the next
+    // `chat:send` is about to read, so a fresh prompt would
+    // otherwise race the streaming compression and pull a
+    // half-applied splice into its replay-time `messages[]`. Abort
+    // any in-flight idle summary, then await its `done` promise
+    // before continuing — the abort routes through `streamSummary`'s
+    // `signal.aborted` branch and emits a clean
+    // `context-summary-aborted` event, so the renderer's reducer
+    // and the persisted JSONL both settle deterministically.
+    if (hasIdleSummaryFor(cid)) {
+      log.warn('chat:send superseding in-flight idle summary', { conversationId: cid });
+      abortIdleSummaryFor(cid);
+      await awaitIdleSummaryFor(cid);
       await drainAppendChain(cid);
     }
 
@@ -875,6 +845,7 @@ export function registerChatIpc(): void {
   });
 
   wrapIpcHandler(IPC.CHAT_ABORT, async (_event, runId: string) => {
+    assertString('chat:abort', 'runId', runId);
     abortRun(runId);
   });
 

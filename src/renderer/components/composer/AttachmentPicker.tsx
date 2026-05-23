@@ -18,6 +18,8 @@ import { Eyebrow } from '../ui/Eyebrow.js';
 import { TextField } from '../ui/TextField.js';
 import { getWorkspaceTree } from '../../lib/workspaceTreeCache.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
+import { useChatStore } from '../../store/useChatStore.js';
+import { useConversationsStore } from '../../store/useConversationsStore.js';
 
 interface AttachmentPickerProps {
   open: boolean;
@@ -56,7 +58,17 @@ export function AttachmentPicker({
   const [loading, setLoading] = useState(false);
   const [internalFilter, setInternalFilter] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
-  const workspaceKey = useWorkspaceStore((s) => s.info.path ?? '');
+  const conversationId = useChatStore((s) => s.conversationId);
+  const convWorkspaceId = useConversationsStore((s) => {
+    if (!conversationId) return null;
+    return s.list.find((m) => m.id === conversationId)?.workspaceId ?? null;
+  });
+  const workspacePath = useWorkspaceStore((s) => {
+    const wsId = convWorkspaceId ?? s.activeId;
+    const entry = wsId ? s.list.find((w) => w.id === wsId) : undefined;
+    return entry?.path ?? s.info.path ?? '';
+  });
+  const workspaceIdForTree = convWorkspaceId ?? useWorkspaceStore.getState().activeId ?? undefined;
 
   const isControlled = controlledFilter !== undefined;
   const filter = isControlled ? controlledFilter! : internalFilter;
@@ -80,7 +92,7 @@ export function AttachmentPicker({
     // picker (very common: `+` button + every `@` mention) reuses the
     // last fresh result instead of re-paying for a full `fast-glob`
     // walk on every click. Cache is invalidated on workspace switch.
-    void getWorkspaceTree(workspaceKey, 5)
+    void getWorkspaceTree(workspacePath, 5, workspaceIdForTree ?? undefined)
       .then((result) => {
         if (cancelled) return;
         setTree(result.entries);
@@ -104,7 +116,7 @@ export function AttachmentPicker({
       cancelled = true;
       if (raf !== null) cancelAnimationFrame(raf);
     };
-  }, [open, isControlled, workspaceKey]);
+  }, [open, isControlled, workspacePath, workspaceIdForTree]);
 
   const filtered = useMemo(() => {
     const all = tree ?? [];

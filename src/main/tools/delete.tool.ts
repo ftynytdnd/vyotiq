@@ -41,7 +41,7 @@ export const deleteTool: Tool = {
 - Fails if the target is a directory (use a focused \`edit\` flow for folder cleanups).
 - Fails if the target does not exist.
 - Refuses binary-looking files (same UTF-8 gate as \`read\`).
-- Without \`allowFileWrites\` or under strict-approvals, the user is asked to confirm.`,
+- When \`allowAuto\` is off (default) or under strict-approvals, the user is asked to confirm.`,
   schema: {
     type: 'function',
     function: {
@@ -123,7 +123,8 @@ export const deleteTool: Tool = {
     // Approval gate. Two-layer policy mirrors `edit`:
     //   1. `strictApprovals` → full-diff preview via `confirmEdit`.
     //      `EditApprovalDialog` paints the pre-body in danger tone.
-    //   2. `allowFileWrites === false` → legacy text-only confirm.
+    //   2. `allowAuto === false` → text-only confirm for the non-strict
+    //      path. The strict path always wins when both are on.
     if (ctx.strictApprovals) {
       const deletions = original.length === 0 ? 0 : original.split('\n').length;
       const payload: EditApprovalPayload = {
@@ -140,7 +141,7 @@ export const deleteTool: Tool = {
       if (!decision.approved) {
         return failure(id, started, `User denied delete of ${a.path}.`, 'permission denied');
       }
-    } else if (!ctx.permissions.allowFileWrites) {
+    } else if (!ctx.permissions.allowAuto) {
       const outcome = await ctx.confirm(
         `Agent V wants to DELETE ${a.path}. Allow?`
       );

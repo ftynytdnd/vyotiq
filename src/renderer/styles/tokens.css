@@ -9,7 +9,7 @@
    ## Color tokens
 
    --color-surface-base       Main app background. Stealth dark, never #000.
-   --color-surface-raised     Sidebar, composer, elevated rows. One step lighter.
+   --color-surface-raised     Dock, composer, elevated rows. One step lighter.
    --color-surface-overlay    Modals, dropdowns, popovers.
    --color-surface-hover      Hover state for raised surfaces.
 
@@ -25,8 +25,17 @@
    --color-accent-soft        Translucent accent for selection / hover-tint.
    --color-accent-strong      Pressed / high-emphasis accent (hover on CTA).
    --color-success            Diff additions, success toasts.
+   --color-success-soft       Soft success wash (e.g. status pill backgrounds).
+   --color-success-strong     Bright success fill (status dots, strong text).
    --color-danger             Diff removals, destructive confirmations.
+   --color-danger-soft        Soft danger wash for Notice / pill chrome.
+   --color-danger-strong      Bright danger fill (status dots, strong text).
    --color-warning            Caution states.
+   --color-warning-soft       Soft warning wash for Notice / pill chrome.
+   --color-warning-strong     Bright warning fill (status dots, strong text).
+
+   --color-border-divider     Canonical horizontal-rule tint shared by
+                              PhaseDividerRow and RunCompleteRow.
 
    ## Radii
 
@@ -38,7 +47,7 @@
    ## Typography
 
    --text-meta      10px   Uppercase eyebrows, timestamps, hint rows
-   --text-row       11px   Timeline row labels, sidebar items
+   --text-row       11px   Timeline row labels, dock tabs, compact UI
    --text-log       12px   Tool / reasoning / subagent log lines
    --text-body      14px   Assistant text, prompts, primary copy
    --font-sans      Primary UI font (Inter)
@@ -53,5 +62,19 @@
    Each elevation bundles a hairline inset ring + shadow stops into a
    single `box-shadow` property so callers don't have to compose
    `shadow-*` and `ring-*` utilities by hand.
+
+   ## Surface shell (composer / dock / timeline)
+
+   `.surface-shell` / `SurfaceShell` component — canonical bordered inset
+   chrome shared by ChatFooter, timeline rows, and secondary panels:
+     - `rounded-inner` (6px)
+     - `border-border-subtle/18` + `bg-surface-raised/10`
+     - inset top highlight shadow
+   `.surface-shell-focus` — optional focus-within glow for interactive shells.
+
+   Padding presets via `surfaceShellInnerClassName`:
+     compact   px-2 py-1     dock tabs, row headers
+     content   px-3 py-2     markdown / prompt body
+     nested    px-2.5 py-1.5 expanded detail panels
 
    --------------------------------------------------------------------------- */

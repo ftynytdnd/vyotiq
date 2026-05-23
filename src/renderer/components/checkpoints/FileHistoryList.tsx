@@ -12,6 +12,7 @@ import type { FileHistoryRow } from '@shared/types/checkpoint.js';
 import { useCheckpointsStore } from '../../store/useCheckpointsStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { Button } from '../ui/Button.js';
+import { Spinner } from '../ui/Spinner.js';
 import { DiffStatsBadge } from '../timeline/tools/shared/DiffStatsBadge.js';
 import { EditDiffView } from '../timeline/tools/edit/EditDiffView.js';
 import { CodeBlock } from '../timeline/tools/shared/CodeBlock.js';
@@ -19,15 +20,23 @@ import { computeDiffHunksClient } from './diffClient.js';
 import { formatTimestamp } from './formatTimestamp.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { cn } from '../../lib/cn.js';
+import { surfaceListClassName } from '../ui/SurfaceShell.js';
+import { timelineRowHeaderClassName } from '../timeline/shared/rowStyles.js';
 
 interface FileHistoryListProps {
   workspaceId: string;
   filePath: string;
+  embedded?: boolean;
   /** Closes the panel. */
   onBack: () => void;
 }
 
-export function FileHistoryList({ workspaceId, filePath, onBack }: FileHistoryListProps) {
+export function FileHistoryList({
+  workspaceId,
+  filePath,
+  embedded = false,
+  onBack
+}: FileHistoryListProps) {
   const [rows, setRows] = useState<FileHistoryRow[] | null>(null);
   /**
    * When set, the row identified by `entryId` is rendered with an
@@ -81,7 +90,7 @@ export function FileHistoryList({ workspaceId, filePath, onBack }: FileHistoryLi
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="log-line flex items-center gap-2">
+      <div className={timelineRowHeaderClassName}>
         <Button size="sm" variant="ghost" onClick={onBack}>
           ← Back
         </Button>
@@ -96,13 +105,21 @@ export function FileHistoryList({ workspaceId, filePath, onBack }: FileHistoryLi
         </Button>
       </div>
       {rows === null && (
-        <div className="text-row text-text-faint">Loading history…</div>
+        <div className="flex items-center gap-2 text-row text-text-muted">
+          <Spinner /> Loading history…
+        </div>
       )}
       {rows && rows.length === 0 && (
         <div className="text-row text-text-muted">No recorded history for this file.</div>
       )}
       {orderedRows && orderedRows.length > 0 && (
-        <ul className="scrollbar-stealth flex max-h-[52vh] flex-col gap-0.5 overflow-y-auto rounded-inner bg-surface-raised/60 p-1">
+        <ul
+          className={cn(
+            'scrollbar-stealth',
+            surfaceListClassName,
+            embedded ? 'min-h-0 flex-1' : 'max-h-[52vh]'
+          )}
+        >
           {orderedRows.map((r) => (
             <HistoryRow
               key={r.entryId}
@@ -185,14 +202,14 @@ function HistoryRow({
 
   return (
     <li className="group flex flex-col">
-      <div className="log-line flex items-center gap-2 px-2 py-1">
+      <div className={timelineRowHeaderClassName}>
         <span
           className={cn(
             'shrink-0 rounded-inner px-1 font-mono text-meta uppercase',
             row.kind === 'create'
-              ? 'bg-success/10 text-success'
+              ? 'bg-success-soft text-success'
               : row.kind === 'delete'
-                ? 'bg-danger/10 text-danger'
+                ? 'bg-danger-soft text-danger'
                 : 'bg-surface-overlay text-text-muted'
           )}
         >
@@ -209,7 +226,7 @@ function HistoryRow({
         <DiffStatsBadge
           additions={row.additions}
           deletions={row.deletions}
-          className="w-16 shrink-0 justify-end"
+          minWidth="badge"
         />
         <Button
           size="sm"
@@ -217,7 +234,7 @@ function HistoryRow({
           onClick={onToggleCompare}
           title="Diff this snapshot against the current on-disk file"
           className={cn(
-            'opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100',
+            'opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100',
             comparing && 'opacity-100'
           )}
         >
@@ -230,7 +247,7 @@ function HistoryRow({
             variant="ghost"
             onClick={() => onRestore(row.preHash!)}
             title="Restore the file content as it was BEFORE this change"
-            className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+            className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
           >
             <RotateCcw className="h-3 w-3" strokeWidth={2.25} />
             Restore pre
@@ -242,7 +259,7 @@ function HistoryRow({
             variant="ghost"
             onClick={() => onRestore(row.postHash!)}
             title="Restore the file content as it was AFTER this change"
-            className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+            className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
           >
             <RotateCcw className="h-3 w-3" strokeWidth={2.25} />
             Restore post

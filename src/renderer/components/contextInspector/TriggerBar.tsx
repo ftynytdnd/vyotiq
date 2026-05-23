@@ -7,10 +7,11 @@
  * No card chrome.
  */
 
-import { Layers, RotateCcw, Sparkles } from 'lucide-react';
+import { Layers, RotateCcw, Sparkles, Square, XCircle } from 'lucide-react';
 import { Button } from '../ui/Button.js';
 import { Eyebrow } from '../ui/Eyebrow.js';
 import { useToastStore } from '../../store/useToastStore.js';
+import { useChatStore } from '../../store/useChatStore.js';
 import { useContextSummaryStore } from '../../store/useContextSummaryStore.js';
 import { formatTokenCount } from '../../lib/formatTokens.js';
 import { projectAfterTokens, sumTokens } from './inspectorFormat.js';
@@ -22,15 +23,17 @@ import type {
 interface TriggerBarProps {
   snapshot: ContextInspectorSnapshot;
   rules: ContextSummaryRules;
-  /** Live mode lets the user trigger summarizations / undo / reset.
-   *  Idle mode renders a read-only bar with the projection only. */
-  mode: 'live' | 'idle';
 }
 
-export function TriggerBar({ snapshot, rules, mode }: TriggerBarProps) {
+export function TriggerBar({ snapshot, rules }: TriggerBarProps) {
   const triggerManual = useContextSummaryStore((s) => s.triggerManual);
+  const abortIdle = useContextSummaryStore((s) => s.abortIdle);
+  const abortLiveSummary = useContextSummaryStore((s) => s.abortLiveSummary);
+  const inspectorMode = useContextSummaryStore((s) => s.mode);
+  const boundId = useContextSummaryStore((s) => s.boundId);
   const resetOverrides = useContextSummaryStore((s) => s.resetMessageOverrides);
   const busy = useContextSummaryStore((s) => s.busy);
+  const abortRun = useChatStore((s) => s.abortRun);
   const showToast = useToastStore((s) => s.show);
 
   const summarizableTokens = sumTokens(
@@ -42,16 +45,14 @@ export function TriggerBar({ snapshot, rules, mode }: TriggerBarProps) {
   ).length;
   const projectedAfter = projectAfterTokens(snapshot.messages);
 
+  const summaryInFlight = snapshot.activeSummaryId !== undefined;
   const canTrigger =
-    mode === 'live' &&
     rules.enabled &&
-    snapshot.activeSummaryId === undefined &&
+    !summaryInFlight &&
     summarizableCount >= rules.minMessagesToSummarize;
   const triggerDisabledReason = (() => {
-    if (mode !== 'live') return 'Summarization runs only against an active run.';
     if (!rules.enabled) return 'Context summarization is disabled in settings.';
-    if (snapshot.activeSummaryId !== undefined)
-      return 'A summarization is already in flight.';
+    if (summaryInFlight) return 'A summarization is already in flight.';
     if (summarizableCount < rules.minMessagesToSummarize) {
       return `Need at least ${rules.minMessagesToSummarize} summarizable messages — only ${summarizableCount} ready.`;
     }
@@ -65,6 +66,24 @@ export function TriggerBar({ snapshot, rules, mode }: TriggerBarProps) {
       return;
     }
     showToast('Summarization started.', 'success');
+  };
+
+  const onCancelSummary = async () => {
+    const result =
+      inspectorMode === 'live' && boundId
+        ? await abortLiveSummary()
+        : await abortIdle();
+    if (!result.ok) {
+      showToast('No summarization is running.', 'danger');
+      return;
+    }
+    showToast('Summarization cancelled.', 'success');
+  };
+
+  const onStopRun = async () => {
+    if (inspectorMode !== 'live' || !boundId) return;
+    await abortRun(boundId);
+    showToast('Run stopped.', 'success');
   };
 
   const onReset = async () => {
@@ -91,33 +110,56 @@ export function TriggerBar({ snapshot, rules, mode }: TriggerBarProps) {
           </span>
         )}
       </div>
-      <div className="text-row text-text-muted">
+      <div className="text-row text-text-secondary">
         {triggerDisabledReason ??
           'Compresses the messages currently marked Summarize. The active rules above govern what gets included.'}
       </div>
-      <div className="flex items-center gap-2">
-        {mode === 'live' && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => void onReset()}
-            title="Clear every Keep / Summarize / Drop override on this conversation."
-          >
-            <RotateCcw className="h-3 w-3" strokeWidth={2.25} />
-            Reset overrides
-          </Button>
-        )}
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"
-          variant="primary"
+          variant="secondary"
+          onClick={() => void onReset()}
+          title="Clear every Keep / Summarize / Drop override on this conversation."
+        >
+          <RotateCcw className="h-3 w-3" strokeWidth={2.25} />
+          Reset overrides
+        </Button>
+        <Button
+          size="sm"
+          variant={canTrigger ? 'primary' : 'secondary'}
           disabled={!canTrigger}
-          loading={busy}
+          loading={busy && !summaryInFlight}
           onClick={() => void onTrigger()}
           title={triggerDisabledReason ?? 'Summarize the eligible messages now.'}
         >
           {!busy && <Sparkles className="h-3 w-3" strokeWidth={2.25} />}
           Summarize now
         </Button>
+        {summaryInFlight && (
+          <>
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={busy}
+              onClick={() => void onCancelSummary()}
+              title="Stop only the in-flight context summarization."
+            >
+              {!busy && <XCircle className="h-3 w-3" strokeWidth={2.25} />}
+              Cancel summary
+            </Button>
+            {inspectorMode === 'live' && boundId && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => void onStopRun()}
+                title="Stop the entire orchestrator run."
+              >
+                <Square className="h-3 w-3" strokeWidth={2.25} />
+                Stop run
+              </Button>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

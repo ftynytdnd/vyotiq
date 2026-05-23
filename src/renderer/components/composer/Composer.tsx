@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { FolderOpen, Mic, X } from 'lucide-react';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { ComposerToolbar } from './ComposerToolbar.js';
 import { TokenUsagePill } from './TokenUsagePill.js';
@@ -9,7 +9,7 @@ import { RunningElsewhereHint } from './runningElsewhere/index.js';
 import { useComposerHistory } from './useComposerHistory.js';
 import { Chip } from '../ui/Chip.js';
 import { useChatStore } from '../../store/useChatStore.js';
-import { useContextSummaryStore } from '../../store/useContextSummaryStore.js';
+import { useSecondaryZoneStore } from '../../store/useSecondaryZoneStore.js';
 import {
   useSettingsStore,
   selectEffectivePermissions
@@ -20,6 +20,7 @@ import {
   selectEffectiveContextWindow
 } from '../../store/useProviderStore.js';
 import { cn } from '../../lib/cn.js';
+import { useToastStore } from '../../store/useToastStore.js';
 import { AGENT_NAME } from '@shared/constants.js';
 
 const TEXTAREA_MAX_HEIGHT = 168;
@@ -28,9 +29,16 @@ interface ComposerProps {
   model: ModelSelection | null;
   onModelChange: (sel: ModelSelection) => void;
   onOpenProviders: () => void;
+  /** `footer` — flush inside the unified chat footer card. */
+  variant?: 'card' | 'footer';
 }
 
-export function Composer({ model, onModelChange, onOpenProviders }: ComposerProps) {
+export function Composer({
+  model,
+  onModelChange,
+  onOpenProviders,
+  variant = 'card'
+}: ComposerProps) {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<string[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -56,12 +64,21 @@ export function Composer({ model, onModelChange, onOpenProviders }: ComposerProp
   const isProcessing = useChatStore((s) => s.isProcessing);
   const send = useChatStore((s) => s.send);
   const abort = useChatStore((s) => s.abort);
-  const totalRunUsage = useChatStore((s) => s.totalRunUsage);
+  // Read the ORCHESTRATOR's authoritative usage directly, NOT the
+  // run-level `totalRunUsage` aggregate. Sub-agents have completely
+  // separate context windows (project.md §"Sub-Agent Delegation" #3,
+  // also Anthropic's 2026 Claude Code subagents docs). The pill is
+  // the "how full is the model the user is composing TO" gauge — it
+  // must reflect the orchestrator's window, not a multi-agent sum.
+  // The Inspector's `UsageBadge`, `LiveStatusRow`, and dock peak badges
+  // all read this same slot, so the surfaces stay consistent.
+  const orchestratorUsage = useChatStore((s) => s.orchestratorUsage);
   const events = useChatStore((s) => s.events);
   const conversationId = useChatStore((s) => s.conversationId);
   const runId = useChatStore((s) => s.runId);
   const storeDraft = useChatStore((s) => s.draft);
   const setDraft = useChatStore((s) => s.setDraft);
+  const workspacePath = useWorkspaceStore((s) => s.info.path);
   const providers = useProviderStore((s) => s.providers);
   const setContextOverride = useProviderStore((s) => s.setContextOverride);
   // Effective permissions resolve through three layers:
@@ -76,24 +93,42 @@ export function Composer({ model, onModelChange, onOpenProviders }: ComposerProp
   // Pre-flight BPE estimate (main process). Runs while the user types.
   // Swapped out for the provider's actual `usage.promptTokens +
   // completionTokens` once the first streamed turn reports usage.
+  //
+  // Phase 2 (2026): passing `conversationId` opts into the full-baseline
+  // path — the estimate now includes the system prompt + harness +
+  // envelopes + replayed history + tool schemas, not just the draft.
+  // The main process caches the baseline per-conversation so a burst
+  // of keystrokes stays cheap.
   const estimate = useComposerTokenEstimate({
     modelId: model?.modelId ?? '',
     prompt: text,
-    attachments
+    attachments,
+    ...(conversationId ? { conversationId } : {})
   });
   const ceiling = model
     ? selectEffectiveContextWindow(providers, model.providerId, model.modelId)
     : undefined;
-  const hasActualUsage = totalRunUsage !== undefined;
+  const hasActualUsage = orchestratorUsage !== undefined;
+  // Phase 4 (2026): once the orchestrator's first usage frame lands,
+  // grow the headline number with the synthetic mid-stream
+  // `inFlight.completionTokens` so the pill animates upward during
+  // long generations instead of sitting frozen at the last `usage`
+  // frame. `inFlight` is cleared the instant the next authoritative
+  // `token-usage` event lands. Scoped to the orchestrator alone —
+  // sub-agent in-flight tokens grow their OWN context windows, not
+  // this one.
+  const inFlightCompletion = orchestratorUsage?.inFlight?.completionTokens ?? 0;
   const usedTokens = hasActualUsage
-    ? totalRunUsage!.latest.promptTokens + totalRunUsage!.latest.completionTokens
+    ? orchestratorUsage!.latest.promptTokens +
+    orchestratorUsage!.latest.completionTokens +
+    inFlightCompletion
     : estimate.tokens;
 
   const history = useComposerHistory(events);
 
   /** Debounced draft persistence. A single `requestAnimationFrame`
    *  coalesces rapid keystrokes into one store write per frame so
-   *  sibling subscribers (sidebar, ChatPage) don't re-render on every
+   *  sibling subscribers (dock, ChatPage) don't re-render on every
    *  character. */
   const draftRafRef = useRef<number | null>(null);
   const pendingDraftRef = useRef('');
@@ -159,13 +194,19 @@ export function Composer({ model, onModelChange, onOpenProviders }: ComposerProp
     autosize(taRef.current);
   }, [text]);
 
+  const showToast = useToastStore((s) => s.show);
+
   const handleSend = async () => {
     if (isProcessing) {
       await abort();
       return;
     }
     const trimmed = text.trim();
-    if (!trimmed || !model) return;
+    if (!trimmed) return;
+    if (!model) {
+      showToast('Select a model before sending.', 'danger');
+      return;
+    }
     const toSend = attachments;
     setText('');
     setAttachments([]);
@@ -259,7 +300,7 @@ export function Composer({ model, onModelChange, onOpenProviders }: ComposerProp
       ? 'ready'
       : 'idle';
   // Inspector entry point: the pill's primary click opens the
-  // Context Inspector slide-over for either the in-flight run
+  // Context Inspector panel for either the in-flight run
   // (when one is bound) or the persisted-initial-messages view
   // of the conversation (when idle). Bound id is preferred in
   // priority order: live runId → conversationId. The Inspector
@@ -269,9 +310,17 @@ export function Composer({ model, onModelChange, onOpenProviders }: ComposerProp
     if (!id) return undefined;
     const mode: 'live' | 'idle' = runId ? 'live' : 'idle';
     return () => {
-      void useContextSummaryStore.getState().open(id, mode);
+      useSecondaryZoneStore.getState().openInspector(id, mode);
     };
   })();
+  // Phase 4 (2026): the `estimated` slash style fires whenever the
+  // pill's headline value is NOT pinned to provider-reported `usage`.
+  // While a run is streaming we treat the value as authoritative-ish
+  // even when the synthetic `inFlight` is adding to it — the slash
+  // stays upright so the user doesn't see a per-frame italic flicker
+  // as inFlight grows. The pre-flight estimate (no `orchestratorUsage`
+  // yet, and the tokenizer fell back to the heuristic) still
+  // italicizes the slash via `!estimate.exact`.
   const tokenUsageSlot = model ? (
     <TokenUsagePill
       used={usedTokens}
@@ -281,17 +330,41 @@ export function Composer({ model, onModelChange, onOpenProviders }: ComposerProp
         setContextOverride(model.providerId, model.modelId, value)
       }
       {...(openInspector ? { onOpenInspector: openInspector } : {})}
+      {...(hasActualUsage ? { usage: orchestratorUsage!.latest } : {})}
+      {...(estimate.baseline ? { baseline: estimate.baseline } : {})}
+      draftTokens={estimate.draftTokens}
     />
   ) : null;
+
+  const footerMode = variant === 'footer';
+  const zoneOpen = useSecondaryZoneStore((s) => s.panel !== null);
 
   return (
     <div className="w-full">
       <div
         className={cn(
-          'flex flex-col overflow-hidden rounded-card bg-surface-overlay p-1',
-          textareaFocused ? 'elev-2-focused' : 'elev-2'
+          'flex flex-col overflow-hidden',
+          footerMode
+            ? 'bg-transparent'
+            : cn(
+                'rounded-card border border-border-subtle/30 bg-surface-raised',
+                textareaFocused ? 'elev-2-focused' : 'elev-2'
+              )
         )}
       >
+        {workspacePath && (
+          <div
+            className={cn(
+              'flex min-w-0 items-center gap-1.5 border-b border-border-subtle/25 text-meta text-text-muted',
+              footerMode ? 'px-2 py-1' : 'px-3 py-1.5'
+            )}
+          >
+            <FolderOpen className="h-3 w-3 shrink-0" strokeWidth={2} aria-hidden />
+            <span className="min-w-0 truncate font-mono" title={workspacePath}>
+              {workspacePath}
+            </span>
+          </div>
+        )}
         {attachments.length > 0 && (
           <div className="flex min-w-0 flex-wrap items-center gap-1 rounded-inner bg-surface-raised/80 px-2 py-1">
             {attachments.map((p) => (
@@ -314,11 +387,14 @@ export function Composer({ model, onModelChange, onOpenProviders }: ComposerProp
           in the natural reading flow without ever taking layout space
           in the idle case.
         */}
-        <RunningElsewhereHint className="px-3 pb-0.5 pt-1" />
+        <RunningElsewhereHint
+          className={footerMode ? 'px-2.5 pb-0 pt-0.5' : 'px-3 pb-0.5 pt-1'}
+        />
         <textarea
           ref={taRef}
           value={text}
           aria-label={`Message ${AGENT_NAME}`}
+          aria-keyshortcuts="Enter Shift+Enter ArrowUp ArrowDown Escape"
           onChange={(e) => onTextChange(e.target.value)}
           onFocus={() => setTextareaFocused(true)}
           onBlur={() => setTextareaFocused(false)}
@@ -334,6 +410,10 @@ export function Composer({ model, onModelChange, onOpenProviders }: ComposerProp
             }
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
+              if (text.trim().length > 0 && !model) {
+                showToast('Select a model before sending.', 'danger');
+                return;
+              }
               void handleSend();
               return;
             }
@@ -368,11 +448,20 @@ export function Composer({ model, onModelChange, onOpenProviders }: ComposerProp
             }
           }}
           rows={1}
-          placeholder={`Message ${AGENT_NAME}`}
+          placeholder="@ to mention files, or describe your task…"
           className={cn(
-            'w-full resize-none bg-transparent px-3 pb-2 pt-2.5 text-body leading-6 text-text-primary',
+            'w-full resize-none bg-transparent outline-none focus:outline-none',
+            footerMode
+              ? 'min-h-[1.75rem] px-2 pb-0 pt-1.5 text-body leading-5 text-text-primary'
+              : 'px-3 pb-1.5 pt-3 text-body leading-6 text-text-primary',
             'placeholder:text-text-faint',
-            'outline-none focus:outline-none'
+            // Short height transition smooths the auto-grow / shrink
+            // step so a multi-line paste doesn't jolt the composer
+            // surface. `motion-reduce` skips the transition for
+            // users with reduced-motion preferences. The autosize()
+            // helper writes the new `style.height` synchronously;
+            // the transition interpolates from the previous value.
+            'transition-[height] duration-150 ease-out motion-reduce:transition-none'
           )}
           style={{ maxHeight: TEXTAREA_MAX_HEIGHT }}
         />
@@ -382,6 +471,8 @@ export function Composer({ model, onModelChange, onOpenProviders }: ComposerProp
           sendState={sendState}
           onSend={() => void handleSend()}
           canSend={text.trim().length > 0 && !!model}
+          compact={zoneOpen}
+          footerMode={footerMode}
           attachments={attachments}
           // Picker is open whenever the `+` button toggled it OR the
           // user is mid-`@`-mention. The two flows route to different

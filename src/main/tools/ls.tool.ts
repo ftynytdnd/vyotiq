@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Tool } from './types.js';
 import type { ToolResult } from '@shared/types/tool.js';
-import { resolveInsideWorkspace, workspaceRelative } from './sandbox.js';
+import { realpathInsideWorkspace, workspaceRelative } from './sandbox.js';
 
 interface LsArgs {
   path?: string;
@@ -42,6 +42,7 @@ async function walk(
     if (out.length >= MAX_ENTRIES) return;
     if (!includeHidden && entry.name.startsWith('.')) continue;
     if (DEFAULT_IGNORE.has(entry.name)) continue;
+    if (entry.isSymbolicLink()) continue;
     const childAbs = join(startAbs, entry.name);
     const rel = workspaceRelative(rootAbs, childAbs);
     if (entry.isDirectory()) {
@@ -103,7 +104,7 @@ export const lsTool: Tool = {
 
     let startAbs: string;
     try {
-      startAbs = resolveInsideWorkspace(ctx.workspacePath, a.path ?? '.');
+      startAbs = await realpathInsideWorkspace(ctx.workspacePath, a.path ?? '.');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return {

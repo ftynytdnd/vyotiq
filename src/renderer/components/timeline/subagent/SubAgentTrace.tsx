@@ -19,9 +19,15 @@ import { SubAgentBriefing } from './briefing/SubAgentBriefing.js';
 import { SubAgentFocusModal } from './focus/SubAgentFocusModal.js';
 import { useSubAgentFocus } from './focus/useSubAgentFocus.js';
 import { StatusIcon } from '../tools/shared/StatusIcon.js';
-import { NestedDetailRail } from '../shared/NestedDetailRail.js';
+import { DetailShell } from '../shared/DetailShell.js';
 import { cn } from '../../../lib/cn.js';
 import { shimmerStyle, shimmerText } from '../../../lib/shimmer.js';
+import { SurfaceShell } from '../../ui/SurfaceShell.js';
+import {
+  timelineRowChevronClassName,
+  timelineRowHeaderClassName,
+  timelineRowIconClassName
+} from '../shared/rowStyles.js';
 
 interface SubAgentTraceProps {
   subagentId: string;
@@ -61,7 +67,7 @@ export function SubAgentTrace({ subagentId }: SubAgentTraceProps) {
   const ok: boolean | null =
     snap.status === 'pending' || snap.status === 'running'
       ? null
-      : snap.status === 'done'
+      : snap.status === 'done' || snap.status === 'partial'
         ? true
         : false;
   const hasOutput = typeof snap.output === 'string' && snap.output.trim().length > 0;
@@ -77,13 +83,19 @@ export function SubAgentTrace({ subagentId }: SubAgentTraceProps) {
   const editStats = summarizeEdits(snap.fileEdits);
 
   return (
-    <div className="vyotiq-stepfade flex flex-col">
+    <SurfaceShell
+      focusGlow={isLive}
+      data-row-kind="subagent-line"
+      data-subagent-id={subagentId}
+      className={cn(
+        'flex flex-col gap-1',
+        !isLive && (snap.status === 'done' || snap.status === 'partial') && 'opacity-90'
+      )}
+    >
       <div
         className={cn(
-          'group log-line app-no-drag flex w-full items-center gap-1.5 rounded-inner px-2 py-1',
-          'transition-colors duration-150',
-          conversationId ? 'cursor-pointer' : 'cursor-default',
-          !isLive && snap.status === 'done' && 'opacity-80 hover:opacity-100'
+          'group flex w-full items-center gap-1.5',
+          conversationId ? 'cursor-pointer' : 'cursor-default'
         )}
       >
         <button
@@ -92,18 +104,19 @@ export function SubAgentTrace({ subagentId }: SubAgentTraceProps) {
           disabled={!conversationId}
           aria-expanded={expanded}
           className={cn(
-            'app-no-drag flex min-w-0 flex-1 items-center gap-2 rounded-inner text-left',
+            timelineRowHeaderClassName,
+            'min-w-0 flex-1',
             conversationId ? 'cursor-pointer' : 'cursor-default'
           )}
         >
           {expanded ? (
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-chevron" strokeWidth={2} />
+            <ChevronDown className={timelineRowChevronClassName} strokeWidth={2} />
           ) : (
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-chevron" strokeWidth={2} />
+            <ChevronRight className={timelineRowChevronClassName} strokeWidth={2} />
           )}
           <Bot
             className={cn(
-              'h-3.5 w-3.5 shrink-0',
+              timelineRowIconClassName,
               isLive
                 ? 'text-accent'
                 : snap.status === 'failed' || snap.status === 'aborted'
@@ -116,7 +129,7 @@ export function SubAgentTrace({ subagentId }: SubAgentTraceProps) {
             className={shimmerText(
               isLive,
               cn(
-                'min-w-0 flex-1 truncate text-log',
+                'min-w-0 flex-1 truncate text-row',
                 isLive ? 'text-text-secondary' : 'text-text-muted'
               )
             )}
@@ -154,28 +167,28 @@ export function SubAgentTrace({ subagentId }: SubAgentTraceProps) {
           onFocus={focus.open}
           className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
         />
-        <StatusIcon ok={ok} size="sm" className="shrink-0" />
+        <StatusIcon ok={ok} size="sm" className="mr-1 shrink-0" />
       </div>
 
       {expanded && (
-        <NestedDetailRail gap="gap-1.5">
+        <DetailShell gap="gap-1.5">
           <SubAgentHeader snap={snap} />
           <SubAgentBriefing snap={snap} />
           <SubAgentRunFlow snap={snap} />
           {hasOutput && <SubAgentResult output={snap.output!} />}
-        </NestedDetailRail>
+        </DetailShell>
       )}
       <SubAgentFocusModal
         open={focus.isOpen}
         onClose={focus.close}
         snap={snap}
       />
-    </div>
+    </SurfaceShell>
   );
 }
 
 function quote(s: string, max: number): string {
-  const truncated = s.length > max ? `${s.slice(0, max - 1)}...` : s;
+  const truncated = s.length > max ? `${s.slice(0, max - 1)}\u2026` : s;
   return `"${truncated}"`;
 }
 

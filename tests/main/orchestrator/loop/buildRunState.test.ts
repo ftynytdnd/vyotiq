@@ -129,6 +129,92 @@ describe('buildRunStateXml', () => {
     );
     expect(xml).toContain('spin_signature_hot: (none)');
   });
+
+  /**
+   * T1-1: the harness illustrative `<run_state>` block lists
+   * `failing_tasks` as a stable field. The renderer ALWAYS includes
+   * the line — `(none)` when the per-task strike map is empty, and a
+   * structured multi-line list otherwise. Pins both branches.
+   */
+  it('always emits a failing_tasks: line (T1-1) — `(none)` when nothing is hot', () => {
+    const acc = createRunStateAccumulator();
+    const xml = buildRunStateXml(
+      snapshotRunState(
+        acc,
+        { consecutiveBadRounds: 0, perTaskBadStreak: new Map() },
+        { used: 0 },
+        createSpinSignatureBuffer(),
+        0
+      )
+    );
+    expect(xml).toContain('failing_tasks: (none)');
+  });
+
+  it('lists each failing task with its streak when one crosses the soft threshold (T1-1)', () => {
+    const acc = createRunStateAccumulator();
+    const counters = {
+      consecutiveBadRounds: 0,
+      perTaskBadStreak: new Map<string, number>([
+        ['edit src/foo.ts|src/foo.ts', 2],
+        ['edit src/bar.ts|src/bar.ts', 3]
+      ])
+    };
+    const xml = buildRunStateXml(
+      snapshotRunState(
+        acc,
+        counters,
+        { used: 0 },
+        createSpinSignatureBuffer(),
+        0
+      )
+    );
+    // Header line on its own.
+    expect(xml).toContain('failing_tasks:');
+    // Highest streak first (sort order in the renderer).
+    const failingIdx = xml.indexOf('failing_tasks:');
+    const tail = xml.slice(failingIdx);
+    expect(tail).toMatch(/streak 3:.*edit src\/bar\.ts/);
+    expect(tail).toMatch(/streak 2:.*edit src\/foo\.ts/);
+    // The "(none)" sentinel must NOT appear when a list is rendered.
+    expect(tail).not.toContain('(none)');
+  });
+
+  /**
+   * T1-1: `child_redelegations:` is rendered ONLY when non-zero so the
+   * steady-state path stays silent. Pin both branches.
+   */
+  it('omits child_redelegations when the count is zero', () => {
+    const acc = createRunStateAccumulator();
+    acc.childRedelegationsTotal = 0;
+    const xml = buildRunStateXml(
+      snapshotRunState(
+        acc,
+        { consecutiveBadRounds: 0, perTaskBadStreak: new Map() },
+        { used: 0 },
+        createSpinSignatureBuffer(),
+        0
+      )
+    );
+    expect(xml).not.toContain('child_redelegations:');
+  });
+
+  it('renders child_redelegations when the model has tried to call delegate as a tool', () => {
+    const acc = createRunStateAccumulator();
+    acc.childRedelegationsTotal = 2;
+    const xml = buildRunStateXml(
+      snapshotRunState(
+        acc,
+        { consecutiveBadRounds: 0, perTaskBadStreak: new Map() },
+        { used: 0 },
+        createSpinSignatureBuffer(),
+        0
+      )
+    );
+    expect(xml).toContain('child_redelegations: 2');
+    // The line includes a one-line corrective hint so the model
+    // recognises the channel mistake without further prompting.
+    expect(xml).toContain('XML directive');
+  });
 });
 
 describe('createRunStateAccumulator', () => {

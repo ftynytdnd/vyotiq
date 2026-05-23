@@ -107,11 +107,16 @@ export interface AppSettings {
    * settings store ALWAYS populates a fully-resolved `permissions` object
    * on the public `AppSettings` shape (`settingsStore.publicShape`), so
    * consumers can treat this as required after the first `refresh()`.
+   *
+   * Legacy shape: pre-2026 settings carried three booleans
+   * (`allowFileWrites`, `allowBash`, `allowWebSearch`). The main-side
+   * `publicShape` derives the new `allowAuto` flag from those on read
+   * (truthy iff both `allowFileWrites` and `allowBash` were on); the
+   * next `setSettings` write drops the legacy fields. The type stays
+   * narrow so consumers never see the deprecated keys.
    */
   permissions?: {
-    allowFileWrites: boolean;
-    allowBash: boolean;
-    allowWebSearch: boolean;
+    allowAuto: boolean;
   };
   webSearchEndpoint?: string;
   /**
@@ -120,7 +125,13 @@ export interface AppSettings {
    * top-level shape.
    */
   ui?: {
+    /** @deprecated Replaced by `dockExpanded`. Read for migration only. */
     sidebarOpen?: boolean;
+    /**
+     * Bottom navigation dock expand/collapse. Expanded by default on
+     * first launch; persisted so the user's preference survives restart.
+     */
+    dockExpanded?: boolean;
     /**
      * Timeline row expand/collapse state keyed by `conversationId`. Each
      * value is an array of opaque row keys (e.g. `tool-group:<id>`) that
@@ -152,26 +163,28 @@ export interface AppSettings {
     /**
      * Per-workspace permission overrides, keyed by `WorkspaceEntry.id`.
      * When a workspace has an entry here, sending a message under that
-     * workspace uses the override INSTEAD of the global
-     * `permissions` block. Each entry is partial — only the flags the
-     * user explicitly toggled in that workspace are persisted, and any
-     * unspecified flag falls back to the global default. This keeps
-     * the override surface minimal: a brand-new workspace with one
-     * "allow bash" toggle stores `{ allowBash: false }`, not all three
-     * flags.
+     * workspace uses the override INSTEAD of the global `permissions`
+     * block. Each entry is a partial — only the flags the user
+     * explicitly toggled per-workspace are persisted, and any
+     * unspecified flag falls back to the global default. This is the
+     * "Trust this workspace" surface the composer's permission menu
+     * writes into.
      *
      * Why per-workspace and not per-conversation: the user's mental
-     * model is "this folder is safe for writes / unsafe / sandboxed"
-     * — a property of the workspace itself, not of any single chat
-     * inside it. Per-conversation overrides would multiply the
-     * surface area without addressing the actual safety question.
+     * model is "this folder is safe / unsafe / sandboxed" — a property
+     * of the workspace itself, not of any single chat inside it.
+     * Per-conversation overrides would multiply the surface area
+     * without addressing the actual safety question.
+     *
+     * Legacy shape: pre-2026 entries carried a partial of the three-
+     * flag shape (`allowFileWrites` / `allowBash` / `allowWebSearch`).
+     * `publicShape` on the main side derives the new `allowAuto` per
+     * entry on read; the next write drops the deprecated keys.
      */
     permissionsByWorkspace?: Record<
       string,
       Partial<{
-        allowFileWrites: boolean;
-        allowBash: boolean;
-        allowWebSearch: boolean;
+        allowAuto: boolean;
       }>
     >;
     /**
@@ -338,7 +351,7 @@ export interface VyotiqApi {
     get(): Promise<WorkspaceInfo>;
     pick(): Promise<WorkspaceInfo>;
     set(path: string): Promise<WorkspaceInfo>;
-    listTree(opts?: { depth?: number }): Promise<WorkspaceTreeResult>;
+    listTree(opts?: { depth?: number; workspaceId?: string }): Promise<WorkspaceTreeResult>;
 
     /** Full multi-workspace registry. Used by the sidebar tree. */
     list(): Promise<WorkspacesState>;
@@ -402,12 +415,36 @@ export interface VyotiqApi {
      * Best-effort token count for a composer draft. Resolves the right
      * encoding for the given model id (o200k_base for GPT-4o+ / DeepSeek,
      * cl100k_base fallback, chars/3.8 for models with no BPE).
+     *
+     * When `conversationId` is supplied (Phase 2 — 2026), the main
+     * process ALSO tokenizes the full prospective `messages[]` that
+     * the next request would carry (system prompt + harness +
+     * envelopes + replayed history + tool schemas) and returns the
+     * per-part breakdown alongside the draft count. `tokens` then
+     * carries the sum (`baseline.total + draftTokens`); legacy
+     * callers that omit `conversationId` get just the draft count
+     * in `tokens` with no `baseline` slot. Field-additive on the
+     * wire so existing callers are unaffected.
      */
     estimate(input: {
       modelId: string;
       prompt: string;
       attachments?: string[];
-    }): Promise<{ tokens: number; exact: boolean }>;
+      conversationId?: string;
+    }): Promise<{
+      tokens: number;
+      exact: boolean;
+      /** Present iff `conversationId` was supplied. */
+      draftTokens?: number;
+      /** Present iff `conversationId` was supplied. Sums to
+       *  `baseline.systemPrompt + baseline.history + baseline.tools`. */
+      baseline?: {
+        total: number;
+        systemPrompt: number;
+        history: number;
+        tools: number;
+      };
+    }>;
   };
 
   // ---- Chat / orchestrator ----
@@ -494,7 +531,10 @@ export interface VyotiqApi {
 
   // ---- Memory ----
   memory: {
-    list(scope: 'global' | 'workspace'): Promise<MemoryEntry[]>;
+    list(
+      scope: 'global' | 'workspace',
+      opts?: { keysOnly?: boolean }
+    ): Promise<MemoryEntry[]>;
     read(scope: 'global' | 'workspace', key: string): Promise<MemoryEntry | null>;
     /**
      * Write or append to a memory entry.
@@ -632,10 +672,36 @@ export interface VyotiqApi {
      * unknown, rules disabled, mid-summary, or the summarizable range
      * is below `minMessagesToSummarize`).
      */
+    /**
+     * Trigger a manual summarization. Two modes:
+     *
+     *   - **Live** — pass a `runId` for an active orchestrator
+     *     run; the second argument MUST be omitted. The handle's
+     *     `triggerManual` callback streams events through the
+     *     run's existing emit sink.
+     *   - **Idle** — pass a `conversationId` as the first argument
+     *     and a synthetic `idleRunId` (renderer-minted, registered
+     *     in the chat store's `runIdToConv` BEFORE calling) as the
+     *     second. The IPC routes the work through
+     *     `idleSummaryRuntime.triggerIdleSummary`, which streams
+     *     `context-summary-*` events through the same `CHAT_EVENT`
+     *     channel and persists them to the JSONL so the next
+     *     `chat:send`'s `replayCompression` re-applies the splice.
+     *
+     * Resolves once the `context-summary-pending` event has been
+     * emitted; the actual streaming continues asynchronously and
+     * arrives through `chat.onEvent`. Returns `{ ok: false, reason }`
+     * when the trigger was rejected (run unknown, rules disabled,
+     * mid-summary, or the summarizable range is below
+     * `minMessagesToSummarize`). The optional `idleRunId` slot on
+     * the success path echoes the synthetic id back so the renderer
+     * can confirm the route registration.
+     */
     triggerManual(
-      runId: string
+      runIdOrConversationId: string,
+      idleRunId?: string
     ): Promise<
-      | { ok: true; summaryId: string }
+      | { ok: true; summaryId: string; idleRunId?: string }
       | { ok: false; reason: string }
     >;
     /**
@@ -644,9 +710,16 @@ export interface VyotiqApi {
      * boundary, run-ended, or unknown id).
      */
     undo(
-      runId: string,
+      runIdOrConversationId: string,
       summaryId: string
-    ): Promise<{ ok: boolean }>;
+    ): Promise<{ ok: boolean; event?: import('./chat.js').TimelineEvent }>;
+    /**
+     * Cancel an in-flight idle-mode summarization. Returns `{ ok: true }`
+     * when a summary was aborted; `{ ok: false }` when none was running.
+     */
+    abortIdle(conversationId: string): Promise<{ ok: boolean }>;
+    /** Cancel summarization on an active orchestrator run (not the whole run). */
+    abortLive(runId: string): Promise<{ ok: boolean }>;
     /**
      * Set or clear a per-message override on the given conversation.
      * Persisted as a `context-override-set` TimelineEvent in the JSONL

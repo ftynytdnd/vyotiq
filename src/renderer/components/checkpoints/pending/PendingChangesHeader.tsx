@@ -8,8 +8,8 @@
  *   - Run filter pill — only rendered when ≥ 2 distinct runs are
  *     present.
  *   - Path filter input — substring match against `filePath`.
- *   - Workspace usage pill (clickable when `onOpenCheckpoints` is
- *     provided) — opens the full Checkpoints view.
+ *   - Workspace usage pill (clickable when `onOpenCheckpointSettings` is
+ *     provided) — opens Settings → Checkpoints.
  *   - Bulk Accept / Reject buttons.
  *   - Optional `Review all` trigger that opens the lightbox mode.
  *
@@ -20,7 +20,9 @@
 
 import { ListChecks, Search, X, GalleryHorizontal } from 'lucide-react';
 import { Button } from '../../ui/Button.js';
+import { TextField } from '../../ui/TextField.js';
 import { cn } from '../../../lib/cn.js';
+import { SurfaceShell, surfaceShellInnerClassName } from '../../ui/SurfaceShell.js';
 
 /**
  * Threshold (inclusive) at which the path filter renders even when
@@ -55,7 +57,7 @@ interface PendingChangesHeaderProps {
   /** Render the workspace usage pill. */
   usageLabel: string | null;
   usageTitle: string | null;
-  onOpenCheckpoints?: () => void;
+  onOpenCheckpointSettings?: () => void;
   onAcceptAll: () => void;
   onRejectAll: () => void;
   /**
@@ -64,6 +66,8 @@ interface PendingChangesHeaderProps {
    * lightbox in `PendingChangesReviewMode`.
    */
   onReviewAll?: () => void;
+  /** When false, run/path filter row is hidden (timeline collapsed row). */
+  filtersVisible?: boolean;
 }
 
 export function PendingChangesHeader({
@@ -79,10 +83,11 @@ export function PendingChangesHeader({
   onPathQueryChange,
   usageLabel,
   usageTitle,
-  onOpenCheckpoints,
+  onOpenCheckpointSettings,
   onAcceptAll,
   onRejectAll,
-  onReviewAll
+  onReviewAll,
+  filtersVisible = true
 }: PendingChangesHeaderProps) {
   const gateLabel = gateOn
     ? 'approve or reject before sending'
@@ -91,8 +96,8 @@ export function PendingChangesHeader({
   const filtered = visibleCount !== totalCount;
 
   return (
-    <div className="flex flex-col gap-1.5 border-b border-border-subtle/30 px-3 py-2">
-      <div className="log-line flex flex-wrap items-center gap-x-2 gap-y-1">
+    <SurfaceShell className={cn('flex flex-col gap-1.5', surfaceShellInnerClassName('compact'))}>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <ListChecks className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} />
         <div className="min-w-0 flex-1 basis-52 text-row text-text-secondary">
           <span className="font-medium text-text-primary">
@@ -109,12 +114,12 @@ export function PendingChangesHeader({
             {gateLabel}
           </span>
         </div>
-        {usageLabel && onOpenCheckpoints && (
+        {usageLabel && onOpenCheckpointSettings && (
           <button
             type="button"
-            onClick={onOpenCheckpoints}
+            onClick={onOpenCheckpointSettings}
             className="shrink-0 text-meta text-text-muted hover:text-text-primary"
-            title={usageTitle ?? 'Open Checkpoints view'}
+            title={usageTitle ?? 'Open checkpoint settings'}
           >
             {usageLabel}
           </button>
@@ -140,9 +145,10 @@ export function PendingChangesHeader({
           </Button>
         </div>
       </div>
-      {(runIds.length > 1 ||
-        totalCount >= PATH_FILTER_AUTO_THRESHOLD ||
-        pathQuery.length > 0) && (
+      {filtersVisible &&
+        (runIds.length > 1 ||
+          totalCount >= PATH_FILTER_AUTO_THRESHOLD ||
+          pathQuery.length > 0) && (
           <div className="flex flex-wrap items-center gap-2">
             {runIds.length > 1 && (
               <RunFilter
@@ -157,7 +163,7 @@ export function PendingChangesHeader({
             />
           </div>
         )}
-    </div>
+    </SurfaceShell>
   );
 }
 
@@ -212,6 +218,12 @@ function PathFilterInput({
   value: string;
   onChange: (value: string) => void;
 }) {
+  // The outer `<label>` carries the surface + hairline border and
+  // wraps the leading icon + trailing clear button. The inner
+  // `TextField` uses `tone="transparent"` so it inherits the
+  // wrapper's background instead of stacking its own — preserves
+  // the pre-migration look while routing through the shared
+  // primitive.
   return (
     <label
       className={cn(
@@ -221,15 +233,14 @@ function PathFilterInput({
       )}
     >
       <Search className="h-3 w-3 text-text-faint" strokeWidth={2} />
-      <input
+      <TextField
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="filter by path"
-        className={cn(
-          'w-32 bg-transparent text-text-secondary outline-none',
-          'placeholder:text-text-faint'
-        )}
+        size="sm"
+        tone="transparent"
+        className="w-32 px-0 text-meta text-text-secondary placeholder:text-text-faint"
       />
       {value.length > 0 && (
         <button

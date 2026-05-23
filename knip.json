@@ -21,8 +21,6 @@
     "src/renderer/types/assets.d.ts"
   ],
   "ignoreDependencies": [
-    "chart.js",
-    "uplot",
     "highlight.js",
     "tailwindcss"
   ]

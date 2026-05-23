@@ -81,7 +81,22 @@ export type MessageKind =
  * `context-override-set` event kind so overrides survive renderer
  * reloads, conversation switches, and app restarts.
  */
-export type ContextMessageOverride = 'keep' | 'summarize' | 'drop';
+/**
+ * Runtime tuple of allowed override values. The TypeScript type
+ * `ContextMessageOverride` is derived from this so the wire-shape
+ * validator (`assertEnum` in `contextSummary.ipc.ts`) and the type
+ * system stay in lockstep — adding a new override here flows through
+ * to both the renderer's toggle and the IPC handler's allow-list
+ * without a second source of truth to drift.
+ *
+ * Mirrors the `PROVIDER_DIALECTS` pattern in `./provider.ts`.
+ */
+export const CONTEXT_MESSAGE_OVERRIDES = [
+  'keep',
+  'summarize',
+  'drop'
+] as const;
+export type ContextMessageOverride = (typeof CONTEXT_MESSAGE_OVERRIDES)[number];
 
 /**
  * Per-kind summarization policy. Used as the "default" decision for a
@@ -293,6 +308,67 @@ export interface ContextInspectorSnapshot {
    *  for this run. The Inspector locks the trigger button and
    *  routes its live-card subscription against this id. */
   activeSummaryId?: string;
+  /**
+   * Phase 5 (2026) — wire breakdown for the Inspector's "Wire
+   * breakdown" panel. Splits the prospective payload into
+   * system-prompt body, tool-schema JSON, and message bodies so the
+   * user can see where the tokens are actually going.
+   *
+   *   - `systemPromptTokens` = sum of every `role:'system'` message's
+   *     token estimate (already counted inside `totalTokens` too).
+   *   - `toolSchemaTokens` = tokens of the serialized tool catalogue.
+   *     NOT counted in `totalTokens` because the Inspector's message
+   *     list only iterates `messages[]` — tools live alongside.
+   *   - `bodyTokens` = sum of every non-system message's token
+   *     estimate (also a subset of `totalTokens`).
+   *   - `total` = `systemPromptTokens + toolSchemaTokens + bodyTokens`
+   *     — the authoritative total that the WIRE will see for the
+   *     next request. May exceed `totalTokens` by `toolSchemaTokens`.
+   *
+   * Always present so the Inspector renders the section
+   * unconditionally; zeros are valid (empty conversation).
+   */
+  framing: {
+    systemPromptTokens: number;
+    toolSchemaTokens: number;
+    bodyTokens: number;
+    total: number;
+    /**
+     * Per-envelope breakdown of `systemPromptTokens` so the Inspector
+     * can foldably surface where the system-prompt budget actually
+     * goes. The first row is always `"Harness body"` (the static
+     * directives + tool catalogue + runtime-limits prose); subsequent
+     * rows are the named envelopes in their wire order:
+     * `Meta rules`, `Host environment`, `Workspace context`,
+     * `Session context`, `Run state`, `Prior conversations`,
+     * `Recent memory`. Missing envelopes are silently skipped (an
+     * idle snapshot before iter-0 hasn't built `<run_state>` yet, so
+     * that row would be absent).
+     *
+     * The sum of `tokens` across rows is APPROXIMATELY equal to
+     * `systemPromptTokens`. Small drift is expected (a few tokens
+     * per envelope) because the renderer tokenises each row
+     * independently — the chat-format framing tokens
+     * `tokenizeMessages` adds for the system message's role marker
+     * land in `systemPromptTokens` only. The Inspector pins the
+     * lumped row to `systemPromptTokens` and only uses this field
+     * for the indented sub-rows; the user-visible totals stay
+     * authoritative.
+     *
+     * Optional so legacy callers / serialized snapshots from older
+     * builds remain backward-compatible: when undefined, the
+     * Inspector falls back to a non-foldable single row.
+     */
+    envelopes?: Array<{
+      /** User-facing row title (e.g. `"Host environment"`). */
+      label: string;
+      /** Tokenized count of the envelope body. Zero is valid (an
+       *  empty `<recent_memory>(no persistent notes matched)
+       *  </recent_memory>` envelope still tokenizes to a handful of
+       *  tokens, but a placeholder body could degenerate to 0). */
+      tokens: number;
+    }>;
+  };
 }
 
 /**

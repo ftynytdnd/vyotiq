@@ -21,9 +21,10 @@ import type { Tool } from './types.js';
 import { describeConfirmFailure } from './types.js';
 import type { ToolResult } from '@shared/types/tool.js';
 import type { CheckpointChangeKind } from '@shared/types/checkpoint.js';
-import { isDestructiveCommand } from './sandbox.js';
+import { bashNeedsEscapeConfirm, isDestructiveCommand } from './sandbox.js';
 import {
   BASH_TIMEOUT_MS,
+  BASH_MAX_TIMEOUT_MS,
   BASH_SNAPSHOT_MAX_ENTRIES,
   BASH_SNAPSHOT_MAX_BYTES_PER_FILE,
   BASH_SNAPSHOT_MAX_TOTAL_BYTES
@@ -92,7 +93,7 @@ const BASH_SCAN_IGNORE = new Set([
   '.vyotiq'
 ]);
 
-interface PreSnapshotEntry {
+export interface PreSnapshotEntry {
   /** File mtime in ms. `null` if the file didn't exist during pre-scan. */
   mtimeMs: number | null;
   /**
@@ -106,7 +107,7 @@ interface PreSnapshotEntry {
   size: number;
 }
 
-interface PreSnapshot {
+export interface PreSnapshot {
   /** absolute path → pre-snapshot record */
   entries: Map<string, PreSnapshotEntry>;
   /** True if we hit any of the caps during the walk. */
@@ -246,13 +247,20 @@ export async function scanWorkspaceForBash(
 async function scanWorkspaceMtimesOnly(
   root: string,
   signal?: AbortSignal
-): Promise<Map<string, number>> {
+): Promise<{ mtimes: Map<string, number>; truncated: boolean }> {
   const out = new Map<string, number>();
   const stack: string[] = [root];
   let count = 0;
+  let truncated = false;
   while (stack.length > 0) {
-    if (signal?.aborted) break;
-    if (count >= BASH_SNAPSHOT_MAX_ENTRIES) break;
+    if (signal?.aborted) {
+      truncated = true;
+      break;
+    }
+    if (count >= BASH_SNAPSHOT_MAX_ENTRIES) {
+      truncated = true;
+      break;
+    }
     const current = stack.pop()!;
     let dirents: import('node:fs').Dirent[];
     try {
@@ -261,7 +269,10 @@ async function scanWorkspaceMtimesOnly(
       continue;
     }
     for (const de of dirents) {
-      if (signal?.aborted) break;
+      if (signal?.aborted) {
+        truncated = true;
+        break;
+      }
       const child = join(current, de.name);
       // Same symlink-skip rule as the pre-scanner (review finding H2):
       // a `vendor -> /etc` symlink must never enter the post-scan
@@ -283,10 +294,13 @@ async function scanWorkspaceMtimesOnly(
       } catch {
         /* vanished */
       }
-      if (count >= BASH_SNAPSHOT_MAX_ENTRIES) break;
+      if (count >= BASH_SNAPSHOT_MAX_ENTRIES) {
+        truncated = true;
+        break;
+      }
     }
   }
-  return out;
+  return { mtimes: out, truncated };
 }
 
 /**
@@ -307,11 +321,50 @@ interface DetectedMutation {
  * against a fresh post-bash mtime scan. Reads `postBody` from disk
  * for create/modify kinds (skipping binary / oversized files — those
  * fall through to audit-only).
+ *
+ * Truncation safety. Both `scanWorkspaceForBash` (pre) and
+ * `scanWorkspaceMtimesOnly` (post) are bounded by
+ * `BASH_SNAPSHOT_MAX_ENTRIES`. When either scan hits the cap, any
+ * file that existed but was skipped by the cap is INVISIBLE in the
+ * matching map — `pre.entries.get(abs)` and `post.get(abs)` both
+ * return `undefined` for it. Without the inline-stat guards below
+ * we'd misclassify those cases as:
+ *
+ *   - `kind: 'create'` for an mtime-changed file the pre-scan
+ *     skipped — and a later Reject on the resulting checkpoint entry
+ *     would `fs.unlink()` a file that the user had on disk before
+ *     bash ran (data loss).
+ *   - `kind: 'delete'` for a file the post-scan skipped — and a
+ *     later Reject would re-materialise the pre-body even though the
+ *     file is still on disk (overwrite).
+ *
+ * The `pre.truncated` and `postTruncated` flags tell us when each
+ * scan hit the cap. When either is set and the corresponding map
+ * lacks the entry, we `lstat` the path inline to disambiguate
+ * "genuinely new / removed" from "existed but past the cap":
+ *
+ *   - Pre-truncated + post has the path + stat says file exists:
+ *     either a `modify` (we have no pre-body, route to audit-only)
+ *     or a no-op (mtime didn't actually change relative to disk).
+ *     The `kind === 'modify'` branch already routes to audit-only
+ *     when `preEntry?.preBody === undefined`, so we just need to
+ *     promote the create case correctly.
+ *   - Post-truncated + pre has the path + stat says file STILL
+ *     exists: not a delete, just a cap-skip. Drop the synthetic
+ *     delete entirely.
+ *
+ * The inline stat costs at most one syscall per detected mutation.
+ * On a healthy small workspace (no truncation) the guards short-
+ * circuit on the truncation flags and we pay nothing.
+ *
+ * Exported for `bashTruncationSafety.test.ts` — same rationale as
+ * `scanWorkspaceForBash`.
  */
-async function computeMutations(
+export async function computeMutations(
   root: string,
   pre: PreSnapshot,
-  post: Map<string, number>
+  post: Map<string, number>,
+  postTruncated: boolean
 ): Promise<{ mutations: DetectedMutation[]; auditOnlyPaths: string[] }> {
   const mutations: DetectedMutation[] = [];
   const auditOnlyPaths: string[] = [];
@@ -320,13 +373,32 @@ async function computeMutations(
 
   // Creates + modifies.
   for (const [abs, postMtime] of post) {
-    visited.add(abs);
+      visited.add(abs);
     const preEntry = pre.entries.get(abs);
     const prevMtime = preEntry?.mtimeMs ?? null;
     if (prevMtime === postMtime) continue;
     const rel = relative(root, abs).split(sep).join('/');
     if (rel.length === 0 || rel.startsWith('..')) continue;
-    const kind: CheckpointChangeKind = prevMtime === null ? 'create' : 'modify';
+    let kind: CheckpointChangeKind = prevMtime === null ? 'create' : 'modify';
+    // Truncation safety for `create`. When the pre-scan hit the cap
+    // and this path is absent from `pre.entries`, the absence does
+    // NOT prove the file is new — it might have just been past the
+    // cap. Confirm with an inline `lstat` against the workspace tree
+    // BEFORE reading `postBody`. We don't follow symlinks here for
+    // the same reason `scanWorkspaceForBash` skips them: a symlink
+    // resolving outside the workspace must never enter the
+    // checkpoint store.
+    if (kind === 'create' && pre.truncated) {
+      // The post-scan saw the file on disk after bash, so we know it
+      // exists NOW. The question is whether it existed BEFORE. We
+      // can't answer that from the bounded snapshots; the best
+      // recovery is to route to audit-only so a later Reject can't
+      // unlink something the user already had. The auditOnlyPaths
+      // surface already exists for exactly this kind of "we observed
+      // a mutation but cannot reverse it".
+      auditOnlyPaths.push(rel);
+      continue;
+    }
     // Post-body: read fresh, binary-reject.
     let postBody: string | null | undefined;
     try {
@@ -365,6 +437,33 @@ async function computeMutations(
     if (visited.has(abs)) continue;
     const rel = relative(root, abs).split(sep).join('/');
     if (rel.length === 0 || rel.startsWith('..')) continue;
+    // Truncation safety for `delete`. When the post-scan hit the cap
+    // and this path is missing from `post`, the absence does NOT
+    // prove the file is gone — it might have just been past the cap.
+    // `lstat` the path inline; if the file is still on disk, this is
+    // a cap-skip (no mutation), not a delete. We use `lstat` so a
+    // dangling symlink doesn't follow through to its (potentially
+    // missing) target and produce a misleading ENOENT.
+    if (postTruncated) {
+      try {
+        const st = await fs.lstat(abs);
+        if (st.isFile() || st.isSymbolicLink()) {
+          // File is still there — the post-scan just didn't see it
+          // because of the cap. Not a real delete, skip entirely.
+          continue;
+        }
+      } catch (err: unknown) {
+        if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+          // Some other I/O error (EACCES on a permissions-locked
+          // path, etc.). Fall through to audit-only — we can't
+          // confidently revert a delete we can't even stat.
+          auditOnlyPaths.push(rel);
+          continue;
+        }
+        // ENOENT confirms the delete is real; fall through to the
+        // normal recoverable / audit-only branch below.
+      }
+    }
     if (preEntry.preBody === undefined) {
       // Can't revert a delete we never snapshotted.
       auditOnlyPaths.push(rel);
@@ -577,7 +676,7 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
       };
     }
 
-    if (!ctx.permissions.allowBash) {
+    if (!ctx.permissions.allowAuto) {
       const outcome = await ctx.confirm(
         `Agent V wants to run a shell command:\n\n${command}\n\nAllow?`
       );
@@ -585,6 +684,27 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
         // Audit fix H-04: surface the precise failure reason instead
         // of always claiming the user denied the prompt.
         const desc = describeConfirmFailure(outcome.reason, 'run shell commands');
+        return {
+          id,
+          name: 'bash',
+          ok: false,
+          output: desc.output,
+          error: desc.error,
+          durationMs: Date.now() - started
+        };
+      }
+    }
+
+    const escapeConfirm = bashNeedsEscapeConfirm(command);
+    if (escapeConfirm.needed) {
+      const outcome = await ctx.confirm(
+        `Agent V wants to run a shell command that may reach outside the workspace:\n\n${command}\n\n${escapeConfirm.reason}\n\nAllow?`
+      );
+      if (!outcome.approved) {
+        const desc = describeConfirmFailure(
+          outcome.reason,
+          'run commands outside the workspace'
+        );
         return {
           id,
           name: 'bash',
@@ -627,7 +747,9 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
     }
 
     const { cmd, args: argsFor } = platformShell();
-    const timeoutMs = typeof a.timeoutMs === 'number' && a.timeoutMs > 0 ? a.timeoutMs : BASH_TIMEOUT_MS;
+    const requested =
+      typeof a.timeoutMs === 'number' && a.timeoutMs > 0 ? a.timeoutMs : BASH_TIMEOUT_MS;
+    const timeoutMs = Math.min(requested, BASH_MAX_TIMEOUT_MS);
 
     // Pre-snapshot BEFORE the spawn so we can recover (or audit) file
     // mutations bash performed (rm / mv / `> file` / sed -i / etc.).
@@ -889,7 +1011,8 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
             const { mutations, auditOnlyPaths } = await computeMutations(
               ctx.workspacePath,
               preSnap,
-              postScan
+              postScan.mtimes,
+              postScan.truncated
             );
             if (ctx.signal.aborted) return;
             for (const m of mutations) {

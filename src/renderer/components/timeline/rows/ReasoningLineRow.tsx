@@ -30,10 +30,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { Brain, ChevronDown, ChevronRight } from 'lucide-react';
 import { useChatStore } from '../../../store/useChatStore.js';
-import { NestedDetailRail } from '../shared/NestedDetailRail.js';
+import { DetailShell } from '../shared/DetailShell.js';
 import { cn } from '../../../lib/cn.js';
 import { shimmerStyle, shimmerText } from '../../../lib/shimmer.js';
 import { formatReasoningLabel } from '../../../lib/reasoningLabel.js';
+import { SurfaceShell } from '../../ui/SurfaceShell.js';
+import {
+  timelineRowChevronClassName,
+  timelineRowHeaderClassName,
+  timelineRowIconClassName
+} from '../shared/rowStyles.js';
 
 /**
  * Cap on the rendered reasoning body. Long chain-of-thought streams
@@ -121,24 +127,19 @@ export function ReasoningLineRow({ id }: ReasoningLineRowProps) {
   };
 
   return (
-    <div className="vyotiq-stepfade flex flex-col">
+    <SurfaceShell className="flex flex-col gap-1">
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
-        className={cn(
-          'log-line app-no-drag flex w-full cursor-pointer items-center gap-1.5 px-1.5 py-0.5 text-left'
-        )}
+        className={cn(timelineRowHeaderClassName, 'cursor-pointer')}
       >
         {expanded ? (
-          <ChevronDown className="h-3 w-3 shrink-0 text-chevron" strokeWidth={2} />
+          <ChevronDown className={timelineRowChevronClassName} strokeWidth={2} />
         ) : (
-          <ChevronRight className="h-3 w-3 shrink-0 text-chevron" strokeWidth={2} />
+          <ChevronRight className={timelineRowChevronClassName} strokeWidth={2} />
         )}
-        <Brain
-          className="h-3 w-3 shrink-0 text-text-faint"
-          strokeWidth={2}
-        />
+        <Brain className={cn(timelineRowIconClassName, 'text-text-faint')} strokeWidth={2} />
         <span
           className={shimmerText(
             streaming,
@@ -154,7 +155,7 @@ export function ReasoningLineRow({ id }: ReasoningLineRowProps) {
       </button>
 
       {expanded && (
-        <NestedDetailRail>
+        <DetailShell>
           <div
             ref={bodyRef}
             onScroll={onBodyScroll}
@@ -165,8 +166,8 @@ export function ReasoningLineRow({ id }: ReasoningLineRowProps) {
           >
             {acc.text}
           </div>
-        </NestedDetailRail>
+        </DetailShell>
       )}
-    </div>
+    </SurfaceShell>
   );
 }

@@ -20,16 +20,61 @@ import type {
 type ChatRole = 'system' | 'user' | 'assistant' | 'tool';
 
 /**
- * Token usage reported by the provider at the end of a streamed turn.
- * Universal across OpenAI-compat providers when `stream_options.include_usage`
- * is set (final SSE chunk carries `usage: { prompt_tokens, completion_tokens,
- * total_tokens }`). Field names are normalized to camelCase at the stream
+ * Token usage reported by the provider for a streamed turn. Universal across
+ * OpenAI-compat providers when `stream_options.include_usage` is set; native
+ * Anthropic and Gemini dialects map their richer 2026 wire shapes into the
+ * same fields. Field names are normalized to camelCase at the stream
  * boundary so renderer code never sees snake_case.
+ *
+ * The optional `reasoning*` / `cached*` fields are SUBSETS of the
+ * containing primary field (already counted there) — surfaced separately
+ * so the UI can break down where the tokens went. NEVER sum them on top
+ * of the primary number.
+ *
+ *   - `reasoningTokens` is a subset of `completionTokens`.
+ *   - `cachedPromptTokens` is a subset of `promptTokens`.
+ *   - `cacheCreationTokens` is a subset of `promptTokens` (Anthropic-only;
+ *     bytes WRITTEN to the prompt cache this turn — separate billing
+ *     line from cache reads).
+ *
+ * 2026 dialect mapping (verified against the cited docs in the plan):
+ *
+ *   - OpenAI Chat Completions:
+ *       reasoningTokens     = usage.completion_tokens_details.reasoning_tokens
+ *       cachedPromptTokens  = usage.prompt_tokens_details.cached_tokens
+ *
+ *   - DeepSeek V4 (OpenAI-compat with non-standard cache field names):
+ *       reasoningTokens     = usage.completion_tokens_details.reasoning_tokens
+ *       cachedPromptTokens  = usage.prompt_cache_hit_tokens
+ *
+ *   - xAI Grok 4.x (OpenAI-compat):
+ *       reasoningTokens     = usage.completion_tokens_details.reasoning_tokens
+ *       cachedPromptTokens  = usage.prompt_tokens_details.cached_tokens
+ *
+ *   - Anthropic native:
+ *       cachedPromptTokens  = message_{start,delta}.usage.cache_read_input_tokens   (CUMULATIVE — replace, never add)
+ *       cacheCreationTokens = message_{start,delta}.usage.cache_creation_input_tokens (CUMULATIVE — replace, never add)
+ *
+ *   - Gemini native:
+ *       reasoningTokens     = usageMetadata.thoughtsTokenCount
+ *       cachedPromptTokens  = usageMetadata.cachedContentTokenCount
+ *
+ *   - Ollama native:
+ *       no cache / no reasoning breakdown on the wire today
  */
 export interface TokenUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  /** Subset of `completionTokens` spent on reasoning / thinking. */
+  reasoningTokens?: number;
+  /** Subset of `promptTokens` served from the prompt cache. */
+  cachedPromptTokens?: number;
+  /** Anthropic-only: subset of `promptTokens` WRITTEN to the prompt cache
+   *  this turn. Surfaced separately so users can spot wasted cache writes
+   *  (a write with no subsequent read is a billing footgun on Sonnet
+   *  4.6+). */
+  cacheCreationTokens?: number;
 }
 
 export interface ChatMessage {
@@ -46,6 +91,22 @@ export interface ChatMessage {
     id: string;
     type: 'function';
     function: { name: string; arguments: string };
+    /**
+     * Phase 9 (2026) — Gemini-only: opaque thoughtSignature that
+     * Gemini 3.x emits alongside a `functionCall` part. The
+     * orchestrator persists it here on the assistant message so
+     * the next request echoes the same signature back on the
+     * matching `functionCall`. Gemini's API returns 400
+     * "Function call signature missing or invalid" without it on
+     * the "Current Turn" of a multi-call sequence. Source:
+     *   https://ai.google.dev/gemini-api/docs/thought-signatures
+     *
+     * Other dialects ignore this field (it's stripped before any
+     * non-Gemini wire serialization). Persisted on the JSONL
+     * transcript via the `tool-call.thoughtSignature` field so a
+     * renderer reload + replay reconstructs it faithfully.
+     */
+    thoughtSignature?: string;
   }>;
   /** For role:'tool' messages, the id of the call being answered. */
   tool_call_id?: string;
@@ -59,6 +120,28 @@ export interface ChatMessage {
    * fields, so this is a safe additive.
    */
   reasoning_content?: string;
+  /**
+   * Anthropic-only: opaque encrypted signature that finalizes a `thinking`
+   * content block. Captured from the `signature_delta` SSE event during
+   * streaming and round-tripped UNCHANGED on the next request — Claude
+   * thinking models lose their reasoning chain across turns when the
+   * signature is missing or modified. Source:
+   * https://platform.claude.com/docs/en/docs/build-with-claude/extended-thinking
+   *
+   * Only populated by the `anthropic-native` transport. Other dialects
+   * (DeepSeek thinking, Ollama thinking, OpenAI o-series) don't surface a
+   * sibling signature on the wire — their reasoning text alone is the
+   * round-trip contract.
+   *
+   * Persisted on the JSONL transcript via the `agent-reasoning-end` event's
+   * `signature` field so a renderer reload + replay reconstructs it
+   * faithfully. The Anthropic Messages API auto-filters thinking blocks
+   * from prior turns it doesn't need (per-model class — see Anthropic's
+   * "Thinking block preservation by model" docs), so a missing signature
+   * for an older model class is harmless; for Opus 4.5+/Sonnet 4.6+ the
+   * API keeps prior thinking blocks and the signature MUST round-trip.
+   */
+  reasoning_signature?: string;
 }
 
 /**
@@ -114,7 +197,18 @@ export type TimelineEvent =
   | { kind: 'agent-text-aborted'; id: string; ts: number; subagentId?: string }
   /** Streaming chain-of-thought (DeepSeek-style). UI shows a collapsible card. */
   | { kind: 'agent-reasoning-delta'; id: string; ts: number; delta: string; subagentId?: string }
-  | { kind: 'agent-reasoning-end'; id: string; ts: number; subagentId?: string }
+  /**
+   * Closes a streaming reasoning panel. The optional `signature` field
+   * carries the Anthropic `signature_delta` payload concatenated across
+   * the closing thinking block — it MUST be passed back unchanged on the
+   * next request for thinking-capable Claude models, otherwise the model
+   * loses its reasoning chain (returns a degraded response or, on Gemini
+   * 3 function calling, a 400 error). Optional on the wire so older
+   * persisted transcripts and non-Anthropic dialects still deserialise
+   * cleanly. The replay layer fans the signature back onto the matching
+   * assistant `ChatMessage.reasoning_signature` slot.
+   */
+  | { kind: 'agent-reasoning-end'; id: string; ts: number; subagentId?: string; signature?: string }
   | { kind: 'phase'; id: string; ts: number; label: string }
   /**
    * Mid-stream notice that the orchestrator has just emitted a fully-formed
@@ -183,7 +277,24 @@ export type TimelineEvent =
     id: string;
     ts: number;
     subagentId: string;
-    status: 'done' | 'failed' | 'aborted';
+    /**
+     * Sub-agent lifecycle status (T1-6).
+     *
+     * - `done`     — worker reported `<status>success</status>`.
+     * - `partial`  — worker reported `<status>partial</status>`. Real
+     *                progress landed but the orchestrator should not
+     *                treat the task as complete. Distinct from `done`
+     *                so the UI can surface it with a softer-tone badge
+     *                (amber) and the orchestrator's harness can
+     *                reason about it semantically. Older transcripts
+     *                persisted before this status was added still
+     *                deserialise — the reducer's terminal-transition
+     *                logic treats every value here as a settled state.
+     * - `failed`   — worker reported `<status>failed</status>`,
+     *                emitted a malformed envelope, or the host gave up.
+     * - `aborted`  — user Stop or run-scoped supersede.
+     */
+    status: 'done' | 'partial' | 'failed' | 'malformed' | 'aborted';
     message?: string;
   }
   | {
@@ -589,6 +700,40 @@ export type TimelineEvent =
     messageId: string;
     /** Effective override. `null` clears the entry. */
     override: ContextMessageOverride | null;
+  }
+  /**
+   * Synthetic mid-stream usage update (Phase 3 — 2026). Emitted
+   * locally by `chatChannel` as `agent-text-delta` /
+   * `agent-reasoning-delta` events stream in, so the composer pill
+   * and Inspector can show a growing token count BEFORE the
+   * provider's authoritative `usage` frame lands at end-of-turn.
+   *
+   * The reducer sets these onto `TokenUsageAggregate.inFlight` and
+   * leaves `latest` untouched; the authoritative `token-usage` event
+   * always wins on arrival and clears the slot.
+   *
+   * IMPORTANT: NOT persisted to JSONL (added to `isPersistentEvent`
+   * deny list alongside `tool-call-args-delta` and `run-status`).
+   * On replay the authoritative `token-usage` events restore the
+   * same final state, so the synthetic stream is pure live
+   * telemetry — meaningless after the fact.
+   *
+   * `subagentId` scopes the event to a specific sub-agent's
+   * aggregate; absent → orchestrator-level.
+   */
+  | {
+    kind: 'synthetic-usage-update';
+    id: string;
+    ts: number;
+    /**
+     * Total completion tokens estimated since the last
+     * authoritative `token-usage` event for this owner (orchestrator
+     * or sub-agent). The reducer replaces `inFlight.completionTokens`
+     * with this value (not adds — the renderer already accumulates
+     * per delta and emits the running total each frame).
+     */
+    completionTokens: number;
+    subagentId?: string;
   };
 
 /** Sent from renderer to main to start an agent run. */
@@ -642,18 +787,31 @@ export type ChatSendReply =
     count: number;
     /** Conversation the block applies to (echo of the input). */
     conversationId: string;
+  }
+  | {
+    ok: false;
+    kind: 'unknown-conversation';
+    /** Id the renderer sent that is not in the conversations index. */
+    conversationId: string;
   };
 
 export interface ChatPermissions {
-  /** Allow edits / writes without per-edit confirmation. */
-  allowFileWrites: boolean;
-  /** Allow bash / shell commands. */
-  allowBash: boolean;
-  /** Allow web search. */
-  allowWebSearch: boolean;
+  /**
+   * Fully Auto Mode. When `true`, gated tool calls (`edit`, `delete`,
+   * `bash`, `report`, and `search mode:"web"`) proceed without
+   * confirmation. When `false` (the default), every such call routes
+   * through the existing confirm-prompt pathway so the user can
+   * approve or deny on the spot.
+   *
+   * Strict-approval mode (`AppSettings.ui.strictApprovalsByWorkspace`)
+   * and the destructive-command gate inside the `bash` tool are
+   * orthogonal safety nets — they still trigger their own prompts
+   * regardless of `allowAuto`.
+   */
+  allowAuto: boolean;
 }
 
-/** Compact metadata for the sidebar history list (loaded eagerly). */
+/** Compact metadata for the dock chat list (loaded eagerly). */
 export interface ConversationMeta {
   id: string;
   title: string;
@@ -664,6 +822,13 @@ export interface ConversationMeta {
   /** Last model selection used (best-effort; for resuming with the same model). */
   lastModelId?: string;
   lastProviderId?: string;
+  /**
+   * Highest observed orchestrator prompt-token count for this
+   * conversation (persisted from `token-usage` events). Lets list /
+   * dock surfaces show peak-context badges without hydrating the
+   * full transcript slice.
+   */
+  peakPromptTokens?: number;
   /**
    * Id of the workspace this conversation belongs to. Optional on the
    * wire for backward compatibility with pre-multi-workspace

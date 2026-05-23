@@ -22,6 +22,7 @@
  * time compression hook.
  */
 
+import { randomUUID } from 'node:crypto';
 import type { ChatMessage } from '@shared/types/chat.js';
 import type { ModelSelection } from '@shared/types/provider.js';
 import type {
@@ -35,6 +36,14 @@ import { applySummary } from './applySummary.js';
 import { streamSummary, type StreamSummaryResult } from './streamSummary.js';
 import { estimateAllMessageTokens } from './tokenBudget.js';
 import { getOverrides } from './overrideStore.js';
+import {
+  tokenizeMessages,
+  tokenizeText,
+  type TokenizableToolSchema
+} from '../../providers/tokenCounter.js';
+import { toolSchemasFor } from '../../tools/registry.js';
+import { ORCHESTRATOR_TOOLS } from '../../tools/policy/index.js';
+import { splitSystemPromptForBreakdown } from './splitSystemPrompt.js';
 
 const log = logger.child('orchestrator/contextSummarizer');
 
@@ -133,15 +142,40 @@ export async function maybeRunSummarization(opts: {
     emit: opts.emit
   });
   if (!result.ok) return result;
-  applySummary({
-    runId: opts.runId,
-    summaryId: result.summaryId,
-    messages: opts.messages,
-    summarizableIndices: part.summarizable,
-    droppedIndices: part.dropped,
-    ids: part.ids,
-    finalText: result.finalText
-  });
+  try {
+    applySummary({
+      runId: opts.runId,
+      summaryId: result.summaryId,
+      messages: opts.messages,
+      summarizableIndices: part.summarizable,
+      droppedIndices: part.dropped,
+      ids: part.ids,
+      finalText: result.finalText
+    });
+  } catch (err) {
+    const friendly = err instanceof Error ? err.message : String(err);
+    log.error('applySummary failed after streamSummary succeeded', {
+      runId: opts.runId,
+      summaryId: result.summaryId,
+      err: friendly
+    });
+    opts.emit({
+      kind: 'context-summary-aborted',
+      id: randomUUID(),
+      ts: Date.now(),
+      summaryId: result.summaryId,
+      reason: friendly
+    });
+    return {
+      ok: false,
+      summaryId: result.summaryId,
+      beforeTokens: result.beforeTokens,
+      afterTokens: 0,
+      finalText: '',
+      savedPercent: 0,
+      reason: friendly
+    };
+  }
   return result;
 }
 
@@ -151,12 +185,25 @@ export async function maybeRunSummarization(opts: {
  * `estimateAllMessageTokens`). Cheap enough to call per IPC ping;
  * memoization on the renderer side gates how often the user can
  * ask for a refresh.
+ *
+ * `tools` is optional; when omitted the function falls back to the
+ * orchestrator's bundled `ORCHESTRATOR_TOOLS` allowlist. Callers
+ * coming from `prospectiveMessages.getProspectiveMessages` pass the
+ * resolved catalogue explicitly so the inspector tokenizes the
+ * EXACT same bytes the composer pill does.
  */
 export async function getInspectorSnapshot(opts: {
   runId?: string;
   conversationId: string;
   workspaceId: string;
   messages: ReadonlyArray<ChatMessage>;
+  /**
+   * Tool catalogue to tokenize for the wire-breakdown's "Tool schemas"
+   * row. When omitted (legacy callers / tests), the orchestrator's
+   * bundled `ORCHESTRATOR_TOOLS` allowlist is used. Mirrors what
+   * `buildOrchestratorRequest` emits on the wire.
+   */
+  tools?: ReadonlyArray<TokenizableToolSchema>;
   rules: ContextSummaryRules;
   workspaceOverridePresent: boolean;
   modelId: string;
@@ -194,7 +241,80 @@ export async function getInspectorSnapshot(opts: {
     };
     messages.push(row);
   }
-  const totalTokens = tokensByIndex.reduce((a, b) => a + b, 0);
+  // ── Phase 5 (2026) — wire breakdown ───────────────────────────────
+  //
+  // The wire breakdown's "System prompt + envelopes", "Tool schemas",
+  // and "Message bodies" rows MUST agree with the composer pill's
+  // pre-flight estimate so the user sees a single, consistent
+  // "% of context window used" reading across both surfaces.
+  //
+  // Both surfaces now route through the SAME tokenizer entry point:
+  // `tokenizeMessages` (which uses `encodeChat` so per-message
+  // OpenAI chat-format framing — role markers + boundary tokens — is
+  // captured the way the provider's `usage` frame reports it). The
+  // pre-Phase-5 implementation split this between
+  // `estimateAllMessageTokens` (raw body tokenization, no framing)
+  // for the inspector and `tokenizeMessages` (with framing) for the
+  // pill, which caused a per-message delta of ~5-10 tokens to
+  // accumulate into a visible gap between the two UIs.
+  //
+  // Per-row `tokenEstimate` values (used by the Keep/Summarize/Drop
+  // toggles for relative ordering) still come from
+  // `estimateAllMessageTokens` because that estimator is the only
+  // public one with a per-message API. The relative ordering is what
+  // the row UI needs — exact wire numbers are owned by the framing
+  // total below.
+  //
+  // Tool catalogue: prefer the caller-supplied `tools[]` (which
+  // `getProspectiveMessages` resolves from the same
+  // `ORCHESTRATOR_TOOLS` allowlist the orchestrator emits on the
+  // wire). Fall back to the bundled allowlist for legacy callers +
+  // tests that don't supply tools.
+  const toolSchemas = opts.tools ?? toolSchemasFor(ORCHESTRATOR_TOOLS);
+  const wire = tokenizeMessages(opts.modelId, opts.messages, toolSchemas);
+  const systemPromptTokens = wire.byPart.systemPrompt;
+  const bodyTokens = wire.byPart.history;
+  const toolSchemaTokens = wire.byPart.tools;
+  const framingTotal = wire.total;
+
+  // Per-envelope breakdown — surfaces "where does the system-prompt
+  // budget actually go" inside the Inspector's foldable Wire
+  // Breakdown row. Only the FIRST system message participates (the
+  // orchestrator's `messages[0]`); any later `role:'system'` artifact
+  // would be a synthetic summary marker that already has its own
+  // dedicated row in the inspector list.
+  //
+  // The sum of per-row tokens is APPROXIMATELY `systemPromptTokens`
+  // (the chat-format role-marker bytes that `tokenizeMessages` counts
+  // alongside the body don't get attributed to a specific part — they
+  // belong to the system message as a whole). The Inspector's lumped
+  // row still uses `systemPromptTokens`; this field only drives the
+  // optional foldable sub-rows.
+  //
+  // Cost: one `tokenizeText` per envelope part (max 8 — harness body
+  // + 7 envelopes). Inspector snapshots fire on the bounded
+  // `token-usage` + manual-refresh path; this is not a hot loop.
+  let envelopeBreakdown: ContextInspectorSnapshot['framing']['envelopes'];
+  const firstSystem = opts.messages.find((m) => m.role === 'system');
+  if (firstSystem && typeof firstSystem.content === 'string') {
+    const parts = splitSystemPromptForBreakdown(firstSystem.content);
+    envelopeBreakdown = parts.map((p) => ({
+      label: p.label,
+      tokens: tokenizeText(opts.modelId, p.body).tokens
+    }));
+  }
+
+  // `totalTokens` is the headline "% of context window used" reading
+  // surfaced by the `UsageBadge` in the inspector header. We anchor
+  // it on the wire-authoritative `framingTotal` (system + tools + body)
+  // so it matches what the composer pill displays for the same
+  // conversation. Pre-Phase-5 this was `sum(tokensByIndex)` which
+  // omitted tool schemas AND the chat-format framing — that left the
+  // badge and the pill diverging by hundreds-to-thousands of tokens,
+  // exactly the gap the user saw between `16.5k` on the pill and
+  // `1.4k` on the inspector. The new anchor closes that gap.
+  const totalTokens = framingTotal;
+
   const snapshot: ContextInspectorSnapshot = {
     ...(opts.runId !== undefined ? { runId: opts.runId } : {}),
     conversationId: opts.conversationId,
@@ -209,7 +329,14 @@ export async function getInspectorSnapshot(opts: {
       : {}),
     ...(opts.activeSummaryId !== undefined
       ? { activeSummaryId: opts.activeSummaryId }
-      : {})
+      : {}),
+    framing: {
+      systemPromptTokens,
+      toolSchemaTokens,
+      bodyTokens,
+      total: framingTotal,
+      ...(envelopeBreakdown !== undefined ? { envelopes: envelopeBreakdown } : {})
+    }
   };
   return snapshot;
 }

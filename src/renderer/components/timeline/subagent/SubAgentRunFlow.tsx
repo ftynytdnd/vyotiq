@@ -42,6 +42,7 @@
 
 import { useMemo } from 'react';
 import type { SubAgentSnapshot } from '../reducer/types.js';
+import { shouldSynthesizePartialToolEntry } from '../reducer/partialToolVisibility.js';
 import {
   editChildPath,
   type FileEditGroupChild,
@@ -281,6 +282,7 @@ export function buildSubAgentFlow(snap: SubAgentSnapshot): FlowGroup[] {
       continue;
     }
     // partial
+    if (!shouldSynthesizePartialToolEntry(it.entry, KNOWN_SUBAGENT_TOOLS)) continue;
     const toolName = pickToolName(it.entry.name);
     const child: ToolGroupChild = {
       callId: it.entry.callId,

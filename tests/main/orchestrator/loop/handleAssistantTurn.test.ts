@@ -187,4 +187,97 @@ describe('handleAssistantTurn — mid-stream <delegate /> detection', () => {
       subagentId: 'A1'
     });
   });
+
+  /**
+   * T0-7 — when the caller passes a shared `seenDelegateIds` Set, two
+   * sequential calls to `handleAssistantTurn` (simulating two
+   * assistant turns inside the same iteration) MUST NOT re-emit
+   * `subagent-pending` for ids the first turn already surfaced.
+   *
+   * This is the runLoop-scoped dedup: the per-turn Set is the legacy
+   * default, and a hoisted run-scoped Set takes precedence when the
+   * caller provides one.
+   */
+  it('dedupes `subagent-pending` across calls when given a shared id set (T0-7)', async () => {
+    const sharedIds = new Set<string>();
+
+    // First call: the model emits a directive for A1.
+    vi.mocked(streamChat).mockReturnValueOnce(
+      asyncGen([
+        { contentDelta: '<delegate id="A1" task="t1" files="foo" />' },
+        { finishReason: 'stop' }
+      ])
+    );
+    const events1: TimelineEvent[] = [];
+    await handleAssistantTurn(
+      { providerId: 'p', model: 'm', messages: [], signal: new AbortController().signal },
+      (e) => events1.push(e),
+      undefined,
+      sharedIds
+    );
+    expect(events1.filter((e) => e.kind === 'subagent-pending')).toHaveLength(1);
+    // The shared set now carries A1.
+    expect(sharedIds.has('A1')).toBe(true);
+
+    // Second call (same iteration, second assistant turn): the model
+    // re-emits the SAME A1 directive AND introduces a fresh A2.
+    vi.mocked(streamChat).mockReturnValueOnce(
+      asyncGen([
+        { contentDelta: '<delegate id="A1" task="t1" files="foo" />' },
+        { contentDelta: '<delegate id="A2" task="t2" files="bar" />' },
+        { finishReason: 'stop' }
+      ])
+    );
+    const events2: TimelineEvent[] = [];
+    await handleAssistantTurn(
+      { providerId: 'p', model: 'm', messages: [], signal: new AbortController().signal },
+      (e) => events2.push(e),
+      undefined,
+      sharedIds
+    );
+    const pending2 = events2.filter(
+      (e): e is Extract<TimelineEvent, { kind: 'subagent-pending' }> =>
+        e.kind === 'subagent-pending'
+    );
+    // Only the FRESH id (A2) produces a new pending row; A1 was
+    // already in the shared set and is suppressed.
+    expect(pending2).toHaveLength(1);
+    expect(pending2[0]?.subagentId).toBe('A2');
+    expect(sharedIds.has('A2')).toBe(true);
+  });
+
+  /**
+   * Backward-compat regression — when the optional 4th argument is
+   * omitted, every call gets a FRESH per-turn Set so the legacy
+   * caller (sub-agent path, tests) behaves exactly as before.
+   */
+  it('defaults to a per-turn id set when none is provided (T0-7 back-compat)', async () => {
+    vi.mocked(streamChat).mockReturnValueOnce(
+      asyncGen([
+        { contentDelta: '<delegate id="A1" task="t1" />' },
+        { finishReason: 'stop' }
+      ])
+    );
+    const events1: TimelineEvent[] = [];
+    await handleAssistantTurn(
+      { providerId: 'p', model: 'm', messages: [], signal: new AbortController().signal },
+      (e) => events1.push(e)
+    );
+    expect(events1.filter((e) => e.kind === 'subagent-pending')).toHaveLength(1);
+
+    // Second call without a shared set: A1 should produce a fresh
+    // pending event because the per-turn Set started empty.
+    vi.mocked(streamChat).mockReturnValueOnce(
+      asyncGen([
+        { contentDelta: '<delegate id="A1" task="t1" />' },
+        { finishReason: 'stop' }
+      ])
+    );
+    const events2: TimelineEvent[] = [];
+    await handleAssistantTurn(
+      { providerId: 'p', model: 'm', messages: [], signal: new AbortController().signal },
+      (e) => events2.push(e)
+    );
+    expect(events2.filter((e) => e.kind === 'subagent-pending')).toHaveLength(1);
+  });
 });
