@@ -196,3 +196,125 @@ describe('providerRateGuard', () => {
     await expect(acquire(PROVIDER_B)).resolves.toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Burst stagger — prevents the sub-agent pool's concurrent initial salvo from
+// all hitting a rate-limited provider simultaneously.
+// ---------------------------------------------------------------------------
+
+/**
+ * Mirror of the module-private constants used by the burst stagger logic.
+ * If either value changes the tests below will fail loudly — that is the
+ * intent: a reviewer should confirm the stagger budget is still appropriate
+ * before silently adjusting these.
+ */
+const BURST_SLOT_MS = 100;
+const BURST_WINDOW_MS = 800;
+
+describe('providerRateGuard — burst stagger', () => {
+  it('first acquire call resolves immediately (no stagger, no cooldown)', async () => {
+    // Fresh state, no prior calls — slot 0 should not sleep at all.
+    const start = Date.now();
+    const p = acquire(PROVIDER_A);
+    // Resolve the promise without advancing fake timers — it should be
+    // synchronously scheduled (i.e. resolved before any timer fires).
+    await vi.advanceTimersByTimeAsync(0);
+    await p;
+    // No timer was consumed (start === Date.now() with fake timers).
+    expect(Date.now()).toBe(start);
+  });
+
+  it('second acquire call within BURST_WINDOW_MS staggers by BURST_SLOT_MS', async () => {
+    // First call — claims slot 0, no sleep.
+    const p1 = acquire(PROVIDER_A);
+    await vi.advanceTimersByTimeAsync(0);
+    await p1;
+
+    // Second call arrives immediately after (same burst window).
+    let resolved = false;
+    const p2 = acquire(PROVIDER_A).then(() => {
+      resolved = true;
+    });
+
+    // One tick before the stagger deadline: still pending.
+    await vi.advanceTimersByTimeAsync(BURST_SLOT_MS - 1);
+    expect(resolved).toBe(false);
+
+    // Cross the stagger deadline: resolves.
+    await vi.advanceTimersByTimeAsync(1);
+    await p2;
+    expect(resolved).toBe(true);
+  });
+
+  it('third acquire call within BURST_WINDOW_MS staggers by 2×BURST_SLOT_MS', async () => {
+    // Claim slots 0 and 1 first.
+    const p1 = acquire(PROVIDER_A);
+    await vi.advanceTimersByTimeAsync(0);
+    await p1;
+
+    const p2 = acquire(PROVIDER_A);
+    await vi.advanceTimersByTimeAsync(BURST_SLOT_MS);
+    await p2;
+
+    // Third call — should wait until 2×BURST_SLOT_MS from the burst start.
+    let resolved = false;
+    const p3 = acquire(PROVIDER_A).then(() => {
+      resolved = true;
+    });
+
+    await vi.advanceTimersByTimeAsync(BURST_SLOT_MS - 1);
+    expect(resolved).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await p3;
+    expect(resolved).toBe(true);
+  });
+
+  it('a call arriving after BURST_WINDOW_MS resets the burst (no stagger)', async () => {
+    // First call — opens the burst window.
+    const p1 = acquire(PROVIDER_A);
+    await vi.advanceTimersByTimeAsync(0);
+    await p1;
+
+    // Advance past the burst window so it expires.
+    vi.advanceTimersByTime(BURST_WINDOW_MS + 1);
+
+    // New call — burst window is stale, should resolve immediately.
+    const start = Date.now();
+    const p2 = acquire(PROVIDER_A);
+    await vi.advanceTimersByTimeAsync(0);
+    await p2;
+    expect(Date.now()).toBe(start);
+  });
+
+  it('burst stagger state is independent per provider', async () => {
+    // Saturate provider A's burst window.
+    const pA1 = acquire(PROVIDER_A);
+    await vi.advanceTimersByTimeAsync(0);
+    await pA1;
+
+    // Provider B should resolve immediately regardless of A's burst.
+    const start = Date.now();
+    const pB = acquire(PROVIDER_B);
+    await vi.advanceTimersByTimeAsync(0);
+    await pB;
+    expect(Date.now()).toBe(start);
+  });
+
+  it('_resetForTests also clears burst state', async () => {
+    // Open a burst window on provider A.
+    const p1 = acquire(PROVIDER_A);
+    await vi.advanceTimersByTimeAsync(0);
+    await p1;
+
+    // Reset all state.
+    _resetForTests();
+
+    // Next call should be slot 0 again — no stagger.
+    const start = Date.now();
+    const p2 = acquire(PROVIDER_A);
+    await vi.advanceTimersByTimeAsync(0);
+    await p2;
+    expect(Date.now()).toBe(start);
+  });
+});

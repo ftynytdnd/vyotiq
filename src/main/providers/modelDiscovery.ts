@@ -167,7 +167,7 @@ export async function discoverModels(providerId: string, force = false): Promise
  *
  * Pure / synchronous; no I/O. Exported for testability.
  */
-export function classifyKnownHost(baseUrl: string): ProviderDialect | null {
+function classifyKnownHost(baseUrl: string): ProviderDialect | null {
   let host: string;
   try {
     host = new URL(baseUrl).hostname.toLowerCase();
@@ -263,6 +263,49 @@ export async function detectDialect(
   );
 }
 
+/**
+ * Pattern-based filter for non-chat model IDs on OpenAI-compatible providers.
+ *
+ * OpenAI-compat `/v1/models` does not advertise capability types (unlike
+ * Gemini's `supportedGenerationMethods`), so we identify non-chat surfaces
+ * by well-known sub-string patterns. Conservative — only excludes IDs whose
+ * primary surface is definitively NOT chat completion:
+ *
+ *   - embedding / reranking  (text-embedding-*, *-embed, *-rerank-*)
+ *   - content moderation     (*-moderation-*)
+ *   - OCR                    (*-ocr-* / *-ocr)
+ *   - speech — TTS and STT   (whisper-*, tts-*, *-speech-*)
+ *   - image generation       (dall-e-*, *-text-to-image*, *-image-generation*)
+ *
+ * Matching is case-insensitive and applied to the model's canonical `id`
+ * after stripping any OpenRouter-style provider prefix
+ * (e.g. `openai/text-embedding-3-small` → `text-embedding-3-small`), so the
+ * prefix never interferes with the word-boundary anchors.
+ *
+ * Intentionally NOT filtered: vision-capable chat models (e.g.
+ * `gpt-4-vision-preview`, `llama-3.2-11b-vision-instruct`, `pixtral-12b`).
+ * "Vision" is a chat capability, not a separate non-chat surface.
+ */
+const NON_CHAT_PATTERNS: ReadonlyArray<RegExp> = [
+  /\bembed(ding)?s?\b/i,      // text-embedding-3-small, mistral-embed, *-embeddings-*
+  /\bmoderation\b/i,          // text-moderation-latest, mistral-moderation-latest
+  /\bocr\b/i,                 // mistral-ocr-latest, pixtral-ocr-*
+  /\brerank\b/i,              // mistral-rerank-v1, cohere-rerank-*
+  /\btts\b/i,                 // tts-1, tts-1-hd
+  /\bwhisper\b/i,             // whisper-1, whisper-large-v3
+  /\bdall-?e\b/i,             // dall-e-2, dall-e-3
+  /\btext-to-image\b/i,       // OpenRouter image-gen route variants
+  /\bimage-generation\b/i,    // provider-specific image-gen endpoints
+  /\btranscri(pt|be)\b/i      // transcription endpoints
+];
+
+export function isNonChatModel(id: string): boolean {
+  // Strip OpenRouter-style provider prefix before pattern matching so
+  // `openai/text-embedding-3-small` correctly resolves to `text-embedding-3-small`.
+  const tail = id.includes('/') ? id.slice(id.lastIndexOf('/') + 1) : id;
+  return NON_CHAT_PATTERNS.some((re) => re.test(tail));
+}
+
 async function fetchOpenAiModels(provider: ProviderWithKey): Promise<ModelInfo[]> {
   const url = `${provider.baseUrl}/v1/models`;
   const headers: Record<string, string> = {
@@ -321,6 +364,10 @@ async function fetchOpenAiModels(provider: ProviderWithKey): Promise<ModelInfo[]
       const nameCandidate = (m as { name?: string }).name;
       const id = idCandidate ?? nameCandidate;
       if (!id) return null;
+      // Drop known non-chat surfaces (embeddings, moderation, OCR, etc.)
+      // before they reach the model picker. OpenAI-compat `/v1/models`
+      // does not carry capability metadata so we match on id patterns.
+      if (isNonChatModel(id)) return null;
       const ctx =
         (m as { context_window?: number }).context_window ??
         (m as { context_length?: number }).context_length;
