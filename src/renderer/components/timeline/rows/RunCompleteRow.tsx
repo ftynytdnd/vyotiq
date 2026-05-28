@@ -5,7 +5,7 @@
 import { formatTokenCountWithUnit } from '../../../lib/formatTokens.js';
 import type { TokenUsageAggregate } from '../reducer/types.js';
 import { cn } from '../../../lib/cn.js';
-import { timelineLogRowClassName } from '../shared/rowStyles.js';
+import { timelineRunCompleteRowClassName } from '../shared/rowStyles.js';
 
 interface RunCompleteRowProps {
   durationMs: number;
@@ -42,7 +42,10 @@ export function RunCompleteRow({
 
   return (
     <div
-      className={cn('vyotiq-stepfade-once vx-timeline-meta text-text-secondary', timelineLogRowClassName)}
+      className={cn(
+        'vyotiq-stepfade-once vx-timeline-meta text-text-secondary',
+        timelineRunCompleteRowClassName
+      )}
       data-row-kind="run-complete"
       aria-label={ariaParts.join(', ')}
     >

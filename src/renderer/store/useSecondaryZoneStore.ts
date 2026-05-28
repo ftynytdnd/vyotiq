@@ -4,8 +4,7 @@
  * opens on demand and sits beside the conversation surface.
  *
  * Strict single overlay slot: opening any panel type closes all others
- * (settings, checkpoints, inspector, review, agentTrace, attachment
- * preview, live diff).
+ * (settings, checkpoints, inspector, review, attachment preview, live diff).
  */
 
 import { create } from 'zustand';
@@ -50,16 +49,14 @@ interface SecondaryZoneStore {
   panel: SecondaryPanel | null;
   settingsTab: SettingsTabId;
   checkpointsTab: CheckpointsTab;
-  agentTraceId: string | null;
   openSettings: (tab?: SettingsTabId) => void;
-  openAgentTrace: (subagentId: string) => void;
   openCheckpoints: (tab?: CheckpointsTab, opts?: OpenCheckpointsOpts) => void;
   /** Opens the inspector panel and loads data for the bound id. */
   openInspector: (id: string, mode?: 'live' | 'idle') => void;
   /** Remember the last settings tab the user viewed. */
   setSettingsTab: (tab: SettingsTabId) => void;
   close: () => void;
-  /** Close every floating overlay (secondary, trace, preview, live diff). */
+  /** Close every floating overlay (secondary, preview, live diff). */
   closeAllOverlays: () => void;
   /** Clear other overlays before opening preview / live diff. */
   closeForCompanionOpen: () => void;
@@ -69,7 +66,7 @@ function isSettingsTabId(value: string | undefined): value is SettingsTabId {
   return value !== undefined && SETTINGS_TAB_IDS.includes(value as SettingsTabId);
 }
 
-/** Clears every floating overlay slot (secondary, trace, preview, live diff). */
+/** Clears every floating overlay slot (secondary, preview, live diff). */
 function clearOverlaySlot(panel: SecondaryPanel | null): void {
   if (panel === 'inspector') {
     useContextSummaryStore.getState().close();
@@ -96,17 +93,11 @@ export const useSecondaryZoneStore = create<SecondaryZoneStore>((set, get) => ({
   panel: null,
   settingsTab: 'providers',
   checkpointsTab: 'runs',
-  agentTraceId: null,
   openSettings: (tab?: SettingsTabId) => {
     const { panel } = get();
     clearOverlaySlot(panel);
     const nextTab = resolveSettingsTab(tab, get().settingsTab);
-    set({ panel: 'settings', settingsTab: nextTab, agentTraceId: null });
-  },
-  openAgentTrace: (subagentId) => {
-    const { panel } = get();
-    clearOverlaySlot(panel);
-    set({ panel: null, agentTraceId: subagentId });
+    set({ panel: 'settings', settingsTab: nextTab });
   },
   openCheckpoints: (tab = 'runs', opts) => {
     const { panel } = get();
@@ -118,12 +109,12 @@ export const useSecondaryZoneStore = create<SecondaryZoneStore>((set, get) => ({
       const pending = useCheckpointsStore.getState().pendingByConversation[cid] ?? [];
       if (pending.length > 0) resolvedTab = 'review';
     }
-    set({ panel: 'checkpoints', checkpointsTab: resolvedTab, agentTraceId: null });
+    set({ panel: 'checkpoints', checkpointsTab: resolvedTab });
   },
   openInspector: (id, mode = 'idle') => {
     const { panel } = get();
     clearOverlaySlot(panel);
-    set({ panel: 'inspector', agentTraceId: null });
+    set({ panel: 'inspector' });
     void useContextSummaryStore.getState().open(id, mode);
   },
   setSettingsTab: (tab) => {
@@ -133,7 +124,7 @@ export const useSecondaryZoneStore = create<SecondaryZoneStore>((set, get) => ({
   },
   close: () => {
     const { panel } = get();
-    set({ panel: null, agentTraceId: null });
+    set({ panel: null });
     if (panel === 'inspector') {
       useContextSummaryStore.getState().close();
     }
@@ -141,11 +132,11 @@ export const useSecondaryZoneStore = create<SecondaryZoneStore>((set, get) => ({
   closeAllOverlays: () => {
     const { panel } = get();
     clearOverlaySlot(panel);
-    set({ panel: null, agentTraceId: null });
+    set({ panel: null });
   },
   closeForCompanionOpen: () => {
     const { panel } = get();
     clearOverlaySlot(panel);
-    set({ panel: null, agentTraceId: null });
+    set({ panel: null });
   }
 }));

@@ -22,6 +22,8 @@ import {
 
   resolveLivePhaseHeadline,
 
+  shouldHideLivePhaseHeadline,
+
   timelineActivityLaneClassName,
 
   timelinePhaseHeadingClassName
@@ -58,7 +60,7 @@ function stepLabelFromRow(row: DisplayRow): string | null {
 
   }
 
-  if (row.kind === 'delegate-batch') {
+  if (row.kind === 'subagent-group') {
 
     const n = row.subagentIds?.length ?? 0;
 
@@ -101,21 +103,21 @@ export function TurnActivitySummary({ activityRows, live = false }: TurnActivity
     }
 
     if (live && latestStatus) {
-
-      const liveLabel = resolveLivePhaseHeadline(
-
-        latestStatus.phase,
-
-        latestStatus.label ?? 'Working…'
-
-      );
-
-      if (fromRows[fromRows.length - 1] !== liveLabel) {
-
-        fromRows.push(liveLabel);
-
+      const phase = latestStatus.phase;
+      if (!shouldHideLivePhaseHeadline(phase)) {
+        const liveLabel = resolveLivePhaseHeadline(
+          phase,
+          latestStatus.label ?? 'Working…'
+        );
+        if (fromRows[fromRows.length - 1] !== liveLabel) {
+          fromRows.push(liveLabel);
+        }
+      } else {
+        const startingIdx = fromRows.lastIndexOf('Starting…');
+        if (startingIdx !== -1) {
+          fromRows.splice(startingIdx, 1);
+        }
       }
-
     }
 
     return fromRows;
@@ -196,7 +198,7 @@ export function TurnActivitySummary({ activityRows, live = false }: TurnActivity
 
     >
 
-      <ul className="m-0 flex list-none flex-col gap-0.5 p-0 text-meta text-text-muted">
+      <ul className="m-0 flex list-none flex-col gap-px p-0 text-meta leading-snug text-text-muted">
 
         {hiddenCount > 0 && !expanded && live && (
 

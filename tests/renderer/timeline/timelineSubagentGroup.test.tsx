@@ -1,5 +1,5 @@
-/**
- * Timeline — V5 delegate batch projection end-to-end.
+﻿/**
+ * timelineSubagentGroup - inline sub-agent group projection end-to-end.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -100,18 +100,19 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('Timeline — delegate batch projection', () => {
-  it('renders one V5 delegate row for parallel sub-agents', () => {
+describe('timelineSubagentGroup', () => {
+  it('renders one group with meta and two collapsed trace headers', () => {
     const { container } = render(<Timeline />);
 
-    const batches = container.querySelectorAll('[data-row-kind="delegate-batch"]');
-    expect(batches).toHaveLength(1);
+    const groups = container.querySelectorAll('[data-row-kind="subagent-group"]');
+    expect(groups).toHaveLength(1);
     expect(container.textContent ?? '').toContain('Delegated');
     expect(container.textContent ?? '').toContain('2 tasks');
-    expect(container.textContent ?? '').not.toContain('scan auth/');
+    expect(container.querySelectorAll('[data-row-kind="subagent-line"]')).toHaveLength(2);
+    expect(container.querySelector('[data-row-kind="delegate-batch"]')).toBeNull();
   });
 
-  it('renders a clickable delegate row for a lone sub-agent', async () => {
+  it('renders a single-worker group without meta line', async () => {
     await act(async () => {
       useChatStore.setState({
         events: [
@@ -156,8 +157,10 @@ describe('Timeline — delegate batch projection', () => {
     });
 
     const { container } = render(<Timeline />);
-    expect(container.querySelectorAll('[data-row-kind="delegate-batch"]')).toHaveLength(1);
-    expect(container.textContent ?? '').toContain('Delegated');
-    expect(container.textContent ?? '').toContain('1 task');
+    const group = container.querySelector('[data-row-kind="subagent-group"]');
+    expect(group).not.toBeNull();
+    expect(group!.textContent ?? '').not.toContain('Delegated');
+    expect(container.textContent ?? '').toContain('only one');
+    expect(container.querySelectorAll('[data-row-kind="subagent-line"]')).toHaveLength(1);
   });
 });

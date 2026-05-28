@@ -89,7 +89,7 @@ export function ProviderGroupHeader({ provider }: ProviderGroupHeaderProps) {
         </button>
       </div>
       {error && (
-        <div className="ml-5 line-clamp-2 text-meta text-danger">{error}</div>
+        <div className="line-clamp-2 text-meta text-danger">{error}</div>
       )}
     </div>
   );

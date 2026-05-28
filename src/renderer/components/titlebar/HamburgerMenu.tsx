@@ -98,7 +98,7 @@ export function HamburgerMenu({ fileActions, viewActions }: HamburgerMenuProps) 
     />,
     <MenuRow
       key="dock"
-      label={dockExpanded ? 'Collapse dock' : 'Expand dock'}
+      label={dockExpanded ? 'Collapse navigation' : 'Expand navigation'}
       shortcut={formatPlatformShortcut('Ctrl+B')}
       onClick={() => run(toggleDock)}
     />,

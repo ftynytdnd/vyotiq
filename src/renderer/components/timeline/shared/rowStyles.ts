@@ -96,6 +96,12 @@ export const timelineRowChevronStroke = SHELL_ACTION_ICON_STROKE;
  */
 export const timelineLogRowClassName = cn('vx-timeline-log-row', 'flex w-full flex-col');
 
+/** Run-complete footer — inline metadata on one baseline row. */
+export const timelineRunCompleteRowClassName = cn(
+  'vx-timeline-log-row',
+  'flex w-full flex-row flex-wrap items-baseline gap-x-1.5'
+);
+
 /** Live-turn shell — no extra chrome (left rail removed). */
 export function timelineLiveTurnClassName(_live: boolean): string {
   return '';
@@ -128,7 +134,13 @@ export function resolveLivePhaseHeadline(
   label: string
 ): string {
   if (phase === 'running-tool') return 'Exploring';
+  if (phase === 'awaiting-response') return 'Starting…';
   return label;
+}
+
+/** Phases where the live status headline should not appear (content is streaming). */
+export function shouldHideLivePhaseHeadline(phase: string): boolean {
+  return phase === 'streaming-text' || phase === 'streaming-reasoning';
 }
 
 /** Whether a persisted phase divider label is a live-phase headline. */

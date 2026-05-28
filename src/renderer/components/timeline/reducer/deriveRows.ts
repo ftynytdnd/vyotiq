@@ -21,7 +21,7 @@
  *
  * Sub-agent tool-call/-result events (tagged with `subagentId`) are not
  * emitted as top-level rows — they remain nested inside the sub-agent
- * snapshot; timeline projects these into delegate-batch / activity rows.
+ * snapshot; timeline projects these into subagent-group / activity rows.
  */
 
 import type { PromptAttachmentMeta, TimelineEvent } from '@shared/types/chat.js';

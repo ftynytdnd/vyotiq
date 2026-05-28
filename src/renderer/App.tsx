@@ -49,7 +49,6 @@ import {
   themePrefsFromSettings,
   watchSystemTheme
 } from './lib/theme.js';
-import { AgentTracePanel } from './components/agent/AgentTracePanel.js';
 import { AttachmentPreviewPanel } from './components/composer/AttachmentPreviewPanel.js';
 import { useAttachmentPreviewStore } from './store/useAttachmentPreviewStore.js';
 import { LiveDiffFloatingPanel } from './components/timeline/LiveDiffFloatingPanel.js';
@@ -100,17 +99,13 @@ export default function App() {
   const {
     openSettings: openSecondarySettings,
     openCheckpoints: openSecondaryCheckpoints,
-    agentTraceId,
     panel: secondaryPanel,
-    close: closeSecondary,
     closeAllOverlays
   } = useSecondaryZoneStore(
     useShallow((s) => ({
       openSettings: s.openSettings,
       openCheckpoints: s.openCheckpoints,
-      agentTraceId: s.agentTraceId,
       panel: s.panel,
-      close: s.close,
       closeAllOverlays: s.closeAllOverlays
     }))
   );
@@ -120,11 +115,9 @@ export default function App() {
   const { liveDiffTarget, dismissLiveDiff } = useFloatingLiveDiffStore(
     useShallow((s) => ({ liveDiffTarget: s.target, dismissLiveDiff: s.dismiss }))
   );
-  const agentTraceWidth = usePersistedPanelWidth('agentTrace');
   const attachmentPreviewWidth = usePersistedPanelWidth('attachmentPreview');
   const overlayOpen =
     secondaryPanel !== null ||
-    agentTraceId !== null ||
     previewAttachment !== null ||
     liveDiffTarget !== null;
   const showToast = useToastStore((s) => s.show);
@@ -483,13 +476,6 @@ export default function App() {
           />,
           document.body
         )}
-      <AgentTracePanel
-        open={agentTraceId !== null}
-        subagentId={agentTraceId}
-        onClose={closeSecondary}
-        initialWidth={agentTraceWidth.initialWidth}
-        onWidthChange={agentTraceWidth.onWidthChange}
-      />
       <AttachmentPreviewPanel
         open={previewAttachment !== null}
         attachment={previewAttachment}

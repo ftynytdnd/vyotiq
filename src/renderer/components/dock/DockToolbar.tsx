@@ -63,8 +63,8 @@ export function DockToolbar({
             </DockIconButton>
           </div>
           <DockIconButton
-            label="Collapse dock"
-            title="Toggle dock (Ctrl+B)"
+            label="Collapse navigation"
+            title="Collapse navigation (Ctrl+B)"
             onClick={onCollapse}
           >
             <CollapseIcon className={DOCK_TAB_ICON_CLASS} strokeWidth={DOCK_TAB_ICON_STROKE} />
@@ -84,8 +84,8 @@ export function DockToolbar({
             <Search className={DOCK_TAB_ICON_CLASS} strokeWidth={DOCK_TAB_ICON_STROKE} />
           </DockIconButton>
           <DockIconButton
-            label="Expand dock"
-            title="Toggle dock (Ctrl+B)"
+            label="Expand navigation"
+            title="Expand navigation (Ctrl+B)"
             onClick={onCollapse}
           >
             <CollapseIcon className={DOCK_TAB_ICON_CLASS} strokeWidth={DOCK_TAB_ICON_STROKE} />

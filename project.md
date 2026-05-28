@@ -177,7 +177,7 @@ Vyotiq uses a **Shell Mono** design system on a stealth-dark oklch token palette
 
 ## 2. Layout Structure
 - **Frameless window** with custom title bar (no bottom border rule).
-- **Three-column shell:** Left dock | chat | secondary zone — separated by `bg-surface-sidebar` vs `bg-surface-base`, not vertical rules.
+- **Three-column shell:** Left dock | chat | secondary zone — dock and chat use `bg-surface-base`; title bar and secondary panels use `bg-surface-sidebar`, not vertical rules.
 - **Chat column** center-aligned, `max-w-3xl`.
 
 ## 3. The Composer

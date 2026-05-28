@@ -1,20 +1,15 @@
 /**
- * Collapse parallel sub-agent rows into one V5 delegate batch line.
+ * Collapse parallel sub-agent rows into one inline group container.
  *
- * The orchestrator-level execution-plan stepper used to be injected
- * here (one card per delegate, rendered above the batch row). It was
- * removed because the same workers were already represented by the
- * expanded `DelegateBatchRow` immediately below — the duplication
- * crowded the timeline without adding navigation value. This module
- * now does one thing: walk the row stream and fold any consecutive
- * `subagent-line` runs into a single `delegate-batch` row.
+ * Walks the row stream and folds any consecutive `subagent-line` runs into
+ * a single `subagent-group` row that renders N manually-expandable traces.
  */
 
 import type { Row } from '../reducer/deriveRows.js';
 
 export type DisplayRow =
   | Row
-  | { kind: 'delegate-batch'; key: string; subagentIds: string[] };
+  | { kind: 'subagent-group'; key: string; subagentIds: string[] };
 
 export function projectSubagentRows(rows: Row[]): DisplayRow[] {
   const out: DisplayRow[] = [];
@@ -34,12 +29,10 @@ export function projectSubagentRows(rows: Row[]): DisplayRow[] {
       i++;
     }
 
-    // Agent trace panel is canonical for per-worker detail; timeline
-    // shows only the compact delegate-batch affordance (never subagent-line).
     if (batch.length >= 1) {
       out.push({
-        kind: 'delegate-batch',
-        key: `delegate:${batch.join(':')}`,
+        kind: 'subagent-group',
+        key: `subagent-group:${batch.join(':')}`,
         subagentIds: batch
       });
     }

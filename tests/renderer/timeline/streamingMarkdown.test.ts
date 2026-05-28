@@ -207,6 +207,15 @@ describe('phase headline helpers', () => {
     );
   });
 
+  it('maps awaiting-response to Starting…', () => {
+    expect(
+      resolveLivePhaseHeadline(
+        'awaiting-response',
+        'Awaiting first token from gemma4:31b…'
+      )
+    ).toBe('Starting…');
+  });
+
   it('detects persisted Exploring dividers', () => {
     expect(isPhaseHeadlineLabel('Exploring')).toBe(true);
     expect(isPhaseHeadlineLabel('Delegating 2 sub-tasks')).toBe(false);

@@ -16,8 +16,8 @@
  *     surfaces an `aria-label` on the row root.
  *   - Phase / run-complete dividers render no horizontal hairline
  *     rules around the label.
- *   - Sub-agent rows render the dot prefix; a model badge appears
- *     only when `snap.model` is populated (and is omitted otherwise).
+ *   - Sub-agent inline traces render collapsed in the activity stream
+ *     with dot prefix and chevron (manual expand only).
  *   - Hover-revealed Copy/Edit/Revert + Copy/Regenerate strips are
  *     still present beneath the user and assistant rows.
  */
@@ -182,11 +182,16 @@ describe('Timeline row chrome — May 2026 restyle', () => {
     expect((runComplete as HTMLElement).className).not.toMatch(/border-t/);
     expect(runComplete!.innerHTML).not.toMatch(/h-px[^"]*flex-1[^"]*bg-border-divider/);
 
-    // 5. Sub-agent inline trace removed from timeline DOM.
-    expect(container.querySelector('[data-row-kind="subagent-line"]')).toBeNull();
+    // 5. Sub-agent inline trace renders collapsed in the turn stream.
+    const subagent = container.querySelector('[data-row-kind="subagent-line"]');
+    expect(subagent).not.toBeNull();
+    expect(subagent!.querySelector('.vx-timeline-subagent-dot')).not.toBeNull();
+    expect(
+      subagent!.querySelector('button[aria-label="Expand sub-agent trace"]')
+    ).not.toBeNull();
   });
 
-  it('does not render sub-agent trace rows when model metadata is absent', () => {
+  it('renders sub-agent trace rows even when model metadata is absent', () => {
     seedSettledTurn({ withSubAgentModel: false });
     useTimelineUiStore.setState({
       expandedByConvo: { [CONV_ID]: new Set(['turn-activity:p1']) },
@@ -197,6 +202,8 @@ describe('Timeline row chrome — May 2026 restyle', () => {
 
     const { container } = render(<Timeline />);
 
-    expect(container.querySelector('[data-row-kind="subagent-line"]')).toBeNull();
+    const subagent = container.querySelector('[data-row-kind="subagent-line"]');
+    expect(subagent).not.toBeNull();
+    expect(subagent!.textContent ?? '').toContain('Read providers');
   });
 });

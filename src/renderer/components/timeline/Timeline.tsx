@@ -39,7 +39,8 @@ import { FileEditGroupRow } from './rows/FileEditGroupRow.js';
 import { RunCompleteRow } from './rows/RunCompleteRow.js';
 import { TokenBudgetWarningRow } from './rows/TokenBudgetWarningRow.js';
 import { ContextSummaryRow } from './rows/ContextSummaryRow.js';
-import { DelegateBatchRow } from './delegation/DelegateBatchRow.js';
+import { SubAgentGroup } from './subagent/SubAgentGroup.js';
+import { SubAgentTrace } from './subagent/SubAgentTrace.js';
 import { projectSubagentRows, type DisplayRow } from './shared/projectSubagentRows.js';
 import { PendingChangesTimelineRow } from '../checkpoints/timeline/index.js';
 import { RowAnchor } from './shared/RowAnchor.js';
@@ -444,10 +445,12 @@ function renderRow(
   liveTurn = false
 ) {
   switch (r.kind) {
-    case 'delegate-batch':
+    case 'subagent-group':
       return (
-        <DelegateBatchRow key={r.key} rowKey={r.key} subagentIds={r.subagentIds} />
+        <SubAgentGroup key={r.key} subagentIds={r.subagentIds} />
       );
+    case 'subagent-line':
+      return <SubAgentTrace key={r.key} subagentId={r.subagentId} />;
     case 'user-prompt':
       return (
         <UserPromptRow
@@ -523,14 +526,6 @@ function renderRow(
           key={r.key}
           summaryId={r.summaryId}
           live={liveTurn}
-        />
-      );
-    case 'subagent-line':
-      return (
-        <DelegateBatchRow
-          key={r.key}
-          rowKey={r.key}
-          subagentIds={[r.subagentId]}
         />
       );
     default: {

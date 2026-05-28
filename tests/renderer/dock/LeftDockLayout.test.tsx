@@ -49,6 +49,7 @@ describe('LeftDock layout', () => {
     render(<LeftDock />);
     const nav = screen.getByRole('navigation', { name: 'Workspace and session navigation' });
     expect(nav).toHaveStyle({ width: `${DOCK_WIDTH_DEFAULT}px` });
+    expect(nav.className).toContain('bg-surface-base');
     expect(nav).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText('Workspaces')).toBeInTheDocument();
     expect(screen.getByText('Chats')).toBeInTheDocument();

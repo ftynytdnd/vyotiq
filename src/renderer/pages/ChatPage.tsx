@@ -40,11 +40,9 @@ export function ChatPage({
   const conversationList = useConversationsStore((s) => s.list);
   const selecting = useConversationsStore((s) => s.selecting);
   const secondaryPanel = useSecondaryZoneStore((s) => s.panel);
-  const agentTraceId = useSecondaryZoneStore((s) => s.agentTraceId);
   const previewOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
   const liveDiffOpen = useFloatingLiveDiffStore((s) => s.target !== null);
-  const zoneOpen =
-    secondaryPanel !== null || agentTraceId !== null || previewOpen || liveDiffOpen;
+  const zoneOpen = secondaryPanel !== null || previewOpen || liveDiffOpen;
 
   const [model, setModel] = useState<ModelSelection | null>(null);
 

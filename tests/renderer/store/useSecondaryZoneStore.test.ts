@@ -12,8 +12,7 @@ beforeEach(() => {
   useSecondaryZoneStore.setState({
     panel: null,
     settingsTab: 'providers',
-    checkpointsTab: 'runs',
-    agentTraceId: null
+    checkpointsTab: 'runs'
   });
   useSettingsStore.setState({
     settings: { ui: { lastSettingsTab: 'memory' } }
@@ -35,19 +34,19 @@ describe('useSecondaryZoneStore', () => {
     expect(useAttachmentPreviewStore.getState().attachment).toBeNull();
   });
 
-  it('closes agent trace when opening attachment preview', () => {
-    useSecondaryZoneStore.setState({ agentTraceId: 'sub-trace' });
+  it('closes secondary panel when opening attachment preview', () => {
+    useSecondaryZoneStore.setState({ panel: 'settings' });
     useAttachmentPreviewStore.getState().open({
       name: 'doc.pdf',
       storedPath: 'a/doc.pdf',
       mimeType: 'application/pdf'
     });
-    expect(useSecondaryZoneStore.getState().agentTraceId).toBeNull();
+    expect(useSecondaryZoneStore.getState().panel).toBeNull();
     expect(useAttachmentPreviewStore.getState().attachment?.name).toBe('doc.pdf');
   });
 
-  it('closes agent trace when opening live diff', () => {
-    useSecondaryZoneStore.setState({ agentTraceId: 'sub-trace' });
+  it('closes secondary panel when opening live diff', () => {
+    useSecondaryZoneStore.setState({ panel: 'checkpoints' });
     useFloatingLiveDiffStore.getState().open({
       callId: 'tc-2',
       filePath: 'b.ts',
@@ -61,24 +60,23 @@ describe('useSecondaryZoneStore', () => {
         ts: 2
       }
     });
-    expect(useSecondaryZoneStore.getState().agentTraceId).toBeNull();
+    expect(useSecondaryZoneStore.getState().panel).toBeNull();
     expect(useFloatingLiveDiffStore.getState().target?.callId).toBe('tc-2');
   });
 
-  it('closes attachment preview when opening agent trace', () => {
+  it('closes attachment preview when opening checkpoints', () => {
     useAttachmentPreviewStore.getState().open({
       name: 'x.png',
       storedPath: 'a/x.png',
       mimeType: 'image/png'
     });
-    useSecondaryZoneStore.getState().openAgentTrace('sub-9');
+    useSecondaryZoneStore.getState().openCheckpoints('runs');
     expect(useAttachmentPreviewStore.getState().attachment).toBeNull();
-    expect(useSecondaryZoneStore.getState().agentTraceId).toBe('sub-9');
-    expect(useSecondaryZoneStore.getState().panel).toBeNull();
+    expect(useSecondaryZoneStore.getState().panel).toBe('checkpoints');
   });
 
-  it('closeAllOverlays clears panel, trace, and companion overlays', () => {
-    useSecondaryZoneStore.setState({ panel: 'checkpoints', agentTraceId: 'sub-1' });
+  it('closeAllOverlays clears panel and companion overlays', () => {
+    useSecondaryZoneStore.setState({ panel: 'checkpoints' });
     useFloatingLiveDiffStore.setState({
       target: {
         callId: 'tc-1',
@@ -96,7 +94,6 @@ describe('useSecondaryZoneStore', () => {
     });
     useSecondaryZoneStore.getState().closeAllOverlays();
     expect(useSecondaryZoneStore.getState().panel).toBeNull();
-    expect(useSecondaryZoneStore.getState().agentTraceId).toBeNull();
     expect(useFloatingLiveDiffStore.getState().target).toBeNull();
   });
 

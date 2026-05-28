@@ -3,8 +3,7 @@
  * Renders only the per-worker briefing (task + granted tools + scoped
  * files); the orchestrator-level delegate roster used to live in a
  * separate stepper row (`OrchestratorExecutionPlanRow`) but was
- * removed because the `DelegateBatchRow` immediately above already
- * lists every worker spawned in the same turn.
+ * removed; grouped delegate meta is shown on `SubAgentGroup` instead.
  */
 
 import { useState } from 'react';

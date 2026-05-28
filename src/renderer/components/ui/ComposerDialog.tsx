@@ -87,12 +87,9 @@ const SIZE_BODY_CLASS: Record<ComposerDialogSize, string> = {
 
 function useBlockingOverlayOpen(): boolean {
   const secondaryPanel = useSecondaryZoneStore((s) => s.panel);
-  const agentTraceId = useSecondaryZoneStore((s) => s.agentTraceId);
   const previewOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
   const liveDiffOpen = useFloatingLiveDiffStore((s) => s.target !== null);
-  return (
-    secondaryPanel !== null || agentTraceId !== null || previewOpen || liveDiffOpen
-  );
+  return secondaryPanel !== null || previewOpen || liveDiffOpen;
 }
 
 export function ComposerDialog({

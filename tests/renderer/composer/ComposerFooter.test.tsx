@@ -27,4 +27,17 @@ describe('ComposerFooter attachment counter', () => {
     );
     expect(screen.getByText(`2/${MAX_CHAT_ATTACHMENTS}`)).toBeInTheDocument();
   });
+
+  it('uses a flex spacer so send stays on the right', () => {
+    const { container } = render(
+      <ComposerFooter
+        attachmentCount={1}
+        sendState="ready"
+        onSend={() => {}}
+        canSend
+      />
+    );
+    const spacer = container.querySelector('.vx-composer-footer .flex-1');
+    expect(spacer).not.toBeNull();
+  });
 });

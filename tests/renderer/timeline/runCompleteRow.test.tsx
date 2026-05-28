@@ -20,4 +20,27 @@ describe('RunCompleteRow', () => {
     expect(row).not.toBeNull();
     expect(row?.className ?? '').not.toMatch(/border-t/);
   });
+
+  it('lays out duration, tokens, and time on a horizontal flex row', () => {
+    const { container } = render(
+      <RunCompleteRow
+        durationMs={10_000}
+        completedAt={1_700_000_000_000}
+        usage={{
+          cumulative: { totalTokens: 38_300, promptTokens: 20_000, completionTokens: 18_300 },
+          latest: { promptTokens: 20_000, completionTokens: 18_300, totalTokens: 38_300 },
+          peak: { promptTokens: 20_000, completionTokens: 18_300, totalTokens: 38_300 },
+          samples: 1
+        }}
+      />
+    );
+    const row = container.querySelector('[data-row-kind="run-complete"]');
+    expect(row).not.toBeNull();
+    expect(row?.className ?? '').toMatch(/flex-row/);
+    expect(row?.className ?? '').not.toMatch(/\bflex-col\b/);
+    const text = row?.textContent ?? '';
+    expect(text).toMatch(/done in/i);
+    expect(text).toMatch(/38\.3k/i);
+    expect(text.indexOf('done in')).toBeLessThan(text.search(/38\.3k/i));
+  });
 });

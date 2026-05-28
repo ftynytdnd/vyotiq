@@ -176,14 +176,14 @@ describe('Timeline turn zones', () => {
     const { container } = render(<Timeline />);
 
     const assistant = container.querySelector('[data-row-kind="assistant-text"]');
-    const delegateBatch = container.querySelector('[data-row-kind="delegate-batch"]');
+    const subagentGroup = container.querySelector('[data-row-kind="subagent-group"]');
     const inlineStream = container.querySelector('[data-turn-inline-stream]');
 
     expect(inlineStream).not.toBeNull();
     expect(assistant).not.toBeNull();
-    expect(delegateBatch).not.toBeNull();
+    expect(subagentGroup).not.toBeNull();
     expect(
-      assistant!.compareDocumentPosition(delegateBatch!) & Node.DOCUMENT_POSITION_FOLLOWING
+      assistant!.compareDocumentPosition(subagentGroup!) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
     expect(container.textContent ?? '').not.toContain('Delegates');
   });

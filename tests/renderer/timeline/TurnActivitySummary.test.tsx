@@ -46,4 +46,35 @@ describe('TurnActivitySummary', () => {
     expect(screen.getByText('Scan repository')).toBeTruthy();
     expect(screen.getByText('Apply fixes')).toBeTruthy();
   });
+
+  it('shows Starting… instead of the raw awaiting-response label', () => {
+    useChatStore.setState({
+      isProcessing: true,
+      latestOrchestratorRunStatus: {
+        kind: 'run-status',
+        phase: 'awaiting-response',
+        label: 'Awaiting first token from gemma4:31b…',
+        ts: Date.now()
+      } as never
+    });
+    render(<TurnActivitySummary activityRows={[]} live />);
+
+    expect(screen.getByText('Starting…')).toBeTruthy();
+    expect(screen.queryByText(/Awaiting first token/i)).toBeNull();
+  });
+
+  it('hides Starting… once assistant text begins streaming', () => {
+    useChatStore.setState({
+      isProcessing: true,
+      latestOrchestratorRunStatus: {
+        kind: 'run-status',
+        phase: 'streaming-text',
+        label: 'Streaming response…',
+        ts: Date.now()
+      } as never
+    });
+    render(<TurnActivitySummary activityRows={[]} live />);
+
+    expect(screen.queryByText('Starting…')).toBeNull();
+  });
 });

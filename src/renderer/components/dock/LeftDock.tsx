@@ -10,7 +10,6 @@ import { DockSearchPopover } from './DockSearchPopover.js';
 import { DockToolbar } from './DockToolbar.js';
 import { DockWorkspaceTabs } from './DockWorkspaceTabs.js';
 import { DockSectionHeader } from './DockSectionHeader.js';
-import { DockAgentPeek } from './DockAgentPeek.js';
 import {
   clampDockWidth,
   dockWorkspaceIndicatorLabel,
@@ -141,7 +140,7 @@ export function LeftDock() {
       aria-label="Workspace and session navigation"
       aria-expanded={dockExpanded}
       className={cn(
-        'app-no-drag relative h-full min-h-0 shrink-0 overflow-hidden bg-surface-sidebar',
+        'app-no-drag relative h-full min-h-0 shrink-0 overflow-hidden bg-surface-base',
         liveWidth !== null ? '' : 'transition-[width] duration-200 ease-out'
       )}
       style={{
@@ -150,7 +149,7 @@ export function LeftDock() {
     >
       {dockExpanded ? (
         <>
-          <div className={cn(DOCK_INSET_CLASS, 'h-full gap-0 py-1.5')}>
+          <div className={cn(DOCK_INSET_CLASS, 'h-full gap-0 py-1')}>
             <div className={workspacePanelClassName(workspaces.length)}>
               <DockSectionHeader label="Workspaces" />
               <DockWorkspaceTabs />
@@ -174,7 +173,7 @@ export function LeftDock() {
           />
         </>
       ) : (
-        <div className="flex h-full min-h-0 flex-col items-center gap-1 px-1 py-2">
+        <div className="flex h-full min-h-0 flex-col items-center justify-center gap-1.5 px-1 py-1.5">
           <button
             type="button"
             onClick={() => setDockExpanded(true)}
@@ -195,7 +194,6 @@ export function LeftDock() {
           <DockToolbar layout="vertical" {...toolbarProps} collapseIcon="right" />
         </div>
       )}
-      <DockAgentPeek />
     </nav>
   );
 }

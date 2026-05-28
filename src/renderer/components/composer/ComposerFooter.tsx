@@ -1,12 +1,9 @@
-import type { ReactNode } from 'react';
 import { MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
-import { ComposerStatusStrip } from './ComposerStatusStrip.js';
 import { SendButton } from './SendButton.js';
 import { cn } from '../../lib/cn.js';
 
 interface ComposerFooterProps {
   attachmentCount: number;
-  meterPill?: ReactNode;
   sendState: 'idle' | 'ready' | 'processing';
   onSend: () => void;
   canSend: boolean;
@@ -15,7 +12,6 @@ interface ComposerFooterProps {
 
 export function ComposerFooter({
   attachmentCount,
-  meterPill,
   sendState,
   onSend,
   canSend,
@@ -28,13 +24,12 @@ export function ComposerFooter({
         compact && 'vx-composer-footer--compact'
       )}
     >
-      {meterPill}
-      <ComposerStatusStrip />
       {attachmentCount > 0 && (
         <span className="shrink-0 font-mono text-meta text-text-faint tabular-nums">
           {attachmentCount}/{MAX_CHAT_ATTACHMENTS}
         </span>
       )}
+      <div className="min-w-0 flex-1" aria-hidden />
       <SendButton
         onClick={onSend}
         state={sendState}

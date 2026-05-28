@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { FolderOpen } from 'lucide-react';
 import type { ModelSelection } from '@shared/types/provider.js';
-import { ComposerToolbar } from './ComposerToolbar.js';
+import { AGENT_NAME, MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
 import { ComposerFooter } from './ComposerFooter.js';
+import { AttachmentButton } from './AttachmentButton.js';
+import { SendButton } from './SendButton.js';
+import { ModelPicker } from './modelPicker/index.js';
+import { PermissionModePill } from './PermissionModePill.js';
 import { TokenUsagePill } from './TokenUsagePill.js';
 import { PromptAttachmentCards } from './PromptAttachmentCards.js';
 import { useComposerAttachments } from './useComposerAttachments.js';
@@ -26,12 +29,7 @@ import {
   selectEffectiveContextWindow
 } from '../../store/useProviderStore.js';
 import { cn } from '../../lib/cn.js';
-import {
-  SHELL_COMPACT_ICON_CLASS,
-  SHELL_COMPACT_ICON_STROKE
-} from '../../lib/shellIcons.js';
 import { useToastStore } from '../../store/useToastStore.js';
-import { AGENT_NAME } from '@shared/constants.js';
 
 const TEXTAREA_MAX_HEIGHT = 168;
 
@@ -109,7 +107,6 @@ export function Composer({
   const selectedPaths = attachments.map(
     (a) => a.workspacePath ?? a.storedPath ?? a.name
   );
-  const workspacePath = useWorkspaceStore((s) => s.info.path);
   const providers = useProviderStore((s) => s.providers);
   const setContextOverride = useProviderStore((s) => s.setContextOverride);
   // Effective permissions resolve through three layers:
@@ -402,6 +399,112 @@ export function Composer({
   const footerMode = variant === 'footer';
   const zoneOpen = useSecondaryZoneStore((s) => s.panel !== null);
 
+  const attachmentButton = (
+    <AttachmentButton
+      open={pickerOpen || !!atMention}
+      onOpen={() => setPickerOpen(true)}
+      onClose={() => {
+        setPickerOpen(false);
+        setAtMention(null);
+      }}
+      selected={selectedPaths}
+      onPick={atMention ? onMentionPick : (p) => void addPaths([p])}
+      onPickFromComputer={() => void pickFromComputer()}
+      workspaceOnly={atMention !== null}
+      {...(atMention ? { controlledFilter: atMention.query } : {})}
+      {...(atMention ? { onControlledFilterChange: onMentionFilterChange } : {})}
+    />
+  );
+
+  const chipRow = (
+    <div className="vx-composer-chip-row">
+      {attachmentButton}
+      <ModelPicker
+        value={model}
+        onChange={onModelChange}
+        onOpenProviders={onOpenProviders}
+      />
+      <PermissionModePill />
+      {footerMode && attachments.length > 0 && (
+        <span className="shrink-0 font-mono text-meta text-text-faint tabular-nums">
+          {attachments.length}/{MAX_CHAT_ATTACHMENTS}
+        </span>
+      )}
+      <div className="min-w-0 flex-1" aria-hidden />
+      {tokenUsageSlot}
+    </div>
+  );
+
+  const textarea = (
+    <textarea
+      ref={taRef}
+      value={text}
+      aria-label={`Message ${AGENT_NAME}`}
+      aria-keyshortcuts="Enter Shift+Enter ArrowUp ArrowDown Escape"
+      onChange={(e) => onTextChange(e.target.value)}
+      onFocus={() => setTextareaFocused(true)}
+      onBlur={() => setTextareaFocused(false)}
+      onKeyUp={onSelectionUpdate}
+      onClick={onSelectionUpdate}
+      onKeyDown={(e) => {
+        const ne = e.nativeEvent as unknown as { isComposing?: boolean; keyCode?: number };
+        if (ne.isComposing || ne.keyCode === 229) return;
+        if (atMention && e.key === 'Escape') {
+          e.preventDefault();
+          setAtMention(null);
+          return;
+        }
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          if (canSendContent && !model) {
+            showToast('Select a model before sending.', 'danger');
+            return;
+          }
+          if (!canSendContent && !isProcessing) return;
+          void handleSend();
+          return;
+        }
+        if (e.key === 'ArrowUp' && text === '') {
+          e.preventDefault();
+          const recalled = history.recall('up');
+          if (recalled !== null) {
+            setText(recalled);
+            fromHistoryRef.current = true;
+            requestAnimationFrame(() => {
+              const el = taRef.current;
+              if (el) el.setSelectionRange(recalled.length, recalled.length);
+            });
+          }
+          return;
+        }
+        if (e.key === 'ArrowDown' && fromHistoryRef.current) {
+          e.preventDefault();
+          const recalled = history.recall('down');
+          setText(recalled ?? '');
+          if (recalled === null) {
+            fromHistoryRef.current = false;
+          }
+          requestAnimationFrame(() => {
+            const el = taRef.current;
+            if (el) {
+              const pos = recalled?.length ?? 0;
+              el.setSelectionRange(pos, pos);
+            }
+          });
+        }
+      }}
+      rows={1}
+      placeholder="@ to mention files, or describe your task…"
+      className={cn(
+        appComposerTextareaClassName,
+        footerMode ? 'min-h-[1.75rem] leading-5' : 'min-h-[2.5rem]',
+        footerMode && 'min-w-0 flex-1',
+        'transition-[height] duration-150 ease-out motion-reduce:transition-none'
+      )}
+      style={{ maxHeight: TEXTAREA_MAX_HEIGHT }}
+    />
+  );
+
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     if (e.dataTransfer.types.includes('Files')) setDragOver(true);
@@ -432,45 +535,7 @@ export function Composer({
         onDragOver={onDragOver}
         onDrop={handleDrop}
       >
-        {workspacePath && (
-          <div
-            className={cn(
-              'vx-composer-path vx-caption',
-              footerMode && 'vx-composer-path--compact'
-            )}
-          >
-            <FolderOpen
-              className={SHELL_COMPACT_ICON_CLASS}
-              strokeWidth={SHELL_COMPACT_ICON_STROKE}
-              aria-hidden
-            />
-            <span className="min-w-0 truncate font-mono" title={workspacePath}>
-              {workspacePath}
-            </span>
-          </div>
-        )}
-        <div className="flex min-w-0 gap-2">
-          <ComposerToolbar
-            side="left"
-            model={model}
-            onModelChange={onModelChange}
-            sendState={sendState}
-            onSend={() => void handleSend()}
-            canSend={canSendContent && !!model}
-            compact={zoneOpen}
-            selectedPaths={selectedPaths}
-            attachmentPickerOpen={pickerOpen || !!atMention}
-            onOpenAttachments={() => setPickerOpen(true)}
-            onCloseAttachments={() => {
-              setPickerOpen(false);
-              setAtMention(null);
-            }}
-            onPickAttachment={atMention ? onMentionPick : (p) => void addPaths([p])}
-            onPickFromComputer={() => void pickFromComputer()}
-            {...(atMention ? { attachmentFilter: atMention.query } : {})}
-            {...(atMention ? { onAttachmentFilterChange: onMentionFilterChange } : {})}
-            onOpenProviders={onOpenProviders}
-          />
+        <div className="flex min-w-0 flex-col">
           <div className="flex min-w-0 flex-1 flex-col">
             {attachments.length > 0 && (
               <PromptAttachmentCards
@@ -480,81 +545,35 @@ export function Composer({
                 className="mb-1"
               />
             )}
-            <textarea
-          ref={taRef}
-          value={text}
-          aria-label={`Message ${AGENT_NAME}`}
-          aria-keyshortcuts="Enter Shift+Enter ArrowUp ArrowDown Escape"
-          onChange={(e) => onTextChange(e.target.value)}
-          onFocus={() => setTextareaFocused(true)}
-          onBlur={() => setTextareaFocused(false)}
-          onKeyUp={onSelectionUpdate}
-          onClick={onSelectionUpdate}
-          onKeyDown={(e) => {
-            const ne = e.nativeEvent as unknown as { isComposing?: boolean; keyCode?: number };
-            if (ne.isComposing || ne.keyCode === 229) return;
-            if (atMention && e.key === 'Escape') {
-              e.preventDefault();
-              setAtMention(null);
-              return;
-            }
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              if (canSendContent && !model) {
-                showToast('Select a model before sending.', 'danger');
-                return;
-              }
-              if (!canSendContent && !isProcessing) return;
-              void handleSend();
-              return;
-            }
-            if (e.key === 'ArrowUp' && text === '') {
-              e.preventDefault();
-              const recalled = history.recall('up');
-              if (recalled !== null) {
-                setText(recalled);
-                fromHistoryRef.current = true;
-                requestAnimationFrame(() => {
-                  const el = taRef.current;
-                  if (el) el.setSelectionRange(recalled.length, recalled.length);
-                });
-              }
-              return;
-            }
-            if (e.key === 'ArrowDown' && fromHistoryRef.current) {
-              e.preventDefault();
-              const recalled = history.recall('down');
-              setText(recalled ?? '');
-              if (recalled === null) {
-                fromHistoryRef.current = false;
-              }
-              requestAnimationFrame(() => {
-                const el = taRef.current;
-                if (el) {
-                  const pos = recalled?.length ?? 0;
-                  el.setSelectionRange(pos, pos);
-                }
-              });
-              return;
-            }
-          }}
-          rows={1}
-          placeholder="@ to mention files, or describe your task…"
-          className={cn(
-            appComposerTextareaClassName,
-            footerMode ? 'min-h-[1.75rem] leading-5' : 'min-h-[2.5rem]',
-            'transition-[height] duration-150 ease-out motion-reduce:transition-none'
-          )}
-          style={{ maxHeight: TEXTAREA_MAX_HEIGHT }}
-            />
-            <ComposerFooter
-              attachmentCount={attachments.length}
-              meterPill={tokenUsageSlot}
-              sendState={sendState}
-              onSend={() => void handleSend()}
-              canSend={canSendContent && !!model}
-              compact={zoneOpen}
-            />
+            <div
+              className={cn(
+                'vx-composer-input-zone',
+                footerMode && 'vx-composer-input-zone--footer'
+              )}
+            >
+              {chipRow}
+              {footerMode ? (
+                <div className="vx-composer-input-row">
+                  {textarea}
+                  <SendButton
+                    onClick={() => void handleSend()}
+                    state={sendState}
+                    disabled={!canSendContent && sendState !== 'processing'}
+                  />
+                </div>
+              ) : (
+                <>
+                  {textarea}
+                  <ComposerFooter
+                    attachmentCount={attachments.length}
+                    sendState={sendState}
+                    onSend={() => void handleSend()}
+                    canSend={canSendContent && !!model}
+                    compact={zoneOpen}
+                  />
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
