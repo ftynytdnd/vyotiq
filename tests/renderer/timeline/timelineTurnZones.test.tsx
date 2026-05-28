@@ -299,4 +299,28 @@ describe('Timeline turn zones', () => {
     expect(assistant).not.toBeNull();
     expect(assistant?.closest('[data-turn-inline-stream]')).toBeNull();
   });
+
+  it('shows run-complete when isProcessing flips false on the trailing turn', () => {
+    useChatStore.setState({
+      conversationId: 'c-zones',
+      isProcessing: true,
+      events: [
+        { kind: 'user-prompt', id: 'p1', ts: 1000, content: 'Go' },
+        { kind: 'agent-text-delta', id: 'a1', ts: 2000, delta: 'Done.' },
+        { kind: 'agent-text-end', id: 'a1', ts: 2100 }
+      ] satisfies TimelineEvent[],
+      assistantTexts: {
+        a1: { id: 'a1', text: 'Done.', done: true }
+      }
+    });
+
+    const { container, rerender } = render(<Timeline />);
+    expect(container.querySelector('[data-row-kind="run-complete"]')).toBeNull();
+    expect(container.querySelector('[data-turn-running-meta]')).not.toBeNull();
+
+    useChatStore.setState({ isProcessing: false });
+    rerender(<Timeline />);
+    expect(container.querySelector('[data-turn-running-meta]')).toBeNull();
+    expect(container.querySelector('[data-row-kind="run-complete"]')).not.toBeNull();
+  });
 });

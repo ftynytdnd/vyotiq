@@ -3,6 +3,7 @@ import { useShallow } from 'zustand/react/shallow';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { AGENT_NAME, MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
 import { ComposerFooter } from './ComposerFooter.js';
+import { ComposerStatusStrip } from './ComposerStatusStrip.js';
 import { AttachmentButton } from './AttachmentButton.js';
 import { SendButton } from './SendButton.js';
 import { ModelPicker } from './modelPicker/index.js';
@@ -430,7 +431,7 @@ export function Composer({
           {attachments.length}/{MAX_CHAT_ATTACHMENTS}
         </span>
       )}
-      <div className="min-w-0 flex-1" aria-hidden />
+      <ComposerStatusStrip />
       {tokenUsageSlot}
     </div>
   );

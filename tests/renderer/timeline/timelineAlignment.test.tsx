@@ -142,7 +142,7 @@ describe('Timeline inline column alignment', () => {
     expect(container.textContent ?? '').not.toContain('Delegates');
   });
 
-  it('does not render LiveStatusRow in the inline stream during delegation', () => {
+  it('does not render live-status rows in the inline stream during delegation', () => {
     seedDelegationTurn(false);
 
     const { container } = render(<Timeline />);

@@ -1,9 +1,6 @@
 /**
- * SubAgentBriefing — task + scope for an expanded sub-agent trace.
- * Renders only the per-worker briefing (task + granted tools + scoped
- * files); the orchestrator-level delegate roster used to live in a
- * separate stepper row (`OrchestratorExecutionPlanRow`) but was
- * removed; grouped delegate meta is shown on `SubAgentGroup` instead.
+ * SubAgentBriefing — task, granted tools, and scoped files for an
+ * expanded sub-agent trace. Grouped delegate meta lives on `SubAgentGroup`.
  */
 
 import { useState } from 'react';

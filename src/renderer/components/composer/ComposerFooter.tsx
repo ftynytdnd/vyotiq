@@ -1,4 +1,5 @@
 import { MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
+import { ComposerStatusStrip } from './ComposerStatusStrip.js';
 import { SendButton } from './SendButton.js';
 import { cn } from '../../lib/cn.js';
 
@@ -29,7 +30,7 @@ export function ComposerFooter({
           {attachmentCount}/{MAX_CHAT_ATTACHMENTS}
         </span>
       )}
-      <div className="min-w-0 flex-1" aria-hidden />
+      <ComposerStatusStrip />
       <SendButton
         onClick={onSend}
         state={sendState}

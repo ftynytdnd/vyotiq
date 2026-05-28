@@ -13,7 +13,7 @@ import { cn } from '../../lib/cn.js';
 export const CHROME_LAYER_TITLEBAR_POPOVER = 40;
 
 export const TITLEBAR_ROOT_CLASS = cn(
-  'vx-titlebar app-drag relative z-30 flex shrink-0 select-none items-stretch bg-surface-sidebar text-row'
+  'vx-titlebar app-drag relative z-30 flex shrink-0 select-none items-stretch bg-surface-base text-row'
 );
 
 const TITLEBAR_ZONE_CLASS = 'app-no-drag flex items-center gap-0.5 py-1';

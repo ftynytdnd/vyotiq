@@ -3,8 +3,9 @@
  * Checkpoints history, and Context Inspector. Closed by default;
  * opens on demand and sits beside the conversation surface.
  *
- * Strict single overlay slot: opening any panel type closes all others
- * (settings, checkpoints, inspector, review, attachment preview, live diff).
+ * Opening settings, checkpoints, or inspector clears companion overlays
+ * (attachment preview, floating live diff). Preview/diff open clears the
+ * secondary panel via `closeForCompanionOpen`.
  */
 
 import { create } from 'zustand';

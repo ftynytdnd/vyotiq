@@ -64,7 +64,7 @@ afterEach(() => {
 });
 
 describe('Timeline inline live trace', () => {
-  it('does not mount LiveStatusRow in the timeline (composer strip owns live phase)', () => {
+  it('does not mount live-status rows in the timeline (composer strip owns live phase)', () => {
     const { container } = render(<Timeline />);
 
     const prompt = container.querySelector('[data-row-kind="user-prompt"]');

@@ -10,6 +10,7 @@ import type { DisplayRow } from './projectSubagentRows.js';
 import type { PartitionedTurn } from './groupTurnSegment.js';
 import { TurnInlineStream } from '../activity/TurnInlineStream.js';
 import { TurnActivitySummary } from '../activity/TurnActivitySummary.js';
+import { TurnRunningMeta } from '../activity/TurnRunningMeta.js';
 import {
   timelineLiveTurnClassName,
   timelineTurnOuterGapClassName,
@@ -62,6 +63,7 @@ export function TurnBlock({
             ))
           ))}
 
+        {live && footer.length === 0 && <TurnRunningMeta live={live} />}
         {footer.map((row) => (
           <div key={row.key}>{renderRow(row)}</div>
         ))}

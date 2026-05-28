@@ -2700,24 +2700,6 @@ textarea {
   }
 }
 
-.vx-composer-path {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 0.25rem;
-  border-bottom: none;
-  padding: 0.125rem 0.625rem;
-  font-size: var(--text-chat-meta);
-  line-height: 1.45;
-}
-
-.vx-composer-path--compact {
-  padding: 0.125rem 0.5rem;
-}
-
-.vx-composer-path.vx-caption {
-  font-size: var(--text-chat-meta);
-}
 
 .vx-composer-token-pill {
   display: inline-flex;
@@ -2977,9 +2959,6 @@ textarea {
   scrollbar-width: thin;
 }
 
-.vx-agent-panel .vx-floating-panel {
-  font-family: var(--font-mono);
-}
 
 .vx-timeline-user-bubble {
   border-radius: var(--radius-inner);

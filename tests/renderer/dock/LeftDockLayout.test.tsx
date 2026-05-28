@@ -108,4 +108,13 @@ describe('LeftDock layout', () => {
     expect(useDockSearchStore.getState().open).toBe(false);
     expect(useDockSearchStore.getState().query).toBe('');
   });
+
+  it('centers collapsed rail controls', () => {
+    useUiStore.setState({ dockExpanded: false });
+    render(<LeftDock />);
+    const expand = screen.getByRole('button', { name: /Expand navigation.*Codex/i });
+    const rail = expand.parentElement;
+    expect(rail?.className ?? '').toMatch(/items-center/);
+    expect(rail?.className ?? '').toMatch(/justify-center/);
+  });
 });
