@@ -888,56 +888,40 @@ export function registerChatIpc(): void {
         // Non-delta events persist verbatim.
         persistEvent(event);
       },
-      onDone: () => {
-        // Drain any residual buffered deltas to disk BEFORE telling
-        // the renderer the run is done. Without this, a quick follow-
-        // up `chat:send` on the same conversation can land before the
-        // tail events of THIS run have flushed to JSONL — the next
-        // run's `readTranscript(cid)` would then see a truncated
-        // transcript and the orchestrator would have no memory of
-        // turns it just produced. The outer `drainAppendChain`
-        // additionally awaits every in-flight `fs.appendFile`.
-        flushAll();
-        // Audit fix M-06: flip the latch AFTER flushAll so any
-        // legitimate end-of-run deltas still drain, but BEFORE
-        // drainAppendChain settles so the post-finalisation guard
-        // is armed by the time fire-and-forget tasks try to emit.
-        runFinalized = true;
-        const terminalMessage = persistFailureMessage;
-        drainAppendChain(cid)
-          .catch(() => undefined)
-          .finally(() => {
-            settleRun(cid);
-            if (terminalMessage) {
-              safeSend(IPC.CHAT_ERROR, input.runId, terminalMessage);
-            } else {
-              safeSend(IPC.CHAT_DONE, input.runId);
-            }
-          });
-      },
-      onError: (message: string) => {
-        // Same durability contract as `onDone`. The error path is
-        // even more important: the renderer surfaces the message and
-        // the user often retries immediately, so a missed tail event
-        // here can corrupt the next run's replay.
-        flushAll();
-        runFinalized = true;
-        const terminalMessage = persistFailureMessage ?? message;
-        drainAppendChain(cid)
-          .catch(() => undefined)
-          .finally(() => {
-            settleRun(cid);
-            safeSend(IPC.CHAT_ERROR, input.runId, terminalMessage);
-          });
-      }
+      onDone: () => finalizeRunDurability('done'),
+      onError: (message: string) => finalizeRunDurability('error', message)
     }, priorTranscript).catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
       log.error('startRun failed', { runId: input.runId, conversationId: cid, err });
+      finalizeRunDurability('error', message);
+    });
+
+    function finalizeRunDurability(mode: 'done' | 'error', runErrorMessage?: string): void {
       flushAll();
       runFinalized = true;
-      settleRun(cid);
-      safeSend(IPC.CHAT_ERROR, input.runId, message);
-    });
+      drainAppendChain(cid)
+        .catch((drainErr: unknown) => {
+          const drainMessage =
+            drainErr instanceof Error ? drainErr.message : 'Failed to persist transcript';
+          if (!persistFailureMessage) {
+            persistFailureMessage = drainMessage;
+          }
+          log.warn('drainAppendChain failed during run finalization', {
+            conversationId: cid,
+            err: drainErr
+          });
+        })
+        .finally(() => {
+          settleRun(cid);
+          const message =
+            persistFailureMessage ?? (mode === 'error' ? runErrorMessage : undefined);
+          if (mode === 'error' || message) {
+            safeSend(IPC.CHAT_ERROR, input.runId, message ?? 'Run failed');
+          } else {
+            safeSend(IPC.CHAT_DONE, input.runId);
+          }
+        });
+    }
 
     return { ok: true as const, conversationId: cid };
   });

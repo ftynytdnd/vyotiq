@@ -21,6 +21,21 @@ interface AgentTraceContentProps {
   snap: SubAgentSnapshot;
 }
 
+function structuralVerdictHint(
+  verdict: SubAgentSnapshot['structuralVerdict'] | undefined
+): string | null {
+  switch (verdict) {
+    case 'ok':
+      return 'Host structural check: envelope OK (orchestrator still verifies semantics).';
+    case 'malformed':
+      return 'Host structural check: malformed or missing <result> envelope.';
+    case 'self-failed':
+      return 'Host structural check: worker reported <status>failed</status>.';
+    default:
+      return null;
+  }
+}
+
 function statusLabel(status: SubAgentSnapshot['status']): string {
   switch (status) {
     case 'pending':
@@ -98,6 +113,8 @@ export function AgentTraceContent({ snap }: AgentTraceContentProps) {
     snap.iterationOrder.length > 0 ||
     Object.keys(snap.partialToolCallArgs).length > 0;
 
+  const structuralHint = structuralVerdictHint(snap.structuralVerdict);
+
   return (
     <div className="flex min-h-0 flex-col gap-3 p-3">
       <header className="flex flex-col gap-1.5 border-b border-border-subtle/20 pb-3">
@@ -112,6 +129,9 @@ export function AgentTraceContent({ snap }: AgentTraceContentProps) {
               <div className="mt-0.5 text-meta text-text-muted">
                 {subtitle ?? snap.liveStatus?.label}
               </div>
+            )}
+            {structuralHint && !running && (
+              <div className="mt-0.5 text-meta text-text-faint">{structuralHint}</div>
             )}
             {taskLabel && <p className="mt-1 text-row text-text-secondary">{taskLabel}</p>}
             {snap.model && (

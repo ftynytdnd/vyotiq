@@ -104,9 +104,9 @@ export function buildRunStateXml(view: RunStateView): string {
   const lines: string[] = [
     `iteration: ${view.iteration} of ${MAX_TOTAL_ITERATIONS}`,
     `direct_tool_rounds: ${view.directToolRounds.total} ` +
-    `(consecutive_failed: ${view.directToolRounds.consecutiveFailed})`,
+    `(consecutive_failed_tools: ${view.directToolRounds.consecutiveFailed})`,
     `delegate_rounds: ${view.delegateRounds.total} ` +
-    `(consecutive_bad: ${view.delegateRounds.consecutiveBad})`,
+    `(consecutive_bad_delegation: ${view.delegateRounds.consecutiveBad})`,
     `planning_nudges: ${view.nudges.planning.used} of ${view.nudges.planning.max} used`,
     `last_action: ${view.lastAction}`,
     `spin_signature_hot: ${view.spinSignatureHot ?? '(none)'}`

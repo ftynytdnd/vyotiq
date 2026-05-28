@@ -124,7 +124,7 @@ export function EditApprovalDialog({
   if (!open) return null;
 
   return (
-    <ComposerDialogPortal>
+    <ComposerDialogPortal elevated>
       <ComposerDialog
         open
         onClose={onDeny}

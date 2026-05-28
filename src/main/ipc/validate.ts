@@ -19,6 +19,11 @@
  * impossible to forget" defense-in-depth, not a schema framework. The
  * audit explicitly calls out the bigger lift (per-channel schemas) as
  * out of scope.
+ *
+ * Blob-like IPC channels (e.g. `attachments:read`) may keep `unknown`
+ * inputs with dedicated parsers in their handler modules — see
+ * `attachments.ipc.ts` (`parseAttachmentPathInput`) for the reference
+ * pattern instead of extending this file ad hoc.
  */
 
 /** Hard cap on the length of any renderer-supplied identifier / key.

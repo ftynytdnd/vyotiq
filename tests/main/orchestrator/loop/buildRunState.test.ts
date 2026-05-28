@@ -54,8 +54,8 @@ describe('buildRunStateXml', () => {
       .replace(/\n<\/run_state>$/, '')
       .split('\n');
     expect(lines[0]).toBe(`iteration: 4 of ${MAX_TOTAL_ITERATIONS}`);
-    expect(lines[1]).toBe('direct_tool_rounds: 3 (consecutive_failed: 0)');
-    expect(lines[2]).toBe('delegate_rounds: 1 (consecutive_bad: 0)');
+    expect(lines[1]).toBe('direct_tool_rounds: 3 (consecutive_failed_tools: 0)');
+    expect(lines[2]).toBe('delegate_rounds: 1 (consecutive_bad_delegation: 0)');
     expect(lines[3]).toBe(`planning_nudges: 0 of ${MAX_NUDGES_PER_RUN} used`);
     expect(lines[4]).toBe('last_action: delegate');
     expect(lines[5]).toBe('spin_signature_hot: (none)');
@@ -92,8 +92,8 @@ describe('buildRunStateXml', () => {
       snapshotRunState(acc, counters, nudges, spin, /*consecutiveBadToolRounds=*/ 2)
     );
 
-    expect(xml).toContain('direct_tool_rounds: 0 (consecutive_failed: 2)');
-    expect(xml).toContain('delegate_rounds: 0 (consecutive_bad: 1)');
+    expect(xml).toContain('direct_tool_rounds: 0 (consecutive_failed_tools: 2)');
+    expect(xml).toContain('delegate_rounds: 0 (consecutive_bad_delegation: 1)');
     expect(xml).toContain(`planning_nudges: 1 of ${MAX_NUDGES_PER_RUN} used`);
     expect(xml).toContain('last_action: direct-tool');
   });

@@ -518,6 +518,7 @@ export async function handleDelegates(
           ts: Date.now(),
           subagentId: run.id,
           status: wireStatus,
+          structuralVerdict: verdict.structural,
           ...((run.error ?? structuralMsg)
             ? { message: run.error ?? structuralMsg }
             : {})

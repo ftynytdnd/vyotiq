@@ -1155,7 +1155,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             // failed signature on the next iteration.
             resetSpinBuffer(spin);
             if (consecutiveBadToolRounds >= MAX_SELF_CORRECTION_ATTEMPTS) {
-              log.warn('three-strike halt — consecutive failed tool rounds', {
+              log.warn('tool-round strike halt — consecutive failed tool rounds', {
                 consecutiveBadToolRounds,
                 iteration: iter
               });

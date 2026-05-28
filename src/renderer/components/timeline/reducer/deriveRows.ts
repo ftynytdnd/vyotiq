@@ -190,7 +190,7 @@ export interface DeriveRowsOptions {
   liveDiffByCallId?: Record<string, import('./types.js').DiffStreamSnapshot>;
 }
 
-function enrichToolGroupsWithLiveDiff(
+export function enrichToolGroupsWithLiveDiff(
   rows: Row[],
   liveDiffByCallId: DeriveRowsOptions['liveDiffByCallId']
 ): Row[] {
@@ -679,12 +679,24 @@ export function deriveRows(
   // haven't yet emitted their authoritative `tool-call` event. We
   // append AFTER the event walk so they sit at the timeline tail —
   // the live position the user is watching.
-  const partials = opts.partialToolCallArgs;
-  if (partials) {
-    appendSynthesizedPartialRows(out, partials, opts.settledCallIds, true);
-  }
   if (!opts.runActive) {
     flushRun();
+  }
+  return applyDeriveRowsLiveLayer(out, opts);
+}
+
+/**
+ * Applies streaming partial tool rows and live FS diffs without re-walking
+ * the full event transcript. Timeline memoizes the event-only pass separately
+ * so high-frequency `partialToolCallArgs` / `liveDiffByCallId` updates stay
+ * O(rows) instead of O(events).
+ */
+export function applyDeriveRowsLiveLayer(rows: Row[], opts: DeriveRowsOptions): Row[] {
+  let out = rows;
+  const partials = opts.partialToolCallArgs;
+  if (partials && Object.keys(partials).length > 0) {
+    out = [...rows];
+    appendSynthesizedPartialRows(out, partials, opts.settledCallIds, true);
   }
   return enrichToolGroupsWithLiveDiff(out, opts.liveDiffByCallId);
 }

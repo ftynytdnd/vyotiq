@@ -515,7 +515,9 @@ export async function appendEvent(id: string, event: TimelineEvent): Promise<voi
   //      just unlinked. With the inner re-check the chain body sees
   //      the tombstone and bails before touching disk.
   const prev = appendChains.get(id) ?? Promise.resolve();
-  const next = prev.then(async () => {
+  // Swallow a prior link's rejection so one failed append does not brick
+  // the per-conversation queue; this caller still observes its own outcome.
+  const next = prev.catch(() => undefined).then(async () => {
     // Re-check the tombstone after the chain head resolves. See the
     // race description above.
     if (isRecentlyRemoved(id)) {
@@ -567,6 +569,7 @@ export async function appendEvent(id: string, event: TimelineEvent): Promise<voi
       scheduleIndexFlush();
     } catch (err) {
       log.error('failed to append event to transcript', { id, kind: event.kind, err });
+      throw err;
     }
   });
   appendChains.set(id, next);
@@ -594,19 +597,14 @@ export async function setLastModel(
  * a superseding run reading the prior transcript) can synchronise on the
  * tail without reaching into module-private state.
  *
- * Resolves to `undefined` regardless of chain outcome — individual append
- * failures are already logged inside `appendEvent`, and the caller's only
- * contract here is "wait until no write is pending". Returns immediately
- * when no chain exists for this id.
+ * Awaits the tail of the per-conversation append chain. Rejects when the
+ * most recent append failed (errors are logged inside `appendEvent`).
+ * Returns immediately when no chain exists for this id.
  */
 export async function drainAppendChain(id: string): Promise<void> {
   const chain = appendChains.get(id);
   if (!chain) return;
-  try {
-    await chain;
-  } catch {
-    /* already logged inside the appender */
-  }
+  await chain;
 }
 
 /**

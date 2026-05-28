@@ -9,7 +9,6 @@ const RERUN_ALLOWED_TOOLS = new Set<RegisteredToolName>([
   'read',
   'ls',
   'search',
-  'bash',
   'memory'
 ]);
 

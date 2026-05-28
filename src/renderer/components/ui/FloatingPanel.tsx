@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../lib/cn.js';
+import { bindFocusTrap, focusFirstFocusable } from '../../lib/focusTrap.js';
 import { PanelHeader } from './PanelHeader.js';
 
 const WIDTH_MIN = 320;
@@ -46,6 +47,7 @@ export function FloatingPanel({
 }: FloatingPanelProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const widthRef = useRef(clampWidth(initialWidth));
   const dragRef = useRef<{ startX: number; startW: number } | null>(null);
   const moveHandlerRef = useRef<((ev: PointerEvent) => void) | null>(null);
@@ -90,14 +92,21 @@ export function FloatingPanel({
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
+    const raf = requestAnimationFrame(() => {
+      const root = panelRef.current;
+      if (root) focusFirstFocusable(root);
+    });
+    const unbindTrap = bindFocusTrap({
+      getRoot: () => panelRef.current,
+      onEscape: onClose
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      unbindTrap();
+      const prev = previouslyFocusedRef.current;
+      if (prev && document.body.contains(prev)) prev.focus();
     };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
   useEffect(() => {
@@ -143,7 +152,7 @@ export function FloatingPanel({
   if (!open) return null;
 
   return createPortal(
-    <div className="vx-floating-panel-root fixed inset-0 z-[60] flex justify-end pointer-events-none">
+    <div className="vx-floating-panel-root fixed inset-0 z-(--z-overlay-panel) flex justify-end pointer-events-none">
       {showBackdrop ? (
         <button
           type="button"

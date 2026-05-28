@@ -71,6 +71,19 @@ describe('executeToolRerun permissions', () => {
     expect(ctx.permissions.allowAuto).toBe(false);
   });
 
+  it('rejects bash re-runs outside an orchestrator turn', async () => {
+    const reply = await executeToolRerun({
+      conversationId: 'conv-1',
+      toolName: 'bash',
+      args: { command: 'echo hi' },
+      permissions: { allowAuto: true }
+    });
+    expect(reply.ok).toBe(false);
+    if (reply.ok) throw new Error('expected failure');
+    expect(reply.reason).toBe('tool-not-rerunnable');
+    expect(runToolByName).not.toHaveBeenCalled();
+  });
+
   it('honors per-workspace allowAuto override from settings', async () => {
     getSettings.mockResolvedValue({
       permissions: { allowAuto: false },

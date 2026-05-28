@@ -11,12 +11,11 @@
  */
 
 import { useBackgroundRuns } from '../../hooks/chat/useBackgroundRuns.js';
-import { useConversationsStore } from '../../store/useConversationsStore.js';
+import { focusRow } from '../../hooks/chat/useChatRowFocus.js';
 import { cn } from '../../lib/cn.js';
 
 export function BackgroundRunsBadge() {
   const { count, firstRunningId } = useBackgroundRuns();
-  const select = useConversationsStore((s) => s.select);
 
   if (count === 0) return null;
 
@@ -27,7 +26,7 @@ export function BackgroundRunsBadge() {
       : `${count} conversations are still streaming. Click to jump to the first.`;
 
   const onClick = (): void => {
-    if (firstRunningId) void select(firstRunningId);
+    if (firstRunningId) focusRow(firstRunningId);
   };
 
   return (

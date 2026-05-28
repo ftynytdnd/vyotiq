@@ -262,6 +262,9 @@ export function applySubagentLifecycleTimelineEvent(
         assistantTexts: closedTexts,
         reasoningTexts: closedReasoning,
         partialToolCallArgs: nextPartial,
+        ...(event.structuralVerdict !== undefined
+          ? { structuralVerdict: event.structuralVerdict }
+          : {}),
         ...(event.message !== undefined ? { message: event.message } : {})
       };
       return {

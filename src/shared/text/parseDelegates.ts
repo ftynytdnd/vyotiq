@@ -79,7 +79,7 @@ export function parseDelegatesWithDuplicates(text: string): ParseDelegatesResult
       tools: (attrs['tools'] ?? '').split(',').map((s) => s.trim()).filter(Boolean)
     });
   }
-  const malformedOpeners: string[] = [];
+  const malformedOpeners = collectMalformedDelegateOpeners(scanText);
   const compoundTaskIds: string[] = [];
   const directives: ParsedDelegate[] = [];
   for (const d of found) {
@@ -144,6 +144,33 @@ export function looksLikeCompoundDelegateTask(task: string): boolean {
   if (semiParts.length >= 3) return true;
 
   return false;
+}
+
+const DELEGATE_OPENER_RE = /<delegate\b/gi;
+
+/**
+ * `<delegate` tokens that do not match the harness directive shape.
+ * Used by the orchestrator to emit a `phase` breadcrumb for the model.
+ */
+function collectMalformedDelegateOpeners(scanText: string): string[] {
+  const malformed: string[] = [];
+  const seenAt = new Set<number>();
+  let opener: RegExpExecArray | null;
+  DELEGATE_OPENER_RE.lastIndex = 0;
+  while ((opener = DELEGATE_OPENER_RE.exec(scanText)) !== null) {
+    const at = opener.index;
+    if (seenAt.has(at)) continue;
+    seenAt.add(at);
+    DELEGATE_RE.lastIndex = at;
+    const full = DELEGATE_RE.exec(scanText);
+    if (full?.index === at) continue;
+    const snippet = scanText
+      .slice(at, at + 120)
+      .replace(/\s+/g, ' ')
+      .trim();
+    malformed.push(snippet);
+  }
+  return malformed;
 }
 
 export { stripDelegateOnlyMarkup as stripDelegates } from './strip.js';

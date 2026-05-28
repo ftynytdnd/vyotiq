@@ -15,7 +15,7 @@ describe('tool rerun eligibility', () => {
     expect(isRerunnableToolName('read')).toBe(true);
     expect(isRerunnableToolName('ls')).toBe(true);
     expect(isRerunnableToolName('search')).toBe(true);
-    expect(isRerunnableToolName('bash')).toBe(true);
+    expect(isRerunnableToolName('bash')).toBe(false);
     expect(isRerunnableToolName('memory')).toBe(true);
   });
 

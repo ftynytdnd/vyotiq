@@ -164,5 +164,34 @@ export async function runSubAgentPool(specs: SubAgentSpec[], deps: PoolDeps): Pr
   const workers: Promise<void>[] = [];
   for (let i = 0; i < Math.min(limit, specs.length); i++) workers.push(worker());
   await Promise.all(workers);
-  return results;
+  return fillMissingResults(specs, results, deps.signal);
+}
+
+/** Every spec index must resolve to a run — abort mid-pool must not leave holes. */
+function fillMissingResults(
+  specs: SubAgentSpec[],
+  results: SubAgentRun[],
+  signal: AbortSignal
+): SubAgentRun[] {
+  const filled: SubAgentRun[] = new Array(specs.length);
+  for (let i = 0; i < specs.length; i++) {
+    const existing = results[i];
+    if (existing !== undefined) {
+      filled[i] = existing;
+      continue;
+    }
+    const spec = specs[i]!;
+    filled[i] = {
+      id: spec.id,
+      task: spec.task,
+      output: '',
+      toolResults: [],
+      inlinedFileCount: 0,
+      status: signal.aborted ? 'aborted' : 'failed',
+      ...(signal.aborted
+        ? {}
+        : { error: 'Sub-agent pool exited before this worker started' })
+    };
+  }
+  return filled;
 }

@@ -20,9 +20,12 @@ describe('projectSubagentRows', () => {
     expect(projectSubagentRows(rows)).toEqual(rows);
   });
 
-  it('keeps a single sub-agent line standalone', () => {
+  it('collapses a lone sub-agent line into a delegate-batch affordance', () => {
     const rows: Row[] = [userPrompt(), subLine('A1')];
-    expect(projectSubagentRows(rows)).toEqual(rows);
+    expect(projectSubagentRows(rows)).toEqual([
+      userPrompt(),
+      { kind: 'delegate-batch', key: 'delegate:A1', subagentIds: ['A1'] }
+    ]);
   });
 
   it('collapses two or more consecutive sub-agent lines into delegate-batch', () => {

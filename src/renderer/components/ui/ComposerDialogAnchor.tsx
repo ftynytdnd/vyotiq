@@ -49,9 +49,24 @@ function useAnchorNode(): HTMLElement | null {
  * reachable. Production app shells always mount an anchor, so the
  * fallback only fires in test or pre-mount edge cases.
  */
-export function ComposerDialogPortal({ children }: { children: ReactNode }) {
+export function ComposerDialogPortal({
+  children,
+  /** Above floating panels / app backdrop when strict approvals must stay reachable. */
+  elevated = false
+}: {
+  children: ReactNode;
+  elevated?: boolean;
+}) {
   const node = useAnchorNode();
   if (typeof document === 'undefined') return null;
+  if (elevated) {
+    return createPortal(
+      <div className="vx-composer-dialog-elevated-root pointer-events-none fixed inset-0 z-(--z-overlay-confirm) flex items-end justify-center px-4 pb-4">
+        <div className="pointer-events-auto w-full max-w-2xl">{children}</div>
+      </div>,
+      document.body
+    );
+  }
   return createPortal(children, node ?? document.body);
 }
 

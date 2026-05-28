@@ -97,5 +97,14 @@ describe('runSubAgentPool', () => {
     const runs = await poolPromise;
     expect(runs).toHaveLength(3);
     expect(started).toEqual(['A']);
+    for (const run of runs) {
+      expect(run).toBeDefined();
+      expect(run.id).toBeTruthy();
+      expect(run.status).toBeTruthy();
+    }
+    expect(runs[1]?.status).toBe('aborted');
+    expect(runs[2]?.status).toBe('aborted');
+    expect(runs[1]?.output).toBe('');
+    expect(runs[2]?.output).toBe('');
   });
 });

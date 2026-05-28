@@ -96,6 +96,12 @@ export const MODEL_DISCOVERY_TIMEOUT_MS = 12_000;
  * surfaced in the renderer (`SubAgentSnapshot.queued`).
  */
 export const MAX_PARALLEL_SUBAGENTS = 8;
+
+/**
+ * Upper bound for awaiting a prior run's settlement latch on supersede.
+ * Prevents `chat:send` from blocking forever when `settleRun` is never called.
+ */
+export const RUN_SETTLEMENT_TIMEOUT_MS = 120_000;
 export const MAX_SELF_CORRECTION_ATTEMPTS = 3;
 export const MAX_TOTAL_ITERATIONS = 24;
 

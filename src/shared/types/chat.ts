@@ -333,6 +333,11 @@ export type TimelineEvent =
      */
     status: 'done' | 'partial' | 'failed' | 'malformed' | 'aborted';
     message?: string;
+    /**
+     * Host structural envelope check (`verifier.ts`). Distinct from your
+     * orchestrator-level semantic acceptance of the worker output.
+     */
+    structuralVerdict?: 'ok' | 'malformed' | 'self-failed';
   }
   | {
     kind: 'subagent-result';

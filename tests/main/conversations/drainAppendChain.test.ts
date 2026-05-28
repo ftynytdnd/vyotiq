@@ -15,7 +15,8 @@
  * them silently.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { promises as fs } from 'node:fs';
 import {
   appendEvent,
   createConversation,
@@ -60,7 +61,7 @@ describe('conversationStore — drainAppendChain', () => {
     await Promise.all(fires);
   });
 
-  it('drainAppendChain awaits in-flight appends without surfacing internal errors', async () => {
+  it('drainAppendChain awaits in-flight appends on the happy path', async () => {
     const meta = await createConversation('ws-test');
 
     // Queue several appends without awaiting individually.
@@ -82,5 +83,32 @@ describe('conversationStore — drainAppendChain', () => {
   it('drainAppendChain on an unknown / quiescent id is a no-op', async () => {
     // No conversation, no prior appends — must not throw.
     await expect(drainAppendChain('nonexistent-id')).resolves.toBeUndefined();
+  });
+
+  it('appendEvent rejects when disk append fails', async () => {
+    const meta = await createConversation('ws-test');
+    const appendSpy = vi.spyOn(fs, 'appendFile').mockRejectedValueOnce(
+      Object.assign(new Error('EACCES'), { code: 'EACCES' })
+    );
+    let appendErr: unknown;
+    await appendEvent(meta.id, evt('denied')).catch((err) => {
+      appendErr = err;
+    });
+    appendSpy.mockRestore();
+    expect(appendErr).toMatchObject({ message: 'EACCES' });
+  });
+
+  it('drainAppendChain propagates a failed append on the chain tail', async () => {
+    const meta = await createConversation('ws-test');
+    const appendSpy = vi.spyOn(fs, 'appendFile').mockRejectedValueOnce(
+      Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
+    );
+    await appendEvent(meta.id, evt('denied')).catch(() => undefined);
+    let drainErr: unknown;
+    await drainAppendChain(meta.id).catch((err) => {
+      drainErr = err;
+    });
+    appendSpy.mockRestore();
+    expect(drainErr).toMatchObject({ message: 'EBUSY' });
   });
 });

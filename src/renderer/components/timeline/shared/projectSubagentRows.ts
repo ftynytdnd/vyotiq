@@ -34,16 +34,14 @@ export function projectSubagentRows(rows: Row[]): DisplayRow[] {
       i++;
     }
 
-    if (batch.length >= 2) {
+    // Agent trace panel is canonical for per-worker detail; timeline
+    // shows only the compact delegate-batch affordance (never subagent-line).
+    if (batch.length >= 1) {
       out.push({
         kind: 'delegate-batch',
         key: `delegate:${batch.join(':')}`,
         subagentIds: batch
       });
-    } else {
-      for (const id of batch) {
-        out.push({ kind: 'subagent-line', key: `sub:${id}`, subagentId: id });
-      }
     }
   }
 

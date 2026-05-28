@@ -23,6 +23,7 @@ import { safeCopy } from '../../../lib/clipboard.js';
 import { chromeRevealIconActionClassName } from '../../ui/SurfaceShell.js';
 import { highlightStreamingCode } from '../../../lib/streamHighlight.js';
 import { CodeLanguageEyebrow } from '../shared/CodeLanguageEyebrow.js';
+import { useThrottledValue } from '../../../lib/useThrottledValue.js';
 import { MarkdownBody } from './MarkdownBody.js';
 import { TaskCheckbox } from './TaskCheckbox.js';
 import {
@@ -50,9 +51,11 @@ export function StreamingMarkdownBody({
     [text]
   );
 
+  const throttledCleaned = useThrottledValue(cleaned, done ? 0 : 120);
+
   const blocks = useMemo(
-    () => (done ? [] : parseStreamingBlocks(cleaned)),
-    [cleaned, done]
+    () => (done ? [] : parseStreamingBlocks(throttledCleaned)),
+    [throttledCleaned, done]
   );
 
   if (cleaned.length === 0) return null;
@@ -214,9 +217,10 @@ function StreamPreWithCopy({
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const isEmpty = content.trim().length === 0;
+  const throttledContent = useThrottledValue(content, partial ? 120 : 0);
   const highlighted = useMemo(
-    () => highlightStreamingCode(language, content),
-    [language, content]
+    () => highlightStreamingCode(language, throttledContent),
+    [language, throttledContent]
   );
 
   useEffect(() => {

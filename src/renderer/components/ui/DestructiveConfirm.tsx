@@ -130,7 +130,7 @@ function DestructiveComposerDialog({
   const primaryLabel = twoStep && !armed ? continueLabel : confirmLabel;
 
   return (
-    <ComposerDialogPortal>
+    <ComposerDialogPortal elevated>
       <ComposerDialog
         open
         onClose={() => {

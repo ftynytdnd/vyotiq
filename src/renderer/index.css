@@ -97,6 +97,11 @@
   /* Settings section titles — muted whisper labels (Linear-lite) */
   --color-section-title: oklch(0.62 0.008 260);
 
+  /* Overlay stacking (backdrop < floating panel < composer confirms) */
+  --z-overlay-backdrop: 59;
+  --z-overlay-panel: 60;
+  --z-overlay-confirm: 70;
+
   /* Radii */
   --radius-card: 12px;
   --radius-composer: 8px;
@@ -186,6 +191,9 @@
   --text-row: 13px;
   --text-log: 14px;
   --text-body: 14px;
+  /* Chat-body / row / meta sizes below are the default (comfortable)
+     density. `[data-density='compact']` and `[data-density='airy']`
+     override --text-chat-body, --text-row, and --text-chat-meta only. */
   --text-chat-body: 15px;
   --text-chat-meta: 12px;
   --text-hero: 16px;

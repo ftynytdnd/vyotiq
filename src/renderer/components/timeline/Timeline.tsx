@@ -27,7 +27,7 @@ import {
   useSettingsStore
 } from '../../store/useSettingsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
-import { deriveRows } from './reducer/deriveRows.js';
+import { applyDeriveRowsLiveLayer, deriveRows } from './reducer/deriveRows.js';
 import { UserPromptRow } from './rows/UserPromptRow.js';
 import { AssistantTextRow } from './rows/AssistantTextRow.js';
 import { ReasoningLineRow } from './rows/ReasoningLineRow.js';
@@ -138,25 +138,25 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
     [settings, activeWorkspaceId]
   );
 
-  const rows = useMemo(
+  const baseRows = useMemo(
     () =>
       deriveRows(events, {
         runActive: isProcessing,
-        partialToolCallArgs,
         settledCallIds,
-        liveDiffByCallId,
         ...(contextWindow !== undefined ? { contextWindow } : {}),
         tokenBudgetWarnThreshold
       }),
-    [
-      events,
-      isProcessing,
-      partialToolCallArgs,
-      settledCallIds,
-      liveDiffByCallId,
-      contextWindow,
-      tokenBudgetWarnThreshold
-    ]
+    [events, isProcessing, settledCallIds, contextWindow, tokenBudgetWarnThreshold]
+  );
+
+  const rows = useMemo(
+    () =>
+      applyDeriveRowsLiveLayer(baseRows, {
+        partialToolCallArgs,
+        settledCallIds,
+        liveDiffByCallId
+      }),
+    [baseRows, partialToolCallArgs, settledCallIds, liveDiffByCallId]
   );
 
   useFloatingLiveDiffAutoOpen(rows);

@@ -461,7 +461,10 @@ export default function App() {
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <LeftDock />
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <main className="min-h-0 flex-1 overflow-hidden bg-surface-base">
+          <main
+            className="min-h-0 flex-1 overflow-hidden bg-surface-base"
+            aria-hidden={overlayOpen ? true : undefined}
+          >
             <ChatPage
               onOpenProviders={() => openSettings('providers')}
               onOpenCheckpointSettings={() => openSettings('checkpoints')}
@@ -474,7 +477,7 @@ export default function App() {
         createPortal(
           <button
             type="button"
-            className="fixed inset-0 z-[59] bg-black/40"
+            className="fixed inset-0 z-(--z-overlay-backdrop) bg-black/40"
             aria-label="Close panel"
             onClick={closeAllOverlays}
           />,

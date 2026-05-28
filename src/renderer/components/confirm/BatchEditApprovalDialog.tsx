@@ -54,7 +54,7 @@ export function BatchEditApprovalDialog({
       : `Approve ${editCount} edits across ${fileCount} file${fileCount === 1 ? '' : 's'}?`;
 
   return (
-    <ComposerDialogPortal>
+    <ComposerDialogPortal elevated>
       <ComposerDialog
         open
         onClose={onDenyAll}

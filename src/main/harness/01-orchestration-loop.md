@@ -408,8 +408,8 @@ block every iteration with the REAL numbers pulled from
 ```
 <run_state>
 iteration: <N> of <MAX_TOTAL_ITERATIONS>
-direct_tool_rounds: <N> (consecutive_failed: <N>)
-delegate_rounds: <N> (consecutive_bad: <N>)
+direct_tool_rounds: <N> (consecutive_failed_tools: <N>)
+delegate_rounds: <N> (consecutive_bad_delegation: <N>)
 planning_nudges: <N> of <MAX_NUDGES_PER_RUN> used
 last_action: delegate
 spin_signature_hot: (none)
@@ -430,7 +430,7 @@ When you've tried to invoke `delegate` as a tool, the host adds a
 `child_redelegations: <N>` line to the block as a one-line
 reminder to switch to the `<delegate ... />` XML directive.
 
-Read it. If `consecutive_bad` is climbing toward
+Read it. If `consecutive_bad_delegation` is climbing toward
 `MAX_DELEGATION_BAD_ROUNDS`, change tactics — different files,
 different sub-task split, ask the user. If `failing_tasks` lists a
 task, that exact decomposition is not working — split it differently
@@ -457,11 +457,11 @@ counter — you can spawn a replacement sub-agent with a corrected
 brief and the counter stays where it was. But if your replacements
 keep coming back self-failed or malformed, that pattern WILL trip
 the strike. Pivot tactics (different files, different split, ask the
-user) before `consecutive_bad` in `<run_state>` reaches
+user) before `consecutive_bad_delegation` in `<run_state>` reaches
 `MAX_DELEGATION_BAD_ROUNDS`.
 
 A round with even ONE `success` or `partial` verdict resets
-`consecutive_bad` to 0, regardless of how the other sub-agents in
+`consecutive_bad_delegation` to 0, regardless of how the other sub-agents in
 the round fared.
 
 ### Hallucination guard

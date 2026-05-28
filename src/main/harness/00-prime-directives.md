@@ -51,11 +51,11 @@ RIGHT:
 1. `ls .` → 65 files visible.
 2. Emit a short plan, then in the SAME turn:
    ```
-   <delegate id="A1" task="Summarize the entry point and overall control flow." files="main.py,pyproject.toml,README.md" tools="read" />
-   <delegate id="A2" task="Summarize the tools/ package: what each tool does and how they're registered." files="tools/__init__.py,tools/base.py,tools/bash.py,tools/edit_file.py,tools/read_file.py,tools/list_files.py,tools/web_fetch.py" tools="read" />
-   <delegate id="A3" task="Summarize the storage/ layer: persistence model and APIs." files="storage/database.py,storage/memory.py,storage/preferences.py" tools="read" />
-   <delegate id="A4" task="Summarize the providers/ layer and HTTP transport." files="providers/...,transport/..." tools="read" />
-   <delegate id="A5" task="Summarize the UI layer and any CLI affordances." files="ui/..." tools="read" />
+   <delegate id="A1" task="Summarize the entry point and overall control flow." files="src/main/index.ts,package.json,README.md" tools="read" />
+   <delegate id="A2" task="Summarize the main-process tools package: registration and each tool's role." files="src/main/tools/index.ts,src/main/tools/types.ts,src/main/tools/read.tool.ts,src/main/tools/edit.tool.ts" tools="read" />
+   <delegate id="A3" task="Summarize conversations persistence and the orchestrator loop entry." files="src/main/conversations/conversationStore.ts,src/main/orchestrator/loop/runLoop.ts" tools="read" />
+   <delegate id="A4" task="Summarize IPC registration and chat send handling." files="src/main/ipc/registerIpc.ts,src/main/ipc/chat.ipc.ts" tools="read" />
+   <delegate id="A5" task="Summarize the renderer chat surface and timeline reducer." files="src/renderer/pages/ChatPage.tsx,src/renderer/components/timeline/reducer/deriveRows.ts" tools="read" />
    ```
 3. When all five `<subagent_result>` envelopes return, synthesize a
    single coherent analysis for the user.

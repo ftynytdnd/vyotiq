@@ -460,6 +460,17 @@ describe('parseDelegatesWithDuplicates', () => {
       expect(out.malformedOpeners).toEqual([]);
     });
 
+    it('collects malformed delegate openers that fail the harness shape', () => {
+      const out = parseDelegatesWithDuplicates(
+        '<delegate id="A1" task="ok" />\n<delegate id="B2" task=broken />'
+      );
+      expect(out.directives).toHaveLength(1);
+      expect(out.directives[0]?.id).toBe('A1');
+      expect(out.malformedOpeners.length).toBe(1);
+      expect(out.malformedOpeners[0]).toContain('<delegate');
+      expect(out.malformedOpeners[0]).toContain('B2');
+    });
+
     it('rejects compound task= directives via compoundTaskIds', () => {
       const compound = [
         '- Read src/a.ts',

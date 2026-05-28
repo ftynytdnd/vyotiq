@@ -241,6 +241,11 @@ export interface SubAgentSnapshot {
    */
   unknownTools: string[];
   status: SubAgentStatus;
+  /**
+   * Cheap host check on the `<result>` envelope (`verifier.ts`). The
+   * orchestrator still performs semantic acceptance separately.
+   */
+  structuralVerdict?: 'ok' | 'malformed' | 'self-failed';
   message?: string;
   output?: string;
   startedAt: number;

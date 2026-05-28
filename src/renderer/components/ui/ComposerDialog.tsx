@@ -36,6 +36,10 @@ import {
   type RefObject
 } from 'react';
 import { cn } from '../../lib/cn.js';
+import { bindFocusTrap, focusFirstFocusable } from '../../lib/focusTrap.js';
+import { useAttachmentPreviewStore } from '../../store/useAttachmentPreviewStore.js';
+import { useFloatingLiveDiffStore } from '../../store/useFloatingLiveDiffStore.js';
+import { useSecondaryZoneStore } from '../../store/useSecondaryZoneStore.js';
 import { PanelHeader } from './PanelHeader.js';
 
 type ComposerDialogSize = 'compact' | 'expanded';
@@ -81,19 +85,13 @@ const SIZE_BODY_CLASS: Record<ComposerDialogSize, string> = {
   expanded: 'max-h-[min(60dvh,520px)] overflow-y-auto'
 };
 
-/** Selector matching focusable descendants for the focus trap. */
-const FOCUSABLE_SELECTOR = [
-  'a[href]',
-  'button:not([disabled])',
-  'textarea:not([disabled])',
-  'input:not([disabled])',
-  'select:not([disabled])',
-  '[tabindex]:not([tabindex="-1"])'
-].join(',');
-
-function getFocusable(root: HTMLElement): HTMLElement[] {
-  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
-    (el) => el.offsetParent !== null || el === document.activeElement
+function useBlockingOverlayOpen(): boolean {
+  const secondaryPanel = useSecondaryZoneStore((s) => s.panel);
+  const agentTraceId = useSecondaryZoneStore((s) => s.agentTraceId);
+  const previewOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
+  const liveDiffOpen = useFloatingLiveDiffStore((s) => s.target !== null);
+  return (
+    secondaryPanel !== null || agentTraceId !== null || previewOpen || liveDiffOpen
   );
 }
 
@@ -115,63 +113,37 @@ export function ComposerDialog({
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const blockingOverlayOpen = useBlockingOverlayOpen();
+  const ariaModal = open && !blockingOverlayOpen;
 
   // Capture the previously-focused element so we can restore it on close.
   useEffect(() => {
     if (!open) return;
     previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
-    // Focus the first focusable inside the dialog on next tick so any
-    // late-mounting children are picked up.
     const raf = requestAnimationFrame(() => {
       const root = dialogRef.current;
-      if (!root) return;
-      const focusables = getFocusable(root);
-      const first = focusables[0];
-      if (first) first.focus();
+      if (root) focusFirstFocusable(root);
     });
     return () => {
       cancelAnimationFrame(raf);
-      // Restore focus to wherever the user came from (best-effort —
-      // the original element may have unmounted).
       const prev = previouslyFocusedRef.current;
       if (prev && document.body.contains(prev)) prev.focus();
     };
   }, [open]);
 
-  // Document-level listeners: Escape to close, Tab to trap.
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (disableEscape) return;
-        e.preventDefault();
+    return bindFocusTrap({
+      getRoot: () => dialogRef.current,
+      disableEscape,
+      onEscape: () => {
         if (size === 'expanded' && onEscapeFromExpanded) {
           onEscapeFromExpanded();
           return;
         }
         onClose();
-        return;
       }
-      if (e.key !== 'Tab') return;
-      const root = dialogRef.current;
-      if (!root) return;
-      const focusables = getFocusable(root);
-      if (focusables.length === 0) return;
-      const first = focusables[0]!;
-      const last = focusables[focusables.length - 1]!;
-      const active = document.activeElement;
-      if (e.shiftKey) {
-        if (active === first || !root.contains(active)) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else if (active === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    });
   }, [open, onClose, disableEscape, size, onEscapeFromExpanded]);
 
   // Enter → click the wired primary action (skipped when the user is
@@ -199,7 +171,7 @@ export function ComposerDialog({
     <div
       ref={dialogRef}
       role="dialog"
-      aria-modal="true"
+      aria-modal={ariaModal ? 'true' : 'false'}
       aria-labelledby={titleId}
       data-size={size}
       onKeyDown={onContainerKeyDown}

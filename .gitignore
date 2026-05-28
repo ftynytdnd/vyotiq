@@ -11,3 +11,8 @@ electron.vite.config.*.mjs
 .cache
 .vscode
 .idea
+knip-report.json
+knip-fresh.json
+knip-clean.json
+knip-current.json
+knip-post-audit.json
