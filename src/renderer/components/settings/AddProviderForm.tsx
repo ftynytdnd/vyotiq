@@ -1,18 +1,23 @@
 import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { Button } from '../ui/Button.js';
-import { Chip } from '../ui/Chip.js';
-import { Eyebrow } from '../ui/Eyebrow.js';
 import { TextField } from '../ui/TextField.js';
 import { Tabs, type TabItem } from '../ui/Tabs.js';
 import { useProviderStore } from '../../store/useProviderStore.js';
-import { cn } from '../../lib/cn.js';
+import {
+  ShellActionRow,
+  ShellCaption,
+  ShellFieldActions,
+  ShellFieldLabel,
+  ShellRow
+} from '../ui/ShellSection.js';
 import {
   PROVIDER_DIALECTS,
   PROVIDER_DIALECT_LABELS,
   type ProviderDialect
 } from '@shared/types/provider.js';
 import { describeBaseUrl } from './baseUrlValidation.js';
+import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../lib/shellIcons.js';
 
 const DIALECT_TABS: TabItem<ProviderDialect>[] = PROVIDER_DIALECTS.map((d) => ({
   id: d,
@@ -31,32 +36,14 @@ interface Preset {
 
 const PRESETS: Preset[] = [
   { label: 'OpenAI', baseUrl: 'https://api.openai.com', dialect: 'openai' },
-  // Anthropic native — REQUIRES the dedicated `anthropic-native`
-  // dialect; the shim path through OpenAI does NOT preserve thinking
-  // signatures, so multi-turn extended-thinking would lose its plan.
-  // Phase 8 (2026).
   { label: 'Anthropic', baseUrl: 'https://api.anthropic.com', dialect: 'anthropic-native' },
-  // Gemini AI Studio — REQUIRES the `gemini-native` dialect for
-  // `thoughtSignature` round-trip. Without it, Gemini 3.x returns
-  // 400 on the second turn of any multi-call sequence. Phase 9 (2026).
   {
     label: 'Gemini (AI Studio)',
     baseUrl: 'https://generativelanguage.googleapis.com',
     dialect: 'gemini-native'
   },
-  // OpenRouter is OpenAI-compatible; the canonical base is
-  // `https://openrouter.ai/api` (the chat client appends `/v1/...`
-  // itself). The base-URL normalizer is dialect-aware so the `/api`
-  // segment is preserved on submit. App-attribution headers
-  // (`HTTP-Referer`, `X-OpenRouter-Title`) are auto-attached for this
-  // host by `attributionHeaders.ts`; users can override per-provider
-  // from the row's "OpenRouter attribution" section.
   { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api', dialect: 'openai' },
-  // Local Ollama speaks BOTH dialects — default to openai (the shim) so
-  // tool calling works without any extra setup. Users can flip the
-  // dialect switch if they prefer the native API.
   { label: 'Ollama (local)', baseUrl: 'http://localhost:11434', dialect: 'openai' },
-  // Ollama Cloud ONLY speaks the native dialect — /v1/* is a 404 there.
   { label: 'Ollama Cloud', baseUrl: 'https://ollama.com', dialect: 'ollama-native' },
   { label: 'LM Studio (local)', baseUrl: 'http://localhost:1234', dialect: 'openai' },
   { label: 'Groq', baseUrl: 'https://api.groq.com/openai', dialect: 'openai' },
@@ -64,12 +51,6 @@ const PRESETS: Preset[] = [
   { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com', dialect: 'openai' }
 ];
 
-/**
- * Returns true when the (post-normalization) URL targets OpenRouter,
- * so the form can render the attribution-default hint inline. Mirrors
- * the host check in `attributionHeaders.isOpenRouterHost` — if either
- * gets out of sync, the hint will lie about the headers actually sent.
- */
 function isOpenRouterUrl(rawUrl: string): boolean {
   try {
     const host = new URL(rawUrl.trim()).hostname.toLowerCase();
@@ -111,7 +92,6 @@ export function AddProviderForm({ onAdded }: AddProviderFormProps) {
       setErr(validation.message);
       return;
     }
-    // Silently accept the normalized form (e.g. strip trailing `/v1`).
     const effectiveBaseUrl = validation?.normalized ?? baseUrl.trim();
     setBusy(true);
     setErr(null);
@@ -134,8 +114,8 @@ export function AddProviderForm({ onAdded }: AddProviderFormProps) {
 
   if (!open) {
     return (
-      <Button variant="primary" size="sm" onClick={() => setOpen(true)}>
-        <Plus className="h-3.5 w-3.5" strokeWidth={2.25} /> Add provider
+      <Button variant="link" onClick={() => setOpen(true)}>
+        <Plus className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} /> Add provider
       </Button>
     );
   }
@@ -148,14 +128,13 @@ export function AddProviderForm({ onAdded }: AddProviderFormProps) {
         : 'text-text-muted';
 
   return (
-    <div className="flex flex-col gap-2.5 border-l border-border-subtle/40 py-1 pl-3">
-      <div className="flex flex-wrap gap-1">
+    <div className="flex flex-col gap-3">
+      <ShellActionRow className="flex-wrap gap-1 pt-0">
         {PRESETS.map((p) => (
-          <Chip
+          <button
             key={p.label}
-            as="button"
-            tone="muted"
-            className="rounded-inner px-2.5 py-1"
+            type="button"
+            className="vx-segment-item rounded px-2 py-1"
             onClick={() => {
               setName(p.label);
               setBaseUrl(p.baseUrl);
@@ -163,20 +142,26 @@ export function AddProviderForm({ onAdded }: AddProviderFormProps) {
             }}
           >
             {p.label}
-          </Chip>
+          </button>
         ))}
-      </div>
+      </ShellActionRow>
+
       <Field label="Name" value={name} onChange={setName} placeholder="e.g. OpenAI" />
       <Field label="Base URL" value={baseUrl} onChange={setBaseUrl} placeholder="https://api.openai.com" />
+
       {validation && (
-        <div className={cn('text-row', validationToneClass)}>{validation.message}</div>
+        <ShellCaption className={validationToneClass}>{validation.message}</ShellCaption>
       )}
+
       {isOpenRouterUrl(baseUrl) && dialect === 'openai' && (
-        <div className="text-row text-text-muted">
-          Auto-attributing as Vyotiq · vyotiq.app for OpenRouter rankings. Adjust later in the provider settings.
-        </div>
+        <ShellCaption>
+          Auto-attributing as Vyotiq · vyotiq.app for OpenRouter rankings. Adjust later in the
+          provider settings.
+        </ShellCaption>
       )}
+
       <DialectSwitch value={dialect} onChange={setDialect} />
+
       <Field
         label="API Key"
         value={apiKey}
@@ -184,18 +169,21 @@ export function AddProviderForm({ onAdded }: AddProviderFormProps) {
         placeholder="sk-… (leave blank for local providers without auth)"
         password
       />
-      {err && <div className="text-row text-danger">{err}</div>}
-      <div className="mt-1 flex justify-end gap-2">
-        <Button variant="ghost" size="sm" onClick={() => { reset(); setOpen(false); }}>Cancel</Button>
+
+      {err && <ShellCaption className="text-danger">{err}</ShellCaption>}
+
+      <ShellFieldActions grouped>
+        <Button variant="ghost" onClick={() => { reset(); setOpen(false); }}>
+          Cancel
+        </Button>
         <Button
           variant="primary"
-          size="sm"
           disabled={busy || validation?.severity === 'error'}
           onClick={() => void submit()}
         >
           {busy ? 'Adding…' : 'Add & discover'}
         </Button>
-      </div>
+      </ShellFieldActions>
     </div>
   );
 }
@@ -208,8 +196,8 @@ function DialectSwitch({
   onChange: (next: ProviderDialect) => void;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <Eyebrow as="span" size="row">Dialect</Eyebrow>
+    <ShellRow className="py-0">
+      <ShellFieldLabel>Provider dialect</ShellFieldLabel>
       <Tabs<ProviderDialect>
         items={DIALECT_TABS}
         value={value}
@@ -217,8 +205,9 @@ function DialectSwitch({
         variant="segmented"
         size="md"
         ariaLabel="Provider dialect"
+        className="mt-2"
       />
-    </label>
+    </ShellRow>
   );
 }
 
@@ -236,16 +225,15 @@ function Field({
   password?: boolean;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <Eyebrow as="span" size="row">{label}</Eyebrow>
+    <ShellRow className="py-0">
+      <ShellFieldLabel>{label}</ShellFieldLabel>
       <TextField
         type={password ? 'password' : 'text'}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        size="lg"
-        tone="raised"
+        className="mt-1"
       />
-    </label>
+    </ShellRow>
   );
 }

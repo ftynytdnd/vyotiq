@@ -36,6 +36,32 @@ vi.mock('@main/memory/workspaceNotes.js', () => ({
   writeWorkspaceNote: (...args: unknown[]) => writeWorkspaceNote(...args)
 }));
 
+const touchGlobalMemoryLastReference = vi.fn(async () => ({
+  conversationId: 'conv-1',
+  conversationTitle: 'Test chat',
+  at: Date.now()
+}));
+const getGlobalMemoryLastReference = vi.fn(async () => null);
+
+vi.mock('@main/memory/lastReferenced.js', () => ({
+  touchGlobalMemoryLastReference: (...args: unknown[]) =>
+    touchGlobalMemoryLastReference(...args),
+  getGlobalMemoryLastReference: (...args: unknown[]) =>
+    getGlobalMemoryLastReference(...args),
+  getMemoryLastReference: vi.fn(async () => null),
+  listMemoryLastReferences: vi.fn(async () => ({})),
+  touchMemoryLastReference: vi.fn(async () => ({
+    conversationId: 'conv-1',
+    conversationTitle: 'Test',
+    at: Date.now()
+  })),
+  GLOBAL_MEMORY_KEY: 'meta-rules.md'
+}));
+
+vi.mock('@main/workspace/workspaceState.js', () => ({
+  getActiveWorkspace: vi.fn(async () => ({ id: 'ws-1', path: '/tmp', label: 'tmp', addedAt: 0 }))
+}));
+
 beforeEach(async () => {
   appendGlobalMetaRule.mockClear();
   writeGlobalMetaRules.mockClear();
@@ -77,6 +103,20 @@ describe('memory:write', () => {
     expect(appendGlobalMetaRule).toHaveBeenCalledWith('Prefer vanilla CSS');
     expect(writeGlobalMetaRules).not.toHaveBeenCalled();
     expect(entry).toMatchObject({ scope: 'global', key: 'meta-rules.md' });
+  });
+
+  it('records global last-referenced when conversationId is supplied', async () => {
+    touchGlobalMemoryLastReference.mockClear();
+    const entry = await mockIpc.__invoke(
+      IPC.MEMORY_WRITE,
+      'global',
+      'meta-rules.md',
+      '# Rules',
+      'set',
+      'conv-99'
+    );
+    expect(touchGlobalMemoryLastReference).toHaveBeenCalledWith('conv-99');
+    expect(entry.lastReferencedConversationId).toBe('conv-1');
   });
 
   it('overwrites workspace notes with set mode', async () => {

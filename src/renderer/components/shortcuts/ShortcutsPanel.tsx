@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { Eyebrow } from '../ui/Eyebrow.js';
 import { cn } from '../../lib/cn.js';
 
 function isMacPlatform(): boolean {
@@ -10,11 +9,11 @@ function isMacPlatform(): boolean {
   return /mac/i.test(p);
 }
 
-export function platformModKey(): string {
+function platformModKey(): string {
   return isMacPlatform() ? '\u2318' : 'Ctrl';
 }
 
-export function platformAltKey(): string {
+function platformAltKey(): string {
   return isMacPlatform() ? '\u2325' : 'Alt';
 }
 
@@ -37,11 +36,7 @@ interface ShortcutsPanelProps {
  */
 export function ShortcutsPanel({ mod = platformModKey(), alt = platformAltKey() }: ShortcutsPanelProps) {
   return (
-    <div
-      role="dialog"
-      aria-label="Keyboard shortcuts"
-      className="flex flex-col gap-2"
-    >
+    <div role="dialog" aria-label="Keyboard shortcuts" className="vx-stack gap-3">
       <ShortcutGroup title="Navigation">
         <ShortcutRow combo={`${mod}+B`} label="Toggle navigation dock" />
         <ShortcutRow combo={`${mod}+K`} label="Search chats" />
@@ -75,21 +70,21 @@ function ShortcutGroup({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-0.5">
-      <Eyebrow className="px-1 pb-0.5">{title}</Eyebrow>
-      {children}
-    </div>
+    <section className="vx-section">
+      <h3 className="vx-section-head mb-1">{title}</h3>
+      <div className="flex flex-col">{children}</div>
+    </section>
   );
 }
 
 function ShortcutRow({ combo, label }: { combo: string; label: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 px-1 py-0.5 text-row">
-      <span className="truncate text-text-secondary">{label}</span>
+    <div className="vx-row flex items-center justify-between gap-3 py-1.5 first:pt-0 last:pb-0">
+      <span className="min-w-0 truncate text-row text-text-muted">{label}</span>
       <kbd
         className={cn(
-          'shrink-0 rounded-inner border border-border-subtle/30 px-1.5 py-0.5',
-          'font-mono text-row tracking-tight text-text-muted'
+          'shrink-0 rounded-inner border border-border-subtle/25 bg-surface-overlay/40',
+          'px-1.5 py-0.5 font-mono text-meta tracking-tight text-text-secondary'
         )}
       >
         {combo}

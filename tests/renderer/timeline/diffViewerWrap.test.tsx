@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
-import { DiffViewer } from '@renderer/components/timeline/tools/edit/diff/DiffViewer';
+import { UnifiedDiffBody as DiffViewer } from '@renderer/components/diff/UnifiedDiffBody';
 import type { DiffHunk } from '@shared/types/tool';
 
 const HUNKS: DiffHunk[] = [

@@ -1,8 +1,9 @@
 /**
  * Lightweight global toast queue used to surface async-IPC failures the
  * UI cannot resolve in-place. Single source of truth for renderer-wide
- * notifications. Toasts auto-dismiss after `DEFAULT_DURATION_MS`; the
- * caller may pass a custom duration. Stack depth is capped so a burst
+ * notifications. Info/success toasts auto-dismiss after ~4s; danger
+ * toasts persist until dismissed. Callers may pass a custom duration.
+ * Stack depth is capped so a burst
  * of failures never floods the layout.
  *
  * Renders via `<ToastHost />` mounted once near the application root.
@@ -39,6 +40,8 @@ interface ToastStore {
 }
 
 const DEFAULT_DURATION_MS = 4000;
+/** Danger toasts persist until dismissed. */
+const PERSISTENT_DURATION_MS = 0;
 const MAX_STACK = 4;
 
 let serial = 0;
@@ -65,6 +68,10 @@ const timers = new Map<string, TimerEntry>();
 
 export const useToastStore = create<ToastStore>((set, get) => {
   function scheduleExpire(id: string, durationMs: number): void {
+    if (durationMs <= 0) {
+      timers.set(id, { timer: null, expiresAt: Number.POSITIVE_INFINITY, remaining: 0 });
+      return;
+    }
     const handle = setTimeout(() => {
       timers.delete(id);
       // Re-read state inside the timer so a dismiss-then-bulk-clear
@@ -87,9 +94,12 @@ export const useToastStore = create<ToastStore>((set, get) => {
   return {
     toasts: [],
 
-    show: (message, tone = 'info', durationMs = DEFAULT_DURATION_MS) => {
+    show: (message, tone = 'info', durationMs?: number) => {
       const id = nextId();
       const next: Toast = { id, message, tone };
+      const resolvedDuration =
+        durationMs ??
+        (tone === 'danger' ? PERSISTENT_DURATION_MS : DEFAULT_DURATION_MS);
       const cur = get().toasts;
       // Drop the oldest entries if we exceed the stack cap so the
       // panel never grows past `MAX_STACK` rows. The dropped entries'
@@ -102,7 +112,7 @@ export const useToastStore = create<ToastStore>((set, get) => {
         for (const t of cur.slice(0, dropped)) clearTimer(t.id);
       }
       set({ toasts: [...trimmed, next] });
-      scheduleExpire(id, durationMs);
+      scheduleExpire(id, resolvedDuration);
     },
 
     dismiss: (id) => {

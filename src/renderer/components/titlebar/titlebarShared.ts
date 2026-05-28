@@ -1,24 +1,36 @@
 /**
  * Shared layout classes for the frameless title bar.
+ *
+ * Layering (low → high): titlebar chrome (z-30) → titlebar popovers (z-40) →
+ * open secondary panels (z-50) → modals. Menus stay inside the titlebar
+ * stacking context so an open Settings drawer paints above them.
  */
 
-import { chromeEdgeClassName, chromePopoverPanelClassName } from '../ui/SurfaceShell.js';
+import { chromePopoverPanelClassName } from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
 
+/** Portaled titlebar popovers (keyboard shortcuts help). */
+export const CHROME_LAYER_TITLEBAR_POPOVER = 40;
+
 export const TITLEBAR_ROOT_CLASS = cn(
-  'app-drag flex h-9 shrink-0 select-none items-stretch border-b bg-surface-raised/30 text-row',
-  chromeEdgeClassName
+  'vx-titlebar app-drag relative z-30 flex shrink-0 select-none items-stretch bg-surface-sidebar text-row'
 );
 
-const TITLEBAR_ZONE_CLASS = 'app-no-drag flex items-center gap-1 py-1';
+const TITLEBAR_ZONE_CLASS = 'app-no-drag flex items-center gap-0.5 py-1';
 
-export const TITLEBAR_MENUBAR_ZONE_CLASS = cn(TITLEBAR_ZONE_CLASS, 'pl-2 pr-1');
+export const TITLEBAR_MENUBAR_ZONE_CLASS = cn(
+  TITLEBAR_ZONE_CLASS,
+  'pl-3 pr-1.5 sm:pl-3.5'
+);
 
-export const TITLEBAR_ACTIONS_ZONE_CLASS = cn(TITLEBAR_ZONE_CLASS, 'pr-0.5');
+export const TITLEBAR_ACTIONS_ZONE_CLASS = cn(TITLEBAR_ZONE_CLASS, 'gap-0.5 pr-1');
+
+/** Settings / help icon buttons — pairs with 16px glyph floor in index.css. */
+export const TITLEBAR_ICON_ACTION_CLASS = 'vx-titlebar-action';
 
 export const TITLEBAR_MENU_PANEL_CLASS = cn(
   chromePopoverPanelClassName,
-  'absolute left-0 top-full z-[80] mt-1.5 min-w-52 border border-border-subtle/18 p-1'
+  'absolute left-0 top-full z-10 mt-1.5 w-[min(100vw-1rem,14rem)] min-w-[12rem] max-w-[min(100vw-1rem,20rem)] border border-border-subtle/18 p-1'
 );
 
 export const TITLEBAR_WINDOW_ZONE_CLASS = cn(TITLEBAR_ZONE_CLASS, 'gap-0 pr-1.5');

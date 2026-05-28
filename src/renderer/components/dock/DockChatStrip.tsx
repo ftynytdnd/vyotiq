@@ -6,32 +6,34 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, ChevronDown, ChevronRight, Trash2, MessageSquare } from 'lucide-react';
 import type { ConversationMeta } from '@shared/types/chat.js';
-import { ConfirmDialog } from '../ui/ConfirmDialog.js';
-import { Spinner } from '../ui/Spinner.js';
+import { Button } from '../ui/Button.js';
+import { DestructiveConfirm } from '../ui/DestructiveConfirm.js';
+import { LoadingHint } from '../ui/LoadingHint.js';
 import { cn } from '../../lib/cn.js';
+import {
+  SHELL_ACTION_ICON_STROKE,
+  SHELL_ROW_ICON_CLASS
+} from '../../lib/shellIcons.js';
 import { DockChatMoveMenu } from './DockChatMoveMenu.js';
 import { filterDockChats } from './filterDockChats.js';
+import { chromeNoMatchesClassName } from '../ui/SurfaceShell.js';
 import {
   CONV_DRAG_MIME,
-  DOCK_CHAT_METER_TRACK_CLASS,
   DOCK_CHAT_TAB_INNER_CLASS,
   DOCK_CHAT_TAB_STACK_CLASS,
   DOCK_EMPTY_STATE_CLASS,
   DOCK_HOVER_ACTIONS,
-  dockChatMeterBarClassName,
+  DOCK_TAB_LABEL_CLASS,
+  DOCK_TAB_TRIGGER_CLASS,
   dockInlineActionClassName,
-  dockTabRowClassName
+  dockTabRowClassName,
+  dockTabActiveAttr
 } from './dockShared.js';
-import {
-  useProviderStore,
-  selectEffectiveContextWindow
-} from '../../store/useProviderStore.js';
 import { useConversationProcessing } from '../../hooks/chat/index.js';
-import { PeakContextBadge } from '../chat/PeakContextBadge.js';
 import { useChatRowFocus } from '../../hooks/chat/index.js';
-import { RunningTitle, RunStopButton } from '../runIndicators/index.js';
+import { BackgroundRunsBadge, RunningTitle, RunStopButton } from '../runIndicators/index.js';
 import { useChatStore } from '../../store/useChatStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
@@ -52,6 +54,8 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
   const prewarm = useConversationsStore((s) => s.prewarm);
   const rename = useConversationsStore((s) => s.rename);
   const remove = useConversationsStore((s) => s.remove);
+  const archive = useConversationsStore((s) => s.archive);
+  const unarchive = useConversationsStore((s) => s.unarchive);
   const newConversationFor = useConversationsStore((s) => s.newConversationFor);
 
   const query = useDockSearchStore((s) => s.query);
@@ -75,7 +79,21 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
       query,
       searchOpen,
       runningIds,
-      activeIdByWorkspace[workspaceId] ?? null
+      activeIdByWorkspace[workspaceId] ?? null,
+      { archivedOnly: false }
+    );
+  }, [list, workspaceId, query, searchOpen, runningIds, activeIdByWorkspace]);
+
+  const archivedEntries = useMemo(() => {
+    if (!workspaceId) return [];
+    return filterDockChats(
+      list,
+      workspaceId,
+      query,
+      searchOpen,
+      runningIds,
+      activeIdByWorkspace[workspaceId] ?? null,
+      { archivedOnly: true }
     );
   }, [list, workspaceId, query, searchOpen, runningIds, activeIdByWorkspace]);
 
@@ -87,6 +105,7 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
   );
   const toggleWorkspaceCollapsed = useUiStore((s) => s.toggleWorkspaceCollapsed);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [archivedExpanded, setArchivedExpanded] = useState(false);
 
   // Hydrate peak-context badges for visible tabs without requiring
   // the user to open each chat first.
@@ -107,16 +126,17 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
 
   if (!workspaceId) {
     return (
-      <div className={cn(DOCK_EMPTY_STATE_CLASS, 'flex-1 text-row text-text-faint')}>
-        Open a workspace to see chats.
+      <div className={cn(DOCK_EMPTY_STATE_CLASS, 'flex-1')}>
+        <MessageSquare className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} aria-hidden />
+        <span>Open a workspace to see chats.</span>
       </div>
     );
   }
 
   if (loading && list.length === 0) {
     return (
-      <div className={cn(DOCK_EMPTY_STATE_CLASS, 'flex-1 flex-row items-center text-row text-text-faint')}>
-        <Spinner /> Loading…
+      <div className={cn(DOCK_EMPTY_STATE_CLASS, 'flex-1')}>
+        <LoadingHint message="Loading…" className="py-4" />
       </div>
     );
   }
@@ -138,6 +158,7 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
                 onSelect={() => void select(runningEntry.id)}
                 onRename={(title) => void rename(runningEntry.id, title)}
                 onRemove={() => void remove(runningEntry.id)}
+                onArchive={() => void archive(runningEntry.id)}
               />
               <RunStopButton
                 runId={runningRunId}
@@ -163,9 +184,14 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
   if (entries.length === 0) {
     return (
       <div className={cn(DOCK_EMPTY_STATE_CLASS, 'min-h-0 flex-1')}>
-        <span className="text-row text-text-faint">
-          {isFiltering ? 'No matches.' : 'No chats yet.'}
-        </span>
+        {isFiltering ? (
+          <span className={chromeNoMatchesClassName}>No matches.</span>
+        ) : (
+          <>
+            <MessageSquare className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} aria-hidden />
+            <span>No chats yet.</span>
+          </>
+        )}
         {!isFiltering && (
           <button
             type="button"
@@ -196,6 +222,7 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
         });
       }}
     >
+      <BackgroundRunsBadge />
       {entries.map((entry) => (
         <ChatTab
           key={entry.id}
@@ -205,8 +232,40 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
           onSelect={() => void select(entry.id)}
           onRename={(title) => void rename(entry.id, title)}
           onRemove={() => void remove(entry.id)}
+          onArchive={() => void archive(entry.id)}
         />
       ))}
+      {archivedEntries.length > 0 && (
+        <div className="mt-2 border-t border-border-subtle/30 pt-2">
+          <button
+            type="button"
+            onClick={() => setArchivedExpanded((open) => !open)}
+            className="flex w-full items-center gap-1 px-2 pb-1 text-left text-meta font-medium text-text-faint hover:text-text-secondary"
+            aria-expanded={archivedExpanded}
+          >
+            {archivedExpanded ? (
+              <ChevronDown className="h-3 w-3 shrink-0" aria-hidden />
+            ) : (
+              <ChevronRight className="h-3 w-3 shrink-0" aria-hidden />
+            )}
+            <span>Archived ({archivedEntries.length})</span>
+          </button>
+          {archivedExpanded &&
+            archivedEntries.map((entry) => (
+              <ChatTab
+                key={entry.id}
+                entry={entry}
+                displayTitle={displayTitles.get(entry.id) ?? entry.title}
+                active={entry.id === activeId}
+                archived
+                onSelect={() => void select(entry.id)}
+                onRename={(title) => void rename(entry.id, title)}
+                onRemove={() => void remove(entry.id)}
+                onArchive={() => void unarchive(entry.id)}
+              />
+            ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -215,15 +274,28 @@ interface ChatTabProps {
   entry: ConversationMeta;
   displayTitle: string;
   active: boolean;
+  archived?: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
   onRemove: () => void;
+  onArchive: () => void;
 }
 
-function ChatTab({ entry, displayTitle, active, onSelect, onRename, onRemove }: ChatTabProps) {
+function ChatTab({
+  entry,
+  displayTitle,
+  active,
+  archived = false,
+  onSelect,
+  onRename,
+  onRemove,
+  onArchive
+}: ChatTabProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(entry.title);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const deleteOpenRef = useRef(false);
+  const lastTrashClickRef = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const { isProcessing, runId } = useConversationProcessing(entry.id);
   const registerRowRef = useChatRowFocus(entry.id);
@@ -235,6 +307,10 @@ function ChatTab({ entry, displayTitle, active, onSelect, onRename, onRemove }: 
   useEffect(() => {
     if (!editing) setDraft(entry.title);
   }, [entry.title, editing]);
+
+  useEffect(() => {
+    deleteOpenRef.current = deleteOpen;
+  }, [deleteOpen]);
 
   const commit = () => {
     setEditing(false);
@@ -251,7 +327,7 @@ function ChatTab({ entry, displayTitle, active, onSelect, onRename, onRemove }: 
         role="tab"
         aria-selected={active}
         tabIndex={active ? 0 : -1}
-        draggable={!editing && !isProcessing}
+        draggable={!editing && !isProcessing && !deleteOpen}
         onDragStart={(e) => {
           e.dataTransfer.setData(CONV_DRAG_MIME, entry.id);
           e.dataTransfer.effectAllowed = 'move';
@@ -260,125 +336,116 @@ function ChatTab({ entry, displayTitle, active, onSelect, onRename, onRemove }: 
           dockTabRowClassName(active, 'chat'),
           DOCK_CHAT_TAB_STACK_CLASS
         )}
+        data-active={dockTabActiveAttr(active)}
       >
         <div className={DOCK_CHAT_TAB_INNER_CLASS}>
-        {editing ? (
-          <input
-            ref={inputRef}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commit}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                commit();
+          {deleteOpen ? (
+            <DestructiveConfirm
+              variant="inline"
+              open
+              context={displayTitle}
+              question={
+                isProcessing
+                  ? 'Remove this chat? A run is still active in it.'
+                  : 'Remove this chat?'
               }
-              if (e.key === 'Escape') {
-                e.preventDefault();
-                setDraft(entry.title);
-                setEditing(false);
-              }
-            }}
-            className="min-w-0 flex-1 bg-transparent text-row text-text-primary outline-none"
-            aria-label="Rename chat"
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={onSelect}
-            onDoubleClick={(e) => {
-              e.preventDefault();
-              setEditing(true);
-            }}
-            className="flex min-w-0 flex-1 items-center gap-1 truncate text-left"
-            title={displayTitle}
-          >
-            {isProcessing ? (
-              <RunningTitle id={entry.id} title={displayTitle} />
-            ) : (
-              displayTitle
-            )}
-            {!editing && <PeakContextBadge meta={entry} className="ml-1" />}
-          </button>
-        )}
-        {!editing && (
-          <span className={cn('flex shrink-0 items-center', DOCK_HOVER_ACTIONS)}>
-            {isProcessing && runId ? (
-              <RunStopButton runId={runId} conversationTitle={entry.title} />
-            ) : (
-              <>
-                {entry.workspaceId && (
-                  <DockChatMoveMenu
-                    conversationId={entry.id}
-                    currentWorkspaceId={entry.workspaceId}
-                  />
+              confirmLabel="Delete"
+              onConfirm={() => {
+                setDeleteOpen(false);
+                onRemove();
+              }}
+              onCancel={() => setDeleteOpen(false)}
+            />
+          ) : editing ? (
+            <input
+              ref={inputRef}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={commit}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  commit();
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setDraft(entry.title);
+                  setEditing(false);
+                }
+              }}
+              className="min-w-0 flex-1 bg-transparent text-row text-text-primary outline-none"
+              aria-label="Rename chat"
+            />
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={onSelect}
+                onDoubleClick={(e) => {
+                  e.preventDefault();
+                  setEditing(true);
+                }}
+                className={DOCK_TAB_TRIGGER_CLASS}
+                title={displayTitle}
+              >
+                {isProcessing ? (
+                  <RunningTitle id={entry.id} title={displayTitle} className={DOCK_TAB_LABEL_CLASS} />
+                ) : (
+                  <span className={DOCK_TAB_LABEL_CLASS}>{displayTitle}</span>
                 )}
-                <button
-                  type="button"
-                  aria-label="Delete chat"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDeleteOpen(true);
-                  }}
-                  className={cn(
-                    'inline-flex h-4 w-4 items-center justify-center rounded-inner',
-                    'text-text-faint hover:text-danger focus-visible:opacity-100'
+              </button>
+            </>
+          )}
+          {!editing && !deleteOpen && (
+            <span className={cn('flex shrink-0 items-center', DOCK_HOVER_ACTIONS)}>
+              {isProcessing && runId ? (
+                <RunStopButton runId={runId} conversationTitle={entry.title} />
+              ) : (
+                <>
+                  {entry.workspaceId && (
+                    <DockChatMoveMenu
+                      conversationId={entry.id}
+                      currentWorkspaceId={entry.workspaceId}
+                    />
                   )}
-                >
-                  <Trash2 className="h-3 w-3" strokeWidth={2} />
-                </button>
-              </>
-            )}
-          </span>
-        )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={archived ? 'Restore chat' : 'Archive chat'}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onArchive();
+                    }}
+                    className="h-4 w-4 px-0 text-text-faint hover:text-text-secondary"
+                  >
+                    {archived ? (
+                      <ArchiveRestore className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+                    ) : (
+                      <Archive className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label="Delete chat"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const now = Date.now();
+                      if (now - lastTrashClickRef.current < 400) return;
+                      lastTrashClickRef.current = now;
+                      if (deleteOpenRef.current) return;
+                      setDeleteOpen(true);
+                    }}
+                    className="h-4 w-4 px-0 text-text-faint hover:text-danger"
+                  >
+                    <Trash2 className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+                  </Button>
+                </>
+              )}
+            </span>
+          )}
         </div>
-        {active && <DockChatContextMeter meta={entry} />}
       </div>
-      <ConfirmDialog
-        open={deleteOpen}
-        title="Delete chat?"
-        message={`"${entry.title}" will be removed permanently.`}
-        confirmLabel="Delete"
-        variant="danger"
-        onConfirm={() => {
-          setDeleteOpen(false);
-          onRemove();
-        }}
-        onCancel={() => setDeleteOpen(false)}
-      />
     </>
   );
 }
-
-/** Bottom context meter on the active chat tab (peak prompt vs ceiling). */
-function DockChatContextMeter({ meta }: { meta: ConversationMeta }) {
-  const slicePeak = useChatStore(
-    (s) => s.slices[meta.id]?.orchestratorUsage?.peak.promptTokens
-  );
-  const providers = useProviderStore((s) => s.providers);
-  const peakPromptTokens = Math.max(
-    meta.peakPromptTokens ?? 0,
-    typeof slicePeak === 'number' ? slicePeak : 0
-  );
-  const providerId = meta.lastProviderId;
-  const modelId = meta.lastModelId;
-  if (!providerId || !modelId) return null;
-  const ceiling = selectEffectiveContextWindow(providers, providerId, modelId);
-  if (typeof ceiling !== 'number' || ceiling <= 0) return null;
-  const ratio = Math.min(1, peakPromptTokens / ceiling);
-  const pct = Math.round(ratio * 100);
-  return (
-    <div className="px-2 pb-1" aria-hidden>
-      <span className={DOCK_CHAT_METER_TRACK_CLASS}>
-        <span
-          className={cn(
-            'absolute inset-y-0 left-0 rounded-pill transition-[width] duration-150',
-            dockChatMeterBarClassName(ratio)
-          )}
-          style={{ width: `${Math.min(100, pct)}%` }}
-        />
-      </span>
-    </div>
-  );
-}
-

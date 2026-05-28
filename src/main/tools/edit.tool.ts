@@ -25,6 +25,11 @@ import {
   findFlexible,
   suggestSimilarLines
 } from './editHelpers.js';
+import {
+  composeOnDiskText,
+  decodeFileForEdit,
+  type DecodedFileText
+} from './editFileEncoding.js';
 import { recordChange } from '../checkpoints/index.js';
 
 interface EditArgs {
@@ -132,12 +137,11 @@ Create a new file:
       return failure(id, started, 'Error: `path` is required.', 'missing path');
     }
 
-    // Cache for the file's existing body. Populated when the
-    // strict-approval path eagerly reads the body to compute the
-    // preview diff, so the MODIFY branch below can skip a redundant
-    // `fs.readFile` and use this buffer directly. Always `null` on
-    // the non-strict path.
-    let preReadOriginal: string | null = null;
+    // Cache for the file's existing on-disk text + encoding. Populated
+    // when the strict-approval path eagerly reads the body to compute
+    // the preview diff, so the MODIFY branch below can skip a redundant
+    // `fs.readFile`. Always `null` on the non-strict path.
+    let preReadFile: { raw: string; decoded: DecodedFileText } | null = null;
 
     let abs: string;
     try {
@@ -199,9 +203,9 @@ Create a new file:
       if (!decision.approved) {
         return failure(id, started, `User denied write to ${a.path}.`, 'permission denied');
       }
-      // Stash any pre-read body the synthesizer already did so the
+      // Stash any pre-read file the synthesizer already did so the
       // MODIFY branch below can skip a second `fs.readFile`.
-      preReadOriginal = previewResult.preReadOriginal;
+      preReadFile = previewResult.preReadFile;
     } else if (!ctx.permissions.allowAuto) {
       const verb = a.create ? 'create' : 'modify';
       const outcome = await ctx.confirm(
@@ -316,21 +320,21 @@ Create a new file:
       return failure(id, started, 'Error: `oldString` and `newString` are identical (no-op).', 'no-op');
     }
 
-    let original: string;
-    if (preReadOriginal !== null) {
-      // Reuse the body we read inside `buildApprovalPayload`. The
-      // approval gate runs BEFORE this branch when `strictApprovals`
-      // is on, so a successful preview round-trip means we already
-      // have the bytes — re-reading would just double the I/O.
-      original = preReadOriginal;
+    let rawOriginal: string;
+    let decoded: DecodedFileText;
+    if (preReadFile !== null) {
+      rawOriginal = preReadFile.raw;
+      decoded = preReadFile.decoded;
     } else {
       try {
-        original = await fs.readFile(abs, 'utf8');
+        rawOriginal = await fs.readFile(abs, 'utf8');
+        decoded = decodeFileForEdit(rawOriginal);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         return failure(id, started, `Cannot read ${a.path}: ${msg}`, msg);
       }
     }
+    const original = decoded.body;
 
     const occ = countOccurrencesFlexible(original, a.oldString);
     if (occ === 0) {
@@ -390,8 +394,9 @@ Create a new file:
       updated = original.slice(0, m.index) + a.newString + original.slice(m.index + m.length);
     }
 
+    const rawUpdated = composeOnDiskText(updated, decoded.encoding);
     try {
-      await fs.writeFile(abs, updated, 'utf8');
+      await fs.writeFile(abs, rawUpdated, 'utf8');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return failure(id, started, `Write failed: ${msg}`, msg);
@@ -408,8 +413,8 @@ Create a new file:
         workspaceId: ctx.workspaceId,
         filePath: rel,
         kind: 'modify',
-        preContent: original,
-        postContent: updated,
+        preContent: rawOriginal,
+        postContent: rawUpdated,
         additions: stats.additions,
         deletions: stats.deletions,
         hunks,
@@ -468,7 +473,11 @@ async function buildApprovalPayload(opts: {
   ctx: ToolContext;
   verb: 'create' | 'modify';
 }): Promise<
-  | { kind: 'ok'; payload: EditApprovalPayload; preReadOriginal: string | null }
+  | {
+      kind: 'ok';
+      payload: EditApprovalPayload;
+      preReadFile: { raw: string; decoded: DecodedFileText } | null;
+    }
   | { kind: 'error'; output: string; error: string }
 > {
   const { a, abs, ctx, verb } = opts;
@@ -487,7 +496,7 @@ async function buildApprovalPayload(opts: {
     const additions = a.content.length === 0 ? 0 : a.content.split('\n').length;
     return {
       kind: 'ok',
-      preReadOriginal: null,
+      preReadFile: null,
       payload: {
         kind: 'edit-approval',
         filePath,
@@ -526,13 +535,16 @@ async function buildApprovalPayload(opts: {
     };
   }
 
-  let original: string;
+  let rawOriginal: string;
+  let decoded: DecodedFileText;
   try {
-    original = await fs.readFile(abs, 'utf8');
+    rawOriginal = await fs.readFile(abs, 'utf8');
+    decoded = decodeFileForEdit(rawOriginal);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return { kind: 'error', output: `Cannot read ${a.path}: ${msg}`, error: msg };
   }
+  const original = decoded.body;
 
   const occ = countOccurrencesFlexible(original, a.oldString);
   if (occ === 0) {
@@ -576,17 +588,18 @@ async function buildApprovalPayload(opts: {
     updated = original.slice(0, m.index) + a.newString + original.slice(m.index + m.length);
   }
 
+  const rawUpdated = composeOnDiskText(updated, decoded.encoding);
   const stats = diffStats(original, updated);
   const hunks = computeDiffHunks(original, updated);
   return {
     kind: 'ok',
-    preReadOriginal: original,
+    preReadFile: { raw: rawOriginal, decoded },
     payload: {
       kind: 'edit-approval',
       filePath,
       operation: 'modify',
-      preBody: original,
-      postBody: updated,
+      preBody: rawOriginal,
+      postBody: rawUpdated,
       hunks,
       additions: stats.additions,
       deletions: stats.deletions,

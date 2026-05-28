@@ -231,7 +231,7 @@ describe('Timeline turn zones', () => {
 
     const agentColumn = container.querySelector('.timeline-agent-column');
     expect(agentColumn).not.toBeNull();
-    expect(agentColumn?.className ?? '').toContain('pl-3.5');
+    expect(agentColumn?.className ?? '').toContain('vx-timeline-agent-column');
 
     const assistant = container.querySelector('[data-row-kind="assistant-text"]');
     expect(assistant).not.toBeNull();
@@ -273,7 +273,7 @@ describe('Timeline turn zones', () => {
     ).toBeTruthy();
   });
 
-  it('renders completed turn activity collapsed with response outside summary', () => {
+  it('renders completed turn rows without the live inline stream wrapper', () => {
     useChatStore.setState({
       conversationId: 'c-zones',
       isProcessing: false,
@@ -294,7 +294,6 @@ describe('Timeline turn zones', () => {
 
     const { container } = render(<Timeline />);
 
-    expect(container.querySelector('[data-row-kind="turn-activity-summary"]')).not.toBeNull();
     expect(container.querySelector('[data-turn-inline-stream]')).toBeNull();
     const assistant = container.querySelector('[data-row-kind="assistant-text"]');
     expect(assistant).not.toBeNull();

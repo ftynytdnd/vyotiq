@@ -2,18 +2,22 @@
  * ProviderGroupHeader - renders a provider name, status icon, and inline
  * `Refresh /v1/models` action.
  *
- * Status icon:
- *   - check: enabled + at least one model discovered
+ * Status icon (error-only when healthy):
+ *   - hidden: enabled + models discovered + no refresh error
  *   - warning: enabled + zero models discovered yet
  *   - x: last refresh raised an error
  */
 
 import { useState } from 'react';
-import { AlertTriangle, Check, RefreshCcw, X } from 'lucide-react';
+import { AlertTriangle, RefreshCcw, X } from 'lucide-react';
 import type { ProviderConfig } from '@shared/types/provider.js';
 import { Eyebrow } from '../../ui/Eyebrow.js';
 import { useProviderStore } from '../../../store/useProviderStore.js';
 import { cn } from '../../../lib/cn.js';
+import {
+  SHELL_ACTION_ICON_STROKE,
+  SHELL_ROW_ICON_CLASS
+} from '../../../lib/shellIcons.js';
 
 interface ProviderGroupHeaderProps {
   provider: ProviderConfig;
@@ -43,32 +47,27 @@ export function ProviderGroupHeader({ provider }: ProviderGroupHeaderProps) {
   return (
     <div className="flex flex-col gap-0.5 px-2 pb-1 pt-2">
       <div className="flex items-center gap-1.5">
-        <span
-          className={cn(
-            'inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center',
-            status === 'error'
-              ? 'text-danger'
-              : status === 'ready'
-                ? 'text-success'
-                : 'text-warning'
-          )}
-          title={
-            status === 'error'
-              ? 'Model refresh failed'
-              : status === 'ready'
-                ? `${totalDiscovered} model${totalDiscovered === 1 ? '' : 's'} available`
+        {status !== 'ready' && (
+          <span
+            className={cn(
+              'inline-flex shrink-0 items-center justify-center',
+              SHELL_ROW_ICON_CLASS,
+              status === 'error' ? 'text-danger' : 'text-warning'
+            )}
+            title={
+              status === 'error'
+                ? 'Model refresh failed'
                 : 'No models discovered yet'
-          }
-        >
-          {status === 'error' ? (
-            <X className="h-3 w-3" strokeWidth={2.25} />
-          ) : status === 'ready' ? (
-            <Check className="h-3 w-3" strokeWidth={2.25} />
-          ) : (
-            <AlertTriangle className="h-3 w-3" strokeWidth={2.25} />
-          )}
-        </span>
-        <Eyebrow as="span" bold className="flex-1 truncate">
+            }
+          >
+            {status === 'error' ? (
+              <X className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+            ) : (
+              <AlertTriangle className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+            )}
+          </span>
+        )}
+        <Eyebrow as="span" bold className="vx-field-label flex-1 truncate normal-case tracking-normal">
           {provider.name}
         </Eyebrow>
         <button
@@ -78,14 +77,14 @@ export function ProviderGroupHeader({ provider }: ProviderGroupHeaderProps) {
           aria-label={`Refresh ${provider.name} models`}
           title="Refresh /v1/models"
           className={cn(
-            'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-inner',
+            'vx-btn vx-btn-quiet inline-flex h-4 w-4 shrink-0 items-center justify-center px-0',
             'text-text-faint transition-colors duration-150',
             'hover:text-text-primary disabled:cursor-not-allowed'
           )}
         >
           <RefreshCcw
-            className={cn('h-3 w-3', busy && 'animate-spin')}
-            strokeWidth={2.25}
+            className={cn(SHELL_ROW_ICON_CLASS, busy && 'animate-spin')}
+            strokeWidth={SHELL_ACTION_ICON_STROKE}
           />
         </button>
       </div>

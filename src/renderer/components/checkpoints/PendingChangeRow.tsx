@@ -14,7 +14,6 @@ import {
 import { PendingFileRowShell } from './pending/PendingFileRowShell.js';
 import { cn } from '../../lib/cn.js';
 import { pendingDiffInsetClassName } from './pending/pendingPanelStyles.js';
-import type { ReviewLinePickProps } from '../timeline/tools/edit/diff/diffLinePick.js';
 
 interface PendingChangeRowProps {
   change: PendingChange;
@@ -23,7 +22,6 @@ interface PendingChangeRowProps {
   index?: number;
   total?: number;
   diffMaxHeightClass?: string;
-  linePick?: ReviewLinePickProps;
 }
 
 export function PendingChangeRow({
@@ -32,14 +30,13 @@ export function PendingChangeRow({
   nested = false,
   index,
   total,
-  diffMaxHeightClass,
-  linePick
+  diffMaxHeightClass
 }: PendingChangeRowProps) {
   const [expanded, setExpanded] = useState(true);
   const open = alwaysExpanded || expanded;
 
   return (
-    <div className={cn('vyotiq-stepfade-once group flex flex-col', nested && 'bg-surface-overlay/[0.07]')}>
+    <div className={cn('vyotiq-stepfade-once group flex flex-col', nested && 'bg-surface-nested')}>
       <PendingFileRowShell
         nested={nested}
         expanded={open}
@@ -90,7 +87,6 @@ export function PendingChangeRow({
               {...(change.preHash ? { preHash: change.preHash } : {})}
               {...(change.postHash ? { postHash: change.postHash } : {})}
               {...(diffMaxHeightClass ? { maxHeightClass: diffMaxHeightClass } : {})}
-              {...(linePick ? { linePick } : {})}
             />
           </div>
         </div>

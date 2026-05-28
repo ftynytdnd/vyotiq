@@ -73,9 +73,9 @@ describe('PendingChangeDiff — kind="create"', () => {
     // The placeholder text appears once the resolve completes.
     await waitFor(() => {
       expect(container.textContent ?? '').toContain('Snapshot missing');
+      expect(container.textContent ?? '').toContain('post-state blob');
     });
-    // No `EditDiffView` mounted — `data-variant` MUST be absent.
-    expect(container.querySelector('[data-variant]')).toBeNull();
+    expect(container.querySelector('[data-variant="authoritative"]')).toBeNull();
   });
 });
 

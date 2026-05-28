@@ -1,132 +1,271 @@
 /**
- * Completed-turn activity collapse — "Worked for Xs" header with
- * expandable categorized activity body. Expand state persists via
- * `useTimelineUiStore` under `turn-activity:{runId}`.
+
+ * TurnActivitySummary — compact orchestrator progress (~5 steps) in the
+
+ * activity lane during live turns; one collapsed line after the run settles.
+
  */
 
-import type { ReactNode } from 'react';
-import { ChevronRight } from 'lucide-react';
-import { formatTokenCount } from '../../../lib/formatTokens.js';
-import { cn } from '../../../lib/cn.js';
-import { useChatStore } from '../../../store/useChatStore.js';
-import { useTimelineUiStore } from '../../../store/useTimelineUiStore.js';
+
+
+import { useMemo, useState } from 'react';
+
+import { ChevronDown } from 'lucide-react';
+
 import type { DisplayRow } from '../shared/projectSubagentRows.js';
-import type { PartitionedTurn } from '../shared/groupTurnSegment.js';
+
+import { useChatStore } from '../../../store/useChatStore.js';
+
+import { cn } from '../../../lib/cn.js';
+
 import {
-  ACTIVITY_CATEGORY_LABELS,
-  ACTIVITY_CATEGORY_ORDER,
-  groupActivityByCategory,
-  resolveTurnActivityDurationMs,
-  turnActivityStoreKey
-} from '../shared/groupTurnSegment.js';
-import { TimelineEyebrow } from '../shared/CodeLanguageEyebrow.js';
-import { formatDuration } from '../rows/RunCompleteRow.js';
-import {
+
+  resolveLivePhaseHeadline,
+
   timelineActivityLaneClassName,
-  timelineCategoryEyebrowClassName,
-  timelineRowChevronClassName,
-  timelineTurnInnerGapClassName
+
+  timelinePhaseHeadingClassName
+
 } from '../shared/rowStyles.js';
 
+import { shimmerText } from '../../../lib/shimmer.js';
+
+import { SHELL_MICRO_ICON_CLASS, SHELL_MICRO_ICON_STROKE } from '../../../lib/shellIcons.js';
+
+
+
+const VISIBLE_STEPS = 5;
+
+
+
 interface TurnActivitySummaryProps {
-  partitioned: PartitionedTurn;
-  renderRow: (row: DisplayRow) => ReactNode;
+
+  activityRows: DisplayRow[];
+
+  live?: boolean;
+
 }
 
-export function TurnActivitySummary({ partitioned, renderRow }: TurnActivitySummaryProps) {
-  const { activity, footer } = partitioned;
-  if (activity.length === 0) return null;
 
-  const runComplete = footer.find((r) => r.kind === 'run-complete');
-  const storeKey = turnActivityStoreKey(partitioned);
-  const conversationId = useChatStore((s) => s.conversationId);
-  const reasoningTexts = useChatStore((s) => s.reasoningTexts);
-  const uiKey = storeKey ? `turn-activity:${storeKey}` : null;
-  const expanded = useTimelineUiStore((s) =>
-    uiKey && conversationId ? s.isExpanded(conversationId, uiKey) : false
-  );
-  const toggle = useTimelineUiStore((s) => s.toggle);
 
-  const durationMs = resolveTurnActivityDurationMs(partitioned, reasoningTexts);
+function stepLabelFromRow(row: DisplayRow): string | null {
 
-  const stats: string[] = [];
-  if (runComplete?.kind === 'run-complete') {
-    if (typeof runComplete.editCount === 'number' && runComplete.editCount > 0) {
-      stats.push(`${runComplete.editCount} edit${runComplete.editCount === 1 ? '' : 's'}`);
-    }
-    if (typeof runComplete.fileCount === 'number' && runComplete.fileCount > 0) {
-      stats.push(`${runComplete.fileCount} file${runComplete.fileCount === 1 ? '' : 's'}`);
-    }
-    const tokenLabel =
-      runComplete.usage && runComplete.usage.cumulative.totalTokens > 0
-        ? formatTokenCount(runComplete.usage.cumulative.totalTokens)
-        : null;
-    if (tokenLabel) stats.push(`${tokenLabel} tok`);
+  if (row.kind === 'agent-thought') {
+
+    const t = row.content.trim();
+
+    return t.length > 0 ? t.slice(0, 120) : null;
+
   }
 
-  const durationLabel = formatDuration(durationMs);
-  const grouped = groupActivityByCategory(activity);
-  const rowCount = activity.length;
+  if (row.kind === 'delegate-batch') {
 
-  const onToggle = () => {
-    if (!uiKey || !conversationId) return;
-    toggle(conversationId, uiKey);
-  };
+    const n = row.subagentIds?.length ?? 0;
+
+    return n > 0 ? `Delegated ${n} sub-agent${n === 1 ? '' : 's'}` : 'Delegating…';
+
+  }
+
+  if (row.kind === 'subagent-line') {
+
+    return 'Sub-agent running…';
+
+  }
+
+  return null;
+
+}
+
+
+
+export function TurnActivitySummary({ activityRows, live = false }: TurnActivitySummaryProps) {
+
+  const [expanded, setExpanded] = useState(false);
+
+  const latestStatus = useChatStore((s) => (live ? s.latestOrchestratorRunStatus : undefined));
+
+  const isProcessing = useChatStore((s) => s.isProcessing);
+
+
+
+  const steps = useMemo(() => {
+
+    const fromRows: string[] = [];
+
+    for (const row of activityRows) {
+
+      const label = stepLabelFromRow(row);
+
+      if (label) fromRows.push(label);
+
+    }
+
+    if (live && latestStatus) {
+
+      const liveLabel = resolveLivePhaseHeadline(
+
+        latestStatus.phase,
+
+        latestStatus.label ?? 'Working…'
+
+      );
+
+      if (fromRows[fromRows.length - 1] !== liveLabel) {
+
+        fromRows.push(liveLabel);
+
+      }
+
+    }
+
+    return fromRows;
+
+  }, [activityRows, live, latestStatus]);
+
+
+
+  if (!live && steps.length === 0) return null;
+
+  if (live && !isProcessing && steps.length === 0) return null;
+
+
+
+  const collapsedLine =
+
+    steps.length === 1
+
+      ? steps[0]!
+
+      : `${steps.length} steps · ${steps[steps.length - 1]!}`;
+
+
+
+  if (!live && !expanded) {
+
+    return (
+
+      <div
+
+        className={cn(timelineActivityLaneClassName, 'vyotiq-stepfade-once')}
+
+        data-turn-activity-summary
+
+      >
+
+        <button
+
+          type="button"
+
+          onClick={() => setExpanded(true)}
+
+          className="vx-btn vx-btn-quiet inline-flex w-full min-w-0 items-center gap-1 px-0.5 py-0 text-left text-meta text-text-muted"
+
+          aria-expanded={false}
+
+        >
+
+          <span className="min-w-0 truncate">{collapsedLine}</span>
+
+          <ChevronDown className={cn(SHELL_MICRO_ICON_CLASS, 'shrink-0')} strokeWidth={SHELL_MICRO_ICON_STROKE} />
+
+        </button>
+
+      </div>
+
+    );
+
+  }
+
+
+
+  const visible = expanded || live ? (expanded ? steps : steps.slice(-VISIBLE_STEPS)) : steps;
+
+  const hiddenCount = steps.length - visible.length;
+
+
 
   return (
-    <div className={cn(timelineActivityLaneClassName, timelineTurnInnerGapClassName)}>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        data-row-kind="turn-activity-summary"
-        className={cn(
-          'app-no-drag flex w-full items-center gap-1.5 rounded-inner px-2 py-1 text-left',
-          'text-meta text-text-muted transition-colors duration-150 hover:bg-surface-hover/40'
-        )}
-      >
-        <ChevronRight
-          className={cn(
-            timelineRowChevronClassName,
-            'transition-transform duration-150',
-            expanded && 'rotate-90'
-          )}
-          aria-hidden
-        />
-        <span className="min-w-0 flex-1 truncate">
-          <span className="font-medium text-text-secondary">Worked for {durationLabel}</span>
-          {stats.length > 0 && (
-            <span className="ml-2 font-mono tabular-nums text-text-faint">
-              {stats.join(' · ')}
-            </span>
-          )}
-          {!expanded && rowCount > 0 && (
-            <span className="ml-2 text-text-faint">
-              · {rowCount} step{rowCount === 1 ? '' : 's'}
-            </span>
-          )}
-        </span>
-      </button>
 
-      {expanded && (
-        <div className="flex flex-col gap-2">
-          {ACTIVITY_CATEGORY_ORDER.map((category) => {
-            const rows = grouped[category];
-            if (rows.length === 0) return null;
-            return (
-              <section key={category} className="flex flex-col gap-1">
-                <TimelineEyebrow
-                  label={ACTIVITY_CATEGORY_LABELS[category]}
-                  className={timelineCategoryEyebrowClassName}
-                />
-                {rows.map((row) => (
-                  <div key={row.key}>{renderRow(row)}</div>
-                ))}
-              </section>
-            );
-          })}
-        </div>
+    <div
+
+      className={cn(timelineActivityLaneClassName, 'vyotiq-stepfade-once')}
+
+      data-turn-activity-summary
+
+      aria-live={live ? 'polite' : undefined}
+
+    >
+
+      <ul className="m-0 flex list-none flex-col gap-0.5 p-0 text-meta text-text-muted">
+
+        {hiddenCount > 0 && !expanded && live && (
+
+          <li className="px-0.5 text-text-faint">+{hiddenCount} earlier</li>
+
+        )}
+
+        {visible.map((label, i) => {
+
+          const isLast = i === visible.length - 1;
+
+          const shimmer = live && isLast && isProcessing;
+
+          return (
+
+            <li
+
+              key={`${i}-${label.slice(0, 24)}`}
+
+              className={cn(
+
+                'truncate px-0.5',
+
+                isLast && live && timelinePhaseHeadingClassName(true)
+
+              )}
+
+            >
+
+              <span className={cn(shimmerText(shimmer))}>{label}</span>
+
+            </li>
+
+          );
+
+        })}
+
+      </ul>
+
+      {(steps.length > VISIBLE_STEPS || !live) && (
+
+        <button
+
+          type="button"
+
+          onClick={() => setExpanded((v) => !v)}
+
+          className="vx-btn vx-btn-quiet mt-1 inline-flex items-center gap-0.5 px-1 py-0 text-meta text-text-faint"
+
+        >
+
+          {expanded ? 'Show less' : live ? `Show all (${steps.length})` : 'Collapse'}
+
+          <ChevronDown
+
+            className={cn(SHELL_MICRO_ICON_CLASS, expanded && 'rotate-180')}
+
+            strokeWidth={SHELL_MICRO_ICON_STROKE}
+
+          />
+
+        </button>
+
       )}
+
     </div>
+
   );
+
 }
+
+

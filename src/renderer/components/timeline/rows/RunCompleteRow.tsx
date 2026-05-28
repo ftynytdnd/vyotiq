@@ -2,13 +2,14 @@
  * Trailing run closer — quiet flush log line (no horizontal rules).
  */
 
-import { formatTokenCount } from '../../../lib/formatTokens.js';
+import { formatTokenCountWithUnit } from '../../../lib/formatTokens.js';
 import type { TokenUsageAggregate } from '../reducer/types.js';
 import { cn } from '../../../lib/cn.js';
 import { timelineLogRowClassName } from '../shared/rowStyles.js';
 
 interface RunCompleteRowProps {
   durationMs: number;
+  completedAt: number;
   usage?: TokenUsageAggregate;
   editCount?: number;
   fileCount?: number;
@@ -16,13 +17,14 @@ interface RunCompleteRowProps {
 
 export function RunCompleteRow({
   durationMs,
+  completedAt,
   usage,
   editCount,
   fileCount
 }: RunCompleteRowProps) {
   const tokenLabel =
     usage && usage.cumulative.totalTokens > 0
-      ? formatTokenCount(usage.cumulative.totalTokens)
+      ? formatTokenCountWithUnit(usage.cumulative.totalTokens)
       : null;
 
   const stats: string[] = [];
@@ -34,22 +36,20 @@ export function RunCompleteRow({
   }
 
   const durationLabel = formatDuration(durationMs);
-  const ariaParts = [...stats, `completed in ${durationLabel}`];
-  if (tokenLabel) ariaParts.push(`${tokenLabel} tokens`);
+  const timeLabel = formatWallClock(completedAt);
+  const ariaParts = [...stats, `completed in ${durationLabel}`, timeLabel];
+  if (tokenLabel) ariaParts.push(tokenLabel);
 
   return (
     <div
-      className={cn(
-        'vyotiq-stepfade-once py-1 text-center text-meta text-text-faint',
-        timelineLogRowClassName
-      )}
+      className={cn('vyotiq-stepfade-once vx-timeline-meta text-text-secondary', timelineLogRowClassName)}
       data-row-kind="run-complete"
       aria-label={ariaParts.join(', ')}
     >
       {stats.length > 0 && (
         <>
           {stats.join(' · ')}
-          <span aria-hidden className="mx-1.5 text-text-faint/50">
+          <span aria-hidden className="mx-1.5 text-text-faint/70">
             ·
           </span>
         </>
@@ -57,12 +57,18 @@ export function RunCompleteRow({
       done in {durationLabel}
       {tokenLabel !== null && (
         <>
-          <span aria-hidden className="mx-1.5 text-text-faint/50">
+          <span aria-hidden className="mx-1.5 text-text-faint/70">
             ·
           </span>
-          <span className="font-mono">{tokenLabel} tok</span>
+          <span className="font-mono tabular-nums">{tokenLabel}</span>
         </>
       )}
+      <span aria-hidden className="mx-1.5 text-text-faint/70">
+        ·
+      </span>
+      <time dateTime={new Date(completedAt).toISOString()} className="tabular-nums text-text-faint">
+        {timeLabel}
+      </time>
     </div>
   );
 }
@@ -82,4 +88,18 @@ export function formatDuration(ms: number): string {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes - hours * 60;
   return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+}
+
+function formatWallClock(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  return d.toLocaleString(undefined, {
+    ...(sameDay ? {} : { month: 'short', day: 'numeric' }),
+    hour: 'numeric',
+    minute: '2-digit'
+  });
 }

@@ -697,6 +697,7 @@ export async function bootstrapChatChannel(): Promise<void> {
           (event.status === 'done' ||
             event.status === 'partial' ||
             event.status === 'failed' ||
+            event.status === 'malformed' ||
             event.status === 'aborted')
         ) {
           // A worker reached a terminal state; any partial-args

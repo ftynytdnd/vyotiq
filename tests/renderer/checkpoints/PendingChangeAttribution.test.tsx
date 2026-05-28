@@ -1,8 +1,8 @@
 /**
- * PendingChangeAttribution — review decision badges on pending rows.
+ * PendingChangeAttribution — tool source badges on pending rows.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { PendingChangeAttribution } from '@renderer/components/checkpoints/shared/PendingChangeAttribution.js';
 import type { PendingChange } from '@shared/types/checkpoint.js';
@@ -19,45 +19,19 @@ const baseChange: PendingChange = {
   createdAt: 1
 };
 
-vi.mock('@renderer/store/useCheckpointsStore.js', () => ({
-  reviewCacheKey: (ws: string, cid: string) => `${ws}:${cid}`,
-  useCheckpointsStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({
-      reviewByConversation: {
-        'ws-1:conv-1': {
-          conversationId: 'conv-1',
-          workspaceId: 'ws-1',
-          startedAt: 1,
-          updatedAt: 1,
-          reviewerLabel: 'Reviewer One',
-          fileDecisions: { 'src/a.ts': 'request_changes' },
-          comments: []
-        }
-      }
-    })
-}));
-
 describe('PendingChangeAttribution', () => {
-  it('shows reviewer and per-file request_changes', () => {
-    render(<PendingChangeAttribution change={baseChange} />);
-    expect(screen.getByText('Reviewer One')).toBeTruthy();
-    expect(screen.getByText('changes')).toBeTruthy();
+  it('shows bash source badge', () => {
+    render(<PendingChangeAttribution change={{ ...baseChange, source: 'bash' }} />);
+    expect(screen.getByText('bash')).toBeTruthy();
   });
 
-  it('renders the decision badge with the chromeMeter surface chrome', () => {
-    // Regression guard for the 2026-05 bug where
-    // `pendingReviewDecisionBadgeClassName` passed `chromeMeterClassName`
-    // to `cn()` as a function reference. clsx silently coerced it to "",
-    // stripping the badge of `inline-flex h-6 items-center rounded-inner
-    // bg-surface-overlay font-mono text-meta`. The visible symptom was a
-    // text-only "changes" / "approved" label without the rounded chip
-    // surface that the design system expects.
-    render(<PendingChangeAttribution change={baseChange} />);
-    const badge = screen.getByText('changes');
-    const cls = badge.className;
-    expect(cls).toContain('bg-surface-overlay');
-    expect(cls).toContain('rounded-inner');
-    expect(cls).toContain('font-mono');
-    expect(cls).toContain('text-meta');
+  it('shows sub-agent id badge', () => {
+    render(<PendingChangeAttribution change={{ ...baseChange, subagentId: 'agent-1' }} />);
+    expect(screen.getByText('agent-1')).toBeTruthy();
+  });
+
+  it('renders nothing when no tool attribution exists', () => {
+    const { container } = render(<PendingChangeAttribution change={baseChange} />);
+    expect(container).toBeEmptyDOMElement();
   });
 });

@@ -19,6 +19,15 @@ import {
   workspaceNotePath,
   writeWorkspaceNote
 } from '../memory/workspaceNotes.js';
+import {
+  getGlobalMemoryLastReference,
+  getMemoryLastReference,
+  GLOBAL_MEMORY_KEY,
+  listMemoryLastReferences,
+  touchGlobalMemoryLastReference,
+  touchMemoryLastReference
+} from '../memory/lastReferenced.js';
+import { getActiveWorkspace } from '../workspace/workspaceState.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 // Audit fix 2026-06-P2-1 — shape gates so `memory:write` can't be
 // fed a non-string `content` (would corrupt the persisted markdown)
@@ -40,6 +49,24 @@ const MAX_MEMORY_CONTENT_BYTES = 256 * 1024;
 const MEMORY_SCOPES = ['global', 'workspace'] as const;
 const MEMORY_WRITE_MODES = ['set', 'append'] as const;
 
+function withLastReference(
+  entry: MemoryEntry,
+  ref: Awaited<ReturnType<typeof getMemoryLastReference>>
+): MemoryEntry {
+  if (!ref) return entry;
+  return {
+    ...entry,
+    lastReferencedAt: ref.at,
+    lastReferencedConversationId: ref.conversationId,
+    lastReferencedConversationTitle: ref.conversationTitle
+  };
+}
+
+async function activeWorkspaceId(): Promise<string | null> {
+  const ws = await getActiveWorkspace();
+  return ws?.id ?? null;
+}
+
 export function registerMemoryIpc(): void {
   wrapIpcHandler(
     IPC.MEMORY_LIST,
@@ -54,21 +81,29 @@ export function registerMemoryIpc(): void {
       const keysOnly = opts?.keysOnly === true;
       if (scope === 'global') {
         const content = await readGlobalMetaRules();
+        const ref = await getGlobalMemoryLastReference();
         const entry: MemoryEntry = {
           scope,
-          key: 'meta-rules.md',
+          key: GLOBAL_MEMORY_KEY,
           content,
           updatedAt: Date.now()
         };
-        return [entry];
+        return [withLastReference(entry, ref)];
       }
       const notes = await listWorkspaceNotes(undefined, keysOnly);
-      return notes.map<MemoryEntry>((n) => ({
-        scope: 'workspace',
-        key: n.key,
-        content: n.content,
-        updatedAt: n.updatedAt
-      }));
+      const wsId = await activeWorkspaceId();
+      const refs = wsId ? await listMemoryLastReferences(wsId) : {};
+      return notes.map<MemoryEntry>((n) =>
+        withLastReference(
+          {
+            scope: 'workspace',
+            key: n.key,
+            content: n.content,
+            updatedAt: n.updatedAt
+          },
+          refs[n.key] ?? null
+        )
+      );
     }
   );
 
@@ -83,12 +118,17 @@ export function registerMemoryIpc(): void {
     if (scope === 'global') {
       const content = await readGlobalMetaRules();
       const entry: MemoryEntry = { scope, key, content, updatedAt: Date.now() };
-      return entry;
+      const ref = await getGlobalMemoryLastReference();
+      return withLastReference(entry, ref);
     }
     const note = await readWorkspaceNote(key);
     if (!note) return null;
-    const entry: MemoryEntry = { scope, key: note.key, content: note.content, updatedAt: note.updatedAt };
-    return entry;
+    const wsId = await activeWorkspaceId();
+    const ref = wsId ? await getMemoryLastReference(wsId, note.key) : null;
+    return withLastReference(
+      { scope, key: note.key, content: note.content, updatedAt: note.updatedAt },
+      ref
+    );
   });
 
   wrapIpcHandler(
@@ -106,7 +146,8 @@ export function registerMemoryIpc(): void {
       // explicit `mode` is omitted, so any out-of-tree caller pinned
       // to the old shape doesn't break, but new code should pass
       // `mode: 'append'` and use a real key.
-      mode?: 'set' | 'append'
+      mode?: 'set' | 'append',
+      conversationId?: string
     ) => {
       assertEnum('memory:write', 'scope', scope, MEMORY_SCOPES);
       assertString('memory:write', 'key', key);
@@ -119,6 +160,9 @@ export function registerMemoryIpc(): void {
       });
       if (mode !== undefined) {
         assertEnum('memory:write', 'mode', mode, MEMORY_WRITE_MODES);
+      }
+      if (conversationId !== undefined) {
+        assertString('memory:write', 'conversationId', conversationId);
       }
       const isAppend = mode === 'append' || (mode === undefined && key === 'append');
       if (scope === 'workspace' && isAppend) {
@@ -133,21 +177,34 @@ export function registerMemoryIpc(): void {
           await writeGlobalMetaRules(content);
         }
         const updated = await readGlobalMetaRules();
-        const entry: MemoryEntry = {
+        let entry: MemoryEntry = {
           scope,
-          key: 'meta-rules.md',
+          key: GLOBAL_MEMORY_KEY,
           content: updated,
           updatedAt: Date.now()
         };
+        if (conversationId) {
+          const ref = await touchGlobalMemoryLastReference(conversationId);
+          entry = withLastReference(entry, ref);
+        } else {
+          entry = withLastReference(entry, await getGlobalMemoryLastReference());
+        }
         return entry;
       }
       const note = await writeWorkspaceNote(key, content);
-      const entry: MemoryEntry = {
+      let entry: MemoryEntry = {
         scope,
         key: note.key,
         content: note.content,
         updatedAt: note.updatedAt
       };
+      const wsId = await activeWorkspaceId();
+      if (wsId && conversationId) {
+        const ref = await touchMemoryLastReference(wsId, note.key, conversationId);
+        entry = withLastReference(entry, ref);
+      } else if (wsId) {
+        entry = withLastReference(entry, await getMemoryLastReference(wsId, note.key));
+      }
       return entry;
     }
   );

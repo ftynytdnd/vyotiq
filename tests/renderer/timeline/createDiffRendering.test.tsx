@@ -112,7 +112,7 @@ describe('Created-file rendering — streaming preview (timeline)', () => {
     // renders (not just an empty diff shell).
     expect(container.textContent ?? '').toContain('STREAM_LINE_1');
     expect(container.textContent ?? '').toContain('STREAM_LINE_2');
-    expect(container.querySelector('.vyotiq-stream-cursor')).not.toBeNull();
+    expect(container.querySelector('.vyotiq-stream-cursor')).toBeNull();
   });
 
   it('renders a non-streaming `preview` variant when partial flag is off', async () => {
@@ -157,7 +157,7 @@ describe('Created-file rendering — streaming preview (timeline)', () => {
     );
     expect(container.querySelector('[data-variant="partial"]')).not.toBeNull();
     expect(container.textContent ?? '').toContain('after');
-    expect(container.querySelector('.vyotiq-stream-cursor')).not.toBeNull();
+    expect(container.querySelector('.vyotiq-stream-cursor')).toBeNull();
   });
 });
 

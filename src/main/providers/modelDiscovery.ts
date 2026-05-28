@@ -106,6 +106,9 @@ function effectiveDialect(provider: ProviderWithKey): ProviderDialect {
   return provider.dialect ?? 'openai';
 }
 
+/** Concurrent `discoverModels` calls per provider share one in-flight fetch. */
+const discoverInFlight = new Map<string, Promise<ModelInfo[]>>();
+
 export async function discoverModels(providerId: string, force = false): Promise<ModelInfo[]> {
   const provider = await getProviderWithKey(providerId);
   if (!provider) throw new Error(`Provider not found: ${providerId}`);
@@ -132,6 +135,22 @@ export async function discoverModels(providerId: string, force = false): Promise
 
   if (cacheFresh) return provider.models!;
 
+  const inflight = discoverInFlight.get(providerId);
+  if (inflight) return inflight;
+
+  const flight = fetchAndPersistModels(provider, providerId).finally(() => {
+    if (discoverInFlight.get(providerId) === flight) {
+      discoverInFlight.delete(providerId);
+    }
+  });
+  discoverInFlight.set(providerId, flight);
+  return flight;
+}
+
+async function fetchAndPersistModels(
+  provider: ProviderWithKey,
+  providerId: string
+): Promise<ModelInfo[]> {
   const dialect = effectiveDialect(provider);
   let models: ModelInfo[];
   switch (dialect) {

@@ -10,7 +10,7 @@
  *
  * What this test pins:
  *   - One agent column rail (`timelineAgentColumnClassName`'s
- *     `pl-3.5 max-w-[46rem]`) wraps the turn's agent stream.
+ *     `pl-3 max-w-[46rem]`) wraps the turn's agent stream.
  *   - User prompt row carries no SurfaceShell card, no "You" eyebrow.
  *   - Assistant prose row carries no rounded/tinted lane fill and
  *     surfaces an `aria-label` on the row root.
@@ -157,8 +157,7 @@ describe('Timeline row chrome — May 2026 restyle', () => {
     const agentColumns = container.querySelectorAll('.timeline-agent-column');
     expect(agentColumns.length).toBeGreaterThanOrEqual(1);
     const sample = agentColumns[0]!;
-    expect(sample.className).toContain('pl-3.5');
-    expect(sample.className).toContain('max-w-[46rem]');
+    expect(sample.className).toContain('vx-timeline-agent-column');
 
     // 2. User prompt is flush — no SurfaceShell descendant, no "You" eyebrow.
     const prompt = container.querySelector('[data-row-kind="user-prompt"]');
@@ -183,15 +182,11 @@ describe('Timeline row chrome — May 2026 restyle', () => {
     expect((runComplete as HTMLElement).className).not.toMatch(/border-t/);
     expect(runComplete!.innerHTML).not.toMatch(/h-px[^"]*flex-1[^"]*bg-border-divider/);
 
-    // 5. Sub-agent row carries the dot prefix and the model badge
-    //    (because `snap.model` is populated).
-    const subagent = container.querySelector('[data-row-kind="subagent-line"]');
-    expect(subagent).not.toBeNull();
-    expect(subagent!.innerHTML).toMatch(/h-1\.5[^"]*w-1\.5[^"]*rounded-full/);
-    expect(subagent!.querySelector('[aria-label="Model gpt-test"]')).not.toBeNull();
+    // 5. Sub-agent inline trace removed from timeline DOM.
+    expect(container.querySelector('[data-row-kind="subagent-line"]')).toBeNull();
   });
 
-  it('hides the sub-agent model badge silently when snap.model is absent', () => {
+  it('does not render sub-agent trace rows when model metadata is absent', () => {
     seedSettledTurn({ withSubAgentModel: false });
     useTimelineUiStore.setState({
       expandedByConvo: { [CONV_ID]: new Set(['turn-activity:p1']) },
@@ -202,11 +197,6 @@ describe('Timeline row chrome — May 2026 restyle', () => {
 
     const { container } = render(<Timeline />);
 
-    const subagent = container.querySelector('[data-row-kind="subagent-line"]');
-    expect(subagent).not.toBeNull();
-    // Dot still present.
-    expect(subagent!.innerHTML).toMatch(/h-1\.5[^"]*w-1\.5[^"]*rounded-full/);
-    // No badge: old transcripts predating the field replay cleanly.
-    expect(subagent!.querySelector('[aria-label^="Model "]')).toBeNull();
+    expect(container.querySelector('[data-row-kind="subagent-line"]')).toBeNull();
   });
 });

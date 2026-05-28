@@ -29,16 +29,46 @@ import { logger } from '../../logging/logger.js';
 
 const log = logger.child('orchestrator/handleToolCalls');
 
+function suggestDelegateDirective(tc: PartialToolCall, refusedTool: string): string {
+  let id = 'TASK_ID';
+  let task = 'One micro-task description';
+  let files = '';
+  let tools = refusedTool;
+  try {
+    const parsed = JSON.parse(tc.argumentsBuf || '{}') as Record<string, unknown>;
+    if (typeof parsed['id'] === 'string' && parsed['id'].trim()) id = parsed['id'].trim();
+    if (typeof parsed['task'] === 'string' && parsed['task'].trim()) task = parsed['task'].trim();
+    if (typeof parsed['files'] === 'string') files = parsed['files'].trim();
+    if (typeof parsed['tools'] === 'string' && parsed['tools'].trim()) tools = parsed['tools'].trim();
+  } catch {
+    /* use defaults */
+  }
+  const filesAttr = files.length > 0 ? ` files="${files}"` : '';
+  return `<delegate id="${id}" task="${task}"${filesAttr} tools="${tools}" />`;
+}
+
+function settleToolCallSurrogate(
+  tc: PartialToolCall,
+  opts: HandleToolCallsOpts,
+  batchIndex: number
+): void {
+  const callId = tc.id;
+  if (!callId) return;
+  opts.onToolCallSettled?.(callId, opts.subagentId ?? 'orc', batchIndex);
+}
+
 function emitSyntheticToolFailure(
   tc: PartialToolCall,
   emit: (event: TimelineEvent) => void,
   messages: ChatMessage[],
   opts: HandleToolCallsOpts,
   output: string,
-  error: string
+  error: string,
+  batchIndex: number
 ): void {
   const callId = tc.id ?? randomUUID();
   if (!tc.id) tc.id = callId;
+  settleToolCallSurrogate(tc, opts, batchIndex);
   const name = (tc.name ?? 'unknown') as ToolName;
   const syntheticResult = {
     id: callId,
@@ -238,7 +268,8 @@ export async function handleToolCalls(
           messages,
           opts,
           'Tool call aborted because the run was stopped or superseded.',
-          'aborted'
+          'aborted',
+          j
         );
       }
       break;
@@ -252,7 +283,8 @@ export async function handleToolCalls(
         messages,
         opts,
         'Tool call missing a name — cannot execute.',
-        'missing tool name'
+        'missing tool name',
+        i
       );
       continue;
     }
@@ -287,7 +319,8 @@ export async function handleToolCalls(
             kind: 'phase',
             id: randomUUID(),
             ts: Date.now(),
-            label: 'Sub-agent attempted re-delegation (refused — use <result>)'
+            label:
+              'Sub-agents cannot nest further — wrap up with a <result> envelope instead'
           });
         }
       }
@@ -307,15 +340,17 @@ export async function handleToolCalls(
         opts.subagentId === undefined
           ? `Tool "${tc.name}" is not callable from the orchestrator. ` +
           `The orchestrator's direct toolset is restricted to ${opts.allowlist.join(', ')}. ` +
-          `Emit a \`<delegate id="..." task="..." files="..." tools="${tc.name}" />\` ` +
-          `directive in your assistant text to spawn a sub-agent that can use \`${tc.name}\`.`
-          : `Tool "${tc.name}" not in allowlist for this sub-agent.`;
+          `Emit a <delegate> directive in your assistant message (not a tool call), for example:\n\n` +
+          suggestDelegateDirective(tc, tc.name) +
+          `\n\nSpawn one sub-agent per micro-task; put the directive in assistant text, not function-calling.`
+          : `Tool "${tc.name}" is not available for this sub-agent — use the granted toolset.`;
       messages.push({
         role: 'tool',
         tool_call_id: callId,
         name: tc.name,
         content: refusalMessage
       });
+      settleToolCallSurrogate(tc, opts, i);
       continue;
     }
 
@@ -455,8 +490,8 @@ export async function handleToolCalls(
       ts: Date.now(),
       label:
         n === 1
-          ? 'Agent called `delegate` as a tool (refused — use the XML directive)'
-          : `Agent called \`delegate\` as a tool ${n} times (refused — emit \`<delegate ... />\` directives in your text)`
+          ? 'Use <delegate … /> in your message to spawn sub-agents (not the delegate tool)'
+          : `Use <delegate … /> in your message to spawn sub-agents (${n} delegate tool calls were ignored)`
     });
   }
   log.debug('tool round summary', {

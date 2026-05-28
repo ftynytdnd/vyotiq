@@ -25,13 +25,8 @@ import type {
   CheckpointsSummary,
   FileHistoryRow,
   PendingChange,
-  FileReviewComment,
   GitBaseDiffResult,
   ListGitRefsResult,
-  ReviewDecision,
-  ReviewExportResult,
-  ReviewImportResult,
-  ReviewSession,
   RewindPreviewResult,
   RewindResult
 } from './checkpoint.js';
@@ -257,6 +252,30 @@ export interface AppSettings {
      * approvals pattern.
      */
     contextSummaryByWorkspace?: Record<string, Partial<ContextSummaryRules>>;
+    /**
+     * Absolute token count at which the timeline shows a budget-warning
+     * row when orchestrator usage crosses this threshold. Displayed in
+     * Settings → Context as thousands (`k`). Absence falls back to
+     * `TOKEN_BUDGET_WARNING_DEFAULT_TOKENS` (128k).
+     */
+    tokenBudgetWarningTokens?: number;
+    /**
+     * Per-workspace override for `tokenBudgetWarningTokens`. Wins over
+     * the global slot for runs in that workspace.
+     */
+    tokenBudgetWarningByWorkspace?: Record<string, number>;
+    /** Appearance: dark, light, or follow OS. */
+    theme?: 'dark' | 'light' | 'system';
+    density?: 'compact' | 'balanced' | 'airy';
+    reducedMotion?: boolean;
+    /** Starred models in the composer picker (`providerId:modelId`). */
+    favoriteModels?: string[];
+    /** Last floating panel widths by panel id. */
+    panelWidths?: Record<string, number>;
+    /** When true, Settings opens on Appearance on next launch only. */
+    firstLaunch?: boolean;
+    /** Last Settings subnav tab. */
+    lastSettingsTab?: string;
   };
 }
 
@@ -349,6 +368,10 @@ export interface MemoryEntry {
   content: string;
   /** Last modified ms epoch. */
   updatedAt: number;
+  /** Last chat that read or wrote this note (workspace scope). */
+  lastReferencedAt?: number;
+  lastReferencedConversationId?: string;
+  lastReferencedConversationTitle?: string;
 }
 
 export interface WorkspaceInfo {
@@ -391,6 +414,11 @@ export interface VyotiqApi {
     get(): Promise<WorkspaceInfo>;
     /** `null` when the user dismisses the folder picker. */
     pick(): Promise<WorkspaceInfo | null>;
+    /**
+     * Open the OS folder picker and return the chosen path without
+     * adding or activating a workspace (used by the path prompt).
+     */
+    pickDirectory(): Promise<string | null>;
     set(path: string): Promise<WorkspaceInfo>;
     listTree(opts?: { depth?: number; workspaceId?: string }): Promise<WorkspaceTreeResult>;
 
@@ -471,6 +499,7 @@ export interface VyotiqApi {
       modelId: string;
       prompt: string;
       attachments?: string[];
+      attachmentMeta?: import('./chat.js').PromptAttachmentMeta[];
       conversationId?: string;
     }): Promise<{
       tokens: number;
@@ -531,6 +560,8 @@ export interface VyotiqApi {
      * / unknown target. Returns the refreshed meta.
      */
     move(id: string, targetWorkspaceId: string): Promise<ConversationMeta>;
+    archive(id: string): Promise<ConversationMeta>;
+    unarchive(id: string): Promise<ConversationMeta>;
   };
 
   // ---- Tools (renderer-initiated helpers) ----
@@ -597,7 +628,9 @@ export interface VyotiqApi {
       scope: 'global' | 'workspace',
       key: string,
       content: string,
-      mode?: 'set' | 'append'
+      mode?: 'set' | 'append',
+      /** When set, records last-referenced metadata for workspace notes. */
+      conversationId?: string
     ): Promise<MemoryEntry>;
     /** Open the OS file manager focused on the entry's underlying file. */
     reveal(scope: 'global' | 'workspace', key: string): Promise<void>;
@@ -681,31 +714,6 @@ export interface VyotiqApi {
       workspaceId: string;
       promptEventId: string;
     }): Promise<RewindResult>;
-    /** PR-style review session (metadata). */
-    getReview(workspaceId: string, conversationId: string): Promise<ReviewSession | null>;
-    ensureReview(input: {
-      workspaceId: string;
-      conversationId: string;
-      runId?: string;
-    }): Promise<ReviewSession>;
-    addReviewComment(input: {
-      workspaceId: string;
-      conversationId: string;
-      filePath: string;
-      body: string;
-      line?: number;
-    }): Promise<FileReviewComment>;
-    setReviewGitBaseRef(input: {
-      workspaceId: string;
-      conversationId: string;
-      ref: string;
-    }): Promise<ReviewSession>;
-    setReviewDecision(input: {
-      workspaceId: string;
-      conversationId: string;
-      decision: ReviewDecision;
-      filePath?: string;
-    }): Promise<ReviewSession>;
     /** Unified diff vs git ref for one workspace-relative path. */
     gitBaseDiff(
       workspaceId: string,
@@ -713,23 +721,6 @@ export interface VyotiqApi {
       ref?: string
     ): Promise<GitBaseDiffResult>;
     listGitRefs(workspaceId: string): Promise<ListGitRefsResult>;
-    setReviewReviewer(input: {
-      workspaceId: string;
-      conversationId: string;
-      reviewerLabel: string;
-    }): Promise<ReviewSession>;
-    exportReview(input: {
-      workspaceId: string;
-      conversationId: string;
-    }): Promise<ReviewExportResult>;
-    importReview(input: {
-      workspaceId: string;
-      conversationId: string;
-      filePath?: string;
-      mode?: 'merge' | 'replace';
-      /** Merge bundle `pendingChanges` into the pending store (skip duplicate entryIds). */
-      restorePending?: boolean;
-    }): Promise<ReviewImportResult>;
     /**
      * Subscribe to checkpoint-store mutations. Fired on every accept /
      * reject / revert / prune / export so renderer views can refresh
@@ -863,6 +854,34 @@ export interface VyotiqApi {
      * passes raw paths in.
      */
     revealPath(target: AppRevealTarget): Promise<void>;
+    /** Sync Electron `nativeTheme.themeSource` with renderer theme mode. */
+    setThemeSource(mode: 'dark' | 'light' | 'system'): Promise<void>;
+    /** Check for app updates (electron-updater when packaged). */
+    checkForUpdates(): Promise<{ updateAvailable: boolean; version?: string }>;
+    /** Play the OS warning / exclamation sound (destructive confirm UX). */
+    playWarningSound(): Promise<void>;
+  };
+
+  attachments: {
+    pick(input: {
+      workspaceId: string;
+      conversationId: string;
+      messageId: string;
+      maxCount?: number;
+    }): Promise<import('./chat.js').PromptAttachmentMeta[]>;
+    ingestPaths(input: {
+      paths: string[];
+      workspaceId: string;
+      conversationId: string;
+      messageId: string;
+    }): Promise<import('./chat.js').PromptAttachmentMeta[]>;
+    readText(
+      input: string | { path: string; workspaceId?: string }
+    ): Promise<string>;
+    fileUrl(
+      input: string | { path: string; workspaceId?: string }
+    ): Promise<string>;
+    open(input: string | { path: string; workspaceId?: string }): Promise<void>;
   };
 
   // ---- Renderer → main log relay (used by the React error boundary) ----

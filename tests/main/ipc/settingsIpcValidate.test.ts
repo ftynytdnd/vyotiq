@@ -53,12 +53,12 @@ describe('registerSettingsIpc — SETTINGS_SET payload validation', () => {
     expect(setSettingsMock).not.toHaveBeenCalled();
   });
 
-  it('accepts dockWidth within 220–360', async () => {
+  it('accepts dockWidth within 180–320', async () => {
     await mockIpc.__invoke(IPC.SETTINGS_SET, { ui: { dockWidth: 300 } });
     expect(setSettingsMock).toHaveBeenCalledOnce();
   });
 
-  it('rejects dockWidth outside 220–360', async () => {
+  it('rejects dockWidth outside 180–320', async () => {
     await expect(mockIpc.__invoke(IPC.SETTINGS_SET, { ui: { dockWidth: 400 } })).rejects.toThrow(
       /dockWidth/
     );
@@ -75,6 +75,27 @@ describe('registerSettingsIpc — SETTINGS_SET payload validation', () => {
   it('accepts approveAutoAcceptPendingByWorkspace per-workspace map', async () => {
     await mockIpc.__invoke(IPC.SETTINGS_SET, {
       ui: { approveAutoAcceptPendingByWorkspace: { 'ws-1': true } }
+    });
+    expect(setSettingsMock).toHaveBeenCalledOnce();
+  });
+
+  it('accepts tokenBudgetWarningTokens within the token cap', async () => {
+    await mockIpc.__invoke(IPC.SETTINGS_SET, {
+      ui: { tokenBudgetWarningTokens: 128_000 }
+    });
+    expect(setSettingsMock).toHaveBeenCalledOnce();
+  });
+
+  it('rejects tokenBudgetWarningTokens outside the token cap', async () => {
+    await expect(
+      mockIpc.__invoke(IPC.SETTINGS_SET, { ui: { tokenBudgetWarningTokens: 50 } })
+    ).rejects.toThrow(/tokenBudgetWarningTokens/);
+    expect(setSettingsMock).not.toHaveBeenCalled();
+  });
+
+  it('accepts tokenBudgetWarningByWorkspace per-workspace map', async () => {
+    await mockIpc.__invoke(IPC.SETTINGS_SET, {
+      ui: { tokenBudgetWarningByWorkspace: { 'ws-1': 200_000 } }
     });
     expect(setSettingsMock).toHaveBeenCalledOnce();
   });

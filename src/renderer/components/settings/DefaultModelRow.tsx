@@ -19,11 +19,10 @@ import { useMemo } from 'react';
 import { useProviderStore } from '../../store/useProviderStore.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { Dropdown, type DropdownItem } from '../ui/Dropdown.js';
-import { chromeEdgeClassName } from '../ui/SurfaceShell.js';
-import { cn } from '../../lib/cn.js';
+import { ShellCaption, ShellFieldLabel, ShellRow, ShellRowSplit } from '../ui/ShellSection.js';
 import { formatTokenCount } from '../../lib/formatTokens.js';
 
-export function DefaultModelRow({ embedded = false }: { embedded?: boolean }) {
+export function DefaultModelRow({ embedded: _embedded = false }: { embedded?: boolean }) {
   const providers = useProviderStore((s) => s.providers);
   const def = useSettingsStore((s) => s.settings.defaultModel);
   const setDefaultModel = useSettingsStore((s) => s.setDefaultModel);
@@ -48,44 +47,39 @@ export function DefaultModelRow({ embedded = false }: { embedded?: boolean }) {
   }, [providers]);
 
   const currentValue = def ? `${def.providerId}::${def.modelId}` : null;
-  // Guard: only keep `currentValue` selected if the underlying provider /
-  // model is still enabled + discovered. Otherwise the dropdown shows its
-  // placeholder instead of a stale id.
   const resolvedValue =
     currentValue && items.some((i) => i.value === currentValue) ? currentValue : null;
 
   return (
-    <div
-      className={cn(
-        'border-b py-3',
-        chromeEdgeClassName,
-        embedded
-          ? 'flex flex-col gap-2'
-          : 'flex items-start justify-between gap-4'
-      )}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="text-body text-text-primary">Default model</div>
-        <div className="mt-0.5 text-row leading-relaxed text-text-muted">
-          The model used by Agent V. Picking a new default applies it to the active
-          composer immediately and persists across restarts. Populated from every
-          enabled provider&apos;s discovered models.
-        </div>
-      </div>
-      <Dropdown<string>
-        items={items}
-        value={resolvedValue}
-        placeholder={items.length === 0 ? 'No models available' : 'Select model…'}
-        disabled={items.length === 0}
-        className={embedded ? 'w-full' : undefined}
-        onChange={(composed) => {
-          const idx = composed.indexOf('::');
-          if (idx === -1) return;
-          const providerId = composed.slice(0, idx);
-          const modelId = composed.slice(idx + 2);
-          void setDefaultModel({ providerId, modelId });
-        }}
+    <ShellRow>
+      <ShellRowSplit
+        main={
+          <>
+            <ShellFieldLabel>Default model</ShellFieldLabel>
+            <ShellCaption>
+              The model used by Agent V. Picking a new default applies it to the active composer
+              immediately and persists across restarts. Populated from every enabled provider&apos;s
+              discovered models.
+            </ShellCaption>
+          </>
+        }
+        control={
+          <Dropdown<string>
+            items={items}
+            value={resolvedValue}
+            placeholder={items.length === 0 ? 'No models available' : 'Select model…'}
+            disabled={items.length === 0}
+            className="min-w-[12rem] w-full max-w-md"
+            onChange={(composed) => {
+              const idx = composed.indexOf('::');
+              if (idx === -1) return;
+              const providerId = composed.slice(0, idx);
+              const modelId = composed.slice(idx + 2);
+              void setDefaultModel({ providerId, modelId });
+            }}
+          />
+        }
       />
-    </div>
+    </ShellRow>
   );
 }

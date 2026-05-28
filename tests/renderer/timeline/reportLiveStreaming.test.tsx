@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { ReportInvocation } from '@renderer/components/timeline/tools/ReportInvocation';
 import type { ToolCall } from '@shared/types/tool';
 import type { DiffStreamSnapshot } from '@renderer/components/timeline/reducer/types';
@@ -51,10 +51,11 @@ describe('ReportInvocation — live streaming', () => {
     const { container } = render(
       <ReportInvocation call={call} partial diffStream={diffStream} rowKey="inv:c-report" />
     );
+    fireEvent.click(container.querySelector('button')!);
 
     expect(container.querySelector('[data-variant="partial"]')).not.toBeNull();
     expect(container.textContent ?? '').toContain('streaming report');
-    expect(container.querySelector('.vyotiq-stream-cursor')).not.toBeNull();
+    expect(container.querySelector('.vyotiq-stream-cursor')).toBeNull();
   });
 
   it('renders renderer-side preview when diffStream is absent', () => {
@@ -66,6 +67,7 @@ describe('ReportInvocation — live streaming', () => {
     const { container } = render(
       <ReportInvocation call={call} partial rowKey="inv:c-report-2" />
     );
+    fireEvent.click(container.querySelector('button')!);
     expect(container.querySelector('[data-variant="partial"]')).not.toBeNull();
     expect(container.textContent ?? '').toContain('line one');
   });
@@ -93,8 +95,9 @@ describe('ReportInvocation — live streaming', () => {
         rowKey="inv:c-report-empty"
       />
     );
+    fireEvent.click(container.querySelector('button')!);
     expect(container.querySelector('[data-variant="partial"]')).not.toBeNull();
     expect(container.textContent ?? '').toContain('line one');
-    expect(container.querySelector('.vyotiq-stream-cursor')).not.toBeNull();
+    expect(container.querySelector('.vyotiq-stream-cursor')).toBeNull();
   });
 });

@@ -6,12 +6,12 @@
 import type { ReactNode } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '../../../lib/cn.js';
-import { timelineRowChevronClassName } from '../../timeline/shared/rowStyles.js';
+import { timelineRowChevronClassName, timelineRowChevronStroke } from '../../timeline/shared/rowStyles.js';
 import {
   pendingExpandButtonClassName,
   pendingFileRowGridClassName,
-  pendingFileRowGridTemplate,
-  pendingFileRowNestedGridClassName
+  pendingFileRowNestedGridClassName,
+  pendingListHeaderClassName
 } from './pendingPanelStyles.js';
 
 interface PendingFileRowShellProps {
@@ -51,9 +51,9 @@ export function PendingFileRowShell({
           aria-label={expanded ? 'Collapse row' : 'Expand row'}
         >
           {expanded ? (
-            <ChevronDown className={timelineRowChevronClassName} strokeWidth={2} />
+            <ChevronDown className={timelineRowChevronClassName} strokeWidth={timelineRowChevronStroke} />
           ) : (
-            <ChevronRight className={timelineRowChevronClassName} strokeWidth={2} />
+            <ChevronRight className={timelineRowChevronClassName} strokeWidth={timelineRowChevronStroke} />
           )}
         </button>
       ) : (
@@ -68,14 +68,7 @@ export function PendingFileRowShell({
 
 export function PendingChangesListHeader() {
   return (
-    <div
-      className={cn(
-        'sticky top-0 z-[1] grid items-center gap-x-2 border-b border-border-subtle/12',
-        'bg-surface-raised/80 px-2 py-0.5 backdrop-blur-[2px]',
-        pendingFileRowGridTemplate,
-        'text-meta uppercase tracking-wider text-text-faint'
-      )}
-    >
+    <div className={pendingListHeaderClassName}>
       <span aria-hidden />
       <span>File</span>
       <span className="justify-self-end">Diff</span>

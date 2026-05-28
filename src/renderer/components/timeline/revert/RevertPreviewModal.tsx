@@ -37,13 +37,15 @@ import type {
   RewindPreviewResult
 } from '@shared/types/checkpoint.js';
 import type { ModelSelection } from '@shared/types/provider.js';
-import { Modal } from '../../ui/Modal.js';
+import { ComposerDialog } from '../../ui/ComposerDialog.js';
+import { ComposerDialogPortal } from '../../ui/ComposerDialogAnchor.js';
 import { Button } from '../../ui/Button.js';
 import { Eyebrow } from '../../ui/Eyebrow.js';
 import { Notice } from '../../ui/Notice.js';
 import { useCheckpointsStore } from '../../../store/useCheckpointsStore.js';
 import { useToastStore } from '../../../store/useToastStore.js';
 import { useChatStore } from '../../../store/useChatStore.js';
+import { useConversationProcessing } from '../../../hooks/chat/index.js';
 import {
   useSettingsStore,
   selectEffectivePermissions
@@ -52,6 +54,7 @@ import { RevertFileRow } from './RevertFileRow.js';
 import type { RevertIntent } from './RevertPromptContext.js';
 import { chromeInsetNoteClassName, chromeScrollListClassName } from '../../ui/SurfaceShell.js';
 import { cn } from '../../../lib/cn.js';
+import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/shellIcons.js';
 
 interface RevertPreviewModalProps {
   open: boolean;
@@ -94,6 +97,7 @@ export function RevertPreviewModal({
   const showToast = useToastStore((s) => s.show);
   const send = useChatStore((s) => s.send);
   const settings = useSettingsStore((s) => s.settings);
+  const { isProcessing } = useConversationProcessing(conversationId ?? '');
 
   const [phase, setPhase] = useState<ModalPhase>({ kind: 'idle' });
 
@@ -270,95 +274,107 @@ export function RevertPreviewModal({
       : 'Revert';
   const cancelLabel = isEdit ? 'Cancel edit' : 'Cancel';
 
+  if (!open) return null;
+
   return (
-    <Modal
-      open={open}
-      onClose={isClosable ? onClose : () => undefined}
-      title={titleCopy}
-      size="lg"
-    >
-      <div className="space-y-4">
-        {phase.kind === 'loading' && (
-          <Notice tone="info">Computing impact…</Notice>
-        )}
+    <ComposerDialogPortal>
+      <ComposerDialog
+        open={open}
+        onClose={isClosable ? onClose : () => undefined}
+        title={titleCopy}
+        size="expanded"
+        disableEscape={!isClosable}
+      >
+        <div className="space-y-4">
+          {phase.kind === 'loading' && (
+            <Notice tone="info">Computing impact…</Notice>
+          )}
 
-        {phase.kind === 'error' && (
-          <Notice
-            tone="warning"
-            title={
-              isEdit
-                ? 'Could not prepare the edit preview'
-                : 'Could not compute revert preview'
-            }
-          >
-            <span className="whitespace-pre-wrap">{phase.message}</span>
-          </Notice>
-        )}
+          {phase.kind === 'error' && (
+            <Notice
+              tone="warning"
+              title={
+                isEdit
+                  ? 'Could not prepare the edit preview'
+                  : 'Could not compute revert preview'
+              }
+            >
+              <span className="whitespace-pre-wrap">{phase.message}</span>
+            </Notice>
+          )}
 
-        {(phase.kind === 'reverting' || phase.kind === 'sending') && (
-          <Notice tone="info">
-            {phase.kind === 'reverting'
-              ? isEdit
-                ? 'Rewinding before sending…'
-                : 'Reverting…'
-              : 'Sending edited message…'}
-          </Notice>
-        )}
+          {isProcessing && phase.kind === 'ready' && (
+            <Notice tone="warning" title="Agent run is still active">
+              Reverting or editing will interrupt the in-flight run. You can still proceed if you
+              intend to stop it.
+            </Notice>
+          )}
 
-        {phase.kind === 'ready' && totals && (
-          <>
-            {isEdit ? (
-              <EditPromptBanner
-                ref={editTextareaRef}
-                value={editText}
-                onChange={setEditText}
-                originalContent={intent.originalContent}
-                editChanged={editChanged}
-                transcriptEventsAffected={phase.preview.transcriptEventsAffected}
-                fileCount={totals.fileCount}
-                additions={totals.additions}
-                deletions={totals.deletions}
-                runCount={totals.runCount}
-                modelMissing={!model}
-              />
-            ) : (
-              <PromptPreviewBanner
-                content={phase.preview.promptContent}
-                transcriptEventsAffected={phase.preview.transcriptEventsAffected}
-                fileCount={totals.fileCount}
-                additions={totals.additions}
-                deletions={totals.deletions}
-                runCount={totals.runCount}
-              />
-            )}
+          {(phase.kind === 'reverting' || phase.kind === 'sending') && (
+            <Notice tone="info">
+              {phase.kind === 'reverting'
+                ? isEdit
+                  ? 'Rewinding before sending…'
+                  : 'Reverting…'
+                : 'Sending edited message…'}
+            </Notice>
+          )}
 
-            {totals.everyAlreadyReverted && (
-              <Notice tone="info" icon={Undo2}>
-                All file changes from this turn were already reverted manually.{' '}
-                {isEdit
-                  ? 'Confirming will only trim the conversation transcript before sending the edited message.'
-                  : 'Confirming will only trim the conversation transcript.'}
-              </Notice>
-            )}
+          {phase.kind === 'ready' && totals && (
+            <>
+              {isEdit ? (
+                <EditPromptBanner
+                  ref={editTextareaRef}
+                  value={editText}
+                  onChange={setEditText}
+                  originalContent={intent.originalContent}
+                  editChanged={editChanged}
+                  transcriptEventsAffected={phase.preview.transcriptEventsAffected}
+                  fileCount={totals.fileCount}
+                  additions={totals.additions}
+                  deletions={totals.deletions}
+                  runCount={totals.runCount}
+                  modelMissing={!model}
+                />
+              ) : (
+                <PromptPreviewBanner
+                  content={phase.preview.promptContent}
+                  transcriptEventsAffected={phase.preview.transcriptEventsAffected}
+                  fileCount={totals.fileCount}
+                  additions={totals.additions}
+                  deletions={totals.deletions}
+                  runCount={totals.runCount}
+                />
+              )}
 
-            {phase.preview.files.length === 0 ? (
-              <Notice tone="info">
-                No file changes were recorded for this run.{' '}
-                {isEdit
-                  ? 'Confirming will trim the conversation transcript and send the edited message.'
-                  : 'Confirming will only rewind the conversation transcript.'}
-              </Notice>
-            ) : (
-              <div className={cn(chromeScrollListClassName, 'flex max-h-[36vh] flex-col')}>
-                {phase.preview.files.map((f) => (
-                  <RevertFileRow key={f.entryId} change={f} />
-                ))}
-              </div>
-            )}
-          </>
-        )}
+              {totals.everyAlreadyReverted && (
+                <Notice tone="info" icon={Undo2}>
+                  All file changes from this turn were already reverted manually.{' '}
+                  {isEdit
+                    ? 'Confirming will only trim the conversation transcript before sending the edited message.'
+                    : 'Confirming will only trim the conversation transcript.'}
+                </Notice>
+              )}
 
-        <div className="flex justify-end gap-2 pt-1">
+              {phase.preview.files.length === 0 ? (
+                <Notice tone="info">
+                  No file changes were recorded for this run.{' '}
+                  {isEdit
+                    ? 'Confirming will trim the conversation transcript and send the edited message.'
+                    : 'Confirming will only rewind the conversation transcript.'}
+                </Notice>
+              ) : (
+                <div className={cn(chromeScrollListClassName, 'flex max-h-[36vh] flex-col')}>
+                  {phase.preview.files.map((f) => (
+                    <RevertFileRow key={f.entryId} change={f} />
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="vx-composer-dialog-sticky-footer mt-3 flex justify-end gap-2 border-t border-border-subtle/20 pt-3">
           <Button variant="ghost" onClick={onClose} disabled={!isClosable}>
             {cancelLabel}
           </Button>
@@ -370,8 +386,8 @@ export function RevertPreviewModal({
             {primaryLabel}
           </Button>
         </div>
-      </div>
-    </Modal>
+      </ComposerDialog>
+    </ComposerDialogPortal>
   );
 }
 
@@ -450,7 +466,7 @@ const EditPromptBanner = forwardRef<HTMLTextAreaElement, EditPromptBannerProps>(
       <div className="space-y-2">
         <div className={cn(chromeInsetNoteClassName, 'text-text-primary')}>
           <Eyebrow className="flex items-center gap-1.5">
-            <Pencil className="h-3 w-3" strokeWidth={2.25} />
+            <Pencil className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
             Edit and resend
           </Eyebrow>
           <textarea
@@ -520,7 +536,7 @@ function ImpactStrip({
   return (
     <div className="flex flex-wrap items-center gap-3 text-row text-text-muted">
       <span className="inline-flex items-center gap-1">
-        <FileWarning className="h-3.5 w-3.5 text-warning" strokeWidth={2} />
+        <FileWarning className={cn(SHELL_ROW_ICON_CLASS, 'text-warning')} strokeWidth={SHELL_ACTION_ICON_STROKE} />
         <span className="text-text-primary">
           {fileCount} file{fileCount === 1 ? '' : 's'}
         </span>{' '}
@@ -533,7 +549,7 @@ function ImpactStrip({
       </span>
       {runCount > 0 && (
         <span className="inline-flex items-center gap-1">
-          <History className="h-3.5 w-3.5 text-text-muted" strokeWidth={2} />
+          <History className={cn(SHELL_ROW_ICON_CLASS, 'text-text-muted')} strokeWidth={SHELL_ACTION_ICON_STROKE} />
           <span className="text-text-primary">
             {runCount} run{runCount === 1 ? '' : 's'}
           </span>{' '}
@@ -541,7 +557,7 @@ function ImpactStrip({
         </span>
       )}
       <span className="inline-flex items-center gap-1">
-        <MessageSquare className="h-3.5 w-3.5 text-text-muted" strokeWidth={2} />
+        <MessageSquare className={cn(SHELL_ROW_ICON_CLASS, 'text-text-muted')} strokeWidth={SHELL_ACTION_ICON_STROKE} />
         <span className="text-text-primary">
           {transcriptEventsAffected} transcript event
           {transcriptEventsAffected === 1 ? '' : 's'}

@@ -134,10 +134,14 @@ export function looksLikeCompoundDelegateTask(task: string): boolean {
     // enumerate sub-steps of a single deliverable.
     if (/^[-*•]\s+\S/.test(line)) bulletCount++;
   }
-  if (bulletCount >= 2) return true;
+  if (bulletCount >= 3) return true;
 
-  const semiParts = t.split(';').filter((p) => p.trim().length >= 12);
-  if (semiParts.length >= 2) return true;
+  // Strip inline code spans before the semicolon check — code
+  // snippets (`python -c "import os; sz = …"`) contain legitimate
+  // semicolons that are NOT outcome separators.
+  const noCode = t.replace(/`[^`]+`/g, '');
+  const semiParts = noCode.split(';').filter((p) => p.trim().length >= 12);
+  if (semiParts.length >= 3) return true;
 
   return false;
 }

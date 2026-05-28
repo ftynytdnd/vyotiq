@@ -22,7 +22,7 @@ export function PendingChangesTimelineRow({
   onOpenCheckpointSettings
 }: PendingChangesTimelineRowProps) {
   const conversationId = useChatStore((s) => s.conversationId);
-  const openReview = useSecondaryZoneStore((s) => s.openReview);
+  const openCheckpoints = useSecondaryZoneStore((s) => s.openCheckpoints);
   const row = usePendingChangesTimelineRow(conversationId);
 
   if (!row.hasEntries) return null;
@@ -35,8 +35,6 @@ export function PendingChangesTimelineRow({
     visibleAdditions,
     visibleDeletions,
     gateOn,
-    reviewGateOn,
-    reviewBlocksSend,
     runIds,
     filters,
     expanded,
@@ -50,10 +48,7 @@ export function PendingChangesTimelineRow({
   return (
     <>
       <div
-        className={cn(
-          pendingPanelShellClassName(gateOn || (reviewGateOn && reviewBlocksSend)),
-          'vyotiq-stepfade-once'
-        )}
+        className={cn(pendingPanelShellClassName(gateOn), 'vyotiq-stepfade-once')}
       >
         <PendingChangesHeader
           visibleCount={visiblePending.length}
@@ -62,8 +57,6 @@ export function PendingChangesTimelineRow({
           visibleAdditions={visibleAdditions}
           visibleDeletions={visibleDeletions}
           gateOn={gateOn}
-          reviewGateOn={reviewGateOn}
-          reviewBlocksSend={reviewBlocksSend}
           runIds={runIds}
           selectedRunId={filters.runId}
           onSelectRunId={filters.setRunId}
@@ -76,7 +69,7 @@ export function PendingChangesTimelineRow({
           onRejectAll={onRejectAll}
           onReviewAll={() => {
             if (conversationId && activeWorkspaceId) {
-              openReview({ conversationId, workspaceId: activeWorkspaceId });
+              openCheckpoints('review', { conversationId, workspaceId: activeWorkspaceId });
             }
           }}
           groupByFolder={filters.groupByFolder}
@@ -94,7 +87,7 @@ export function PendingChangesTimelineRow({
                 <button
                   type="button"
                   onClick={filters.reset}
-                  className="ml-2 text-meta text-accent hover:underline"
+                  className="vx-btn-text ml-2"
                 >
                   Clear filters
                 </button>

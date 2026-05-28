@@ -1,19 +1,13 @@
 /**
- * Shared class names for timeline row chrome aligned with composer/dock.
+ * Shared class names for timeline row chrome aligned with Vyotiq UI.
  */
 
-import { chromeLogWashClassName, chromeRowActionClassName } from '../../ui/SurfaceShell.js';
 import { cn } from '../../../lib/cn.js';
+import { SHELL_ROW_ICON_CLASS, SHELL_ACTION_ICON_STROKE } from '../../../lib/shellIcons.js';
 import type { RunStatusPhase } from '@shared/types/chat.js';
 
-/** Quiet uppercase label above user prompts and assistant prose. */
-export const timelineEyebrowClassName =
-  'mb-1 text-meta font-semibold uppercase tracking-[0.16em] text-text-secondary';
-
-export const timelineContentMaxWidthClassName = 'w-full max-w-[46rem]';
-
 /** Shared inset for activity row headers and response prose left edge. */
-export const timelineAgentContentInsetClassName = 'pl-3.5';
+const timelineAgentContentInsetClassName = '';
 
 /**
  * Left-aligned agent-side column — activity, response, and footer share
@@ -21,8 +15,7 @@ export const timelineAgentContentInsetClassName = 'pl-3.5';
  * read on one vertical column.
  */
 export const timelineAgentColumnClassName = cn(
-  'timeline-agent-column',
-  timelineContentMaxWidthClassName,
+  'timeline-agent-column vx-timeline-agent-column',
   timelineAgentContentInsetClassName,
   'flex w-full flex-col'
 );
@@ -34,10 +27,10 @@ export const timelineAgentColumnReserveRightClassName = 'pr-[5.5rem]';
 export const timelineTurnInnerGapClassName = 'gap-1.5';
 
 /** Vertical rhythm between prompt / activity / response zones inside a turn. */
-export const timelineTurnZoneGapClassName = 'gap-3';
+export const timelineTurnZoneGapClassName = 'vx-timeline-turn-gap';
 
 /** Vertical rhythm between consecutive turn blocks in the transcript. */
-export const timelineTurnOuterGapClassName = 'mb-10 pt-1 last:mb-0 last:pt-0';
+export const timelineTurnOuterGapClassName = 'vx-timeline-turn-outer last:mb-0 last:pt-0';
 
 /**
  * User prompt surface — flush in the reading column (no card, no ring).
@@ -51,12 +44,10 @@ export const timelineTurnOuterGapClassName = 'mb-10 pt-1 last:mb-0 last:pt-0';
  * row identity is now carried by `data-row-kind="user-prompt"` and
  * positional cues alone.
  */
-export const timelinePromptCardClassName = '';
-
 /** Live/completed activity lane — flat stack inside the agent column rail. */
 export const timelineActivityLaneClassName = cn(
-  'timeline-activity-lane',
-  'flex flex-col gap-1.5'
+  'timeline-activity-lane vx-timeline-activity-lane',
+  'flex flex-col'
 );
 
 /**
@@ -70,54 +61,30 @@ export const timelineActivityLaneClassName = cn(
  * (`[&_[data-row-kind=assistant-text]]:*`) still resolve to a real
  * element. Only the painted tokens were dropped.
  */
-export const timelineResponseLaneClassName = cn('flex flex-col gap-1.5');
-
-/**
- * Legacy spacer between activity block and response prose. The new
- * inline stream renders in wire order with a single `gap-1.5`, so the
- * dedicated separator is unused. Kept exported as an empty string for
- * source-compat with any callers in transit.
- */
-export const timelineActivityResponseSeparatorClassName = '';
+const timelineResponseLaneClassName = cn('vx-timeline-response-lane', 'flex flex-col');
 
 /** Tiny dot prefix used by the sub-agent header — running vs settled tones. */
 export function timelineSubAgentDotClassName(running: boolean): string {
   return cn(
-    'inline-block h-1.5 w-1.5 shrink-0 rounded-full',
-    running ? 'bg-accent-gold-strong' : 'bg-text-muted'
+    'vx-timeline-subagent-dot',
+    running ? 'vx-timeline-subagent-dot-live' : 'vx-timeline-subagent-dot-settled'
   );
 }
 
-/** Italic muted subtitle beneath the sub-agent dot/title row. */
-export const timelineSubAgentSubtitleClassName =
-  'mt-0.5 line-clamp-1 pl-3 text-meta italic text-text-muted';
-
-/** Compact provider/model chip floated to the right edge of a row. */
-export const timelineModelBadgeClassName = cn(
-  'inline-flex h-5 shrink-0 items-center gap-1 rounded-inner border border-border-subtle/25 px-1.5',
-  'font-mono text-meta text-text-muted'
-);
-
-/** Category eyebrows inside the live activity lane (Reasoning, Tools, …). */
-export const timelineCategoryEyebrowClassName =
-  'mb-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-text-muted';
-
 /** Compact clickable row header (tool groups, reasoning, sub-agent collapsed). */
 export const timelineRowHeaderClassName = cn(
-  'app-no-drag flex w-full min-w-0 items-center gap-1.5 rounded-inner px-2 py-1 text-left',
-  '[.timeline-activity-lane_&]:max-w-none',
-  'text-meta text-text-muted',
-  'transition-colors duration-150',
-  'hover:bg-surface-hover/40'
+  'app-no-drag vx-timeline-row-header',
+  '[.timeline-activity-lane_&]:max-w-none'
 );
 
-/** Dock-style action pill — thin alias over chrome row/pill tokens. */
-export const timelineActionPillClassName = chromeRowActionClassName;
+/** Vyotiq UI quiet action pill for timeline row affordances. */
+export const timelineActionPillClassName = cn('app-no-drag vx-timeline-action');
 
-const timelineRowIconClassName = 'h-3.5 w-3.5 shrink-0';
+const timelineRowIconClassName = SHELL_ROW_ICON_CLASS;
 
 /** Chevron in row headers. */
-export const timelineRowChevronClassName = cn(timelineRowIconClassName, 'text-chevron');
+export const timelineRowChevronClassName = cn(timelineRowIconClassName, 'text-chevron opacity-70');
+export const timelineRowChevronStroke = SHELL_ACTION_ICON_STROKE;
 
 /**
  * Quiet log-line surface (agent thoughts, status lines, run closer).
@@ -127,24 +94,7 @@ export const timelineRowChevronClassName = cn(timelineRowIconClassName, 'text-ch
  * trailing `RunCompleteRow` rendered outside any lane) the same
  * tokens still produce the legacy quiet-wash treatment.
  */
-export const timelineLogRowClassName = cn(
-  chromeLogWashClassName,
-  timelineContentMaxWidthClassName,
-  'px-2.5 py-1 text-meta text-text-faint',
-  '[.timeline-activity-lane_&]:max-w-none [.timeline-activity-lane_&]:bg-transparent [.timeline-activity-lane_&]:px-0 [.timeline-activity-lane_&]:py-0.5'
-);
-
-/** Compact secondary activity line (status, reasoning, tool headers). */
-export const timelineActivityRowClassName = cn(
-  timelineLogRowClassName,
-  'text-text-muted'
-);
-
-/** Live telemetry inside the activity lane — quiet, not a primary content block. */
-export const timelineLiveStatusRowClassName = cn(
-  'flex w-full min-w-0 items-center gap-1 py-1',
-  'text-meta text-text-faint'
-);
+export const timelineLogRowClassName = cn('vx-timeline-log-row', 'flex w-full flex-col');
 
 /** Live-turn shell — no extra chrome (left rail removed). */
 export function timelineLiveTurnClassName(_live: boolean): string {
@@ -164,12 +114,12 @@ export const timelineAssistantRowClassName = cn(
   'group vyotiq-stepfade-once'
 );
 
+/** User prompt body — open Vyotiq UI typography. */
+export const timelineUserPromptBodyClassName = 'vx-timeline-prompt';
+
 /** Gold phase heading for live status + persisted Exploring dividers. */
 export function timelinePhaseHeadingClassName(live = false): string {
-  return cn(
-    'font-semibold',
-    live ? 'text-accent-gold-strong vyotiq-reveal-text' : 'text-accent-gold'
-  );
+  return live ? 'vx-timeline-phase-live vyotiq-reveal-text' : 'vx-timeline-phase';
 }
 
 /** Map run-status phase + label to the user-facing gold headline. */
@@ -196,9 +146,14 @@ export function isGoldLivePhase(phase: RunStatusPhase | 'streaming-reasoning' | 
   );
 }
 
-/** In-flight tool row title — gold while pending, primary when settled. */
+/** In-flight tool row title — primary while pending, settled label when done. */
 export function toolTitleClassName(running: boolean): string {
-  return cn('font-medium', running ? 'text-accent-gold-strong' : 'text-text-primary');
+  return cn(
+    'font-medium',
+    running
+      ? 'text-text-primary'
+      : 'vx-row-label text-[length:var(--text-row)] text-text-secondary'
+  );
 }
 
 /** Reasoning row headline — orchestrator vs sub-agent typography variants. */
@@ -209,9 +164,14 @@ export function reasoningHeadlineClassName(
   if (variant === 'orchestrator') {
     return streaming
       ? cn(timelinePhaseHeadingClassName(true), 'truncate text-meta')
-      : 'truncate text-meta text-text-faint';
+      : 'truncate text-meta vx-caption';
   }
   return streaming
     ? cn(timelinePhaseHeadingClassName(true), 'min-w-0 flex-1 truncate text-row italic')
     : 'min-w-0 flex-1 truncate text-row italic text-text-muted';
 }
+
+/** Timeline stack wrapper (Timeline.tsx root). */
+export const timelineStackClassName = 'vx-timeline-stack';
+
+

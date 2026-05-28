@@ -108,11 +108,10 @@ describe('Timeline — delegate batch projection', () => {
     expect(batches).toHaveLength(1);
     expect(container.textContent ?? '').toContain('Delegated');
     expect(container.textContent ?? '').toContain('2 tasks');
-    expect(container.textContent ?? '').toContain('scan auth/');
-    expect(container.textContent ?? '').toContain('scan api/');
+    expect(container.textContent ?? '').not.toContain('scan auth/');
   });
 
-  it('renders standalone SubAgentTrace for a lone sub-agent', async () => {
+  it('renders a clickable delegate row for a lone sub-agent', async () => {
     await act(async () => {
       useChatStore.setState({
         events: [
@@ -157,9 +156,8 @@ describe('Timeline — delegate batch projection', () => {
     });
 
     const { container } = render(<Timeline />);
-    expect(container.querySelectorAll('[data-row-kind="delegate-batch"]')).toHaveLength(0);
-    expect(container.querySelectorAll('[data-row-kind="subagent-line"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-row-kind="delegate-batch"]')).toHaveLength(1);
     expect(container.textContent ?? '').toContain('Delegated');
-    expect(container.textContent ?? '').toContain('only one');
+    expect(container.textContent ?? '').toContain('1 task');
   });
 });

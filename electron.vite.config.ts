@@ -77,8 +77,9 @@ export default defineConfig({
     },
     build: {
       sourcemap: SOURCEMAP,
-      // Drop stale hashed lazy chunks when rebuilding while preview is open.
-      emptyOutDir: true,
+      // Keep prior hashed chunks on disk so a running preview instance can still
+      // lazy-load panels if another build runs concurrently (e.g. CI/typecheck build).
+      emptyOutDir: false,
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/renderer/index.html') }
       }

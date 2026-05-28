@@ -18,19 +18,31 @@ import {
   type ProviderConfig
 } from '@shared/types/provider.js';
 import { Button } from '../ui/Button.js';
-import { Eyebrow } from '../ui/Eyebrow.js';
-import { ConfirmDialog } from '../ui/ConfirmDialog.js';
+import { DestructiveConfirm } from '../ui/DestructiveConfirm.js';
 import { Switch } from '../ui/Switch.js';
 import { TextField } from '../ui/TextField.js';
 import { ModelList } from './ModelList.js';
 import { useProviderStore } from '../../store/useProviderStore.js';
-import { cn } from '../../lib/cn.js';
+import {
+  ShellActionRow,
+  ShellCaption,
+  ShellFieldActions,
+  ShellFieldLabel,
+  ShellRow,
+  ShellRowSplit
+} from '../ui/ShellSection.js';
+import {
+  SHELL_COMPACT_ICON_CLASS,
+  SHELL_COMPACT_ICON_STROKE,
+  SHELL_ROW_ICON_CLASS,
+  SHELL_ROW_ICON_STROKE
+} from '../../lib/shellIcons.js';
 
 interface ProviderRowProps {
   provider: ProviderConfig;
 }
 
-export function ProviderRow({ provider, embedded = false }: ProviderRowProps & { embedded?: boolean }) {
+export function ProviderRow({ provider }: ProviderRowProps & { embedded?: boolean }) {
   const remove = useProviderStore((s) => s.remove);
   const discover = useProviderStore((s) => s.discover);
   const test = useProviderStore((s) => s.test);
@@ -68,54 +80,72 @@ export function ProviderRow({ provider, embedded = false }: ProviderRowProps & {
   };
 
   return (
-    <div className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0">
-      <div className={cn('flex items-start justify-between gap-2', embedded && 'flex-col')}>
-        <div className="min-w-0">
-          <h3 className="text-body font-semibold text-text-primary">{provider.name}</h3>
-          <div className="mt-0.5 truncate font-mono text-row text-text-muted">
-            {provider.baseUrl}
-          </div>
-          <Eyebrow className="mt-0.5">
-            {PROVIDER_DIALECT_LABELS[provider.dialect ?? 'openai']}
-          </Eyebrow>
-        </div>
-        <div className="flex items-center gap-2">
-          <Switch
-            size="sm"
-            value={provider.enabled}
-            onChange={(v) => void update(provider.id, { enabled: v })}
-            ariaLabel={`${provider.enabled ? 'Disable' : 'Enable'} provider ${provider.name}`}
-          />
-          <Button
-            size="sm"
-            variant="danger"
-            aria-label={`Remove provider ${provider.name}`}
-            onClick={() => setRemoveOpen(true)}
-          >
-            <Trash2 className="h-3.5 w-3.5" strokeWidth={2.25} />
-          </Button>
-        </div>
-      </div>
+    <ShellRow>
+      {removeOpen ? (
+        <DestructiveConfirm
+          variant="inline"
+          open
+          context={provider.name}
+          question="Remove provider?"
+          confirmLabel="Remove"
+          onConfirm={() => {
+            setRemoveOpen(false);
+            void remove(provider.id);
+          }}
+          onCancel={() => setRemoveOpen(false)}
+        />
+      ) : (
+        <ShellRowSplit
+          main={
+            <>
+              <div className="vx-row-label">{provider.name}</div>
+              <div className="vx-provider-meta">{provider.baseUrl}</div>
+              <ShellCaption className="mt-1">
+                {PROVIDER_DIALECT_LABELS[provider.dialect ?? 'openai']}
+              </ShellCaption>
+            </>
+          }
+          control={
+            <div className="flex items-center gap-2">
+              <Switch
+                size="md"
+                value={provider.enabled}
+                onChange={(v) => void update(provider.id, { enabled: v })}
+                ariaLabel={`${provider.enabled ? 'Disable' : 'Enable'} provider ${provider.name}`}
+              />
+              <Button
+                variant="danger"
+                aria-label={`Remove provider ${provider.name}`}
+                onClick={() => setRemoveOpen(true)}
+              >
+                <Trash2 className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
+              </Button>
+            </div>
+          }
+        />
+      )}
 
-      <div className={cn('flex items-center gap-2', embedded && 'flex-wrap')}>
-        <Button size="sm" variant="secondary" onClick={() => void onDiscover()} disabled={busy !== 'idle'}>
-          <RefreshCcw className="h-3.5 w-3.5" strokeWidth={2.25} />
+      {!removeOpen && (
+      <>
+      <ShellActionRow>
+        <Button variant="secondary" onClick={() => void onDiscover()} disabled={busy !== 'idle'}>
+          <RefreshCcw className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
           {busy === 'discovering'
             ? 'Discovering…'
             : provider.dialect === 'ollama-native'
               ? 'Refresh /api/tags'
               : 'Refresh /v1/models'}
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => void onTest()} disabled={busy !== 'idle'}>
+        <Button variant="ghost" onClick={() => void onTest()} disabled={busy !== 'idle'}>
           {busy === 'testing' ? 'Testing…' : 'Test connection'}
         </Button>
-        {testResult && (
-          <div className={cn('flex items-center gap-1.5 text-row', testResult.ok ? 'text-success' : 'text-danger')}>
-            {testResult.ok ? <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={2.25} /> : <XCircle className="h-3.5 w-3.5" strokeWidth={2.25} />}
+        {testResult && !testResult.ok && (
+          <div className="flex items-center gap-1.5 vx-caption text-danger">
+            <XCircle className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
             <span className="line-clamp-2">{testResult.message}</span>
           </div>
         )}
-      </div>
+      </ShellActionRow>
 
       <ModelList
         models={provider.models ?? []}
@@ -126,21 +156,9 @@ export function ProviderRow({ provider, embedded = false }: ProviderRowProps & {
       />
 
       <AttributionSection provider={provider} onSave={(next) => void update(provider.id, { attribution: next })} />
-
-      <ConfirmDialog
-        open={removeOpen}
-        title="Remove provider?"
-        message={`Remove "${provider.name}" and its stored API key? Conversations that used this provider keep their transcripts but won't be able to continue runs against it.`}
-        confirmLabel="Remove"
-        cancelLabel="Cancel"
-        variant="danger"
-        onConfirm={() => {
-          setRemoveOpen(false);
-          void remove(provider.id);
-        }}
-        onCancel={() => setRemoveOpen(false)}
-      />
-    </div>
+      </>
+      )}
+    </ShellRow>
   );
 }
 
@@ -249,30 +267,24 @@ function AttributionSection({
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className={cn(
-          'flex items-center gap-1.5 self-start text-row text-text-muted',
-          'hover:text-text-primary transition-colors duration-150'
-        )}
+        className="vx-btn-text inline-flex items-center gap-1.5 self-start"
         aria-expanded={expanded}
       >
         {expanded ? (
-          <ChevronDown className="h-3 w-3" strokeWidth={2.25} />
+          <ChevronDown className={SHELL_COMPACT_ICON_CLASS} strokeWidth={SHELL_COMPACT_ICON_STROKE} />
         ) : (
-          <ChevronRight className="h-3 w-3" strokeWidth={2.25} />
+          <ChevronRight className={SHELL_COMPACT_ICON_CLASS} strokeWidth={SHELL_COMPACT_ICON_STROKE} />
         )}
         <span>OpenRouter attribution</span>
         <span className="text-text-faint">· {collapsedSummary}</span>
       </button>
       {expanded && (
-        // Same left-rail indent rhythm as `AddProviderForm`'s expanded
-        // body so nested expanders across the Providers tab share one
-        // visual hierarchy instead of one rail / one card surface.
-        <div className="flex flex-col gap-2 border-l border-border-subtle/40 py-1 pl-3">
-          <p className="text-row text-text-muted">
+        <div className="flex flex-col gap-2 py-1">
+          <ShellCaption>
             Optional. OpenRouter credits the calling app on its public rankings via these headers.
             Leave a field blank to send an empty value (suppress that header). Clear both to fall back
             to the project defaults.
-          </p>
+          </ShellCaption>
           <AttributionField
             label="HTTP-Referer"
             placeholder="https://vyotiq.app"
@@ -285,16 +297,16 @@ function AttributionSection({
             value={title}
             onChange={setTitle}
           />
-          <div className="flex items-center justify-end gap-2">
+          <ShellFieldActions grouped>
             {savedTick && (
-              <span className="flex items-center gap-1 text-row text-success">
-                <CheckCircle2 className="h-3 w-3" strokeWidth={2.25} /> Saved
+              <span className="mr-auto flex items-center gap-1 text-row text-success">
+                <CheckCircle2 className={SHELL_COMPACT_ICON_CLASS} strokeWidth={SHELL_COMPACT_ICON_STROKE} /> Saved
               </span>
             )}
-            <Button size="sm" variant="primary" onClick={onSubmit}>
+            <Button variant="primary" onClick={onSubmit}>
               Save attribution
             </Button>
-          </div>
+          </ShellFieldActions>
         </div>
       )}
     </div>
@@ -313,16 +325,15 @@ function AttributionField({
   onChange: (v: string) => void;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <Eyebrow as="span" size="row">{label}</Eyebrow>
+    <label className="flex flex-col">
+      <ShellFieldLabel>{label}</ShellFieldLabel>
       <TextField
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        size="lg"
-        tone="raised"
       />
     </label>
   );
 }
+

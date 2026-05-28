@@ -23,7 +23,7 @@ interface DiffLineProps {
   oldNo: number | null;
   newNo: number | null;
   intra?: IntraLineHighlight;
-  /** Trailing blinking caret when this row is the partial-stream tip. */
+  /** Reserved for partial-stream tip styling (cursor removed in redesign). */
   isStreamingTip?: boolean;
   /** Review mode: click a line to anchor a comment. */
   linePick?: {
@@ -37,7 +37,7 @@ export function DiffLine({
   oldNo,
   newNo,
   intra,
-  isStreamingTip = false,
+  isStreamingTip: _isStreamingTip = false,
   linePick
 }: DiffLineProps) {
   const anchor = pickAnchorLine({ newLine: newNo, oldLine: oldNo });
@@ -75,8 +75,8 @@ export function DiffLine({
         line.kind === '+' && (intra ? 'bg-success/[0.05] text-success' : 'bg-success/10 text-success'),
         line.kind === '-' && (intra ? 'bg-danger/[0.05] text-danger' : 'bg-danger/10 text-danger'),
         line.kind === ' ' && 'text-text-secondary',
-        pickable && 'cursor-pointer hover:bg-surface-hover/80',
-        highlighted && 'ring-1 ring-inset ring-border-strong/60 bg-surface-hover/50'
+        pickable && 'vx-diff-line-pickable',
+        highlighted && 'vx-diff-line-highlighted'
       )}
     >
       <GutterCell n={oldNo} />
@@ -97,7 +97,6 @@ export function DiffLine({
         ) : (
           line.text
         )}
-        {isStreamingTip && <span className="vyotiq-stream-cursor" aria-hidden />}
       </span>
     </div>
   );

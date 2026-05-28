@@ -13,19 +13,15 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Copy, Check, RefreshCcw } from 'lucide-react';
+import { Copy, Check } from 'lucide-react';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { AGENT_NAME } from '@shared/constants.js';
 import { stripEmoji } from '@shared/text/emoji.js';
 import { useChatStore } from '../../../store/useChatStore.js';
-import {
-  useSettingsStore,
-  selectEffectivePermissions
-} from '../../../store/useSettingsStore.js';
-import { useWorkspaceStore } from '../../../store/useWorkspaceStore.js';
 import { displayAssistantTurnText } from '../../../lib/text.js';
 import { StreamingMarkdownBody } from '../markdown/StreamingMarkdownBody.js';
 import { cn } from '../../../lib/cn.js';
+import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/shellIcons.js';
 import { safeCopy } from '../../../lib/clipboard.js';
 import { timelineActionPillClassName, timelineAssistantRowClassName } from '../shared/rowStyles.js';
 
@@ -34,25 +30,12 @@ interface AssistantTextRowProps {
   model?: ModelSelection | null;
 }
 
-export function AssistantTextRow({ id, model }: AssistantTextRowProps) {
+export function AssistantTextRow({ id, model: _model }: AssistantTextRowProps) {
   const acc = useChatStore((s) => s.assistantTexts[id]);
-  const lastUserPromptContent = useChatStore((s) => s.lastUserPromptContent);
-  const isProcessing = useChatStore((s) => s.isProcessing);
-  const conversationId = useChatStore((s) => s.conversationId);
-  const send = useChatStore((s) => s.send);
-
-  const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
-  const settings = useSettingsStore((s) => s.settings);
-  const permissions = selectEffectivePermissions(activeWorkspaceId, settings);
 
   const [copied, setCopied] = useState(false);
-  const [pendingRegenerate, setPendingRegenerate] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
-
-  useEffect(() => {
-    if (isProcessing) setPendingRegenerate(false);
-  }, [isProcessing]);
 
   useEffect(() => {
     return () => {
@@ -70,10 +53,6 @@ export function AssistantTextRow({ id, model }: AssistantTextRowProps) {
 
   if (cleaned.length === 0 && acc.done) return null;
 
-  const hasLastPrompt = typeof lastUserPromptContent === 'string' && lastUserPromptContent.length > 0;
-  const canRegenerate =
-    !isProcessing && hasLastPrompt && model !== null && conversationId !== null;
-
   const handleCopy = () => {
     void safeCopy(stripEmoji(cleaned), { context: 'assistant-row' }).then((ok) => {
       if (!ok || !mountedRef.current) return;
@@ -85,12 +64,6 @@ export function AssistantTextRow({ id, model }: AssistantTextRowProps) {
         setCopied(false);
       }, 1200);
     });
-  };
-
-  const handleRegenerate = () => {
-    if (!canRegenerate || !model || !lastUserPromptContent) return;
-    setPendingRegenerate(true);
-    void send(lastUserPromptContent, model, permissions);
   };
 
   return (
@@ -117,30 +90,14 @@ export function AssistantTextRow({ id, model }: AssistantTextRowProps) {
           onClick={handleCopy}
           className={timelineActionPillClassName}
           title={copied ? 'Copied' : 'Copy'}
+          aria-label={copied ? 'Copied response' : 'Copy response'}
         >
           {copied ? (
-            <Check className="h-3 w-3 text-success" strokeWidth={2.25} />
+            <Check className={cn(SHELL_ROW_ICON_CLASS, 'text-success')} strokeWidth={SHELL_ACTION_ICON_STROKE} />
           ) : (
-            <Copy className="h-3 w-3" strokeWidth={2.25} />
+            <Copy className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
           )}
           <span>{copied ? 'Copied' : 'Copy'}</span>
-        </button>
-        <button
-          type="button"
-          disabled={!canRegenerate}
-          onClick={handleRegenerate}
-          className={cn(
-            timelineActionPillClassName,
-            !canRegenerate && 'cursor-not-allowed opacity-40'
-          )}
-          title={canRegenerate ? 'Regenerate response' : 'Regenerate unavailable'}
-          aria-label={canRegenerate ? 'Regenerate response' : 'Regenerate unavailable'}
-        >
-          <RefreshCcw
-            className={cn('h-3 w-3', pendingRegenerate && 'animate-spin')}
-            strokeWidth={2.25}
-          />
-          <span>Regenerate</span>
         </button>
       </div>
     </div>

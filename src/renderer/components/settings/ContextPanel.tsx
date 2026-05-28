@@ -1,40 +1,46 @@
 /**
  * Settings → Context tab body.
  *
- * Visual contract: STRICTLY mirrors the Permissions tab — no
- * header, no nested cards, just rows from the shared
- * `RulesHeader` form starting at the top of the panel. The
- * per-workspace overrides section underneath uses the SAME
- * `WorkspaceOverridesSection` shape as the Permissions tab does.
- *
- * Per-workspace overrides are managed from the Context Inspector
- * (whose `RulesHeader` defaults to `'workspace'` scope). This tab's
- * job is the global default + showing what's overridden.
+ * Visual contract: mirrors Permissions tab — Vyotiq UI sections with
+ * left-rail headings, row dividers, and override rows. Per-workspace
+ * overrides use the same `ShellSection` + `vx-override` shape as
+ * Settings → Permissions.
  */
 
 import { useEffect, useState } from 'react';
 import { RotateCcw } from 'lucide-react';
+import { TOKEN_BUDGET_WARNING_DEFAULT_TOKENS } from '@shared/constants.js';
 import { useContextSummaryStore } from '../../store/useContextSummaryStore.js';
-import { useSettingsStore } from '../../store/useSettingsStore.js';
+import {
+  selectEffectiveTokenBudgetWarning,
+  useSettingsStore
+} from '../../store/useSettingsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
-import { Eyebrow } from '../ui/Eyebrow.js';
-import { Spinner } from '../ui/Spinner.js';
+import { Button } from '../ui/Button.js';
+import { LoadingHint } from '../ui/LoadingHint.js';
+import { TextField } from '../ui/TextField.js';
 import {
-  chromeGhostRowButtonClassName,
-  chromeSettingsInsetRowClassName
-} from '../ui/SurfaceShell.js';
-import { cn } from '../../lib/cn.js';
+  ShellCaption,
+  ShellRow,
+  ShellRowSplit,
+  ShellSection,
+  ShellStack
+} from '../ui/ShellSection.js';
+import { chromeGhostRowButtonClassName } from '../ui/SurfaceShell.js';
 import { RulesHeader } from '../contextInspector/RulesHeader.js';
 import {
   DEFAULT_CONTEXT_SUMMARY_RULES,
   resolveContextSummaryRules,
   type ContextSummaryRules
 } from '@shared/types/contextSummary.js';
+import type { AppSettings } from '@shared/types/ipc.js';
+import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../lib/shellIcons.js';
 
-export function ContextPanel({ embedded = false }: { embedded?: boolean }) {
+export function ContextPanel({ embedded: _embedded = false }: { embedded?: boolean }) {
   const settings = useSettingsStore((s) => s.settings);
   const settingsLoading = useSettingsStore((s) => s.loading);
+  const setTokenBudgetWarningTokens = useSettingsStore((s) => s.setTokenBudgetWarningTokens);
 
   const [resolvedGlobal, setResolvedGlobal] = useState<ContextSummaryRules>(
     () => resolveContextSummaryRules(settings.contextSummary, undefined)
@@ -43,43 +49,101 @@ export function ContextPanel({ embedded = false }: { embedded?: boolean }) {
     setResolvedGlobal(resolveContextSummaryRules(settings.contextSummary, undefined));
   }, [settings.contextSummary]);
 
+  const persistedBudgetK = Math.round(
+    (settings.ui?.tokenBudgetWarningTokens ?? TOKEN_BUDGET_WARNING_DEFAULT_TOKENS) / 1000
+  );
+  const [budgetDraftK, setBudgetDraftK] = useState(String(persistedBudgetK));
+  const budgetDirty = budgetDraftK !== String(persistedBudgetK);
+
+  useEffect(() => {
+    setBudgetDraftK(String(persistedBudgetK));
+  }, [persistedBudgetK]);
+
+  const onSaveBudgetWarning = async () => {
+    const parsed = Number.parseInt(budgetDraftK, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      useToastStore.getState().show('Enter a positive token count (in thousands).', 'danger');
+      return;
+    }
+    try {
+      await setTokenBudgetWarningTokens(parsed * 1000);
+      useToastStore.getState().show('Token budget warning threshold saved.', 'success');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      useToastStore.getState().show(`Save failed: ${msg}`, 'danger');
+    }
+  };
+
   if (settingsLoading && !settings.permissions) {
     return (
-      <div className="flex items-center gap-2 text-row text-text-muted">
-        <Spinner /> Loading settings…
+      <div className="flex items-center gap-2 vx-caption">
+        <LoadingHint message="Loading settings…" className="py-4" />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col">
-      <RulesHeader
-        rules={resolvedGlobal}
-        workspaceId={null}
-        defaultScope="global"
-        compact={embedded}
-      />
-      <WorkspaceContextOverridesSection />
-    </div>
+    <ShellStack>
+      <ShellSection title="Context summary">
+        <RulesHeader
+          rules={resolvedGlobal}
+          workspaceId={null}
+          defaultScope="global"
+        />
+      </ShellSection>
+      <ShellSection title="Timeline">
+        <ShellRow>
+          <ShellRowSplit
+            main={
+              <>
+                <div className="vx-row-label">Token budget warning (k)</div>
+                <p className="vx-row-desc">
+                  Show a timeline warning when estimated context exceeds this threshold.
+                </p>
+              </>
+            }
+            control={
+              <div className="flex flex-wrap items-center gap-2">
+                <TextField
+                  type="number"
+                  min={1}
+                  value={budgetDraftK}
+                  placeholder={String(TOKEN_BUDGET_WARNING_DEFAULT_TOKENS / 1000)}
+                  appearance="boxed"
+                  size="sm"
+                  onChange={(e) => setBudgetDraftK(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void onSaveBudgetWarning();
+                    }
+                  }}
+                  className="w-16 font-mono text-right"
+                />
+                <Button variant="primary" disabled={!budgetDirty} onClick={() => void onSaveBudgetWarning()}>
+                  Save
+                </Button>
+              </div>
+            }
+          />
+        </ShellRow>
+      </ShellSection>
+      <WorkspaceContextOverridesSection settings={settings} />
+    </ShellStack>
   );
 }
 
-/**
- * Per-workspace overrides list. Visually matches
- * `WorkspaceOverridesSection` in Settings → Context — same
- * `border-t border-border-subtle/40 pt-4` separator, same
- * `Eyebrow` header, same compact diff summary, same `Reset` ghost
- * button row. Hidden entirely when no workspace has any override.
- */
-function WorkspaceContextOverridesSection() {
-  const settings = useSettingsStore((s) => s.settings);
+function WorkspaceContextOverridesSection({ settings }: { settings: AppSettings }) {
   const workspaces = useWorkspaceStore((s) => s.list);
   const updateRules = useContextSummaryStore((s) => s.updateRules);
   const showToast = useToastStore((s) => s.show);
   const overrideMap = settings.ui?.contextSummaryByWorkspace ?? {};
-  const overridden = workspaces.filter(
-    (w) => Object.keys(overrideMap[w.id] ?? {}).length > 0
-  );
+  const budgetOverrideMap = settings.ui?.tokenBudgetWarningByWorkspace ?? {};
+  const overridden = workspaces.filter((w) => {
+    const ctx = Object.keys(overrideMap[w.id] ?? {}).length > 0;
+    const budget = w.id in budgetOverrideMap;
+    return ctx || budget;
+  });
   if (overridden.length === 0) return null;
 
   const onReset = async (workspaceId: string) => {
@@ -93,35 +157,25 @@ function WorkspaceContextOverridesSection() {
   };
 
   return (
-    <div className="mt-6 flex flex-col gap-2 border-t border-border-subtle/40 pt-4">
-      <Eyebrow as="span" bold>
-        Per-workspace overrides
-      </Eyebrow>
-      <div className="text-row text-text-muted">
-        Workspaces below override the global defaults above. Toggling a
-        rule from the Context Inspector while a workspace is active
-        scopes the change to that workspace; reset to fall back to the
-        global value.
-      </div>
-      <ul className="mt-2 flex flex-col gap-1">
-        {overridden.map((w) => {
-          const entry = overrideMap[w.id] ?? {};
-          const diffs = describeOverrideDiff(entry);
-          return (
-            <li
-              key={w.id}
-              className={cn(
-                chromeSettingsInsetRowClassName,
-                'flex items-start justify-between gap-3'
-              )}
-            >
-              <div className="min-w-0 flex-1">
-                <div className="text-row text-text-primary">{w.label}</div>
-                <div className="mt-0.5 text-meta text-text-muted" title={w.path}>
+    <ShellSection title="Per-workspace overrides">
+      <ShellCaption className="mb-3">
+        Workspaces below override the global defaults above. Toggling a rule from the Context
+        Inspector while a workspace is active scopes the change to that workspace; reset to fall
+        back to the global value.
+      </ShellCaption>
+      {overridden.map((w) => {
+        const entry = overrideMap[w.id] ?? {};
+        const diffs = describeOverrideDiff(entry, settings, w.id);
+        return (
+          <ShellRow key={w.id}>
+            <div className="vx-override">
+              <div className="min-w-0">
+                <div className="vx-row-label">{w.label}</div>
+                <p className="vx-row-desc" title={w.path}>
                   {diffs.length === 0
                     ? 'Override matches global defaults.'
                     : diffs.join(' · ')}
-                </div>
+                </p>
               </div>
               <button
                 type="button"
@@ -129,25 +183,29 @@ function WorkspaceContextOverridesSection() {
                 title="Reset this workspace to the global default"
                 className={chromeGhostRowButtonClassName}
               >
-                <RotateCcw className="h-3.5 w-3.5" strokeWidth={2.25} />
-                <span>Reset</span>
+                <RotateCcw className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
+                Reset
               </button>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+            </div>
+          </ShellRow>
+        );
+      })}
+    </ShellSection>
   );
 }
 
-/**
- * Produce a short list of human strings describing only the fields a
- * workspace override actually pins. Mirrors the diff surface
- * `WorkspaceOverridesSection` uses in the permissions tab.
- */
-function describeOverrideDiff(entry: Partial<ContextSummaryRules>): string[] {
+function describeOverrideDiff(
+  entry: Partial<ContextSummaryRules>,
+  settings: AppSettings,
+  workspaceId: string
+): string[] {
   const out: string[] = [];
   const base = DEFAULT_CONTEXT_SUMMARY_RULES;
+  const globalBudget = selectEffectiveTokenBudgetWarning(settings, null);
+  const wsBudget = settings.ui?.tokenBudgetWarningByWorkspace?.[workspaceId];
+  if (typeof wsBudget === 'number' && wsBudget > 0 && wsBudget !== globalBudget) {
+    out.push(`Budget warning: ${Math.round(wsBudget / 1000)}k`);
+  }
   if (entry.enabled !== undefined && entry.enabled !== base.enabled) {
     out.push(`enabled: ${entry.enabled ? 'on' : 'off'}`);
   }
@@ -211,12 +269,6 @@ function describeOverrideDiff(entry: Partial<ContextSummaryRules>): string[] {
   return out;
 }
 
-/**
- * Empty patch sentinel — clears the workspace's override slot via
- * the existing IPC. The settings store deep-merges, so we set
- * each supported field to `undefined` so the resolver falls back
- * to the global layer on read.
- */
 function emptyPatch(): Partial<ContextSummaryRules> {
   return {
     enabled: undefined,

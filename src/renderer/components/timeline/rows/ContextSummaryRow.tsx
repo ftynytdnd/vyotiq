@@ -4,10 +4,10 @@
 
 import { Sparkles, Undo2 } from 'lucide-react';
 import {
-  chromeBadgeClassName,
-  chromeRowActionClassName
+  chromeBadgeClassName
 } from '../../ui/SurfaceShell.js';
 import { cn } from '../../../lib/cn.js';
+import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/shellIcons.js';
 import { shimmerText } from '../../../lib/shimmer.js';
 import type { ContextSummaryAcc } from '../reducer/types.js';
 import { useChatStore } from '../../../store/useChatStore.js';
@@ -15,7 +15,6 @@ import { useContextSummaryStore } from '../../../store/useContextSummaryStore.js
 import { useSecondaryZoneStore } from '../../../store/useSecondaryZoneStore.js';
 import { DetailShell } from '../shared/DetailShell.js';
 import { StreamingMarkdownBody } from '../markdown/StreamingMarkdownBody.js';
-import { MarkdownBody } from '../markdown/MarkdownBody.js';
 import { TimelineRowHeader } from '../shared/TimelineRowHeader.js';
 import { useTimelineRowExpand } from '../shared/useTimelineRowExpand.js';
 import { timelineActionPillClassName, timelineLogRowClassName, timelinePhaseHeadingClassName } from '../shared/rowStyles.js';
@@ -109,94 +108,87 @@ export function ContextSummaryRow({ summaryId, live = false }: ContextSummaryRow
 
   return (
     <div
-      className={cn('vyotiq-stepfade-once flex flex-col gap-1', timelineLogRowClassName)}
+      className={cn('vyotiq-stepfade-once flex flex-col gap-0', timelineLogRowClassName)}
       data-row-kind="context-summary"
     >
       <TimelineRowHeader
         expanded={expanded}
         onToggle={onToggleExpand}
         expandable={canExpand}
+        expandAriaLabel={
+          canExpand
+            ? expanded
+              ? 'Collapse context summary'
+              : 'Expand context summary'
+            : undefined
+        }
         rowAnchorKey={rowKey}
       >
         {headlineNode}
+        {acc.undone && (
+          <span className={cn(chromeBadgeClassName, 'ml-1 shrink-0 px-1')}>Undone</span>
+        )}
       </TimelineRowHeader>
-      <div className="flex flex-wrap items-center gap-1.5 pl-6">
-        {acc.undone && <span className={cn(chromeBadgeClassName, 'px-1')}>Undone</span>}
-        {acc.status === 'ended' && typeof acc.afterTokens === 'number' && (
-          <span className="font-mono text-meta text-text-faint">
-            {acc.beforeTokens.toLocaleString()} → {acc.afterTokens.toLocaleString()} tok
-          </span>
-        )}
-        {showInspectButton && (
-          <button
-            type="button"
-            onClick={onOpenInspector}
-            title="Open context inspector for this conversation"
-            className={cn(chromeRowActionClassName, timelineActionPillClassName)}
-          >
-            Inspect
-          </button>
-        )}
-        {showUndoButton && (
-          <button
-            type="button"
-            onClick={() => {
-              const targetId = runId ?? conversationId ?? undefined;
-              void undo(summaryId, targetId);
-            }}
-            disabled={busy}
-            title="Restore the messages this summary replaced. Only valid until the next user prompt."
-            className={cn(
-              chromeRowActionClassName,
-              timelineActionPillClassName,
-              'ml-auto',
-              busy && 'opacity-50'
+      {expanded && (
+        <>
+          <div className="flex flex-wrap items-center gap-1 pl-5">
+            {acc.status === 'ended' && typeof acc.afterTokens === 'number' && (
+              <span className="font-mono vx-caption">
+                {acc.beforeTokens.toLocaleString()} → {acc.afterTokens.toLocaleString()} tok
+              </span>
             )}
-          >
-            <Undo2 className="h-3 w-3" strokeWidth={2} />
-            Undo
-          </button>
-        )}
-      </div>
+            {showInspectButton && (
+              <button
+                type="button"
+                onClick={onOpenInspector}
+                title="Open context inspector for this conversation"
+                className={timelineActionPillClassName}
+              >
+                Inspect
+              </button>
+            )}
+            {showUndoButton && (
+              <button
+                type="button"
+                onClick={() => {
+                  const targetId = runId ?? conversationId ?? undefined;
+                  void undo(summaryId, targetId);
+                }}
+                disabled={busy}
+                title="Restore the messages this summary replaced. Only valid until the next user prompt."
+                className={cn(
+                  timelineActionPillClassName,
+                  'ml-auto',
+                  busy && 'opacity-50'
+                )}
+              >
+                <Undo2 className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+                Undo
+              </button>
+            )}
+          </div>
 
-      {acc.status === 'streaming' && acc.reasoningText.length > 0 && (
-        <div className="flex items-start gap-1 pl-6 text-meta italic text-text-faint">
-          <Sparkles className="mt-[3px] h-2.5 w-2.5 shrink-0" strokeWidth={2} />
-          <span className="line-clamp-2">{acc.reasoningText}</span>
-        </div>
-      )}
-      {previewBody.length > 0 && !expanded && (
-        <div className="relative pl-6">
-          <div className="max-h-[3.6rem] overflow-hidden">
-            {isStreamingSummary ? (
-              <StreamingMarkdownBody
-                text={previewBody}
-                done={false}
-                className="text-row text-text-muted"
-              />
-            ) : (
-              <MarkdownBody text={previewBody} className="text-row text-text-muted" />
-            )}
-          </div>
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-4 bg-gradient-to-t from-surface-base via-surface-base/60 to-transparent"
-          />
-        </div>
-      )}
-      {expanded && previewBody.length > 0 && (
-        <DetailShell variant="nested">
-          <div className="max-h-[480px] overflow-y-auto">
-            <StreamingMarkdownBody
-              text={previewBody}
-              done={acc.status === 'ended'}
-              className="text-row text-text-secondary"
-            />
-          </div>
-        </DetailShell>
-      )}
-      {acc.status === 'aborted' && acc.reason && (
-        <div className="pl-6 text-meta text-danger-strong">{acc.reason}</div>
+          {acc.status === 'streaming' && acc.reasoningText.length > 0 && (
+            <div className="flex items-start gap-1 pl-2 vx-caption italic">
+              <Sparkles className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+              <span className="line-clamp-2">{acc.reasoningText}</span>
+            </div>
+          )}
+          {previewBody.length > 0 && (
+            <DetailShell variant="nested">
+              <div className="max-h-[360px] overflow-y-auto">
+                <StreamingMarkdownBody
+                  text={previewBody}
+                  done={acc.status === 'ended'}
+                  className="text-row text-text-secondary"
+                />
+              </div>
+            </DetailShell>
+          )}
+          {acc.status === 'aborted' && acc.reason && (
+            <div className="pl-6 text-meta text-danger-strong">{acc.reason}</div>
+          )}
+        </>
       )}
     </div>
   );

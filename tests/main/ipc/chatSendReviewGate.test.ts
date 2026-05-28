@@ -1,5 +1,5 @@
 /**
- * `chat:send` review gate — fail closed when session read fails (F-IPC-001).
+ * `chat:send` review request_changes gate.
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -67,22 +67,23 @@ vi.mock('@main/workspace/workspaceState.js', () => ({
   }))
 }));
 
-vi.mock('@main/settings/settingsStore.js', () => ({
-  getSettings: vi.fn(async () => ({
-    ui: { gatePromptOnReviewRequestChangesByWorkspace: { 'ws-test': true } }
-  }))
-}));
-
 vi.mock('@main/checkpoints/index.js', () => ({
   listPending: vi.fn(async () => []),
-  acceptAll: vi.fn(async () => undefined)
+  acceptAll: vi.fn(async () => 0)
 }));
 
-const getReviewSession = vi.fn();
+const reviewSessionBlocksSend = vi.fn(async () => false);
 
 vi.mock('@main/checkpoints/reviewSessions.js', () => ({
-  getReviewSession: (...args: unknown[]) => getReviewSession(...args),
-  reviewSessionBlocksSend: vi.fn(() => false)
+  reviewSessionBlocksSend: (...args: unknown[]) => reviewSessionBlocksSend(...args)
+}));
+
+const getSettings = vi.fn(async () => ({
+  ui: { gatePromptOnReviewRequestChangesByWorkspace: { 'ws-test': true } }
+}));
+
+vi.mock('@main/settings/settingsStore.js', () => ({
+  getSettings: (...args: unknown[]) => getSettings(...args)
 }));
 
 const { registerChatIpc } = await import('@main/ipc/chat.ipc');
@@ -91,6 +92,10 @@ const { startRun } = await import('@main/orchestrator/AgentV');
 beforeEach(() => {
   vi.clearAllMocks();
   mockIpc.__handlers.clear();
+  getSettings.mockResolvedValue({
+    ui: { gatePromptOnReviewRequestChangesByWorkspace: { 'ws-test': true } }
+  });
+  reviewSessionBlocksSend.mockResolvedValue(false);
   registerChatIpc();
 });
 
@@ -103,9 +108,22 @@ const baseInput: ChatSendInput = {
   workspaceId: 'ws-test'
 };
 
-describe('chat:send review gate', () => {
-  it('blocks send when gate is on and getReviewSession throws', async () => {
-    getReviewSession.mockRejectedValueOnce(new Error('disk read failed'));
+describe('chat:send review request_changes gate', () => {
+  it('blocks send when gate is on and session has request_changes', async () => {
+    reviewSessionBlocksSend.mockResolvedValueOnce(true);
+
+    const reply = await mockIpc.__invoke(IPC.CHAT_SEND, baseInput);
+
+    expect(reply).toEqual({
+      ok: false,
+      kind: 'review-request-changes',
+      conversationId: 'conv-known'
+    });
+    expect(startRun).not.toHaveBeenCalled();
+  });
+
+  it('blocks send when gate is on and reviewSessionBlocksSend throws', async () => {
+    reviewSessionBlocksSend.mockRejectedValueOnce(new Error('reviews unreadable'));
 
     const reply = await mockIpc.__invoke(IPC.CHAT_SEND, baseInput);
 
@@ -115,5 +133,18 @@ describe('chat:send review gate', () => {
       conversationId: 'conv-known'
     });
     expect(startRun).not.toHaveBeenCalled();
+  });
+
+  it('allows send when gate is off even if session would block', async () => {
+    getSettings.mockResolvedValueOnce({
+      ui: { gatePromptOnReviewRequestChangesByWorkspace: { 'ws-test': false } }
+    });
+    reviewSessionBlocksSend.mockResolvedValueOnce(true);
+
+    const reply = await mockIpc.__invoke(IPC.CHAT_SEND, baseInput);
+
+    expect(reply).toEqual({ ok: true, conversationId: 'conv-known' });
+    expect(reviewSessionBlocksSend).not.toHaveBeenCalled();
+    expect(startRun).toHaveBeenCalled();
   });
 });

@@ -30,7 +30,6 @@ import {
 } from './paths.js';
 import { clearWorkspace as clearPending } from './pendingChanges.js';
 import { forgetEntriesForRun, forgetEntriesForWorkspace } from './index.js';
-import { pruneOrphanedReviewSessions } from './reviewSessions.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child('checkpoints/gc');
@@ -127,13 +126,11 @@ export async function pruneOlderThan(
   }
   const keep = await collectReferencedHashes(workspaceId);
   const removedBlobs = await sweepBlobs(workspaceId, keep);
-  const removedReviews = await pruneOrphanedReviewSessions(workspaceId);
   log.info('prune complete', {
     workspaceId,
     cutoffMs,
     removedRuns: doomedRuns.size,
-    removedBlobs,
-    removedReviews
+    removedBlobs
   });
   return { removedRuns: doomedRuns.size, removedBlobs };
 }

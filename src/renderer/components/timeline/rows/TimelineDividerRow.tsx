@@ -39,7 +39,7 @@ interface TimelineDividerRowProps {
 
 const VARIANT_WRAP: Record<TimelineDividerVariant, string> = {
   phase: 'py-1',
-  'run-complete': 'py-2'
+  'run-complete': 'vx-timeline-divider-run-complete'
 };
 
 export function TimelineDividerRow({
@@ -53,8 +53,8 @@ export function TimelineDividerRow({
     <div className={cn('flex items-center justify-center', wrap)}>
       <span
         className={cn(
-          'text-row',
-          goldHeadline ? timelinePhaseHeadingClassName() : 'text-text-muted',
+          'vx-timeline-divider',
+          goldHeadline ? timelinePhaseHeadingClassName() : 'vx-caption',
           tooltip && 'cursor-help'
         )}
         {...(tooltip ? { title: tooltip } : {})}

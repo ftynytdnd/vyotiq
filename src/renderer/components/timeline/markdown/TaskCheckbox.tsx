@@ -12,11 +12,10 @@ export function TaskCheckbox({ checked }: { checked: boolean }) {
       role="img"
       aria-label={checked ? 'Completed' : 'Not completed'}
       className={cn(
-        'mr-1.5 inline-flex h-3.5 w-3.5 shrink-0 -translate-y-px items-center justify-center',
-        'rounded-line border align-text-bottom',
+        'mr-1.5 inline-flex h-3.5 w-3.5 shrink-0 -translate-y-px items-center justify-center rounded-[3px] border align-text-bottom',
         checked
           ? 'border-success/60 bg-success/15 text-success'
-          : 'border-border-strong/60 bg-surface-overlay/40 text-transparent'
+          : 'border-border-subtle/35 bg-surface-overlay/20 text-transparent'
       )}
     >
       <Check className="h-2.5 w-2.5" strokeWidth={3} aria-hidden />

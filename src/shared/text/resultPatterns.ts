@@ -10,14 +10,50 @@
  * call sites import from here.
  */
 
+import { stripFencedCode } from './strip.js';
+
 export type ResultStatus = 'success' | 'partial' | 'failed';
 
 /** Outer `<result>…</result>` block. */
 export const RESULT_RE = /<result\b[^>]*>([\s\S]*?)<\/result>/i;
 /** Inner `<status>success|partial|failed</status>`. Case-insensitive. */
-export const STATUS_RE = /<status>\s*(success|partial|failed)\s*<\/status>/i;
+export const STATUS_RE =
+  /<status>\s*(success|partial|failed|complete|completed|ok|done|failure|fail|error)\s*<\/status>/i;
 /** Inner `<summary>…</summary>`. */
 export const SUMMARY_RE = /<summary>([\s\S]*?)<\/summary>/i;
+
+const STATUS_SYNONYMS: Record<string, ResultStatus> = {
+  success: 'success',
+  complete: 'success',
+  completed: 'success',
+  ok: 'success',
+  done: 'success',
+  partial: 'partial',
+  failed: 'failed',
+  failure: 'failed',
+  fail: 'failed',
+  error: 'failed'
+};
+
+function normalizeStatusToken(raw: string): ResultStatus | null {
+  const key = raw.trim().toLowerCase();
+  return STATUS_SYNONYMS[key] ?? null;
+}
+
+/**
+ * Last `<result>…</result>` in text (fenced code stripped). Prefer the
+ * final envelope when the model narrates before/after the structured block.
+ */
+function findLastResultMatch(text: string): RegExpExecArray | null {
+  const scanText = stripFencedCode(text);
+  const re = new RegExp(RESULT_RE.source, RESULT_RE.flags + 'g');
+  let last: RegExpExecArray | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(scanText)) !== null) {
+    last = m;
+  }
+  return last;
+}
 
 /**
  * Pulls the status out of a sub-agent's free text. `'malformed'` is the
@@ -27,9 +63,8 @@ export const SUMMARY_RE = /<summary>([\s\S]*?)<\/summary>/i;
 export function inferResultStatus(text: string): ResultStatus | 'malformed' {
   const m = STATUS_RE.exec(text);
   if (!m) return 'malformed';
-  const s = (m[1] ?? '').toLowerCase();
-  if (s === 'success' || s === 'partial' || s === 'failed') return s;
-  return 'malformed';
+  const normalized = normalizeStatusToken(m[1] ?? '');
+  return normalized ?? 'malformed';
 }
 
 export interface ParsedResultEnvelope {
@@ -61,17 +96,13 @@ export interface ParsedResultEnvelope {
  * the harness mandated it).
  */
 export function parseResultEnvelope(text: string): ParsedResultEnvelope {
-  const m = RESULT_RE.exec(text);
+  const m = findLastResultMatch(text);
   if (!m) {
     return { found: false, inner: '', status: null, summary: '' };
   }
   const inner = (m[1] ?? '').trim();
   const statusRaw = STATUS_RE.exec(inner)?.[1];
-  const statusNorm = statusRaw ? statusRaw.toLowerCase() : null;
-  const status: ResultStatus | null =
-    statusNorm === 'success' || statusNorm === 'partial' || statusNorm === 'failed'
-      ? statusNorm
-      : null;
+  const status = statusRaw ? normalizeStatusToken(statusRaw) : null;
   const summary = (SUMMARY_RE.exec(inner)?.[1] ?? '').trim();
   return { found: true, inner, status, summary };
 }

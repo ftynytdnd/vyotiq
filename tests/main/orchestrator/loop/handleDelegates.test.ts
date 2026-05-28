@@ -21,6 +21,9 @@
  * and never fetches.
  */
 
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { ChatMessage, TimelineEvent } from '@shared/types/chat';
 import { MAX_DELEGATION_BAD_ROUNDS } from '@shared/constants';
@@ -862,6 +865,7 @@ describe('handleDelegates — malformed, read-shard warn, host verification', ()
         task: 'Create src/new.ts',
         output: '<result><status>success</status><summary>created</summary></result>',
         toolResults: [],
+        inlinedFileCount: 1,
         status: 'success'
       }
     ]);
@@ -879,6 +883,45 @@ describe('handleDelegates — malformed, read-shard warn, host verification', ()
     const body = messages[0]?.content ?? '';
     expect(body).toContain('<host_verification>');
     expect(body).toContain('src/new.ts');
+  });
+});
+
+describe('handleDelegates — P2b no-tool-use-with-files', () => {
+  it('marks structural malformed when files assigned but no tools and no inlines', async () => {
+    const workspacePath = await mkdtemp(join(tmpdir(), 'vyotiq-p2b-'));
+    await writeFile(join(workspacePath, 'foo.ts'), 'export const x = 1;\n', 'utf8');
+
+    vi.mocked(runSubAgentPool).mockResolvedValueOnce([
+      {
+        id: 'A1',
+        task: 'Read src/foo.ts and summarize.',
+        output:
+          '<result><status>success</status><summary>Hallucinated summary.</summary></result>',
+        toolResults: [],
+        inlinedFileCount: 0,
+        status: 'success'
+      }
+    ]);
+
+    const messages: ChatMessage[] = [];
+    const counters: DelegationCounters = {
+      consecutiveBadRounds: 0,
+      perTaskBadStreak: new Map()
+    };
+
+    const outcome = await handleDelegates(
+      [{ id: 'A1', task: 'Read foo.ts', files: ['foo.ts'], tools: ['read'] }],
+      messages,
+      counters,
+      () => undefined,
+      { ...baseOpts, workspacePath }
+    );
+
+    expect(outcome).toBe('continue');
+    const body = messages[0]?.content ?? '';
+    expect(body).toContain('malformed="true"');
+    expect(body).toContain('reason="no-tool-use-with-files"');
+    expect(counters.consecutiveBadRounds).toBe(1);
   });
 });
 

@@ -13,7 +13,8 @@ import {
   moveConversationToWorkspace,
   readConversation,
   removeConversation,
-  renameConversation
+  renameConversation,
+  setConversationArchived
 } from '../conversations/conversationStore.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 // Audit fix 2026-06-P2-1 — id-and-title shape gates for the
@@ -64,6 +65,20 @@ export function registerConversationsIpc(): void {
   // Drag-between-workspaces. The store throws on unknown id / unknown
   // target workspace; the wrap layer surfaces the error to the renderer
   // so the sidebar can show a toast instead of silently swallowing it.
+  wrapIpcHandler(
+    IPC.CONVERSATIONS_ARCHIVE,
+    async (_e, id: string) => {
+      assertString('conversations:archive', 'id', id);
+      return setConversationArchived(id, true);
+    }
+  );
+  wrapIpcHandler(
+    IPC.CONVERSATIONS_UNARCHIVE,
+    async (_e, id: string) => {
+      assertString('conversations:unarchive', 'id', id);
+      return setConversationArchived(id, false);
+    }
+  );
   wrapIpcHandler(
     IPC.CONVERSATIONS_MOVE,
     async (_e, id: string, targetWorkspaceId: string) => {

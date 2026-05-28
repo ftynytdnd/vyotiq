@@ -7,9 +7,8 @@
  * list itself — each row is a compact `SurfaceShell` from `MessageRow`.
  */
 
-import { Eyebrow } from '../ui/Eyebrow.js';
 import { cn } from '../../lib/cn.js';
-import { surfaceListClassName } from '../ui/SurfaceShell.js';
+import { chromeListEmptyClassName, surfaceListClassName } from '../ui/SurfaceShell.js';
 import { MessageRow } from './MessageRow.js';
 import type { ContextInspectorMessage } from '@shared/types/contextSummary.js';
 
@@ -21,26 +20,24 @@ interface MessageListProps {
 export function MessageList({ messages, conversationId }: MessageListProps) {
   if (messages.length === 0) {
     return (
-      <div className="text-row text-text-muted">
-        The orchestrator hasn't accumulated any messages yet.
+      <div className={chromeListEmptyClassName}>
+        The orchestrator hasn&apos;t accumulated any messages yet.
       </div>
     );
   }
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between gap-2">
-        <Eyebrow as="span" bold>
-          Messages
-        </Eyebrow>
-        <span className="text-meta text-text-faint">
+    <section className="vx-section">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="vx-section-head mb-0">Messages</h3>
+        <span className="vx-caption">
           {messages.length} {messages.length === 1 ? 'entry' : 'entries'}
         </span>
       </div>
-      <ul className={cn('scrollbar-stealth flex max-h-[32vh] flex-col overflow-y-auto pr-1', surfaceListClassName)}>
+      <ul className={cn('scrollbar-stealth flex max-h-[min(45vh,28rem)] flex-col overflow-y-auto pr-1', surfaceListClassName)}>
         {messages.map((m) => (
           <MessageRow key={m.messageId} message={m} conversationId={conversationId} />
         ))}
       </ul>
-    </div>
+    </section>
   );
 }

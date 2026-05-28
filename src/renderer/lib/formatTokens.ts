@@ -23,6 +23,12 @@ export function formatTokenCount(n: number): string {
   return String(Math.round(n));
 }
 
+/** Same as {@link formatTokenCount} with an optional unit suffix (`tok`). */
+export function formatTokenCountWithUnit(n: number, unit = 'tok'): string {
+  const core = formatTokenCount(n);
+  return core === '—' ? core : `${core} ${unit}`;
+}
+
 /**
  * Parse a human-entered string into a token count. Accepts raw ints
  * (`128000`), `k` suffix (`128k`, `1.5k`), `m` suffix (`1m`, `1.5M`),

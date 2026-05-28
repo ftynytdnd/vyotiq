@@ -1,0 +1,435 @@
+## Audit complete (Phases 0–4 + integration)
+
+Phases 0–4 of the systematic Vyotiq audit are complete on the working tree (no commits). Phase 0 covered provider/render hot paths, checkpoint auto-accept telemetry, delegate/result parsing, and bash process-tree kill. Phase 1 hardened orchestrator/harness/replay (runLoop seed, sub-agent recovery/pool, junction realpath, harness boot guard, replay dedupe). Phase 2 extended tools/providers/IPC (bash scan, edit encoding, sandbox patterns, tombstone caps, model discovery dedupe, renderer token heuristic). Phase 3 batched renderer store subscriptions and memoized streaming UI. Phase 4 cleared knip to zero issues. Post-audit integration (below) re-ran full gates and fixed the `indexQuarantine` Vitest timeout flake. Deferred: `runLoop.ts` module extraction until snapshot fixtures exist.
+
+---
+
+Phase 0 systematic audit — Vyotiq (working tree only, no git commits)
+Date: 2026-05-28
+
+## Files changed
+- src/renderer/App.tsx
+- src/renderer/main.tsx
+- src/renderer/lib/retryDynamicImport.ts (new)
+- src/renderer/store/useProviderStore.ts
+- src/renderer/components/composer/modelPicker/ModelRow.tsx
+- src/main/providers/providerError.ts
+- src/main/orchestrator/loop/runLoop.ts
+- src/main/orchestrator/SubAgent.ts
+- src/main/orchestrator/loop/handleToolCalls.ts
+- src/main/harness/harnessLoader.ts
+- src/main/ipc/chat.ipc.ts
+- src/main/tools/bash.tool.ts
+- src/shared/text/parseDelegates.ts
+- src/shared/text/resultPatterns.ts
+- tests/renderer/composer/ModelPickerPanel.render.test.tsx (new)
+- tests/renderer/conversations/appActiveMirror.test.ts (new)
+- tests/main/tools/bashProcessTreeKill.test.ts (new)
+- tests/main/orchestrator/loop/runLoop.providerError.test.ts
+- tests/shared/text/compoundDelegateTask.test.ts
+- tests/main/orchestrator/parseDelegates.test.ts
+- tests/main/orchestrator/resultPatterns.test.ts
+- tests/main/providers/providerError.test.ts
+
+## Tests added
+- tests/renderer/composer/ModelPickerPanel.render.test.tsx — bounded ModelRow re-renders on discover
+- tests/renderer/conversations/appActiveMirror.test.ts — hydrated active select short-circuit
+- tests/main/tools/bashProcessTreeKill.test.ts — Windows taskkill / Unix process-group kill
+- Updated: runLoop.providerError, compoundDelegateTask, parseDelegates, resultPatterns, providerError
+
+## Verification
+- npm run typecheck: PASS
+- npm test: 2174 passed, 1 failed (pre-existing flake: tests/main/conversations/indexQuarantine.test.ts timeout — unrelated to Phase 0)
+- Targeted Phase 0 tests (7 files, 61 tests): PASS
+
+---
+
+### 0.1 ModelRow / ModelPickerPanel infinite re-render
+- Added `selectProviderDiscoverKey()`; App discover effect depends on id+enabled only (not `lastDiscoveredAt`).
+- Memoized `ModelRow` and `ContextWindowEditor` with `useShallow` for context-window slice.
+- Test: ModelPickerPanel.render.test.tsx
+
+### 0.2 Stale dynamic import after rebuild
+- New `retryDynamicImport.ts`; wrapped lazy imports in App.tsx.
+- Debounced `vite:preloadError` → single reload in main.tsx.
+
+### 0.3 Provider-error retry policy
+- `isNonRecoverableProviderError()` for billing, auth, model-not-found, endpoint-missing.
+- runLoop + SubAgent terminate immediately (no retry).
+- Test: 402 billing → 1 attempt, no retry thought.
+
+### 0.4 Stale-read race on conversation switch
+- Split App.tsx sync into workspace-switch vs list-validation effects.
+- Skip `select()` when mirror already active+hydrated.
+- Test: appActiveMirror.test.ts (select short-circuit).
+
+### 0.5 Auto-accept pending checkpoints
+- Confirmed `approveAutoAcceptPending` default true in chat.ipc.ts.
+- On auto-accept: list pending first, log paths, emit `phase` timeline event with count + first-5 paths; forward to renderer via CHAT_EVENT.
+
+### 0.6 Sub-agent missing-envelope
+- Repeat `<result>` template at end of subagent static body (harnessLoader).
+- Recovery user message prefixed with prior turn excerpt (2000 chars).
+
+### 0.7 Compound-delegate rejection
+- Timeline copy: "Skipped … compound" (not "Rewrote").
+- In-band user message for rejected compound ids.
+- Heuristic tightened: ≥3 bullets or ≥3 semicolon clauses (≥12 chars each).
+- Tests updated for false-positive shapes.
+
+### 0.8 Allowlist refusal UX
+- Orchestrator refusal suggests concrete `<delegate … />` from tool-call args when parseable.
+
+### 0.9 Status regex synonyms
+- STATUS_RE + normalize: complete/ok/done → success; fail/error → failed.
+- Tests for synonym mapping.
+
+### 0.10 RESULT_RE last occurrence
+- `findLastResultMatch()` after `stripFencedCode`; parseResultEnvelope uses last block.
+- Regression tests for multiple blocks and fenced-code guard.
+
+### 0.11 runLoop.ts extraction
+- DEFERRED to Phase 1 (maintenance refactor per plan).
+
+### 0.12 snapshotBroadcastTimer leak
+- Already cleared in runLoop `finally` (confirmed present); no code change required.
+
+### 0.13 Bash process tree kill
+- `killBashProcessTree()`: Unix detached spawn + `kill(-pid)`; Windows `taskkill /T [/F]`.
+- KILL_GRACE_MS = 3000.
+- BASH_MAX_TIMEOUT_MS cap: already applied via `Math.min(requested, BASH_MAX_TIMEOUT_MS)` — no change.
+- Test: bashProcessTreeKill.test.ts
+
+### 0.14 (withdrawn)
+- Skipped per plan.
+
+## Deferred / notes
+- Phase 0.11 runLoop extraction → Phase 1.
+- Full `npm test` suite: one unrelated flaky timeout in indexQuarantine.test.ts on this run.
+- No new instrumentation-only items left pending.
+
+---
+
+Phase 1 systematic audit — Vyotiq (working tree only, no git commits)
+Date: 2026-05-28
+
+## Files changed
+- src/main/orchestrator/loop/runLoop.ts
+- src/main/orchestrator/loop/handleDelegates.ts
+- src/main/orchestrator/SubAgent.ts
+- src/main/orchestrator/SubAgentPool.ts
+- src/main/orchestrator/replay/replayTranscript.ts
+- src/main/harness/harnessLoader.ts
+- tests/main/orchestrator/SubAgent.test.ts
+- tests/main/orchestrator/SubAgentPool.test.ts (new)
+- tests/main/orchestrator/classifyFiles.test.ts
+- tests/main/orchestrator/replay/replayTranscript.test.ts
+- tests/main/harness/assertHarnessBoot.test.ts
+
+## Tests added / updated
+- SubAgent.test.ts — prior-turn excerpt in recovery prompt; final-iteration phase (no recovery)
+- SubAgentPool.test.ts — concurrency cap ≤ MAX_PARALLEL_SUBAGENTS (8); abort skips queued workers
+- classifyFiles.test.ts — symlink/junction absolute-path regression (skips on EPERM)
+- replayTranscript.test.ts — duplicate settled tool-call/tool-result not re-emitted
+- assertHarnessBoot.test.ts — bundled markdown non-empty guard
+
+## Verification
+- npm run typecheck: PASS
+- Phase 1 targeted tests (5 files, 40 tests): PASS
+- npm test: 2181 passed, 1 failed (pre-existing flake: indexQuarantine.test.ts timeout)
+
+## Per-item summary
+
+### 1. runLoop.ts system message seed (763–767)
+- Verified `buildInitialMessages` always returns `messages[0]` as `{ role: 'system', content: '' }`.
+- Removed dead `unshift` branch; loop now always refreshes `messages[0]` in place.
+
+### 2. SubAgent.ts missing-envelope recovery (810–843)
+- Phase 0 recovery excerpt confirmed present (`priorSnippet` / `priorBlock`).
+- Added test: recovery user message includes prior turn excerpt.
+
+### 3. SubAgent.ts last-iteration recovery (336–344)
+- Documented via `phase` timeline event when malformed on final iteration (`iter >= SUBAGENT_MAX_ITERATIONS - 1`): recovery cannot run by design.
+- Test: 14-iteration path emits that phase label.
+
+### 4. SubAgentPool.ts concurrency + abort
+- Verified cap uses `MAX_PARALLEL_SUBAGENTS` (8) from `@shared/constants.ts`.
+- Added `deps.signal.aborted` check at top of worker loop so queued workers respect abort.
+- Tests: max in-flight ≤ 8; concurrency=1 abort leaves only first spec started.
+
+### 5. handleDelegates.ts junction realpath (24–25 / classifyFiles)
+- `classifyFiles` now `realpath`s candidate `abs` before `relative` + `access` (fixes false `missing` when workspace is symlinked/junctioned but delegate path uses link spelling).
+- Test: symlinked workspace (skips on EPERM without privilege).
+
+### 6. harnessLoader.ts boot failure
+- `assertHarnessMarkdownPresent()` validates all six bundled `*.md` `?raw` bodies non-empty before prompt assembly.
+- Called from `assertHarnessBoot()` (main `index.ts` already invokes at bootstrap).
+
+### 7. replay/ settled rows
+- `replayTranscript` skips duplicate `tool-call` / `tool-result` when call id already paired (settled).
+- Regression test added.
+
+### 8. runLoop extraction (Phase 0.11 deferred)
+- DEFERRED: `runLoop.ts` ~1.7k lines; extracting `iterationStep` / `iterationErrorPath` / `iterationDelegatePath` without snapshot fixtures risks behavior drift. No extraction in this phase.
+
+## Verified CLEAN (unchanged)
+- diffWorkerPool dispose, diffStreamer dispose, contextManager envelope cache + inlineFiles abort, streamInactivity watchdog, providerRateGuard, chat-stream abort/ProviderError pattern, runLoop abort listener (267–273), runLoop onConnect (854–868), SubAgent attempt reset (619).
+
+## Deferred / knip
+- Phase 2–4 not started.
+- runLoop module extraction remains deferred to a future pass with snapshot fixtures.
+- Knip: no new public exports; `classifyFiles` / `assertHarnessBoot` already exported. Expect no material knip delta beyond existing orchestrator/harness surface.
+
+---
+
+Phase 2 systematic audit — Vyotiq (working tree only, no git commits)
+Date: 2026-05-28
+
+## Files changed
+- src/shared/constants.ts
+- src/main/tools/bash.tool.ts
+- src/main/tools/sandbox.ts
+- src/main/tools/edit.tool.ts
+- src/main/tools/editFileEncoding.ts (new)
+- src/main/providers/modelDiscovery.ts
+- src/main/providers/tokenCounter.ts
+- src/main/ipc/chat.ipc.ts
+- src/shared/text/tokenizeForModel.ts
+- tests/main/tools/editEncoding.test.ts (new)
+- tests/main/providers/modelDiscovery.dedupe.test.ts (new)
+- tests/main/tools/sandbox.test.ts
+
+## Tests added / updated
+- editEncoding.test.ts — CRLF + UTF-8 BOM round-trip via `edit` tool
+- modelDiscovery.dedupe.test.ts — parallel `discoverModels` coalesces to one fetch
+- sandbox.test.ts — Windows destructive patterns (`rmdir /s /q`, `del /q /f /s`, `Format-Volume`, `Clear-Disk`, `Reset-Service`)
+
+## Verification
+- npm run typecheck: PASS
+- Phase 2 targeted tests (6 files, 121 tests): PASS
+
+## Per-item summary
+
+### 1. bash.tool.ts BASH_SCAN_IGNORE + huge tree
+- Extended ignore set: `target/release`, `vendor`, `.terraform`, `.cargo`, `.next/cache`, `.eslintcache`, `.docusaurus`, `.serverless`, `.aws-sam` (plus existing `.parcel-cache`, `.next`).
+- `BASH_SNAPSHOT_HUGE_TREE_FILES` (50k): when exceeded, skip pre-body capture (audit-only); clears bodies already captured.
+
+### 2. bash post-scan phase event
+- Emits `phase` label `Scanning workspace for mutations…` before post-bash mtime scan (when mutation heuristic applies).
+
+### 3. bash SECRET / credential env denylist
+- `CREDENTIAL_ENV_DENYLIST`: `STRIPE_*`, `AWS_*`, `GITHUB_*`, `DATABASE_URL`, `MONGO_URI`, `REDIS_URL`, `VYOTIQ_*` via `isDeniedBashEnvName` on allowlist forward.
+
+### 4. edit.tool.ts BOM + CRLF
+- New `editFileEncoding.ts`; modify path preserves UTF-8 BOM and CRLF on write; checkpoints store on-disk bytes.
+- Test: editEncoding.test.ts
+
+### 5. sandbox.ts Windows destructive patterns
+- Added: `rmdir /s /q`, `del /q /f /s`, `Format-Volume`, `Clear-Disk`, `Reset-Service`.
+
+### 6. chat.ipc.ts tombstone Sets
+- FIFO cap 10k via `addTombstone` for `tombstonedIds` and `tombstonedSummaryIds`.
+- Phase 0.5 auto-accept `phase` event confirmed present.
+
+### 7. modelDiscovery.ts TTL + dedupe
+- TTL via `lastDiscoveredAt` + `MODEL_DISCOVERY_TTL_MS` unchanged.
+- `discoverInFlight` Map dedupes concurrent `discoverModels` per providerId.
+- Test: modelDiscovery.dedupe.test.ts
+
+### 8. tokenCounter + TokenUsagePill / renderer bundle
+- `gpt-tokenizer` remains main-only (`tokenCounter.ts`).
+- `tokenizeForModel.ts` now chars/3.8 heuristic only — removed renderer `gpt-tokenizer` imports.
+- `TokenUsagePill` / `useComposerTokenEstimate` already IPC-only (unchanged).
+
+### 9. wrapIpcHandler / ipcMain.handle bypass
+- Grep: only `wrapIpcHandler.ts` calls `ipcMain.handle` — no bypass handlers.
+
+### 10. ipc/validate.ts + variants
+- Reviewed `chatValidate`, `attachments.ipc`, `tools.ipc`, `settingsValidate`, `contextSummaryValidate` — newer shapes covered; no gaps found requiring changes.
+
+## Verified CLEAN (unchanged)
+- providerRateGuard per-provider cooldowns
+- Four chat-stream providers abort + ProviderError pattern
+
+## Deferred / knip
+- Phase 3–4 not started.
+- Knip: new export `editFileEncoding` helpers are used by `edit.tool.ts` only (not dead). `fetchAndPersistModels` is module-private. Expect no material knip delta; run full knip separately if tracking unused exports repo-wide.
+
+---
+
+Phase 3 systematic audit — Renderer sweep (working tree only, no git commits)
+Date: 2026-05-28
+
+## Files changed
+- src/renderer/App.tsx
+- src/renderer/main.tsx
+- src/renderer/index.css
+- src/renderer/hooks/useGlobalShortcuts.ts
+- src/renderer/hooks/usePersistedPanelWidth.ts
+- src/renderer/store/useProviderStore.ts
+- src/renderer/components/ErrorBoundary.tsx
+- src/renderer/components/composer/Composer.tsx
+- src/renderer/components/composer/TokenUsagePill.tsx
+- src/renderer/components/composer/PermissionModePill.tsx
+- src/renderer/components/composer/ComposerStatusStrip.tsx
+- src/renderer/components/composer/modelPicker/ModelPickerPanel.tsx
+- tests/renderer/hooks/useGlobalShortcuts.test.tsx
+
+## Per-item summary
+
+### 1. App.tsx re-render storm (52–91)
+- Batched multi-field picks with `useShallow` for provider, conversations, secondary zone, attachment preview, floating live diff, UI, and timeline UI stores.
+- Boot discover uses `selectEnabledProviderIds()` instead of per-render `getState().providers.filter().map()`.
+
+### 2. App.tsx discover deps (299–322)
+- `enabledProviderIds` from store selector; discover effect deps are the id array (shallow-stable when membership unchanged).
+
+### 3. App.tsx split effects (268–295)
+- Verified Phase 0.4 workspace-switch vs list-validation effects; no duplicate `select()` when mirror already active+hydrated.
+
+### 4. index.css dead dock rules
+- Removed unused `.vx-dock-edge` (knip-flagged `DOCK_EDGE_CLASS` / `DOCK_CHAT_METER_TRACK_CLASS` already absent from `dockShared.ts`).
+- **Manual CSS cull candidates** (knip exports, not auto-removed): `formatWallClock`, `shimmerPill`, `timelineSubAgentSubtitleClassName`, `timelineModelBadgeClassName`, `timelineJumpChipClassName`, `chromeEdgeClassName`, `appPanelBodyClassName`, `appPanelTitleClassName`, `chromeChipTrayClassName`, theme helpers in `theme.ts`, attachment sandbox exports — verify call sites before delete.
+
+### 5. Composer / TokenUsagePill streaming
+- `useChatStore` batched via `useShallow`; `tokenUsageSlot` wrapped in `useMemo`.
+- `TokenUsagePill` wrapped in `React.memo` (no hook extraction — marginal win vs refactor cost).
+
+### 6. ModelPickerPanel effects (122–145)
+- Replaced mount-only `eslint-disable` with `didSyncSelectionRef` + deps `[query, value, navOptions]`.
+
+### 7. timeline/ virtualization
+- No `react-virtuoso` in tree. `Timeline.tsx` maps derived `turnSegments` (not raw events); scroll coalescing via rAF. No change — acceptable unless profiling shows turn-count bottlenecks.
+
+### 8. store/ spot-check
+- Stable `EMPTY_*` refs present (`useSettingsStore`, `useCheckpointsStore`, chat mirror). `getState()` in `App.tsx` effects is intentional for sync short-circuit (not render). Subscribe cleanup: checkpoints `initOnce`, chat channel elsewhere.
+
+### 9. useGlobalShortcuts keyup cleanup
+- Paired `keyup` listener; both removed on unmount. Test added.
+
+### 10. usePersistedPanelWidth debounce
+- 200 ms debounced IPC writes (module timer); flush on hook unmount.
+
+### 11. ErrorBoundary React 19 fallback
+- `componentDidCatch` logs `info.componentStack` with digest / `error.stack` fallback.
+
+### 12. main.tsx boundary + Suspense
+- `ErrorBoundary` → `Suspense` → `App` (lazy children inside App unchanged).
+
+### 13. PermissionModePill / ComposerStatusStrip memo
+- Both `memo` + `useShallow` for settings/chat picks during streaming.
+
+## Verification
+- npm run typecheck: PASS
+- Renderer-focused tests (5 files, 20 tests): PASS
+  - useGlobalShortcuts, ModelPickerPanel.render, appActiveMirror, ComposerFooter, DockChatStrip
+
+---
+
+Phase 4 systematic audit — Dead-code / unused-imports cleanup (working tree only, no git commits)
+Date: 2026-05-28
+
+## Files changed
+- src/renderer/store/useProviderStore.ts — removed dead `selectProviderDiscoverKey` (superseded by `selectEnabledProviderIds` in Phase 3)
+- src/shared/text/resultPatterns.ts — `findLastResultMatch` module-private (still used by `parseResultEnvelope`)
+- knip.json — ignore `@fontsource-variable/geist` + `geist-mono` (CSS `@import` in `index.css`, not TS entry)
+- knip-report.json — snapshot updated to `{"issues":[]}`
+
+## Knip before / after
+- **Before (compact):** 1 unused-deps group (font packages, false positive), 2 unused exports (`selectProviderDiscoverKey`, `findLastResultMatch`)
+- **After (compact):** clean (exit 0, no issues)
+- **Baseline `knip-report.json` (pre-Phase 4):** 17 issue rows (fonts, dock/timeline/SurfaceShell/theme/attachment exports, types) — most already removed in Phases 0–3; remaining delta was the two exports above + font ignore
+
+## Unused deps
+- **Kept** `@fontsource-variable/geist` and `@fontsource-variable/geist-mono` — used via `src/renderer/index.css` `@import`; added to `knip.json` `ignoreDependencies`
+
+## Unused exports removed / verified
+- `selectProviderDiscoverKey` — removed (App boot discover uses `selectEnabledProviderIds` only)
+- `findLastResultMatch` — unexported (tests cover via `parseResultEnvelope` only; per plan keep behavior)
+- Phase 3/earlier already cleared: `DOCK_EDGE_CLASS`, `DOCK_CHAT_METER_TRACK_CLASS`, `formatWallClock` export, `shimmerPill`, timeline `rowStyles` chip helpers, `SurfaceShell` chrome class exports — verified absent; knip no longer flags
+
+## Manual sweep
+- `noUnusedLocals` / `noUnusedParameters` — already enabled in `tsconfig.web.json` + `tsconfig.node.json`; `npm run typecheck` PASS (no temp toggle needed)
+- Zustand `useFooStore((s) => s.bar)` — spot-checked; no unused destructured slice fields found (TS would flag)
+- `// TODO` / `// FIXME` / `// XXX` in `src/main/orchestrator/loop/` — none
+- `// audit fix L-XX` in loop — none
+- **Deferred (Phase 3 CSS candidates):** index.css still documents `shimmerPill` in a comment only; no further CSS cull this phase
+
+## Verification
+- npm run typecheck: PASS (node + web)
+- npm run knip --reporter compact: PASS (0 issues)
+- npm test: 2190 passed, 1 failed (pre-existing flake: `tests/main/conversations/indexQuarantine.test.ts` timeout)
+
+---
+
+## Integration pass (post Phases 0–4)
+Date: 2026-05-28
+
+### Gate results
+| Gate | Result |
+|------|--------|
+| `npm run typecheck` | **PASS** (node + web) |
+| `npm run knip` | **PASS** (0 issues; configuration hints only) |
+| `npm test` | **PASS** — 327 files, 2193 tests |
+
+### Fixes made
+- **tests/main/conversations/indexQuarantine.test.ts** — `describe(..., { timeout: 15_000 })` for corrupt-index quarantine tests. Root cause: `freshStore()` calls `vi.resetModules()` then cold-imports `@main/conversations/conversationStore` (large dependency graph); default Vitest 5s limit was exceeded when the file ran in isolation or under suite load. Verified 5/5 isolated reruns + full suite green.
+
+### Files changed (integration only)
+- tests/main/conversations/indexQuarantine.test.ts
+- progress.txt (this section + audit summary)
+
+### Remaining deferred
+- `runLoop.ts` extraction (`iterationStep` / error / delegate paths) — blocked on snapshot fixtures (unchanged from Phases 0–1).
+- Phase 3 manual CSS cull candidates (comment-only / knip-cleared exports) — no further action this pass.
+- No new orchestrator `TODO`/`FIXME` markers found; `project.md` not updated.
+
+---
+
+## Manual smoke test checklist (user-run)
+
+Run after a clean `npm run dev` build. Check each item once; note regressions in a new issue.
+
+1. **Model picker** — Open composer model picker with 2+ enabled providers. Trigger background discover (wait ~30s or add a provider). Rows must not flicker/re-render for unrelated providers; selection and keyboard nav stay responsive.
+2. **Conversation switch** — Switch workspace tabs and dock chat slots. Hydrated conversation should appear without redundant loading flash; unhydrated slot shows loading (not blank onboarding). Rapid switches must not show the wrong transcript.
+3. **402 fail-fast** — Send a chat with a provider that returns HTTP 402 (billing). Run must stop after one attempt with a clear billing message; no retry/backoff loop in timeline thoughts.
+4. **Sub-agent envelope** — Delegate a small task. Sub-agent must return a parseable `<result>` block; on malformed final turn, timeline shows phase note (no infinite recovery on last iteration).
+5. **Auto-accept phase** — With auto-accept pending enabled, complete a run that leaves pending checkpoint edits. Timeline should show a `phase` event listing auto-accepted paths (count + sample paths).
+6. **Stale chunk reload** — After `npm run build` while dev is open, navigate lazy routes (settings, checkpoints). App should recover via debounced reload on `vite:preloadError` (at most one full reload, no infinite loop).
+
+---
+
+## Deferred follow-up (2026-05-28)
+
+### Phase 3 CSS cull candidates — verified, no removals
+- `formatWallClock` — module-private in `RunCompleteRow.tsx` (not exported); keep.
+- `shimmerPill` — TS helper removed in Phase 4; CSS `.vyotiq-shimmer-pill` still used by `DockWorkspaceTabs` / `LeftDock`; keep CSS.
+- Timeline row chip exports (`timelineSubAgentSubtitleClassName`, etc.) — already removed in Phase 4; `rowStyles.ts` remaining exports all referenced.
+- `theme.ts` helpers — all referenced (`App.tsx`, `main.tsx`, `AppearancePanel.tsx`); knip clean.
+- Attachment `sandbox.ts` — main-only, used by attachments IPC/resolve; not renderer exports.
+
+### SurfaceShell.tsx
+- `npm run knip`: clean. Spot-check: all public exports imported across composer, dock, timeline, checkpoints, settings.
+
+### App discover + modelDiscovery dedupe
+- App boot effect: sequential `discoverCached(id)` per `selectEnabledProviderIds()`; deps exclude `lastDiscoveredAt`.
+- Main: `discoverInFlight` coalesces parallel `discoverModels` per provider (`modelDiscovery.dedupe.test.ts`).
+- Added: `tests/renderer/store/selectEnabledProviderIds.test.ts` — stable id list when only discovery metadata changes.
+
+### runLoop extraction
+- **Still deferred.** No snapshot fixtures for `iterationStep` / `iterationErrorPath` / `iterationDelegatePath`; extracting ~1.7k-line `runLoop.ts` risks behavior drift. Revisit when loop snapshot tests exist.
+
+### Documentation
+- Smoke checklist appended above (manual user-run; not automated).
+
+---
+
+## Hotfix (2026-05-28) — production boot React #185 at App
+
+**Root cause:** Phase 3 batched `enabledProviderIds: selectEnabledProviderIds(...)` inside a `useShallow` object pick. Shallow compare uses `Object.is` on each property — the id array is a new reference on every provider-store write (`discoverCached` sets `lastDiscoveredAt`). Boot discover effect re-ran after each discovery → infinite `setState` loop → minified React error #185.
+
+**Fix:** Split provider subscriptions; subscribe to enabled ids with `useShallow((s) => selectEnabledProviderIds(s.providers))` so array elements are compared, not array identity.
+
+**Files:** `src/renderer/App.tsx`, `tests/renderer/app/appBootDiscoverStable.test.ts` (new).
+
+**Tests:** `npm run typecheck` OK; `vitest run tests/renderer/app/appBootDiscoverStable.test.ts` (+ related store/mirror tests) 5/5 pass.

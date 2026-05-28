@@ -18,6 +18,7 @@ import { stripEmoji } from '@shared/text/emoji.js';
 import { normalizeMathShortcuts } from '@shared/text/mathShortcuts.js';
 import { displayAssistantTurnText } from '../../../lib/text.js';
 import { cn } from '../../../lib/cn.js';
+import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/shellIcons.js';
 import { safeCopy } from '../../../lib/clipboard.js';
 import { chromeRevealIconActionClassName } from '../../ui/SurfaceShell.js';
 import { highlightStreamingCode } from '../../../lib/streamHighlight.js';
@@ -61,16 +62,41 @@ export function StreamingMarkdownBody({
   }
 
   return (
-    <div className={cn('vyotiq-stream-md text-body leading-relaxed text-text-secondary', className)}>
+    <div className={cn('vyotiq-stream-md vx-timeline-stream-md vx-prose', className)}>
       {blocks.map((block, idx) => (
-        <StreamBlock key={idx} block={block} isTail={idx === blocks.length - 1} />
+        <StreamBlock
+          key={streamBlockKey(block, idx)}
+          block={block}
+          isTail={idx === blocks.length - 1}
+        />
       ))}
-      <span className="vyotiq-stream-cursor" aria-hidden />
     </div>
   );
 }
 
 const HEADING_LEVELS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const;
+
+function streamBlockKey(block: StreamingBlock, idx: number): string {
+  const tail = (text: string) => text.slice(0, 24);
+  switch (block.kind) {
+    case 'heading':
+      return `h${block.level}-${tail(block.spans.map((s) => (s.kind === 'text' ? s.text : '')).join(''))}`;
+    case 'paragraph':
+      return `p-${idx}-${tail(block.spans.map((s) => (s.kind === 'text' ? s.text : '')).join(''))}`;
+    case 'blockquote':
+      return `bq-${idx}-${tail(block.spans.map((s) => (s.kind === 'text' ? s.text : '')).join(''))}`;
+    case 'hr':
+      return `hr-${idx}`;
+    case 'list':
+      return `list-${block.ordered ? 'ol' : 'ul'}-${block.items.length}-${idx}`;
+    case 'table':
+      return `table-${block.headers.length}-${block.rows.length}-${block.partial ? 'p' : 'd'}-${idx}`;
+    case 'code':
+      return `code-${block.language ?? 'plain'}-${block.partial ? 'p' : 'd'}-${tail(block.content)}`;
+    default:
+      return `block-${idx}`;
+  }
+}
 
 function StreamBlock({ block, isTail }: { block: StreamingBlock; isTail: boolean }) {
   switch (block.kind) {
@@ -81,8 +107,8 @@ function StreamBlock({ block, isTail }: { block: StreamingBlock; isTail: boolean
         tag,
         {
           className: cn(
-            'vyotiq-stream-heading font-semibold tracking-[-0.01em] text-accent-gold-strong',
-            level <= 2 ? 'mt-3 mb-1.5 text-body' : 'mt-2 mb-1 text-row'
+            'vx-timeline-stream-heading vyotiq-stream-heading font-medium tracking-normal text-text-primary',
+            level <= 2 ? 'mt-3 mb-1.5 text-row' : 'mt-2 mb-1 text-chat-meta'
           )
         },
         <InlineSpans spans={block.spans} />
@@ -98,12 +124,12 @@ function StreamBlock({ block, isTail }: { block: StreamingBlock; isTail: boolean
       );
     case 'blockquote':
       return (
-        <blockquote className="my-2 border-l-2 border-border-subtle pl-[0.9em] text-text-muted">
+        <blockquote className="my-2 border-l-2 border-border-subtle/30 pl-[0.9em] vx-caption">
           <InlineSpans spans={block.spans} />
         </blockquote>
       );
     case 'hr':
-      return <hr className="my-4 border-0 border-t border-border-subtle" />;
+      return <hr className="my-4 border-0 border-t border-border-subtle/20" />;
     case 'paragraph':
       return (
         <p className="my-1.5 whitespace-pre-wrap break-words">
@@ -112,15 +138,12 @@ function StreamBlock({ block, isTail }: { block: StreamingBlock; isTail: boolean
       );
     case 'table':
       return (
-        <div className="my-2 overflow-x-auto">
-          <table className="border-collapse text-row">
+        <div className="vx-timeline-md-table-wrap">
+          <table className="vx-timeline-md-table">
             <thead>
               <tr>
                 {block.headers.map((cell, idx) => (
-                  <th
-                    key={idx}
-                    className="border border-border-subtle/40 px-2 py-1 text-left font-semibold text-text-primary"
-                  >
+                  <th key={idx}>
                     <InlineSpans spans={cell} />
                   </th>
                 ))}
@@ -130,10 +153,7 @@ function StreamBlock({ block, isTail }: { block: StreamingBlock; isTail: boolean
               {block.rows.map((row, rIdx) => (
                 <tr key={rIdx}>
                   {row.map((cell, cIdx) => (
-                    <td
-                      key={cIdx}
-                      className="border border-border-subtle/30 px-2 py-1 text-text-secondary"
-                    >
+                    <td key={cIdx}>
                       <InlineSpans spans={cell} />
                     </td>
                   ))}
@@ -158,10 +178,7 @@ function StreamList({ root }: { root: StreamingListRoot }) {
   return createElement(
     tag,
     {
-      className: cn(
-        'my-1 ml-[1.15em] pl-0',
-        root.ordered ? 'list-decimal' : 'list-disc'
-      )
+      className: cn(root.ordered ? 'list-decimal' : 'list-disc')
     },
     root.items.map((item, idx) => <StreamListItem key={idx} item={item} />)
   );
@@ -232,8 +249,8 @@ function StreamPreWithCopy({
       {highlighted && <CodeLanguageEyebrow language={highlighted.language} />}
       <pre
         className={cn(
-          'overflow-x-auto rounded-inner border border-border-subtle/20 bg-surface-overlay/40 px-3 py-2 font-mono text-row text-text-secondary',
-          partial && 'border-border-subtle/25'
+          'vx-timeline-stream-pre overflow-x-auto',
+          partial && 'vx-timeline-stream-pre-partial'
         )}
       >
         {highlighted ? (
@@ -258,9 +275,9 @@ function StreamPreWithCopy({
         )}
       >
         {copied ? (
-          <Check className="h-3.5 w-3.5 text-success" strokeWidth={2.25} />
+          <Check className={cn(SHELL_ROW_ICON_CLASS, 'text-success')} strokeWidth={SHELL_ACTION_ICON_STROKE} />
         ) : (
-          <Copy className="h-3.5 w-3.5" strokeWidth={2.25} />
+          <Copy className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
         )}
       </button>
     </div>
@@ -283,13 +300,13 @@ function InlineSpan({ span }: { span: InlineSpan }): ReactNode {
       return <Fragment>{span.text}</Fragment>;
     case 'code':
       return (
-        <code className="rounded-line bg-surface-overlay px-1 py-0.5 font-mono text-[0.9em] text-text-primary align-baseline">
+        <code className="vx-timeline-stream-inline-code">
           {span.text}
         </code>
       );
     case 'strong':
       return (
-        <strong className="font-semibold text-text-primary">
+        <strong className="font-medium text-text-primary">
           <InlineSpans spans={span.children} />
         </strong>
       );

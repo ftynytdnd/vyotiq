@@ -23,7 +23,7 @@
       it in `<meta>` CSP (DevTools warning). Electron frame embedding is
       governed by the main-process window model, not document CSP meta.
     -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src *; object-src 'none'; base-uri 'self'; form-action 'none';" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; frame-src 'self' file:; connect-src *; object-src 'none'; base-uri 'self'; form-action 'none';" />
     <title>Vyotiq — Agent V</title>
   </head>
   <body>

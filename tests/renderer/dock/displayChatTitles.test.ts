@@ -35,4 +35,20 @@ describe('buildDisplayChatTitles', () => {
     expect(map.get('a')).toBe('Hi (1)');
     expect(map.get('b')).toBe('hi (2)');
   });
+
+  it('does not shorten long unique titles (CSS handles ellipsis)', () => {
+    const long = 'Summarize this repo and list the main entry points.';
+    const entries = [meta('a', long), meta('b', 'Triage')];
+    const map = buildDisplayChatTitles(entries);
+    expect(map.get('a')).toBe(long);
+    expect(map.get('b')).toBe('Triage');
+  });
+
+  it('only adds disambiguation suffixes for duplicate titles', () => {
+    const prompt = 'Summarize this repo and list the main entry points.';
+    const entries = [meta('a', prompt), meta('b', prompt)];
+    const map = buildDisplayChatTitles(entries);
+    expect(map.get('a')).toBe(`${prompt} (1)`);
+    expect(map.get('b')).toBe(`${prompt} (2)`);
+  });
 });

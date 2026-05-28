@@ -6,25 +6,21 @@
  * file's body as an all-`+` hunk via `EditDiffView` + the shared
  * `synthesizeCreateHunks`. Pre-fix `EditApprovalDialog` used
  * `CodeBlock tone="muted"` here, so the SAME create operation
- * read three different ways across the three surfaces (the diff
- * card in the timeline + pending panel, but a muted plain-text
- * wall in the approval dialog). Audit fix May 2026 routes the
- * dialog through `EditDiffView` too — this test pins that
- * contract so the modal can't drift back to the muted variant.
+ * read three different ways across the three surfaces.
+ *
+ * The dialog now opens with a compact 3-line preview that
+ * expands to the full `UnifiedDiffPanel` on demand (per
+ * `dialog-ux-redesign.md`). These tests click "Show full diff"
+ * before asserting on the authoritative diff container so they
+ * reflect the post-redesign contract.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { EditApprovalDialog } from '@renderer/components/confirm/EditApprovalDialog';
 import type { EditApprovalPayload } from '@shared/types/ipc';
 
-// `Modal` renders into a `createPortal(document.body)` target, so
-// the dialog DOM lives on `document.body` rather than the wrapper
-// `container` returned by `render`. Every assertion below queries
-// the body so the portal subtree is reached. `cleanup()` between
-// tests removes the portal-rendered nodes (RTL's default cleanup
-// already does this for portaled content; the explicit afterEach
-// is documentation more than need).
 afterEach(() => cleanup());
 
 const NEW_FILE_BODY = ['# Hello', 'second line', 'third line'].join('\n');
@@ -42,38 +38,33 @@ function makePayload(overrides: Partial<EditApprovalPayload> = {}): EditApproval
   };
 }
 
+async function expandFullDiff() {
+  const expand = screen.getByRole('button', { name: /show full diff/i });
+  await userEvent.click(expand);
+}
+
 describe('EditApprovalDialog — create branch routes through EditDiffView', () => {
-  it('renders the new file body inside an authoritative diff container', () => {
+  it('renders the new file body inside an authoritative diff container after expand', async () => {
     render(
       <EditApprovalDialog
         open
         payload={makePayload()}
+        queuePosition={1}
+        queueTotal={1}
         queuedBehind={0}
         onApprove={() => { }}
         onApproveAll={() => { }}
         onDeny={() => { }}
       />
     );
-    // The shared `EditDiffView` stamps `data-variant` on its
-    // outer container. Mounting under the `'create'` branch must
-    // produce the `authoritative` variant (matches the timeline's
-    // settled-create branch + the pending-changes panel) — NOT a
-    // bare `CodeBlock` wrapper, which is what the pre-fix path
-    // rendered for muted plain-text bodies.
+    await expandFullDiff();
+
     const diff = document.body.querySelector('[data-variant="authoritative"]');
     expect(diff).not.toBeNull();
-    // Every line of the new body is present with the `+` marker.
-    // The marker lives inside `<span class="mr-1 select-none">+</span>`
-    // immediately adjacent to the line text in `EditDiffView`.
     const text = document.body.textContent ?? '';
     expect(text).toContain('# Hello');
     expect(text).toContain('second line');
     expect(text).toContain('third line');
-    // Three `+` markers — one per content line. We assert at
-    // least three so trailing-newline fixtures stay non-flaky
-    // (`synthesizeCreateHunks` splits on `\n`, a trailing
-    // newline produces a trailing empty `+` line which we don't
-    // need to pin here).
     const plusMarkers = diff!.querySelectorAll('.select-none');
     const plusCount = Array.from(plusMarkers).filter(
       (el) => (el.textContent ?? '').trim() === '+'
@@ -81,42 +72,37 @@ describe('EditApprovalDialog — create branch routes through EditDiffView', () 
     expect(plusCount).toBeGreaterThanOrEqual(3);
   });
 
-  it('mounts EditDiffView even when the body is empty (single empty `+` line)', () => {
-    // Defensive: zero-byte file creates still render through
-    // `EditDiffView` (`synthesizeCreateHunks('')` produces a
-    // single empty `+` line). Pre-fix this surfaced as a blank
-    // muted block; post-fix it surfaces as one empty diff row,
-    // matching the timeline + pending-changes panel behaviour.
+  it('mounts EditDiffView even when the body is empty after expand', async () => {
     render(
       <EditApprovalDialog
         open
         payload={makePayload({ postBody: '', additions: 0, deletions: 0 })}
+        queuePosition={1}
+        queueTotal={1}
         queuedBehind={0}
         onApprove={() => { }}
         onApproveAll={() => { }}
         onDeny={() => { }}
       />
     );
+    await expandFullDiff();
     expect(document.body.querySelector('[data-variant="authoritative"]')).not.toBeNull();
   });
 
-  it('renders the new body with the success-tinted diff lines, not muted plain text', () => {
-    // Regression guard against the pre-fix shape: a `CodeBlock`
-    // with `tone="muted"` rendered the new file body as a wall
-    // of muted plain text. The shared `EditDiffView` produces a
-    // diff card with green `+`-tinted lines instead, so a
-    // post-fix DOM tree must carry the `text-success` token on
-    // at least one body row.
+  it('renders the new body with the success-tinted diff lines after expand', async () => {
     render(
       <EditApprovalDialog
         open
         payload={makePayload()}
+        queuePosition={1}
+        queueTotal={1}
         queuedBehind={0}
         onApprove={() => { }}
         onApproveAll={() => { }}
         onDeny={() => { }}
       />
     );
+    await expandFullDiff();
     const diff = document.body.querySelector('[data-variant="authoritative"]');
     expect(diff).not.toBeNull();
     const lines = Array.from(diff!.querySelectorAll('div'));
@@ -124,5 +110,42 @@ describe('EditApprovalDialog — create branch routes through EditDiffView', () 
       (el.className ?? '').toString().includes('text-success')
     );
     expect(hasSuccessTinted).toBe(true);
+  });
+
+  it('opens compact: shows a 3-line preview and a "Show full diff" expander', () => {
+    render(
+      <EditApprovalDialog
+        open
+        payload={makePayload()}
+        queuePosition={1}
+        queueTotal={1}
+        queuedBehind={0}
+        onApprove={() => { }}
+        onApproveAll={() => { }}
+        onDeny={() => { }}
+      />
+    );
+    // No authoritative diff yet — compact preview by default.
+    expect(document.body.querySelector('[data-variant="authoritative"]')).toBeNull();
+    expect(screen.getByRole('button', { name: /show full diff/i })).toBeTruthy();
+    // Compact preview shows the new body lines as `+` rows.
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('# Hello');
+  });
+
+  it('shows a queue stepper badge in the header when more approvals are pending', () => {
+    render(
+      <EditApprovalDialog
+        open
+        payload={makePayload()}
+        queuePosition={1}
+        queueTotal={5}
+        queuedBehind={4}
+        onApprove={() => { }}
+        onApproveAll={() => { }}
+        onDeny={() => { }}
+      />
+    );
+    expect(screen.getByText(/Approval 1 of 5/)).toBeTruthy();
   });
 });

@@ -19,13 +19,9 @@ import type {
   CheckpointRevertResult,
   CheckpointsSummary,
   FileHistoryRow,
-  FileReviewComment,
   GitBaseDiffResult,
   ListGitRefsResult,
   PendingChange,
-  ReviewDecision,
-  ReviewExportResult,
-  ReviewSession,
   RewindPreviewResult,
   RewindResult
 } from '@shared/types/checkpoint.js';
@@ -53,16 +49,6 @@ import {
   listWorkspaces,
   requireWorkspaceById
 } from '../workspace/workspaceState.js';
-import {
-  addReviewComment,
-  ensureReviewSession,
-  getReviewSession,
-  setReviewDecision,
-  setReviewGitBaseRef,
-  setReviewReviewerLabel
-} from '../checkpoints/reviewSessions.js';
-import { exportReviewSession } from '../checkpoints/exportReview.js';
-import { importReviewSession } from '../checkpoints/importReview.js';
 import { gitBaseDiffForFile, validateGitRef } from '../checkpoints/gitBaseDiff.js';
 import { listGitRefs } from '../checkpoints/listGitRefs.js';
 import { realpathInsideWorkspace } from '../tools/sandbox.js';
@@ -89,23 +75,6 @@ const log = logger.child('ipc/checkpoints');
 // 4 KB ceiling the workspace ipc uses — well above any realistic
 // repo path while still rejecting pathological inputs.
 const MAX_CHECKPOINT_PATH_BYTES = 4096;
-
-const REVIEW_DECISIONS: ReadonlySet<ReviewDecision> = new Set([
-  'comment',
-  'approve',
-  'request_changes'
-]);
-
-function assertReviewDecision(
-  channel: string,
-  field: string,
-  value: unknown
-): asserts value is ReviewDecision {
-  assertString(channel, field, value);
-  if (!REVIEW_DECISIONS.has(value as ReviewDecision)) {
-    throw new Error(`${channel}: ${field} must be approve, request_changes, or comment`);
-  }
-}
 
 /**
  * Wire the broadcaster ONCE so the checkpoint store can push
@@ -194,6 +163,10 @@ export function registerCheckpointsIpc(): void {
 
   wrapIpcHandler(IPC.CHECKPOINTS_ACCEPT, async (_event, entryId: string) => {
     assertString('checkpoints:accept', 'entryId', entryId);
+    // `approveAutoAcceptPendingByWorkspace` previously controlled whether
+    // review-tab "Approve" also accepted pending rows for that file. Review
+    // IPC was removed in Phase 1 — explicit timeline Accept always proceeds
+    // here regardless of the flag. Auto-accept-on-send is gated in chat.ipc.
     await acceptEntry(entryId);
   });
 
@@ -451,187 +424,11 @@ export function registerCheckpointsIpc(): void {
   );
 
   wrapIpcHandler(
-    IPC.CHECKPOINTS_GET_REVIEW,
-    async (
-      _event,
-      workspaceId: string,
-      conversationId: string
-    ): Promise<ReviewSession | null> => {
-      assertString('checkpoints:getReview', 'workspaceId', workspaceId);
-      assertString('checkpoints:getReview', 'conversationId', conversationId);
-      return getReviewSession(workspaceId, conversationId);
-    }
-  );
-
-  wrapIpcHandler(
-    IPC.CHECKPOINTS_ENSURE_REVIEW,
-    async (
-      _event,
-      input: { workspaceId: string; conversationId: string; runId?: string }
-    ): Promise<ReviewSession> => {
-      assertObject('checkpoints:ensureReview', 'input', input);
-      assertString('checkpoints:ensureReview', 'input.workspaceId', input.workspaceId);
-      assertString('checkpoints:ensureReview', 'input.conversationId', input.conversationId);
-      if (input.runId !== undefined) {
-        assertString('checkpoints:ensureReview', 'input.runId', input.runId);
-      }
-      return ensureReviewSession(input);
-    }
-  );
-
-  wrapIpcHandler(
-    IPC.CHECKPOINTS_ADD_REVIEW_COMMENT,
-    async (
-      _event,
-      input: {
-        workspaceId: string;
-        conversationId: string;
-        filePath: string;
-        body: string;
-        line?: number;
-      }
-    ): Promise<FileReviewComment> => {
-      assertObject('checkpoints:addReviewComment', 'input', input);
-      assertString('checkpoints:addReviewComment', 'input.workspaceId', input.workspaceId);
-      assertString('checkpoints:addReviewComment', 'input.conversationId', input.conversationId);
-      assertString('checkpoints:addReviewComment', 'input.filePath', input.filePath, {
-        maxBytes: MAX_CHECKPOINT_PATH_BYTES
-      });
-      assertString('checkpoints:addReviewComment', 'input.body', input.body);
-      if (input.line !== undefined) {
-        if (!Number.isInteger(input.line) || input.line < 1) {
-          throw new Error('checkpoints:addReviewComment: input.line must be a positive integer');
-        }
-      }
-      const comment = await addReviewComment(input);
-      safeWebContentsSend(IPC.CHECKPOINTS_CHANGED, input.workspaceId);
-      return comment;
-    }
-  );
-
-  wrapIpcHandler(
-    IPC.CHECKPOINTS_SET_REVIEW_DECISION,
-    async (
-      _event,
-      input: {
-        workspaceId: string;
-        conversationId: string;
-        decision: ReviewDecision;
-        filePath?: string;
-      }
-    ): Promise<ReviewSession> => {
-      assertObject('checkpoints:setReviewDecision', 'input', input);
-      assertString('checkpoints:setReviewDecision', 'input.workspaceId', input.workspaceId);
-      assertString('checkpoints:setReviewDecision', 'input.conversationId', input.conversationId);
-      assertReviewDecision(
-        'checkpoints:setReviewDecision',
-        'input.decision',
-        input.decision
-      );
-      if (input.filePath !== undefined) {
-        assertString('checkpoints:setReviewDecision', 'input.filePath', input.filePath, {
-          maxBytes: MAX_CHECKPOINT_PATH_BYTES
-        });
-      }
-      const session = await setReviewDecision(input);
-      safeWebContentsSend(IPC.CHECKPOINTS_CHANGED, input.workspaceId);
-      return session;
-    }
-  );
-
-  wrapIpcHandler(
-    IPC.CHECKPOINTS_SET_REVIEW_GIT_REF,
-    async (
-      _event,
-      input: { workspaceId: string; conversationId: string; ref: string }
-    ): Promise<ReviewSession> => {
-      assertObject('checkpoints:setReviewGitRef', 'input', input);
-      assertString('checkpoints:setReviewGitRef', 'input.workspaceId', input.workspaceId);
-      assertString('checkpoints:setReviewGitRef', 'input.conversationId', input.conversationId);
-      assertString('checkpoints:setReviewGitRef', 'input.ref', input.ref);
-      const validated = validateGitRef(input.ref);
-      if (!validated) {
-        throw new Error('checkpoints:setReviewGitRef: invalid git ref');
-      }
-      const session = await setReviewGitBaseRef({
-        workspaceId: input.workspaceId,
-        conversationId: input.conversationId,
-        ref: validated
-      });
-      safeWebContentsSend(IPC.CHECKPOINTS_CHANGED, input.workspaceId);
-      return session;
-    }
-  );
-
-  wrapIpcHandler(
     IPC.CHECKPOINTS_LIST_GIT_REFS,
     async (_event, workspaceId: string): Promise<ListGitRefsResult> => {
       assertString('checkpoints:listGitRefs', 'workspaceId', workspaceId);
       const workspacePath = await requireWorkspaceById(workspaceId);
       return listGitRefs(workspacePath);
-    }
-  );
-
-  wrapIpcHandler(
-    IPC.CHECKPOINTS_SET_REVIEW_REVIEWER,
-    async (
-      _event,
-      input: { workspaceId: string; conversationId: string; reviewerLabel: string }
-    ): Promise<ReviewSession> => {
-      assertObject('checkpoints:setReviewReviewer', 'input', input);
-      assertString('checkpoints:setReviewReviewer', 'input.workspaceId', input.workspaceId);
-      assertString('checkpoints:setReviewReviewer', 'input.conversationId', input.conversationId);
-      assertString('checkpoints:setReviewReviewer', 'input.reviewerLabel', input.reviewerLabel);
-      const session = await setReviewReviewerLabel(input);
-      safeWebContentsSend(IPC.CHECKPOINTS_CHANGED, input.workspaceId);
-      return session;
-    }
-  );
-
-  wrapIpcHandler(
-    IPC.CHECKPOINTS_EXPORT_REVIEW,
-    async (
-      _event,
-      input: { workspaceId: string; conversationId: string }
-    ): Promise<ReviewExportResult> => {
-      assertObject('checkpoints:exportReview', 'input', input);
-      assertString('checkpoints:exportReview', 'input.workspaceId', input.workspaceId);
-      assertString('checkpoints:exportReview', 'input.conversationId', input.conversationId);
-      return exportReviewSession(input);
-    }
-  );
-
-  wrapIpcHandler(
-    IPC.CHECKPOINTS_IMPORT_REVIEW,
-    async (
-      _event,
-      input: {
-        workspaceId: string;
-        conversationId: string;
-        filePath?: string;
-        mode?: 'merge' | 'replace';
-        restorePending?: boolean;
-      }
-    ) => {
-      assertObject('checkpoints:importReview', 'input', input);
-      assertString('checkpoints:importReview', 'input.workspaceId', input.workspaceId);
-      assertString('checkpoints:importReview', 'input.conversationId', input.conversationId);
-      if (input.filePath !== undefined) {
-        assertString('checkpoints:importReview', 'input.filePath', input.filePath, {
-          maxBytes: MAX_CHECKPOINT_PATH_BYTES
-        });
-      }
-      if (input.mode !== undefined) {
-        if (input.mode !== 'merge' && input.mode !== 'replace') {
-          throw new Error('checkpoints:importReview input.mode must be merge or replace');
-        }
-      }
-      if (input.restorePending !== undefined && typeof input.restorePending !== 'boolean') {
-        throw new Error('checkpoints:importReview input.restorePending must be a boolean');
-      }
-      const result = await importReviewSession(input);
-      safeWebContentsSend(IPC.CHECKPOINTS_CHANGED, input.workspaceId);
-      return result;
     }
   );
 

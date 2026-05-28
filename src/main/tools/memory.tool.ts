@@ -4,7 +4,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import type { Tool } from './types.js';
+import type { Tool, ToolContext } from './types.js';
 import type { ToolData, ToolResult } from '@shared/types/tool.js';
 import {
   appendGlobalMetaRule,
@@ -17,6 +17,10 @@ import {
   readWorkspaceNote,
   writeWorkspaceNote
 } from '../memory/workspaceNotes.js';
+import {
+  touchGlobalMemoryLastReference,
+  touchMemoryLastReference
+} from '../memory/lastReferenced.js';
 
 interface MemoryArgs {
   action: 'list' | 'read' | 'write' | 'append';
@@ -73,7 +77,7 @@ export const memoryTool: Tool = {
 
     try {
       if (a.scope === 'global') {
-        return await runGlobal(a, id, started);
+        return await runGlobal(a, id, started, ctx);
       }
       // Pass the run's pinned `workspacePath` so workspace memory
       // operations always target the run's `<workspace>/.vyotiq/memory/`,
@@ -81,7 +85,7 @@ export const memoryTool: Tool = {
       // workspace. Without this, a memory write from a run in
       // workspace A could land in workspace B's `.vyotiq/memory/`
       // simply because the user switched B to active mid-run.
-      return await runWorkspace(a, id, started, ctx.workspacePath);
+      return await runWorkspace(a, id, started, ctx.workspacePath, ctx);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return fail(id, started, `Memory error: ${msg}`, msg);
@@ -89,11 +93,17 @@ export const memoryTool: Tool = {
   }
 };
 
-async function runGlobal(a: Partial<MemoryArgs>, id: string, started: number): Promise<ToolResult> {
+async function runGlobal(
+  a: Partial<MemoryArgs>,
+  id: string,
+  started: number,
+  ctx: ToolContext
+): Promise<ToolResult> {
   switch (a.action) {
     case 'read':
     case 'list': {
       const content = await readGlobalMetaRules();
+      void touchGlobalMemoryLastReference(ctx.conversationId).catch(() => undefined);
       return ok(id, started, `# Global Meta-Rules\n${content}`, {
         tool: 'memory',
         action: 'read',
@@ -104,6 +114,7 @@ async function runGlobal(a: Partial<MemoryArgs>, id: string, started: number): P
     case 'write': {
       if (typeof a.content !== 'string') return fail(id, started, 'Error: `content` required.', 'missing content');
       await writeGlobalMetaRules(a.content);
+      void touchGlobalMemoryLastReference(ctx.conversationId).catch(() => undefined);
       return ok(id, started, 'Global meta-rules overwritten.', {
         tool: 'memory',
         action: 'write',
@@ -114,6 +125,7 @@ async function runGlobal(a: Partial<MemoryArgs>, id: string, started: number): P
     case 'append': {
       if (typeof a.content !== 'string') return fail(id, started, 'Error: `content` required.', 'missing content');
       await appendGlobalMetaRule(a.content);
+      void touchGlobalMemoryLastReference(ctx.conversationId).catch(() => undefined);
       return ok(id, started, 'Appended to global meta-rules.', {
         tool: 'memory',
         action: 'append',
@@ -130,7 +142,8 @@ async function runWorkspace(
   a: Partial<MemoryArgs>,
   id: string,
   started: number,
-  workspacePath: string
+  workspacePath: string,
+  ctx: ToolContext
 ): Promise<ToolResult> {
   switch (a.action) {
     case 'list': {
@@ -156,6 +169,9 @@ async function runWorkspace(
           key: a.key
         });
       }
+      void touchMemoryLastReference(ctx.workspaceId, note.key, ctx.conversationId).catch(
+        () => undefined
+      );
       return ok(id, started, `# ${note.key}\n${note.content}`, {
         tool: 'memory',
         action: 'read',
@@ -168,6 +184,9 @@ async function runWorkspace(
       if (!a.key) return fail(id, started, 'Error: `key` required.', 'missing key');
       if (typeof a.content !== 'string') return fail(id, started, 'Error: `content` required.', 'missing content');
       const note = await writeWorkspaceNote(a.key, a.content, workspacePath);
+      void touchMemoryLastReference(ctx.workspaceId, note.key, ctx.conversationId).catch(
+        () => undefined
+      );
       return ok(id, started, `Wrote note: ${note.key}`, {
         tool: 'memory',
         action: 'write',
@@ -180,6 +199,9 @@ async function runWorkspace(
       if (!a.key) return fail(id, started, 'Error: `key` required.', 'missing key');
       if (typeof a.content !== 'string') return fail(id, started, 'Error: `content` required.', 'missing content');
       const note = await appendWorkspaceNote(a.key, a.content, workspacePath);
+      void touchMemoryLastReference(ctx.workspaceId, note.key, ctx.conversationId).catch(
+        () => undefined
+      );
       return ok(id, started, `Appended to note: ${note.key}`, {
         tool: 'memory',
         action: 'append',

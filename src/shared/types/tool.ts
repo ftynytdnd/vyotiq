@@ -123,6 +123,8 @@ export type ToolData =
     /** Plain file content for the returned range — no numbering prefix. */
     content: string;
     truncated: boolean;
+    /** True when decoded text looks garbled (high ? / NUL ratio). */
+    garbled?: boolean;
   }
   | {
     tool: 'edit';

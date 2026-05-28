@@ -120,6 +120,16 @@ describe('recall tool', () => {
     } else {
       throw new Error('expected recall read data');
     }
+
+    const {
+      getMemoryLastReference,
+      recallConversationKey
+    } = await import('@main/memory/lastReferenced.js');
+    const ref = await getMemoryLastReference(
+      baseCtx.workspaceId,
+      recallConversationKey(meta.id)
+    );
+    expect(ref?.conversationId).toBe(baseCtx.conversationId);
   });
 
   it('action:"read" caps output at MAX_TOOL_OUTPUT_CHARS regardless of caller maxChars', async () => {

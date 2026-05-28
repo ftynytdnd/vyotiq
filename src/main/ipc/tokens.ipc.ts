@@ -13,6 +13,7 @@
  */
 
 import { IPC, MAX_CHAT_ATTACHMENTS, MAX_USER_PROMPT_BYTES } from '@shared/constants.js';
+import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import {
   estimateTokens,
   tokenizeMessages,
@@ -50,6 +51,7 @@ interface EstimateInputWire {
   modelId?: string;
   prompt?: string;
   attachments?: string[];
+  attachmentMeta?: PromptAttachmentMeta[];
   /**
    * Phase 2: when present, the handler tokenizes the full prospective
    * `messages[]` for this conversation and returns the per-part
@@ -207,17 +209,23 @@ export function registerTokensIpc(): void {
         maxItems: MAX_CHAT_ATTACHMENTS
       });
     }
+    if (wire.attachmentMeta !== undefined) {
+      if (!Array.isArray(wire.attachmentMeta)) {
+        throw new Error('tokens:estimate: attachmentMeta must be an array');
+      }
+      if (wire.attachmentMeta.length > MAX_CHAT_ATTACHMENTS) {
+        throw new Error(`tokens:estimate: attachmentMeta exceeds max ${MAX_CHAT_ATTACHMENTS}`);
+      }
+    }
 
     const modelId = typeof wire.modelId === 'string' ? wire.modelId : '';
     const prompt = typeof wire.prompt === 'string' ? wire.prompt : '';
-    // F-023: drop the prior `input!.attachments!.filter(...)` non-null
-    // assertions. The `Array.isArray(input?.attachments)` guard already
-    // proves both `input` and `input.attachments` are defined; the `!`
-    // operators were TypeScript noise that misleadingly suggested the
-    // narrowing was incomplete.
     const attachments = Array.isArray(wire.attachments)
       ? wire.attachments.filter((p): p is string => typeof p === 'string')
       : [];
+    const attachmentMeta = Array.isArray(wire.attachmentMeta)
+      ? (wire.attachmentMeta as PromptAttachmentMeta[])
+      : undefined;
     const conversationId =
       typeof wire.conversationId === 'string' && wire.conversationId.length > 0
         ? wire.conversationId
@@ -227,6 +235,7 @@ export function registerTokensIpc(): void {
       modelId,
       prompt,
       attachments,
+      ...(attachmentMeta ? { attachmentMeta } : {}),
       ...(workspacePath ? { workspacePath } : {})
     });
 

@@ -15,9 +15,15 @@ import {
   Trash2
 } from 'lucide-react';
 import type { WorkspaceEntry } from '@shared/types/ipc.js';
-import { ConfirmDialog } from '../ui/ConfirmDialog.js';
-import { Spinner } from '../ui/Spinner.js';
+import { Button } from '../ui/Button.js';
+import { DestructiveConfirm } from '../ui/DestructiveConfirm.js';
+import { InlineConfirm } from '../ui/InlineConfirm.js';
+import { LoadingHint } from '../ui/LoadingHint.js';
 import { cn } from '../../lib/cn.js';
+import {
+  SHELL_ACTION_ICON_STROKE,
+  SHELL_ROW_ICON_CLASS
+} from '../../lib/shellIcons.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useWorkspaceHasActiveRun } from '../../hooks/chat/index.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
@@ -25,10 +31,14 @@ import {
   CONV_DRAG_MIME,
   DOCK_EMPTY_STATE_CLASS,
   DOCK_HOVER_ACTIONS,
+  DOCK_TAB_ICON_CLASS,
+  DOCK_TAB_ICON_STROKE,
+  DOCK_TAB_LABEL_CLASS,
+  DOCK_TAB_TRIGGER_CLASS,
   dockInlineActionClassName,
-  dockTabRowClassName
+  dockTabRowClassName,
+  dockTabActiveAttr
 } from './dockShared.js';
-import { chromePillClassName } from '../ui/SurfaceShell.js';
 import { useUiStore } from '../../store/useUiStore.js';
 import { handleDockVerticalTablistKeyDown } from './dockVerticalTablistKeyboard.js';
 
@@ -51,7 +61,7 @@ export function DockWorkspaceTabs() {
   if (loading && workspaces.length === 0) {
     return (
       <div className={cn(DOCK_EMPTY_STATE_CLASS, 'flex-row items-center')}>
-        <Spinner /> <span className="text-row text-text-faint">Loading workspaces…</span>
+        <LoadingHint message="Loading workspaces…" className="py-2" />
       </div>
     );
   }
@@ -101,9 +111,9 @@ export function DockWorkspaceTabs() {
         aria-label="Add workspace"
         title="Add workspace"
         onClick={() => void addWorkspace()}
-        className={cn(chromePillClassName(), 'gap-1 self-start px-1.5 text-row')}
+        className="vx-btn vx-btn-quiet gap-1 self-start px-1.5 text-row"
       >
-        <Plus className="h-3 w-3" strokeWidth={2.25} />
+        <Plus className={DOCK_TAB_ICON_CLASS} strokeWidth={DOCK_TAB_ICON_STROKE} />
         <span>Add workspace</span>
       </button>
     </div>
@@ -167,11 +177,49 @@ function WorkspaceTab({ workspace, active, onActivate }: WorkspaceTabProps) {
         className={cn(
           dockTabRowClassName(active, 'workspace'),
           hasActiveRun && 'vyotiq-shimmer-pill',
-          dragOver && 'bg-surface-hover ring-1 ring-border-subtle/60'
+          dragOver && 'bg-chrome-hover-strong ring-1 ring-border-subtle/70'
         )}
+        data-active={dockTabActiveAttr(active)}
         aria-busy={hasActiveRun || undefined}
       >
-        {editing ? (
+        {removeStep === 'confirm' ? (
+          <DestructiveConfirm
+            variant="inline"
+            open
+            twoStep={false}
+            context={workspace.label}
+            question="Remove this workspace?"
+            confirmLabel="Continue"
+            cancelLabel="Cancel"
+            onConfirm={() => setRemoveStep('choice')}
+            onCancel={() => setRemoveStep('idle')}
+          />
+        ) : removeStep === 'choice' ? (
+          <WorkspaceRemoveChoice
+            label={workspace.label}
+            onCancel={() => setRemoveStep('idle')}
+            onKeepChats={() => {
+              setRemoveStep('idle');
+              void removeWorkspace(workspace.id, { deleteConversations: false });
+            }}
+            onDeleteChats={() => {
+              setRemoveStep('idle');
+              void removeWorkspace(workspace.id, { deleteConversations: true });
+            }}
+          />
+        ) : retryOpen ? (
+          <InlineConfirm
+            context={workspace.label}
+            question="Retry path?"
+            confirmLabel="Retry"
+            variant="primary"
+            onConfirm={() => {
+              setRetryOpen(false);
+              void retryReachability(workspace.id);
+            }}
+            onCancel={() => setRetryOpen(false)}
+          />
+        ) : editing ? (
           <input
             ref={inputRef}
             value={draft}
@@ -196,15 +244,15 @@ function WorkspaceTab({ workspace, active, onActivate }: WorkspaceTabProps) {
             <button
               type="button"
               onClick={onActivate}
-              className="flex min-w-0 flex-1 items-center gap-1 truncate text-left"
+              className={DOCK_TAB_TRIGGER_CLASS}
               title={workspace.path ?? workspace.label}
             >
               {active ? (
-                <FolderOpen className="h-3 w-3 shrink-0" strokeWidth={2} />
+                <FolderOpen className={DOCK_TAB_ICON_CLASS} strokeWidth={DOCK_TAB_ICON_STROKE} />
               ) : (
-                <Folder className="h-3 w-3 shrink-0" strokeWidth={2} />
+                <Folder className={DOCK_TAB_ICON_CLASS} strokeWidth={DOCK_TAB_ICON_STROKE} />
               )}
-              <span className="truncate">{workspace.label}</span>
+              <span className={DOCK_TAB_LABEL_CLASS}>{workspace.label}</span>
             </button>
             {active && (
               <button
@@ -216,14 +264,14 @@ function WorkspaceTab({ workspace, active, onActivate }: WorkspaceTabProps) {
                   toggleWorkspaceCollapsed(workspace.id);
                 }}
                 className={cn(
-                  'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-inner',
+                  'vx-btn vx-btn-quiet inline-flex h-4 w-4 items-center justify-center px-0',
                   'text-text-faint hover:text-text-primary focus-visible:opacity-100'
                 )}
               >
                 {chatsCollapsed ? (
-                  <ChevronDown className="h-3 w-3" strokeWidth={2.25} />
+                  <ChevronDown className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
                 ) : (
-                  <ChevronUp className="h-3 w-3" strokeWidth={2.25} />
+                  <ChevronUp className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
                 )}
               </button>
             )}
@@ -235,7 +283,7 @@ function WorkspaceTab({ workspace, active, onActivate }: WorkspaceTabProps) {
                 onClick={() => setRetryOpen(true)}
                 className="shrink-0 text-warning focus-visible:opacity-100"
               >
-                <AlertTriangle className="h-3 w-3" strokeWidth={2} />
+                <AlertTriangle className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
               </button>
             )}
             <span className={cn('flex shrink-0 items-center gap-0.5', DOCK_HOVER_ACTIONS)}>
@@ -246,64 +294,87 @@ function WorkspaceTab({ workspace, active, onActivate }: WorkspaceTabProps) {
                   setEditing(true);
                   queueMicrotask(() => inputRef.current?.select());
                 }}
-                className={cn(
-                  'inline-flex h-4 w-4 items-center justify-center rounded-inner',
-                  'text-text-faint hover:text-text-primary focus-visible:opacity-100'
-                )}
+                className="vx-btn vx-btn-quiet inline-flex h-4 w-4 items-center justify-center px-0 text-text-faint hover:text-text-primary focus-visible:opacity-100"
               >
-                <Pencil className="h-2.5 w-2.5" strokeWidth={2} />
+                <Pencil className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
               </button>
               <button
                 type="button"
                 aria-label="Remove workspace"
                 onClick={() => setRemoveStep('confirm')}
-                className={cn(
-                  'inline-flex h-4 w-4 items-center justify-center rounded-inner',
-                  'text-text-faint hover:text-danger focus-visible:opacity-100'
-                )}
+                className="vx-btn vx-btn-quiet inline-flex h-4 w-4 items-center justify-center px-0 text-text-faint hover:text-danger focus-visible:opacity-100"
               >
-                <Trash2 className="h-2.5 w-2.5" strokeWidth={2} />
+                <Trash2 className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
               </button>
             </span>
           </>
         )}
       </div>
 
-      <ConfirmDialog
-        open={removeStep === 'confirm'}
-        title="Remove workspace?"
-        message={`"${workspace.label}" will be removed from the list.`}
-        confirmLabel="Continue"
-        onConfirm={() => setRemoveStep('choice')}
-        onCancel={() => setRemoveStep('idle')}
-      />
-      <ConfirmDialog
-        open={removeStep === 'choice'}
-        title="Delete chats too?"
-        message="Keep chats (move to another workspace) or delete them permanently."
-        confirmLabel="Delete chats"
-        cancelLabel="Keep chats"
-        variant="danger"
-        onConfirm={() => {
-          setRemoveStep('idle');
-          void removeWorkspace(workspace.id, { deleteConversations: true });
-        }}
-        onCancel={() => {
-          setRemoveStep('idle');
-          void removeWorkspace(workspace.id, { deleteConversations: false });
-        }}
-      />
-      <ConfirmDialog
-        open={retryOpen}
-        title="Retry workspace path?"
-        message={`Agent V could not reach "${workspace.path}". Retry now?`}
-        confirmLabel="Retry"
-        onConfirm={() => {
-          setRetryOpen(false);
-          void retryReachability(workspace.id);
-        }}
-        onCancel={() => setRetryOpen(false)}
-      />
     </>
+  );
+}
+
+interface WorkspaceRemoveChoiceProps {
+  label: string;
+  onCancel: () => void;
+  onKeepChats: () => void;
+  onDeleteChats: () => void;
+}
+
+function WorkspaceRemoveChoice({
+  label,
+  onCancel,
+  onKeepChats,
+  onDeleteChats
+}: WorkspaceRemoveChoiceProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onPointerDown = (e: PointerEvent) => {
+      const root = rootRef.current;
+      if (!root) return;
+      const target = e.target as Node | null;
+      if (target && root.contains(target)) return;
+      onCancel();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onCancel();
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [onCancel]);
+
+  return (
+    <div
+      ref={rootRef}
+      role="group"
+      aria-label={`Choose how to remove ${label}`}
+      data-inline-confirm="true"
+      className="vx-inline-confirm flex min-w-0 items-center gap-2 px-1.5 py-0.5"
+    >
+      <span className="min-w-0 truncate text-row text-text-faint" aria-hidden>
+        {label}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-row text-text-secondary">
+        Delete chats too?
+      </span>
+      <Button size="sm" variant="ghost" onClick={onCancel}>
+        Cancel
+      </Button>
+      <Button size="sm" variant="secondary" onClick={onKeepChats}>
+        Keep chats
+      </Button>
+      <Button size="sm" variant="danger" onClick={onDeleteChats}>
+        Delete chats
+      </Button>
+    </div>
   );
 }

@@ -14,6 +14,7 @@ import { registerConversationsIpc } from './conversations.ipc.js';
 import { registerTokensIpc } from './tokens.ipc.js';
 import { registerCheckpointsIpc } from './checkpoints.ipc.js';
 import { registerAppIpc } from './app.ipc.js';
+import { registerAttachmentsIpc } from './attachments.ipc.js';
 import { registerContextSummaryIpc } from './contextSummary.ipc.js';
 import {
   abortRunsForConversation,
@@ -55,6 +56,7 @@ export function registerIpc(): void {
   registerTokensIpc();
   registerCheckpointsIpc();
   registerAppIpc();
+  registerAttachmentsIpc();
   registerContextSummaryIpc();
 
   // Renderer → main log relay (used by the React error boundary).

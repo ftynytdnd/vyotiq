@@ -1,19 +1,31 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useShallow } from 'zustand/react/shallow';
 import { TitleBar } from './components/titlebar/TitleBar.js';
 import { LeftDock } from './components/dock/index.js';
 import { SecondaryZone } from './components/zone/index.js';
 import { ChatPage } from './pages/ChatPage.js';
 import { ToastHost } from './components/toast/ToastHost.js';
-// Lazy-loaded overlays. ConfirmHost and PromptDialog are the only
-// modal surfaces left at the app root — Settings, Checkpoints, and
-// Context Inspector live in the right-hand SecondaryZone.
+import { LoadingHint } from './components/ui/LoadingHint.js';
+// Lazy-loaded composer dialogs. ConfirmHost and PromptDialog portal
+// into the `ComposerDialogAnchor` slot above the chat composer
+// (Settings, Checkpoints, and Context Inspector live in the
+// right-hand SecondaryZone instead).
 const ConfirmHost = lazy(() =>
-  import('./components/confirm/ConfirmHost.js').then((m) => ({ default: m.ConfirmHost }))
+  retryDynamicImport(() =>
+    import('./components/confirm/ConfirmHost.js').then((m) => ({ default: m.ConfirmHost }))
+  )
 );
 const PromptDialog = lazy(() =>
-  import('./components/ui/PromptDialog.js').then((m) => ({ default: m.PromptDialog }))
+  retryDynamicImport(() =>
+    import('./components/ui/PromptDialog.js').then((m) => ({ default: m.PromptDialog }))
+  )
 );
-import { useProviderStore } from './store/useProviderStore.js';
+import {
+  selectEnabledProviderIds,
+  useProviderStore
+} from './store/useProviderStore.js';
+import { retryDynamicImport } from './lib/retryDynamicImport.js';
 import { useWorkspaceStore } from './store/useWorkspaceStore.js';
 import { useSettingsStore, selectSettingsReady } from './store/useSettingsStore.js';
 import { useToastStore } from './store/useToastStore.js';
@@ -26,38 +38,97 @@ import {
   useSecondaryZoneStore,
   type SettingsTabId
 } from './store/useSecondaryZoneStore.js';
+import { usePersistedPanelWidth } from './hooks/usePersistedPanelWidth.js';
 import { vyotiq } from './lib/ipc.js';
 import { logger } from './lib/logger.js';
 import { openContextInspectorForActiveChat } from './lib/openContextInspector.js';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts.js';
+import {
+  applyAppTheme,
+  stopWatchSystemTheme,
+  themePrefsFromSettings,
+  watchSystemTheme
+} from './lib/theme.js';
+import { AgentTracePanel } from './components/agent/AgentTracePanel.js';
+import { AttachmentPreviewPanel } from './components/composer/AttachmentPreviewPanel.js';
+import { useAttachmentPreviewStore } from './store/useAttachmentPreviewStore.js';
+import { LiveDiffFloatingPanel } from './components/timeline/LiveDiffFloatingPanel.js';
+import { useFloatingLiveDiffStore } from './store/useFloatingLiveDiffStore.js';
 
 const log = logger.child('app');
 
 export default function App() {
   const refreshProviders = useProviderStore((s) => s.refresh);
+  const discoverCached = useProviderStore((s) => s.discoverCached);
+  const enabledProviderIds = useProviderStore(
+    useShallow((s) => selectEnabledProviderIds(s.providers))
+  );
   const refreshWorkspace = useWorkspaceStore((s) => s.refresh);
   const refreshSettings = useSettingsStore((s) => s.refresh);
   const refreshConversations = useConversationsStore((s) => s.refresh);
-  const providers = useProviderStore((s) => s.providers);
-  const discoverCached = useProviderStore((s) => s.discoverCached);
   const settings = useSettingsStore((s) => s.settings);
   const settingsReady = useSettingsStore(selectSettingsReady);
-  const hydrateUi = useUiStore((s) => s.hydrate);
-  const uiHydrated = useUiStore((s) => s.hydrated);
-  const hydrateTimelineUi = useTimelineUiStore((s) => s.hydrate);
-  const timelineUiHydrated = useTimelineUiStore((s) => s.hydrated);
+  const { hydrateUi, uiHydrated } = useUiStore(
+    useShallow((s) => ({ hydrateUi: s.hydrate, uiHydrated: s.hydrated }))
+  );
+  const { hydrateTimelineUi, timelineUiHydrated } = useTimelineUiStore(
+    useShallow((s) => ({ hydrateTimelineUi: s.hydrate, timelineUiHydrated: s.hydrated }))
+  );
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
-  const hydrateActiveByWorkspace = useConversationsStore((s) => s.hydrateActiveByWorkspace);
-  const selectConversation = useConversationsStore((s) => s.select);
-  const conversationsList = useConversationsStore((s) => s.list);
-  const activeIdByWorkspace = useConversationsStore((s) => s.activeIdByWorkspace);
+  const {
+    hydrateActiveByWorkspace,
+    select: selectConversation,
+    list: conversationsList,
+    activeIdByWorkspace,
+    prewarm: prewarmConversation,
+    newConversation
+  } = useConversationsStore(
+    useShallow((s) => ({
+      hydrateActiveByWorkspace: s.hydrateActiveByWorkspace,
+      select: s.select,
+      list: s.list,
+      activeIdByWorkspace: s.activeIdByWorkspace,
+      prewarm: s.prewarm,
+      newConversation: s.newConversation
+    }))
+  );
   const [activeMapHydrated, setActiveMapHydrated] = useState(false);
 
   const [workspacePathOpen, setWorkspacePathOpen] = useState(false);
   const [workspacePathError, setWorkspacePathError] = useState<string | null>(null);
   const initCheckpoints = useCheckpointsStore((s) => s.initOnce);
-  const openSecondarySettings = useSecondaryZoneStore((s) => s.openSettings);
-  const openSecondaryCheckpoints = useSecondaryZoneStore((s) => s.openCheckpoints);
+  const {
+    openSettings: openSecondarySettings,
+    openCheckpoints: openSecondaryCheckpoints,
+    agentTraceId,
+    panel: secondaryPanel,
+    close: closeSecondary,
+    closeAllOverlays
+  } = useSecondaryZoneStore(
+    useShallow((s) => ({
+      openSettings: s.openSettings,
+      openCheckpoints: s.openCheckpoints,
+      agentTraceId: s.agentTraceId,
+      panel: s.panel,
+      close: s.close,
+      closeAllOverlays: s.closeAllOverlays
+    }))
+  );
+  const { previewAttachment, closePreview } = useAttachmentPreviewStore(
+    useShallow((s) => ({ previewAttachment: s.attachment, closePreview: s.close }))
+  );
+  const { liveDiffTarget, dismissLiveDiff } = useFloatingLiveDiffStore(
+    useShallow((s) => ({ liveDiffTarget: s.target, dismissLiveDiff: s.dismiss }))
+  );
+  const agentTraceWidth = usePersistedPanelWidth('agentTrace');
+  const attachmentPreviewWidth = usePersistedPanelWidth('attachmentPreview');
+  const overlayOpen =
+    secondaryPanel !== null ||
+    agentTraceId !== null ||
+    previewAttachment !== null ||
+    liveDiffTarget !== null;
+  const showToast = useToastStore((s) => s.show);
+  const updateCheckDone = useRef(false);
 
   // Foundational data: providers, workspace, settings, conversations.
   useEffect(() => {
@@ -104,6 +175,46 @@ export default function App() {
     }
   }, [settings, settingsReady, uiHydrated, hydrateUi]);
 
+  useEffect(() => {
+    if (!settingsReady) return;
+    const prefs = themePrefsFromSettings(settings);
+    applyAppTheme(prefs);
+    watchSystemTheme(() => {}, () => themePrefsFromSettings(useSettingsStore.getState().settings));
+    return () => stopWatchSystemTheme();
+  }, [settings, settingsReady]);
+
+  useEffect(() => {
+    if (!settingsReady) return;
+    if (settings.ui?.firstLaunch) {
+      openSecondarySettings('appearance');
+      void vyotiq.settings.set({
+        ui: { ...settings.ui, firstLaunch: false, lastSettingsTab: 'appearance' }
+      });
+    }
+  }, [settings, settingsReady, openSecondarySettings]);
+
+  // Auto-check for updates once after settings hydrate (packaged builds only).
+  useEffect(() => {
+    if (!settingsReady || updateCheckDone.current) return;
+    updateCheckDone.current = true;
+    let cancelled = false;
+    void vyotiq.app
+      .checkForUpdates()
+      .then((result) => {
+        if (cancelled || !result.updateAvailable) return;
+        showToast(
+          result.version ? `Update available: v${result.version}` : 'Update available',
+          'success'
+        );
+      })
+      .catch(() => {
+        /* silent on launch — About tab manual check surfaces errors */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsReady, showToast]);
+
   // Hydrate persisted timeline expand/collapse state exactly once after
   // the first settings refresh resolves. Cheap — just a
   // Record<string, string[]> snapshot.
@@ -130,7 +241,6 @@ export default function App() {
   // contending with first-paint work) and fall back to a 200 ms
   // `setTimeout`. Each prewarm is fire-and-forget; failures are
   // logged inside `useConversationsStore.prewarm`.
-  const prewarmConversation = useConversationsStore((s) => s.prewarm);
   const [prewarmDone, setPrewarmDone] = useState(false);
   useEffect(() => {
     if (prewarmDone) return;
@@ -187,51 +297,83 @@ export default function App() {
     prewarmConversation
   ]);
 
-  // Sync the chat store's active mirror with the active workspace's
-  // last-viewed conversation. Runs whenever:
-  //   - the active workspace changes (user clicks another group),
-  //   - the persisted active map finishes hydrating (first boot), or
-  //   - the conversations list arrives (so we can validate the slot
-  //     still exists before selecting it).
-  useEffect(() => {
-    if (!activeMapHydrated) return;
-    if (!activeWorkspaceId) return;
+  const slotIsValidForWorkspace = useMemo(() => {
+    if (!activeWorkspaceId) return false;
     const targetId = activeIdByWorkspace[activeWorkspaceId] ?? null;
-    // Verify the slot still resolves against the FULL list — the user
-    // could have deleted the conversation in a previous boot that
-    // didn't run this hydration step. If not (or no slot at all),
-    // explicitly clear the chat mirror so the user gets a fresh-state
-    // ChatPage instead of seeing the previous workspace's session.
-    const slotIsValid =
+    return (
       targetId !== null &&
-      conversationsList.some((m) => m.id === targetId && m.workspaceId === activeWorkspaceId);
-    if (slotIsValid) {
-      void selectConversation(targetId!);
+      conversationsList.some((m) => m.id === targetId && m.workspaceId === activeWorkspaceId)
+    );
+  }, [activeWorkspaceId, activeIdByWorkspace, conversationsList]);
+
+  const activeSlotConversationId =
+    activeWorkspaceId && slotIsValidForWorkspace
+      ? (activeIdByWorkspace[activeWorkspaceId] ?? null)
+      : null;
+
+  // Workspace switch: follow the persisted last-active slot for the
+  // newly active workspace. Skip when the mirror already shows that
+  // hydrated conversation — avoids redundant `select()` supersede churn.
+  useEffect(() => {
+    if (!activeMapHydrated || !activeWorkspaceId) return;
+    if (!slotIsValidForWorkspace || !activeSlotConversationId) {
+      useChatStore.getState().setActiveConversation(null);
       return;
     }
-    // No valid slot — make sure the mirror isn't still showing a
-    // sibling workspace's slice. `setActiveConversation(null)` only
-    // touches the mirror, never the slice registry, so background
-    // runs keep streaming undisturbed.
-    useChatStore.getState().setActiveConversation(null);
+    const chat = useChatStore.getState();
+    const conv = useConversationsStore.getState();
+    if (
+      chat.conversationId === activeSlotConversationId &&
+      conv.hydratedIds.has(activeSlotConversationId)
+    ) {
+      return;
+    }
+    void selectConversation(activeSlotConversationId);
   }, [
     activeMapHydrated,
     activeWorkspaceId,
-    activeIdByWorkspace,
+    activeSlotConversationId,
+    slotIsValidForWorkspace,
+    selectConversation
+  ]);
+
+  // List validation: once the conversation catalogue arrives, re-check
+  // that the active workspace slot still resolves. Does not re-select
+  // when the user is already viewing a valid hydrated conversation.
+  useEffect(() => {
+    if (!activeMapHydrated || !activeWorkspaceId || conversationsList.length === 0) return;
+    if (!slotIsValidForWorkspace) {
+      useChatStore.getState().setActiveConversation(null);
+      return;
+    }
+    if (!activeSlotConversationId) return;
+    const chat = useChatStore.getState();
+    const conv = useConversationsStore.getState();
+    if (
+      chat.conversationId === activeSlotConversationId &&
+      conv.hydratedIds.has(activeSlotConversationId)
+    ) {
+      return;
+    }
+    void selectConversation(activeSlotConversationId);
+  }, [
+    activeMapHydrated,
+    activeWorkspaceId,
     conversationsList,
+    slotIsValidForWorkspace,
+    activeSlotConversationId,
     selectConversation
   ]);
 
   // Background TTL-respecting model discovery, once per provider per boot.
-  // Skipped for providers that already have a fresh cache server-side.
+  // Depends only on enabled provider ids — not `lastDiscoveredAt` mutations.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      for (const p of providers) {
+      for (const id of enabledProviderIds) {
         if (cancelled) return;
-        if (!p.enabled) continue;
         try {
-          await discoverCached(p.id);
+          await discoverCached(id);
         } catch {
           // Failures are surfaced inside the provider card; don't block boot.
         }
@@ -240,20 +382,12 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-    // Audit fix L-02: depend on the joined provider-id+enabled-flag
-    // string so REPLACING a provider (same length, different id) still
-    // triggers discovery against the new endpoint. The server's TTL
-    // cache deduplicates anyway — re-running on every change is safe
-    // and ensures cache misses on the new id are caught immediately
-    // rather than waiting for the TTL to expire.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [providers.map((p) => `${p.id}:${p.enabled ? 1 : 0}`).join(',')]);
+  }, [enabledProviderIds, discoverCached]);
 
   const openSettings = (tab?: SettingsTabId) => {
     openSecondarySettings(tab);
   };
 
-  const newConversation = useConversationsStore((s) => s.newConversation);
   const pickWorkspace = useWorkspaceStore((s) => s.pick);
   const setWorkspace = useWorkspaceStore((s) => s.set);
 
@@ -326,24 +460,55 @@ export default function App() {
       />
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <LeftDock />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <main className="min-h-0 flex-1 overflow-hidden bg-surface-base">
             <ChatPage
               onOpenProviders={() => openSettings('providers')}
               onOpenCheckpointSettings={() => openSettings('checkpoints')}
             />
           </main>
+          <SecondaryZone />
         </div>
-        <SecondaryZone />
       </div>
-      <Suspense fallback={null}>
+      {overlayOpen &&
+        createPortal(
+          <button
+            type="button"
+            className="fixed inset-0 z-[59] bg-black/40"
+            aria-label="Close panel"
+            onClick={closeAllOverlays}
+          />,
+          document.body
+        )}
+      <AgentTracePanel
+        open={agentTraceId !== null}
+        subagentId={agentTraceId}
+        onClose={closeSecondary}
+        initialWidth={agentTraceWidth.initialWidth}
+        onWidthChange={agentTraceWidth.onWidthChange}
+      />
+      <AttachmentPreviewPanel
+        open={previewAttachment !== null}
+        attachment={previewAttachment}
+        onClose={closePreview}
+        initialWidth={attachmentPreviewWidth.initialWidth}
+        onWidthChange={attachmentPreviewWidth.onWidthChange}
+      />
+      <LiveDiffFloatingPanel
+        target={liveDiffTarget}
+        onClose={() => {
+          if (liveDiffTarget) dismissLiveDiff(liveDiffTarget.callId);
+        }}
+      />
+      <Suspense fallback={<LoadingHint className="py-4" />}>
         <PromptDialog
           open={workspacePathOpen}
+          variant="workspacePath"
           title="Set Workspace by Path"
           message={
             workspacePathError
-              ? `Could not set that workspace: ${workspacePathError}\n\nPaste another absolute path or cancel.`
-              : 'Paste an absolute path to a folder. Agent V\'s tools will be sandboxed inside it.'
+              ? `Could not set that workspace: ${workspacePathError}\n\nChoose another folder, pick a recent path, or paste an absolute path.`
+              : 'Choose a folder or paste an absolute path. Agent V\'s tools will be sandboxed inside it.'
           }
           placeholder={
             navigator.userAgent.toLowerCase().includes('windows')
@@ -359,7 +524,7 @@ export default function App() {
           }}
         />
       </Suspense>
-      <Suspense fallback={null}>
+      <Suspense fallback={<LoadingHint className="py-4" />}>
         <ConfirmHost />
       </Suspense>
       <ToastHost />

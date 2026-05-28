@@ -5,6 +5,7 @@
 import type { AppSettings } from '@shared/types/ipc.js';
 import {
   assertBoolean,
+  assertEnum,
   assertNumber,
   assertObject,
   assertString,
@@ -19,9 +20,11 @@ const SETTINGS_TOP_KEYS = new Set([
   'ui'
 ]);
 
-const UI_BOOLEAN_KEYS = ['sidebarOpen', 'dockExpanded'] as const;
+const UI_BOOLEAN_KEYS = ['sidebarOpen', 'dockExpanded', 'reducedMotion', 'firstLaunch'] as const;
 
 const UI_NUMERIC_KEYS = ['dockWidth'] as const;
+
+const UI_STRING_KEYS = ['theme', 'density', 'lastSettingsTab'] as const;
 
 const UI_RECORD_KEYS = [
   'expandedRows',
@@ -33,8 +36,17 @@ const UI_RECORD_KEYS = [
   'gatePromptOnPendingByWorkspace',
   'approveAutoAcceptPendingByWorkspace',
   'gatePromptOnReviewRequestChangesByWorkspace',
-  'contextSummaryByWorkspace'
+  'contextSummaryByWorkspace',
+  'tokenBudgetWarningByWorkspace',
+  'panelWidths'
 ] as const;
+
+const THEME_VALUES = ['dark', 'light', 'system'] as const;
+const DENSITY_VALUES = ['compact', 'balanced', 'airy'] as const;
+
+/** Absolute token count for the timeline budget-warning row (Settings → Context). */
+const TOKEN_BUDGET_WARNING_MIN = 1_000;
+const TOKEN_BUDGET_WARNING_MAX = 10_000_000;
 
 /** Max keys per persisted `ui.*` record map — prevents unbounded merge. */
 const UI_RECORD_MAX_KEYS = 256;
@@ -61,7 +73,10 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
     const allowed =
       (UI_BOOLEAN_KEYS as readonly string[]).includes(key) ||
       (UI_NUMERIC_KEYS as readonly string[]).includes(key) ||
-      (UI_RECORD_KEYS as readonly string[]).includes(key);
+      (UI_STRING_KEYS as readonly string[]).includes(key) ||
+      (UI_RECORD_KEYS as readonly string[]).includes(key) ||
+      key === 'tokenBudgetWarningTokens' ||
+      key === 'favoriteModels';
     if (!allowed) {
       throw new Error(`${channel}: patch.ui.${key} is not a recognized ui field`);
     }
@@ -73,7 +88,33 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
   }
   for (const k of UI_NUMERIC_KEYS) {
     if (k in ui && ui[k] !== undefined) {
-      assertNumber(channel, `patch.ui.${k}`, ui[k], { integer: true, min: 220, max: 360 });
+      assertNumber(channel, `patch.ui.${k}`, ui[k], { integer: true, min: 180, max: 320 });
+    }
+  }
+  for (const k of UI_STRING_KEYS) {
+    if (k in ui && ui[k] !== undefined) {
+      assertString(channel, `patch.ui.${k}`, ui[k]);
+      if (k === 'theme') {
+        assertEnum(channel, 'patch.ui.theme', ui[k], THEME_VALUES);
+      }
+      if (k === 'density') {
+        assertEnum(channel, 'patch.ui.density', ui[k], DENSITY_VALUES);
+      }
+    }
+  }
+  if ('favoriteModels' in ui && ui.favoriteModels !== undefined) {
+    assertStringArray(channel, 'patch.ui.favoriteModels', ui.favoriteModels, {
+      maxItems: 64,
+      maxBytes: 256
+    });
+  }
+  if ('panelWidths' in ui && ui.panelWidths !== undefined) {
+    assertObject(channel, 'patch.ui.panelWidths', ui.panelWidths);
+    const map = ui.panelWidths as Record<string, unknown>;
+    assertRecordKeyCount(channel, 'patch.ui.panelWidths', map, 16);
+    for (const [panelId, w] of Object.entries(map)) {
+      assertString(channel, 'patch.ui.panelWidths key', panelId);
+      assertNumber(channel, `patch.ui.panelWidths[${panelId}]`, w, { integer: true, min: 320, max: 720 });
     }
   }
   if ('expandedRows' in ui && ui.expandedRows !== undefined) {
@@ -196,6 +237,26 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
     assertRecordKeyCount(channel, 'patch.ui.contextSummaryByWorkspace', map, UI_RECORD_MAX_KEYS);
     for (const key of Object.keys(map)) {
       assertString(channel, 'patch.ui.contextSummaryByWorkspace key', key);
+    }
+  }
+  if ('tokenBudgetWarningTokens' in ui && ui.tokenBudgetWarningTokens !== undefined) {
+    assertNumber(channel, 'patch.ui.tokenBudgetWarningTokens', ui.tokenBudgetWarningTokens, {
+      integer: true,
+      min: TOKEN_BUDGET_WARNING_MIN,
+      max: TOKEN_BUDGET_WARNING_MAX
+    });
+  }
+  if ('tokenBudgetWarningByWorkspace' in ui && ui.tokenBudgetWarningByWorkspace !== undefined) {
+    assertObject(channel, 'patch.ui.tokenBudgetWarningByWorkspace', ui.tokenBudgetWarningByWorkspace);
+    const map = ui.tokenBudgetWarningByWorkspace as Record<string, unknown>;
+    assertRecordKeyCount(channel, 'patch.ui.tokenBudgetWarningByWorkspace', map, UI_RECORD_MAX_KEYS);
+    for (const [wsId, tokens] of Object.entries(map)) {
+      assertString(channel, 'patch.ui.tokenBudgetWarningByWorkspace key', wsId);
+      assertNumber(channel, `patch.ui.tokenBudgetWarningByWorkspace[${wsId}]`, tokens, {
+        integer: true,
+        min: TOKEN_BUDGET_WARNING_MIN,
+        max: TOKEN_BUDGET_WARNING_MAX
+      });
     }
   }
 }

@@ -69,12 +69,12 @@ describe('PendingChangesTimelineRow', () => {
       }));
     });
     const { container } = render(<PendingChangesTimelineRow />);
-    expect(container.textContent ?? '').toContain('Pending changes');
-    expect(container.textContent ?? '').toContain('auto-accepted on next message');
+    expect(container.textContent ?? '').toContain('1 file');
+    expect(container.textContent ?? '').toContain('Accept all');
     expect(container.querySelector('[aria-expanded="true"]')).toBeNull();
   });
 
-  it('auto-expands when gate-on and pending entries exist', async () => {
+  it('shows gate pill when gate-on without auto-expanding the panel', async () => {
     await act(async () => {
       useSettingsStore.setState((prev) => ({
         ...prev,
@@ -91,8 +91,9 @@ describe('PendingChangesTimelineRow', () => {
       }));
     });
     const { container } = render(<PendingChangesTimelineRow />);
-    expect(container.querySelector('[aria-expanded="true"]')).not.toBeNull();
-    expect(container.textContent ?? '').toContain('approve or reject before sending');
+    expect(container.textContent ?? '').toContain('2 files');
+    expect(container.querySelector('.bg-danger-soft')).not.toBeNull();
+    expect(container.querySelector('[aria-expanded="true"]')).toBeNull();
   });
 
   it('accept-all invokes store acceptAll', async () => {

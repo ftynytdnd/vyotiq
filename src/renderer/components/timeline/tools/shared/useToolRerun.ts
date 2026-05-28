@@ -4,7 +4,7 @@
 
 import { useCallback, useState } from 'react';
 import type { ToolCall, RegisteredToolName } from '@shared/types/tool.js';
-import { isRerunnableToolCall, isRerunnableToolName } from '@shared/tools/toolRerun.js';
+import { isRerunnableToolCall } from '@shared/tools/toolRerun.js';
 import { vyotiq } from '../../../../lib/ipc.js';
 import { useChatStore } from '../../../../store/useChatStore.js';
 import {
@@ -13,11 +13,6 @@ import {
 } from '../../../../store/useSettingsStore.js';
 import { useWorkspaceStore } from '../../../../store/useWorkspaceStore.js';
 import { useToastStore } from '../../../../store/useToastStore.js';
-
-/** @deprecated Prefer `isRerunnableToolCall` when args are available. */
-export function canRerunTool(name: string): boolean {
-  return isRerunnableToolName(name);
-}
 
 export function canRerunToolCall(
   call: ToolCall

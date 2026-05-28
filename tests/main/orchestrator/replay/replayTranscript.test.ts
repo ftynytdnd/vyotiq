@@ -209,6 +209,24 @@ describe('replayTranscript', () => {
     expect(tools[0]?.tool_call_id).toBe('real-call');
   });
 
+  it('does not re-emit tool-call/tool-result for an already-settled call id', () => {
+    const events: TimelineEvent[] = [
+      userPrompt('go'),
+      textDelta('a-1', 'calling'),
+      toolCall('a-1', 'settled-call', 'read', { path: 'a.ts' }),
+      toolResult('a-1', 'settled-call', 'read', 'file contents'),
+      // Duplicate persisted tool-call for the same id (settled row).
+      toolCall('a-1', 'settled-call', 'read', { path: 'a.ts' }),
+      toolResult('a-1', 'settled-call', 'read', 'file contents again')
+    ];
+    const msgs = replayTranscript(events);
+    const assistants = msgs.filter((m) => m.role === 'assistant');
+    const tools = msgs.filter((m) => m.role === 'tool');
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0]?.tool_calls).toHaveLength(1);
+    expect(tools).toHaveLength(1);
+  });
+
   it('skips sub-agent internal tool-call/-result events', () => {
     const events: TimelineEvent[] = [
       userPrompt('go'),

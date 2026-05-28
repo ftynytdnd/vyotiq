@@ -44,7 +44,10 @@ beforeEach(() => {
   vi.doUnmock('electron');
 });
 
-describe('conversationStore — corrupt index quarantine', () => {
+// `freshStore()` resets modules and dynamically imports conversationStore
+// (heavy graph: workspace, checkpoints, logger). Cold import often exceeds
+// Vitest's default 5s when this file runs alone or under load.
+describe('conversationStore — corrupt index quarantine', { timeout: 15_000 }, () => {
   it('quarantine-renames a corrupt index.json and starts empty', async () => {
     const { mod, baseDir } = await freshStore();
     await fs.mkdir(baseDir, { recursive: true });

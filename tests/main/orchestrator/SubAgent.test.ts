@@ -24,9 +24,13 @@ vi.mock('@main/providers/chatClient', () => ({
 vi.mock('@main/harness/harnessLoader', () => ({
   buildSubagentSystemPrompt: () => '<system_instructions>stub</system_instructions>'
 }));
-vi.mock('@main/orchestrator/contextManager', () => ({
-  inlineFiles: vi.fn(async () => '')
-}));
+vi.mock('@main/orchestrator/contextManager', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@main/orchestrator/contextManager')>();
+  return {
+    ...actual,
+    inlineFiles: vi.fn(async () => '')
+  };
+});
 vi.mock('@main/orchestrator/retry', () => ({
   // Skip real backoff so an error path in a future test wouldn't stall.
   backoff: vi.fn(async () => undefined)
@@ -36,6 +40,8 @@ vi.mock('@main/orchestrator/loop/handleToolCalls', () => ({
 }));
 
 import { streamChat } from '@main/providers/chatClient';
+import { handleToolCalls } from '@main/orchestrator/loop/handleToolCalls';
+import { SUBAGENT_MAX_ITERATIONS } from '@shared/constants';
 import { runSubAgent } from '@main/orchestrator/SubAgent';
 
 async function* streamOf(deltas: ChatStreamDelta[]): AsyncGenerator<ChatStreamDelta> {
@@ -344,6 +350,67 @@ describe('runSubAgent — missing-envelope recovery (one-shot)', () => {
     // Two provider calls: original + one recovery attempt. NOT 14
     // (no spin against the cap).
     expect(streamChat).toHaveBeenCalledTimes(2);
+  });
+
+  it('includes prior turn excerpt in the recovery user message', async () => {
+    const uniqueMarker = 'UNIQUE_PRIOR_EXCERPT_MARKER_FOR_RECOVERY';
+    let call = 0;
+    vi.mocked(streamChat).mockImplementation((req) => {
+      call += 1;
+      if (call === 1) {
+        return streamOf([
+          { contentDelta: `${uniqueMarker} — prose without envelope.` },
+          { finishReason: 'stop' }
+        ]);
+      }
+      const recoveryUser = req.messages.find(
+        (m) => m.role === 'user' && typeof m.content === 'string' && m.content.includes(uniqueMarker)
+      );
+      expect(recoveryUser).toBeDefined();
+      expect(recoveryUser?.content).toContain('Your previous turn (excerpt)');
+      return streamOf([
+        {
+          contentDelta:
+            '<result><status>success</status><summary>Wrapped.</summary></result>'
+        },
+        { finishReason: 'stop' }
+      ]);
+    });
+
+    const run = await runSubAgent(baseSpec, baseDeps);
+    expect(run.status).toBe('success');
+    expect(streamChat).toHaveBeenCalledTimes(2);
+  });
+
+  it('emits phase on final iteration when recovery cannot run', async () => {
+    const phases: string[] = [];
+    let call = 0;
+    vi.mocked(streamChat).mockImplementation(() => {
+      call += 1;
+      if (call < SUBAGENT_MAX_ITERATIONS) {
+        return streamOf([
+          {
+            toolCallDelta: { index: 0, id: `call-${call}`, name: 'read', argumentsDelta: '{}' }
+          },
+          { finishReason: 'tool_calls' }
+        ]);
+      }
+      return streamOf([
+        { contentDelta: 'Final iteration prose without envelope.' },
+        { finishReason: 'stop' }
+      ]);
+    });
+    vi.mocked(handleToolCalls).mockResolvedValue({ attempted: 1, failed: 0 });
+
+    const run = await runSubAgent(baseSpec, {
+      ...baseDeps,
+      onTimelineEvent: (event) => {
+        if (event.kind === 'phase') phases.push(event.label);
+      }
+    });
+    expect(run.status).toBe('malformed');
+    expect(phases.some((label) => label.includes('final sub-agent iteration'))).toBe(true);
+    expect(streamChat).toHaveBeenCalledTimes(SUBAGENT_MAX_ITERATIONS);
   });
 
   it('does NOT trigger the recovery when the first turn already has a <result> envelope', async () => {

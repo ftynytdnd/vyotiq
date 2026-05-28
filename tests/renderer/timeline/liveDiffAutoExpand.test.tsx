@@ -98,29 +98,20 @@ beforeEach(() => {
   });
 });
 
-describe('live streaming diff — auto-expand', () => {
-  it('auto-expands the tool-group row when a partial child carries a diffStream', () => {
+describe('live streaming diff — collapsed one-line', () => {
+  it('keeps the tool-group row collapsed when a partial child carries a diffStream', () => {
     const { container } = render(
       <ToolGroupRow rowKey="tg:c-live" toolName="edit" items={[partialChild()]} />
     );
-    // Top-level group button is the FIRST <button> in the tree; it
-    // must report aria-expanded=true even though no one clicked it.
     const groupBtn = container.querySelector('button')!;
-    expect(groupBtn.getAttribute('aria-expanded')).toBe('true');
+    expect(groupBtn.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('reveals the streaming hunk content in the DOM with zero clicks', () => {
+  it('does not reveal streaming hunk content until the user expands', () => {
     const { container } = render(
       <ToolGroupRow rowKey="tg:c-live" toolName="edit" items={[partialChild()]} />
     );
-    // The streaming + line carries a unique sentinel so we can detect
-    // it specifically (not just any diff-related markup).
-    expect(container.textContent ?? '').toContain('STREAMING_NEW_LINE');
-    expect(container.textContent ?? '').toContain('old_line');
-    // The data-variant on the diff container must be `partial` while
-    // streaming so the cursor + softer intra-line stain land.
-    const partialNode = container.querySelector('[data-variant="partial"]');
-    expect(partialNode).not.toBeNull();
+    expect(container.textContent ?? '').not.toContain('STREAMING_NEW_LINE');
   });
 
   it('keeps the group collapsed when no partial child is in flight', () => {
@@ -134,14 +125,14 @@ describe('live streaming diff — auto-expand', () => {
     expect(container.textContent ?? '').not.toContain('STREAMING_NEW_LINE');
   });
 
-  it('records a manual override when the user collapses the auto-expanded row', () => {
+  it('records a manual override when the user expands then collapses the row', () => {
     const { container } = render(
       <ToolGroupRow rowKey="tg:c-live" toolName="edit" items={[partialChild()]} />
     );
     const groupBtn = container.querySelector('button')!;
+    expect(groupBtn.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(groupBtn);
     expect(groupBtn.getAttribute('aria-expanded')).toBe('true');
-    // Click toggles the VISIBLE state from true → false. The store
-    // records a manual override + the explicit `false` value.
     fireEvent.click(groupBtn);
     const ui = useTimelineUiStore.getState();
     expect(ui.hasManualOverride('c-test', 'tg:c-live')).toBe(true);
@@ -156,7 +147,7 @@ describe('live streaming diff — auto-expand', () => {
     const { container, rerender } = render(
       <ToolGroupRow rowKey="tg:c-live" toolName="edit" items={[partialChild()]} />
     );
-    // Manual collapse during streaming.
+    fireEvent.click(container.querySelector('button')!);
     fireEvent.click(container.querySelector('button')!);
     expect(container.querySelector('button')!.getAttribute('aria-expanded')).toBe('false');
     // Settle the call. Same rowKey thanks to the
@@ -166,12 +157,11 @@ describe('live streaming diff — auto-expand', () => {
     expect(container.querySelector('button')!.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('auto-collapses on settle when the user never overrode the auto-expanded row', () => {
+  it('stays collapsed on settle when the user never expanded the row', () => {
     const { container, rerender } = render(
       <ToolGroupRow rowKey="tg:c-live" toolName="edit" items={[partialChild()]} />
     );
-    // Auto-expanded by the live signal; never clicked.
-    expect(container.querySelector('button')!.getAttribute('aria-expanded')).toBe('true');
+    expect(container.querySelector('button')!.getAttribute('aria-expanded')).toBe('false');
     rerender(<ToolGroupRow rowKey="tg:c-live" toolName="edit" items={[settledChild()]} />);
     // The live signal turned off; no override exists → derives back
     // to the persisted `false`. No write happens.
@@ -181,7 +171,7 @@ describe('live streaming diff — auto-expand', () => {
     expect(container.querySelector('button')!.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('auto-expands in-flight edit after tool-call lands (call pending, no result)', () => {
+  it('keeps in-flight edit collapsed after tool-call lands (call pending, no result)', () => {
     const child: ToolGroupChild = {
       callId: 'c-live',
       call: {
@@ -193,8 +183,8 @@ describe('live streaming diff — auto-expand', () => {
     const { container } = render(
       <ToolGroupRow rowKey="tg:c-live" toolName="edit" items={[child]} />
     );
-    expect(container.querySelector('button')!.getAttribute('aria-expanded')).toBe('true');
-    expect(container.textContent ?? '').toContain('STREAMING_NEW_LINE');
+    expect(container.querySelector('button')!.getAttribute('aria-expanded')).toBe('false');
+    expect(container.textContent ?? '').not.toContain('STREAMING_NEW_LINE');
   });
 
   it('merges liveDiffByCallId into settled tool-group children via deriveRows', () => {
@@ -227,19 +217,16 @@ describe('live streaming diff — auto-expand', () => {
     expect(group?.kind === 'tool-group' && group.children[0]?.diffStream).toBeTruthy();
   });
 
-  it('keeps the inner edit row open as well — both layers auto-expand together', async () => {
+  it('expands the group when the user clicks the header', async () => {
     const { container } = render(
       <ToolGroupRow rowKey="tg:c-live" toolName="edit" items={[partialChild()]} />
     );
-    const buttons = container.querySelectorAll('button');
-    expect(buttons.length).toBeGreaterThanOrEqual(2);
-    const innerBtn = buttons[1]!;
-    expect(innerBtn.getAttribute('aria-expanded')).toBe('true');
+    const groupBtn = container.querySelector('button')!;
+    expect(groupBtn.getAttribute('aria-expanded')).toBe('false');
     await act(async () => {
-      fireEvent.click(innerBtn);
+      fireEvent.click(groupBtn);
     });
-    const after = container.querySelectorAll('button');
-    expect(after[0]!.getAttribute('aria-expanded')).toBe('true');
-    expect(after[1]!.getAttribute('aria-expanded')).toBe('false');
+    expect(groupBtn.getAttribute('aria-expanded')).toBe('true');
+    expect(container.textContent ?? '').toContain('STREAMING_NEW_LINE');
   });
 });

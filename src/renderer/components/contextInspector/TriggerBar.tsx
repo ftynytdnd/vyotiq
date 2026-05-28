@@ -1,20 +1,21 @@
 /**
  * Bottom action bar for the Context Inspector.
  *
- * Visual contract: matches the action rows in
- * `CheckpointSettingsPanel` ("Prune", "Export archive") — `Eyebrow`
- * header on top, short description, action button at the bottom.
- * No card chrome.
+ * Visual contract: Vyotiq UI action row — `vx-field-label`, `vx-row-desc`,
+ * `vx-action-row`, and `vx-btn` actions (matches Settings specimen).
  */
 
 import { Layers, RotateCcw, Sparkles, Square, XCircle } from 'lucide-react';
 import { Button } from '../ui/Button.js';
-import { Eyebrow } from '../ui/Eyebrow.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { useChatStore } from '../../store/useChatStore.js';
 import { useContextSummaryStore } from '../../store/useContextSummaryStore.js';
 import { formatTokenCount } from '../../lib/formatTokens.js';
 import { projectAfterTokens, sumTokens } from './inspectorFormat.js';
+import { ShellActionRow, ShellCaption } from '../ui/ShellSection.js';
+import { chromeBadgeClassName } from '../ui/SurfaceShell.js';
+import { cn } from '../../lib/cn.js';
+import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../lib/shellIcons.js';
 import type {
   ContextInspectorSnapshot,
   ContextSummaryRules
@@ -94,34 +95,32 @@ export function TriggerBar({ snapshot, rules }: TriggerBarProps) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-baseline gap-2">
-        <Eyebrow as="span" bold>
-          Summarize now
-        </Eyebrow>
+        <span className="vx-field-label mb-0">Summarize now</span>
         <span className="font-mono text-row text-text-secondary">
           {formatTokenCount(summarizableTokens)} → ~{formatTokenCount(projectedAfter)} tok
         </span>
         {snapshot.workspaceOverridePresent && (
           <span
-            className="ml-auto inline-flex items-center gap-1 rounded-inner border border-border-subtle/25 px-2 py-0.5 text-meta text-text-secondary"
+            className={cn(chromeBadgeClassName, 'ml-auto inline-flex items-center gap-1')}
             title="A workspace .vyotiq/context-summarizer.md is in effect. The bundled summarizer prompt is overridden for this workspace."
           >
-            <Layers className="h-3 w-3" strokeWidth={2} />
+            <Layers className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
             Workspace override
           </span>
         )}
       </div>
-      <div className="text-row text-text-secondary">
+      <ShellCaption>
         {triggerDisabledReason ??
           'Compresses the messages currently marked Summarize. The active rules above govern what gets included.'}
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
+      </ShellCaption>
+      <ShellActionRow className="pt-0">
         <Button
           size="sm"
           variant="secondary"
           onClick={() => void onReset()}
           title="Clear every Keep / Summarize / Drop override on this conversation."
         >
-          <RotateCcw className="h-3 w-3" strokeWidth={2.25} />
+          <RotateCcw className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
           Reset overrides
         </Button>
         <Button
@@ -132,7 +131,7 @@ export function TriggerBar({ snapshot, rules }: TriggerBarProps) {
           onClick={() => void onTrigger()}
           title={triggerDisabledReason ?? 'Summarize the eligible messages now.'}
         >
-          {!busy && <Sparkles className="h-3 w-3" strokeWidth={2.25} />}
+          {!busy && <Sparkles className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />}
           Summarize now
         </Button>
         {summaryInFlight && (
@@ -144,7 +143,7 @@ export function TriggerBar({ snapshot, rules }: TriggerBarProps) {
               onClick={() => void onCancelSummary()}
               title="Stop only the in-flight context summarization."
             >
-              {!busy && <XCircle className="h-3 w-3" strokeWidth={2.25} />}
+              {!busy && <XCircle className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />}
               Cancel summary
             </Button>
             {inspectorMode === 'live' && boundId && (
@@ -154,13 +153,13 @@ export function TriggerBar({ snapshot, rules }: TriggerBarProps) {
                 onClick={() => void onStopRun()}
                 title="Stop the entire orchestrator run."
               >
-                <Square className="h-3 w-3" strokeWidth={2.25} />
+                <Square className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
                 Stop run
               </Button>
             )}
           </>
         )}
-      </div>
+      </ShellActionRow>
     </div>
   );
 }

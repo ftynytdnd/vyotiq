@@ -31,7 +31,7 @@ import type {
 import type { ModelSelection } from '@shared/types/provider.js';
 import type { ParsedDelegate } from '../envelope/index.js';
 import { runSubAgentPool } from '../SubAgentPool.js';
-import { verifySubagentOutput } from '../verifier.js';
+import { verifySubagentRun } from '../verifier.js';
 import { buildSubagentResultsEnvelope } from '../envelope/index.js';
 import { parseResultEnvelope } from '@shared/text/resultPatterns.js';
 import { listForConversation as listPendingChanges } from '../../checkpoints/pendingChanges.js';
@@ -318,9 +318,7 @@ export async function handleDelegates(
           task: spec.task,
           files: spec.files,
           tools: spec.tools ?? [],
-          ...(validated && validated.missingFiles.length > 0
-            ? { missingFiles: validated.missingFiles }
-            : {}),
+          missingFiles: validated?.missingFiles ?? [],
           ...(validated && validated.unknownTools.length > 0
             ? { unknownTools: validated.unknownTools }
             : {}),
@@ -497,7 +495,12 @@ export async function handleDelegates(
         // harness now reasons about it semantically (see
         // `04-subagent-prompt.md` "Output format") and the renderer
         // surfaces it with a softer-tone badge.
-        const verdict = verifySubagentOutput(run.output);
+        const spawnSpec = validatedSpecs.find((s) => s.id === run.id);
+        const verdict = verifySubagentRun(run.output, {
+          delegateFiles: spawnSpec?.files ?? [],
+          toolResultCount: run.toolResults.length,
+          inlinedFileCount: run.inlinedFileCount
+        });
         const structuralMsg = malformedReasonFromAttrs(verdict.attrs);
         const wireStatus =
           run.status === 'success'
@@ -561,8 +564,16 @@ export async function handleDelegates(
   emitRunStatus(emit, 'verifying', 'Verifying sub-agent output…', {
     delegates: runs.length
   });
+  const specsById = new Map(
+    validatedSpecs.map((s) => [s.id, { task: s.task, files: s.files }])
+  );
   const verified = runs.map((run) => {
-    const verdict = verifySubagentOutput(run.output);
+    const spec = specsById.get(run.id);
+    const verdict = verifySubagentRun(run.output, {
+      delegateFiles: spec?.files ?? [],
+      toolResultCount: run.toolResults.length,
+      inlinedFileCount: run.inlinedFileCount
+    });
     return {
       id: run.id,
       status: run.status,
@@ -594,9 +605,6 @@ export async function handleDelegates(
   // `validatedSpecs` (already keyed by id at spawn time) so the
   // signature uses the post-validation files list — same shape the
   // worker actually saw.
-  const specsById = new Map(
-    validatedSpecs.map((s) => [s.id, { task: s.task, files: s.files }])
-  );
   const newlyEscalated: Array<{ key: string; streak: number; ids: string[] }> = [];
   // Track which signatures saw at least one OK verdict in THIS round
   // so a mixed-signature spec (rare but possible if the model reuses
@@ -909,7 +917,19 @@ export async function classifyFiles(
       const abs = isAbsolute(trimmed)
         ? trimmed
         : resolvePath(wsRoot, trimmed);
-      const rel = relativePath(wsRoot, abs);
+      // Canonicalize the candidate path before containment. When the
+      // workspace root was `realpath`'d but the delegate supplied an
+      // absolute path through a junction/symlink spelling
+      // (`<link>/file` vs `<target>/file`), a lexical `relative()`
+      // falsely reports escape. Fall back to lexical `abs` on ENOENT
+      // so not-yet-created paths still reach `access`.
+      let probeAbs = abs;
+      try {
+        probeAbs = await realpath(abs);
+      } catch {
+        /* keep lexical abs */
+      }
+      const rel = relativePath(wsRoot, probeAbs);
       if (rel.length === 0 || rel.startsWith('..') || isAbsolute(rel)) {
         // Sandbox escape (literal `..`-prefix or cross-drive on
         // Windows) — see review finding H1.
@@ -917,7 +937,7 @@ export async function classifyFiles(
         continue;
       }
       try {
-        await access(abs);
+        await access(probeAbs);
         slots[i] = { kind: 'resolved', trimmed };
       } catch {
         slots[i] = { kind: 'missing', raw: trimmed };

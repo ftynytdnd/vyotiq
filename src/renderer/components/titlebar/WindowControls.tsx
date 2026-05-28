@@ -3,6 +3,10 @@ import { Minus, Square, X, Copy } from 'lucide-react';
 import { vyotiq } from '../../lib/ipc.js';
 import { TITLEBAR_WINDOW_ZONE_CLASS } from './titlebarShared.js';
 import { cn } from '../../lib/cn.js';
+import {
+  SHELL_CHROME_ICON_CLASS,
+  SHELL_WINDOW_ICON_STROKE
+} from '../../lib/shellIcons.js';
 
 export function WindowControls() {
   const [isMaximized, setIsMaximized] = useState(false);
@@ -19,16 +23,19 @@ export function WindowControls() {
         label="Minimize"
         onClick={() => void vyotiq.window.minimize()}
       >
-        <Minus className="h-3.5 w-3.5" strokeWidth={2.25} />
+        <Minus className={SHELL_CHROME_ICON_CLASS} strokeWidth={SHELL_WINDOW_ICON_STROKE} />
       </WindowControlButton>
       <WindowControlButton
         label={isMaximized ? 'Restore' : 'Maximize'}
         onClick={() => void vyotiq.window.maximizeToggle()}
       >
         {isMaximized ? (
-          <Copy className="h-3.5 w-3.5 -scale-x-100" strokeWidth={2.25} />
+          <Copy
+            className={cn(SHELL_CHROME_ICON_CLASS, '-scale-x-100')}
+            strokeWidth={SHELL_WINDOW_ICON_STROKE}
+          />
         ) : (
-          <Square className="h-3 w-3" strokeWidth={2.25} />
+          <Square className={SHELL_CHROME_ICON_CLASS} strokeWidth={SHELL_WINDOW_ICON_STROKE} />
         )}
       </WindowControlButton>
       <WindowControlButton
@@ -36,7 +43,7 @@ export function WindowControls() {
         danger
         onClick={() => void vyotiq.window.close()}
       >
-        <X className="h-3.5 w-3.5" strokeWidth={2.25} />
+        <X className={SHELL_CHROME_ICON_CLASS} strokeWidth={SHELL_WINDOW_ICON_STROKE} />
       </WindowControlButton>
     </div>
   );
@@ -60,11 +67,8 @@ function WindowControlButton({
       title={label}
       onClick={onClick}
       className={cn(
-        'app-no-drag inline-flex h-8 w-10 items-center justify-center rounded-inner',
-        'text-text-muted transition-colors duration-150',
-        'hover:bg-surface-hover hover:text-text-primary',
-        danger &&
-          'hover:bg-danger-strong hover:text-text-primary focus-visible:bg-danger-strong focus-visible:text-text-primary'
+        'app-no-drag vx-window-control h-8 w-10',
+        danger && 'vx-window-control--danger'
       )}
     >
       {children}

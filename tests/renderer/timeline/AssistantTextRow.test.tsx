@@ -3,7 +3,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { AssistantTextRow } from '@renderer/components/timeline/rows/AssistantTextRow';
 import { AGENT_NAME } from '@shared/constants.js';
 import { useChatStore } from '@renderer/store/useChatStore';
@@ -63,7 +63,7 @@ describe('AssistantTextRow', () => {
     expect(container.querySelector('.vyotiq-md')).toBeNull();
   });
 
-  it('exposes copy and regenerate actions when eligible', () => {
+  it('exposes copy action when eligible', () => {
     useChatStore.setState({
       conversationId: 'c-1',
       isProcessing: false,
@@ -74,7 +74,7 @@ describe('AssistantTextRow', () => {
       send: vi.fn()
     });
 
-    const { getByRole } = render(
+    const { getByRole, queryByRole } = render(
       <AssistantTextRow
         id="msg-1"
         model={{ providerId: 'p-1', modelId: 'gpt-test' }}
@@ -82,13 +82,6 @@ describe('AssistantTextRow', () => {
     );
 
     expect(getByRole('button', { name: /copy/i })).not.toBeNull();
-    const regen = getByRole('button', { name: 'Regenerate response' });
-    expect(regen).not.toBeDisabled();
-    fireEvent.click(regen);
-    expect(useChatStore.getState().send).toHaveBeenCalledWith(
-      'prior prompt',
-      { providerId: 'p-1', modelId: 'gpt-test' },
-      expect.any(Object)
-    );
+    expect(queryByRole('button', { name: /regenerate/i })).toBeNull();
   });
 });

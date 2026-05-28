@@ -106,6 +106,10 @@ interface ConversationsStore {
   select: (id: string) => Promise<void>;
   rename: (id: string, title: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
+  archive: (id: string) => Promise<void>;
+  unarchive: (id: string) => Promise<void>;
+  /** True while `select()` is loading an unhydrated transcript. */
+  selecting: boolean;
   /**
    * Drag-between-workspaces. Moves a conversation under a different
    * workspace's group. Aborts any in-flight runs pinned to it
@@ -129,6 +133,11 @@ interface ConversationsStore {
    * cheap no-op.
    */
   prewarm: (id: string) => Promise<void>;
+  /**
+   * Drop a conversation from the hydrated set after its chat slice was
+   * unloaded from memory. The next `select(id)` re-reads JSONL from disk.
+   */
+  markSliceUnloaded: (id: string) => void;
   /**
    * Called by chat when a run binds (or auto-creates) the active
    * conversation id. Updates the workspace's slot and refreshes the
@@ -183,9 +192,31 @@ function persistActiveMap(map: Record<string, string | null>): void {
  */
 let selectEpoch = 0;
 
+/**
+ * Tracks in-flight `conversations.read` calls started by `select()`.
+ * `selecting` mirrors `selectReadInFlight > 0`. A refcount (not a
+ * boolean cleared only when `myEpoch === selectEpoch`) is required
+ * because a superseding `select()` can short-circuit via `hydratedIds`
+ * — e.g. DockChatStrip `prewarm()` finishing while the boot-time
+ * `App.tsx` effect's first read is still awaiting — leaving the
+ * stale read's `finally` unable to clear the spinner.
+ */
+let selectReadInFlight = 0;
+
+function syncSelecting(set: (partial: Partial<ConversationsStore>) => void): void {
+  set({ selecting: selectReadInFlight > 0 });
+}
+
+/** Test-only reset for module-level select spinner state. */
+export function __resetSelectSpinnerForTests(): void {
+  selectEpoch = 0;
+  selectReadInFlight = 0;
+}
+
 export const useConversationsStore = create<ConversationsStore>((set, get) => ({
   list: [],
   loading: false,
+  selecting: false,
   activeIdByWorkspace: {},
   hydratedIds: new Set<string>(),
 
@@ -361,6 +392,8 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
     // which Timeline renders as the empty / fresh state. The
     // subsequent `setTranscript` upgrades the slice in place.
     useChatStore.getState().setActiveConversation(id);
+    selectReadInFlight++;
+    syncSelecting(set);
 
     let events: TimelineEvent[] = [];
     let peakPromptTokens: number | undefined;
@@ -372,6 +405,9 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
       }
     } catch (err) {
       log.error('conversations.read failed', { err });
+    } finally {
+      selectReadInFlight = Math.max(0, selectReadInFlight - 1);
+      syncSelecting(set);
     }
     if (myEpoch !== selectEpoch) {
       // A newer `select(...)` raced ahead while we awaited. Drop the
@@ -421,6 +457,15 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
     useChatStore.getState().prewarmSlice(id, events);
   },
 
+  markSliceUnloaded: (id) => {
+    set((s) => {
+      if (!s.hydratedIds.has(id)) return s;
+      const nextHydrated = new Set(s.hydratedIds);
+      nextHydrated.delete(id);
+      return { hydratedIds: nextHydrated };
+    });
+  },
+
   rename: async (id, title) => {
     try {
       const updated = await vyotiq.conversations.rename(id, title);
@@ -429,6 +474,30 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
       }));
     } catch (err) {
       log.error('conversations.rename failed', { err, id });
+    }
+  },
+
+  archive: async (id) => {
+    try {
+      const updated = await vyotiq.conversations.archive(id);
+      set((s) => ({
+        list: s.list.map((m) => (m.id === id ? updated : m))
+      }));
+    } catch (err) {
+      log.error('conversations.archive failed', { err, id });
+      useToastStore.getState().show('Could not archive chat.', 'danger');
+    }
+  },
+
+  unarchive: async (id) => {
+    try {
+      const updated = await vyotiq.conversations.unarchive(id);
+      set((s) => ({
+        list: s.list.map((m) => (m.id === id ? updated : m))
+      }));
+    } catch (err) {
+      log.error('conversations.unarchive failed', { err, id });
+      useToastStore.getState().show('Could not restore chat.', 'danger');
     }
   },
 

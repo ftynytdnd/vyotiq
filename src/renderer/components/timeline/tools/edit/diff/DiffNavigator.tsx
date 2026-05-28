@@ -32,6 +32,7 @@ import {
   chromePopoverPanelClassName
 } from '../../../../ui/SurfaceShell.js';
 import { cn } from '../../../../../lib/cn.js';
+import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../../../lib/shellIcons.js';
 
 interface DiffNavigatorProps {
   hunks: readonly DiffHunk[];
@@ -91,7 +92,7 @@ export function DiffNavigator({
       )}
     >
       <NavIconButton title="Previous hunk" onClick={onPrev}>
-        <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2.25} />
+        <ChevronLeft className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
       </NavIconButton>
       <div className="relative">
         <button
@@ -101,14 +102,11 @@ export function DiffNavigator({
           aria-haspopup="listbox"
           aria-expanded={open}
           className={cn(
-            'inline-flex items-center gap-1 rounded-inner px-2 py-0.5',
-            'text-meta font-mono text-text-muted',
-            'transition-colors duration-150',
-            'hover:bg-surface-hover hover:text-text-secondary'
+            'vx-diff-control inline-flex items-center gap-1 px-2 py-0.5 font-mono text-text-muted'
           )}
           title="Jump to hunk"
         >
-          <ListOrdered className="h-3 w-3" strokeWidth={2} />
+          <ListOrdered className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
           <span>{label}</span>
         </button>
         {open && (
@@ -133,12 +131,8 @@ export function DiffNavigator({
                   triggerRef.current?.focus();
                 }}
                 className={cn(
-                  'flex w-full items-center justify-between gap-2 px-2 py-1 text-left',
-                  'text-meta font-mono',
-                  'transition-colors duration-150',
-                  i === activeIdx
-                    ? 'bg-accent-soft/40 text-accent'
-                    : 'text-text-muted hover:bg-surface-hover hover:text-text-secondary'
+                  'vx-dropdown-item flex w-full items-center justify-between gap-2 px-2 py-1 text-left font-mono',
+                  i === activeIdx && 'bg-accent-soft/40 text-accent'
                 )}
               >
                 <span className="truncate">Hunk {i + 1}</span>
@@ -151,7 +145,7 @@ export function DiffNavigator({
         )}
       </div>
       <NavIconButton title="Next hunk" onClick={onNext}>
-        <ChevronRight className="h-3.5 w-3.5" strokeWidth={2.25} />
+        <ChevronRight className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
       </NavIconButton>
     </div>
   );

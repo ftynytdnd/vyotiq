@@ -1,12 +1,20 @@
 /**
  * Secondary zone — right-side panel visibility for Settings,
- * Checkpoints history, Context Inspector, and PR review. Closed by
- * default; opens on demand and sits beside the conversation surface.
+ * Checkpoints history, and Context Inspector. Closed by default;
+ * opens on demand and sits beside the conversation surface.
+ *
+ * Strict single overlay slot: opening any panel type closes all others
+ * (settings, checkpoints, inspector, review, agentTrace, attachment
+ * preview, live diff).
  */
 
 import { create } from 'zustand';
-import { useContextSummaryStore } from './useContextSummaryStore.js';
+import { vyotiq } from '../lib/ipc.js';
+import { useAttachmentPreviewStore } from './useAttachmentPreviewStore.js';
 import { useCheckpointsStore } from './useCheckpointsStore.js';
+import { useContextSummaryStore } from './useContextSummaryStore.js';
+import { useFloatingLiveDiffStore } from './useFloatingLiveDiffStore.js';
+import { useSettingsStore } from './useSettingsStore.js';
 
 export type SettingsTabId =
   | 'providers'
@@ -14,80 +22,130 @@ export type SettingsTabId =
   | 'context'
   | 'checkpoints'
   | 'memory'
+  | 'appearance'
+  | 'shortcuts'
   | 'about';
 
-export type SecondaryPanel = 'settings' | 'checkpoints' | 'inspector' | 'review';
+export type CheckpointsTab = 'runs' | 'files' | 'review';
 
-interface ReviewPanelOpts {
+export type SecondaryPanel = 'settings' | 'checkpoints' | 'inspector';
+
+const SETTINGS_TAB_IDS: SettingsTabId[] = [
+  'providers',
+  'permissions',
+  'context',
+  'checkpoints',
+  'memory',
+  'appearance',
+  'shortcuts',
+  'about'
+];
+
+interface OpenCheckpointsOpts {
   conversationId?: string;
   workspaceId?: string;
-  filePath?: string;
 }
-
-/** Panel-specific widths tuned to content density. */
-export const SECONDARY_ZONE_WIDTH: Record<SecondaryPanel, string> = {
-  settings: 'min(480px,42vw)',
-  checkpoints: 'min(400px,36vw)',
-  inspector: 'min(480px,40vw)',
-  review: 'min(520px,44vw)'
-};
 
 interface SecondaryZoneStore {
   panel: SecondaryPanel | null;
   settingsTab: SettingsTabId;
-  reviewOpts: ReviewPanelOpts | null;
+  checkpointsTab: CheckpointsTab;
+  agentTraceId: string | null;
   openSettings: (tab?: SettingsTabId) => void;
-  openCheckpoints: () => void;
+  openAgentTrace: (subagentId: string) => void;
+  openCheckpoints: (tab?: CheckpointsTab, opts?: OpenCheckpointsOpts) => void;
   /** Opens the inspector panel and loads data for the bound id. */
   openInspector: (id: string, mode?: 'live' | 'idle') => void;
-  /** Opens the review drawer for pending / PR metadata review. */
-  openReview: (opts?: ReviewPanelOpts) => void;
   /** Remember the last settings tab the user viewed. */
   setSettingsTab: (tab: SettingsTabId) => void;
   close: () => void;
+  /** Close every floating overlay (secondary, trace, preview, live diff). */
+  closeAllOverlays: () => void;
+  /** Clear other overlays before opening preview / live diff. */
+  closeForCompanionOpen: () => void;
 }
 
-function closeInspectorIfOpen(panel: SecondaryPanel | null): void {
+function isSettingsTabId(value: string | undefined): value is SettingsTabId {
+  return value !== undefined && SETTINGS_TAB_IDS.includes(value as SettingsTabId);
+}
+
+/** Clears every floating overlay slot (secondary, trace, preview, live diff). */
+function clearOverlaySlot(panel: SecondaryPanel | null): void {
   if (panel === 'inspector') {
     useContextSummaryStore.getState().close();
   }
+  useAttachmentPreviewStore.getState().close();
+  useFloatingLiveDiffStore.getState().close();
+}
+
+function refreshCheckpointsForOpen(opts?: OpenCheckpointsOpts): void {
+  const cid = opts?.conversationId;
+  if (cid) {
+    void useCheckpointsStore.getState().refreshPending(cid);
+  }
+}
+
+function resolveSettingsTab(tab: SettingsTabId | undefined, fallback: SettingsTabId): SettingsTabId {
+  if (tab) return tab;
+  const persisted = useSettingsStore.getState().settings.ui?.lastSettingsTab;
+  if (isSettingsTabId(persisted)) return persisted;
+  return fallback;
 }
 
 export const useSecondaryZoneStore = create<SecondaryZoneStore>((set, get) => ({
   panel: null,
   settingsTab: 'providers',
-  reviewOpts: null,
+  checkpointsTab: 'runs',
+  agentTraceId: null,
   openSettings: (tab?: SettingsTabId) => {
-    closeInspectorIfOpen(get().panel);
-    const nextTab = tab ?? get().settingsTab;
-    set({ panel: 'settings', settingsTab: nextTab, reviewOpts: null });
+    const { panel } = get();
+    clearOverlaySlot(panel);
+    const nextTab = resolveSettingsTab(tab, get().settingsTab);
+    set({ panel: 'settings', settingsTab: nextTab, agentTraceId: null });
   },
-  openCheckpoints: () => {
-    closeInspectorIfOpen(get().panel);
-    set({ panel: 'checkpoints', reviewOpts: null });
+  openAgentTrace: (subagentId) => {
+    const { panel } = get();
+    clearOverlaySlot(panel);
+    set({ panel: null, agentTraceId: subagentId });
+  },
+  openCheckpoints: (tab = 'runs', opts) => {
+    const { panel } = get();
+    clearOverlaySlot(panel);
+    refreshCheckpointsForOpen(opts);
+    const cid = opts?.conversationId;
+    let resolvedTab = tab;
+    if (tab === 'runs' && cid) {
+      const pending = useCheckpointsStore.getState().pendingByConversation[cid] ?? [];
+      if (pending.length > 0) resolvedTab = 'review';
+    }
+    set({ panel: 'checkpoints', checkpointsTab: resolvedTab, agentTraceId: null });
   },
   openInspector: (id, mode = 'idle') => {
-    set({ panel: 'inspector', reviewOpts: null });
+    const { panel } = get();
+    clearOverlaySlot(panel);
+    set({ panel: 'inspector', agentTraceId: null });
     void useContextSummaryStore.getState().open(id, mode);
-  },
-  openReview: (opts) => {
-    closeInspectorIfOpen(get().panel);
-    set({ panel: 'review', reviewOpts: opts ?? null });
-    const cid = opts?.conversationId;
-    const wsId = opts?.workspaceId;
-    if (cid) {
-      void useCheckpointsStore.getState().refreshPending(cid);
-      if (wsId) void useCheckpointsStore.getState().refreshReview(cid, wsId);
-    }
   },
   setSettingsTab: (tab) => {
     set({ settingsTab: tab });
+    const ui = useSettingsStore.getState().settings.ui ?? {};
+    void vyotiq.settings.set({ ui: { ...ui, lastSettingsTab: tab } });
   },
   close: () => {
     const { panel } = get();
-    set({ panel: null, reviewOpts: null });
+    set({ panel: null, agentTraceId: null });
     if (panel === 'inspector') {
       useContextSummaryStore.getState().close();
     }
+  },
+  closeAllOverlays: () => {
+    const { panel } = get();
+    clearOverlaySlot(panel);
+    set({ panel: null, agentTraceId: null });
+  },
+  closeForCompanionOpen: () => {
+    const { panel } = get();
+    clearOverlaySlot(panel);
+    set({ panel: null, agentTraceId: null });
   }
 }));

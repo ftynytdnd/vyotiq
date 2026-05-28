@@ -165,48 +165,35 @@ The natural language harness must be injected into the LLM using strict, machine
 ## Transparent UI & Streaming
 
 # UI/UX, Design, and Styling Instructions
-The design must be extremely clean, minimalist, frameless, and stealthy, ensuring Agent V feels like a high-end, localized tool.
 
-## 1. Global Theme & Color Palette
-- **Backgrounds:** Use a "stealth" dark mode. Do not use pure black (#000000). 
-  - Main App Background: Extremely dark, matte gray (e.g., #18181A or Tailwind bg-neutral-900).
-  - Elevated Surfaces (Dock, Composer, Cards): Slightly lighter gray (e.g., #262628 or Tailwind bg-neutral-800).
-- **Typography:**
-  - Font Family: Clean, modern Sans-Serif (Inter, SF Pro Display, or system-ui).
-  - Primary Text: High-contrast pure white (text-white) or very light gray (text-neutral-100).
-  - Secondary/Muted Text: Medium gray (text-[#8A8A8E] or text-neutral-400). Use heavily for placeholders, timestamps, subtitles, and secondary actions.
-- **Borders & Separation:**
-  - **CRITICAL:** Almost zero visible borders. Element separation must be achieved through subtle background color contrast (elevation) and padding.
-  - Border Radii: rounded-xl (12px) for large panels and the Composer; rounded-md or rounded-full for inner buttons/tags.
+Vyotiq uses a **Shell Mono** design system on a stealth-dark oklch token palette. Styling flows: `src/renderer/index.css` `@theme` → `shell-mono.css` `.sm-*` classes → `SurfaceShell.tsx` chrome helpers → domain components.
+
+## 1. Global Theme & Color Palette (Linear-lite frameless)
+- **Backgrounds:** Stealth dark — never pure black. Region separation uses **surface steps only** (`surface-base`, `surface-sidebar`, `surface-input`) — no column border rules.
+- **Typography:** **Geist Sans** / **Geist Mono**. Body **400**, labels **500**, section whispers **text-meta** muted. Avoid `font-semibold` in shell chrome.
+- **Accent:** Steel violet for **focus halos**, **links**, and **Send-ready** only; warm gold for live streaming phase labels.
+- **Chrome interaction:** `chrome-hover` / `chrome-hover-soft` for ghost controls — not `panel-edge` layout lines.
+- **Borders:** Floating layers (popovers, modals, code blocks) only — not dock/chat/settings splits.
 
 ## 2. Layout Structure
-- **Frameless Window:** The app must have a custom, thin top title bar that blends perfectly into the base background, containing standard File/Edit menus on the left and window controls on the right.
-- **Left Dock:** Workspace-scoped chat tabs, search, and run indicators live in a collapsible left-hand dock. Settings, checkpoint history, and the Context Inspector open in a **right-hand SecondaryZone** panel beside the conversation surface.
-- **Main Content Area:** The central chat and composer area must be strictly **center-aligned** with a constrained maximum width (e.g., max-w-3xl) to prevent eye fatigue from scanning wide text lines.
+- **Frameless window** with custom title bar (no bottom border rule).
+- **Three-column shell:** Left dock | chat | secondary zone — separated by `bg-surface-sidebar` vs `bg-surface-base`, not vertical rules.
+- **Chat column** center-aligned, `max-w-3xl`.
 
-## 3. The "Composer" (Input Box) UI
-The Composer is the central hub for interacting with Agent V.
-- **Container:** A floating, elevated, pill-shaped or rounded-rectangle card (bg-neutral-800 rounded-xl).
-- **Top Context Bar:** A small pill-shaped indicator showing the agent's current working context or active directory.
-- **Text Area:** Borderless, transparent background, auto-resizing. Muted placeholder text: "Ask Agent V anything. @ to mention files or folders".
-- **Bottom Toolbar (Inside Composer):**
-  - Left side: A + icon for attachments and a "Permissions" dropdown.
-  - Right side: Model selector dropdown (to switch between local/cloud models), a microphone placeholder (voice input not yet implemented), and the Send Button.
-- **Send Button:** A distinct circular button. Active state = solid background with an UP arrow (↑). Processing state = Stop icon (Square ■).
+## 3. The Composer
+- **Container:** Flat `sm-composer-shell` on `surface-input` — no border, no drop shadow.
+- **Toolbar:** Ghost pills; Send uses `sm-btn-accent-fill` when ready (sole accent CTA).
+- **Token pill:** Ghost text + thin track (`sm-composer-token-pill` transparent fill).
 
 ## 4. Agent Interaction UI
-Do not use traditional chat bubbles. Render a clean timeline of actions.
-- **Sub-agents:** Delegated workers render inline in the timeline (`SubAgentTrace`) — expandable traces with briefing, tool steps, and results. No separate sub-agents panel.
-- **User Prompts:** Simple, clean, right-aligned or inline plain text.
-- **Agent Status/Thoughts:** Use tiny, muted text indicating background work (e.g., "Agent V is thinking..." or "Reading workspace directory..."). Separate phases with a subtle horizontal line (border-t border-neutral-700).
-- **File Modification Cards:** When Agent V creates or edits a file, render a beautiful, elevated Card:
-  - Header: File type icon, the exact filename, and a descriptive subtitle.
-  - Action: An "Open ↗" button on the right.
-  - Diff Summary: Below the card, explicitly show the code changes (e.g., 1 file changed, +12 additions in green text, -2 deletions in red text).
+- **No chat bubbles.** Chromeless timeline prose.
+- **Settings:** Flat `ShellSection` (no left rail, no row hairlines). Link-style actions (`Button variant="link"`).
+- **Live phases:** Gold accent on streaming status lines only.
 
 ## 5. Micro-Interactions
-- **Loading State:** Subtle spinner or pulsing animation next to the send button when Agent V is processing.
-- **Hover States:** Every icon, button, and list item must have a fast, subtle background highlight on hover (transition-colors duration-150).
+- **Focus:** Global accent halo (`:focus-visible`).
+- **Hover:** Soft fill via `chrome-hover-soft`.
+- **Toggles:** Square-thumb tracks; accent border when on.
 
 
 

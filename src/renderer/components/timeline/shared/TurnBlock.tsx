@@ -8,8 +8,8 @@ import { type ReactNode } from 'react';
 import { cn } from '../../../lib/cn.js';
 import type { DisplayRow } from './projectSubagentRows.js';
 import type { PartitionedTurn } from './groupTurnSegment.js';
-import { TurnActivitySummary } from '../activity/TurnActivitySummary.js';
 import { TurnInlineStream } from '../activity/TurnInlineStream.js';
+import { TurnActivitySummary } from '../activity/TurnActivitySummary.js';
 import {
   timelineLiveTurnClassName,
   timelineTurnOuterGapClassName,
@@ -36,6 +36,8 @@ export function TurnBlock({
 
   return (
     <div
+      data-turn-block
+      data-turn-live={live ? 'true' : undefined}
       className={cn(
         'relative flex flex-col py-0',
         timelineTurnZoneGapClassName,
@@ -48,20 +50,12 @@ export function TurnBlock({
       {prompt && renderRow(prompt)}
 
       <div className={timelineAgentColumnClassName}>
+        {(live || partitioned.activity.length > 0) && (
+          <TurnActivitySummary activityRows={partitioned.activity} live={live} />
+        )}
         {showAgentStream &&
           (live ? (
-            <TurnInlineStream
-              rows={partitioned.agentStream}
-              renderRow={renderRow}
-              showLiveStatus
-            />
-          ) : partitioned.activity.length > 0 ? (
-            <>
-              <TurnActivitySummary partitioned={partitioned} renderRow={renderRow} />
-              {partitioned.response && (
-                <div key={partitioned.response.key}>{renderRow(partitioned.response)}</div>
-              )}
-            </>
+            <TurnInlineStream rows={partitioned.agentStream} renderRow={renderRow} />
           ) : (
             partitioned.agentStream.map((row) => (
               <div key={row.key}>{renderRow(row)}</div>

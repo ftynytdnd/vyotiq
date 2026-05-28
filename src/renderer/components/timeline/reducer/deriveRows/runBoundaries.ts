@@ -94,6 +94,7 @@ export function flushRunToRows(
       kind: 'run-complete',
       key: `done:${openRun.promptId}`,
       durationMs,
+      completedAt: openRun.lastTs,
       ...(usage !== undefined ? { usage } : {}),
       ...(editCount > 0 ? { editCount } : {}),
       ...(fileCount > 0 ? { fileCount } : {})

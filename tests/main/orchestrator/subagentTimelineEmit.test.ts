@@ -13,9 +13,13 @@ vi.mock('@main/providers/chatClient', () => ({
 vi.mock('@main/harness/harnessLoader', () => ({
   buildSubagentSystemPrompt: () => '<system_instructions>stub</system_instructions>'
 }));
-vi.mock('@main/orchestrator/contextManager', () => ({
-  inlineFiles: vi.fn(async () => '')
-}));
+vi.mock('@main/orchestrator/contextManager', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@main/orchestrator/contextManager')>();
+  return {
+    ...actual,
+    inlineFiles: vi.fn(async () => '')
+  };
+});
 vi.mock('@main/orchestrator/retry', () => ({
   backoff: vi.fn(async () => undefined)
 }));

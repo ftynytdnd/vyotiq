@@ -10,6 +10,10 @@ import { X, AlertCircle, Info, CheckCircle2 } from 'lucide-react';
 import { useToastStore, type Toast } from '../../store/useToastStore.js';
 import { chromePopoverPanelClassName } from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
+import {
+  SHELL_ACTION_ICON_STROKE,
+  SHELL_ROW_ICON_CLASS
+} from '../../lib/shellIcons.js';
 
 export function ToastHost() {
   const toasts = useToastStore((s) => s.toasts);
@@ -77,17 +81,17 @@ function ToastRow({ toast, onDismiss, onPause, onResume }: ToastRowProps) {
             : 'border-l-accent/70'
       )}
     >
-      <Icon className={cn('mt-0.5 h-3.5 w-3.5 shrink-0', toneClass)} strokeWidth={2.25} />
+      <Icon className={cn(SHELL_ROW_ICON_CLASS, toneClass)} strokeWidth={SHELL_ACTION_ICON_STROKE} />
       <div className="min-w-0 flex-1 text-row leading-relaxed text-text-primary">
         {toast.message}
       </div>
       <button
         type="button"
         onClick={onDismiss}
-        className="app-no-drag -mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-inner text-text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text-primary"
+        className="app-no-drag vx-btn vx-btn-quiet h-5 w-5 shrink-0 px-0"
         aria-label="Dismiss"
       >
-        <X className="h-3 w-3" strokeWidth={2.25} />
+        <X className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
       </button>
     </div>
   );

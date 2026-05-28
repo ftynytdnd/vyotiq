@@ -263,6 +263,11 @@ const DESTRUCTIVE_PATTERNS: RegExp[] = [
   // whitespace. We anchor on the trailing word boundary only.
   /\bRemove-Item\b[^|]*-Recurse\b/i,
   /\b(?:rd|rmdir|ri)\b[^|]*-Recurse\b/i,
+  /\brmdir\s+\/s\s+\/q\b/i,
+  /\bdel\s+\/q\s+\/f\s+\/s\b/i,
+  /\bFormat-Volume\b/i,
+  /\bClear-Disk\b/i,
+  /\bReset-Service\b/i,
   // PowerShell pipeline variants that sidestep the `-Recurse` flag:
   //   `Get-ChildItem -Recurse | Remove-Item -Force`
   //   `gci -R | ri -Force`
@@ -315,6 +320,14 @@ const RELATIVE_REDIRECT_ESCAPE =
 const PS_PARENT_WRITE =
   /\b(?:Out-File|Set-Content|Add-Content|tee)\b[^|]*(?:\.\.[\\/]|>>\s*\.\.)/i;
 
+/** POSIX read builtins with a parent-segment path (`cat ../outside`). */
+const RELATIVE_PARENT_READ =
+  /\b(?:cat|head|tail|less|more|type|nl|awk|grep|rg|ripgrep|strings|file|stat|ls|dir)\b[^|;\n&]*(?:^|[\s'"`])(?:\.\.(?:[\\/]|$)|\.\.[\\/])/i;
+
+/** PowerShell read cmdlets targeting a parent path (`Get-Content ..\secret`). */
+const PS_PARENT_READ =
+  /\b(?:Get-Content|Select-String|Get-Item)\b[^|;\n]*(?:\.\.[\\/]|\\?\.\.\\)/i;
+
 /**
  * Absolute POSIX path (excluding benign `/tmp` and `/dev/null`) or a
  * Windows drive-letter path. Used to gate bash with a confirm prompt.
@@ -323,6 +336,45 @@ const ABSOLUTE_PATH_REF =
   /(?:^|[\s;&|'"`])\/(?!tmp(?:\/|$)|dev\/null(?:\s|$))[^\s;&|'"`]*/i;
 
 const WINDOWS_DRIVE_REF = /(?:^|[\s;&|'"`])[A-Za-z]:\\[^\s;&|'"`]*/;
+
+/**
+ * Location env vars forwarded to the bash child (see `BASH_ENV_ALLOWLIST`
+ * in bash.tool.ts). Resolving any of these in a command path reaches
+ * outside the workspace cwd even when the literal string has no `../`.
+ */
+const ESCAPE_ENV_VAR_NAMES =
+  'HOME|USERPROFILE|APPDATA|LOCALAPPDATA|TMPDIR|TEMP|TMP';
+
+/** Unix `$VAR` / `${VAR}` references to home/temp location vars. */
+const UNIX_ENV_PATH_REF = new RegExp(
+  `\\$(?:\\{)?(?:${ESCAPE_ENV_VAR_NAMES})(?:\\})?(?=[\\\\/]|$|[\\s;&|'"\\\`])`,
+  'i'
+);
+
+/** PowerShell `$env:VAR` / `${env:VAR}`. */
+const PS_ENV_PATH_REF = new RegExp(
+  `\\$\\{?env:(?:${ESCAPE_ENV_VAR_NAMES})\\}?`,
+  'i'
+);
+
+/** Windows CMD `%VAR%` percent expansion. */
+const CMD_ENV_PATH_REF = new RegExp(
+  `%(${ESCAPE_ENV_VAR_NAMES})%`,
+  'i'
+);
+
+/** Tilde expansion to user home (`~`, `~/`, `~\`). */
+const TILDE_HOME_REF =
+  /(?:^|[\s;&|'"`(])~(?:[\\/]|$|[\s;&|'"`])/;
+
+export function hasEnvPathEscape(command: string): boolean {
+  return (
+    UNIX_ENV_PATH_REF.test(command) ||
+    PS_ENV_PATH_REF.test(command) ||
+    CMD_ENV_PATH_REF.test(command) ||
+    TILDE_HOME_REF.test(command)
+  );
+}
 
 export interface BashEscapeConfirm {
   needed: boolean;
@@ -335,6 +387,13 @@ export interface BashEscapeConfirm {
  * workspace-relative redirects that escape via `../`.
  */
 export function bashNeedsEscapeConfirm(command: string): BashEscapeConfirm {
+  if (RELATIVE_PARENT_READ.test(command) || PS_PARENT_READ.test(command)) {
+    return {
+      needed: true,
+      reason:
+        'Command reads via a parent path (../) that may escape the workspace. Confirm only if you intend to read outside the project folder.'
+    };
+  }
   if (RELATIVE_REDIRECT_ESCAPE.test(command) || PS_PARENT_WRITE.test(command)) {
     return {
       needed: true,
@@ -347,6 +406,13 @@ export function bashNeedsEscapeConfirm(command: string): BashEscapeConfirm {
       needed: true,
       reason:
         'Command references an absolute filesystem path outside the workspace sandbox. Confirm only if you intend to read or write outside the project folder.'
+    };
+  }
+  if (hasEnvPathEscape(command)) {
+    return {
+      needed: true,
+      reason:
+        'Command references a home or temp directory via an environment variable or tilde (~) that may resolve outside the workspace. Confirm only if you intend to read or write outside the project folder.'
     };
   }
   return { needed: false };

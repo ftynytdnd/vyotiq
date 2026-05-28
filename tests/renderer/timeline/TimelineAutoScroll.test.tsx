@@ -1,10 +1,10 @@
 /**
  * `Timeline` auto-scroll regression.
  *
- * Confirms the snap-on-send behaviour: the moment a new `user-prompt`
- * event appears on the chat store, the Timeline must call
- * `scrollIntoView` on its bottom sentinel — even if the user was
- * previously scrolled up past the sticky threshold.
+ * Confirms center-on-send: the moment a new `user-prompt` event appears
+ * on the chat store, the Timeline must call `scrollIntoView` on that
+ * prompt — even if the user was previously scrolled up past the sticky
+ * threshold.
  *
  * Also confirms that a second `user-prompt` with the same id does NOT
  * trigger a redundant snap (the effect must dedupe by id, not by
@@ -36,11 +36,6 @@ let originalCaf: typeof window.cancelAnimationFrame;
 
 beforeEach(() => {
   resetStore();
-  // Fake timers so `LiveStatusRow`'s 1 s setInterval doesn't fire a
-  // setState outside `act()` mid-test (visible as a noisy "update was
-  // not wrapped in act(...)" console warning, no functional impact).
-  // The auto-scroll suite never advances time itself, so freezing the
-  // clock is safe.
   vi.useFakeTimers();
   scrollSpy = vi.fn();
   // Route every element's scrollIntoView through our spy. The Timeline
@@ -79,7 +74,7 @@ afterEach(() => {
 });
 
 describe('Timeline auto-scroll', () => {
-  it('snaps to the tail when a new user-prompt lands on the store', () => {
+  it('scrolls when a new user-prompt lands on the store', () => {
     render(<Timeline />);
     // Initial mount always calls scrollToTail() via the rows-length
     // effect; clear the baseline call so the assertion below

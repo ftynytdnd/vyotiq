@@ -429,6 +429,7 @@ export async function triggerIdleSummary(
   // `chat:error` to fulfill the renderer's run-finalisation
   // contract, then drop the handle.
   let summaryId = '';
+  let idleAppendChain: Promise<void> = Promise.resolve();
   void (async () => {
     try {
       const result = await maybeRunSummarization({
@@ -453,10 +454,9 @@ export async function triggerIdleSummary(
           }
           // Persist BEFORE broadcasting so a renderer reload mid-
           // stream sees the same shape on disk it just observed
-          // through the live channel. Failures inside `appendEvent`
-          // are logged there; we keep going so the live channel
-          // doesn't stall on a transient EBUSY.
-          void (async () => {
+          // through the live channel. Serialized through
+          // `idleAppendChain` so JSONL order matches broadcast order.
+          idleAppendChain = idleAppendChain.then(async () => {
             try {
               await appendEvent(conversationId, event);
             } catch (err) {
@@ -467,9 +467,10 @@ export async function triggerIdleSummary(
               });
             }
             broadcast(runId, event);
-          })();
+          });
         }
       });
+      await idleAppendChain;
       if (result.ok) summaryId = result.summaryId;
     } catch (err) {
       // `maybeRunSummarization` swallows provider/abort errors and
@@ -486,7 +487,12 @@ export async function triggerIdleSummary(
         summaryId: fakeId,
         reason
       };
-      appendEvent(conversationId, aborted).catch(() => undefined);
+      await idleAppendChain;
+      try {
+        await appendEvent(conversationId, aborted);
+      } catch {
+        /* logged in appendEvent */
+      }
       broadcast(runId, aborted);
     } finally {
       // Settle the renderer's run-state mirror cleanly via

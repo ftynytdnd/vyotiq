@@ -58,8 +58,8 @@ export interface TabItem<T extends string = string> {
   id: T;
   label: ReactNode;
   /**
-   * Optional leading icon. `strip` callers pair this with a 14×14
-   * lucide icon; `segmented` callers typically omit it. The icon
+   * Optional leading icon. `strip` / `underline` callers pair this with
+   * {@link SHELL_TAB_ICON_CLASS} (16×16); `segmented` callers typically omit it. The icon
    * inherits color from the row, so it picks up the active /
    * inactive tone automatically.
    */
@@ -70,21 +70,23 @@ export interface TabItem<T extends string = string> {
    * `aria-controls` for screen-reader correctness.
    */
   panelId?: string;
+  /** Optional stable id for the tab button (`aria-labelledby` target). */
+  tabId?: string;
 }
 
 interface TabsProps<T extends string = string> {
   items: ReadonlyArray<TabItem<T>>;
   value: T;
   onChange: (next: T) => void;
-  /** Defaults to `'strip'`. */
-  variant?: 'strip' | 'segmented';
+  /** Defaults to `'strip'`. `underline` — Vyotiq UI `vx-tab-bar`. */
+  variant?: 'strip' | 'segmented' | 'underline';
   /** Only applies to `variant="segmented"`. Defaults to `'md'`. */
   size?: 'sm' | 'md';
   /** Forwarded to the container's `aria-label`. */
   ariaLabel?: string;
   /**
-   * Settings-style nav strip: softer base tint (`bg-surface-overlay/30`),
-   * active tab uses `bg-surface-hover`. Defaults to Checkpoints overlay pills.
+   * Settings-style nav strip: softer base tint (`vx-tab-strip-nav`),
+   * active tab uses `vx-tab-pill-active`. Defaults to Checkpoints overlay pills.
    */
   stripNav?: boolean;
   /**
@@ -92,6 +94,11 @@ interface TabsProps<T extends string = string> {
    * icon only (label visible on the active tab). Pair with `stripNav`.
    */
   stripCompact?: boolean;
+  /**
+   * Underline tabs: always render icon + label (Vyotiq UI mockup rhythm).
+   * Adds `vx-tab-bar--labeled` so container queries never hide labels.
+   */
+  alwaysShowLabels?: boolean;
   className?: string;
 }
 
@@ -104,6 +111,7 @@ export function Tabs<T extends string = string>({
   ariaLabel,
   stripNav = false,
   stripCompact = false,
+  alwaysShowLabels = false,
   className
 }: TabsProps<T>) {
   const buttonRefs = useRef<Map<T, HTMLButtonElement | null>>(new Map());
@@ -142,6 +150,54 @@ export function Tabs<T extends string = string>({
     }
   };
 
+  if (variant === 'underline') {
+    const hideInactiveLabels = stripCompact && !alwaysShowLabels;
+    return (
+      <div
+        role="tablist"
+        aria-label={ariaLabel}
+        className={cn(
+          'vx-tab-bar scrollbar-stealth app-no-drag',
+          alwaysShowLabels && 'vx-tab-bar--labeled',
+          className
+        )}
+      >
+        {items.map((item) => {
+          const active = item.id === value;
+          const labelText = typeof item.label === 'string' ? item.label : undefined;
+          const showLabel = alwaysShowLabels || !stripCompact || active;
+          return (
+            <button
+              key={item.id}
+              ref={(el) => {
+                buttonRefs.current.set(item.id, el);
+              }}
+              type="button"
+              role="tab"
+              id={item.tabId}
+              aria-selected={active}
+              aria-controls={item.panelId}
+              aria-label={hideInactiveLabels && !active ? labelText : undefined}
+              title={hideInactiveLabels && !active ? labelText : undefined}
+              tabIndex={active ? 0 : -1}
+              disabled={item.disabled}
+              data-active={active ? 'true' : 'false'}
+              onClick={() => !item.disabled && onChange(item.id)}
+              onKeyDown={(e) => onKeyDown(e, item.id)}
+              className={cn(
+                'vx-tab',
+                item.disabled && 'cursor-not-allowed opacity-50'
+              )}
+            >
+              {item.icon}
+              {showLabel && <span className="vx-tab-label">{item.label}</span>}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
   if (variant === 'segmented') {
     // Inset segmented control. Wrapper carries the surface
     // (soft tray tint) and the buttons swap active / inactive
@@ -156,22 +212,6 @@ export function Tabs<T extends string = string>({
       >
         {items.map((item) => {
           const active = item.id === value;
-          const buttonClass =
-            size === 'sm'
-              ? cn(
-                  'rounded-line px-2 py-0.5 text-row transition-colors duration-150',
-                  active
-                    ? 'bg-surface-raised text-text-primary'
-                    : 'text-text-muted hover:text-text-primary',
-                  item.disabled && 'cursor-not-allowed opacity-50'
-                )
-              : cn(
-                  'flex-1 px-3 py-1.5 text-row transition-colors duration-150',
-                  active
-                    ? 'bg-surface-hover text-text-primary'
-                    : 'text-text-muted hover:text-text-primary',
-                  item.disabled && 'cursor-not-allowed opacity-50'
-                );
           return (
             <button
               key={item.id}
@@ -180,13 +220,19 @@ export function Tabs<T extends string = string>({
               }}
               type="button"
               role="tab"
+              id={item.tabId}
               aria-selected={active}
               aria-controls={item.panelId}
               tabIndex={active ? 0 : -1}
               disabled={item.disabled}
+              data-active={active ? 'true' : 'false'}
               onClick={() => !item.disabled && onChange(item.id)}
               onKeyDown={(e) => onKeyDown(e, item.id)}
-              className={cn('app-no-drag', buttonClass)}
+              className={cn(
+                'vx-segment-item app-no-drag',
+                size === 'md' && 'flex-1',
+                item.disabled && 'cursor-not-allowed opacity-50'
+              )}
             >
               {item.icon && <span className="mr-1 inline-flex items-center">{item.icon}</span>}
               {item.label}
@@ -218,6 +264,7 @@ export function Tabs<T extends string = string>({
             }}
             type="button"
             role="tab"
+            id={item.tabId}
             aria-selected={active}
             aria-controls={item.panelId}
             aria-label={stripCompact && !labelVisible ? labelText : undefined}
@@ -232,7 +279,7 @@ export function Tabs<T extends string = string>({
               stripCompact ? 'gap-1 px-2 py-1.5' : 'gap-1.5 rounded-inner px-2.5 py-1 text-row',
               stripNav
                 ? cn(
-                    'bg-surface-overlay/30 hover:bg-surface-hover/60',
+                    'vx-tab-strip-nav',
                     active ? chromeTabActiveClassName : chromeTabIdleClassName
                   )
                 : active

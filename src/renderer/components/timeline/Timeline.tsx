@@ -5,34 +5,33 @@
  * NOT mirror state into any other store.
  *
  * Auto-scroll is a three-state machine:
- *   - **Snap:** a brand-new `user-prompt` event arrives (the user just
- *     hit Send) → unconditionally pin to the tail so the focus moves
- *     to the incoming agent response, even if the user was scrolled up
- *     reviewing earlier turns.
+ *   - **Center-on-send:** a brand-new `user-prompt` event arrives →
+ *     smooth-scroll that prompt to the viewport center and re-enable
+ *     sticky follow, even if the user was reviewing earlier turns.
  *   - **Sticky:** while the user remains at (or near) the bottom,
- *     incoming streamed deltas keep the view pinned. Throttled via
- *     `requestAnimationFrame` so bursts of tokens don't queue dozens
- *     of smooth-scrolls.
+ *     incoming streamed deltas keep the view pinned with smooth tail
+ *     follow. Throttled via `requestAnimationFrame` so bursts of
+ *     tokens don't queue dozens of scrolls.
  *   - **Unstuck:** the moment the user scrolls up more than
- *     `UNSTICK_PX`, the sticky bit drops. They are now in full
- *     control — no auto-scroll happens until either they scroll back
- *     within `RESTICK_PX` of the bottom, hit the "Jump to latest"
- *     chip, or submit a new prompt.
- *
- * The chip renders bottom-right (sticky) when the user scrolls away
- * from the tail during an in-flight run.
+ *     `UNSTICK_PX`, the sticky bit drops until they scroll back within
+ *     `RESTICK_PX` of the bottom or submit a new prompt.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { useChatStore } from '../../store/useChatStore.js';
+import { useSecondaryZoneStore } from '../../store/useSecondaryZoneStore.js';
 import { useProviderStore, selectEffectiveContextWindow } from '../../store/useProviderStore.js';
+import {
+  selectEffectiveTokenBudgetWarning,
+  useSettingsStore
+} from '../../store/useSettingsStore.js';
+import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { deriveRows } from './reducer/deriveRows.js';
 import { UserPromptRow } from './rows/UserPromptRow.js';
 import { AssistantTextRow } from './rows/AssistantTextRow.js';
 import { ReasoningLineRow } from './rows/ReasoningLineRow.js';
 import { AgentThoughtRow } from './rows/AgentThoughtRow.js';
-import { LiveStatusRow } from './rows/LiveStatusRow.js';
 import { PhaseDividerRow } from './rows/PhaseDividerRow.js';
 import { ErrorRow } from './rows/ErrorRow.js';
 import { ToolGroupRow } from './rows/ToolGroupRow.js';
@@ -40,18 +39,18 @@ import { FileEditGroupRow } from './rows/FileEditGroupRow.js';
 import { RunCompleteRow } from './rows/RunCompleteRow.js';
 import { TokenBudgetWarningRow } from './rows/TokenBudgetWarningRow.js';
 import { ContextSummaryRow } from './rows/ContextSummaryRow.js';
-import { SubAgentTrace } from './subagent/SubAgentTrace.js';
 import { DelegateBatchRow } from './delegation/DelegateBatchRow.js';
 import { projectSubagentRows, type DisplayRow } from './shared/projectSubagentRows.js';
 import { PendingChangesTimelineRow } from '../checkpoints/timeline/index.js';
-import { JumpToLatestChip } from './shared/JumpToLatestChip.js';
 import { RowAnchor } from './shared/RowAnchor.js';
 import { TimelineFindBar } from './shared/TimelineFindBar.js';
 import { parseRowAnchorHash, scrollToRowAnchor } from './shared/timelineRowAnchor.js';
 import { TurnBlock, groupRowsIntoTurns } from './shared/TurnBlock.js';
 import { partitionTurnSegment } from './shared/groupTurnSegment.js';
-import { timelineAgentColumnReserveRightClassName } from './shared/rowStyles.js';
+import { timelineStackClassName } from './shared/rowStyles.js';
 import { cn } from '../../lib/cn.js';
+import { useFloatingLiveDiffAutoOpen } from './hooks/useFloatingLiveDiffAutoOpen.js';
+import { computeTailScrollKey } from './shared/computeTailScrollKey.js';
 
 /**
  * Slack (px) allowed between scroll position and the tail before the
@@ -68,16 +67,6 @@ const UNSTICK_PX = 80;
  */
 const RESTICK_PX = 24;
 
-/**
- * Threshold (px) under which the timeline is considered "at the top".
- * Hides the `Top` pill so it isn't rendered as a useless affordance
- * when the user has already scrolled to the head of the transcript.
- * Same numeric rhythm as `RESTICK_PX` — generous enough that micro-
- * scrolls don't reveal the pill, tight enough that genuine `up by
- * one row` intent flips it on.
- */
-const AT_TOP_PX = 24;
-
 interface TimelineProps {
   model?: ModelSelection | null;
   /** Opens Settings → Checkpoints (pending row usage pill). */
@@ -85,6 +74,7 @@ interface TimelineProps {
 }
 
 export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
+  const secondaryZoneOpen = useSecondaryZoneStore((s) => s.panel !== null);
   const events = useChatStore((s) => s.events);
   const isProcessing = useChatStore((s) => s.isProcessing);
   // Live partial-args snapshots — pulled in so `deriveRows` can
@@ -113,7 +103,6 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
    * ref is the source of truth; `setSticky` mirrors it for the view.
    */
   const stickyRef = useRef(true);
-  const [sticky, setSticky] = useState(true);
 
   /**
    * Mirrors `parent.scrollTop <= AT_TOP_PX` so the `Top` pill can hide
@@ -125,7 +114,6 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
    * pill is a stateless presentational component driven by parent
    * predicates.
    */
-  const [atTop, setAtTop] = useState(true);
   const [findOpen, setFindOpen] = useState(false);
 
   /**
@@ -137,11 +125,18 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
 
   const summaries = useChatStore((s) => s.summaries);
   const providers = useProviderStore((s) => s.providers);
+  const settings = useSettingsStore((s) => s.settings);
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
 
   const contextWindow = useMemo(() => {
     if (!model) return undefined;
     return selectEffectiveContextWindow(providers, model.providerId, model.modelId);
   }, [model, providers]);
+
+  const tokenBudgetWarnThreshold = useMemo(
+    () => selectEffectiveTokenBudgetWarning(settings, activeWorkspaceId),
+    [settings, activeWorkspaceId]
+  );
 
   const rows = useMemo(
     () =>
@@ -150,10 +145,21 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
         partialToolCallArgs,
         settledCallIds,
         liveDiffByCallId,
-        ...(contextWindow !== undefined ? { contextWindow } : {})
+        ...(contextWindow !== undefined ? { contextWindow } : {}),
+        tokenBudgetWarnThreshold
       }),
-    [events, isProcessing, partialToolCallArgs, settledCallIds, liveDiffByCallId, contextWindow]
+    [
+      events,
+      isProcessing,
+      partialToolCallArgs,
+      settledCallIds,
+      liveDiffByCallId,
+      contextWindow,
+      tokenBudgetWarnThreshold
+    ]
   );
+
+  useFloatingLiveDiffAutoOpen(rows);
 
   const displayRows = useMemo(
     () => projectSubagentRows(rows),
@@ -166,14 +172,16 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
   const reasoningTexts = useChatStore((s) => s.reasoningTexts);
 
   const tailScrollKey = useMemo(
-    () => computeTailScrollKey(displayRows, assistantTexts, reasoningTexts, summaries),
-    [displayRows, assistantTexts, reasoningTexts, summaries]
+    () =>
+      computeTailScrollKey(
+        displayRows,
+        assistantTexts,
+        reasoningTexts,
+        summaries,
+        liveDiffByCallId
+      ),
+    [displayRows, assistantTexts, reasoningTexts, summaries, liveDiffByCallId]
   );
-
-  const liveStatusAnchored =
-    isProcessing &&
-    lastTurnIndex >= 0 &&
-    turnSegments[lastTurnIndex]?.some((r) => r.kind === 'user-prompt');
 
   // Note: a `userPromptIndices` memo lived here previously. The `g j` /
   // `g k` keyboard navigator below uses
@@ -183,15 +191,35 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
   const updateSticky = (next: boolean) => {
     if (stickyRef.current === next) return;
     stickyRef.current = next;
-    setSticky(next);
+  };
+
+  const scheduleScroll = (fn: () => void) => {
+    if (scrollFrameRef.current !== null) return;
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      fn();
+    });
+  };
+
+  const scrollNewTurnToCenter = () => {
+    scheduleScroll(() => {
+      const prompts = containerRef.current?.querySelectorAll('[data-row-kind="user-prompt"]');
+      const last = prompts?.[prompts.length - 1];
+      if (last) {
+        last.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    });
   };
 
   const scrollToTail = (force: boolean) => {
     if (!force && !stickyRef.current) return;
-    if (scrollFrameRef.current !== null) return;
-    scrollFrameRef.current = requestAnimationFrame(() => {
-      scrollFrameRef.current = null;
-      bottomRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+    scheduleScroll(() => {
+      bottomRef.current?.scrollIntoView({
+        behavior: force || stickyRef.current ? 'smooth' : 'auto',
+        block: 'end'
+      });
     });
   };
 
@@ -209,18 +237,13 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
       } else if (!stickyRef.current && distance <= RESTICK_PX) {
         updateSticky(true);
       }
-      // Recompute the at-top predicate alongside sticky so the `Top`
-      // pill flips off the moment the user lands at the head — no
-      // separate listener.
-      const nearTop = parent.scrollTop <= AT_TOP_PX;
-      setAtTop((prev) => (prev === nearTop ? prev : nearTop));
     };
 
     parent.addEventListener('scroll', onScroll, { passive: true });
     return () => {
       parent.removeEventListener('scroll', onScroll);
     };
-  }, []);
+  }, [secondaryZoneOpen]);
 
   // Keyboard navigation between user prompts (`g j` / `g k`) and Esc to
   // drop sticky scroll. The `g`-prefix uses a short timeout so accidental
@@ -302,11 +325,11 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
       window.removeEventListener('keydown', onKey);
       disarm();
     };
-  }, []);
+  }, [secondaryZoneOpen]);
 
-  // Snap-on-send: whenever a brand new `user-prompt` event appears in
-  // the event list, unconditionally jump to the tail and re-enable
-  // sticky. This fires exactly once per new prompt id.
+  // Center-on-send: whenever a brand new `user-prompt` event appears,
+  // scroll that turn into the viewport center and re-enable sticky.
+  // Fires exactly once per new prompt id.
   //
   // Depends on `lastUserPromptId` (a reducer-maintained primitive)
   // rather than the full `events` array, so streaming deltas no
@@ -317,7 +340,7 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
     if (lastUserPromptId === lastUserPromptIdRef.current) return;
     lastUserPromptIdRef.current = lastUserPromptId;
     updateSticky(true);
-    scrollToTail(true);
+    scrollNewTurnToCenter();
   }, [lastUserPromptId]);
 
   // Sticky follow during streaming: every time the derived row list
@@ -363,20 +386,6 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  const onJumpToLatest = () => {
-    updateSticky(true);
-    scrollToTail(true);
-  };
-
-  const onJumpToTop = () => {
-    const first = containerRef.current?.firstElementChild;
-    if (first) {
-      first.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  };
-
-  const showJumpChip = !sticky && isProcessing;
-
   return (
     <>
       <TimelineFindBar
@@ -387,7 +396,7 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
       />
       <div
         ref={containerRef}
-        className={cn('flex flex-col py-2', showJumpChip && timelineAgentColumnReserveRightClassName)}
+        className={cn(timelineStackClassName, 'flex flex-col')}
       >
         {turnSegments.map((segment, segmentIndex) => {
           const isLastTurn = segmentIndex === lastTurnIndex;
@@ -412,18 +421,9 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
           <PendingChangesTimelineRow
             {...(onOpenCheckpointSettings ? { onOpenCheckpointSettings } : {})}
           />
-          {!liveStatusAnchored && <LiveStatusRow />}
         </div>
         <div ref={bottomRef} className="h-px w-full shrink-0" aria-hidden />
       </div>
-      {showJumpChip && (
-        <div className="sticky bottom-3 z-30 flex justify-end px-1 pb-1 pt-2">
-          <JumpToLatestChip
-            onClick={onJumpToLatest}
-            {...(atTop ? {} : { onJumpToTop })}
-          />
-        </div>
-      )}
     </>
   );
 }
@@ -455,6 +455,9 @@ function renderRow(
           id={r.id}
           {...(r.runId ? { runId: r.runId } : {})}
           content={r.content}
+          {...(r.attachments && r.attachments.length > 0
+            ? { attachments: r.attachments }
+            : {})}
           live={liveTurn}
         />
       );
@@ -508,6 +511,7 @@ function renderRow(
         <RunCompleteRow
           key={r.key}
           durationMs={r.durationMs}
+          completedAt={r.completedAt}
           {...(r.usage !== undefined ? { usage: r.usage } : {})}
           {...(r.editCount !== undefined ? { editCount: r.editCount } : {})}
           {...(r.fileCount !== undefined ? { fileCount: r.fileCount } : {})}
@@ -522,7 +526,13 @@ function renderRow(
         />
       );
     case 'subagent-line':
-      return <SubAgentTrace key={r.key} subagentId={r.subagentId} />;
+      return (
+        <DelegateBatchRow
+          key={r.key}
+          rowKey={r.key}
+          subagentIds={[r.subagentId]}
+        />
+      );
     default: {
       const _exhaustive: never = r;
       void _exhaustive;
@@ -534,29 +544,3 @@ function renderRow(
 // Runtime guard lives in `reducer/runtimeGuards.ts` so non-UI callers
 // (e.g. `chatChannel.ts`) can import it without pulling in the React
 // tree. Import it directly from there — no re-export here.
-
-/** Stable key for sticky scroll — row count plus tail growth proxy. */
-function computeTailScrollKey(
-  rows: DisplayRow[],
-  assistantTexts: Record<string, { text: string }>,
-  reasoningTexts: Record<string, { text: string }>,
-  summaries: Record<string, { text: string }>
-): string {
-  if (rows.length === 0) return '0';
-  const last = rows[rows.length - 1]!;
-  let growth = 0;
-  switch (last.kind) {
-    case 'assistant-text':
-      growth = assistantTexts[last.id]?.text.length ?? 0;
-      break;
-    case 'reasoning-line':
-      growth = reasoningTexts[last.id]?.text.length ?? 0;
-      break;
-    case 'context-summary':
-      growth = summaries[last.summaryId]?.text.length ?? 0;
-      break;
-    default:
-      break;
-  }
-  return `${rows.length}:${last.key}:${growth}`;
-}

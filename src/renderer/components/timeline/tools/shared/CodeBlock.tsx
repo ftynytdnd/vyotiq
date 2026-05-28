@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { chromeCodeSurfaceClassName, chromeRevealIconActionClassName } from '../../../ui/SurfaceShell.js';
 import { cn } from '../../../../lib/cn.js';
+import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../../lib/shellIcons.js';
 import { safeCopy } from '../../../../lib/clipboard.js';
 import { MAX_TOOL_OUTPUT_CHARS } from '@shared/constants.js';
 
@@ -95,9 +96,9 @@ export function CodeBlock({
           )}
         >
           {copied ? (
-            <Check className="h-3.5 w-3.5 text-success" strokeWidth={2.25} />
+            <Check className={cn(SHELL_ROW_ICON_CLASS, 'text-success')} strokeWidth={SHELL_ACTION_ICON_STROKE} />
           ) : (
-            <Copy className="h-3.5 w-3.5" strokeWidth={2.25} />
+            <Copy className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
           )}
         </button>
       )}

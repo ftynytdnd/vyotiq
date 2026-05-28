@@ -1,25 +1,24 @@
 /**
- * V5 delegate batch — one tool-like row for parallel sub-agent spawns.
- * Expanded: inline roster with per-worker SubAgentTrace (Run/Brief/Result tabs).
+ * Delegate batch — one quiet line when sub-agents start (detail in AgentTracePanel).
  */
 
 import { useMemo } from 'react';
 import { useChatStore } from '../../../store/useChatStore.js';
-import { SubAgentTrace } from '../subagent/SubAgentTrace.js';
-import { DetailShell } from '../shared/DetailShell.js';
-import { TimelineRowHeader } from '../shared/TimelineRowHeader.js';
-import { useTimelineRowExpand } from '../shared/useTimelineRowExpand.js';
-import { delegateBatchHasInflightDiff } from '../shared/toolInflight.js';
+import { useSecondaryZoneStore } from '../../../store/useSecondaryZoneStore.js';
 import { timelineSubAgentDotClassName } from '../shared/rowStyles.js';
+import { cn } from '../../../lib/cn.js';
+
 interface DelegateBatchRowProps {
   rowKey: string;
   subagentIds: string[];
 }
 
-export function DelegateBatchRow({ rowKey, subagentIds }: DelegateBatchRowProps) {
+export function DelegateBatchRow({ subagentIds }: DelegateBatchRowProps) {
   const subagents = useChatStore((s) => s.subagents);
+  const openAgentTrace = useSecondaryZoneStore((s) => s.openAgentTrace);
 
   const stats = useMemo(() => {
+    const delegated = subagentIds.length;
     let running = 0;
     let done = 0;
     let failed = 0;
@@ -30,16 +29,13 @@ export function DelegateBatchRow({ rowKey, subagentIds }: DelegateBatchRowProps)
       else if (s.status === 'done' || s.status === 'partial') done++;
       else failed++;
     }
-    return { running, done, failed };
+    running = Math.min(running, delegated);
+    failed = Math.min(failed, delegated);
+    done = Math.min(done, Math.max(0, delegated - running - failed));
+    return { running, done, failed, delegated };
   }, [subagentIds, subagents]);
 
   const isLive = stats.running > 0;
-  const hasInflightDiff = useMemo(
-    () => delegateBatchHasInflightDiff(subagentIds, subagents),
-    [subagentIds, subagents]
-  );
-  const liveAutoExpand = isLive || hasInflightDiff;
-  const { expanded, onToggle } = useTimelineRowExpand({ rowKey, liveAutoExpand });
 
   const metaParts: string[] = [];
   if (stats.running > 0) metaParts.push(`${stats.running} running`);
@@ -49,33 +45,36 @@ export function DelegateBatchRow({ rowKey, subagentIds }: DelegateBatchRowProps)
   const taskLabel =
     subagentIds.length === 1 ? '1 task' : `${subagentIds.length} tasks`;
 
-  return (
-    <div data-row-kind="delegate-batch" className="vyotiq-stepfade-once flex flex-col">
-      <TimelineRowHeader
-        expanded={expanded}
-        onToggle={onToggle}
-        expandable
-        chevronOnRight
-      >
-        <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 truncate text-row">
-          <span className={timelineSubAgentDotClassName(isLive)} aria-hidden />
-          <span className="min-w-0 truncate">
-            <span className="font-medium text-text-primary">Delegated</span>{' '}
-            <span className="text-text-secondary">{taskLabel}</span>
-            {metaParts.length > 0 && (
-              <span className="text-text-muted"> · {metaParts.join(' · ')}</span>
-            )}
-          </span>
-        </span>
-      </TimelineRowHeader>
+  const onOpenTrace = () => {
+    const preferred =
+      subagentIds.find((id) => {
+        const s = subagents[id];
+        return s?.status === 'running' || s?.status === 'pending';
+      }) ?? subagentIds[0];
+    if (preferred) openAgentTrace(preferred);
+  };
 
-      {expanded && (
-        <DetailShell variant="flat" gap="gap-0.5">
-          {subagentIds.map((id) => (
-            <SubAgentTrace key={id} subagentId={id} nested />
-          ))}
-        </DetailShell>
+  return (
+    <button
+      type="button"
+      data-row-kind="delegate-batch"
+      onClick={onOpenTrace}
+      className={cn(
+        'vyotiq-stepfade-once w-full px-2 py-1 text-left',
+        'rounded-inner transition-colors hover:bg-surface-raised/40'
       )}
-    </div>
+      aria-label={`Open sub-agent trace for ${taskLabel}`}
+    >
+      <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 truncate text-row text-text-muted">
+        <span className={timelineSubAgentDotClassName(isLive)} aria-hidden />
+        <span className="min-w-0 truncate">
+          <span className="vx-row-label">Delegated</span>{' '}
+          <span className="vx-row-desc">{taskLabel}</span>
+          {metaParts.length > 0 && (
+            <span className="vx-caption"> · {metaParts.join(' · ')}</span>
+          )}
+        </span>
+      </span>
+    </button>
   );
 }

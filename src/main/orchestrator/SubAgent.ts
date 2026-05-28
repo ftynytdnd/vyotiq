@@ -20,7 +20,7 @@ import { toolSchemasFor } from '../tools/registry.js';
 import { validateSubagentToolset } from '../tools/policy/index.js';
 import { buildSubagentSystemPrompt } from '../harness/harnessLoader.js';
 import { buildHostEnvironmentXml } from './loop/buildHostEnvironment.js';
-import { inlineFiles, type InlineFileCache } from './contextManager.js';
+import { countSuccessfulInlines, inlineFiles, type InlineFileCache } from './contextManager.js';
 import { backoff } from './retry.js';
 import { isAbortError } from './abortSignal.js';
 import {
@@ -33,6 +33,7 @@ import { lockToolCallIds } from './loop/lockToolCallIds.js';
 import { handleToolCalls } from './loop/handleToolCalls.js';
 import { sanitizeToolCallPairing } from './loop/sanitizeToolPairing.js';
 import { seedCachedRead } from './toolResultCache.js';
+import { isNonRecoverableProviderError } from '../providers/providerError.js';
 import { inferResultStatus } from '@shared/text/resultPatterns.js';
 import {
   buildSubagentRunStateXml,
@@ -73,6 +74,8 @@ export interface SubAgentRun {
   output: string;
   toolResults: ToolResult[];
   status: 'success' | 'partial' | 'failed' | 'aborted' | 'malformed';
+  /** Files host-inlined at spawn (P2b structural excuse for zero tools). */
+  inlinedFileCount: number;
   error?: string;
 }
 
@@ -228,6 +231,7 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
     deps.inlineCache,
     deps.signal
   );
+  const inlinedFileCount = countSuccessfulInlines(filesBlock);
 
   // Audit fix A4: pre-seed this worker's read-cache with a synthetic
   // hit for every file we just inlined. The first `read({ path })`
@@ -342,7 +346,14 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
 
   for (let iter = 0; iter < SUBAGENT_MAX_ITERATIONS; iter++) {
     if (deps.signal.aborted) {
-      return { id: spec.id, task: spec.task, output: '', toolResults: allResults, status: 'aborted' };
+      return {
+        id: spec.id,
+        task: spec.task,
+        output: '',
+        toolResults: allResults,
+        inlinedFileCount,
+        status: 'aborted'
+      };
     }
 
     // Wrap-up turn: at iteration `SUBAGENT_WRAPUP_ITER` we flip
@@ -551,7 +562,25 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
       // Detect the abort first and return the `'aborted'` shape the
       // top-of-loop check at line 141 already uses.
       if (isAbortError(lastError, deps.signal)) {
-        return { id: spec.id, task: spec.task, output: '', toolResults: allResults, status: 'aborted' };
+        return {
+          id: spec.id,
+          task: spec.task,
+          output: '',
+          toolResults: allResults,
+          inlinedFileCount,
+          status: 'aborted'
+        };
+      }
+      if (isNonRecoverableProviderError(lastError)) {
+        return {
+          id: spec.id,
+          task: spec.task,
+          output: assistantText,
+          toolResults: allResults,
+          inlinedFileCount,
+          status: 'failed',
+          error: lastError.friendlyMessage
+        };
       }
       attempt += 1;
       if (attempt >= MAX_SELF_CORRECTION_ATTEMPTS) {
@@ -561,6 +590,7 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
           task: spec.task,
           output: assistantText,
           toolResults: allResults,
+          inlinedFileCount,
           status: 'failed',
           error: msg
         };
@@ -578,7 +608,14 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
       try {
         await backoff(attempt, { signal: deps.signal });
       } catch {
-        return { id: spec.id, task: spec.task, output: '', toolResults: allResults, status: 'aborted' };
+        return {
+        id: spec.id,
+        task: spec.task,
+        output: '',
+        toolResults: allResults,
+        inlinedFileCount,
+        status: 'aborted'
+      };
       }
       lastAction = 'retry';
       continue;
@@ -774,12 +811,30 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
         task: spec.task,
         output: assistantText,
         toolResults: allResults,
+        inlinedFileCount,
         status: 'failed',
         error:
           'Sub-agent finished without producing any output (no text, no tool ' +
           'calls, no result envelope) — nothing to verify; treating the round ' +
           'as failed.'
       };
+    }
+    if (
+      status === 'malformed' &&
+      !textNoResultNudged &&
+      iter >= SUBAGENT_MAX_ITERATIONS - 1
+    ) {
+      deps.onTimelineEvent?.(
+        {
+          kind: 'phase',
+          id: randomUUID(),
+          ts: Date.now(),
+          label:
+            'Missing `<result>` envelope on the final sub-agent iteration; ' +
+            'one-shot recovery cannot run (iteration cap).'
+        },
+        spec.id
+      );
     }
     if (status === 'malformed' && !textNoResultNudged && iter < SUBAGENT_MAX_ITERATIONS - 1) {
       textNoResultNudged = true;
@@ -790,9 +845,15 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
         cleanTextLen: assistantText.length,
         toolResults: allResults.length
       });
+      const priorSnippet = assistantText.trim().slice(0, 2000);
+      const priorBlock =
+        priorSnippet.length > 0
+          ? `Your previous turn (excerpt):\n"""\n${priorSnippet}\n"""\n\n`
+          : '';
       messages.push({
         role: 'user',
         content:
+          priorBlock +
           'Your last turn ended without a `<result>…</result>` envelope. The host treats ' +
           'an envelope-less worker output as `malformed` and reports the round as ' +
           'failed even when the underlying work succeeded. Re-emit your final answer ' +
@@ -834,6 +895,7 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
       task: spec.task,
       output: assistantText,
       toolResults: allResults,
+      inlinedFileCount,
       status,
       ...(error ? { error } : {})
     };
@@ -849,6 +911,7 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
     task: spec.task,
     output: '',
     toolResults: allResults,
+    inlinedFileCount,
     status: 'failed',
     error: `iteration cap reached (${SUBAGENT_MAX_ITERATIONS} turns)`
   };

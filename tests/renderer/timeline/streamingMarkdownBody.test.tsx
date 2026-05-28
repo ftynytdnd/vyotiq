@@ -7,16 +7,16 @@ import { render } from '@testing-library/react';
 import { StreamingMarkdownBody } from '@renderer/components/timeline/markdown/StreamingMarkdownBody.js';
 
 describe('StreamingMarkdownBody', () => {
-  it('renders gold headings and inline code while streaming', () => {
+  it('renders stream headings and inline code while streaming', () => {
     const { container } = render(
       <StreamingMarkdownBody
         text={'# Exploring\n\nCheck `backdrop-blur` usage.'}
         done={false}
       />
     );
-    expect(container.querySelector('h1')?.className).toMatch(/text-accent-gold/);
+    expect(container.querySelector('h1')?.className).toMatch(/vx-timeline-stream-heading/);
     expect(container.querySelector('code')?.textContent).toBe('backdrop-blur');
-    expect(container.querySelector('.vyotiq-stream-cursor')).not.toBeNull();
+    expect(container.querySelector('.vyotiq-stream-cursor')).toBeNull();
   });
 
   it('hands off to full markdown when done', () => {

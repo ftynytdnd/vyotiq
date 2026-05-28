@@ -1,48 +1,51 @@
 /** Shared constants and class strings for the left navigation dock. */
 
-import {
-  chromeEdgeClassName,
-  chromePillClassName,
-  chromeTabActiveClassName,
-  chromeTabIdleClassName
-} from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
+import {
+  SHELL_DOCK_TAB_ICON_CLASS,
+  SHELL_TAB_ICON_STROKE
+} from '../../lib/shellIcons.js';
 
 export const CONV_DRAG_MIME = 'application/x-vyotiq-conversation';
 
-/** Hover-only dock actions stay visible on keyboard focus. */
+/**
+ * Hover-only dock actions. Hidden from layout until hover or keyboard focus
+ * so tab labels can use the full row width (audit #20).
+ */
 export const DOCK_HOVER_ACTIONS =
-  'opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100';
+  'hidden shrink-0 items-center group-hover:flex focus-within:flex';
 
-const DOCK_TAB_ROW_CLASS = cn(
-  'group app-no-drag flex w-full max-w-none shrink-0 items-center gap-1 rounded-inner px-2 py-1',
-  'text-row transition-colors duration-150'
-);
+/** Lucide icon sizing — matches Vyotiq UI {@link vx-tab} (mockup kit). */
+export const DOCK_TAB_ICON_CLASS = SHELL_DOCK_TAB_ICON_CLASS;
+export const DOCK_TAB_ICON_STROKE = SHELL_TAB_ICON_STROKE;
 
-const DOCK_TAB_ACTIVE_CLASS = chromeTabActiveClassName;
-const DOCK_TAB_IDLE_CLASS = chromeTabIdleClassName;
+/** Primary label inside a dock tab row. */
+export const DOCK_TAB_LABEL_CLASS = 'vx-dock-tab-label';
 
-export const DOCK_WIDTH_DEFAULT = 260;
-const DOCK_WIDTH_MIN = 220;
-export const DOCK_WIDTH_MAX = 360;
-export const DOCK_WIDTH_COLLAPSED_PX = 40;
+/** Inner activate control — inherits row color/typography; label ellipsis via {@link DOCK_TAB_LABEL_CLASS}. */
+export const DOCK_TAB_TRIGGER_CLASS = 'vx-dock-tab-trigger';
 
-export const DOCK_EDGE_CLASS = cn('border-r', chromeEdgeClassName);
+const DOCK_TAB_ROW_CLASS = cn('vx-dock-tab group app-no-drag shrink-0');
 
-export const DOCK_INSET_CLASS = 'flex min-h-0 flex-1 flex-col gap-2 px-2';
+export const DOCK_WIDTH_DEFAULT = 200;
+const DOCK_WIDTH_MIN = 180;
+export const DOCK_WIDTH_MAX = 320;
+export const DOCK_WIDTH_COLLAPSED_PX = 44;
 
-export const DOCK_DIVIDER_H_CLASS = 'mx-2 h-px shrink-0 bg-border-subtle/25';
+export const DOCK_INSET_CLASS = 'flex min-h-0 flex-1 flex-col gap-1.5 px-1.5';
 
-export const DOCK_FOOTER_CLASS = cn('shrink-0 border-t', chromeEdgeClassName);
+export const DOCK_DIVIDER_H_CLASS = 'mx-2 h-0 shrink-0';
+
+export const DOCK_FOOTER_CLASS = 'shrink-0';
 
 export const DOCK_FOOTER_TOOLBAR_CLASS = 'px-1.5 py-0.5';
 
-/** Empty / loading copy — no background box. */
+/** Empty / loading copy — icon + muted text, no background box. */
 export const DOCK_EMPTY_STATE_CLASS =
-  'mx-2 flex flex-col gap-1.5 px-1 py-1 text-row text-text-faint';
+  'mx-2 flex flex-col items-start gap-1.5 px-1 py-2 text-row text-text-muted';
 
 export function dockInlineActionClassName(): string {
-  return cn(chromePillClassName(), 'px-2 text-row');
+  return cn('vx-btn vx-btn-quiet px-2 text-row');
 }
 
 export const DOCK_RESIZE_HANDLE_CLASS =
@@ -76,23 +79,21 @@ export const DOCK_CHAT_TAB_INNER_CLASS = cn(
   'flex w-full min-w-0 items-center gap-1'
 );
 
-/** Peak-context meter track under the active chat tab. */
-export const DOCK_CHAT_METER_TRACK_CLASS =
-  'relative block h-0.5 w-full overflow-hidden rounded-pill bg-border-subtle/30';
-
 export function dockTabRowClassName(
-  active: boolean,
+  _active: boolean,
   _kind: 'chat' | 'workspace'
 ): string {
-  return cn(
-    DOCK_TAB_ROW_CLASS,
-    active ? DOCK_TAB_ACTIVE_CLASS : DOCK_TAB_IDLE_CLASS
-  );
+  return DOCK_TAB_ROW_CLASS;
+}
+
+/** data-active attribute value for {@link dockTabRowClassName} rows. */
+export function dockTabActiveAttr(active: boolean): 'true' | 'false' {
+  return active ? 'true' : 'false';
 }
 
 /** Fill color for dock / composer context meters from usage ratio. */
 export function dockChatMeterBarClassName(ratio: number): string {
   if (ratio >= 0.9) return 'bg-danger';
   if (ratio >= 0.7) return 'bg-warning';
-  return 'bg-accent/80';
+  return 'bg-edge-light-meter';
 }

@@ -54,6 +54,8 @@ interface PopoverProps {
    * secondary-zone width CSS transition).
    */
   revision?: number;
+  /** Stacking order for the portaled panel. Defaults to composer popovers. */
+  zIndex?: number;
   className?: string;
   children: React.ReactNode;
 }
@@ -126,6 +128,7 @@ export function Popover({
   collisionPadding,
   preferSide = 'auto',
   revision = 0,
+  zIndex = 60,
   className,
   children
 }: PopoverProps) {
@@ -243,7 +246,7 @@ export function Popover({
         top: pos?.top ?? 0,
         left: pos?.left ?? 0,
         visibility: ready ? 'visible' : 'hidden',
-        zIndex: 60
+        zIndex
       }}
       className={cn('app-no-drag', className)}
     >

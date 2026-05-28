@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { chromeRevealIconActionClassName } from '../../../../ui/SurfaceShell.js';
 import { cn } from '../../../../../lib/cn.js';
+import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../../../lib/shellIcons.js';
 import { safeCopy } from '../../../../../lib/clipboard.js';
 
 interface DiffCopyButtonProps {
@@ -68,8 +69,8 @@ export function DiffCopyButton({ text, className }: DiffCopyButtonProps) {
       )}
     >
       {done
-        ? <Check className="h-3.5 w-3.5" strokeWidth={2.25} />
-        : <Copy className="h-3.5 w-3.5" strokeWidth={2.25} />}
+        ? <Check className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+        : <Copy className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />}
     </button>
   );
 }

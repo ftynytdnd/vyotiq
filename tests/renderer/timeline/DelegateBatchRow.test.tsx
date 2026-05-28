@@ -1,12 +1,12 @@
 /**
- * DelegateBatchRow — V5 tool-like delegate batch line.
+ * DelegateBatchRow — one quiet delegate summary line (detail in AgentTracePanel).
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
-import { act, fireEvent, render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { DelegateBatchRow } from '@renderer/components/timeline/delegation/DelegateBatchRow';
 import { useChatStore } from '@renderer/store/useChatStore';
-import { useTimelineUiStore } from '@renderer/store/useTimelineUiStore';
+import { useSecondaryZoneStore } from '@renderer/store/useSecondaryZoneStore';
 import type { SubAgentSnapshot } from '@renderer/components/timeline/reducer/types';
 
 function makeSnap(id: string, task: string, status: SubAgentSnapshot['status'] = 'running'): SubAgentSnapshot {
@@ -32,15 +32,11 @@ beforeEach(() => {
     conversationId: 'c-test',
     subagents: {}
   });
-  useTimelineUiStore.setState({
-    expandedByConvo: {},
-    manualOverrideByConvo: {},
-    hydrated: true
-  });
+  useSecondaryZoneStore.setState({ agentTraceId: null, panel: null });
 });
 
 describe('DelegateBatchRow', () => {
-  it('renders a tool-like delegate summary line', async () => {
+  it('renders a one-line delegate summary with status counts', async () => {
     await act(async () => {
       useChatStore.setState({
         subagents: {
@@ -58,94 +54,28 @@ describe('DelegateBatchRow', () => {
     expect(container.textContent ?? '').toContain('2 tasks');
     expect(container.textContent ?? '').toContain('1 running');
     expect(container.textContent ?? '').toContain('1 done');
+    expect(container.textContent ?? '').not.toContain('worker alpha');
+    expect(container.querySelector('[data-row-kind="subagent-line"]')).toBeNull();
   });
 
-  it('auto-expands while workers are live and shows nested roster', async () => {
+  it('opens trace when clicked', async () => {
     await act(async () => {
       useChatStore.setState({
         subagents: {
-          A1: makeSnap('A1', 'worker alpha'),
-          A2: makeSnap('A2', 'worker beta')
+          A1: makeSnap('A1', 'task one')
         }
       });
     });
 
     const { container } = render(
-      <DelegateBatchRow rowKey="delegate:A1:A2" subagentIds={['A1', 'A2']} />
+      <DelegateBatchRow rowKey="delegate:A1" subagentIds={['A1']} />
     );
 
-    expect(container.textContent ?? '').toContain('worker alpha');
-    expect(container.textContent ?? '').toContain('worker beta');
-  });
-
-  it('toggles roster visibility when batch is idle', async () => {
+    const button = container.querySelector('[data-row-kind="delegate-batch"]');
+    expect(button).not.toBeNull();
     await act(async () => {
-      useChatStore.setState({
-        subagents: {
-          A1: makeSnap('A1', 'done one', 'done'),
-          A2: makeSnap('A2', 'done two', 'done')
-        }
-      });
+      button?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-
-    const { container } = render(
-      <DelegateBatchRow rowKey="delegate:A1:A2" subagentIds={['A1', 'A2']} />
-    );
-
-    expect(container.textContent ?? '').not.toContain('done one');
-
-    const headerBtn = container.querySelector('[data-row-kind="delegate-batch"] button');
-    expect(headerBtn).not.toBeNull();
-    fireEvent.click(headerBtn!);
-
-    expect(container.textContent ?? '').toContain('done one');
-    expect(container.textContent ?? '').toContain('done two');
-  });
-
-  it('auto-expands when a done worker still has an in-flight report diff', async () => {
-    const reportBody = '<html>\n<body>Survey</body>\n</html>';
-    await act(async () => {
-      useChatStore.setState({
-        subagents: {
-          A1: {
-            ...makeSnap('A1', 'done one', 'done'),
-            partialToolCallArgs: {
-              'c-report': {
-                callId: 'c-report',
-                name: 'report',
-                index: 0,
-                argsBuf: JSON.stringify({ title: 'Survey', body: reportBody }),
-                parsed: { title: 'Survey', body: reportBody },
-                ts: 2,
-                diffStream: {
-                  tool: 'report',
-                  filePath: '.vyotiq/reports/survey-preview.html',
-                  hunks: [
-                    {
-                      oldStart: 1,
-                      newStart: 1,
-                      lines: [{ kind: '+', text: '<html>' }]
-                    }
-                  ],
-                  additions: 1,
-                  deletions: 0,
-                  settled: false,
-                  ts: 2
-                }
-              }
-            }
-          },
-          A2: makeSnap('A2', 'done two', 'done')
-        }
-      });
-    });
-
-    const { container } = render(
-      <DelegateBatchRow rowKey="delegate:A1:A2" subagentIds={['A1', 'A2']} />
-    );
-
-    const batchBtn = container.querySelector('[data-row-kind="delegate-batch"] button');
-    expect(batchBtn!.getAttribute('aria-expanded')).toBe('true');
-    expect(container.textContent ?? '').toContain('Survey');
+    expect(useSecondaryZoneStore.getState().agentTraceId).toBe('A1');
   });
 });

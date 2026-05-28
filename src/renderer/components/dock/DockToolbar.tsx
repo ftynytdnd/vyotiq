@@ -2,11 +2,11 @@
  * DockToolbar — footer / collapsed-rail actions (composer-aligned h-6 pills).
  */
 
-import { ChevronLeft, ChevronRight, Search, SquarePen } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { chromeIconPillClassName, chromePillClassName } from '../ui/SurfaceShell.js';
-import { DOCK_FOOTER_TOOLBAR_CLASS } from './dockShared.js';
+import { DOCK_FOOTER_TOOLBAR_CLASS, DOCK_TAB_ICON_CLASS, DOCK_TAB_ICON_STROKE } from './dockShared.js';
 import { cn } from '../../lib/cn.js';
+import { chromePillClassName, chromeToolbarButtonClassName } from '../ui/SurfaceShell.js';
 
 export interface DockToolbarProps {
   layout: 'horizontal' | 'vertical';
@@ -48,9 +48,9 @@ export function DockToolbar({
               aria-label="New chat"
               title="New chat (Ctrl+N)"
               onClick={onNewChat}
-              className={cn(chromePillClassName(), 'gap-1 px-1.5 text-row')}
+              className={cn(chromePillClassName(false), 'gap-1 px-1.5 text-row')}
             >
-              <SquarePen className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+              <Plus className={DOCK_TAB_ICON_CLASS} strokeWidth={DOCK_TAB_ICON_STROKE} />
               <span className="truncate">New chat</span>
             </button>
             <DockIconButton
@@ -59,7 +59,7 @@ export function DockToolbar({
               active={searchOpen}
               onClick={onToggleSearch}
             >
-              <Search className="h-3.5 w-3.5" strokeWidth={2} />
+              <Search className={DOCK_TAB_ICON_CLASS} strokeWidth={DOCK_TAB_ICON_STROKE} />
             </DockIconButton>
           </div>
           <DockIconButton
@@ -67,13 +67,13 @@ export function DockToolbar({
             title="Toggle dock (Ctrl+B)"
             onClick={onCollapse}
           >
-            <CollapseIcon className="h-3.5 w-3.5" strokeWidth={2.25} />
+            <CollapseIcon className={DOCK_TAB_ICON_CLASS} strokeWidth={DOCK_TAB_ICON_STROKE} />
           </DockIconButton>
         </>
       ) : (
         <>
           <DockIconButton label="New chat" title="New chat (Ctrl+N)" onClick={onNewChat}>
-            <SquarePen className="h-3.5 w-3.5" strokeWidth={2} />
+            <Plus className={DOCK_TAB_ICON_CLASS} strokeWidth={DOCK_TAB_ICON_STROKE} />
           </DockIconButton>
           <DockIconButton
             label="Search chats"
@@ -81,14 +81,14 @@ export function DockToolbar({
             active={searchOpen}
             onClick={onToggleSearch}
           >
-            <Search className="h-3.5 w-3.5" strokeWidth={2} />
+            <Search className={DOCK_TAB_ICON_CLASS} strokeWidth={DOCK_TAB_ICON_STROKE} />
           </DockIconButton>
           <DockIconButton
             label="Expand dock"
             title="Toggle dock (Ctrl+B)"
             onClick={onCollapse}
           >
-            <CollapseIcon className="h-3.5 w-3.5" strokeWidth={2.25} />
+            <CollapseIcon className={DOCK_TAB_ICON_CLASS} strokeWidth={DOCK_TAB_ICON_STROKE} />
           </DockIconButton>
         </>
       )}
@@ -115,7 +115,10 @@ function DockIconButton({
       aria-label={label}
       title={title}
       onClick={onClick}
-      className={chromeIconPillClassName(active)}
+      className={cn(
+        chromeToolbarButtonClassName(active),
+        'h-6 w-6 shrink-0 px-0'
+      )}
     >
       {children}
     </button>

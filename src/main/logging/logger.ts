@@ -176,21 +176,36 @@ export const logger: Logger = makeLogger('vyotiq');
  * but never crash the app — Agent V is an always-on desktop agent.
  */
 let installed = false;
+const CRASH_USER_MESSAGE =
+  'An unexpected error interrupted the run. Check the log for details.';
+
+function drainProcessCrash(label: string, detail: unknown): void {
+  logger.error(label, {
+    ...(label === 'unhandledRejection'
+      ? { reason: serializeError(detail) }
+      : { error: serializeError(detail) })
+  });
+  void import('../orchestrator/AgentV.js')
+    .then(({ abortAllActiveRunsWithError }) =>
+      abortAllActiveRunsWithError(CRASH_USER_MESSAGE)
+    )
+    .catch(() => undefined);
+  void import('../orchestrator/contextSummarizer/idleSummaryRuntime.js')
+    .then(({ abortAllIdleSummaries }) => abortAllIdleSummaries())
+    .catch(() => undefined);
+  void import('../orchestrator/confirmBus.js')
+    .then(({ clearAllPending }) => clearAllPending())
+    .catch(() => undefined);
+}
+
 export function installCrashHandlers(): void {
   if (installed) return;
   installed = true;
   process.on('unhandledRejection', (reason) => {
-    logger.error('unhandledRejection', { reason: serializeError(reason) });
-    void import('../orchestrator/AgentV.js')
-      .then(({ abortAllActiveRunsWithError }) =>
-        abortAllActiveRunsWithError(
-          'An unexpected error interrupted the run. Check the log for details.'
-        )
-      )
-      .catch(() => undefined);
+    drainProcessCrash('unhandledRejection', reason);
   });
   process.on('uncaughtException', (err) => {
-    logger.error('uncaughtException', { error: serializeError(err) });
+    drainProcessCrash('uncaughtException', err);
   });
 }
 

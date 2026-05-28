@@ -1,6 +1,6 @@
 ---
 auto_execution_mode: 3
-description: Review code changes for bugs, security issues, and improvements and performance and efficiency and latency. 
+description: Review code changes for bugs, security issues, and improvements and performance and efficiency and latency.
 ---
 You are a senior software engineer performing a thorough code review to identify potential bugs, security issues, and improvements and performance and efficiency and latency.
 
@@ -26,18 +26,9 @@ Your task is to find all potential bugs and code improvements in the code change
 17. Audit the silent and sudden orchestrator crashes in between while running and other potential issues
 18. Audit the entire current existing tools and their implementations and usages and integrations and dependencies and so on
 19. Audit the performance and efficiency of the codebase and identify any bottlenecks or inefficiencies and optimize them
-20. Audit the entire codebase for any potential issues
-21. Review the project.md file and ensure that all the features and functionalities are properly implemented and connected
+20. Completely remove and clean all the unused imports and variables and functions and methods and logics and so on from the codebase.
 
-Make sure to:
-1. If exploring the codebase, call multiple tools in parallel for increased efficiency. Do not spend too much time exploring.
-2. If you find any pre-existing bugs in the code, you should also report those since it's important for us to maintain general code quality for the user.
-3. Do NOT report issues that are speculative or low-confidence. All your conclusions should be based on a complete understanding of the codebase.
-4. Remember that if you were given a specific git commit, it may not be checked out and local code states may be different.
-5. Ensure that all the features and functionalities are properly wired and connected.
-6. Ensure that all the features and functionalities are properly tested and validated.
-7. Ensure that all the features and functionalities are properly documented.
-8. Ensure that all the features and functionalities are properly secured.
+
 
 
 Take as much time you need . Don't rush the process at all.
@@ -85,7 +76,3 @@ IMPORTANT NOTE:- Always strictly and properly follow all the current complete ex
 - Always maintain the current existing styling and design choices, ensuring that any new features or changes are consistent with the existing look and feel of the app. Avoid introducing any new design elements that may disrupt the overall aesthetic.
 
 - Always follow the existing architecture and patterns used in the codebase, ensuring that any new code is organized in a way that fits seamlessly with the current structure and promotes maintainability and scalability. Avoid introducing any new architectural patterns or structures that may conflict with the existing codebase.
-
-
-
-After everything, Ask me questions(as many as you want or required) if you need clarification or have any doubts and so on about the project, the requirements, orchestration harness loop, child" AI agents, architecture, project goals, tools calling, project scope, context management, UI/UX components, LLM provider integration, or the implementation details before you start coding.

@@ -37,6 +37,7 @@ import {
   listConversations,
   readConversation
 } from '../conversations/conversationStore.js';
+import { touchRecallConversationLastReference } from '../memory/lastReferenced.js';
 
 /**
  * Per-run map from the orchestrator's `AbortSignal` to the active
@@ -344,6 +345,17 @@ async function runRead(
   const body = fullBody.length > ceiling
     ? fullBody.slice(0, Math.max(0, ceiling - TRUNC_MARKER.length)) + TRUNC_MARKER
     : fullBody;
+
+  const recallWorkspaceId = runWorkspaceId ?? ctx.workspaceId;
+  try {
+    await touchRecallConversationLastReference(
+      recallWorkspaceId,
+      conv.id,
+      ctx.conversationId
+    );
+  } catch {
+    // Last-ref is best-effort; recall output must still return.
+  }
 
   return ok(
     id,

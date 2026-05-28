@@ -58,4 +58,13 @@ describe('useToastStore', () => {
     expect(() => vi.advanceTimersByTime(10_000)).not.toThrow();
     expect(useToastStore.getState().toasts).toHaveLength(0);
   });
+
+  it('keeps danger toasts until explicitly dismissed (POL-1)', () => {
+    useToastStore.getState().show('boom', 'danger');
+    expect(useToastStore.getState().toasts).toHaveLength(1);
+    vi.advanceTimersByTime(60_000);
+    expect(useToastStore.getState().toasts).toHaveLength(1);
+    useToastStore.getState().dismiss(useToastStore.getState().toasts[0]!.id);
+    expect(useToastStore.getState().toasts).toHaveLength(0);
+  });
 });

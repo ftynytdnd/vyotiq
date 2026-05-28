@@ -5,7 +5,7 @@
 
 import type { RegisteredToolName, ToolCall } from '@shared/types/tool.js';
 
-export const RERUN_ALLOWED_TOOLS = new Set<RegisteredToolName>([
+const RERUN_ALLOWED_TOOLS = new Set<RegisteredToolName>([
   'read',
   'ls',
   'search',
@@ -14,7 +14,7 @@ export const RERUN_ALLOWED_TOOLS = new Set<RegisteredToolName>([
 ]);
 
 /** Read-only memory actions that are safe to re-run. */
-export const MEMORY_RERUN_ACTIONS = new Set(['list', 'read']);
+const MEMORY_RERUN_ACTIONS = new Set(['list', 'read']);
 
 export function isRerunnableToolName(name: string): name is RegisteredToolName {
   return RERUN_ALLOWED_TOOLS.has(name as RegisteredToolName);

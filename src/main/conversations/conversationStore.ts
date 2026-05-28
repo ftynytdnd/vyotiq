@@ -28,6 +28,9 @@ import { logger } from '../logging/logger.js';
 import { sanitizeTitle } from './titleSanitizer.js';
 import { getActiveWorkspace, listWorkspaces } from '../workspace/workspaceState.js';
 import { atomicWriteString } from '../checkpoints/atomicWrite.js';
+import { deleteAttachmentsForConversation } from '../attachments/gc.js';
+import { listActiveRuns } from '../orchestrator/AgentV.js';
+import { repairNonTerminalSubagents } from '@shared/transcript/repairNonTerminalSubagents.js';
 
 const log = logger.child('conversations');
 
@@ -371,6 +374,26 @@ export async function getConversationMeta(id: string): Promise<ConversationMeta 
   return meta ? { ...meta } : null;
 }
 
+export async function setConversationArchived(
+  id: string,
+  archived: boolean
+): Promise<ConversationMeta> {
+  await loadIndex();
+  const meta = findMeta(id);
+  if (!meta) throw new Error(`Conversation not found: ${id}`);
+  if (archived) {
+    meta.archived = true;
+    meta.archivedAt = Date.now();
+  } else {
+    delete meta.archived;
+    delete meta.archivedAt;
+  }
+  meta.updatedAt = Date.now();
+  scheduleIndexFlush();
+  await flushIndex();
+  return { ...meta };
+}
+
 export async function renameConversation(id: string, title: string): Promise<ConversationMeta> {
   await loadIndex();
   const meta = findMeta(id);
@@ -429,6 +452,7 @@ export async function removeConversation(id: string): Promise<void> {
   pruneRemovedIds();
   const list = indexCache!;
   const idx = list.findIndex((m) => m.id === id);
+  const removedMeta = idx >= 0 ? list[idx] : undefined;
   if (idx >= 0) list.splice(idx, 1);
   try {
     await fs.unlink(transcriptPath(id));
@@ -436,6 +460,9 @@ export async function removeConversation(id: string): Promise<void> {
     if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
       log.warn('failed to unlink transcript', { id, err });
     }
+  }
+  if (removedMeta?.workspaceId) {
+    void deleteAttachmentsForConversation(removedMeta.workspaceId, id);
   }
   scheduleIndexFlush();
   await flushIndex();
@@ -792,9 +819,14 @@ export async function readConversation(id: string): Promise<Conversation | null>
   // matching `subagent-spawn` never landed — typically because the
   // run was aborted between mid-stream directive parse and
   // verification — doesn't materialize as a phantom sub-agent row
-  // in the renderer's timeline. Review finding H3.
+  // in the renderer's timeline. Review finding H3. When the
+  // conversation has no active orchestrator run, also synthesize
+  // terminal `subagent-status` / `aborted` rows for spawns that
+  // never settled (hard kill / aborted delegation).
   const rawEvents = await readTranscript(id);
-  const events = dropOrphanPendingSubagents(rawEvents);
+  let events = dropOrphanPendingSubagents(rawEvents);
+  const hasActiveRun = listActiveRuns().some((r) => r.conversationId === id);
+  events = repairNonTerminalSubagents(events, { closeWhenIdle: !hasActiveRun });
   const peak = peakOrchestratorPromptTokens(events);
   if (peak > (meta.peakPromptTokens ?? 0)) {
     meta.peakPromptTokens = peak;
@@ -906,9 +938,8 @@ export async function moveConversationToWorkspace(
   meta.updatedAt = Date.now();
   if (priorWorkspaceId && priorWorkspaceId !== targetWorkspaceId) {
     const { migrateConversationPending } = await import('../checkpoints/pendingChanges.js');
-    const { migrateConversationReview } = await import('../checkpoints/reviewSessions.js');
     await migrateConversationPending(id, priorWorkspaceId, targetWorkspaceId);
-    await migrateConversationReview(id, priorWorkspaceId, targetWorkspaceId);
+    // Legacy `reviews.json` rows are read-only after Phase 1 — not migrated.
   }
   log.info('conversation moved to workspace', {
     conversationId: id,

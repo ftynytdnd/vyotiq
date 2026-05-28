@@ -65,7 +65,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'main',
-          include: ['tests/main/**/*.test.{ts,tsx}'],
+          include: ['tests/main/**/*.test.{ts,tsx}', 'tests/shared/**/*.test.{ts,tsx}'],
           environment: 'node',
           setupFiles: ['tests/setup/electronMock.ts']
         }

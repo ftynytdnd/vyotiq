@@ -19,7 +19,11 @@ describe('inferResultStatus', () => {
     ['<status>partial</status>', 'partial'],
     ['<status>failed</status>', 'failed'],
     ['<STATUS>SUCCESS</STATUS>', 'success'],
-    ['<status>  failed  </status>', 'failed']
+    ['<status>  failed  </status>', 'failed'],
+    ['<status>complete</status>', 'success'],
+    ['<status>ok</status>', 'success'],
+    ['<status>done</status>', 'success'],
+    ['<status>error</status>', 'failed']
   ] as const)('parses %s as %s', (text, expected) => {
     expect(inferResultStatus(text)).toBe(expected);
   });
@@ -88,6 +92,24 @@ trailing`;
     const out = parseResultEnvelope(text);
     expect(out.found).toBe(true);
     expect(out.status).toBe('failed');
+  });
+
+  it('prefers the last <result> block when multiple are present', () => {
+    const text =
+      'draft\n<result><status>failed</status><summary>old</summary></result>\n' +
+      'final\n<result><status>success</status><summary>new</summary></result>';
+    const out = parseResultEnvelope(text);
+    expect(out.status).toBe('success');
+    expect(out.summary).toBe('new');
+  });
+
+  it('ignores <result> blocks inside fenced code when choosing the last envelope', () => {
+    const text =
+      '```xml\n<result><status>failed</status></result>\n```\n' +
+      '<result><status>success</status><summary>real</summary></result>';
+    const out = parseResultEnvelope(text);
+    expect(out.status).toBe('success');
+    expect(out.summary).toBe('real');
   });
 });
 

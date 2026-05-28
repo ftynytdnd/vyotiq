@@ -8,7 +8,7 @@ import { useMemo } from 'react';
 import type { ToolCall, ToolResult, SearchMatch } from '@shared/types/tool.js';
 import { InvocationShell } from './shared/InvocationShell.js';
 import { DetailPane } from './shared/DetailPane.js';
-import { chromeCodeSurfaceClassName } from '../../ui/SurfaceShell.js';
+import { chromeCodeSurfaceClassName, chromeNoMatchesClassName } from '../../ui/SurfaceShell.js';
 import { CodeBlock } from './shared/CodeBlock.js';
 import { toolErrorBody, toolErrorHint } from './shared/toolErrorDisplay.js';
 
@@ -100,7 +100,7 @@ function LocalMatches({ matches }: { matches: SearchMatch[] }) {
 
   if (groups.length === 0) {
     return (
-      <div className="text-row italic text-text-muted">No matches.</div>
+      <div className={chromeNoMatchesClassName}>No matches.</div>
     );
   }
 

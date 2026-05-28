@@ -14,6 +14,7 @@ import { join, sep } from 'node:path';
 import { mkdtemp, rm, mkdir, writeFile, symlink } from 'node:fs/promises';
 import {
   bashNeedsEscapeConfirm,
+  hasEnvPathEscape,
   isDestructiveCommand,
   isInsideWorkspace,
   findSymlinksEscapingWorkspace,
@@ -233,7 +234,12 @@ describe('isDestructiveCommand', () => {
     // chmod / chown / icacls rooted at `/`.
     'chmod -R 777 /',
     'chown -R root:root /',
-    'icacls / /T /grant Everyone:F'
+    'icacls / /T /grant Everyone:F',
+    'rmdir /s /q .',
+    'del /q /f /s *',
+    'Format-Volume -DriveLetter D',
+    'Clear-Disk -RemoveData',
+    'Reset-Service -Name wuauserv -Force'
   ])('flags %s as destructive', (cmd) => {
     expect(isDestructiveCommand(cmd)).toBe(true);
   });
@@ -264,13 +270,48 @@ describe('isDestructiveCommand', () => {
   });
 });
 
+describe('hasEnvPathEscape', () => {
+  it.each([
+    'cat $HOME/.ssh/id_rsa',
+    'cat ${HOME}/.ssh/id_rsa',
+    'Get-Content $env:USERPROFILE\\secret.txt',
+    '${env:APPDATA}\\evil.txt',
+    'type %USERPROFILE%\\secret.txt',
+    'cat %LOCALAPPDATA%\\cache\\db',
+    'head ~/.bashrc',
+    'cd ~ && ls',
+    'ls ~\\Documents',
+    'cat $TMPDIR/outside.log',
+    'echo x > $env:TEMP\\escape.txt'
+  ])('detects %s', (cmd) => {
+    expect(hasEnvPathEscape(cmd)).toBe(true);
+  });
+
+  it.each([
+    'echo hello',
+    'echo $USER',
+    'echo $PATH',
+    'echo $PWD',
+    'npm install foo~1.2.3',
+    'cat ./README.md'
+  ])('does not detect %s', (cmd) => {
+    expect(hasEnvPathEscape(cmd)).toBe(false);
+  });
+});
+
 describe('bashNeedsEscapeConfirm', () => {
   it.each([
     'echo x > ../outside.txt',
     'echo x >> ..\\secret.log',
     'Set-Content ..\\escape.txt -Value x',
+    'cat ../outside/secret.txt',
+    'Get-Content ..\\secret.log',
     'cat C:\\Windows\\System32\\drivers\\etc\\hosts',
-    'head /etc/passwd'
+    'head /etc/passwd',
+    'cat $HOME/.ssh/id_rsa',
+    'Get-Content $env:USERPROFILE\\secret.txt',
+    'type %USERPROFILE%\\secret.txt',
+    'head ~/.bashrc'
   ])('flags %s', (cmd) => {
     expect(bashNeedsEscapeConfirm(cmd).needed).toBe(true);
   });
@@ -279,7 +320,9 @@ describe('bashNeedsEscapeConfirm', () => {
     'echo hello',
     'ls -la src',
     'cat README.md',
-    'echo done > ./out.log'
+    'echo done > ./out.log',
+    'echo $USER',
+    'npm install foo~1.2.3'
   ])('does not flag %s', (cmd) => {
     expect(bashNeedsEscapeConfirm(cmd).needed).toBe(false);
   });

@@ -26,7 +26,7 @@ import {
   pendingPanelListClassName,
   pendingRunGroupHeaderClassName
 } from './pendingPanelStyles.js';
-import { timelineRowChevronClassName } from '../../timeline/shared/rowStyles.js';
+import { timelineRowChevronClassName, timelineRowChevronStroke } from '../../timeline/shared/rowStyles.js';
 import { cn } from '../../../lib/cn.js';
 
 const VIRTUALIZATION_THRESHOLD = 60;
@@ -118,9 +118,9 @@ function FolderGroup({
       >
         <span className={pendingExpandButtonClassName}>
           {expanded ? (
-            <ChevronDown className={timelineRowChevronClassName} strokeWidth={2} />
+            <ChevronDown className={timelineRowChevronClassName} strokeWidth={timelineRowChevronStroke} />
           ) : (
-            <ChevronRight className={timelineRowChevronClassName} strokeWidth={2} />
+            <ChevronRight className={timelineRowChevronClassName} strokeWidth={timelineRowChevronStroke} />
           )}
         </span>
         <span className="min-w-0 truncate font-mono normal-case tracking-normal text-text-muted">
@@ -172,9 +172,9 @@ function RunGroup({
       >
         <span className={pendingExpandButtonClassName}>
           {expanded ? (
-            <ChevronDown className={timelineRowChevronClassName} strokeWidth={2} />
+            <ChevronDown className={timelineRowChevronClassName} strokeWidth={timelineRowChevronStroke} />
           ) : (
-            <ChevronRight className={timelineRowChevronClassName} strokeWidth={2} />
+            <ChevronRight className={timelineRowChevronClassName} strokeWidth={timelineRowChevronStroke} />
           )}
         </span>
         <span className="min-w-0 truncate font-mono normal-case tracking-normal text-text-muted">

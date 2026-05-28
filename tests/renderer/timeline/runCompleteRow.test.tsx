@@ -5,7 +5,7 @@ import { RunCompleteRow } from '@renderer/components/timeline/rows/RunCompleteRo
 describe('RunCompleteRow', () => {
   it('includes edit and file stats when provided', () => {
     render(
-      <RunCompleteRow durationMs={12_400} editCount={5} fileCount={3} />
+      <RunCompleteRow durationMs={12_400} completedAt={1_700_000_000_000} editCount={5} fileCount={3} />
     );
     expect(screen.getByText(/5 edits/i)).toBeInTheDocument();
     expect(screen.getByText(/3 files/i)).toBeInTheDocument();
@@ -14,7 +14,7 @@ describe('RunCompleteRow', () => {
 
   it('renders without a top hairline rule (May 2026 restyle)', () => {
     const { container } = render(
-      <RunCompleteRow durationMs={1_000} editCount={1} fileCount={1} />
+      <RunCompleteRow durationMs={1_000} completedAt={1_700_000_000_000} editCount={1} fileCount={1} />
     );
     const row = container.querySelector('[data-row-kind="run-complete"]');
     expect(row).not.toBeNull();

@@ -12,6 +12,7 @@
 
 import React from 'react';
 import { Button } from './ui/Button.js';
+import { ShellCaption, ShellFieldActions } from './ui/ShellSection.js';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -30,10 +31,16 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
   componentDidCatch(error: Error, info: React.ErrorInfo): void {
     try {
+      const componentStack =
+        info.componentStack ??
+        (typeof (info as { digest?: string }).digest === 'string'
+          ? (info as { digest: string }).digest
+          : undefined) ??
+        error.stack;
       window.vyotiq?.log('error', 'renderer crash', {
         message: error.message,
         stack: error.stack,
-        componentStack: info.componentStack
+        ...(componentStack ? { componentStack } : {})
       });
     } catch {
       /* noop */
@@ -50,33 +57,37 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
       this.state.error.message.includes('Importing a module script failed');
 
     return (
-      <div className="flex h-full w-full items-center justify-center bg-surface-base p-8">
-        <div className="elev-2 max-w-lg rounded-card bg-surface-raised p-6">
-          <div className="text-body font-semibold text-text-primary">
-            {staleChunk ? 'App build is out of date' : 'Something went wrong.'}
+      <div
+        className="flex h-full w-full items-center justify-center bg-surface-base p-8"
+        role="alert"
+        aria-live="assertive"
+      >
+        <div className="vx-panel-frame max-w-lg border border-border-subtle/18 shadow-modal">
+          <div className="vx-panel-head">
+            <h2 className="vx-panel-title">
+              {staleChunk ? 'App build is out of date' : 'Something went wrong.'}
+            </h2>
           </div>
-          {staleChunk && (
-            <div className="mt-2 text-row text-text-secondary">
-              A panel loaded code from an older build. Reload the window to pick up the
-              latest build.
-            </div>
-          )}
-          <div className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap font-mono text-row text-danger">
-            {this.state.error.message}
-          </div>
-          <div className="mt-4 flex justify-end gap-2">
-            {!staleChunk && (
-              <Button variant="ghost" size="sm" onClick={this.reset}>
-                Try again
-              </Button>
+          <div className="vx-panel-body flex flex-col gap-3">
+            {staleChunk && (
+              <ShellCaption>
+                A panel loaded code from an older build. Reload the window to pick up the latest
+                build.
+              </ShellCaption>
             )}
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => location.reload()}
-            >
-              Reload
-            </Button>
+            <div className="max-h-48 overflow-y-auto whitespace-pre-wrap font-mono text-row text-danger">
+              {this.state.error.message}
+            </div>
+            <ShellFieldActions>
+              {!staleChunk && (
+                <Button variant="ghost" size="sm" onClick={this.reset}>
+                  Try again
+                </Button>
+              )}
+              <Button variant="primary" size="sm" onClick={() => location.reload()}>
+                Reload
+              </Button>
+            </ShellFieldActions>
           </div>
         </div>
       </div>

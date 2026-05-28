@@ -161,7 +161,15 @@ export type TimelineEvent =
    * code paths fall back to a `manifest.startedAt ≈ event.ts` match
    * when `runId` is absent.
    */
-  | { kind: 'user-prompt'; id: string; ts: number; content: string; runId?: string }
+  | {
+    kind: 'user-prompt';
+    id: string;
+    ts: number;
+    content: string;
+    runId?: string;
+    /** Persisted attachment metadata for timeline cards after reload. */
+    attachments?: PromptAttachmentMeta[];
+  }
   | {
     kind: 'agent-thought';
     id: string;
@@ -770,6 +778,19 @@ export type TimelineEvent =
 /** Phases for ephemeral `run-status` timeline events. */
 export type RunStatusPhase = Extract<TimelineEvent, { kind: 'run-status' }>['phase'];
 
+/** Attachment descriptor on user-prompt events and send wire. */
+export interface PromptAttachmentMeta {
+  id: string;
+  name: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  /** Absolute path under app userData when copied from external drop. */
+  storedPath?: string;
+  /** Workspace-relative path when picked inside the project. */
+  workspacePath?: string;
+  external?: boolean;
+}
+
 /** Sent from renderer to main to start an agent run. */
 export interface ChatSendInput {
   /** Stable id assigned by the renderer; used for delta + abort routing. */
@@ -796,6 +817,14 @@ export interface ChatSendInput {
   workspaceId?: string;
   /** Workspace-relative file paths attached by the user. Optional. */
   attachments?: string[];
+  /** Rich attachment metadata from external ingest (preferred when present). */
+  attachmentMeta?: PromptAttachmentMeta[];
+  /**
+   * Stable user-prompt event id from the composer. When set, external
+   * attachment copies ingested under this id stay aligned with the
+   * persisted `user-prompt` row after send.
+   */
+  promptEventId?: string;
 }
 
 /**
@@ -805,9 +834,13 @@ export interface ChatSendInput {
  *   - `pending-checkpoints`: the run's workspace has
  *     `gatePromptOnPendingByWorkspace` set AND the conversation has
  *     unresolved pending checkpoint entries. The renderer surfaces a
- *     toast and opens the review drawer; no run is started.
+ *     toast and opens Checkpoints; no run is started.
  *   - `pending-gate-error`: pending gate is on but `listPending` failed;
- *     send is blocked (fail closed, same UX as `review-gate-error`).
+ *     send is blocked (fail closed).
+ *   - `review-request-changes`: review gate is on and the conversation's
+ *     stored review session has `decision === 'request_changes'`.
+ *   - `review-gate-error`: review gate is on but reading `reviews.json`
+ *     failed; send is blocked (fail closed).
  *
  * Extending the union keeps the happy-path shape unchanged (legacy
  * renderers still assert `reply.ok === true`), but a future `ok: false`
@@ -826,17 +859,17 @@ export type ChatSendReply =
   }
   | {
     ok: false;
+    kind: 'pending-gate-error';
+    conversationId: string;
+  }
+  | {
+    ok: false;
     kind: 'review-request-changes';
     conversationId: string;
   }
   | {
     ok: false;
     kind: 'review-gate-error';
-    conversationId: string;
-  }
-  | {
-    ok: false;
-    kind: 'pending-gate-error';
     conversationId: string;
   }
   | {
@@ -889,6 +922,9 @@ export interface ConversationMeta {
    * after the first `conversations.list()` resolves.
    */
   workspaceId?: string;
+  /** When set, conversation is hidden from the main dock list. */
+  archived?: boolean;
+  archivedAt?: number;
 }
 
 /** Full transcript shape (events streamed from disk). */

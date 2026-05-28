@@ -12,7 +12,7 @@ import type { FileHistoryRow } from '@shared/types/checkpoint.js';
 import { useCheckpointsStore } from '../../store/useCheckpointsStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { Button } from '../ui/Button.js';
-import { Spinner } from '../ui/Spinner.js';
+import { LoadingHint } from '../ui/LoadingHint.js';
 import { DiffStatsBadge } from '../timeline/tools/shared/DiffStatsBadge.js';
 import { EditDiffView } from '../timeline/tools/edit/EditDiffView.js';
 import { CodeBlock } from '../timeline/tools/shared/CodeBlock.js';
@@ -20,12 +20,13 @@ import { computeDiffHunksClient } from './diffClient.js';
 import { formatTimestamp } from './formatTimestamp.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { cn } from '../../lib/cn.js';
+import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../lib/shellIcons.js';
 import {
   chromeFileKindBadgeClassName,
   chromeInsetNoteClassName,
-  surfaceListClassName
+  chromeListEmptyClassName
 } from '../ui/SurfaceShell.js';
-import { timelineRowHeaderClassName } from '../timeline/shared/rowStyles.js';
+import { pendingDiffInsetClassName } from './pending/pendingPanelStyles.js';
 
 interface FileHistoryListProps {
   workspaceId: string;
@@ -93,34 +94,33 @@ export function FileHistoryList({
   };
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className={timelineRowHeaderClassName}>
+    <div className="vx-stack">
+      <div className="vx-row flex w-full min-w-0 items-center gap-2 px-0">
         <Button size="sm" variant="ghost" onClick={onBack}>
           ← Back
         </Button>
         <div
-          className="min-w-0 flex-1 truncate font-mono text-row text-text-primary"
+          className="min-w-0 flex-1 truncate font-mono vx-row-label"
           title={filePath}
         >
           {filePath}
         </div>
         <Button size="sm" variant="ghost" onClick={() => void openFile()}>
-          Open <ArrowUpRight className="h-3 w-3" strokeWidth={2.25} />
+          Open <ArrowUpRight className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
         </Button>
       </div>
       {rows === null && (
         <div className="flex items-center gap-2 text-row text-text-muted">
-          <Spinner /> Loading history…
+          <LoadingHint message="Loading history…" className="py-4" />
         </div>
       )}
       {rows && rows.length === 0 && (
-        <div className="text-row text-text-muted">No recorded history for this file.</div>
+        <div className={chromeListEmptyClassName}>No recorded history for this file.</div>
       )}
       {orderedRows && orderedRows.length > 0 && (
         <ul
           className={cn(
-            'scrollbar-stealth',
-            surfaceListClassName,
+            'scrollbar-stealth vx-memory-list',
             embedded ? 'min-h-0 flex-1' : 'max-h-[52vh]'
           )}
         >
@@ -206,7 +206,7 @@ function HistoryRow({
 
   return (
     <li className="group flex flex-col">
-      <div className={timelineRowHeaderClassName}>
+      <div className="vx-memory-list-item flex w-full min-w-0 flex-wrap items-center gap-1.5 text-left">
         <span className={chromeFileKindBadgeClassName(row.kind)}>
           {row.kind}
         </span>
@@ -233,7 +233,7 @@ function HistoryRow({
             comparing && 'opacity-100'
           )}
         >
-          <GitCompare className="h-3 w-3" strokeWidth={2.25} />
+          <GitCompare className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
           {comparing ? 'Hide' : 'Compare'}
         </Button>
         {row.preHash && (
@@ -244,7 +244,7 @@ function HistoryRow({
             title="Restore the file content as it was BEFORE this change"
             className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
           >
-            <RotateCcw className="h-3 w-3" strokeWidth={2.25} />
+            <RotateCcw className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
             Restore pre
           </Button>
         )}
@@ -256,14 +256,16 @@ function HistoryRow({
             title="Restore the file content as it was AFTER this change"
             className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
           >
-            <RotateCcw className="h-3 w-3" strokeWidth={2.25} />
+            <RotateCcw className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
             Restore post
           </Button>
         )}
       </div>
       {comparing && (
-        <div className="px-2 pb-2 pt-1">
-          <CompareWithCurrent state={state} />
+        <div className={cn(pendingDiffInsetClassName, 'mx-1 mb-2 mt-1')}>
+          <div className="px-2 py-1.5">
+            <CompareWithCurrent state={state} />
+          </div>
         </div>
       )}
     </li>
@@ -323,3 +325,4 @@ function CompareWithCurrent({
   }
   return <EditDiffView hunks={hunks} variant="authoritative" />;
 }
+

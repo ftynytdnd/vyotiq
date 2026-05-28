@@ -13,16 +13,27 @@
  *   - selected    : check icon + brighter text (works regardless of focus)
  */
 
-import { useState, useRef, useEffect } from 'react';
-import { Check, Pencil } from 'lucide-react';
+import { memo, useState, useRef, useEffect } from 'react';
+import { Check, Pencil, Star } from 'lucide-react';
 import type { ModelInfo } from '@shared/types/provider.js';
-import { chromeMeterClassName, chromePillClassName } from '../../ui/SurfaceShell.js';
+import { useShallow } from 'zustand/react/shallow';
 import { cn } from '../../../lib/cn.js';
+import { TextField } from '../../ui/TextField.js';
+import {
+  SHELL_ACTION_ICON_STROKE,
+  SHELL_MICRO_ICON_CLASS,
+  SHELL_MICRO_ICON_STROKE,
+  SHELL_ROW_ICON_CLASS
+} from '../../../lib/shellIcons.js';
 import { formatTokenCount, parseTokenCount } from '../../../lib/formatTokens.js';
 import {
   useProviderStore,
   selectEffectiveContextWindow
 } from '../../../store/useProviderStore.js';
+import {
+  EMPTY_FAVORITE_MODELS,
+  useSettingsStore
+} from '../../../store/useSettingsStore.js';
 
 interface ModelRowProps {
   /** Owning provider id, needed to route the override write. */
@@ -34,7 +45,7 @@ interface ModelRowProps {
   onMouseEnter?: () => void;
 }
 
-export function ModelRow({
+export const ModelRow = memo(function ModelRow({
   providerId,
   model,
   selected,
@@ -42,20 +53,19 @@ export function ModelRow({
   onSelect,
   onMouseEnter
 }: ModelRowProps) {
+  const favoriteKey = `${providerId}::${model.id}`;
+  const isFavorite = useSettingsStore((s) =>
+    (s.settings.ui?.favoriteModels ?? EMPTY_FAVORITE_MODELS).includes(favoriteKey)
+  );
+  const toggleFavorite = useSettingsStore((s) => s.toggleFavoriteModel);
+
   return (
     <div
       role="option"
       aria-selected={selected}
       onMouseEnter={onMouseEnter}
-      className={cn(
-        'group flex w-full items-center gap-2 rounded-inner px-2 py-1 text-left text-row',
-        'transition-colors duration-150',
-        focused
-          ? 'bg-accent-soft text-text-primary'
-          : selected
-            ? 'text-text-primary'
-            : 'text-text-secondary hover:bg-accent-soft hover:text-text-primary'
-      )}
+      className="vx-dropdown-item group flex w-full items-center gap-2"
+      data-active={focused || selected ? 'true' : 'false'}
     >
       <button
         type="button"
@@ -64,19 +74,35 @@ export function ModelRow({
       >
         <Check
           className={cn(
-            'h-3 w-3 shrink-0',
+            SHELL_ROW_ICON_CLASS,
             selected ? 'text-accent' : 'opacity-0'
           )}
-          strokeWidth={2.25}
+          strokeWidth={SHELL_ACTION_ICON_STROKE}
         />
         <span className="min-w-0 flex-1 truncate font-mono" title={model.id}>
           {model.id}
         </span>
       </button>
+      <button
+        type="button"
+        aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+        title={isFavorite ? 'Unfavorite' : 'Favorite'}
+        onClick={(e) => {
+          e.stopPropagation();
+          void toggleFavorite(providerId, model.id);
+        }}
+        className="vx-btn vx-btn-quiet shrink-0 px-0.5 py-0.5 opacity-0 group-hover:opacity-100 data-[fav=true]:opacity-100"
+        data-fav={isFavorite ? 'true' : 'false'}
+      >
+        <Star
+          className={cn(SHELL_MICRO_ICON_CLASS, isFavorite && 'fill-accent text-accent')}
+          strokeWidth={SHELL_MICRO_ICON_STROKE}
+        />
+      </button>
       <ContextWindowEditor providerId={providerId} modelId={model.id} />
     </div>
   );
-}
+});
 
 /**
  * Inline ctx-window pill + editor. Reads the effective value
@@ -85,17 +111,23 @@ export function ModelRow({
  * only appears on row hover; the pill itself is display-only unless
  * clicked.
  */
-function ContextWindowEditor({
+const ContextWindowEditor = memo(function ContextWindowEditor({
   providerId,
   modelId
 }: {
   providerId: string;
   modelId: string;
 }) {
-  const providers = useProviderStore((s) => s.providers);
+  const { effective, hasOverride } = useProviderStore(
+    useShallow((s) => {
+      const p = s.providers.find((x) => x.id === providerId);
+      return {
+        effective: selectEffectiveContextWindow(s.providers, providerId, modelId),
+        hasOverride: !!p?.contextOverrides?.[modelId]
+      };
+    })
+  );
   const setContextOverride = useProviderStore((s) => s.setContextOverride);
-  const effective = selectEffectiveContextWindow(providers, providerId, modelId);
-  const hasOverride = !!providers.find((p) => p.id === providerId)?.contextOverrides?.[modelId];
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -135,8 +167,10 @@ function ContextWindowEditor({
 
   if (editing) {
     return (
-      <input
+      <TextField
         ref={inputRef}
+        appearance="boxed"
+        size="sm"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onClick={(e) => e.stopPropagation()}
@@ -152,10 +186,7 @@ function ContextWindowEditor({
           }
         }}
         placeholder="e.g. 128k"
-        className={cn(
-          chromeMeterClassName('w-20 shrink-0 px-1.5 py-0.5 text-text-primary'),
-          'outline-none focus:outline-none ring-1 ring-accent/60'
-        )}
+        className="w-20 shrink-0 font-mono text-right"
       />
     );
   }
@@ -170,17 +201,15 @@ function ContextWindowEditor({
           : 'Set context window'
       }
       className={cn(
-        chromePillClassName(false),
-        'shrink-0 gap-1 px-1.5 py-0.5 font-mono text-meta text-text-faint',
-        'hover:text-text-primary',
-        hasOverride && 'ring-1 ring-accent/40'
+        'vx-btn vx-btn-quiet shrink-0 gap-1 px-1.5 py-0.5 font-mono text-meta',
+        hasOverride && 'ring-1 ring-edge-light-focus'
       )}
     >
       {typeof effective === 'number' ? formatTokenCount(effective) : 'set'}
       <Pencil
-        className="h-2.5 w-2.5 opacity-0 group-hover:opacity-70"
-        strokeWidth={2}
+        className={cn(SHELL_MICRO_ICON_CLASS, 'opacity-0 group-hover:opacity-70')}
+        strokeWidth={SHELL_MICRO_ICON_STROKE}
       />
     </button>
   );
-}
+});

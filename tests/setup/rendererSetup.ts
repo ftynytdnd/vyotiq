@@ -43,6 +43,7 @@ function makeStubApi() {
     workspace: {
       get: vi.fn(async () => ({ path: null })),
       pick: vi.fn(async () => ({ path: null })),
+      pickDirectory: vi.fn(async () => null),
       set: vi.fn(async () => ({ path: null })),
       listTree: vi.fn(async () => ({ entries: [], truncated: false, total: 0 })),
       list: vi.fn(async () => ({ activeId: null, workspaces: [] })),
@@ -110,7 +111,10 @@ function makeStubApi() {
         settingsFile: '/tmp/userdata/settings.json',
         logDir: '/tmp/userdata/vyotiq/logs'
       })),
-      revealPath: asyncNoop
+      revealPath: asyncNoop,
+      playWarningSound: vi.fn(async () => undefined),
+      setThemeSource: asyncNoop,
+      checkForUpdates: vi.fn(async () => ({ updateAvailable: false }))
     },
     // Checkpoints slice — stubbed to safe defaults so unguarded calls
     // from a mounted Checkpoints view (or its store actions) resolve
@@ -134,6 +138,12 @@ function makeStubApi() {
       revertFileToHash: vi.fn(async () => ({ ok: true, reverted: 0 })),
       readBlob: vi.fn(async () => null),
       readCurrentFile: vi.fn(async () => null),
+      listGitRefs: vi.fn(async () => ({
+        ok: true as const,
+        options: [{ ref: 'HEAD', group: 'builtin' as const }],
+        head: 'main'
+      })),
+      gitBaseDiff: vi.fn(async () => ({ ok: false as const, reason: 'not-a-repo' as const })),
       exportArchive: vi.fn(async () => ({ archivePath: '/tmp/archive.json', bytes: 0 })),
       prune: vi.fn(async () => ({ removedRuns: 0, removedBlobs: 0 })),
       deleteRun: vi.fn(async () => ({ removed: true, droppedPending: 0 })),

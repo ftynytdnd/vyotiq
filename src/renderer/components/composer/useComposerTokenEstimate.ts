@@ -20,6 +20,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { logger } from '../../lib/logger.js';
 
@@ -32,6 +33,8 @@ export interface UseComposerTokenEstimateInput {
   modelId: string;
   prompt: string;
   attachments: string[];
+  /** Rich attachment metadata — preferred over legacy path strings. */
+  attachmentMeta?: PromptAttachmentMeta[];
   /**
    * Active conversation id (Phase 2). When supplied, the estimate
    * includes the full prospective payload (harness + envelopes +
@@ -70,7 +73,7 @@ export interface ComposerTokenEstimate {
 export function useComposerTokenEstimate(
   input: UseComposerTokenEstimateInput
 ): ComposerTokenEstimate {
-  const { modelId, prompt, attachments, conversationId } = input;
+  const { modelId, prompt, attachments, attachmentMeta, conversationId } = input;
   const [value, setValue] = useState<ComposerTokenEstimate>({
     tokens: 0,
     exact: false,
@@ -82,7 +85,10 @@ export function useComposerTokenEstimate(
 
   // Stringify the attachments list so the effect's dep array compares by
   // content, not by array identity. Cheap — usually 0-3 entries.
-  const attachmentsKey = attachments.join('\x00');
+  const attachmentsKey = [
+    attachments.join('\x00'),
+    attachmentMeta?.map((a) => a.id).join('\x00') ?? ''
+  ].join('\x01');
 
   useEffect(() => {
     if (!modelId) {
@@ -96,6 +102,7 @@ export function useComposerTokenEstimate(
         prompt,
         attachments
       };
+      if (attachmentMeta && attachmentMeta.length > 0) wire.attachmentMeta = attachmentMeta;
       if (conversationId) wire.conversationId = conversationId;
       void vyotiq.tokens
         .estimate(wire)

@@ -16,7 +16,6 @@ import {
 import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 import {
-  assertBoolean,
   assertConfirmResponse,
   assertObject,
   assertOptionalString,
@@ -26,6 +25,23 @@ import {
 const log = logger.child('ipc/tools');
 
 const MAX_RELATIVE_PATH_BYTES = 4096;
+/** Cap serialized tool args on rerun IPC (renderer-supplied JSON). */
+const MAX_TOOL_RERUN_ARGS_BYTES = 256 * 1024;
+
+function assertJsonObjectMaxBytes(
+  channel: string,
+  field: string,
+  value: Record<string, unknown>,
+  maxBytes: number
+): void {
+  const bytes = Buffer.byteLength(JSON.stringify(value), 'utf8');
+  if (bytes > maxBytes) {
+    throw new Error(
+      `${channel}: ${field} exceeds the ${maxBytes.toLocaleString()}-byte cap ` +
+      `(received ${bytes.toLocaleString()} bytes)`
+    );
+  }
+}
 
 export function registerToolsIpc(): void {
   // `workspaceId` is optional; when supplied, the path is resolved
@@ -82,8 +98,7 @@ export function registerToolsIpc(): void {
     assertString('tools:rerun', 'conversationId', input.conversationId);
     assertString('tools:rerun', 'toolName', input.toolName);
     assertObject('tools:rerun', 'args', input.args);
-    assertObject('tools:rerun', 'permissions', input.permissions);
-    assertBoolean('tools:rerun', 'permissions.allowAuto', input.permissions.allowAuto);
+    assertJsonObjectMaxBytes('tools:rerun', 'args', input.args, MAX_TOOL_RERUN_ARGS_BYTES);
     return executeToolRerun(input);
   });
 }

@@ -207,7 +207,7 @@ export interface TokenUsageAggregate {
  * status line under the matching trace card. Updated only while the
  * snapshot is in the `running` state; terminal transitions clear it.
  */
-export interface SubAgentLiveStatus {
+interface SubAgentLiveStatus {
   phase: RunStatusPhase;
   label: string;
   ts: number;

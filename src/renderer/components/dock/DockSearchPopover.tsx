@@ -4,15 +4,13 @@
 
 import { useEffect, useRef } from 'react';
 import { Search, X } from 'lucide-react';
-import { chromeEdgeClassName, chromeSearchRowClassName } from '../ui/SurfaceShell.js';
 import { filterDockChats } from './filterDockChats.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useChatStore } from '../../store/useChatStore.js';
-import { TextField } from '../ui/TextField.js';
-import { chromeIconPillClassName } from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
+import { SHELL_CHROME_ICON_CLASS, SHELL_CHROME_ICON_STROKE, SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../lib/shellIcons.js';
 
 function collectRunningIds(): Set<string> {
   const set = new Set<string>();
@@ -30,12 +28,7 @@ export function DockSearchPopover() {
     <div
       role="search"
       aria-label="Search chats"
-      className={cn(
-        chromeSearchRowClassName,
-        'border-b bg-transparent',
-        chromeEdgeClassName,
-        'mx-2 mb-1 mt-0.5 px-2 py-1'
-      )}
+      className="mx-2 mb-1 mt-0.5 flex items-center gap-1.5 px-1 pb-1.5"
     >
       <DockSearchInput />
     </div>
@@ -59,11 +52,10 @@ function DockSearchInput() {
 
   return (
     <>
-      <Search className="h-3.5 w-3.5 shrink-0 text-text-muted" strokeWidth={2} aria-hidden />
-      <TextField
+      <Search className={cn(SHELL_ROW_ICON_CLASS, 'text-text-faint')} strokeWidth={SHELL_ROW_ICON_STROKE} aria-hidden />
+      <input
         ref={inputRef}
-        size="sm"
-        tone="transparent"
+        type="search"
         value={query}
         aria-label="Search chats"
         onChange={(e) => setQuery(e.target.value)}
@@ -98,15 +90,15 @@ function DockSearchInput() {
           }
         }}
         placeholder="Search chats in this workspace…"
-        className="min-w-0 flex-1 px-0"
+        className="vx-input min-w-0 flex-1 py-0.5 text-row"
       />
       <button
         type="button"
         aria-label="Close search"
         onClick={() => setOpen(false)}
-        className={chromeIconPillClassName()}
+        className="vx-btn vx-btn-quiet h-6 w-6 shrink-0 px-0"
       >
-        <X className="h-3 w-3" strokeWidth={2.25} />
+        <X className={SHELL_CHROME_ICON_CLASS} strokeWidth={SHELL_CHROME_ICON_STROKE} />
       </button>
     </>
   );

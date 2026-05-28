@@ -62,6 +62,26 @@ const ORCHESTRATOR_SECTIONS: ReadonlyArray<{ title: string; body: string }> = [
   { title: 'Continuous Learning', body: continuousLearning }
 ];
 
+/** Bundled harness bodies validated at boot — missing/empty fails loud. */
+const BOOTSTRAP_HARNESS_MARKDOWN: ReadonlyArray<{ file: string; body: string }> = [
+  { file: '00-prime-directives.md', body: primeDirectives },
+  { file: '01-orchestration-loop.md', body: orchestrationLoop },
+  { file: '02-context-and-memory.md', body: contextAndMemory },
+  { file: '03-continuous-learning.md', body: continuousLearning },
+  { file: '04-subagent-prompt.md', body: subagentPrompt },
+  { file: '05-context-summarizer.md', body: contextSummarizer }
+];
+
+function assertHarnessMarkdownPresent(): void {
+  for (const { file, body } of BOOTSTRAP_HARNESS_MARKDOWN) {
+    if (typeof body !== 'string' || body.trim().length === 0) {
+      throw new Error(
+        `harness boot: ${file} missing or empty (Vite ?raw import failed or file unparseable)`
+      );
+    }
+  }
+}
+
 /**
  * Render the runtime-limits envelope. Single source of truth for the
  * numbers the harness references — pulling them from `constants.ts`
@@ -215,6 +235,34 @@ function buildOrchestratorToolCatalogue(): string {
  */
 let orchestratorPromptCache: string | null = null;
 
+/**
+ * Synchronous boot guard — fails fast before IPC/window if harness
+ * assembly or `<runtime_limits>` drift from `@shared/constants.ts`.
+ */
+export function assertHarnessBoot(): void {
+  assertHarnessMarkdownPresent();
+  const orch = buildOrchestratorSystemPrompt();
+  if (!orch.includes('<system_instructions>')) {
+    throw new Error('harness boot: orchestrator prompt missing <system_instructions>');
+  }
+  if (!orch.includes('<runtime_limits>')) {
+    throw new Error('harness boot: orchestrator prompt missing <runtime_limits>');
+  }
+  if (!orch.includes(`MAX_TOTAL_ITERATIONS=${MAX_TOTAL_ITERATIONS}`)) {
+    throw new Error('harness boot: orchestrator runtime_limits drift from constants.ts');
+  }
+  const sub = buildSubagentSystemPrompt({
+    task: 'boot-check',
+    allowedTools: ['read']
+  });
+  if (!sub.includes('<runtime_limits>')) {
+    throw new Error('harness boot: sub-agent prompt missing <runtime_limits>');
+  }
+  if (!sub.includes(`SUBAGENT_MAX_ITERATIONS=${SUBAGENT_MAX_ITERATIONS}`)) {
+    throw new Error('harness boot: sub-agent runtime_limits drift from constants.ts');
+  }
+}
+
 /** System prompt for the orchestrator (top-level Agent V). */
 export function buildOrchestratorSystemPrompt(): string {
   if (orchestratorPromptCache !== null) return orchestratorPromptCache;
@@ -320,9 +368,24 @@ function buildSubagentStaticBody(task: string, allowedTools: string[]): string {
   const briefs = allowed.map((t) => t.briefMarkdown).join('\n\n');
   const taskBlock = wrapXml('task', task, undefined, { escape: true });
   const limits = buildSubagentRuntimeLimitsBlock();
+  const envelopeReminder =
+    '## Required final envelope (repeat)\n\n' +
+    'Your LAST action MUST be exactly one `<result>…</result>` block:\n\n' +
+    '```\n' +
+    '<result>\n' +
+    '<status>success|partial|failed</status>\n' +
+    '<summary>One sentence: what you did or attempted.</summary>\n' +
+    '<details>\n' +
+    '- Specific finding or change.\n' +
+    '</details>\n' +
+    '<artifacts>\n' +
+    '- Path or symbol you produced/modified.\n' +
+    '</artifacts>\n' +
+    '</result>\n' +
+    '```';
   return (
     `${primeDirectives}\n\n---\n\n${subagentPrompt}\n\n---\n\n` +
-    `# Tool Catalogue (restricted)\n\n${briefs}\n\n---\n\n${limits}\n\n---\n\n${taskBlock}`
+    `# Tool Catalogue (restricted)\n\n${briefs}\n\n---\n\n${limits}\n\n---\n\n${taskBlock}\n\n---\n\n${envelopeReminder}`
   );
 }
 

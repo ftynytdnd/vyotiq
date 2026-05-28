@@ -8,6 +8,7 @@
  *   - Derive a short title from the first user prompt.
  */
 
+import { randomUUID } from 'node:crypto';
 import { IPC, PERSIST_DELTA_COALESCE_CHARS } from '@shared/constants.js';
 import type {
   ChatSendInput,
@@ -42,10 +43,7 @@ import {
   acceptAll as checkpointsAcceptAll,
   listPending as checkpointsListPending
 } from '../checkpoints/index.js';
-import {
-  getReviewSession,
-  reviewSessionBlocksSend
-} from '../checkpoints/reviewSessions.js';
+import { reviewSessionBlocksSend } from '../checkpoints/reviewSessions.js';
 import { listWorkspaces } from '../workspace/workspaceState.js';
 import { getSettings } from '../settings/settingsStore.js';
 import { logger } from '../logging/logger.js';
@@ -387,12 +385,41 @@ export function registerChatIpc(): void {
     //     before they can send another message. This is the
     //     opt-in "no implicit acceptance" workflow.
     let gatePromptOnPending = false;
+    let approveAutoAcceptPending = true;
+    let gateReviewRequestChanges = false;
     try {
       const settings = await getSettings();
       gatePromptOnPending =
         settings.ui?.gatePromptOnPendingByWorkspace?.[workspaceIdForRun] === true;
+      const autoFlag = settings.ui?.approveAutoAcceptPendingByWorkspace?.[workspaceIdForRun];
+      approveAutoAcceptPending = autoFlag !== false;
+      gateReviewRequestChanges =
+        settings.ui?.gatePromptOnReviewRequestChangesByWorkspace?.[workspaceIdForRun] === true;
     } catch (err) {
-      log.warn('failed to read gatePromptOnPending; defaulting to off', { err });
+      log.warn('failed to read pending/review gate settings; defaulting to off', { err });
+    }
+    if (gateReviewRequestChanges) {
+      try {
+        const blocks = await reviewSessionBlocksSend(workspaceIdForRun, cid);
+        if (blocks) {
+          log.info('chat:send blocked by review request_changes', { conversationId: cid });
+          return {
+            ok: false,
+            kind: 'review-request-changes',
+            conversationId: cid
+          };
+        }
+      } catch (err) {
+        log.warn('gatePromptOnReviewRequestChanges check failed; blocking send', {
+          conversationId: cid,
+          err
+        });
+        return {
+          ok: false,
+          kind: 'review-gate-error',
+          conversationId: cid
+        };
+      }
     }
     if (gatePromptOnPending) {
       try {
@@ -425,43 +452,7 @@ export function registerChatIpc(): void {
       }
     }
 
-    let gateReviewRequestChanges = false;
-    try {
-      const settings = await getSettings();
-      gateReviewRequestChanges =
-        settings.ui?.gatePromptOnReviewRequestChangesByWorkspace?.[
-          workspaceIdForRun
-        ] === true;
-    } catch (err) {
-      log.warn('failed to read gateReviewRequestChanges; defaulting to off', { err });
-    }
-    if (gateReviewRequestChanges) {
-      try {
-        const session = await getReviewSession(workspaceIdForRun, cid);
-        if (session && reviewSessionBlocksSend(session)) {
-          log.info('chat:send blocked by review request_changes', { conversationId: cid });
-          return {
-            ok: false,
-            kind: 'review-request-changes',
-            conversationId: cid
-          };
-        }
-      } catch (err) {
-        // Fail closed when the gate is enabled — do not start a run if we
-        // cannot verify review state (review finding F-IPC-001).
-        log.warn('gateReviewRequestChanges check failed; blocking send', {
-          conversationId: cid,
-          err
-        });
-        return {
-          ok: false,
-          kind: 'review-gate-error',
-          conversationId: cid
-        };
-      }
-    }
-
-    if (!gatePromptOnPending) {
+    if (!gatePromptOnPending && approveAutoAcceptPending) {
       try {
         // Pass the live workspace id list so `acceptAll` can warm
         // every workspace's pending bucket from disk before the
@@ -473,12 +464,35 @@ export function registerChatIpc(): void {
         // finding M3.
         const wsState = await listWorkspaces();
         const wsIds = wsState.workspaces.map((w) => w.id);
+        const pendingBefore = await checkpointsListPending(cid, wsIds);
         const accepted = await checkpointsAcceptAll(cid, wsIds);
         if (accepted > 0) {
+          const pathPreview = pendingBefore
+            .map((p) => p.filePath)
+            .slice(0, 5)
+            .join(', ');
+          const more =
+            pendingBefore.length > 5 ? ` (+${pendingBefore.length - 5} more)` : '';
           log.info('auto-accepted pending checkpoints on new prompt', {
             conversationId: cid,
-            accepted
+            accepted,
+            pathsHead: pathPreview
           });
+          const autoAcceptPhase: TimelineEvent = {
+            kind: 'phase',
+            id: randomUUID(),
+            ts: Date.now(),
+            label:
+              `Auto-accepted ${accepted} pending change${accepted === 1 ? '' : 's'} before send` +
+              (pathPreview.length > 0 ? `: ${pathPreview}${more}` : ''),
+            tooltip:
+              'approveAutoAcceptPending is enabled for this workspace. Pending rows were accepted ' +
+              'implicitly so the new prompt could proceed.'
+          };
+          void appendEvent(cid, autoAcceptPhase).catch((err) => {
+            log.warn('auto-accept phase persist failed', { conversationId: cid, err });
+          });
+          safeWebContentsSend(IPC.CHAT_EVENT, input.runId, autoAcceptPhase);
         }
       } catch (err) {
         log.warn('checkpoints auto-accept failed', { conversationId: cid, err });
@@ -526,6 +540,13 @@ export function registerChatIpc(): void {
      * (coalescer entries, renderer accumulators) long before this
      * Set is the bottleneck.
      */
+    const TOMBSTONE_CAP = 10_000;
+    const addTombstone = (set: Set<string>, id: string): void => {
+      set.add(id);
+      if (set.size <= TOMBSTONE_CAP) return;
+      const oldest = set.values().next().value;
+      if (oldest !== undefined) set.delete(oldest);
+    };
     const tombstonedIds = new Set<string>();
     /**
      * Tombstones for `summaryId`s whose summarization was terminated
@@ -750,7 +771,7 @@ export function registerChatIpc(): void {
           // signal flipped, etc.) is dropped from persistence instead
           // of producing an out-of-order `aborted → delta` row on
           // replay. Review finding H6.
-          tombstonedIds.add(event.id);
+          addTombstone(tombstonedIds, event.id);
         } else if (
           event.kind === 'context-summary-delta' ||
           event.kind === 'context-summary-reasoning-delta'
@@ -814,7 +835,7 @@ export function registerChatIpc(): void {
             flushBuf(entry.reasoning);
             summaryCoalescer.delete(event.summaryId);
           }
-          tombstonedSummaryIds.add(event.summaryId);
+          addTombstone(tombstonedSummaryIds, event.summaryId);
         } else if (event.kind === 'context-summary-undone') {
           // Undo lands AFTER `context-summary-end` for the same id —
           // both buffers should already be drained, but be defensive
@@ -827,7 +848,7 @@ export function registerChatIpc(): void {
             flushBuf(entry.reasoning);
             summaryCoalescer.delete(event.summaryId);
           }
-          tombstonedSummaryIds.add(event.summaryId);
+          addTombstone(tombstonedSummaryIds, event.summaryId);
         } else {
           // Implicit boundary: any other persistent event kind
           // (`tool-call`, `tool-result`, `phase`, `subagent-*`,

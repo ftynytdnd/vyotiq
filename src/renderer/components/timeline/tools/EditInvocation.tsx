@@ -81,6 +81,7 @@ interface EditInvocationProps {
   retryCount?: number;
   /** Parent override — e.g. tool-group tail in-flight edit only. */
   liveAutoExpand?: boolean;
+  groupExpanded?: boolean;
 }
 
 export function EditInvocation({
@@ -91,7 +92,8 @@ export function EditInvocation({
   partial,
   diffStream,
   retryCount,
-  liveAutoExpand: liveAutoExpandOverride
+  liveAutoExpand: liveAutoExpandOverride,
+  groupExpanded
 }: EditInvocationProps) {
   const data = result?.data?.tool === 'edit' ? result.data : null;
   const argCreate = call?.args?.['create'] === true;
@@ -277,6 +279,7 @@ export function EditInvocation({
   // to flip the signal even when the FS-aware streamer hasn't
   // landed a frame yet (rare but possible).
   const computedLiveAutoExpand =
+    !dense &&
     !result &&
     (partial === true || diffStream != null || preview != null || call != null);
   const liveAutoExpand = liveAutoExpandOverride ?? computedLiveAutoExpand;
@@ -299,6 +302,7 @@ export function EditInvocation({
       {...(dense ? { dense } : {})}
       {...(rowKey ? { rowKey } : {})}
       liveAutoExpand={liveAutoExpand}
+      {...(groupExpanded ? { groupExpanded } : {})}
       {...(actions ? { actions } : {})}
       call={call}
       result={result}

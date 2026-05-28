@@ -10,19 +10,20 @@ import { DockSearchPopover } from './DockSearchPopover.js';
 import { DockToolbar } from './DockToolbar.js';
 import { DockWorkspaceTabs } from './DockWorkspaceTabs.js';
 import { DockSectionHeader } from './DockSectionHeader.js';
+import { DockAgentPeek } from './DockAgentPeek.js';
 import {
   clampDockWidth,
   dockWorkspaceIndicatorLabel,
   DOCK_DIVIDER_H_CLASS,
-  DOCK_EDGE_CLASS,
   DOCK_FOOTER_CLASS,
   DOCK_INSET_CLASS,
   DOCK_RESIZE_HANDLE_CLASS,
+  DOCK_TAB_ICON_CLASS,
+  DOCK_TAB_ICON_STROKE,
   DOCK_WIDTH_COLLAPSED_PX,
   workspacePanelClassName
 } from './dockShared.js';
 import { useDockShortcuts } from './useDockShortcuts.js';
-import { chromeIconPillClassName } from '../ui/SurfaceShell.js';
 import { useUiStore } from '../../store/useUiStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
@@ -49,6 +50,8 @@ export function LeftDock() {
 
   const [liveWidth, setLiveWidth] = useState<number | null>(null);
   const dragWidthRef = useRef<number | null>(null);
+  const moveHandlerRef = useRef<((ev: MouseEvent) => void) | null>(null);
+  const upHandlerRef = useRef<(() => void) | null>(null);
 
   const activeWorkspaceLabel = useMemo(() => {
     if (!activeWorkspaceId) return null;
@@ -76,6 +79,20 @@ export function LeftDock() {
     }
   }, [dockExpanded, searchOpen]);
 
+  useEffect(() => {
+    return () => {
+      if (moveHandlerRef.current) {
+        window.removeEventListener('mousemove', moveHandlerRef.current);
+        moveHandlerRef.current = null;
+      }
+      if (upHandlerRef.current) {
+        window.removeEventListener('mouseup', upHandlerRef.current);
+        upHandlerRef.current = null;
+      }
+      dragWidthRef.current = null;
+    };
+  }, []);
+
   const onResizeStart = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
@@ -91,6 +108,8 @@ export function LeftDock() {
       };
 
       const onUp = () => {
+        moveHandlerRef.current = null;
+        upHandlerRef.current = null;
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', onUp);
         if (dragWidthRef.current !== null) {
@@ -100,6 +119,8 @@ export function LeftDock() {
         setLiveWidth(null);
       };
 
+      moveHandlerRef.current = onMove;
+      upHandlerRef.current = onUp;
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
     },
@@ -120,8 +141,7 @@ export function LeftDock() {
       aria-label="Workspace and session navigation"
       aria-expanded={dockExpanded}
       className={cn(
-        'app-no-drag relative h-full min-h-0 shrink-0 overflow-hidden bg-surface-base',
-        DOCK_EDGE_CLASS,
+        'app-no-drag relative h-full min-h-0 shrink-0 overflow-hidden bg-surface-sidebar',
         liveWidth !== null ? '' : 'transition-[width] duration-200 ease-out'
       )}
       style={{
@@ -162,20 +182,20 @@ export function LeftDock() {
             aria-label={`Expand navigation: ${collapsedTooltip}`}
             title={collapsedTooltip}
             className={cn(
-              chromeIconPillClassName(),
-              'max-w-8 font-mono text-meta',
+              'vx-btn vx-btn-quiet h-6 w-6 shrink-0 px-0 font-mono text-meta',
               workspaceHasActiveRun && 'vyotiq-shimmer-pill'
             )}
           >
             {activeWorkspaceId ? (
               <span className="truncate">{indicatorShort}</span>
             ) : (
-              <FolderOpen className="h-3.5 w-3.5 shrink-0" strokeWidth={2} aria-hidden />
+              <FolderOpen className={DOCK_TAB_ICON_CLASS} strokeWidth={DOCK_TAB_ICON_STROKE} aria-hidden />
             )}
           </button>
           <DockToolbar layout="vertical" {...toolbarProps} collapseIcon="right" />
         </div>
       )}
+      <DockAgentPeek />
     </nav>
   );
 }

@@ -11,7 +11,6 @@ import { useChatStore } from '../../store/useChatStore.js';
 import { useContextSummaryStore } from '../../store/useContextSummaryStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { Button } from '../ui/Button.js';
-import { Eyebrow } from '../ui/Eyebrow.js';
 import { chromeBadgeClassName, SurfaceShell } from '../ui/SurfaceShell.js';
 import { formatTokenCount } from '../../lib/formatTokens.js';
 import { StreamingMarkdownBody } from '../timeline/markdown/StreamingMarkdownBody.js';
@@ -66,11 +65,9 @@ export function LiveStreamCard({ summaryId, conversationId }: LiveStreamCardProp
   const headlineTone = acc.status === 'aborted' ? 'text-danger' : undefined;
 
   return (
-    <div className="flex flex-col gap-2 border-b border-border-subtle/30 py-3">
+    <div className="vx-row flex flex-col gap-2 border-b border-border-subtle/30">
       <div className="flex flex-wrap items-baseline gap-2">
-        <Eyebrow as="span" bold>
-          Live summary
-        </Eyebrow>
+        <span className="vx-field-label mb-0">Live summary</span>
         <span
           aria-hidden
           className={cn('inline-block h-1.5 w-1.5 shrink-0 rounded-full', dotTone)}
@@ -96,7 +93,7 @@ export function LiveStreamCard({ summaryId, conversationId }: LiveStreamCardProp
       </div>
       {acc.reasoningText.length > 0 && acc.status !== 'aborted' && (
         <div className="flex flex-col gap-1">
-          <Eyebrow as="span">Reasoning</Eyebrow>
+          <span className="vx-field-label mb-0">Reasoning</span>
           <SurfaceShell padded padding="nested">
             <pre className="whitespace-pre-wrap break-words font-mono text-row italic text-text-faint">
               {acc.reasoningText}
@@ -106,9 +103,9 @@ export function LiveStreamCard({ summaryId, conversationId }: LiveStreamCardProp
       )}
       {body.length > 0 && acc.status !== 'aborted' && (
         <div className="flex flex-col gap-1">
-          <Eyebrow as="span">
+          <span className="vx-field-label mb-0">
             {acc.status === 'ended' ? 'Compressed body' : 'Live body'}
-          </Eyebrow>
+          </span>
           <SurfaceShell padded padding="nested">
             <div className="scrollbar-stealth max-h-[28vh] overflow-y-auto">
               <StreamingMarkdownBody
@@ -124,7 +121,7 @@ export function LiveStreamCard({ summaryId, conversationId }: LiveStreamCardProp
         <div className="text-row text-danger">{acc.reason}</div>
       )}
       {isLiveCompressing && (
-        <div className="flex justify-end">
+        <div className="vx-field-actions pt-0">
           <Button
             size="sm"
             variant="secondary"

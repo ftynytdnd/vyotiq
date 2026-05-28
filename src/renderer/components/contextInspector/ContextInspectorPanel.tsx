@@ -1,39 +1,24 @@
 /**
  * Context Inspector panel for the secondary zone.
  *
- * Visual contract: borrows the same shell pattern as
- * `CheckpointsView` — `PanelFrame` in the secondary zone, dock-style
- * tab strip, flat rows (no modal backdrop). Message rows and summary
- * cards use nested `SurfaceShell` panels matching the timeline.
- *
- * Two tabs:
- *   - **Overview** — message list + manual trigger + (when present)
- *     the live-stream card and the most-recent-summary tabbed view.
- *     The user spends 95 % of their time here.
- *   - **Rules**    — the flat `RulesHeader` form, scoped to the
- *     active workspace by default. Settings → Context handles the
- *     global scope.
- *
- * The header summary line on the right of the tab strip mirrors
- * `CheckpointsView`'s usage badge:
- *
- *     "{used} / {ceiling} tokens · {pct}% of context window"
- *
- * Same typographic hierarchy, same alignment, same monospace tone
- * for the numbers.
+ * Single-scroll accordion layout: overview sections (live stream, wire
+ * breakdown, messages) plus a collapsible Rules section. The outer
+ * FloatingPanel in SecondaryZone owns the panel chrome — no inner header.
  */
 
-import { useEffect, useMemo, useState } from 'react';
-import { History, Settings as SettingsIcon } from 'lucide-react';
-import { PanelFrame } from '../zone/PanelFrame.js';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Notice } from '../ui/Notice.js';
-import { Spinner } from '../ui/Spinner.js';
-import { Tabs, type TabItem } from '../ui/Tabs.js';
+import { LoadingHint } from '../ui/LoadingHint.js';
 import { useChatStore } from '../../store/useChatStore.js';
 import { useContextSummaryStore } from '../../store/useContextSummaryStore.js';
 import { useSecondaryZoneStore } from '../../store/useSecondaryZoneStore.js';
-import { chromeEdgeClassName } from '../ui/SurfaceShell.js';
+import {
+  chromeListEmptyClassName,
+  secondaryZonePanelContentClassName
+} from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
+import { SHELL_COMPACT_ICON_CLASS, SHELL_COMPACT_ICON_STROKE } from '../../lib/shellIcons.js';
 import { formatTokenCount } from '../../lib/formatTokens.js';
 import { formatRatioPercent, ratioBand } from './inspectorFormat.js';
 import { RulesHeader } from './RulesHeader.js';
@@ -44,29 +29,38 @@ import { TriggerBar } from './TriggerBar.js';
 import { WireBreakdown } from './WireBreakdown.js';
 import type { ContextSummaryAcc } from '../timeline/reducer/types.js';
 
-type Tab = 'overview' | 'rules';
-
 /** Stable fallback — never allocate `{}` inside a Zustand selector. */
 const EMPTY_SUMMARIES: Record<string, ContextSummaryAcc> = {};
 
-/**
- * Tab catalogue for the Inspector strip. Lifted to module scope so
- * the `Tabs` primitive's child identity stays stable across renders
- * — re-rendering for a different reason (snapshot refresh, etc.)
- * won't reset the strip's internal focus tracking.
- */
-const INSPECTOR_TABS: TabItem<Tab>[] = [
-  {
-    id: 'overview',
-    label: 'Overview',
-    icon: <History className="h-3.5 w-3.5" strokeWidth={2} />
-  },
-  {
-    id: 'rules',
-    label: 'Rules',
-    icon: <SettingsIcon className="h-3.5 w-3.5" strokeWidth={2} />
-  }
-];
+function InspectorAccordionSection({
+  title,
+  defaultOpen = true,
+  children
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className="border-b border-border-subtle/15 last:border-b-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="vx-btn vx-btn-quiet flex w-full items-center gap-1.5 px-3 py-2 text-left"
+      >
+        {open ? (
+          <ChevronDown className={SHELL_COMPACT_ICON_CLASS} strokeWidth={SHELL_COMPACT_ICON_STROKE} />
+        ) : (
+          <ChevronRight className={SHELL_COMPACT_ICON_CLASS} strokeWidth={SHELL_COMPACT_ICON_STROKE} />
+        )}
+        <span className="vx-row-label">{title}</span>
+      </button>
+      {open && <div className="px-3 pb-3">{children}</div>}
+    </section>
+  );
+}
 
 /** Inspector body for the secondary zone or modal shell. */
 export function ContextInspectorBody() {
@@ -90,10 +84,8 @@ export function ContextInspectorBody() {
       : undefined
   );
 
-  const [tab, setTab] = useState<Tab>('overview');
   useEffect(() => {
     if (!boundConversationId) return;
-    setTab('overview');
     void useContextSummaryStore.getState().refresh();
   }, [boundConversationId]);
 
@@ -116,115 +108,82 @@ export function ContextInspectorBody() {
   }, [summaries]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className={cn('flex min-h-0 flex-1 flex-col', secondaryZonePanelContentClassName)}>
       {loading && !snapshot && (
-        <div className="flex items-center gap-2 text-row text-text-muted">
-          <Spinner size={14} />
+        <div className="flex items-center gap-2 px-3 py-2 text-row text-text-muted">
+          <LoadingHint message="Loading inspector…" className="py-6" size={14} />
           <span>Loading inspector…</span>
         </div>
       )}
-      {error && <Notice tone="danger">{error}</Notice>}
+      {error && (
+        <div className="px-3 py-2">
+          <Notice tone="danger">{error}</Notice>
+        </div>
+      )}
       {snapshot && rules && (
         <>
-          <div className="mb-3 flex min-w-0 flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-1">
-            <Tabs<Tab>
-              items={INSPECTOR_TABS}
-              value={tab}
-              onChange={setTab}
-              variant="strip"
-              ariaLabel="Context inspector view"
-            />
-            <UsageBadge snapshot={snapshot} className="sm:ml-auto" />
+          <div className="shrink-0 border-b border-border-subtle/15 px-3 py-2">
+            <UsageBadge snapshot={snapshot} />
           </div>
-
-          {tab === 'overview' && (
-            <div className="flex min-h-0 flex-1 flex-col">
-              <div className="min-h-0 flex-1">
-                {snapshot.activeSummaryId && (
-                  <LiveStreamCard
-                    summaryId={snapshot.activeSummaryId}
-                    conversationId={snapshot.conversationId}
-                  />
-                )}
-                {!snapshot.activeSummaryId && latestCompletedSummaryId && (
-                  <RawDiffView summaryId={latestCompletedSummaryId} />
-                )}
-                <WireBreakdown
-                  snapshot={snapshot}
-                  peakUsage={peakUsage}
-                  streamStartedAt={streamStartedAt}
-                  streamEndedAt={streamEndedAt}
-                />
-                <MessageList
-                  messages={snapshot.messages}
+          <div className="scrollbar-stealth min-h-0 flex-1 overflow-y-auto">
+            <InspectorAccordionSection title="Overview" defaultOpen>
+              {snapshot.activeSummaryId && (
+                <LiveStreamCard
+                  summaryId={snapshot.activeSummaryId}
                   conversationId={snapshot.conversationId}
                 />
-              </div>
-              <div
-                className={cn(
-                  'sticky bottom-0 shrink-0 border-t bg-surface-base/80 px-3 py-2 backdrop-blur-sm',
-                  chromeEdgeClassName
-                )}
-              >
-                <TriggerBar snapshot={snapshot} rules={rules} />
-              </div>
-            </div>
-          )}
-
-          {tab === 'rules' && (
-            <RulesHeader
-              rules={rules}
-              workspaceId={
-                snapshot.workspaceId.length > 0 ? snapshot.workspaceId : null
-              }
-              defaultScope="workspace"
-              onOpenContextSettings={() => openContextSettings('context')}
-            />
-          )}
+              )}
+              {!snapshot.activeSummaryId && latestCompletedSummaryId && (
+                <RawDiffView summaryId={latestCompletedSummaryId} />
+              )}
+              <MessageList messages={snapshot.messages} conversationId={snapshot.conversationId} />
+            </InspectorAccordionSection>
+            <InspectorAccordionSection title="Wire breakdown" defaultOpen>
+              <WireBreakdown
+                snapshot={snapshot}
+                peakUsage={peakUsage}
+                streamStartedAt={streamStartedAt}
+                streamEndedAt={streamEndedAt}
+              />
+            </InspectorAccordionSection>
+            <InspectorAccordionSection title="Rules" defaultOpen={false}>
+              <RulesHeader
+                rules={rules}
+                workspaceId={snapshot.workspaceId.length > 0 ? snapshot.workspaceId : null}
+                defaultScope="workspace"
+                onOpenContextSettings={() => openContextSettings('context')}
+              />
+            </InspectorAccordionSection>
+          </div>
+          <div className="sticky bottom-0 shrink-0 border-t border-border-subtle/15 bg-surface-base/80 px-3 py-2 backdrop-blur-sm">
+            <TriggerBar snapshot={snapshot} rules={rules} />
+          </div>
         </>
       )}
       {!loading && !snapshot && !error && (
-        <div className="text-row text-text-muted">
-          Couldn't read the orchestrator's context for this conversation.
+        <div className={chromeListEmptyClassName}>
+          Couldn&apos;t read the orchestrator&apos;s context for this conversation.
         </div>
       )}
     </div>
   );
 }
 
-/** Embedded inspector shell for the secondary zone. */
+/** Legacy shell — delegates to body; outer zone owns panel chrome. */
 export function ContextInspectorZonePanel({
-  onClose,
+  onClose: _onClose,
   embedded: _embedded = false
 }: {
   onClose: () => void;
   embedded?: boolean;
 }) {
-  return (
-    <PanelFrame
-      title="Context Inspector"
-      onClose={onClose}
-      contentClassName="flex min-h-0 flex-col overflow-hidden p-0"
-      className="h-full"
-    >
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-3">
-        <ContextInspectorBody />
-      </div>
-    </PanelFrame>
-  );
+  return <ContextInspectorBody />;
 }
 
-/**
- * Right-aligned token-usage summary on the tab strip. Matches the
- * `CheckpointsView` "{N} runs · {N} files · {bytes}" badge tone
- * exactly so the two surfaces feel symmetrical.
- */
 function UsageBadge({
-  snapshot,
-  className
+  snapshot
 }: {
   snapshot: import('@shared/types/contextSummary.js').ContextInspectorSnapshot;
-  className?: string;
 }) {
   const band = ratioBand(snapshot.currentRatio);
   const ratioLabel = formatRatioPercent(snapshot.currentRatio);
@@ -235,23 +194,14 @@ function UsageBadge({
         ? 'text-warning'
         : 'text-text-muted';
   return (
-    <div
-      className={cn(
-        'flex min-w-0 items-baseline gap-2 truncate text-meta',
-        tone,
-        className
-      )}
-    >
+    <div className={cn('min-w-0 truncate vx-caption', tone)}>
       <span className="font-mono">
         {formatTokenCount(snapshot.totalTokens)}
         {typeof snapshot.ceiling === 'number' && (
           <span className="text-text-faint"> / {formatTokenCount(snapshot.ceiling)}</span>
         )}
       </span>
-      <span className="font-mono">{ratioLabel}</span>
-      <span className="text-text-faint">
-        {snapshot.messages.length} message{snapshot.messages.length === 1 ? '' : 's'}
-      </span>
+      <span className="font-mono"> · {ratioLabel}</span>
     </div>
   );
 }

@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import type { ToolCall, ToolResult } from '@shared/types/tool.js';
+import { SHELL_ROW_ICON_CLASS, SHELL_ACTION_ICON_STROKE } from '../../../lib/shellIcons.js';
 import type { DiffStreamSnapshot } from '../reducer/types.js';
 import { InvocationShell } from './shared/InvocationShell.js';
 import { DetailPane } from './shared/DetailPane.js';
@@ -100,10 +101,6 @@ export function ReportInvocation({
     );
   }
 
-  const liveAutoExpand =
-    !result &&
-    (partial === true || diffStream != null || preview != null || call != null);
-
   return (
     <InvocationShell
       title="report"
@@ -113,7 +110,6 @@ export function ReportInvocation({
       {...(detail !== undefined ? { detail } : {})}
       {...(dense ? { dense } : {})}
       {...(rowKey ? { rowKey } : {})}
-      {...(liveAutoExpand ? { liveAutoExpand } : {})}
       call={call}
       result={result}
       partial={partial}
@@ -164,7 +160,7 @@ function OpenInBrowserButton({ filePath }: OpenInBrowserButtonProps) {
       )}
       title={`Open ${filePath} in your default browser`}
     >
-      <ExternalLink className="h-3 w-3" strokeWidth={2.25} />
+      <ExternalLink className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
       Open in browser
     </button>
   );

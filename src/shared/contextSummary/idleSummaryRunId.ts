@@ -7,6 +7,7 @@
  * `contextSummary.abortIdle` instead of `chat.abort`.
  */
 
+export { IDLE_SUMMARY_RUN_ID_PREFIX } from '../constants.js';
 import { IDLE_SUMMARY_RUN_ID_PREFIX } from '../constants.js';
 
 /** True when `runId` was minted for an idle summarizer side-run. */

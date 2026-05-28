@@ -17,7 +17,7 @@ import type { ActiveRunInfo } from '@shared/types/ipc.js';
 import { IPC } from '@shared/constants.js';
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import { wrapXml } from './envelope/index.js';
-import { inlineFiles } from './contextManager.js';
+import { resolveAttachmentsForInline } from '../attachments/resolveAttachmentsForInline.js';
 import { replayTranscript } from './replay/index.js';
 import { runOrchestratorLoop } from './loop/index.js';
 import {
@@ -232,6 +232,9 @@ export async function startRun(
 ): Promise<void> {
   const abort = new AbortController();
   const prior = activeRuns.get(input.runId);
+  if (prior) {
+    prior.abort.abort();
+  }
   const generation = (prior?.generation ?? 0) + 1;
   activeRuns.set(input.runId, {
     generation,
@@ -250,12 +253,16 @@ export async function startRun(
   // Mint the prompt id up-front so we can both emit it and pass it
   // down to `buildInitialMessages` for precise replay-deduplication
   // (filter by id, not by content — see §3.6 in the audit).
-  const promptEventId = randomUUID();
+  const promptEventId = input.promptEventId ?? randomUUID();
   emit({
     kind: 'user-prompt',
     id: promptEventId,
     ts: Date.now(),
     content: input.prompt,
+    attachments:
+      input.attachmentMeta && input.attachmentMeta.length > 0
+        ? input.attachmentMeta
+        : undefined,
     // Pin the prompt to its run so the inline per-prompt Revert
     // affordance (and the `rewindToPrompt` IPC) can resolve the
     // matching checkpoint manifest in O(1). Older transcripts that
@@ -388,14 +395,18 @@ export async function startRun(
       strictApprovals
     });
     if (loopResult.terminalError) {
+      // Terminal halt — `runLoop` already emitted the authoritative
+      // `kind:'error'` row. `onError` alone drives `chat:error` +
+      // settlement; `onDone` would also emit `chat:done` and confuse
+      // the renderer (audit P2a).
       deps.onError(loopResult.terminalError);
+    } else {
+      deps.onDone();
     }
-    deps.onDone();
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: msg });
     deps.onError(msg);
-    deps.onDone();
   } finally {
     removeActiveRunIfCurrent(input.runId, generation);
     // Clear the "Accept all remaining edits in this run" latch the
@@ -510,17 +521,15 @@ async function buildInitialMessages(
   }
 
   const userMessageXml = wrapXml('user_message', input.prompt, undefined, { escape: true });
+  const attachmentBlocks = await resolveAttachmentsForInline({
+    attachmentMeta: input.attachmentMeta,
+    legacyAttachments: input.attachments,
+    workspacePath,
+    signal
+  });
   const attachmentsXml =
-    input.attachments && input.attachments.length > 0
-      ? wrapXml(
-        'attached_files',
-        // Audit fix 2026-08-P2-1 / 13-P2-1: pass the run signal into
-        // `inlineFiles` so a long-running attachment read aborts
-        // alongside the rest of the orchestrator pipeline.
-        await inlineFiles(workspacePath, input.attachments, undefined, signal),
-        undefined,
-        { escape: true }
-      )
+    attachmentBlocks.length > 0
+      ? wrapXml('attached_files', attachmentBlocks, undefined, { escape: true })
       : '';
   const turnBody = attachmentsXml ? `${userMessageXml}\n${attachmentsXml}` : userMessageXml;
   const userEnvelope = wrapXml('turn', turnBody);

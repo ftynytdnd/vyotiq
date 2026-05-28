@@ -7,6 +7,7 @@ import { type MouseEvent, type ReactNode } from 'react';
 import { RotateCcw } from 'lucide-react';
 import type { ToolCall, ToolResult } from '@shared/types/tool.js';
 import { cn } from '../../../../lib/cn.js';
+import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../../lib/shellIcons.js';
 import { DetailShell } from '../../shared/DetailShell.js';
 import { TimelineRowHeader } from '../../shared/TimelineRowHeader.js';
 import { useTimelineRowExpand } from '../../shared/useTimelineRowExpand.js';
@@ -28,6 +29,8 @@ interface InvocationShellProps {
   dense?: boolean;
   rowKey?: string;
   liveAutoExpand?: boolean;
+  /** Parent tool-group row is expanded — show detail without a second click. */
+  groupExpanded?: boolean;
   actions?: ReactNode;
   /** Detail shell variant when expanded. Defaults to `flat` in dense mode. */
   detailVariant?: 'nested' | 'flat';
@@ -46,6 +49,7 @@ export function InvocationShell({
   dense = false,
   rowKey,
   liveAutoExpand = false,
+  groupExpanded = false,
   actions,
   detailVariant,
   call,
@@ -57,7 +61,7 @@ export function InvocationShell({
 
   const { expanded: open, onToggle } = useTimelineRowExpand({
     ...(rowKey ? { rowKey } : {}),
-    liveAutoExpand: canExpand ? liveAutoExpand : false
+    liveAutoExpand: canExpand ? liveAutoExpand || groupExpanded : false
   });
 
   const onHeaderToggle = () => {
@@ -87,20 +91,23 @@ export function InvocationShell({
         className={cn(timelineActionPillClassName, 'text-meta')}
         title="Re-run this tool"
       >
-        <RotateCcw className={cn('h-3 w-3', rerunBusy && 'animate-spin')} strokeWidth={2.25} />
+        <RotateCcw
+          className={cn(SHELL_ROW_ICON_CLASS, rerunBusy && 'animate-spin')}
+          strokeWidth={SHELL_ACTION_ICON_STROKE}
+        />
         Re-run
       </button>
     ) : null;
 
   const label = (
     <span
-      className={cn('inline-flex min-w-0 max-w-full items-center gap-1.5 truncate', summaryText)}
+      className={cn('inline-flex min-w-0 max-w-full items-center gap-1.5', summaryText)}
       title={summary}
     >
-      <span className={toolTitleClassName(running)}>{title}</span>
+      <span className={cn(toolTitleClassName(running), 'shrink-0')}>{title}</span>
       <span
         className={cn(
-          'truncate',
+          'min-w-0 flex-1 truncate',
           mono && 'font-mono',
           running ? 'text-text-secondary' : ok === false ? 'text-danger' : 'text-text-muted'
         )}
@@ -124,6 +131,11 @@ export function InvocationShell({
           expanded={open}
           onToggle={onHeaderToggle}
           expandable={canExpand}
+          expandAriaLabel={
+            canExpand
+              ? `${open ? 'Collapse' : 'Expand'} ${title} tool details`
+              : undefined
+          }
           chevronSpacer={!canExpand}
           className="min-w-0 flex-1"
           {...(rowKey ? { rowAnchorKey: rowKey } : {})}

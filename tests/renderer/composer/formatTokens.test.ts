@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { formatTokenCount, parseTokenCount } from '@renderer/lib/formatTokens';
+import { formatTokenCount, formatTokenCountWithUnit, parseTokenCount } from '@renderer/lib/formatTokens';
 
 describe('formatTokenCount', () => {
   it('renders integers below 1000 verbatim', () => {
@@ -27,6 +27,17 @@ describe('formatTokenCount', () => {
   it('returns an em-dash for negative / NaN inputs', () => {
     expect(formatTokenCount(-1)).toBe('—');
     expect(formatTokenCount(Number.NaN)).toBe('—');
+  });
+});
+
+describe('formatTokenCountWithUnit', () => {
+  it('appends the token unit suffix', () => {
+    expect(formatTokenCountWithUnit(128_000)).toBe('128k tok');
+    expect(formatTokenCountWithUnit(640)).toBe('640 tok');
+  });
+
+  it('preserves em-dash for invalid counts', () => {
+    expect(formatTokenCountWithUnit(-1)).toBe('—');
   });
 });
 

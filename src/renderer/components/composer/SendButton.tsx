@@ -1,48 +1,88 @@
 import { ArrowUp, Square } from 'lucide-react';
+
 import { cn } from '../../lib/cn.js';
 
+import {
+
+  SHELL_CHROME_ICON_CLASS,
+
+  SHELL_CHROME_ICON_STROKE,
+
+  SHELL_MICRO_ICON_CLASS,
+
+  SHELL_MICRO_ICON_STROKE
+
+} from '../../lib/shellIcons.js';
+
+
+
 interface SendButtonProps {
+
   onClick: () => void;
+
   state: 'idle' | 'ready' | 'processing';
+
   disabled?: boolean;
+
 }
+
+
 
 export function SendButton({ onClick, state, disabled }: SendButtonProps) {
+
   const isProcessing = state === 'processing';
+
   const isReady = state === 'ready';
 
-  // Visual state matrix:
-  //   - idle       : ghost — faint glyph only until hover or ready.
-  //   - ready      : full-strength white pill + a quiet accent halo
-  //                  (`ring-1 ring-accent/40`) so the affordance reads
-  //                  the moment the user has typed something. No shape
-  //                  change vs. processing — preserves the existing
-  //                  white-pill aesthetic from project.md.
-  //   - processing : full-strength white pill, square stop glyph. No
-  //                  halo (the running run's shimmer + status row
-  //                  already telegraph live state up the tree).
+
+
   return (
+
     <button
+
       type="button"
+
       onClick={onClick}
+
       disabled={disabled}
+
       aria-label={isProcessing ? 'Stop' : 'Send'}
+
       title={isProcessing ? 'Stop' : 'Send'}
+
       className={cn(
-        'app-no-drag inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-inner',
-        'transition-[background-color,box-shadow] duration-150 disabled:cursor-not-allowed',
+
+        'vx-btn app-no-drag h-6 w-6 shrink-0 px-0',
+
+        'disabled:cursor-not-allowed',
+
         isProcessing
-          ? 'bg-text-primary text-surface-base hover:brightness-90'
+
+          ? 'vx-btn-primary bg-surface-overlay/60'
+
           : isReady
-            ? 'bg-text-primary text-surface-base ring-1 ring-accent/40 hover:brightness-95'
-            : 'text-text-faint opacity-60 hover:bg-surface-hover'
+
+            ? 'vx-btn-accent-fill'
+
+            : 'vx-btn-quiet'
+
       )}
+
     >
+
       {isProcessing ? (
-        <Square className="h-2.5 w-2.5 fill-current" strokeWidth={2.25} />
+
+        <Square className={cn(SHELL_MICRO_ICON_CLASS, 'fill-current')} strokeWidth={SHELL_MICRO_ICON_STROKE} />
+
       ) : (
-        <ArrowUp className="h-3.5 w-3.5" strokeWidth={2.5} />
+
+        <ArrowUp className={SHELL_CHROME_ICON_CLASS} strokeWidth={SHELL_CHROME_ICON_STROKE} />
+
       )}
+
     </button>
+
   );
+
 }
+

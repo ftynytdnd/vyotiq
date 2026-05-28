@@ -28,19 +28,14 @@ vi.mock('@main/orchestrator/loop/index.js', () => ({
   runOrchestratorLoop: vi.fn(
     ({ signal }: { signal: AbortSignal }) =>
       new Promise<void>((resolve) => {
-        if (signal.aborted) {
-          resolve();
-          return;
-        }
-        const onAbort = () => {
+        const finish = () => {
           signal.removeEventListener('abort', onAbort);
           resolve();
         };
+        const onAbort = finish;
         signal.addEventListener('abort', onAbort);
-        pendingLoopResolvers.push(() => {
-          signal.removeEventListener('abort', onAbort);
-          resolve();
-        });
+        pendingLoopResolvers.push(finish);
+        if (signal.aborted) finish();
       })
   )
 }));
@@ -79,6 +74,9 @@ vi.mock('@main/tools/recall.tool.js', () => ({
 // stubbed loop.
 vi.mock('@main/orchestrator/contextManager.js', () => ({
   inlineFiles: vi.fn(async () => '')
+}));
+vi.mock('@main/attachments/resolveAttachmentsForInline.js', () => ({
+  resolveAttachmentsForInline: vi.fn(async () => '')
 }));
 vi.mock('@main/orchestrator/replay/index.js', () => ({
   replayTranscript: vi.fn(() => [])
@@ -271,24 +269,18 @@ describe('listActiveRuns / abort surfaces', () => {
       makeInput({ runId: 'reuse', conversationId: 'c-new', workspaceId: 'wA' }),
       deps
     );
-    await Promise.resolve();
-    await Promise.resolve();
+    for (let i = 0; i < 8; i++) {
+      await Promise.resolve();
+    }
 
     expect(listActiveRuns()).toEqual([
       expect.objectContaining({ runId: 'reuse', conversationId: 'c-new' })
     ]);
 
-    const settleFirst = pendingLoopResolvers[0];
-    expect(settleFirst).toBeTypeOf('function');
-    settleFirst!();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(listActiveRuns()).toEqual([
-      expect.objectContaining({ runId: 'reuse', conversationId: 'c-new' })
-    ]);
-
-    pendingLoopResolvers[1]?.();
+    const settle =
+      pendingLoopResolvers[pendingLoopResolvers.length - 1] ??
+      (() => abortRun('reuse'));
+    settle();
     await settleActiveRuns();
     expect(listActiveRuns()).toEqual([]);
   });

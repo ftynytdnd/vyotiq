@@ -92,4 +92,39 @@ describe('assertChatSendInput', () => {
       /attachments exceeds/
     );
   });
+
+  it('rejects malformed attachmentMeta entries', () => {
+    expect(() =>
+      assertChatSendInput({
+        ...VALID,
+        attachmentMeta: [{ id: 'a1', name: 'x.txt' }]
+      })
+    ).toThrow(/must include workspacePath or storedPath/);
+
+    expect(() =>
+      assertChatSendInput({
+        ...VALID,
+        attachmentMeta: [{ id: '', name: 'x.txt', workspacePath: 'a.ts' }]
+      })
+    ).toThrow(/attachmentMeta\[0\]\.id must be a non-empty string/);
+
+    expect(() =>
+      assertChatSendInput({
+        ...VALID,
+        attachmentMeta: [{ id: 'a1', name: 'x.txt', workspacePath: 'src/a.ts', external: 'yes' }]
+      })
+    ).toThrow(/attachmentMeta\[0\]\.external must be a boolean/);
+  });
+
+  it('accepts well-formed attachmentMeta', () => {
+    expect(() =>
+      assertChatSendInput({
+        ...VALID,
+        attachmentMeta: [
+          { id: 'a1', name: 'a.ts', workspacePath: 'src/a.ts', external: false },
+          { id: 'a2', name: 'b.pdf', storedPath: '/tmp/b.pdf', external: true, sizeBytes: 42 }
+        ]
+      })
+    ).not.toThrow();
+  });
 });

@@ -79,10 +79,11 @@ describe('InvocationShell', () => {
     expect(btn.textContent ?? '').not.toContain('no match');
   });
 
-  it('uses gold title while a tool call is pending', () => {
+  it('uses primary title while a tool call is pending', () => {
     const { container } = render(
       <InvocationShell title="read" summary="src/main.ts" ok={null} />
     );
-    expect(container.innerHTML).toContain('text-accent-gold-strong');
+    expect(container.innerHTML).toContain('text-text-primary');
+    expect(container.innerHTML).not.toContain('vx-timeline-phase-live');
   });
 });

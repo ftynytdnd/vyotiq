@@ -20,16 +20,16 @@
  * flowing settings layout, so the simpler positioning is preserved.
  *
  * Surface palette:
- *   - Trigger : ghost {@link chromePillClassName} (fill on hover / open).
- *   - Panel   : `elev-1` on `bg-surface-overlay` rounded-card.
- *   - Rows    : same hover transition as the rest of the app's row
- *     family; `bg-surface-hover` is the active-selected tint.
+ *   - Trigger : Vyotiq UI `vx-input` underline field.
+ *   - Panel   : `vx-dropdown-menu` popover list.
+ *   - Rows    : `vx-dropdown-item` with hover / selected tint.
  */
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { chromePillClassName, chromePopoverPanelClassName } from './SurfaceShell.js';
+import { chromeNoMatchesClassName } from './SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
+import { SHELL_CHROME_ICON_CLASS, SHELL_CHROME_ICON_STROKE } from '../../lib/shellIcons.js';
 import { Eyebrow } from './Eyebrow.js';
 
 export interface DropdownItem<T = string> {
@@ -201,19 +201,18 @@ export function Dropdown<T extends string>({
         aria-expanded={open}
         aria-controls={open ? listboxId : undefined}
         className={cn(
-          chromePillClassName(open),
-          'h-8 max-w-64 gap-1.5 px-2.5 text-row text-text-secondary',
-          open && 'text-text-primary',
+          'vx-input flex max-w-full items-center justify-between gap-2 text-left',
           'disabled:cursor-not-allowed disabled:opacity-50'
         )}
       >
         <span className="truncate">{selected?.label ?? placeholder}</span>
         <ChevronDown
           className={cn(
-            'h-3.5 w-3.5 shrink-0 transition-transform duration-150',
+            SHELL_CHROME_ICON_CLASS,
+            'opacity-50 transition-transform duration-200',
             open && 'rotate-180'
           )}
-          strokeWidth={2.25}
+          strokeWidth={SHELL_CHROME_ICON_STROKE}
         />
       </button>
       {open && (
@@ -224,10 +223,7 @@ export function Dropdown<T extends string>({
           aria-activedescendant={
             focusedIdx === -1 ? undefined : `${listboxId}-row-${focusedIdx}`
           }
-          className={cn(
-            chromePopoverPanelClassName,
-            'absolute z-50 mt-1.5 max-h-80 min-w-60 overflow-y-auto p-1'
-          )}
+          className="vx-dropdown-menu absolute z-50 max-h-80 min-w-full overflow-y-auto"
           style={{ right: 0 }}
         >
           {groups.map(([groupName, groupItems]) => (
@@ -256,14 +252,11 @@ export function Dropdown<T extends string>({
                       e.preventDefault();
                     }}
                     onClick={() => commit(idx)}
+                    data-active={isSelected ? 'true' : 'false'}
+                    data-focused={isFocused && !item.disabled ? 'true' : 'false'}
                     className={cn(
-                      'flex w-full cursor-pointer flex-col items-start gap-0.5 rounded-inner px-2 py-1.5 text-left text-row transition-colors duration-150',
-                      isFocused
-                        ? 'bg-surface-hover text-text-primary'
-                        : isSelected
-                          ? 'text-text-primary'
-                          : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
-                      item.disabled && 'cursor-not-allowed opacity-50 hover:bg-transparent'
+                      'vx-dropdown-item flex w-full flex-col items-start gap-0.5',
+                      item.disabled && 'cursor-not-allowed opacity-50'
                     )}
                   >
                     <span className="truncate font-medium">{item.label}</span>
@@ -278,7 +271,7 @@ export function Dropdown<T extends string>({
             </div>
           ))}
           {items.length === 0 && (
-            <div className="px-2 py-3 text-row text-text-muted">No options.</div>
+            <div className={chromeNoMatchesClassName}>No options.</div>
           )}
         </div>
       )}

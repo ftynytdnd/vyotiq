@@ -12,7 +12,7 @@
  * Bindings:
  *   - Ctrl/Cmd+N        : new conversation
  *   - Ctrl/Cmd+O        : pick workspace folder (OS dialog)
- *   - Ctrl/Cmd+,        : open Settings → Providers
+ *   - Ctrl/Cmd+,        : open Settings (last-used tab)
  *   - Ctrl/Cmd+Shift+H  : open Checkpoints history
  *   - Ctrl/Cmd+Shift+C  : open Context Inspector
  *   - Ctrl/Cmd+R        : reload the renderer (View → Reload)
@@ -56,7 +56,7 @@ export function useGlobalShortcuts(actions: GlobalShortcutActions): void {
   ref.current = actions;
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+    const onKeyDown = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
       if (!mod) return;
 
@@ -116,7 +116,20 @@ export function useGlobalShortcuts(actions: GlobalShortcutActions): void {
         return;
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      // Release tracking is a no-op today; paired listener ensures
+      // symmetric teardown on unmount (audit Phase 3).
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
   }, []);
 }

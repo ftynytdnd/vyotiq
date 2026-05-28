@@ -34,16 +34,18 @@
  * No card UI. Stealth dark tokens only.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { BarChart2, Pencil } from 'lucide-react';
 import type { TokenUsage } from '@shared/types/chat.js';
 import { cn } from '../../lib/cn.js';
 import {
-  chromeMeterClassName,
-  chromeProgressTrackClassName
-} from '../ui/SurfaceShell.js';
+  SHELL_MICRO_ICON_CLASS,
+  SHELL_MICRO_ICON_STROKE,
+  SHELL_ROW_ICON_CLASS,
+  SHELL_ROW_ICON_STROKE
+} from '../../lib/shellIcons.js';
 import { dockChatMeterBarClassName } from '../dock/dockShared.js';
-import { formatTokenCount, parseTokenCount } from '../../lib/formatTokens.js';
+import { formatTokenCount, formatTokenCountWithUnit, parseTokenCount } from '../../lib/formatTokens.js';
 
 export interface TokenUsagePillBaseline {
   total: number;
@@ -92,7 +94,7 @@ interface TokenUsagePillProps {
   draftTokens?: number;
 }
 
-export function TokenUsagePill({
+export const TokenUsagePill = memo(function TokenUsagePill({
   used,
   ceiling,
   estimated,
@@ -162,8 +164,8 @@ export function TokenUsagePill({
         aria-label="Context window ceiling"
         title="Set this model's context-window ceiling. Accepts 128k, 1.5M, or raw integers. Empty clears the override."
         className={cn(
-          chromeMeterClassName('w-24 px-1.5 text-text-primary'),
-          'outline-none focus:outline-none ring-1 ring-accent/60 placeholder:text-text-muted'
+          'vx-input w-24 px-0 py-0.5 font-mono text-chat-meta text-text-primary',
+          'ring-1 ring-edge-light-focus placeholder:text-text-muted'
         )}
       />
     );
@@ -195,8 +197,8 @@ export function TokenUsagePill({
         ? 'Click to open the Context Inspector (manual summarize, per-message overrides, set ceiling).'
         : 'Click to set a ceiling (e.g. 128k, 1M).');
     const pillClass = cn(
-      chromeMeterClassName('group relative shrink-0 gap-1 px-1.5'),
-      'text-warning transition-colors duration-150 hover:bg-surface-hover'
+      'vx-composer-token-pill',
+      'group relative shrink-0 text-warning transition-colors duration-150'
     );
     if (onOpenInspector) {
       return (
@@ -206,9 +208,9 @@ export function TokenUsagePill({
             onClick={primaryAction}
             aria-label={primaryLabel}
             title={primaryTitle}
-            className="inline-flex items-center gap-1 hover:bg-transparent"
+            className="vx-composer-token-pill__label hover:bg-transparent"
           >
-            <BarChart2 className="h-3 w-3" strokeWidth={2} />
+            <BarChart2 className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} aria-hidden />
             <span className="font-mono">{formatTokenCount(used)}</span>
             <span className="text-text-faint" aria-hidden>·</span>
             <span className="font-medium text-warning-strong underline decoration-warning/40 underline-offset-2">
@@ -222,7 +224,7 @@ export function TokenUsagePill({
             title="Set ceiling (e.g. 128k, 1M)"
             className="ml-0.5 inline-flex items-center opacity-0 transition-opacity group-hover:opacity-70 hover:opacity-100 focus-visible:opacity-100"
           >
-            <Pencil className="h-2.5 w-2.5" strokeWidth={2} />
+            <Pencil className={SHELL_MICRO_ICON_CLASS} strokeWidth={SHELL_MICRO_ICON_STROKE} />
           </button>
         </div>
       );
@@ -235,15 +237,15 @@ export function TokenUsagePill({
         title={primaryTitle}
         className={pillClass}
       >
-        <BarChart2 className="h-3 w-3" strokeWidth={2} />
+        <BarChart2 className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} aria-hidden />
         <span className="font-mono">{formatTokenCount(used)}</span>
         <span className="text-text-faint" aria-hidden>·</span>
         <span className="font-medium text-warning-strong underline decoration-warning/40 underline-offset-2">
           set ctx
         </span>
         <Pencil
-          className="h-2.5 w-2.5 opacity-0 group-hover:opacity-70"
-          strokeWidth={2}
+          className={cn(SHELL_MICRO_ICON_CLASS, 'opacity-0 group-hover:opacity-70')}
+          strokeWidth={SHELL_MICRO_ICON_STROKE}
           aria-hidden
         />
       </button>
@@ -286,14 +288,14 @@ export function TokenUsagePill({
     : `${title}`;
 
   const activePillClass = cn(
-    chromeMeterClassName('group relative shrink-0 gap-1 overflow-hidden px-1.5'),
-    'transition-colors duration-150 hover:bg-surface-hover',
+    'vx-composer-token-pill group relative min-w-0 shrink-0',
+    'transition-colors duration-150',
     toneClass
   );
   const activeLabel = (
-    <>
-      <BarChart2 className="h-3 w-3" strokeWidth={2} />
-      <span className="font-mono">
+    <span className="vx-composer-token-pill__label">
+      <BarChart2 className={cn(SHELL_ROW_ICON_CLASS, 'shrink-0')} strokeWidth={SHELL_ROW_ICON_STROKE} aria-hidden />
+      <span className="truncate">
         {formatTokenCount(used)}
         <span
           className={cn('mx-0.5 text-text-faint', estimated ? 'italic' : '')}
@@ -303,16 +305,13 @@ export function TokenUsagePill({
         </span>
         {formatTokenCount(ceiling!)}
       </span>
-      <span className="font-mono text-text-faint">{pctLabel}</span>
-    </>
+      <span className="vx-composer-token-pill__pct shrink-0">{pctLabel}</span>
+    </span>
   );
   const progressBar = (
-    <span aria-hidden className={cn(chromeProgressTrackClassName, 'h-1 w-full min-w-[4.5rem]')}>
+    <span aria-hidden className="vx-composer-token-pill__track">
       <span
-        className={cn(
-          'absolute inset-y-0 left-0 rounded-pill transition-[width] duration-150',
-          barClass
-        )}
+        className={cn('vx-composer-token-pill__bar', barClass)}
         style={{ width: barWidth }}
       />
     </span>
@@ -320,30 +319,25 @@ export function TokenUsagePill({
 
   if (onOpenInspector) {
     return (
-      <div
-        className={cn(activePillClass, 'flex min-w-0 flex-col gap-0.5 py-1')}
-        title={primaryTitle}
-      >
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={primaryAction}
-            aria-label={primaryLabel}
-            className="inline-flex min-w-0 flex-1 items-center gap-1"
-          >
-            {activeLabel}
-          </button>
-          <button
-            type="button"
-            onClick={openEditor}
-            aria-label="Edit context window ceiling"
-            title="Edit ceiling"
-            className="inline-flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-70 hover:opacity-100 focus-visible:opacity-100"
-          >
-            <Pencil className="h-2.5 w-2.5" strokeWidth={2} />
-          </button>
-        </div>
-        {progressBar}
+      <div className={activePillClass} title={primaryTitle}>
+        <button
+          type="button"
+          onClick={primaryAction}
+          aria-label={primaryLabel}
+          className="inline-flex min-w-0 flex-1 items-center gap-1.5 hover:bg-transparent"
+        >
+          {activeLabel}
+          {progressBar}
+        </button>
+        <button
+          type="button"
+          onClick={openEditor}
+          aria-label="Edit context window ceiling"
+          title="Edit ceiling"
+          className="inline-flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-70 hover:opacity-100 focus-visible:opacity-100"
+        >
+          <Pencil className={SHELL_MICRO_ICON_CLASS} strokeWidth={SHELL_MICRO_ICON_STROKE} />
+        </button>
       </div>
     );
   }
@@ -353,21 +347,21 @@ export function TokenUsagePill({
       type="button"
       onClick={primaryAction}
       aria-label={primaryLabel}
-      className={cn(activePillClass, 'flex min-w-0 flex-col gap-0.5 py-1')}
+      className={activePillClass}
       title={primaryTitle}
     >
-      <span className="inline-flex items-center gap-1">
+      <span className="inline-flex min-w-0 items-center gap-1.5">
         {activeLabel}
+        {progressBar}
         <Pencil
-          className="h-2.5 w-2.5 opacity-0 group-hover:opacity-70"
-          strokeWidth={2}
+          className={cn(SHELL_MICRO_ICON_CLASS, 'opacity-0 group-hover:opacity-70')}
+          strokeWidth={SHELL_MICRO_ICON_STROKE}
           aria-hidden
         />
       </span>
-      {progressBar}
     </button>
   );
-}
+});
 
 /**
  * Phase 4 (2026): builds the hover-tooltip body for the active-state
@@ -402,35 +396,39 @@ function buildBreakdownTitle(args: {
 }): string {
   const { used, ceiling, pct, estimated, usage, baseline, draftTokens } = args;
   const lines: string[] = [];
-  lines.push(`${used.toLocaleString()} / ${ceiling.toLocaleString()} tokens — ${pct}% of context window used`);
+  const hasRunUsage = usage && (usage.promptTokens > 0 || usage.completionTokens > 0);
+  lines.push(
+    `Context: ${formatTokenCount(used)} / ${formatTokenCount(ceiling)} · ${pct}% of context window used`
+  );
   if (estimated) {
     lines.push('(pre-flight estimate — the provider will replace it with the real count once the next turn streams)');
   }
-  if (usage && (usage.promptTokens > 0 || usage.completionTokens > 0)) {
+  if (hasRunUsage) {
     lines.push('');
-    if (usage.promptTokens > 0) {
-      lines.push(`Prompt: ${formatTokenCount(usage.promptTokens)}`);
-      if (typeof usage.cachedPromptTokens === 'number' && usage.cachedPromptTokens > 0) {
-        lines.push(`  · cached: ${formatTokenCount(usage.cachedPromptTokens)}`);
+    lines.push('Run total (latest turn):');
+    if (usage!.promptTokens > 0) {
+      lines.push(`Prompt: ${formatTokenCountWithUnit(usage!.promptTokens)}`);
+      if (typeof usage!.cachedPromptTokens === 'number' && usage!.cachedPromptTokens > 0) {
+        lines.push(`  · cached: ${formatTokenCountWithUnit(usage!.cachedPromptTokens)}`);
       }
-      if (typeof usage.cacheCreationTokens === 'number' && usage.cacheCreationTokens > 0) {
-        lines.push(`  · cache write: ${formatTokenCount(usage.cacheCreationTokens)}`);
+      if (typeof usage!.cacheCreationTokens === 'number' && usage!.cacheCreationTokens > 0) {
+        lines.push(`  · cache write: ${formatTokenCountWithUnit(usage!.cacheCreationTokens)}`);
       }
     }
-    if (usage.completionTokens > 0) {
-      lines.push(`Completion: ${formatTokenCount(usage.completionTokens)}`);
-      if (typeof usage.reasoningTokens === 'number' && usage.reasoningTokens > 0) {
-        lines.push(`  · reasoning: ${formatTokenCount(usage.reasoningTokens)}`);
+    if (usage!.completionTokens > 0) {
+      lines.push(`Completion: ${formatTokenCountWithUnit(usage!.completionTokens)}`);
+      if (typeof usage!.reasoningTokens === 'number' && usage!.reasoningTokens > 0) {
+        lines.push(`  · reasoning: ${formatTokenCountWithUnit(usage!.reasoningTokens)}`);
       }
     }
   } else if (baseline && typeof draftTokens === 'number') {
     // Pre-flight only — no real usage yet. Show the baseline + draft
     // split so the user understands the headline number.
     lines.push('');
-    lines.push(`Pre-flight: ${formatTokenCount(baseline.total)} baseline + ${formatTokenCount(draftTokens)} draft`);
-    lines.push(`  · system prompt: ${formatTokenCount(baseline.systemPrompt)}`);
-    lines.push(`  · tools: ${formatTokenCount(baseline.tools)}`);
-    lines.push(`  · history: ${formatTokenCount(baseline.history)}`);
+    lines.push(`Context (pre-flight): ${formatTokenCountWithUnit(baseline.total)} baseline + ${formatTokenCountWithUnit(draftTokens)} draft`);
+    lines.push(`  · system prompt: ${formatTokenCountWithUnit(baseline.systemPrompt)}`);
+    lines.push(`  · tools: ${formatTokenCountWithUnit(baseline.tools)}`);
+    lines.push(`  · history: ${formatTokenCountWithUnit(baseline.history)}`);
   }
   lines.push('');
   lines.push('Click to retune.');

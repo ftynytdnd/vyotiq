@@ -13,13 +13,20 @@ import type {
 import { useCheckpointsStore } from '../../store/useCheckpointsStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { Button } from '../ui/Button.js';
-import { ConfirmDialog } from '../ui/ConfirmDialog.js';
+import { DestructiveConfirm } from '../ui/DestructiveConfirm.js';
 import { DiffStatsBadge } from '../timeline/tools/shared/DiffStatsBadge.js';
 import { PendingChangeDiff } from './PendingChangeDiff.js';
 import { formatTimestamp } from './formatTimestamp.js';
 import { cn } from '../../lib/cn.js';
-import { chromeFileKindBadgeClassName, SurfaceShell } from '../ui/SurfaceShell.js';
-import { timelineRowHeaderClassName } from '../timeline/shared/rowStyles.js';
+import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../lib/shellIcons.js';
+import {
+  chromeFileKindBadgeClassName,
+  appComposerShellClassName
+} from '../ui/SurfaceShell.js';
+import {
+  pendingDiffInsetClassName,
+  pendingExpandButtonClassName
+} from './pending/pendingPanelStyles.js';
 
 interface RunCheckpointCardProps {
   workspaceId: string;
@@ -110,26 +117,56 @@ export function RunCheckpointCard({ workspaceId, runHead }: RunCheckpointCardPro
     manifest!.entries.every((e) => e.reverted === true);
 
   return (
-    <SurfaceShell className="group flex flex-col gap-1">
-      <div className={timelineRowHeaderClassName}>
+    <div className={cn(appComposerShellClassName, 'group flex flex-col gap-0')}>
+      <div className="vx-row flex w-full min-w-0 items-center gap-1.5 px-2 py-1">
+        {confirmRevert ? (
+          <DestructiveConfirm
+            variant="inline"
+            open
+            context={runHead.label}
+            question={
+              runHead.endedAt === null
+                ? 'Revert this run? It is still marked running.'
+                : `Revert "${runHead.label}"?`
+            }
+            confirmLabel="Revert run"
+            onConfirm={() => void onRevertRun()}
+            onCancel={() => setConfirmRevert(false)}
+          />
+        ) : confirmDelete ? (
+          <DestructiveConfirm
+            variant="inline"
+            open
+            context={runHead.label}
+            question={
+              runHead.endedAt === null
+                ? 'Delete this run? It is still marked running.'
+                : `Delete run "${runHead.label}"?`
+            }
+            confirmLabel="Delete run"
+            onConfirm={() => void onDeleteRun()}
+            onCancel={() => setConfirmDelete(false)}
+          />
+        ) : (
+          <>
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="app-no-drag flex items-center gap-1 rounded-inner text-text-muted hover:text-text-primary"
+          className={pendingExpandButtonClassName}
           aria-label={expanded ? 'Collapse run' : 'Expand run'}
           aria-expanded={expanded}
         >
           {expanded ? (
-            <ChevronDown className="h-3.5 w-3.5" strokeWidth={2} />
+            <ChevronDown className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
           ) : (
-            <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
+            <ChevronRight className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
           )}
         </button>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-row text-text-primary" title={runHead.label}>
+          <div className="truncate vx-row-label" title={runHead.label}>
             {runHead.label}
           </div>
-          <div className="text-meta text-text-muted">
+          <div className="vx-caption">
             {formatTimestamp(runHead.startedAt)} ·{' '}
             {runHead.entryCount} change{runHead.entryCount === 1 ? '' : 's'}
             {runHead.endedAt === null ? ' · running' : ''}
@@ -138,29 +175,31 @@ export function RunCheckpointCard({ workspaceId, runHead }: RunCheckpointCardPro
         {manifest && (
           <DiffStatsBadge additions={additions} deletions={deletions} minWidth="badge" />
         )}
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => setConfirmRevert(true)}
-          disabled={everyReverted}
-          className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
-        >
-          <RotateCcw className="h-3 w-3" strokeWidth={2.25} />
-          Revert run
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => setConfirmDelete(true)}
-          title="Delete this run from the checkpoint store"
-          className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
-        >
-          <Trash2 className="h-3 w-3" strokeWidth={2.25} />
-          Delete
-        </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setConfirmRevert(true)}
+              disabled={everyReverted}
+              className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
+            >
+              <RotateCcw className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+              Revert run
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setConfirmDelete(true)}
+              title="Delete this run from the checkpoint store"
+              className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
+            >
+              <Trash2 className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+              Delete
+            </Button>
+          </>
+        )}
       </div>
       {expanded && manifest && (
-        <ul className="flex flex-col gap-0.5 border-t border-border-subtle/30 px-2 py-1">
+        <ul className="flex flex-col gap-0.5">
           {manifest.entries.map((e) => (
             <EntryRow
               key={e.id}
@@ -171,27 +210,7 @@ export function RunCheckpointCard({ workspaceId, runHead }: RunCheckpointCardPro
           ))}
         </ul>
       )}
-      <ConfirmDialog
-        open={confirmRevert}
-        title="Revert this run?"
-        message={`Roll back every file changed in "${runHead.label}". The current contents will be replaced with the snapshot taken before the run started.`}
-        confirmLabel="Revert run"
-        cancelLabel="Cancel"
-        variant="danger"
-        onConfirm={() => void onRevertRun()}
-        onCancel={() => setConfirmRevert(false)}
-      />
-      <ConfirmDialog
-        open={confirmDelete}
-        title="Delete this run?"
-        message={`Permanently remove the audit trail for "${runHead.label}" — its manifest, snapshot blobs, and any pending rows tied to its entries. Files on disk are untouched, but you will no longer be able to revert past edits from this run.`}
-        confirmLabel="Delete run"
-        cancelLabel="Cancel"
-        variant="danger"
-        onConfirm={() => void onDeleteRun()}
-        onCancel={() => setConfirmDelete(false)}
-      />
-    </SurfaceShell>
+    </div>
   );
 }
 
@@ -213,17 +232,17 @@ function EntryRow({
   const [open, setOpen] = useState(false);
   return (
     <li className="group flex flex-col">
-      <div className={timelineRowHeaderClassName}>
+      <div className="vx-row flex w-full min-w-0 items-center gap-1.5 px-2 py-1">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="app-no-drag flex items-center gap-1 rounded-inner text-text-muted hover:text-text-primary"
+          className={pendingExpandButtonClassName}
           aria-label={open ? 'Collapse entry diff' : 'Expand entry diff'}
         >
           {open ? (
-            <ChevronDown className="h-3.5 w-3.5" strokeWidth={2} />
+            <ChevronDown className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
           ) : (
-            <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
+            <ChevronRight className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
           )}
         </button>
         <span className={chromeFileKindBadgeClassName(entry.kind)}>{entry.kind}</span>
@@ -252,13 +271,15 @@ function EntryRow({
         </Button>
       </div>
       {open && (
-        <div className="px-6 pb-2 pt-1">
-          <PendingChangeDiff
+        <div className={cn(pendingDiffInsetClassName, 'mx-3 mb-2 mt-0')}>
+          <div className="px-2 py-1.5">
+            <PendingChangeDiff
             workspaceId={workspaceId}
             kind={entry.kind}
             {...(entry.preHash ? { preHash: entry.preHash } : {})}
             {...(entry.postHash ? { postHash: entry.postHash } : {})}
           />
+          </div>
         </div>
       )}
     </li>

@@ -2,19 +2,14 @@
  * Derives a displayable model catalogue from `useProviderStore` for the
  * model picker. Returns:
  *
- *   - `groups`: enabled providers, each with a (possibly empty) list of
- *     filter-matching models. Disabled providers are dropped entirely so
- *     the picker never offers something that won't actually run.
- *   - `flat`: a flat sequence of selectable items in display order. Used
- *     for keyboard navigation (Up/Down/Enter) — disabled rows (e.g. "no
- *     models discovered yet") are excluded so focus skips them.
- *
- * Filter is case-insensitive substring on `model.id`. When the filter
- * eliminates all of a provider's models, the group is omitted.
+ *   - `localGroups` / `remoteGroups`: enabled providers split by loopback
+ *     hosts, each with filter-matching models.
+ *   - `flat`: selectable items in display order (local first, then remote).
  */
 
 import { useMemo } from 'react';
 import type { ModelInfo, ProviderConfig } from '@shared/types/provider.js';
+import { isLocalProvider } from '@shared/providers/isLocalProvider.js';
 import { useProviderStore } from '../../../store/useProviderStore.js';
 
 interface ModelOptionGroup {
@@ -30,9 +25,23 @@ interface FlatOption {
 }
 
 export interface ModelOptions {
+  localGroups: ModelOptionGroup[];
+  remoteGroups: ModelOptionGroup[];
+  /** @deprecated Prefer localGroups + remoteGroups — kept for callers still on flat groups. */
   groups: ModelOptionGroup[];
   flat: FlatOption[];
   totalEnabledProviders: number;
+}
+
+function buildGroups(enabled: ProviderConfig[], q: string): ModelOptionGroup[] {
+  const groups: ModelOptionGroup[] = [];
+  for (const p of enabled) {
+    const models = p.models ?? [];
+    const matched = q ? models.filter((m) => m.id.toLowerCase().includes(q)) : models;
+    if (q && matched.length === 0) continue;
+    groups.push({ provider: p, models: matched });
+  }
+  return groups;
 }
 
 export function useModelOptions(query: string): ModelOptions {
@@ -40,21 +49,24 @@ export function useModelOptions(query: string): ModelOptions {
   return useMemo(() => {
     const q = query.trim().toLowerCase();
     const enabled = providers.filter((p) => p.enabled);
-    const groups: ModelOptionGroup[] = [];
+    const localEnabled = enabled.filter((p) => isLocalProvider(p));
+    const remoteEnabled = enabled.filter((p) => !isLocalProvider(p));
+    const localGroups = buildGroups(localEnabled, q);
+    const remoteGroups = buildGroups(remoteEnabled, q);
+    const groups = [...localGroups, ...remoteGroups];
     const flat: FlatOption[] = [];
     let cursor = 0;
-    for (const p of enabled) {
-      const models = p.models ?? [];
-      const matched = q
-        ? models.filter((m) => m.id.toLowerCase().includes(q))
-        : models;
-      // When filtering, hide groups with zero matches entirely.
-      if (q && matched.length === 0) continue;
-      groups.push({ provider: p, models: matched });
-      for (const m of matched) {
-        flat.push({ providerId: p.id, modelId: m.id, index: cursor++ });
+    for (const g of groups) {
+      for (const m of g.models) {
+        flat.push({ providerId: g.provider.id, modelId: m.id, index: cursor++ });
       }
     }
-    return { groups, flat, totalEnabledProviders: enabled.length };
+    return {
+      localGroups,
+      remoteGroups,
+      groups,
+      flat,
+      totalEnabledProviders: enabled.length
+    };
   }, [providers, query]);
 }

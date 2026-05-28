@@ -109,7 +109,7 @@ function seedDelegationTurn(withResponse = false) {
 }
 
 describe('Timeline inline column alignment', () => {
-  it('uses a flat activity lane inside a single pl-3.5 agent column', () => {
+  it('uses a flat activity lane inside a single pl-3 agent column', () => {
     seedDelegationTurn(true);
 
     const { container } = render(<Timeline />);
@@ -118,7 +118,7 @@ describe('Timeline inline column alignment', () => {
     const activityLane = container.querySelector('.timeline-activity-lane');
 
     expect(agentColumn).not.toBeNull();
-    expect(agentColumn?.className ?? '').toContain('pl-3.5');
+    expect(agentColumn?.className ?? '').toContain('vx-timeline-agent-column');
     expect(activityLane).not.toBeNull();
     expect(activityLane?.className ?? '').not.toMatch(/\bborder-l\b/);
     expect(activityLane?.className ?? '').not.toMatch(/\bpl-3\b/);
@@ -142,22 +142,13 @@ describe('Timeline inline column alignment', () => {
     expect(container.textContent ?? '').not.toContain('Delegates');
   });
 
-  it('renders delegating live status at the inline stream tail', () => {
+  it('does not render LiveStatusRow in the inline stream during delegation', () => {
     seedDelegationTurn(false);
 
     const { container } = render(<Timeline />);
 
-    const inlineStream = container.querySelector('[data-turn-inline-stream]');
-    const liveStatus = container.querySelector('[data-row-kind="live-status"]');
-    const firstSubagent = container.querySelector('[data-row-kind="subagent-line"]');
-
-    expect(inlineStream).not.toBeNull();
-    expect(liveStatus).not.toBeNull();
-    expect(firstSubagent).not.toBeNull();
-    expect(inlineStream?.contains(liveStatus)).toBe(true);
-    expect(
-      firstSubagent!.compareDocumentPosition(liveStatus!) & Node.DOCUMENT_POSITION_FOLLOWING
-    ).toBeTruthy();
+    expect(container.querySelector('[data-row-kind="live-status"]')).toBeNull();
+    expect(container.textContent ?? '').not.toContain('Exploring');
   });
 
   it('does not add a response separator during live inline streaming', () => {
@@ -172,7 +163,7 @@ describe('Timeline inline column alignment', () => {
     expect(container.querySelector('.border-t.border-border-subtle\\/15')).toBeNull();
   });
 
-  it('pairs the jump chip with a reserved right gutter class', () => {
+  it('jump chip gutter class is defined for legacy callers', () => {
     expect(timelineAgentColumnReserveRightClassName).toBe('pr-[5.5rem]');
   });
 });

@@ -461,8 +461,12 @@ describe('parseDelegatesWithDuplicates', () => {
     });
 
     it('rejects compound task= directives via compoundTaskIds', () => {
-      const compound =
-        '- Read src/a.ts\n- Edit src/b.ts\n- Run tests and report';
+      const compound = [
+        '- Read src/a.ts',
+        '- Edit src/b.ts',
+        '- Run tests and report',
+        '- Update the changelog'
+      ].join('\n');
       const out = parseDelegatesWithDuplicates(
         `<delegate id="A1" task="${compound}" />`
       );

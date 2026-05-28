@@ -13,8 +13,8 @@ interface ErrorRowProps {
 
 export function ErrorRow({ message }: ErrorRowProps) {
   return (
-    <div className={cn('vyotiq-stepfade-once', timelineLogRowClassName)} data-row-kind="error">
-      <Notice tone="danger" size="sm" icon={AlertTriangle} className="border-0 bg-transparent">
+    <div className={cn('vyotiq-stepfade-once vx-notice', timelineLogRowClassName)} data-row-kind="error">
+      <Notice tone="danger" size="sm" icon={AlertTriangle} className="border-0 bg-transparent p-0">
         <div className="whitespace-pre-wrap">{message}</div>
       </Notice>
     </div>

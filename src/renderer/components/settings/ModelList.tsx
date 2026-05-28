@@ -2,9 +2,12 @@ import { useState } from 'react';
 import { RefreshCcw } from 'lucide-react';
 import type { ModelInfo } from '@shared/types/provider.js';
 import { Button } from '../ui/Button.js';
-import { Spinner } from '../ui/Spinner.js';
+import { LoadingHint } from '../ui/LoadingHint.js';
 import { TextField } from '../ui/TextField.js';
 import { formatTokenCount } from '../../lib/formatTokens.js';
+import { ShellCaption } from '../ui/ShellSection.js';
+import { chromeNoMatchesClassName } from '../ui/SurfaceShell.js';
+import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../lib/shellIcons.js';
 
 interface ModelListProps {
   models: ModelInfo[];
@@ -29,23 +32,18 @@ export function ModelList({ models, loading, emptyMessage, onDiscover, discoverD
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 text-row text-text-muted">
-        <Spinner /> Discovering models…
+      <div className="flex items-center gap-2 vx-caption">
+        <LoadingHint message="Discovering models…" className="py-4" />
       </div>
     );
   }
   if (models.length === 0) {
     return (
-      <div className="flex flex-col items-start gap-2 text-row text-text-muted">
-        <span>{emptyMessage ?? 'No models discovered yet.'}</span>
+      <div className="flex flex-col items-start gap-2">
+        <ShellCaption>{emptyMessage ?? 'No models discovered yet.'}</ShellCaption>
         {onDiscover && (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={onDiscover}
-            disabled={discoverDisabled}
-          >
-            <RefreshCcw className="h-3.5 w-3.5" strokeWidth={2.25} />
+          <Button variant="secondary" onClick={onDiscover} disabled={discoverDisabled}>
+            <RefreshCcw className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
             Discover models
           </Button>
         )}
@@ -60,22 +58,20 @@ export function ModelList({ models, loading, emptyMessage, onDiscover, discoverD
         onChange={(e) => setFilter(e.target.value)}
         placeholder={`Filter ${models.length} models…`}
       />
-      <div className="max-h-48 overflow-y-auto rounded-inner bg-surface-base">
+      <div className="scrollbar-stealth max-h-48 overflow-y-auto">
         {visible.map((m) => (
           <div
             key={m.id}
-            className="flex items-center justify-between px-2.5 py-1.5 text-row text-text-secondary"
+            className="flex items-center justify-between rounded-line px-1 py-0.5 transition-colors hover:bg-chrome-hover-soft vx-model-list-row"
           >
-            <span className="truncate font-mono">{m.id}</span>
+            <span className="truncate font-mono text-text-secondary">{m.id}</span>
             {typeof m.contextWindow === 'number' && (
-              <span className="text-text-faint">
-                {formatTokenCount(m.contextWindow)} ctx
-              </span>
+              <span className="shrink-0 vx-caption">{formatTokenCount(m.contextWindow)} ctx</span>
             )}
           </div>
         ))}
         {visible.length === 0 && (
-          <div className="px-2.5 py-2 text-row text-text-muted">No matches.</div>
+          <div className={chromeNoMatchesClassName}>No matches.</div>
         )}
       </div>
     </div>

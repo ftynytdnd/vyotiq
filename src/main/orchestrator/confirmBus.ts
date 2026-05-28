@@ -238,7 +238,8 @@ export function requestConfirm(
  * Accepts the legacy boolean reply shape AND the richer
  * `{ approved, acceptAllRemaining }` envelope used by
  * `EditApprovalDialog`. Booleans are normalized so the boolean callers
- * (`ConfirmDialog`, destructive-command path) need no churn.
+ * (`DestructiveConfirm` composer variant in `ConfirmHost`, the
+ * destructive-command path) need no churn.
  */
 export function settleConfirm(id: string, reply: ConfirmResponse): void {
   const entry = pending.get(id);

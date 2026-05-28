@@ -218,9 +218,10 @@ describe('phase headline helpers', () => {
     expect(isGoldLivePhase('awaiting-response')).toBe(false);
   });
 
-  it('styles in-flight tool titles with gold', () => {
-    expect(toolTitleClassName(true)).toContain('text-accent-gold-strong');
-    expect(toolTitleClassName(false)).toContain('text-text-primary');
+  it('styles in-flight tool titles with primary text', () => {
+    expect(toolTitleClassName(true)).toContain('text-text-primary');
+    expect(toolTitleClassName(false)).toContain('vx-row-label');
+    expect(toolTitleClassName(true)).not.toContain('vx-timeline-phase-live');
   });
 
   it('does not add live-turn chrome', () => {
@@ -229,7 +230,7 @@ describe('phase headline helpers', () => {
   });
 
   it('styles streaming reasoning headlines consistently', () => {
-    expect(reasoningHeadlineClassName(true, 'orchestrator')).toContain('text-accent-gold');
+    expect(reasoningHeadlineClassName(true, 'orchestrator')).toContain('vx-timeline-phase-live');
     expect(reasoningHeadlineClassName(false, 'subagent')).toContain('text-text-muted');
   });
 });

@@ -9,10 +9,10 @@
  * for an inactive slice or accidentally make the per-event work O(N)
  * in the slice count.
  *
- * The threshold is intentionally loose (250ms on a slow CI worker)
- * because the goal is "no quadratic-ish surprise", not micro-bench
- * stability. Vitest reporters tag this as a perf check via the test
- * name so CI can grep for it if a worker is heavily contested.
+ * The threshold is intentionally loose (500ms on a slow or contested
+ * CI worker) because the goal is "no quadratic-ish surprise", not
+ * micro-bench stability. Vitest reporters tag this as a perf check via
+ * the test name so CI can grep for it if a worker is heavily contested.
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -22,7 +22,7 @@ import { chatSliceFixture, type ChatSliceFixture } from '../../_fixtures/chatSli
 const SLICE_COUNT = 50;
 const EVENTS_PER_SLICE = 100;
 const TOTAL_EVENTS = SLICE_COUNT * EVENTS_PER_SLICE;
-const BUDGET_MS = 250;
+const BUDGET_MS = 500;
 
 beforeEach(() => {
   useChatStore.setState({

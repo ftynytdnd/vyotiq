@@ -605,3 +605,15 @@ export async function inlineFiles(
 
   return slots.join('\n\n');
 }
+
+/**
+ * Count `<file>` blocks whose bodies were successfully inlined (opening
+ * tag is `<file path="…">\n`, not the self-closing `error="…"` form).
+ * Used by the P2b structural verifier: zero tool results is acceptable
+ * when the host already inlined at least one assigned file.
+ */
+export function countSuccessfulInlines(filesBlock: string): number {
+  if (!filesBlock.trim()) return 0;
+  const matches = filesBlock.match(/<file path="[^"]+">\n/g);
+  return matches?.length ?? 0;
+}

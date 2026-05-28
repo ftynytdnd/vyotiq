@@ -6,15 +6,15 @@ import { ChevronDown, ChevronRight, Search, X } from 'lucide-react';
 import { Button } from '../../ui/Button.js';
 import { TextField } from '../../ui/TextField.js';
 import { cn } from '../../../lib/cn.js';
+import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/shellIcons.js';
 import {
-  chromeFilterChipClassName,
-  chromeSearchRowClassName
+  chromeSearchRowClassName,
+  chromeSegmentedTrayClassName
 } from '../../ui/SurfaceShell.js';
-import { timelineRowChevronClassName } from '../../timeline/shared/rowStyles.js';
+import { timelineRowChevronClassName, timelineRowChevronStroke } from '../../timeline/shared/rowStyles.js';
 import {
   pendingExpandButtonClassName,
   pendingGatePillClassName,
-  pendingReviewBlockPillClassName,
   pendingPanelCountChipClassName,
   pendingPanelFiltersRowClassName,
   pendingPanelHeaderClassName,
@@ -33,8 +33,6 @@ interface PendingChangesHeaderProps {
   visibleAdditions: number;
   visibleDeletions: number;
   gateOn: boolean;
-  reviewGateOn?: boolean;
-  reviewBlocksSend?: boolean;
   runIds: readonly string[];
   selectedRunId: string | null;
   onSelectRunId: (runId: string | null) => void;
@@ -61,8 +59,6 @@ export function PendingChangesHeader({
   visibleAdditions,
   visibleDeletions,
   gateOn,
-  reviewGateOn = false,
-  reviewBlocksSend = false,
   runIds,
   selectedRunId,
   onSelectRunId,
@@ -84,7 +80,6 @@ export function PendingChangesHeader({
   const gateLabel = gateOn
     ? 'approve or reject before sending'
     : 'auto-accepted on next message';
-  const reviewBlockLabel = 'send blocked — request changes in review';
   const filtered = visibleCount !== totalCount;
   const showFileRollup =
     visibleFileCount > 0 && visibleFileCount < visibleCount;
@@ -111,15 +106,20 @@ export function PendingChangesHeader({
       totalCount >= PATH_FILTER_AUTO_THRESHOLD ||
       pathQuery.length > 0);
 
+  const compactLineLabel =
+    visibleFileCount > 0
+      ? `${visibleFileCount} file${visibleFileCount === 1 ? '' : 's'}`
+      : `${visibleCount} pending change${visibleCount === 1 ? '' : 's'}`;
+
   const body = (
     <div
       className={cn(
         embedded && pendingPanelHeaderClassName,
-        collapsed && 'gap-0.5 border-b-0 py-1'
+        collapsed && 'gap-0 border-b-0 py-0.5'
       )}
     >
-      <div className={pendingPanelTitleRowClassName}>
-        {embedded && onTogglePanel && (
+      <div className={cn(pendingPanelTitleRowClassName, collapsed && 'min-h-0 gap-1')}>
+        {embedded && onTogglePanel && !collapsed && (
           <button
             type="button"
             onClick={onTogglePanel}
@@ -128,42 +128,32 @@ export function PendingChangesHeader({
             className={pendingExpandButtonClassName}
           >
             {panelExpanded ? (
-              <ChevronDown className={timelineRowChevronClassName} strokeWidth={2} />
+              <ChevronDown className={timelineRowChevronClassName} strokeWidth={timelineRowChevronStroke} />
             ) : (
-              <ChevronRight className={timelineRowChevronClassName} strokeWidth={2} />
+              <ChevronRight className={timelineRowChevronClassName} strokeWidth={timelineRowChevronStroke} />
             )}
           </button>
         )}
 
-        {embedded && onTogglePanel ? (
+        {embedded && collapsed ? (
+          <span className="min-w-0 flex-1 truncate vx-row-label text-text-secondary" title={countSummary}>
+            {compactLineLabel}
+          </span>
+        ) : embedded && onTogglePanel ? (
           <button
             type="button"
             onClick={onTogglePanel}
             className={pendingPanelTitleButtonClassName}
             aria-expanded={panelExpanded}
           >
-            <span className="truncate text-row font-medium text-text-primary">Pending changes</span>
+            <span className="truncate vx-row-label">Pending changes</span>
             <span className={pendingPanelCountChipClassName} title={countSummary}>
               {countChip}
             </span>
-            {collapsed && (
-              <>
-                <span className={cn(pendingGatePillClassName(gateOn), 'max-w-[12rem] truncate')}>
-                  {gateLabel}
-                </span>
-                {reviewGateOn && reviewBlocksSend && (
-                  <span
-                    className={cn(pendingReviewBlockPillClassName(), 'max-w-[14rem] truncate')}
-                  >
-                    {reviewBlockLabel}
-                  </span>
-                )}
-              </>
-            )}
           </button>
         ) : (
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <span className="truncate text-row font-medium text-text-primary">Pending changes</span>
+            <span className="truncate vx-row-label">Pending changes</span>
             <span className={pendingPanelCountChipClassName} title={countSummary}>
               {countChip}
             </span>
@@ -171,7 +161,7 @@ export function PendingChangesHeader({
         )}
 
         <div className="flex shrink-0 items-center gap-1">
-          {!collapsed && onReviewAll && visibleCount >= 1 && (
+          {onReviewAll && visibleCount >= 1 && (
             <Button
               size="sm"
               variant="ghost"
@@ -182,13 +172,13 @@ export function PendingChangesHeader({
               Review
             </Button>
           )}
-          {(!collapsed || gateOn) && (
+          {!collapsed && (
             <Button size="sm" variant="ghost" onClick={onRejectAll}>
-              {collapsed ? 'Reject' : 'Reject all'}
+              Reject all
             </Button>
           )}
           <Button size="sm" variant="primary" onClick={onAcceptAll}>
-            {collapsed ? 'Accept' : 'Accept all'}
+            {collapsed ? 'Accept all' : 'Accept all'}
           </Button>
         </div>
       </div>
@@ -197,9 +187,6 @@ export function PendingChangesHeader({
         <div className={pendingPanelToolbarRowClassName}>
           <div className={pendingPanelMetaRowClassName}>
             <span className={pendingGatePillClassName(gateOn)}>{gateLabel}</span>
-            {reviewGateOn && reviewBlocksSend && (
-              <span className={pendingReviewBlockPillClassName()}>{reviewBlockLabel}</span>
-            )}
             {visibleCount > 0 && (visibleAdditions > 0 || visibleDeletions > 0) && (
               <span className="font-mono tabular-nums text-text-faint">
                 +{visibleAdditions} −{visibleDeletions}
@@ -212,7 +199,7 @@ export function PendingChangesHeader({
                 <button
                   type="button"
                   onClick={onOpenCheckpointSettings}
-                  className="text-text-muted hover:text-text-primary"
+                  className="vx-btn-text text-text-muted"
                   title={usageTitle ?? 'Open checkpoint settings'}
                 >
                   {usageLabel}
@@ -242,14 +229,17 @@ export function PendingChangesHeader({
           )}
           <PathFilterInput value={pathQuery} onChange={onPathQueryChange} />
           {onGroupByFolderChange && (
-            <button
-              type="button"
-              onClick={() => onGroupByFolderChange(!groupByFolder)}
-              className={chromeFilterChipClassName(groupByFolder)}
-              aria-pressed={groupByFolder}
-            >
-              By folder
-            </button>
+            <div className={chromeSegmentedTrayClassName(true)}>
+              <button
+                type="button"
+                onClick={() => onGroupByFolderChange(!groupByFolder)}
+                data-active={groupByFolder ? 'true' : 'false'}
+                className="vx-segment-item"
+                aria-pressed={groupByFolder}
+              >
+                By folder
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -269,29 +259,30 @@ function RunFilter({
   onSelectRunId: (runId: string | null) => void;
 }) {
   return (
-    <div className="flex items-center gap-1 text-meta">
-      <span className="uppercase tracking-wider text-text-faint">Run</span>
-      <button
-        type="button"
-        onClick={() => onSelectRunId(null)}
-        className={chromeFilterChipClassName(selectedRunId === null)}
-      >
-        all
-      </button>
-      {runIds.map((runId) => (
+    <div className="flex items-center gap-2 text-meta">
+      <span className="vx-field-label mb-0">Run</span>
+      <div className={chromeSegmentedTrayClassName(true)}>
         <button
-          key={runId}
           type="button"
-          onClick={() => onSelectRunId(runId)}
-          title={runId}
-          className={cn(
-            chromeFilterChipClassName(selectedRunId === runId),
-            'font-mono'
-          )}
+          onClick={() => onSelectRunId(null)}
+          data-active={selectedRunId === null ? 'true' : 'false'}
+          className="vx-segment-item"
         >
-          {runId.slice(0, 8)}
+          all
         </button>
-      ))}
+        {runIds.map((runId) => (
+          <button
+            key={runId}
+            type="button"
+            onClick={() => onSelectRunId(runId)}
+            title={runId}
+            data-active={selectedRunId === runId ? 'true' : 'false'}
+            className="vx-segment-item font-mono"
+          >
+            {runId.slice(0, 8)}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -305,7 +296,7 @@ function PathFilterInput({
 }) {
   return (
     <label className={cn(chromeSearchRowClassName, 'group/path-filter ml-auto')}>
-      <Search className="h-3 w-3 text-text-faint" strokeWidth={2} />
+      <Search className={cn(SHELL_ROW_ICON_CLASS, 'text-text-faint')} strokeWidth={SHELL_ACTION_ICON_STROKE} />
       <TextField
         type="text"
         value={value}
@@ -322,7 +313,7 @@ function PathFilterInput({
           aria-label="Clear path filter"
           className="text-text-faint hover:text-text-secondary"
         >
-          <X className="h-3 w-3" strokeWidth={2.25} />
+          <X className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
         </button>
       )}
     </label>

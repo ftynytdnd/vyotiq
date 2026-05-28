@@ -193,6 +193,27 @@ describe('useGlobalShortcuts', () => {
     expect(toggleDevTools).not.toHaveBeenCalled();
   });
 
+  it('removes keydown and keyup listeners on unmount', () => {
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    const { unmount } = render(
+      <Harness
+        newConversation={() => {}}
+        openWorkspace={() => {}}
+        openSettings={() => {}}
+      />
+    );
+    const addedKeydown = addSpy.mock.calls.filter((c) => c[0] === 'keydown').length;
+    const addedKeyup = addSpy.mock.calls.filter((c) => c[0] === 'keyup').length;
+    expect(addedKeydown).toBeGreaterThan(0);
+    expect(addedKeyup).toBeGreaterThan(0);
+    unmount();
+    expect(removeSpy.mock.calls.filter((c) => c[0] === 'keydown').length).toBe(addedKeydown);
+    expect(removeSpy.mock.calls.filter((c) => c[0] === 'keyup').length).toBe(addedKeyup);
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+  });
+
   it('silently ignores Ctrl+R / Ctrl+Shift+I when handlers are undefined', () => {
     // Sibling handlers must NOT be invoked either — the keystrokes
     // should be a no-op when the optional reload / toggleDevTools

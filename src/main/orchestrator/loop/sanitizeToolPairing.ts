@@ -112,6 +112,25 @@ export function sanitizeToolCallPairing(messages: ChatMessage[]): ChatMessage[] 
   return sanitizeImpl(messages).messages;
 }
 
+/**
+ * Fingerprint of the message tail that drives tool pairing. Skips index
+ * 0 (system prompt rebuilt every iteration) so `runLoop` can reuse the
+ * prior sanitize result when only the system envelope changed.
+ */
+export function messagesSanitizeFingerprint(messages: ChatMessage[]): string {
+  const tail = messages.slice(1);
+  if (tail.length === 0) return '0';
+  return JSON.stringify(
+    tail.map((m) => ({
+      role: m.role,
+      cl: typeof m.content === 'string' ? m.content.length : 0,
+      tcs: m.tool_calls?.map((tc) => tc.id).join('|') ?? '',
+      tcid: m.tool_call_id ?? '',
+      n: m.name ?? ''
+    }))
+  );
+}
+
 function sanitizeImpl(messages: ChatMessage[]): SanitizeResult {
   // Single-pass sanitizer (review finding M5). The legacy
   // implementation was O(N²) on long histories: for every assistant

@@ -21,11 +21,12 @@
  *
  * Sub-agent tool-call/-result events (tagged with `subagentId`) are not
  * emitted as top-level rows — they remain nested inside the sub-agent
- * snapshot and are rendered by `SubAgentTrace`.
+ * snapshot; timeline projects these into delegate-batch / activity rows.
  */
 
-import type { TimelineEvent } from '@shared/types/chat.js';
+import type { PromptAttachmentMeta, TimelineEvent } from '@shared/types/chat.js';
 import type { ToolCall, ToolName, ToolResult } from '@shared/types/tool.js';
+import { TOKEN_BUDGET_WARNING_DEFAULT_RATIO } from '@shared/constants.js';
 import type { DiffStreamSnapshot, PartialToolCallArgs, TokenUsageAggregate } from './types.js';
 import { foldTokenUsage } from './types.js';
 import { appendSynthesizedPartialRows } from './deriveRows/partials.js';
@@ -102,6 +103,7 @@ export type Row =
      */
     runId?: string;
     content: string;
+    attachments?: PromptAttachmentMeta[];
   }
   | { kind: 'assistant-text'; key: string; id: string }
   | { kind: 'reasoning-line'; key: string; id: string }
@@ -124,6 +126,7 @@ export type Row =
     kind: 'run-complete';
     key: string;
     durationMs: number;
+    completedAt: number;
     usage?: TokenUsageAggregate;
     editCount?: number;
     fileCount?: number;
@@ -153,8 +156,14 @@ export interface DeriveRowsOptions {
    * gets its trailing closer exactly once.
    */
   runActive?: boolean;
-  /** Model context window — enables token-budget warning rows at 70%+. */
+  /** Model context window — used for warning-row percent / detail display. */
   contextWindow?: number;
+  /**
+   * Absolute token threshold for budget-warning rows (from Settings →
+   * Context). When omitted, falls back to `contextWindow *
+   * TOKEN_BUDGET_WARNING_DEFAULT_RATIO` when a window is known.
+   */
+  tokenBudgetWarnThreshold?: number;
   /**
    * Live partial-args snapshots for orchestrator-level tool calls that
    * haven't yet emitted their authoritative `tool-call` event. When
@@ -286,7 +295,10 @@ export function deriveRows(
           ...(typeof e.runId === 'string' && e.runId.length > 0
             ? { runId: e.runId }
             : {}),
-          content: e.content
+          content: e.content,
+          ...(e.attachments && e.attachments.length > 0
+            ? { attachments: e.attachments }
+            : {})
         });
         break;
 
@@ -552,12 +564,20 @@ export function deriveRows(
             );
             const ceiling = opts.contextWindow;
             const latest = openRunUsage.orchestrator?.latest.totalTokens;
-            if (typeof ceiling === 'number' && ceiling > 0 && typeof latest === 'number') {
-              const pct = latest / ceiling;
-              if (pct >= 0.7) {
-                openRun.tokenBudgetWarnPct = Math.min(100, Math.round(pct * 100));
-                openRun.tokenBudgetWarnTokens = latest;
-              }
+            const absoluteThreshold = opts.tokenBudgetWarnThreshold;
+            const ratioThreshold =
+              typeof ceiling === 'number' && ceiling > 0
+                ? ceiling * TOKEN_BUDGET_WARNING_DEFAULT_RATIO
+                : undefined;
+            const threshold =
+              typeof absoluteThreshold === 'number' && absoluteThreshold > 0
+                ? absoluteThreshold
+                : ratioThreshold;
+            if (typeof threshold === 'number' && typeof latest === 'number' && latest >= threshold) {
+              const pctBase =
+                typeof ceiling === 'number' && ceiling > 0 ? ceiling : threshold;
+              openRun.tokenBudgetWarnPct = Math.min(100, Math.round((latest / pctBase) * 100));
+              openRun.tokenBudgetWarnTokens = latest;
             }
           } else {
             openRunUsage.subagents[ownerKey] = foldTokenUsage(
@@ -570,7 +590,7 @@ export function deriveRows(
         break;
 
       case 'run-status':
-        // Pure live-telemetry signal — rendered by `LiveStatusRow` at
+        // Pure live-telemetry signal — surfaced in TurnActivitySummary /
         // the tail of the timeline, never as an inline row. Deliberately
         // does not close tool groups: a `run-status` landing between
         // two consecutive `tool-call`s of the same name must NOT split

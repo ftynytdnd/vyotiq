@@ -32,10 +32,10 @@ import {
 } from '../ui/SurfaceShell.js';
 import type { ContextInspectorSnapshot } from '@shared/types/contextSummary.js';
 import type { TokenUsage } from '@shared/types/chat.js';
-import { Eyebrow } from '../ui/Eyebrow.js';
 import { formatTokenCount } from '../../lib/formatTokens.js';
 import { cn } from '../../lib/cn.js';
-import { formatCacheBreakdown, formatTokensPerSecond } from './inspectorFormat.js';
+import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../lib/shellIcons.js';
+import { formatCacheBreakdown, formatRatioPercent, formatTokensPerSecond } from './inspectorFormat.js';
 
 interface WireBreakdownProps {
   snapshot: ContextInspectorSnapshot;
@@ -88,28 +88,23 @@ export function WireBreakdown({
   const denom = typeof ceiling === 'number' && ceiling > 0 ? ceiling : total;
   const envelopes = framing.envelopes;
   // Toggle for the foldable per-envelope breakdown of the system
-  // prompt row. Closed by default — the lumped row carries the
-  // "is my context filling up" signal; the sub-rows are debugger-
+  // prompt row. Expanded by default (POL-6) — the lumped row carries
+  // the "is my context filling up" signal; the sub-rows are debugger-
   // grade ("which envelope is bloating the budget"). When the
   // snapshot didn't compute envelopes (legacy build / no system
   // message), the row stays non-foldable.
-  const [envelopesOpen, setEnvelopesOpen] = useState(false);
+  const [envelopesOpen, setEnvelopesOpen] = useState(true);
   const canFoldEnvelopes =
     Array.isArray(envelopes) && envelopes.length > 0;
   const totalRatio = denom > 0 ? Math.min(1, total / denom) : 0;
-  const totalPct = Math.round(totalRatio * 100);
+  const totalPctLabel = formatRatioPercent(totalRatio);
+  const breakdownGridClassName =
+    'grid w-full grid-cols-[1.25rem_minmax(0,1fr)_3.5rem_minmax(2.5rem,1fr)_2.5rem] items-center gap-x-2';
   return (
-    <div className="flex flex-col gap-2 border-b border-border-subtle/40 py-3">
-      <div className="flex items-center justify-between gap-2">
-        <Eyebrow as="span" bold>
-          Wire breakdown
-        </Eyebrow>
-        <span className="text-meta text-text-muted">
-          What the next request will carry
-        </span>
-      </div>
+    <div className="vx-row flex flex-col gap-2 border-b border-border-subtle/40 last:border-b-0">
       <ul className="flex flex-col gap-1">
         <BreakdownRow
+          gridClassName={breakdownGridClassName}
           label="System prompt + envelopes"
           value={systemPromptTokens}
           denom={denom}
@@ -127,6 +122,7 @@ export function WireBreakdown({
               {envelopes.map((env) => (
                 <BreakdownRow
                   key={env.label}
+                  gridClassName={breakdownGridClassName}
                   label={env.label}
                   value={env.tokens}
                   denom={denom}
@@ -136,25 +132,12 @@ export function WireBreakdown({
             </ul>
           </li>
         )}
-        <BreakdownRow label="Tool schemas" value={toolSchemaTokens} denom={denom} />
-        <BreakdownRow label="Message bodies" value={bodyTokens} denom={denom} />
+        <BreakdownRow gridClassName={breakdownGridClassName} label="Tool schemas" value={toolSchemaTokens} denom={denom} />
+        <BreakdownRow gridClassName={breakdownGridClassName} label="Message bodies" value={bodyTokens} denom={denom} />
       </ul>
       <div className="flex items-baseline justify-between gap-2 border-t border-border-subtle/30 pt-2">
         <span className="text-row text-text-secondary">Total</span>
-        <span
-          className={cn(
-            'flex items-baseline gap-2 font-mono text-row',
-            'text-text-primary'
-          )}
-        >
-          {formatTokenCount(total)}
-          {typeof ceiling === 'number' && (
-            <span className="text-text-faint">/ {formatTokenCount(ceiling)}</span>
-          )}
-          <span className="text-text-muted">
-            {totalRatio > 0 && totalPct === 0 ? '<1%' : `${totalPct}%`}
-          </span>
-        </span>
+        <span className="font-mono text-row text-text-muted">{totalPctLabel}</span>
       </div>
       {(breakdown.length > 0 || toks !== null) && (
         // Phase 11 (2026) — dialect-specific token breakdown surfaces
@@ -214,6 +197,7 @@ export function WireBreakdown({
 }
 
 interface BreakdownRowProps {
+  gridClassName: string;
   label: string;
   value: number;
   denom: number;
@@ -250,6 +234,7 @@ interface BreakdownRowProps {
  * the timeline-card chevrons.
  */
 function BreakdownRow({
+  gridClassName,
   label,
   value,
   denom,
@@ -259,59 +244,37 @@ function BreakdownRow({
   nested
 }: BreakdownRowProps) {
   const ratio = denom > 0 ? Math.min(1, value / denom) : 0;
-  const pct = Math.round(ratio * 100);
-  const pctLabel = ratio > 0 && pct === 0 ? '<1%' : `${pct}%`;
-  const barWidth = `${Math.min(100, pct)}%`;
-  // Visual rhythm:
-  //   - Top-level row: 160px label slot, primary text tone.
-  //   - Nested sub-row: 140px label slot (sub-rows already sit inside
-  //     a `pl-3` indent, so the narrower slot lines the bars up with
-  //     the parent row instead of pushing them off the right edge).
-  //     The bar uses `accent/40` instead of `accent/60` so the
-  //     hierarchy reads as visually quieter.
-  const labelMin = nested ? 'min-w-[140px]' : 'min-w-[160px]';
-  const labelTone = nested ? 'text-text-muted' : 'text-text-secondary';
+  const pctLabel = formatRatioPercent(ratio);
+  const barWidth = `${Math.min(100, Math.round(ratio * 100))}%`;
+  const labelTone = nested ? 'text-text-muted truncate' : 'text-text-secondary truncate';
   const barTone = nested ? 'bg-accent/40' : 'bg-accent/60';
-  // Chevron slot:
-  //   - Expandable rows render the rotating chevron icon.
-  //   - Non-expandable TOP-LEVEL rows reserve the same width with an
-  //     empty placeholder so every top-level label starts at the
-  //     same x-coordinate (Tool schemas / Message bodies line up
-  //     under "System prompt + envelopes").
-  //   - Nested sub-rows render NO slot — their parent <ul>'s
-  //     `ml-5 pl-3` already provides the visual indent that
-  //     distinguishes them from the parent row.
   const chevronSlot = expandable ? (
     <ChevronRight
       className={cn(
-        'h-3 w-3 shrink-0 text-chevron transition-transform duration-150',
+        SHELL_ROW_ICON_CLASS,
+        'text-chevron transition-transform duration-150',
         expanded ? 'rotate-90' : 'rotate-0'
       )}
-      strokeWidth={2}
+      strokeWidth={SHELL_ACTION_ICON_STROKE}
       aria-hidden
     />
   ) : nested ? null : (
-    <span className="h-3 w-3 shrink-0" aria-hidden />
+    <span className={SHELL_ROW_ICON_CLASS} aria-hidden />
   );
   const rowInner = (
     <>
       {chevronSlot}
-      <span className={cn('flex-shrink-0', labelMin, labelTone)}>{label}</span>
-      <span className="w-14 flex-shrink-0 text-right font-mono text-text-primary">
+      <span className={cn('min-w-0', labelTone)}>{label}</span>
+      <span className="text-right font-mono text-text-primary tabular-nums">
         {formatTokenCount(value)}
       </span>
-      <span
-        aria-hidden
-        className={chromeProgressTrackClassName}
-      >
+      <span aria-hidden className={cn(chromeProgressTrackClassName, 'min-w-0')}>
         <span
           className={cn('absolute left-0 top-0 h-full rounded-pill', barTone)}
           style={{ width: barWidth }}
         />
       </span>
-      <span className="w-10 flex-shrink-0 text-right font-mono text-text-muted">
-        {pctLabel}
-      </span>
+      <span className="text-right font-mono text-text-muted tabular-nums">{pctLabel}</span>
     </>
   );
   if (expandable) {
@@ -321,12 +284,17 @@ function BreakdownRow({
           type="button"
           onClick={onToggle}
           aria-expanded={expanded === true}
-          className="app-no-drag flex w-full cursor-pointer items-center gap-2 rounded-inner text-left text-row transition-colors duration-150 hover:bg-surface-hover/40"
+          className={cn(
+            'app-no-drag vx-list-row grid w-full cursor-pointer text-left text-row',
+            gridClassName
+          )}
         >
           {rowInner}
         </button>
       </li>
     );
   }
-  return <li className="flex items-center gap-2 text-row">{rowInner}</li>;
+  return (
+    <li className={cn('grid text-row', gridClassName)}>{rowInner}</li>
+  );
 }

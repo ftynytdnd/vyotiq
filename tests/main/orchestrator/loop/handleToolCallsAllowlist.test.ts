@@ -226,7 +226,7 @@ describe('handleToolCalls — orchestrator allowlist enforcement', () => {
       .map(([e]) => e)
       .filter((e) => e.kind === 'phase');
     expect(phases).toHaveLength(1);
-    expect(phases[0]!.label).toContain('8 times');
+    expect(phases[0]!.label).toContain('8 delegate tool calls were ignored');
     expect(phases[0]!.label).toContain('<delegate');
   });
 
@@ -245,11 +245,49 @@ describe('handleToolCalls — orchestrator allowlist enforcement', () => {
     expect(runToolByName).not.toHaveBeenCalled();
     expect(messages).toHaveLength(1);
     expect(messages[0]!.content).toBe(
-      'Tool "edit" not in allowlist for this sub-agent.'
+      'Tool "edit" is not available for this sub-agent — use the granted toolset.'
     );
     // Crucially does NOT contain the orchestrator-only hint.
     expect(messages[0]!.content).not.toContain('not callable from the orchestrator');
     expect(messages[0]!.content).not.toContain('<delegate');
+  });
+
+  it('calls onToolCallSettled on allowlist refusal without emitting tool-call', async () => {
+    const onToolCallSettled = vi.fn();
+    const messages: ChatMessage[] = [];
+    const emit = vi.fn<(e: TimelineEvent) => void>();
+    await handleToolCalls(
+      [makePartialCall('edit', '{}', 'call-edit')],
+      messages,
+      emit,
+      { ...baseOpts, allowlist: ORCHESTRATOR_TOOLS, onToolCallSettled }
+    );
+    expect(runToolByName).not.toHaveBeenCalled();
+    expect(emit).not.toHaveBeenCalled();
+    expect(onToolCallSettled).toHaveBeenCalledTimes(1);
+    expect(onToolCallSettled).toHaveBeenCalledWith('call-edit', 'orc', 0);
+  });
+
+  it('calls onToolCallSettled for synthetic failures on abort mid-batch', async () => {
+    const onToolCallSettled = vi.fn();
+    const ac = new AbortController();
+    ac.abort();
+    const messages: ChatMessage[] = [];
+    const emit = vi.fn<(e: TimelineEvent) => void>();
+    await handleToolCalls(
+      [
+        makePartialCall('read', '{}', 'c1'),
+        makePartialCall('read', '{}', 'c2')
+      ],
+      messages,
+      emit,
+      { ...baseOpts, allowlist: ['read'], signal: ac.signal, onToolCallSettled }
+    );
+    expect(onToolCallSettled).toHaveBeenCalledTimes(2);
+    expect(onToolCallSettled).toHaveBeenNthCalledWith(1, 'c1', 'orc', 0);
+    expect(onToolCallSettled).toHaveBeenNthCalledWith(2, 'c2', 'orc', 1);
+    const results = emit.mock.calls.map(([e]) => e).filter((e) => e.kind === 'tool-result');
+    expect(results).toHaveLength(2);
   });
 
   it('does not emit Exploring run-status when tool args fail to parse', async () => {

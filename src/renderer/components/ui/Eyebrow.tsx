@@ -58,9 +58,8 @@ export function Eyebrow({
   children
 }: EyebrowProps) {
   const cls = cn(
-    SIZE_CLASS[size],
-    bold && 'font-medium',
-    'uppercase tracking-wider text-text-faint',
+    size === 'meta' ? 'vx-field-label mb-0' : cn(SIZE_CLASS[size], 'uppercase tracking-wider text-text-faint'),
+    bold && size === 'row' && 'font-medium',
     className
   );
   if (as === 'span') {

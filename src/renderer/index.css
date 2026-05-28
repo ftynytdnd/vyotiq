@@ -1,6 +1,6 @@
 @import "tailwindcss";
-
-@import "./styles/tokens.css";
+@import "@fontsource-variable/geist/wght.css";
+@import "@fontsource-variable/geist-mono/wght.css";
 @import "highlight.js/styles/github-dark.css";
 
 /* ---------------------------------------------------------------------------
@@ -18,12 +18,15 @@
   --color-surface-overlay: oklch(0.26 0.006 260);
   /* slightly lighter */
   --color-surface-hover: oklch(0.30 0.007 260);
+  /* Region steps — frameless separation (dock, secondary zone, composer bar) */
+  --color-surface-sidebar: oklch(0.20 0.005 260 / 0.5);
+  --color-surface-input: oklch(0.22 0.005 260 / 0.35);
 
   /* Text */
-  --color-text-primary: #ffffff;
+  --color-text-primary: oklch(1 0 0);
   --color-text-secondary: oklch(0.92 0.005 260);
-  --color-text-muted: #8a8a8e;
-  --color-text-faint: oklch(0.55 0.005 260);
+  --color-text-muted: oklch(0.62 0.008 260);
+  --color-text-faint: oklch(0.58 0.006 260);
 
   /* Borders (used sparingly) */
   --color-border-subtle: oklch(0.30 0.005 260 / 0.4);
@@ -37,9 +40,9 @@
      state token band so focus halos, links, and small chips land in
      the same perceptual register.
   */
-  --color-accent: oklch(0.74 0.14 290);
-  --color-accent-soft: oklch(0.74 0.14 290 / 0.18);
-  --color-accent-strong: oklch(0.80 0.16 290);
+  --color-accent: oklch(0.82 0.14 75);
+  --color-accent-soft: oklch(0.82 0.14 75 / 0.18);
+  --color-accent-strong: oklch(0.88 0.16 75);
   /* Live phase headings — warm gold accent for streaming status lines
      (Exploring, Writing, …). Distinct from steel-violet focus/links. */
   --color-accent-gold: oklch(0.82 0.12 75);
@@ -76,8 +79,27 @@
      drifted between `border-strong/50` and `border-subtle/45`. */
   --color-border-divider: oklch(0.30 0.005 260 / 0.45);
 
+  /* Chrome interaction — ghost controls, tabs, list rows */
+  --color-chrome-active: oklch(0.30 0.007 260 / 0.55);
+  --color-chrome-hover: oklch(0.30 0.007 260 / 0.35);
+  --color-chrome-hover-soft: oklch(0.30 0.007 260 / 0.22);
+  --color-chrome-hover-strong: oklch(0.30 0.007 260 / 0.40);
+
+  /* Panel / dock separation */
+  --color-panel-edge: oklch(0.30 0.005 260 / 0.15);
+
+  /* Toggle tracks */
+  --color-toggle-track-off: oklch(0.22 0.005 260 / 0.60);
+  --color-toggle-track-off-border: oklch(0.30 0.005 260 / 0.35);
+  --color-toggle-track-on: oklch(0.26 0.006 260 / 0.85);
+  --color-toggle-track-on-border: oklch(0.82 0.14 75 / 0.45);
+
+  /* Settings section titles — muted whisper labels (Linear-lite) */
+  --color-section-title: oklch(0.62 0.008 260);
+
   /* Radii */
   --radius-card: 12px;
+  --radius-composer: 8px;
   --radius-pill: 9999px;
   --radius-inner: 6px;
   --radius-line: 4px;
@@ -87,6 +109,65 @@
   --color-line-hover: oklch(0.26 0.006 260 / 0.55);
   --color-chevron: oklch(0.55 0.005 260);
 
+  /* Alpha surfaces (Vyotiq UI fields, nested rows, code blocks) */
+  --color-surface-shell: oklch(0.22 0.005 260 / 0.10);
+  --color-surface-field: oklch(0.22 0.005 260 / 0.45);
+  --color-surface-field-strong: oklch(0.22 0.005 260 / 0.55);
+  --color-surface-nested: oklch(0.22 0.005 260 / 0.20);
+  --color-surface-sunken: oklch(0.20 0.005 260 / 0.35);
+  --color-surface-raised-soft: oklch(0.22 0.005 260 / 0.50);
+  --color-surface-preview-bar: oklch(0.18 0.005 260 / 0.92);
+  --color-surface-preview-toggle: oklch(0.22 0.005 260 / 0.55);
+  --color-surface-bubble-user: oklch(0.78 0.08 75 / 0.12);
+  --color-surface-bubble-agent: oklch(0.22 0.005 260 / 0.45);
+
+  /* Border alpha variants (fields, tables, preview chrome) */
+  --color-border-shell: oklch(0.30 0.005 260 / 0.18);
+  --color-border-field: oklch(0.30 0.005 260 / 0.28);
+  --color-border-table: oklch(0.30 0.005 260 / 0.22);
+  --color-border-muted: oklch(0.30 0.005 260 / 0.25);
+  --color-border-faint: oklch(0.30 0.005 260 / 0.20);
+  --color-border-preview: oklch(0.30 0.005 260 / 0.12);
+  --color-border-emphasis: oklch(0.30 0.005 260 / 0.45);
+  --color-border-shell-focus: oklch(0.30 0.005 260 / 0.35);
+
+  /* Light edge (focus rings, meter fills on dark fields) */
+  --color-edge-light-wash: oklch(0.92 0.005 260 / 0.08);
+  --color-edge-light-soft: oklch(0.92 0.005 260 / 0.22);
+  --color-edge-light-mid: oklch(0.92 0.005 260 / 0.30);
+  --color-edge-light-focus: oklch(0.92 0.005 260 / 0.35);
+  --color-edge-light-strong: oklch(0.92 0.005 260 / 0.45);
+  --color-edge-light-meter: oklch(0.92 0.005 260 / 0.55);
+
+  /* Inset shell highlights */
+  --color-highlight-inset: oklch(1 0 0 / 0.025);
+  --color-highlight-inset-strong: oklch(1 0 0 / 0.04);
+  --color-highlight-ring: oklch(1 0 0 / 0.02);
+
+  /* Shadow color stops */
+  --color-shadow-ambient: oklch(0 0 0 / 0.30);
+  --color-shadow-ambient-soft: oklch(0 0 0 / 0.25);
+  --color-shadow-ambient-deep: oklch(0 0 0 / 0.45);
+  --color-shadow-modal: oklch(0.1 0.005 260 / 0.35);
+  --color-shadow-popover: oklch(0.1 0.005 260 / 0.55);
+
+  /* Scroll/tab fade masks */
+  --color-mask-solid: oklch(0 0 0);
+
+  /* Destructive control (Vyotiq UI danger buttons) */
+  --color-danger-control-border: oklch(0.62 0.14 25 / 0.45);
+  --color-danger-control-text: oklch(0.78 0.12 25);
+  --color-danger-control-fill: oklch(0.62 0.14 25 / 0.12);
+  --color-danger-control-border-strong: oklch(0.62 0.14 25 / 0.65);
+
+  /* Segmented chrome fills */
+  --color-chrome-segment: oklch(0.3 0.007 260 / 0.45);
+  --color-chrome-segment-soft: oklch(0.3 0.007 260 / 0.28);
+  --color-chrome-segment-ring: oklch(0.3 0.005 260 / 0.45);
+  --color-chrome-segment-idle: oklch(0.22 0.005 260 / 0.5);
+  --color-chrome-segment-active: oklch(0.3 0.007 260 / 0.65);
+  --color-chrome-track: oklch(0.3 0.005 260 / 0.22);
+
   /* Typography
      --------------------------------------------------------------------
      Named font-size scale. Replaces scattered `text-[10px]` / `[11px]` /
@@ -94,18 +175,74 @@
      `text-sm` (14px) Tailwind defaults remain available for semantically
      neutral sizing; prefer the named tokens on meta/row/body surfaces.
 
-       text-meta   10px  uppercase eyebrows, timestamps, hint rows
-       text-row    11px  timeline row labels, dock tabs, compact UI
-       text-log    12px  legacy compact lines (checkpoints / diffs); prefer text-row in new UI
+       text-meta   11px  uppercase eyebrows, timestamps, hint rows
+       text-row    13px  timeline row labels, dock tabs, compact UI
+       text-log    14px  section heads, log lines (checkpoints / diffs)
        text-body   14px  assistant text, prompts, primary copy
+       text-chat-body  15px  timeline prose, user prompts, composer input
+       text-chat-meta  12px  composer footer, timeline meta in chat column
   */
-  --text-meta: 10px;
-  --text-row: 11px;
-  --text-log: 12px;
+  --text-meta: 11px;
+  --text-row: 13px;
+  --text-log: 14px;
   --text-body: 14px;
+  --text-chat-body: 15px;
+  --text-chat-meta: 12px;
+  --text-hero: 16px;
+  --text-section: 14px;
 
-  --font-sans: "Inter", "SF Pro Display", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  --font-sans: "Geist Variable", "Geist Sans", system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+
+  /* Spacing — Cursor-like compact rhythm */
+  --spacing-chrome-y: 0.25rem;
+  --spacing-row-y: 0.5rem;
+  --spacing-section-gap: 0.75rem;
+}
+
+/* Light theme — warm paper surfaces */
+[data-theme='light'] {
+  color-scheme: light;
+  --color-surface-base: oklch(0.97 0.012 85);
+  --color-surface-raised: oklch(0.99 0.008 85);
+  --color-surface-overlay: oklch(1 0.006 85);
+  --color-surface-hover: oklch(0.94 0.014 85);
+  --color-surface-sidebar: oklch(0.96 0.012 85 / 0.92);
+  --color-surface-input: oklch(0.98 0.01 85 / 0.9);
+  --color-text-primary: oklch(0.22 0.02 85);
+  --color-text-secondary: oklch(0.35 0.02 85);
+  --color-text-muted: oklch(0.5 0.02 85);
+  --color-text-faint: oklch(0.58 0.015 85);
+  --color-border-subtle: oklch(0.75 0.02 85 / 0.35);
+  --color-border-strong: oklch(0.65 0.025 85 / 0.5);
+  --color-surface-bubble-user: oklch(0.82 0.1 75 / 0.2);
+  --color-shadow-ambient: oklch(0.4 0.02 85 / 0.08);
+  --color-shadow-ambient-soft: oklch(0.4 0.02 85 / 0.06);
+  --color-shadow-ambient-deep: oklch(0.35 0.02 85 / 0.12);
+}
+
+[data-density='compact'] {
+  --spacing-row-y: 0.375rem;
+  --spacing-chrome-y: 0.125rem;
+  --text-chat-body: 14px;
+  --text-row: 12px;
+  --text-chat-meta: 11px;
+}
+
+[data-density='airy'] {
+  --spacing-row-y: 0.625rem;
+  --spacing-chrome-y: 0.375rem;
+  --text-chat-body: 16px;
+  --text-row: 14px;
+  --text-chat-meta: 13px;
+}
+
+[data-reduced-motion='true'] *,
+[data-reduced-motion='true'] *::before,
+[data-reduced-motion='true'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
 }
 
 /* ---------------------------------------------------------------------------
@@ -121,6 +258,8 @@ body,
   background: var(--color-surface-base);
   color: var(--color-text-primary);
   font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: 1.5;
   font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -140,10 +279,10 @@ body,
   -webkit-app-region: no-drag;
 }
 
-/* Custom scrollbar — minimal, stealthy */
+/* Global stealth scrollbars — thin, fade in when scrolling / hovering */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -151,15 +290,18 @@ body,
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border-subtle);
+  background: transparent;
   border-radius: 9999px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
+  transition: background 160ms ease;
+}
+
+:hover::-webkit-scrollbar-thumb,
+:focus-within::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--color-border-subtle) 55%, transparent);
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-border-strong);
-  background-clip: padding-box;
 }
 
 /* Selection */
@@ -221,26 +363,44 @@ textarea {
 .elev-1 {
   box-shadow:
     inset 0 0 0 1px var(--color-border-subtle),
-    0 1px 2px 0 oklch(0 0 0 / 0.30),
-    0 2px 6px -2px oklch(0 0 0 / 0.25);
+    0 1px 2px 0 var(--color-shadow-ambient),
+    0 2px 6px -2px var(--color-shadow-ambient-soft);
 }
 
 .elev-2 {
   box-shadow:
     inset 0 0 0 1px var(--color-border-subtle),
-    0 2px 4px -1px oklch(0 0 0 / 0.30),
-    0 8px 24px -6px oklch(0 0 0 / 0.45);
+    0 2px 4px -1px var(--color-shadow-ambient),
+    0 8px 24px -6px var(--color-shadow-ambient-deep);
 }
 
 /* Focused composer variant — elev-2 plus a quiet inset edge. Swap in
-   via the single `.elev-2-focused` class so the composer doesn't
+   via the single `.elev-2-focused` class so the composer does not
    need to stack two separate shadow utilities. */
 .elev-2-focused {
   box-shadow:
     inset 0 0 0 1px var(--color-border-strong),
-    0 2px 4px -1px oklch(0 0 0 / 0.30),
-    0 8px 24px -6px oklch(0 0 0 / 0.45);
+    0 2px 4px -1px var(--color-shadow-ambient),
+    0 8px 24px -6px var(--color-shadow-ambient-deep);
   transition: box-shadow 150ms ease;
+}
+
+.shadow-surface-inset {
+  box-shadow: inset 0 1px 0 0 var(--color-highlight-inset);
+}
+
+.shadow-surface-inset-focus {
+  box-shadow:
+    inset 0 1px 0 0 var(--color-highlight-inset-strong),
+    0 0 0 1px var(--color-highlight-ring);
+}
+
+.shadow-modal {
+  box-shadow: 0 24px 64px var(--color-shadow-modal);
+}
+
+.shadow-popover {
+  box-shadow: 0 16px 40px var(--color-shadow-popover);
 }
 
 /* Subtle slide + fade for streaming list items (e.g. sub-agent steps
@@ -299,35 +459,6 @@ textarea {
   margin-top: 0;
 }
 
-@keyframes vyotiq-stream-cursor {
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0;
-  }
-}
-
-.vyotiq-stream-cursor {
-  display: inline-block;
-  width: 0.45em;
-  height: 1em;
-  margin-left: 1px;
-  vertical-align: text-bottom;
-  background: currentColor;
-  opacity: 1;
-  animation: vyotiq-stream-cursor 650ms step-end infinite;
-  will-change: opacity;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .vyotiq-stream-cursor {
-    animation: none;
-  }
-}
-
 /* ---------------------------------------------------------------------------
    Streaming shimmer — applied to in-flight timeline labels (reasoning,
    agent-thought, sub-agent, tool call/group summaries, status pill).
@@ -336,7 +467,7 @@ textarea {
      The shimmer is a *lightness* oscillation, not a color shift. Base
      sits at `text-muted` (≈ lightness 0.58) and the peak rises to
      `text-primary` (white, lightness 1.0) — a ~0.42 lightness delta,
-     which is the minimum for the effect to read clearly on 10–12px
+     which is the minimum for the effect to read clearly on 11–14px
      labels without feeling flashy. Accent color is deliberately NOT
      in the peak — a blue tint shows up as a hue spike rather than
      shimmer, and that is what earlier iterations read as "pulsing".
@@ -361,8 +492,8 @@ textarea {
      `-webkit-text-fill-color: transparent` is the key to letting the
      clipped gradient show through. It is independent of and higher
      priority than `color`, so it survives Tailwind `text-*` utilities
-     that callers compose via the `extra` argument to `shimmerText` /
-     `shimmerPill`.
+     that callers compose via the `extra` argument to `shimmerText`, or
+     the `.vyotiq-shimmer-pill` class on dock workspace tabs directly.
 
    Reduced-motion:
      Freezes animation and paints a static `text-primary` tint so the
@@ -516,9 +647,8 @@ textarea {
 }
 
 /* ---------------------------------------------------------------------------
-   Stealth-thin scrollbar — scoped opt-in via `.scrollbar-stealth`. The
-   global scrollbar (10 px) stays as-is for body scroll surfaces; only
-   panel-internal scroll regions need this finer treatment.
+   Stealth-thin scrollbar — opt-in via `.scrollbar-stealth` for nested
+   panels. Global scrollbars use the same thin fade-in treatment on `html`.
    --------------------------------------------------------------------------- */
 .scrollbar-stealth::-webkit-scrollbar {
   width: 6px;
@@ -544,12 +674,13 @@ textarea {
 }
 
 /* ---------------------------------------------------------------------------
-   Markdown scope (.vyotiq-md)
-   Applied to assistant text, memory previews, and any sanitized markdown
-   body. All rules target descendants only — never leak across the app.
+   Markdown scope (.vyotiq-md, .vx-timeline-md)
+   Applied to assistant text, memory previews, timeline prose, and any
+   sanitized markdown body. All rules target descendants only.
    --------------------------------------------------------------------------- */
-.vyotiq-md {
-  font-size: 14px;
+.vyotiq-md,
+.vx-timeline-md {
+  font-size: var(--text-chat-body);
   line-height: 1.6;
   color: var(--color-text-primary);
   word-break: break-word;
@@ -557,35 +688,42 @@ textarea {
   text-rendering: optimizeLegibility;
 }
 
-.vyotiq-md>*:first-child {
+.vyotiq-md>*:first-child,
+.vx-timeline-md>*:first-child {
   margin-top: 0;
 }
 
-.vyotiq-md>*:last-child {
+.vyotiq-md>*:last-child,
+.vx-timeline-md>*:last-child {
   margin-bottom: 0;
 }
 
-.vyotiq-md p {
+.vyotiq-md p,
+.vx-timeline-md p {
   margin: 0 0 0.65em 0;
 }
 
 .vyotiq-md h1,
 .vyotiq-md h2,
 .vyotiq-md h3,
-.vyotiq-md h4 {
+.vyotiq-md h4,
+.vx-timeline-md h1,
+.vx-timeline-md h2,
+.vx-timeline-md h3,
+.vx-timeline-md h4 {
   color: var(--color-text-primary);
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.3;
   margin: 1em 0 0.35em 0;
-  letter-spacing: -0.005em;
+  letter-spacing: normal;
 }
 
 .vyotiq-md h1 {
-  font-size: 1.25rem;
+  font-size: 1.05rem;
 }
 
 .vyotiq-md h2 {
-  font-size: 1.1rem;
+  font-size: 1rem;
 }
 
 .vyotiq-md h3 {
@@ -598,39 +736,42 @@ textarea {
 }
 
 .vyotiq-md ul,
-.vyotiq-md ol {
+.vyotiq-md ol,
+.vx-timeline-md ul,
+.vx-timeline-md ol {
   margin: 0.25em 0 0.65em 1.15em;
   padding: 0;
 }
 
-.vyotiq-md ul {
+.vyotiq-md ul,
+.vx-timeline-md ul {
   list-style: disc;
 }
 
-.vyotiq-md ol {
+.vyotiq-md ol,
+.vx-timeline-md ol {
   list-style: decimal;
 }
 
-.vyotiq-md li {
+.vyotiq-md li,
+.vx-timeline-md li {
   margin: 0.1em 0;
 }
 
-.vyotiq-md li>p {
+.vyotiq-md li>p,
+.vx-timeline-md li>p {
   margin: 0.1em 0;
 }
 
-/* GFM task-list items — `- [x] …` / `- [ ] …`. The custom `<TaskCheckbox>`
-   icon (rendered by the MarkdownBody `input` override) sits inline at the
-   start of the item; suppress the parent list's disc marker and align the
-   item flush-left so the icon reads as the leading affordance instead of
-   trailing a redundant bullet point. */
-.vyotiq-md li.task-list-item {
+.vyotiq-md li.task-list-item,
+.vx-timeline-md li.task-list-item {
   list-style: none;
   margin-left: -1.15em;
   padding-left: 0;
 }
 
-.vyotiq-md a {
+.vyotiq-md a,
+.vx-timeline-md a {
   color: var(--color-accent);
   text-decoration: underline;
   text-decoration-color: color-mix(in oklab, var(--color-accent) 45%, transparent);
@@ -638,7 +779,8 @@ textarea {
   transition: text-decoration-color 150ms ease;
 }
 
-.vyotiq-md a:hover {
+.vyotiq-md a:hover,
+.vx-timeline-md a:hover {
   text-decoration-color: var(--color-accent);
 }
 
@@ -646,6 +788,15 @@ textarea {
   font-family: var(--font-mono);
   font-size: 0.87em;
   background: var(--color-surface-overlay);
+  color: var(--color-text-primary);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+
+.vx-timeline-md code {
+  font-family: var(--font-mono);
+  font-size: 0.87em;
+  background: var(--color-surface-field);
   color: var(--color-text-primary);
   padding: 0.1em 0.35em;
   border-radius: 4px;
@@ -663,7 +814,21 @@ textarea {
   margin: 0.5em 0 0.9em 0;
 }
 
-.vyotiq-md pre code {
+.vx-timeline-md pre {
+  font-family: var(--font-mono);
+  border: 1px solid var(--color-border-field);
+  border-radius: 6px;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  padding: 0.625rem 0.75rem;
+  font-size: var(--text-log);
+  line-height: 1.55;
+  overflow-x: auto;
+  margin: 0.5em 0 0.9em 0;
+}
+
+.vyotiq-md pre code,
+.vx-timeline-md pre code {
   background: transparent;
   padding: 0;
   border-radius: 0;
@@ -671,88 +836,125 @@ textarea {
   color: inherit;
 }
 
-.vyotiq-md blockquote {
+.vyotiq-md blockquote,
+.vx-timeline-md blockquote {
   margin: 0.5em 0 0.9em 0;
   padding: 0.15em 0 0.15em 0.9em;
   border-left: 2px solid var(--color-border-subtle);
   color: var(--color-text-muted);
 }
 
-.vyotiq-md hr {
+.vyotiq-md hr,
+.vx-timeline-md hr {
   border: none;
   border-top: 1px solid var(--color-border-subtle);
-  /* Asymmetric margin: more breathing room below than above so the
-     HR visually anchors to the prose section it closes rather than
-     reading as a header for whatever timeline rows follow it. */
   margin: 1em 0 1.4em 0;
 }
 
-.vyotiq-md table {
+.vyotiq-md table,
+.vx-timeline-md table,
+.vx-timeline-md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-row);
+  line-height: 1.45;
+}
+
+.vx-timeline-md-table-wrap>table,
+.vyotiq-md .vx-timeline-md-table-wrap>table {
+  display: table;
+  max-width: none;
+  overflow: visible;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+
+.vyotiq-md table:not(.vx-timeline-md-table) {
   display: block;
   width: fit-content;
   max-width: 100%;
-  border-collapse: collapse;
-  margin: 0.4em 0 0.75em 0;
+  margin: 0.5em 0 0.85em 0;
   overflow-x: auto;
-  font-size: 0.86em;
+  border: 1px solid var(--color-border-table);
+  border-radius: 6px;
 }
 
-.vyotiq-md thead {
-  border-bottom: 1px solid var(--color-border-subtle);
+.vyotiq-md thead,
+.vx-timeline-md thead,
+.vx-timeline-md-table thead {
+  background: var(--color-surface-field-strong);
+  border-bottom: 1px solid var(--color-border-field);
 }
 
 .vyotiq-md th,
-.vyotiq-md td {
-  padding: 0.28em 0.65em;
+.vyotiq-md td,
+.vx-timeline-md th,
+.vx-timeline-md td,
+.vx-timeline-md-table th,
+.vx-timeline-md-table td {
+  padding: 0.35em 0.75em;
   text-align: left;
-  border-right: 1px solid color-mix(in oklab, var(--color-border-subtle) 70%, transparent);
   color: var(--color-text-secondary);
-  /* Prose cells still wrap, but the global `.vyotiq-md` `word-break:
-     break-word` is overridden so identifiers in inline `<code>` (filenames,
-     symbol names) don't split mid-token. The table itself already declares
-     `display: block; max-width: 100%; overflow-x: auto` above, so wide cells
-     produce a horizontal scrollbar instead. */
   word-break: normal;
   overflow-wrap: anywhere;
 }
 
+.vyotiq-md th,
+.vx-timeline-md th,
+.vx-timeline-md-table th {
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
 .vyotiq-md td code,
-.vyotiq-md th code {
-  /* Filenames, function names, and other monospace identifiers must
-     never split mid-token inside a table cell — `openai_compat_mixin.py`
-     would otherwise break at `_` boundaries when the column gets narrow
-     (see screenshot regression). */
+.vyotiq-md th code,
+.vx-timeline-md td code,
+.vx-timeline-md th code,
+.vx-timeline-md-table td code,
+.vx-timeline-md-table th code {
   white-space: nowrap;
 }
 
-.vyotiq-md th:last-child,
-.vyotiq-md td:last-child {
-  border-right: 0;
+.vyotiq-md tbody tr,
+.vx-timeline-md tbody tr,
+.vx-timeline-md-table tbody tr {
+  border-bottom: 1px solid var(--color-panel-edge);
 }
 
-.vyotiq-md tbody tr {
-  border-bottom: 1px solid color-mix(in oklab, var(--color-border-subtle) 55%, transparent);
-}
-
-.vyotiq-md tbody tr:last-child {
+.vyotiq-md tbody tr:last-child,
+.vx-timeline-md tbody tr:last-child,
+.vx-timeline-md-table tbody tr:last-child {
   border-bottom: 0;
 }
 
-.vyotiq-md strong {
+.vyotiq-md strong,
+.vx-timeline-md strong {
   color: var(--color-text-primary);
-  font-weight: 600;
+  font-weight: 500;
 }
 
-.vyotiq-md em {
+.vyotiq-md em,
+.vx-timeline-md em {
   color: var(--color-text-secondary);
 }
 
-/* Tighten the highlight.js palette down to the Vyotiq surface family by
-   overriding just the background so the dark theme colors still read but
-   blend with the panel. */
-.vyotiq-md pre code.hljs {
+.vyotiq-md pre code.hljs,
+.vx-timeline-md pre code.hljs {
   background: transparent !important;
   padding: 0 !important;
+}
+
+.vx-timeline-md-table-wrap {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0.5em 0 0.85em;
+  overflow-x: auto;
+}
+
+.vx-timeline-md blockquote {
+  border-left-color: var(--color-border-field);
 }
 
 /* ---------------------------------------------------------------------------
@@ -762,9 +964,9 @@ textarea {
 .surface-shell {
   overflow: hidden;
   border-radius: var(--radius-inner);
-  border: 1px solid oklch(0.30 0.005 260 / 0.18);
-  background: oklch(0.22 0.005 260 / 0.10);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--color-border-shell);
+  background: var(--color-surface-shell);
+  box-shadow: inset 0 1px 0 0 var(--color-highlight-inset);
 }
 
 .surface-shell-focus {
@@ -772,10 +974,10 @@ textarea {
 }
 
 .surface-shell-focus:focus-within {
-  border-color: oklch(0.30 0.005 260 / 0.35);
+  border-color: var(--color-border-shell-focus);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.04),
-    0 0 0 1px rgba(255, 255, 255, 0.02);
+    inset 0 1px 0 0 var(--color-highlight-inset-strong),
+    0 0 0 1px var(--color-highlight-ring);
 }
 
 /* ---------------------------------------------------------------------------
@@ -789,4 +991,2038 @@ textarea {
 
 .log-line:hover {
   background: var(--color-line-hover);
+}
+
+/**
+ * Vyotiq UI � production design language (shared with .ui-mockup preview).
+ */
+
+.vx-stack {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.75rem, 2vw, 1rem);
+  min-width: 0;
+}
+
+.vx-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.vx-section-head {
+  margin-bottom: 0.5rem;
+  padding-left: 0;
+  font-size: var(--text-meta);
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--color-section-title);
+}
+
+.vx-section-body {
+  padding-left: 0;
+  min-width: 0;
+}
+
+.vx-section-body--rail {
+  border-left: 2px solid color-mix(in oklab, var(--color-panel-edge) 145%, transparent);
+  padding-left: clamp(0.625rem, 2.5vw, 0.875rem);
+}
+
+.vx-panel-body .vx-row+.vx-row {
+  border-top: none;
+}
+
+.vx-row-split {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.vx-row-split-main {
+  width: 100%;
+  min-width: 0;
+}
+
+.vx-row-split-control {
+  flex-shrink: 0;
+}
+
+.vx-row {
+  padding-top: clamp(0.5rem, 2vw, 0.625rem);
+  padding-bottom: clamp(0.5rem, 2vw, 0.625rem);
+  min-width: 0;
+}
+
+.vx-row+.vx-row {
+  border-top: none;
+}
+
+.vx-row-label {
+  font-size: var(--text-body);
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--color-text-primary);
+}
+
+.vx-row-desc {
+  margin-top: 0.25rem;
+  font-size: var(--text-row);
+  line-height: 1.55;
+  color: var(--color-text-muted);
+}
+
+.vx-caption {
+  font-size: var(--text-meta);
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+/* Timeline meta � readable on stealth-dark surfaces (run closer, live counters). */
+.vx-timeline-meta {
+  font-size: var(--text-chat-meta);
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.vx-field-label {
+  display: block;
+  margin-bottom: 0.375rem;
+  font-size: var(--text-meta);
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--color-text-faint);
+}
+
+.vx-input {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  border: none;
+  border-radius: var(--radius-line);
+  background: color-mix(in oklch, var(--color-chrome-hover-soft) 50%, transparent);
+  padding: 0.5rem 0.625rem;
+  font-size: clamp(var(--text-row), 2.8vw, var(--text-body));
+  line-height: 1.4;
+  color: var(--color-text-primary);
+  outline: none;
+  transition:
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.vx-input::placeholder {
+  color: var(--color-text-faint);
+}
+
+.vx-input:focus {
+  background: var(--color-chrome-hover-soft);
+}
+
+/* Compact boxed field for split-column numeric controls (Settings rows). */
+.vx-input-boxed {
+  width: auto;
+  min-width: 3.5rem;
+  max-width: 100%;
+  border: 1px solid var(--color-border-field);
+  border-radius: 4px;
+  background: var(--color-surface-field);
+  padding: 0.25rem 0.5rem;
+  font-size: var(--text-row);
+  line-height: 1.25;
+  height: 1.75rem;
+}
+
+.vx-input-boxed::placeholder {
+  color: var(--color-text-faint);
+}
+
+.vx-input-boxed:focus {
+  border-color: var(--color-edge-light-strong);
+  outline: none;
+}
+
+.vx-tab-bar {
+  display: flex;
+  gap: 0.125rem;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  margin-bottom: clamp(1rem, 3vw, 1.25rem);
+  margin-inline: calc(-1 * clamp(0.875rem, 3vw, 1rem));
+  padding-inline: clamp(0.875rem, 3vw, 1rem);
+  padding-bottom: 0;
+  border-bottom: none;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, transparent, var(--color-mask-solid) 12px, var(--color-mask-solid) calc(100% - 12px), transparent);
+}
+
+.vx-tab-bar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Labeled secondary-zone strips � no edge fade that clips last tab labels. */
+.vx-tab-bar--labeled {
+  mask-image: none;
+}
+
+.vx-panel-body .vx-tab-bar {
+  margin-bottom: clamp(0.75rem, 2vw, 1rem);
+}
+
+.vx-panel-body .vx-tab {
+  padding: 0.5rem 0.4375rem 0.625rem;
+  min-height: 2.375rem;
+  gap: 0.375rem;
+}
+
+.vx-tab {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: -1px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  padding: 0.6875rem 0.625rem 0.8125rem;
+  min-height: 2.75rem;
+  scroll-snap-align: start;
+  font-size: var(--text-log);
+  line-height: 1.2;
+  color: var(--color-text-faint);
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease;
+}
+
+.vx-tab-label {
+  white-space: nowrap;
+}
+
+.vx-tab:hover {
+  color: var(--color-text-muted);
+}
+
+.vx-tab[data-active='true'] {
+  border-bottom-color: color-mix(in oklch, var(--color-accent) 60%, transparent);
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+/* Lucide floor � tab/dock glyphs; prevent flex shrink below 14px. */
+.vx-tab svg,
+.vx-dock-tab svg {
+  min-width: 0.875rem;
+  min-height: 0.875rem;
+  flex-shrink: 0;
+}
+
+/* 16px chrome controls (titlebar, composer toolbar, panel close, window tray). */
+.vx-titlebar-action svg,
+.vx-composer-toolbar .vx-btn-quiet svg,
+.vx-composer-toolbar .vx-btn:not(.vx-btn-primary) svg,
+.vx-window-control svg,
+.vx-panel-head .vx-btn svg {
+  width: 1rem;
+  height: 1rem;
+  min-width: 1rem;
+  min-height: 1rem;
+  flex-shrink: 0;
+}
+
+.vx-action-row .vx-btn svg,
+.vx-btn-quiet:not(.h-6):not(.w-6) svg,
+.vx-timeline-action svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  min-width: 0.875rem;
+  min-height: 0.875rem;
+  flex-shrink: 0;
+}
+
+.vx-toggle-track {
+  position: relative;
+  flex-shrink: 0;
+  width: 2.75rem;
+  height: 1.125rem;
+  border-radius: 9999px;
+  border: 1px solid var(--color-toggle-track-off-border);
+  background: var(--color-toggle-track-off);
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease;
+}
+
+.vx-toggle-track[data-on='true'] {
+  border-color: var(--color-toggle-track-on-border);
+  background: var(--color-toggle-track-on);
+}
+
+.vx-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 3px;
+  background: var(--color-text-faint);
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 160ms ease;
+}
+
+.vx-toggle-track[data-on='true'] .vx-toggle-thumb {
+  transform: translateX(1.125rem);
+  background: var(--color-text-primary);
+}
+
+.vx-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  min-height: 1.5rem;
+  border-radius: var(--radius-line);
+  font-size: var(--text-log);
+  font-weight: 400;
+  line-height: 1.2;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    opacity 160ms ease;
+}
+
+.vx-btn-primary {
+  border: 1px solid var(--color-edge-light-strong);
+  background: transparent;
+  padding: 0.5rem 0.875rem;
+  color: var(--color-text-primary);
+}
+
+.vx-btn-primary:hover:not(:disabled) {
+  background: var(--color-edge-light-wash);
+}
+
+.vx-btn-primary:disabled {
+  border-color: var(--color-border-faint);
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.vx-btn-quiet {
+  border: none;
+  background: transparent;
+  padding: 0.4375rem 0.625rem;
+  color: var(--color-text-muted);
+}
+
+.vx-btn-quiet:hover:not(:disabled) {
+  background: var(--color-chrome-hover);
+  color: var(--color-text-primary);
+}
+
+.vx-btn-accent {
+  border: 1px solid color-mix(in oklch, var(--color-accent) 55%, transparent);
+  background: transparent;
+  padding: 0.4375rem 0.75rem;
+  color: var(--color-accent);
+}
+
+.vx-btn-accent:hover:not(:disabled) {
+  background: var(--color-accent-soft);
+  color: var(--color-text-primary);
+}
+
+.vx-btn-accent-fill {
+  border: 1px solid color-mix(in oklch, var(--color-accent) 55%, transparent);
+  background: color-mix(in oklch, var(--color-accent) 18%, transparent);
+  padding: 0.4375rem 0.75rem;
+  color: var(--color-text-primary);
+}
+
+.vx-btn-accent-fill:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--color-accent) 28%, transparent);
+}
+
+.vx-btn-text {
+  border: none;
+  background: transparent;
+  padding: 0.3125rem 0;
+  font-size: var(--text-log);
+  color: var(--color-text-muted);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+  transition: text-decoration-color 160ms ease;
+}
+
+.vx-btn-text:hover {
+  color: var(--color-text-primary);
+  text-decoration-color: var(--color-edge-light-focus);
+}
+
+.vx-btn-link {
+  border: none;
+  background: transparent;
+  padding: 0.25rem 0;
+  font-size: var(--text-log);
+  font-weight: 400;
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.vx-btn-link:hover:not(:disabled) {
+  color: var(--color-accent-strong);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--color-accent) 45%, transparent);
+}
+
+/* -- Chrome interaction helpers (tabs, chips, lists, diff controls) -- */
+
+.vx-tab-pill-idle {
+  color: var(--color-text-muted);
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.vx-tab-pill-idle:hover {
+  background: color-mix(in oklch, var(--color-surface-hover) 60%, transparent);
+  color: var(--color-text-secondary);
+}
+
+.vx-tab-pill-active {
+  background: var(--color-chrome-active);
+  color: var(--color-text-primary);
+}
+
+.vx-tab-strip-nav {
+  background: var(--color-surface-field-strong);
+}
+
+.vx-tab-strip-nav .vx-tab-pill-idle:hover {
+  background: var(--color-chrome-hover-strong);
+}
+
+.vx-filter-chip {
+  border-radius: 4px;
+  padding: 0.125rem 0.375rem;
+  font-size: var(--text-meta);
+  color: var(--color-text-muted);
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.vx-filter-chip:hover {
+  background: var(--color-chrome-hover);
+  color: var(--color-text-secondary);
+}
+
+.vx-search-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 4px;
+  border: 1px solid var(--color-border-field);
+  padding: 0.125rem 0.5rem;
+  font-size: var(--text-meta);
+  transition:
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.vx-search-row:focus-within {
+  border-color: var(--color-border-emphasis);
+  background: var(--color-chrome-hover-soft);
+}
+
+.vx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 9999px;
+  padding: 0.125rem 0.5rem;
+  font-size: var(--text-meta);
+}
+
+.vx-chip-static {
+  border: 1px solid var(--color-border-muted);
+}
+
+.vx-chip-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.vx-chip-btn:hover:not(:disabled) {
+  background: var(--color-chrome-hover);
+  color: var(--color-text-primary);
+}
+
+.vx-chip-btn[data-pressed='true'] {
+  background: var(--color-chrome-active);
+  color: var(--color-text-primary);
+}
+
+.vx-list-row {
+  width: 100%;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.vx-list-row:hover {
+  background: var(--color-chrome-hover-soft);
+}
+
+.vx-prompt-chip {
+  width: 100%;
+  border-radius: var(--radius-line);
+  border: none;
+  background: var(--color-chrome-hover-soft);
+  padding: 0.5rem 0.75rem;
+  font-size: var(--text-row);
+  font-weight: 400;
+  color: var(--color-text-secondary);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.vx-prompt-chip:hover {
+  background: var(--color-chrome-hover);
+  color: var(--color-text-primary);
+}
+
+.vx-window-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.vx-window-control:hover {
+  background: var(--color-chrome-hover);
+  color: var(--color-text-primary);
+}
+
+.vx-window-control--danger:hover,
+.vx-window-control--danger:focus-visible {
+  background: var(--color-danger-strong);
+  color: var(--color-text-primary);
+}
+
+.vx-toggle-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  padding: 0.375rem 0.5rem;
+  font-size: var(--text-row);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.vx-toggle-row:hover:not(:disabled) {
+  background: var(--color-chrome-hover-soft);
+}
+
+.vx-diff-control {
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font-size: var(--text-meta);
+  color: var(--color-text-faint);
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease;
+}
+
+.vx-diff-control:hover {
+  background: var(--color-chrome-hover);
+  color: var(--color-text-secondary);
+}
+
+.vx-diff-fold {
+  border: 1px dashed var(--color-border-field);
+  border-radius: 4px;
+  background: transparent;
+  font-size: var(--text-meta);
+  font-style: italic;
+  color: var(--color-text-faint);
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease;
+}
+
+.vx-diff-fold:hover {
+  border-color: var(--color-border-emphasis);
+  background: var(--color-chrome-hover);
+  color: var(--color-text-secondary);
+}
+
+.vx-diff-line-pickable {
+  cursor: pointer;
+}
+
+.vx-diff-line-pickable:hover {
+  background: var(--color-chrome-segment);
+}
+
+.vx-diff-line-highlighted {
+  background: var(--color-chrome-segment-soft);
+  box-shadow: inset 0 0 0 1px var(--color-border-emphasis);
+}
+
+.vx-segment {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  border-radius: 6px;
+  background: var(--color-surface-raised-soft);
+  padding: 0.1875rem;
+  max-width: 100%;
+}
+
+.vx-segment-fluid {
+  display: flex;
+  width: 100%;
+}
+
+.vx-segment-fluid .vx-segment-item {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: center;
+}
+
+.vx-segment-item {
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  padding: 0.3125rem 0.625rem;
+  font-size: var(--text-row);
+  color: var(--color-text-faint);
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.vx-segment-item[data-active='true'] {
+  background: var(--color-chrome-segment-active);
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.vx-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.625rem 0;
+  font-size: var(--text-row);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.vx-notice-action {
+  width: 100%;
+}
+
+.vx-field-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
+.vx-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding-top: 0.75rem;
+}
+
+.vx-dropdown-menu {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  margin-top: 0.375rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-border-field);
+  background: var(--color-surface-overlay);
+  padding: 0.25rem;
+  box-shadow: 0 16px 40px var(--color-shadow-popover);
+  animation: vx-dropdown-in 160ms ease;
+}
+
+.vx-dropdown-item {
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  padding: 0.4375rem 0.5rem;
+  font-size: var(--text-row);
+  text-align: left;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.vx-dropdown-item:hover {
+  background: var(--color-chrome-hover-strong);
+  color: var(--color-text-primary);
+}
+
+.vx-dropdown-item[data-active='true'] {
+  background: var(--color-chrome-active);
+  color: var(--color-text-primary);
+}
+
+.vx-dropdown-item[data-focused='true'] {
+  background: var(--color-chrome-hover-strong);
+  color: var(--color-text-primary);
+}
+
+.vx-panel-frame {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: 100dvh;
+  background: var(--color-surface-sidebar);
+  box-shadow: none;
+}
+
+@media (min-width: 640px) {
+  .vx-panel-frame {
+    min-height: 0;
+  }
+}
+
+.vx-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: clamp(0.625rem, 2vw, 0.75rem) clamp(0.875rem, 3vw, 1rem);
+  padding-top: max(clamp(0.625rem, 2vw, 0.75rem), env(safe-area-inset-top, 0px));
+  border-bottom: none;
+  background: transparent;
+}
+
+.vx-panel-head--minimal {
+  padding-bottom: 0.25rem;
+}
+
+.vx-panel-body {
+  padding: clamp(0.875rem, 3vw, 1rem) clamp(0.875rem, 3vw, 1rem) clamp(1rem, 3vw, 1.25rem);
+  padding-bottom: max(clamp(1rem, 3vw, 1.25rem), env(safe-area-inset-bottom, 0px));
+  min-width: 0;
+  container-type: inline-size;
+  container-name: vx-panel;
+}
+
+/* Panel-scoped readability � settings, checkpoints, inspector bodies */
+.vx-panel-body .vx-field-label {
+  font-size: var(--text-meta);
+  letter-spacing: normal;
+}
+
+.vx-panel-body .vx-btn-primary {
+  border: 1px solid var(--color-edge-light-soft);
+  background: transparent;
+  padding: 0.375rem 0.625rem;
+}
+
+.vx-panel-body .vx-btn-primary:hover:not(:disabled) {
+  background: var(--color-chrome-hover-soft);
+  border-color: var(--color-edge-light-mid);
+}
+
+.vx-panel-body .vx-row-desc,
+.vx-panel-body .vx-caption {
+  font-size: var(--text-log);
+}
+
+.vx-panel-body .vx-segment-item {
+  font-size: var(--text-log);
+  padding: 0.375rem 0.75rem;
+}
+
+.vx-panel-body .vx-dropdown-item {
+  font-size: var(--text-log);
+  padding: 0.5rem 0.625rem;
+}
+
+.vx-panel-body .vx-notice {
+  font-size: var(--text-log);
+}
+
+.vx-override {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.vx-provider-meta {
+  margin-top: 0.125rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-row);
+  line-height: 1.45;
+  color: var(--color-text-faint);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.vx-model-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.4375rem;
+  padding-bottom: 0.4375rem;
+  font-size: var(--text-log);
+  line-height: 1.4;
+}
+
+.vx-row-desc,
+.vx-caption,
+.vx-notice p {
+  overflow-wrap: anywhere;
+}
+
+/* ── Container queries (panel width, not viewport) ── */
+@container vx-panel (max-width: 380px) {
+  .vx-tab-label {
+    display: none;
+  }
+
+  .vx-tab-bar--labeled .vx-tab-label {
+    display: inline;
+  }
+
+  .vx-tab {
+    padding-inline: 0.625rem;
+  }
+
+  .vx-segment-fluid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .vx-field-actions {
+    justify-content: stretch;
+  }
+
+  .vx-field-actions .vx-btn-primary {
+    width: 100%;
+  }
+
+  .vx-action-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .vx-action-row .vx-btn-quiet {
+    justify-content: center;
+    width: 100%;
+  }
+}
+
+@container vx-panel (min-width: 381px) {
+  .vx-row-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(5rem, 1fr);
+    align-items: start;
+    column-gap: 1rem;
+    row-gap: 0.75rem;
+  }
+
+  .vx-row-split-main {
+    flex: unset;
+    width: auto;
+    min-width: 0;
+  }
+
+  .vx-row-split-control {
+    justify-self: start;
+    align-self: start;
+  }
+
+  .vx-override {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(5rem, 1fr);
+    align-items: start;
+    column-gap: 1rem;
+    row-gap: 0.75rem;
+  }
+
+  .vx-notice-action {
+    width: auto;
+    margin-left: auto;
+  }
+}
+
+@container vx-panel (min-width: 420px) {
+  .vx-tab {
+    padding-inline: 0.625rem;
+  }
+}
+
+/* ── Viewport fallbacks when container queries unsupported ── */
+@supports not (container-type: inline-size) {
+  @media (max-width: 380px) {
+    .vx-tab-label {
+      display: none;
+    }
+
+    .vx-tab-bar--labeled .vx-tab-label {
+      display: inline;
+    }
+
+    .vx-row-split {
+      flex-direction: column;
+    }
+
+    .vx-field-actions .vx-btn-primary {
+      width: 100%;
+    }
+  }
+
+  @media (min-width: 381px) {
+    .vx-row-split {
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(5rem, 1fr);
+      align-items: start;
+      column-gap: 1rem;
+      row-gap: 0.75rem;
+    }
+
+    .vx-row-split-control {
+      justify-self: start;
+    }
+
+    .vx-override {
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(5rem, 1fr);
+      align-items: start;
+      column-gap: 1rem;
+      row-gap: 0.75rem;
+    }
+
+    .vx-notice-action {
+      width: auto;
+    }
+  }
+}
+
+.vx-panel-title {
+  font-size: var(--text-row);
+  font-weight: 500;
+  letter-spacing: normal;
+  color: var(--color-text-secondary);
+}
+
+/* ── Focus & interaction ── */
+/* Focus: inherit global accent halo from index.css :focus-visible */
+
+.vx-toggle-track:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Settings range control � square-thumb track matching toggles. */
+.vx-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 8rem;
+  height: 1.125rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  --range-progress: 0%;
+}
+
+.vx-range:focus-visible {
+  outline: none;
+}
+
+.vx-range::-webkit-slider-runnable-track {
+  height: 0.375rem;
+  border-radius: 9999px;
+  background: linear-gradient(to right,
+      color-mix(in oklch, var(--color-accent) 35%, transparent) var(--range-progress),
+      var(--color-chrome-hover-soft) var(--range-progress));
+}
+
+.vx-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-top: -0.1875rem;
+  border: 1px solid var(--color-toggle-track-off-border);
+  border-radius: 3px;
+  background: var(--color-text-primary);
+  transition:
+    background 160ms ease,
+    border-color 160ms ease;
+}
+
+.vx-range::-moz-range-track {
+  height: 0.375rem;
+  border: none;
+  border-radius: 9999px;
+  background: var(--color-chrome-hover-soft);
+}
+
+.vx-range::-moz-range-progress {
+  height: 0.375rem;
+  border-radius: 9999px;
+  background: color-mix(in oklch, var(--color-accent) 35%, transparent);
+}
+
+.vx-range::-moz-range-thumb {
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 1px solid var(--color-toggle-track-off-border);
+  border-radius: 3px;
+  background: var(--color-text-primary);
+  transition:
+    background 160ms ease,
+    border-color 160ms ease;
+}
+
+.vx-range:focus-visible::-webkit-slider-thumb,
+.vx-range:focus-visible::-moz-range-thumb {
+  box-shadow:
+    0 0 0 1px var(--color-surface-base),
+    0 0 0 3px color-mix(in oklab, var(--color-accent) 55%, transparent);
+}
+
+.vx-range:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.vx-btn-danger {
+  border: 1px solid var(--color-danger-control-border);
+  background: transparent;
+  padding: 0.4375rem 0.75rem;
+  color: var(--color-danger-control-text);
+}
+
+.vx-btn-danger:hover {
+  background: var(--color-danger);
+  border-color: var(--color-danger-control-border-strong);
+  color: var(--color-text-primary);
+}
+
+.vx-btn-danger-primary {
+  border: 1px solid var(--color-danger-control-border-strong);
+  background: var(--color-danger);
+  padding: 0.4375rem 0.75rem;
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.vx-btn-danger-primary:hover {
+  background: var(--color-danger-strong);
+  border-color: var(--color-danger-control-border-strong);
+}
+
+.vx-field-actions-group {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.vx-textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 7rem;
+  resize: vertical;
+  border: 1px solid var(--color-border-field);
+  border-radius: 6px;
+  background: var(--color-surface-sunken);
+  padding: 0.625rem 0.75rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-row);
+  line-height: 1.55;
+  color: var(--color-text-primary);
+  outline: none;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.vx-textarea:focus {
+  border-color: var(--color-edge-light-focus);
+  background: var(--color-surface-field);
+}
+
+.vx-meta-grid {
+  display: grid;
+  grid-template-columns: minmax(4.5rem, max-content) minmax(0, 1fr);
+  gap: 0.375rem 1rem;
+  margin: 0;
+}
+
+.vx-meta-label {
+  font-size: var(--text-meta);
+  color: var(--color-text-faint);
+}
+
+.vx-meta-value {
+  margin: 0;
+  font-size: var(--text-row);
+  line-height: 1.45;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.vx-meta-value-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+}
+
+.vx-stat-value {
+  margin-top: 0.25rem;
+  font-size: var(--text-body);
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.vx-memory-split {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.vx-memory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vx-memory-list-item {
+  width: 100%;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  padding: 0.4375rem 0.5rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  text-align: left;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  transition: background 160ms ease;
+}
+
+.vx-memory-list-item:hover {
+  background: var(--color-chrome-hover);
+}
+
+.vx-memory-list-item[data-active='true'] {
+  background: var(--color-chrome-active);
+  color: var(--color-text-primary);
+}
+
+.vx-memory-editor {
+  min-width: 0;
+}
+
+@keyframes vx-dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@container vx-panel (min-width: 520px) {
+  .vx-memory-split {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .vx-memory-list {
+    flex: 0 0 min(11rem, 38%);
+  }
+
+  .vx-memory-editor {
+    flex: 1 1 auto;
+  }
+}
+
+/* Left subnav — settings / checkpoints / providers master-detail */
+.vx-left-subnav-layout {
+  display: flex;
+  min-width: 0;
+  gap: 0.75rem;
+}
+
+.vx-left-subnav-rail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 0 0 min(11rem, 34%);
+}
+
+.vx-left-subnav-content {
+  min-width: 0;
+}
+
+.vx-left-subnav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin: 0;
+  padding: 0;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.vx-left-subnav-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.5rem;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  padding: 0.4375rem 0.5rem;
+  font-size: var(--text-row);
+  text-align: left;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.vx-left-subnav-item:hover {
+  background: var(--color-chrome-hover);
+  color: var(--color-text-primary);
+}
+
+.vx-left-subnav-item[data-active='true'] {
+  background: var(--color-chrome-active);
+  color: var(--color-text-primary);
+}
+
+@container vx-panel (max-width: 520px) {
+  .vx-left-subnav-layout {
+    flex-direction: column;
+  }
+
+  .vx-left-subnav-rail {
+    flex-basis: auto;
+    max-width: none;
+  }
+
+  .vx-left-subnav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+}
+
+/* Long-form copy */
+.vx-prose {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+}
+
+.vx-prose>*+* {
+  margin-top: 0.75rem;
+}
+
+.vx-prose p {
+  margin: 0;
+}
+
+/* -- Timeline reading column (Vyotiq UI) -- */
+
+.vx-timeline-stack {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0;
+}
+
+.vx-timeline-agent-column {
+  display: flex;
+  width: 100%;
+  max-width: 48rem;
+  flex-direction: column;
+  padding-left: 0.875rem;
+  font-size: var(--text-chat-body);
+  line-height: 1.55;
+}
+
+.vx-timeline-activity-lane {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.vx-timeline-turn-gap {
+  gap: 0.75rem;
+}
+
+.vx-timeline-turn-outer {
+  margin-bottom: 2.5rem;
+  padding-top: 0.25rem;
+}
+
+.vx-timeline-turn-outer:last-child {
+  margin-bottom: 0;
+  padding-top: 0;
+}
+
+.vx-timeline-response-lane {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.vx-timeline-row-header {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 0.375rem;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  padding: 0.25rem 0.5rem;
+  text-align: left;
+  font-size: var(--text-chat-meta);
+  line-height: 1.15;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.vx-timeline-row-header:hover {
+  background: var(--color-chrome-hover);
+  color: var(--color-text-secondary);
+}
+
+.vx-timeline-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  padding: 0.125rem 0.375rem;
+  font-size: var(--text-chat-meta);
+  font-weight: 500;
+  line-height: 1.15;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.vx-timeline-action:hover:not(:disabled) {
+  background: var(--color-chrome-hover);
+  color: var(--color-text-primary);
+}
+
+.vx-timeline-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.vx-timeline-log-row {
+  width: 100%;
+  max-width: 46rem;
+  border-radius: 4px;
+  background: var(--color-surface-nested);
+  padding: 0.25rem 0.625rem;
+  font-size: var(--text-meta);
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.timeline-activity-lane .vx-timeline-log-row,
+.vx-timeline-activity-lane .vx-timeline-log-row {
+  max-width: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.125rem 0;
+}
+
+/* Turn footer meta (run closer, token budget) � flush in the reading column. */
+.vx-timeline-log-row[data-row-kind='run-complete'],
+.vx-timeline-log-row[data-row-kind='token-budget-warning'] {
+  max-width: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.375rem 0;
+  text-align: left;
+  font-size: var(--text-chat-meta);
+  color: var(--color-text-secondary);
+}
+
+.vx-timeline-live-status {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  font-size: var(--text-chat-meta);
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.vx-timeline-live-status-interactive {
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.vx-timeline-live-status-interactive:hover {
+  background: var(--color-chrome-hover);
+}
+
+.vx-timeline-phase {
+  font-weight: 600;
+  color: var(--color-accent-gold);
+}
+
+.vx-timeline-phase-live {
+  font-weight: 600;
+  color: var(--color-accent-gold-strong);
+}
+
+.vx-timeline-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-row);
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.vx-timeline-divider-run-complete {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+  font-size: var(--text-meta);
+  color: var(--color-text-muted);
+}
+
+.vx-timeline-eyebrow {
+  margin-bottom: 0.125rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-faint);
+}
+
+.vx-timeline-prompt {
+  white-space: pre-wrap;
+  font-size: var(--text-chat-body);
+  line-height: 1.55;
+  color: var(--color-text-primary);
+}
+
+.vx-timeline-model-badge {
+  display: inline-flex;
+  height: 1.25rem;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 4px;
+  border: 1px solid var(--color-border-muted);
+  padding: 0 0.375rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  color: var(--color-text-muted);
+}
+
+.vx-timeline-subagent-dot {
+  display: inline-block;
+  height: 0.375rem;
+  width: 0.375rem;
+  flex-shrink: 0;
+  border-radius: 9999px;
+}
+
+.vx-timeline-subagent-dot-live {
+  background: var(--color-accent-gold-strong);
+}
+
+.vx-timeline-subagent-dot-settled {
+  background: var(--color-text-muted);
+}
+
+.vx-timeline-subagent-subtitle {
+  margin-top: 0.125rem;
+  padding-left: 0.75rem;
+  font-size: var(--text-meta);
+  font-style: italic;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.vx-timeline-stream-md {
+  font-size: var(--text-body);
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.vx-timeline-stream-md .vx-timeline-stream-heading:first-child {
+  margin-top: 0;
+}
+
+.vx-timeline-stream-pre {
+  margin: 0.5rem 0;
+  overflow-x: auto;
+  border: 1px solid var(--color-border-field);
+  border-radius: 6px;
+  background: var(--color-surface-sunken);
+  padding: 0.625rem 0.75rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-log);
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+.vx-timeline-stream-pre-partial {
+  border-color: var(--color-border-table);
+}
+
+.vx-timeline-stream-inline-code {
+  border-radius: 4px;
+  background: var(--color-surface-field);
+  padding: 0.1em 0.35em;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  color: var(--color-text-primary);
+  vertical-align: baseline;
+}
+
+.vx-timeline-stream-md ul,
+.vx-timeline-stream-md ol {
+  margin: 0.35em 0 0.75em 1.15em;
+  padding: 0;
+}
+
+.vx-timeline-stream-md ul {
+  list-style: disc;
+}
+
+.vx-timeline-stream-md ol {
+  list-style: decimal;
+}
+
+.vx-timeline-stream-md li {
+  margin: 0.15em 0;
+}
+
+.vx-timeline-stream-md li>p {
+  margin: 0.15em 0;
+}
+
+.vx-timeline-detail-shell {
+  margin-top: 0.125rem;
+}
+
+.vx-timeline-chip {
+  display: inline-flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+/* -- Composer / dock / titlebar chrome -- */
+.vx-composer-shell {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-composer);
+  border: none;
+  background: var(--color-surface-input);
+  box-shadow: none;
+  transition: background 160ms ease;
+}
+
+.vx-composer-shell:focus-within {
+  background: color-mix(in oklch, var(--color-surface-input) 85%, var(--color-surface-hover) 15%);
+}
+
+.vx-composer-textarea {
+  width: 100%;
+  min-width: 0;
+  resize: none;
+  border: none;
+  background: transparent;
+  padding: 0.5rem 0.625rem;
+  font-size: var(--text-chat-body);
+  line-height: 1.55;
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.vx-composer-textarea::placeholder {
+  font-size: var(--text-chat-body);
+  color: var(--color-text-faint);
+}
+
+.vx-composer-path {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.25rem;
+  border-bottom: none;
+  padding: 0.125rem 0.625rem;
+  font-size: var(--text-chat-meta);
+  line-height: 1.45;
+}
+
+.vx-composer-path--compact {
+  padding: 0.125rem 0.5rem;
+}
+
+.vx-composer-toolbar {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  border-top: none;
+  padding: var(--spacing-chrome-y) 0.375rem;
+}
+
+.vx-composer-toolbar--compact {
+  padding: 0.125rem 0.25rem;
+}
+
+.vx-composer-toolbar .vx-btn {
+  height: 1.5rem;
+  font-size: var(--text-chat-meta);
+}
+
+.vx-composer-toolbar .vx-caption,
+.vx-composer-path.vx-caption {
+  font-size: var(--text-chat-meta);
+}
+
+.vx-composer-token-pill {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.375rem;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  padding: 0.125rem 0.375rem;
+  height: 1.5rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-chat-meta);
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.vx-composer-token-pill:hover {
+  background: var(--color-chrome-hover-soft);
+}
+
+.vx-composer-token-pill__label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+
+.vx-composer-token-pill__pct {
+  color: var(--color-text-muted);
+}
+
+.vx-composer-token-pill__track {
+  position: relative;
+  height: 0.125rem;
+  width: 2.25rem;
+  min-width: 2rem;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: var(--color-border-table);
+}
+
+.vx-composer-token-pill__bar {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  border-radius: 9999px;
+  transition: width 150ms ease;
+}
+
+.vx-composer-footer {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.375rem;
+  padding: var(--spacing-chrome-y) 0.375rem;
+}
+
+.vx-composer-footer--compact {
+  padding: 0.125rem 0.25rem;
+  gap: 0.25rem;
+}
+
+.vx-composer-status-strip {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.vx-attachment-card__thumb {
+  height: 2.5rem;
+  width: 2.5rem;
+  flex-shrink: 0;
+  border-radius: var(--radius-inner, 0.375rem);
+  object-fit: cover;
+}
+
+.vx-attachment-card__thumb--placeholder {
+  display: inline-block;
+  background: var(--color-chrome-hover-soft);
+}
+
+.vx-attachment-card--image {
+  max-width: 2.75rem;
+  padding: 0.125rem;
+}
+
+[data-density='compact'] .vx-composer-footer {
+  padding: 0.125rem 0.25rem;
+}
+
+[data-density='compact'] .vx-composer-textarea {
+  padding: 0.375rem 0.5rem;
+  font-size: var(--text-chat-body);
+}
+
+[data-density='compact'] .vx-composer-toolbar {
+  padding: 0.125rem 0.25rem;
+  gap: 0.125rem;
+}
+
+[data-density='compact'] .vx-composer-toolbar .vx-btn {
+  height: 1.375rem;
+}
+
+[data-density='compact'] .vx-composer-shell {
+  border-radius: calc(var(--radius-composer) - 1px);
+}
+
+[data-density='airy'] .vx-composer-footer {
+  padding: 0.375rem 0.5rem;
+}
+
+[data-density='airy'] .vx-composer-textarea {
+  padding: 0.625rem 0.75rem;
+}
+
+[data-density='airy'] .vx-composer-toolbar {
+  padding: 0.375rem 0.5rem;
+  gap: 0.375rem;
+}
+
+[data-density='airy'] .vx-composer-toolbar .vx-btn {
+  height: 1.625rem;
+}
+
+.vx-dock-tab {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 0.375rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  padding: 0.375rem 0.5rem;
+  min-height: 2rem;
+  font-size: var(--text-row);
+  line-height: 1.25;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background 160ms ease;
+}
+
+.vx-dock-tab-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vx-dock-tab-trigger {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.375rem;
+  overflow: hidden;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vx-dock-tab:hover {
+  background: color-mix(in oklch, var(--color-surface-hover) 60%, transparent);
+  color: var(--color-text-secondary);
+}
+
+.vx-dock-tab[data-active='true'] {
+  background: var(--color-chrome-hover-soft);
+  font-weight: 400;
+  color: var(--color-text-primary);
+}
+
+.vx-dock-tab[data-active='true'] .vx-dock-tab-trigger {
+  font-weight: 400;
+}
+
+.vx-popover-panel {
+  border-radius: 6px;
+  border: 1px solid var(--color-border-field);
+  background: var(--color-surface-overlay);
+  box-shadow: 0 16px 40px var(--color-shadow-popover);
+}
+
+/* Floating panels, composer dialogs, agent trace */
+.vx-floating-panel-root {
+  pointer-events: none;
+}
+
+.vx-floating-panel {
+  pointer-events: auto;
+}
+
+/* ComposerDialog — mini FloatingPanel anchored above the chat
+   composer. No backdrop, no full-width banner: the dialog floats with
+   shadow only and inherits the composer column's width via its mount
+   slot (.vx-composer-dialog-slot). */
+.vx-composer-dialog {
+  border-radius: var(--radius-inner);
+  border: 1px solid var(--color-border-primary, var(--color-border-subtle));
+  background: var(--color-surface-raised);
+  /* Border carries elevation; keep shadow minimal (round 3 polish). */
+  box-shadow: 0 1px 0 var(--color-shadow-ambient-deep);
+}
+
+/* Composer dialog slot sits above the footer — must not block timeline scroll. */
+.vx-composer-dialog-slot {
+  pointer-events: none;
+}
+
+.vx-composer-dialog-slot .vx-composer-dialog {
+  pointer-events: auto;
+}
+
+.vx-composer-dialog-slot:empty {
+  display: none;
+}
+
+/* Slide-up + fade entrance for ComposerDialog. Subdued so a queue
+   advance (one dismiss → next dialog) doesn't feel busy. Honors
+   reduced motion via the global override above. */
+@keyframes vyotiq-composer-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.vyotiq-composer-dialog-enter {
+  animation: vyotiq-composer-dialog-in 150ms ease-out both;
+}
+
+[data-reduced-motion='true'] .vyotiq-composer-dialog-enter {
+  animation: none;
+}
+
+/* InlineConfirm — row-replacement strip. No backdrop, no danger tint:
+   the destructive intent is communicated by the button colors only. */
+.vx-inline-confirm {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 0.375rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.vx-agent-panel .vx-floating-panel {
+  font-family: var(--font-mono);
+}
+
+.vx-dock-agent-peek {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  z-index: 20;
+  transform: translateY(-50%);
+}
+
+.vx-timeline-user-bubble {
+  border-radius: var(--radius-inner);
+  background: var(--color-surface-bubble-user);
+  border: 1px solid color-mix(in oklch, var(--color-accent) 25%, transparent);
+  padding: 0.5rem 0.75rem;
+}
+
+/* Diff layout toggle + split panes */
+.vx-diff-layout-toggle {
+  display: inline-flex;
+  align-items: stretch;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid var(--color-border-field);
+  background: var(--color-chrome-segment-idle);
+  padding: 1px;
+  gap: 1px;
+}
+
+.vx-diff-layout-toggle__btn {
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  padding: 0.125rem 0.5rem;
+  font-size: var(--text-meta);
+  line-height: 1.4;
+  color: var(--color-text-faint);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.vx-diff-layout-toggle__btn:hover {
+  color: var(--color-text-secondary);
+}
+
+.vx-diff-layout-toggle__btn.is-active {
+  background: var(--color-chrome-segment-active);
+  color: var(--color-text-primary);
+}
+
+.vx-diff-split-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0;
+}
+
+.vx-diff-split-pane {
+  min-width: 0;
+}
+
+.vx-diff-split-placeholder {
+  min-height: 1.35rem;
+}
+
+.vx-titlebar {
+  height: 34px;
+}
+
+[data-density='compact'] .vx-titlebar {
+  height: 30px;
+}
+
+[data-density='airy'] .vx-titlebar {
+  height: 38px;
+}
+
+[data-density='compact'] .vx-dock-tab {
+  min-height: 1.75rem;
+  padding: 0.25rem 0.375rem;
+}
+
+[data-density='airy'] .vx-dock-tab {
+  min-height: 2.25rem;
+  padding: 0.5rem 0.625rem;
 }

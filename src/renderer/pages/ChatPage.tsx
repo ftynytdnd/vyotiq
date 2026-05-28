@@ -10,15 +10,14 @@ import type { ModelSelection } from '@shared/types/provider.js';
 import { useWorkspaceStore } from '../store/useWorkspaceStore.js';
 import { Button } from '../components/ui/Button.js';
 import { FolderOpen } from 'lucide-react';
-import { AGENT_NAME } from '@shared/constants.js';
 import { cn } from '../lib/cn.js';
+import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../lib/shellIcons.js';
 import { useSecondaryZoneStore } from '../store/useSecondaryZoneStore.js';
+import { useAttachmentPreviewStore } from '../store/useAttachmentPreviewStore.js';
+import { useFloatingLiveDiffStore } from '../store/useFloatingLiveDiffStore.js';
 
-const EXAMPLE_PROMPTS = [
-  'Summarize this repo and list the main entry points.',
-  'Find where authentication is handled and explain the flow.',
-  'Add a focused unit test for the most recent change.'
-] as const;
+import { LoadingHint } from '../components/ui/LoadingHint.js';
+import { ComposerDialogAnchor } from '../components/ui/ComposerDialogAnchor.js';
 
 interface ChatPageProps {
   onOpenProviders: () => void;
@@ -31,10 +30,6 @@ export function ChatPage({
   onOpenCheckpointSettings
 }: ChatPageProps) {
   const events = useChatStore((s) => s.events);
-  const conversationId = useChatStore((s) => s.conversationId);
-  const setDraft = useChatStore((s) => s.setDraft);
-  const newConversation = useConversationsStore((s) => s.newConversation);
-  const selectConversation = useConversationsStore((s) => s.select);
   const providers = useProviderStore((s) => s.providers);
   const workspaceInfo = useWorkspaceStore((s) => s.info);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
@@ -43,7 +38,13 @@ export function ChatPage({
   const setLastModelByWorkspace = useSettingsStore((s) => s.setLastModelByWorkspace);
   const activeConversationId = useActiveConversationId();
   const conversationList = useConversationsStore((s) => s.list);
-  const zoneOpen = useSecondaryZoneStore((s) => s.panel !== null);
+  const selecting = useConversationsStore((s) => s.selecting);
+  const secondaryPanel = useSecondaryZoneStore((s) => s.panel);
+  const agentTraceId = useSecondaryZoneStore((s) => s.agentTraceId);
+  const previewOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
+  const liveDiffOpen = useFloatingLiveDiffStore((s) => s.target !== null);
+  const zoneOpen =
+    secondaryPanel !== null || agentTraceId !== null || previewOpen || liveDiffOpen;
 
   const [model, setModel] = useState<ModelSelection | null>(null);
 
@@ -194,83 +195,47 @@ export function ChatPage({
 
   const isFresh = events.length === 0;
   const hasProviders = useMemo(() => providers.some((p) => p.enabled && (p.models?.length ?? 0) > 0), [providers]);
-  // Pick the empty-state height based on whether we actually have a
-  // CTA to surface. A title-only hero at 64vh leaves an awkward
-  // empty gap above the composer; collapsing to 40vh when no setup
-  // row is present keeps the heading near the eye-line. When a
-  // setup row IS present (`!workspaceInfo.path` or `!hasProviders`)
-  // we keep the original 64vh so the title + CTA breathe.
   const needsSetup = !workspaceInfo.path || !hasProviders;
-  const emptyMinH = needsSetup ? 'min-h-[48vh]' : 'min-h-[24vh]';
+  const emptyMinH = needsSetup ? 'min-h-[40vh]' : 'min-h-0 flex-1';
   /** Adaptive reading width — narrows when the secondary zone is open. */
   const contentWidth = zoneOpen ? 'max-w-2xl' : 'max-w-3xl';
 
-  const applyExamplePrompt = async (prompt: string) => {
-    let cid = conversationId;
-    if (!cid) {
-      const meta = await newConversation();
-      if (!meta) return;
-      cid = meta.id;
-      await selectConversation(meta.id);
-    }
-    setDraft(cid, prompt);
-  };
-
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="scrollbar-stealth flex-1 overflow-y-auto scroll-pb-6 px-6 pb-8 antialiased">
-        <div className={cn('mx-auto w-full transition-[max-width] duration-200 ease-out', contentWidth)}>
-          {isFresh && (
-            <div className={cn('flex flex-col items-start justify-center px-2 pb-8 pt-10', emptyMinH)}>
-              {workspaceInfo.path ? (
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {selecting && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-surface-base/80">
+            <LoadingHint message="Loading conversation…" />
+          </div>
+        )}
+      <div className="scrollbar-stealth flex-1 overflow-y-auto scroll-pb-6 px-4 pb-8 antialiased">
+        <div
+          className={cn(
+            'mx-auto flex w-full flex-col transition-[max-width] duration-200 ease-out',
+            contentWidth,
+            isFresh && !needsSetup && 'min-h-full justify-center'
+          )}
+        >
+          {isFresh && needsSetup && (
+            <div className={cn('flex flex-col items-start justify-center px-2 pb-8 pt-6', emptyMinH)}>
+              {!workspaceInfo.path ? (
                 <>
-                  <div className="text-body font-semibold tracking-[-0.01em] text-text-primary">
-                    What should {AGENT_NAME} work on here?
-                  </div>
-                  {!needsSetup && (
-                    <>
-                      <div className="mt-2 max-w-md text-row text-text-muted">
-                        Describe a task in the composer below, or try one of these:
-                      </div>
-                      <ul className="mt-4 flex max-w-lg flex-col gap-1.5">
-                        {EXAMPLE_PROMPTS.map((prompt) => (
-                          <li key={prompt}>
-                            <button
-                              type="button"
-                              onClick={() => void applyExamplePrompt(prompt)}
-                              className="w-full rounded-inner border border-border-subtle/25 px-3 py-2 text-left text-row text-text-secondary transition-colors duration-150 hover:border-border-subtle/45 hover:bg-surface-hover/40 hover:text-text-primary"
-                            >
-                              {prompt}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
-                </>
-              ) : (
-                <>
-                  <div className="text-body font-semibold tracking-[-0.01em] text-text-primary">
+                  <div className="text-body font-medium tracking-normal text-text-primary">
                     Open a workspace to begin
                   </div>
                   <div className="mt-2 max-w-md text-row text-text-muted">
                     Agent V runs inside a folder on your machine. Pick one to sandbox tools and memory.
                   </div>
                 </>
-              )}
+              ) : null}
 
-              {/*
-                Empty-state setup rows stay flush and minimal: muted text
-                plus one primary Button when action is required. No card
-                chrome or suggestion grid.
-              */}
               {!workspaceInfo.path && (
                 <div className="mt-6 flex flex-wrap items-center gap-3">
                   <span className="text-row text-text-muted">
                     Pick a workspace to begin.
                   </span>
-                  <Button variant="primary" size="sm" onClick={() => void pickWorkspace()}>
-                    <FolderOpen className="h-3 w-3" strokeWidth={2.25} />
+                  <Button variant="link" size="sm" onClick={() => void pickWorkspace()}>
+                    <FolderOpen className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} aria-hidden />
                     Open workspace…
                   </Button>
                 </div>
@@ -281,7 +246,7 @@ export function ChatPage({
                   <span className="text-row text-text-muted">
                     No AI provider configured yet.
                   </span>
-                  <Button variant="primary" size="sm" onClick={onOpenProviders}>
+                  <Button variant="link" size="sm" onClick={onOpenProviders}>
                     Configure provider
                   </Button>
                 </div>
@@ -295,6 +260,18 @@ export function ChatPage({
               onOpenCheckpointSettings={onOpenCheckpointSettings}
             />
           </RevertPromptProvider>
+        </div>
+      </div>
+      </div>
+
+      <div className="shrink-0 px-4">
+        <div
+          className={cn(
+            'mx-auto w-full transition-[max-width] duration-200 ease-out',
+            contentWidth
+          )}
+        >
+          <ComposerDialogAnchor className="vx-composer-dialog-slot empty:hidden" />
         </div>
       </div>
 

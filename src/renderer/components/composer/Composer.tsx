@@ -1,18 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
-import { FolderOpen, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
+import { FolderOpen } from 'lucide-react';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { ComposerToolbar } from './ComposerToolbar.js';
+import { ComposerFooter } from './ComposerFooter.js';
 import { TokenUsagePill } from './TokenUsagePill.js';
+import { PromptAttachmentCards } from './PromptAttachmentCards.js';
+import { useComposerAttachments } from './useComposerAttachments.js';
 import { useComposerTokenEstimate } from './useComposerTokenEstimate.js';
 import { detectAtToken } from './atToken.js';
-import { RunningElsewhereHint } from './runningElsewhere/index.js';
 import { useComposerHistory } from './useComposerHistory.js';
 import {
-  chromeChipTrayClassName,
-  chromeEdgeClassName,
-  surfaceShellFocusClassName
+  appComposerShellClassName,
+  appComposerTextareaClassName
 } from '../ui/SurfaceShell.js';
-import { Chip } from '../ui/Chip.js';
 import { useChatStore } from '../../store/useChatStore.js';
 import { useSecondaryZoneStore } from '../../store/useSecondaryZoneStore.js';
 import {
@@ -25,6 +26,10 @@ import {
   selectEffectiveContextWindow
 } from '../../store/useProviderStore.js';
 import { cn } from '../../lib/cn.js';
+import {
+  SHELL_COMPACT_ICON_CLASS,
+  SHELL_COMPACT_ICON_STROKE
+} from '../../lib/shellIcons.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { AGENT_NAME } from '@shared/constants.js';
 
@@ -45,7 +50,6 @@ export function Composer({
   variant = 'card'
 }: ComposerProps) {
   const [text, setText] = useState('');
-  const [attachments, setAttachments] = useState<string[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   /**
    * Active `@`-mention token. When non-null, the AttachmentPicker is
@@ -54,35 +58,57 @@ export function Composer({
    * picked path to attachments. The `+` button flow remains untouched.
    */
   const [atMention, setAtMention] = useState<{ start: number; query: string } | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   /**
-   * Drives the composer's accent-halo elevation. Flipped by the textarea's
-   * focus/blur handlers so the card subtly breathes when the user is
-   * composing — no ring on the textarea itself (would read as a double
-   * affordance), just a single halo on the enclosing card.
+   * Drives the composer's accent-halo elevation. Reserved for future
+   * focus affordances; the Vyotiq UI shell uses `:focus-within`.
    */
-  const [textareaFocused, setTextareaFocused] = useState(false);
+  const [, setTextareaFocused] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
   /** Tracks whether the current `text` came from history recall so
    *  ArrowDown can walk back toward the tail. Reset on any user
    *  keystroke that isn't history navigation. */
   const fromHistoryRef = useRef(false);
-  const isProcessing = useChatStore((s) => s.isProcessing);
-  const send = useChatStore((s) => s.send);
-  const abort = useChatStore((s) => s.abort);
-  // Read the ORCHESTRATOR's authoritative usage directly, NOT the
-  // run-level `totalRunUsage` aggregate. Sub-agents have completely
-  // separate context windows (project.md §"Sub-Agent Delegation" #3,
-  // also Anthropic's 2026 Claude Code subagents docs). The pill is
-  // the "how full is the model the user is composing TO" gauge — it
-  // must reflect the orchestrator's window, not a multi-agent sum.
-  // The Inspector's `UsageBadge`, `LiveStatusRow`, and dock peak badges
-  // all read this same slot, so the surfaces stay consistent.
-  const orchestratorUsage = useChatStore((s) => s.orchestratorUsage);
-  const events = useChatStore((s) => s.events);
-  const conversationId = useChatStore((s) => s.conversationId);
-  const runId = useChatStore((s) => s.runId);
-  const storeDraft = useChatStore((s) => s.draft);
-  const setDraft = useChatStore((s) => s.setDraft);
+  const {
+    isProcessing,
+    send,
+    abort,
+    orchestratorUsage,
+    events,
+    conversationId,
+    runId,
+    storeDraft,
+    setDraft
+  } = useChatStore(
+    useShallow((s) => ({
+      isProcessing: s.isProcessing,
+      send: s.send,
+      abort: s.abort,
+      orchestratorUsage: s.orchestratorUsage,
+      events: s.events,
+      conversationId: s.conversationId,
+      runId: s.runId,
+      storeDraft: s.draft,
+      setDraft: s.setDraft
+    }))
+  );
+  const activeWorkspaceIdForAttach = useWorkspaceStore((s) => s.activeId);
+  const {
+    attachments,
+    addPaths,
+    pickFromComputer,
+    remove: removeAttachment,
+    clearAttachments,
+    peekPendingMessageId,
+    onDrop,
+    onDragOver
+  } = useComposerAttachments({
+    conversationId,
+    workspaceId: activeWorkspaceIdForAttach
+  });
+  const selectedPaths = attachments.map(
+    (a) => a.workspacePath ?? a.storedPath ?? a.name
+  );
   const workspacePath = useWorkspaceStore((s) => s.info.path);
   const providers = useProviderStore((s) => s.providers);
   const setContextOverride = useProviderStore((s) => s.setContextOverride);
@@ -91,9 +117,8 @@ export function Composer({
   // override (if any). Driven by the active workspace id; switching
   // workspaces immediately re-resolves the menu / send pipeline so the
   // user can see the chosen folder's policy without a reload.
-  const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
   const settings = useSettingsStore((s) => s.settings);
-  const permissions = selectEffectivePermissions(activeWorkspaceId, settings);
+  const permissions = selectEffectivePermissions(activeWorkspaceIdForAttach, settings);
 
   // Pre-flight BPE estimate (main process). Runs while the user types.
   // Swapped out for the provider's actual `usage.promptTokens +
@@ -107,7 +132,8 @@ export function Composer({
   const estimate = useComposerTokenEstimate({
     modelId: model?.modelId ?? '',
     prompt: text,
-    attachments,
+    attachments: selectedPaths,
+    attachmentMeta: attachments,
     ...(conversationId ? { conversationId } : {})
   });
   const ceiling = model
@@ -199,6 +225,15 @@ export function Composer({
     autosize(taRef.current);
   }, [text]);
 
+  useEffect(() => {
+    return () => {
+      if (draftRafRef.current !== null) {
+        cancelAnimationFrame(draftRafRef.current);
+        draftRafRef.current = null;
+      }
+    };
+  }, []);
+
   const showToast = useToastStore((s) => s.show);
 
   const handleSend = async () => {
@@ -207,14 +242,16 @@ export function Composer({
       return;
     }
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed && attachments.length === 0) return;
     if (!model) {
       showToast('Select a model before sending.', 'danger');
       return;
     }
-    const toSend = attachments;
+    const toSendMeta = attachments;
+    const promptEventId =
+      toSendMeta.length > 0 ? peekPendingMessageId() : undefined;
     setText('');
-    setAttachments([]);
+    clearAttachments();
     setAtMention(null);
     fromHistoryRef.current = false;
     history.reset();
@@ -233,7 +270,14 @@ export function Composer({
       selfDraftRef.current = '';
       setDraft(conversationId, '');
     }
-    await send(trimmed, model, permissions, toSend.length > 0 ? { attachments: toSend } : undefined);
+    await send(
+      trimmed || 'See attached files.',
+      model,
+      permissions,
+      toSendMeta.length > 0
+        ? { attachmentMeta: toSendMeta, promptEventId }
+        : undefined
+    );
   };
 
   const onTextChange = (next: string) => {
@@ -279,7 +323,7 @@ export function Composer({
    *  and adds the picked path to the attachments pill row. */
   const onMentionPick = (path: string) => {
     if (!atMention) {
-      setAttachments((cur) => (cur.includes(path) ? cur : [...cur, path]));
+      void addPaths([path]);
       return;
     }
     const before = text.slice(0, atMention.start);
@@ -289,7 +333,7 @@ export function Composer({
     const collapsed =
       before.endsWith(' ') && after.startsWith(' ') ? before + after.slice(1) : before + after;
     setText(collapsed);
-    setAttachments((cur) => (cur.includes(path) ? cur : [...cur, path]));
+    void addPaths([path]);
     setAtMention(null);
     requestAnimationFrame(() => {
       const el = taRef.current;
@@ -299,9 +343,10 @@ export function Composer({
     });
   };
 
+  const canSendContent = text.trim().length > 0 || attachments.length > 0;
   const sendState: 'idle' | 'ready' | 'processing' = isProcessing
     ? 'processing'
-    : text.trim().length > 0 && model
+    : canSendContent && model
       ? 'ready'
       : 'idle';
   // Inspector entry point: the pill's primary click opens the
@@ -326,78 +371,116 @@ export function Composer({
   // as inFlight grows. The pre-flight estimate (no `orchestratorUsage`
   // yet, and the tokenizer fell back to the heuristic) still
   // italicizes the slash via `!estimate.exact`.
-  const tokenUsageSlot = model ? (
-    <TokenUsagePill
-      used={usedTokens}
-      {...(typeof ceiling === 'number' ? { ceiling } : {})}
-      estimated={!hasActualUsage && !estimate.exact}
-      onCeilingChange={(value) =>
-        setContextOverride(model.providerId, model.modelId, value)
-      }
-      {...(openInspector ? { onOpenInspector: openInspector } : {})}
-      {...(hasActualUsage ? { usage: orchestratorUsage!.latest } : {})}
-      {...(estimate.baseline ? { baseline: estimate.baseline } : {})}
-      draftTokens={estimate.draftTokens}
-    />
-  ) : null;
-
+  const tokenUsageSlot = useMemo(() => {
+    if (!model) return null;
+    return (
+      <TokenUsagePill
+        used={usedTokens}
+        {...(typeof ceiling === 'number' ? { ceiling } : {})}
+        estimated={!hasActualUsage && !estimate.exact}
+        onCeilingChange={(value) =>
+          setContextOverride(model.providerId, model.modelId, value)
+        }
+        {...(openInspector ? { onOpenInspector: openInspector } : {})}
+        {...(hasActualUsage ? { usage: orchestratorUsage!.latest } : {})}
+        {...(estimate.baseline ? { baseline: estimate.baseline } : {})}
+        draftTokens={estimate.draftTokens}
+      />
+    );
+  }, [
+    model,
+    usedTokens,
+    ceiling,
+    hasActualUsage,
+    estimate.exact,
+    estimate.baseline,
+    estimate.draftTokens,
+    setContextOverride,
+    openInspector,
+    orchestratorUsage
+  ]);
   const footerMode = variant === 'footer';
   const zoneOpen = useSecondaryZoneStore((s) => s.panel !== null);
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.types.includes('Files')) setDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    setDragOver(false);
+    onDrop(e);
+  };
 
   return (
     <div className="w-full">
       <div
         className={cn(
-          'flex flex-col overflow-hidden',
+          'flex flex-col overflow-hidden transition-shadow duration-150',
           footerMode
             ? 'bg-transparent'
-            : cn(
-                'rounded-card border border-border-subtle/18 bg-surface-raised/80',
-                textareaFocused ? 'elev-2-focused' : 'elev-2',
-                textareaFocused && surfaceShellFocusClassName
-              )
+            : appComposerShellClassName,
+          dragOver && 'ring-2 ring-accent/35 ring-offset-0'
         )}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={onDragOver}
+        onDrop={handleDrop}
       >
         {workspacePath && (
           <div
             className={cn(
-              'flex min-w-0 items-center gap-1.5 border-b text-meta text-text-muted',
-              chromeEdgeClassName,
-              footerMode ? 'px-2 py-0.5' : 'px-3 py-1'
+              'vx-composer-path vx-caption',
+              footerMode && 'vx-composer-path--compact'
             )}
           >
-            <FolderOpen className="h-3 w-3 shrink-0" strokeWidth={2} aria-hidden />
+            <FolderOpen
+              className={SHELL_COMPACT_ICON_CLASS}
+              strokeWidth={SHELL_COMPACT_ICON_STROKE}
+              aria-hidden
+            />
             <span className="min-w-0 truncate font-mono" title={workspacePath}>
               {workspacePath}
             </span>
           </div>
         )}
-        {attachments.length > 0 && (
-          <div className={cn(chromeChipTrayClassName, 'flex min-w-0 flex-wrap items-center gap-1')}>
-            {attachments.map((p) => (
-              <Chip
-                key={p}
-                as="button"
-                tone="secondary"
-                onClick={() => setAttachments((cur) => cur.filter((x) => x !== p))}
-                title={`Remove ${p}`}
-              >
-                <span className="max-w-[240px] truncate font-mono">{p}</span>
-                <X className="h-2.5 w-2.5 shrink-0" strokeWidth={2.25} />
-              </Chip>
-            ))}
-          </div>
-        )}
-        {/*
-          Self-hiding when no other slices are streaming. Sits between
-          the chips row and the textarea so background work is visible
-          in the natural reading flow without ever taking layout space
-          in the idle case.
-        */}
-        <RunningElsewhereHint
-          className={footerMode ? 'px-2.5 pb-0 pt-0.5' : 'px-3 pb-0.5 pt-1'}
-        />
-        <textarea
+        <div className="flex min-w-0 gap-2">
+          <ComposerToolbar
+            side="left"
+            model={model}
+            onModelChange={onModelChange}
+            sendState={sendState}
+            onSend={() => void handleSend()}
+            canSend={canSendContent && !!model}
+            compact={zoneOpen}
+            selectedPaths={selectedPaths}
+            attachmentPickerOpen={pickerOpen || !!atMention}
+            onOpenAttachments={() => setPickerOpen(true)}
+            onCloseAttachments={() => {
+              setPickerOpen(false);
+              setAtMention(null);
+            }}
+            onPickAttachment={atMention ? onMentionPick : (p) => void addPaths([p])}
+            onPickFromComputer={() => void pickFromComputer()}
+            {...(atMention ? { attachmentFilter: atMention.query } : {})}
+            {...(atMention ? { onAttachmentFilterChange: onMentionFilterChange } : {})}
+            onOpenProviders={onOpenProviders}
+          />
+          <div className="flex min-w-0 flex-1 flex-col">
+            {attachments.length > 0 && (
+              <PromptAttachmentCards
+                items={attachments}
+                editable
+                onRemove={removeAttachment}
+                className="mb-1"
+              />
+            )}
+            <textarea
           ref={taRef}
           value={text}
           aria-label={`Message ${AGENT_NAME}`}
@@ -417,10 +500,11 @@ export function Composer({
             }
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              if (text.trim().length > 0 && !model) {
+              if (canSendContent && !model) {
                 showToast('Select a model before sending.', 'danger');
                 return;
               }
+              if (!canSendContent && !isProcessing) return;
               void handleSend();
               return;
             }
@@ -457,47 +541,22 @@ export function Composer({
           rows={1}
           placeholder="@ to mention files, or describe your task…"
           className={cn(
-            'w-full resize-none bg-transparent outline-none focus:outline-none',
-            footerMode
-              ? 'min-h-[1.75rem] px-2 pb-0 pt-1.5 text-body leading-5 text-text-primary'
-              : 'px-3 pb-1.5 pt-3 text-body leading-6 text-text-primary',
-            'placeholder:text-text-faint',
-            // Short height transition smooths the auto-grow / shrink
-            // step so a multi-line paste doesn't jolt the composer
-            // surface. `motion-reduce` skips the transition for
-            // users with reduced-motion preferences. The autosize()
-            // helper writes the new `style.height` synchronously;
-            // the transition interpolates from the previous value.
+            appComposerTextareaClassName,
+            footerMode ? 'min-h-[1.75rem] leading-5' : 'min-h-[2.5rem]',
             'transition-[height] duration-150 ease-out motion-reduce:transition-none'
           )}
           style={{ maxHeight: TEXTAREA_MAX_HEIGHT }}
-        />
-        <ComposerToolbar
-          model={model}
-          onModelChange={onModelChange}
-          sendState={sendState}
-          onSend={() => void handleSend()}
-          canSend={text.trim().length > 0 && !!model}
-          compact={zoneOpen}
-          footerMode={footerMode}
-          attachments={attachments}
-          // Picker is open whenever the `+` button toggled it OR the
-          // user is mid-`@`-mention. The two flows route to different
-          // close/pick handlers below.
-          attachmentPickerOpen={pickerOpen || !!atMention}
-          onOpenAttachments={() => setPickerOpen(true)}
-          onCloseAttachments={() => {
-            setPickerOpen(false);
-            setAtMention(null);
-          }}
-          onPickAttachment={atMention ? onMentionPick : (p) =>
-            setAttachments((cur) => (cur.includes(p) ? cur : [...cur, p]))
-          }
-          {...(atMention ? { attachmentFilter: atMention.query } : {})}
-          {...(atMention ? { onAttachmentFilterChange: onMentionFilterChange } : {})}
-          tokenUsageSlot={tokenUsageSlot}
-          onOpenProviders={onOpenProviders}
-        />
+            />
+            <ComposerFooter
+              attachmentCount={attachments.length}
+              meterPill={tokenUsageSlot}
+              sendState={sendState}
+              onSend={() => void handleSend()}
+              canSend={canSendContent && !!model}
+              compact={zoneOpen}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

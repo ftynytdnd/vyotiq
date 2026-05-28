@@ -10,15 +10,15 @@ describe('TimelineDividerRow', () => {
   it('renders Exploring phase dividers with gold headline', () => {
     const { container } = render(<TimelineDividerRow label="Exploring" variant="phase" />);
     expect(container.textContent ?? '').toContain('Exploring');
-    expect(container.innerHTML).toContain('text-accent-gold');
+    expect(container.innerHTML).toContain('vx-timeline-phase');
   });
 
   it('keeps non-exploring phase labels muted', () => {
     const { container } = render(
       <TimelineDividerRow label="Delegating 2 sub-tasks" variant="phase" />
     );
-    expect(container.innerHTML).toContain('text-text-muted');
-    expect(container.innerHTML).not.toContain('text-accent-gold-strong');
+    expect(container.innerHTML).toContain('vx-caption');
+    expect(container.innerHTML).not.toContain('vx-timeline-phase-live');
   });
 
   it('renders no horizontal hairline rules around the label (May 2026 restyle)', () => {

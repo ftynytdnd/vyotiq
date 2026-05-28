@@ -8,6 +8,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '../../../lib/cn.js';
 import {
   timelineRowChevronClassName,
+  timelineRowChevronStroke,
   timelineRowHeaderClassName
 } from './rowStyles.js';
 import { copyRowAnchor } from './timelineRowAnchor.js';
@@ -26,6 +27,8 @@ export interface TimelineRowHeaderProps {
   rowAnchorKey?: string;
   /** Stable id for the expandable panel controlled by this header. */
   panelId?: string;
+  /** Screen-reader label for the expand control (visible title stays in `children`). */
+  expandAriaLabel?: string;
   /**
    * Place the expand/collapse chevron on the trailing edge instead of
    * the leading edge. Used by the May 2026 sub-agent row restyle so
@@ -47,7 +50,8 @@ export function TimelineRowHeader({
   children,
   rowAnchorKey,
   panelId,
-  chevronOnRight = false
+  chevronOnRight = false,
+  expandAriaLabel
 }: TimelineRowHeaderProps) {
   const showChevronSlot = expandable || chevronSpacer;
 
@@ -64,9 +68,9 @@ export function TimelineRowHeader({
     <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center" aria-hidden>
       {expandable ? (
         expanded ? (
-          <ChevronDown className={timelineRowChevronClassName} strokeWidth={2} />
+          <ChevronDown className={timelineRowChevronClassName} strokeWidth={timelineRowChevronStroke} />
         ) : (
-          <ChevronRight className={timelineRowChevronClassName} strokeWidth={2} />
+          <ChevronRight className={timelineRowChevronClassName} strokeWidth={timelineRowChevronStroke} />
         )
       ) : null}
     </span>
@@ -89,6 +93,7 @@ export function TimelineRowHeader({
           onClick={handleToggle}
           className={cn(timelineRowHeaderClassName, 'min-w-0 flex-1')}
           aria-expanded={expanded}
+          {...(expandAriaLabel ? { 'aria-label': expandAriaLabel } : {})}
           {...(panelId ? { 'aria-controls': panelId } : {})}
           title={rowAnchorKey ? 'Ctrl+click to copy row link' : undefined}
         >

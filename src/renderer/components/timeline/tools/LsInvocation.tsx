@@ -5,6 +5,8 @@
 
 import { Folder, FileText } from 'lucide-react';
 import type { ToolCall, ToolResult } from '@shared/types/tool.js';
+import { cn } from '../../../lib/cn.js';
+import { SHELL_ROW_ICON_CLASS, SHELL_ACTION_ICON_STROKE } from '../../../lib/shellIcons.js';
 import { InvocationShell } from './shared/InvocationShell.js';
 import { DetailPane } from './shared/DetailPane.js';
 import { SurfaceShell } from '../../ui/SurfaceShell.js';
@@ -42,9 +44,9 @@ export function LsInvocation({ call, result, dense, rowKey }: LsInvocationProps)
             className="flex items-center gap-1.5 font-mono text-row text-text-secondary"
           >
             {e.type === 'dir' ? (
-              <Folder className="h-3 w-3 shrink-0 text-accent" strokeWidth={2} />
+              <Folder className={cn(SHELL_ROW_ICON_CLASS, 'text-accent')} strokeWidth={SHELL_ACTION_ICON_STROKE} />
             ) : (
-              <FileText className="h-3 w-3 shrink-0 text-text-faint" strokeWidth={2} />
+              <FileText className={cn(SHELL_ROW_ICON_CLASS, 'text-text-faint')} strokeWidth={SHELL_ACTION_ICON_STROKE} />
             )}
             <span className="truncate" title={e.rel}>
               {e.rel}

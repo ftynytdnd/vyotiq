@@ -8,8 +8,9 @@ import { forwardRef } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { useProviderStore } from '../../../store/useProviderStore.js';
-import { chromeBadgeClassName, chromePillClassName } from '../../ui/SurfaceShell.js';
 import { cn } from '../../../lib/cn.js';
+import { chromeToolbarButtonClassName } from '../../ui/SurfaceShell.js';
+import { SHELL_COMPACT_ICON_CLASS, SHELL_COMPACT_ICON_STROKE } from '../../../lib/shellIcons.js';
 
 interface ModelPickerTriggerProps {
   value: ModelSelection | null;
@@ -61,17 +62,15 @@ export const ModelPickerTrigger = forwardRef<HTMLButtonElement, ModelPickerTrigg
         onClick={onClick}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label={`Model: ${tooltip}`}
         title={tooltip}
         className={cn(
-          // `text-row` (11px) on the trigger, not `text-meta` (10px) —
-          // the model id is the only one of the composer's pill
-          // controls that holds arbitrary user-supplied text.
-          chromePillClassName(open),
-          'min-w-0 max-w-[190px] gap-1 px-1.5 text-row text-text-secondary'
+          chromeToolbarButtonClassName(open),
+          'h-[1.625rem] min-w-0 max-w-[190px] items-center gap-1 px-1.5 text-chat-meta text-text-secondary'
         )}
       >
         {showProviderBadge && (
-          <span className={cn(chromeBadgeClassName, 'shrink-0 px-1 py-0.5 font-normal')}>
+          <span className="vx-caption shrink-0 rounded-line border border-border-subtle/70 px-1 py-0.5 font-normal">
             {provider!.name}
           </span>
         )}
@@ -80,10 +79,12 @@ export const ModelPickerTrigger = forwardRef<HTMLButtonElement, ModelPickerTrigg
         </span>
         <ChevronDown
           className={cn(
-            'h-3 w-3 shrink-0 transition-transform duration-150',
+            SHELL_COMPACT_ICON_CLASS,
+            'transition-transform duration-150',
             open && 'rotate-180'
           )}
-          strokeWidth={2.25}
+          strokeWidth={SHELL_COMPACT_ICON_STROKE}
+          aria-hidden
         />
       </button>
     );

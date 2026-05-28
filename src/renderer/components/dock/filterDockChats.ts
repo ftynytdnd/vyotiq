@@ -11,13 +11,16 @@ export function filterDockChats(
   query: string,
   searchOpen: boolean,
   runningIds: ReadonlySet<string>,
-  activeId?: string | null
+  activeId?: string | null,
+  opts?: { archivedOnly?: boolean }
 ): ConversationMeta[] {
   const q = query.trim().toLowerCase();
   const isFiltering = searchOpen && q.length > 0;
+  const archivedOnly = opts?.archivedOnly === true;
 
   return list.filter((c) => {
     if (c.workspaceId !== workspaceId) return false;
+    if (!!c.archived !== archivedOnly) return false;
     if (c.id === activeId) return true;
     if (isFiltering && !c.title.toLowerCase().includes(q) && !runningIds.has(c.id)) {
       return false;

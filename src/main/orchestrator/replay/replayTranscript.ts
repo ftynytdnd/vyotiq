@@ -85,7 +85,7 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
    *  wrong status when an id was re-spawned across rounds). */
   const latestStatusByAgent = new Map<string, string>();
 
-  const flushAssistant = () => {
+  const flushAssistant = (opts?: { dropUnpairedToolCalls?: boolean }) => {
     if (curAssistantId === null) return;
     if (curText.length === 0 && curReasoning.length === 0 && curToolCalls.length === 0) {
       curAssistantId = null;
@@ -104,7 +104,18 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
     // field stays absent (the API auto-filters legacy thinking
     // blocks for older Sonnet/Haiku classes anyway).
     if (curReasoningSignature.length > 0) msg.reasoning_signature = curReasoningSignature;
-    if (curToolCalls.length > 0) msg.tool_calls = curToolCalls;
+    if (curToolCalls.length > 0) {
+      if (opts?.dropUnpairedToolCalls) {
+        // Boundary flush (user-prompt / delegation start): omit tool_calls
+        // that never received a matching `tool-result` event. The normal
+        // `tool-result` path flushes WITHOUT this flag so calls are still
+        // attached right before their paired result row lands.
+        const paired = curToolCalls.filter((tc) => !pendingCallIds.includes(tc.id));
+        if (paired.length > 0) msg.tool_calls = paired;
+      } else {
+        msg.tool_calls = curToolCalls;
+      }
+    }
     messages.push(msg);
     curAssistantId = null;
     curText = '';
@@ -153,7 +164,7 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
   for (const e of events) {
     switch (e.kind) {
       case 'user-prompt': {
-        flushAssistant();
+        flushAssistant({ dropUnpairedToolCalls: true });
         flushSubagentRound();
         // Any tool-call ids still unpaired at this boundary are stale —
         // they belonged to a previous turn that never received its
@@ -238,6 +249,15 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
         break;
       case 'tool-call': {
         if (e.subagentId) break; // sub-agent internals are isolated
+        // A call id that already paired with a `tool-result` must not
+        // be re-emitted — duplicate persisted rows would otherwise
+        // rebuild orphan `tool_calls` on the next assistant turn.
+        if (
+          toolCallMeta.has(e.call.id) &&
+          !pendingCallIds.includes(e.call.id)
+        ) {
+          break;
+        }
         // Tool calls belong to the in-progress assistant turn.
         if (curAssistantId === null) curAssistantId = `call-anchor-${e.id}`;
         const tc: NonNullable<ChatMessage['tool_calls']>[number] = {
@@ -261,6 +281,12 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
       }
       case 'tool-result': {
         if (e.subagentId) break;
+        if (
+          toolCallMeta.has(e.result.id) &&
+          !pendingCallIds.includes(e.result.id)
+        ) {
+          break;
+        }
         // Flush the assistant turn that spawned this call (if any).
         flushAssistant();
         // Pairing policy: see the `pendingCallIds` comment. Prefer an
@@ -286,7 +312,12 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
         break;
       }
       case 'subagent-spawn': {
-        flushAssistant();
+        flushAssistant({ dropUnpairedToolCalls: true });
+        // Any tool-call ids that were still pending at the delegation
+        // boundary were dropped from the flushed assistant above — clear
+        // them so a later stray `tool-result` cannot pair against a stale
+        // id from a turn the orchestrator already moved past.
+        pendingCallIds = [];
         inSubagentRound = true;
         if (!roundEntries.has(e.subagentId)) {
           roundSpawnOrder.push(e.subagentId);

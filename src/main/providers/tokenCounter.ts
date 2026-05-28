@@ -20,8 +20,8 @@
  *   - `estimateTokens(...)`  — legacy single-prompt + attachment shape used
  *     by the composer's keystroke-debounced pre-flight estimate.
  *   - `tokenizeText(modelId, text)` — raw BPE count for any string.
- *     The renderer-safe equivalent (`@shared/text/tokenizeForModel`)
- *     mirrors this signature for the synthetic mid-stream counter.
+ *     The renderer synthetic counter (`@shared/text/tokenizeForModel`)
+ *     uses the chars/3.8 heuristic so `gpt-tokenizer` stays main-only.
  *   - `tokenizeMessages(modelId, messages, tools)` — Phase 2's full
  *     prospective-payload tokenizer. Sums every message body + the
  *     serialized tool catalogue and returns the per-part breakdown the
@@ -37,10 +37,11 @@ import {
   encode as encodeCl100k,
   encodeChat as encodeChatCl100k
 } from 'gpt-tokenizer/model/gpt-4';
-import type { ChatMessage } from '@shared/types/chat.js';
+import type { ChatMessage, PromptAttachmentMeta } from '@shared/types/chat.js';
 import { logger } from '../logging/logger.js';
 import { escapeXmlAttr } from '../orchestrator/envelope/index.js';
-import { resolveInsideWorkspace } from '../tools/sandbox.js';
+import { realpathInsideWorkspace } from '../tools/sandbox.js';
+import { resolveAttachmentsForInline } from '../attachments/resolveAttachmentsForInline.js';
 
 const log = logger.child('providers/tokenCounter');
 
@@ -51,6 +52,7 @@ export interface EstimateInput {
   modelId: string;
   prompt: string;
   attachments?: string[];
+  attachmentMeta?: PromptAttachmentMeta[];
   /** Absolute workspace root; used to resolve attachment paths. */
   workspacePath?: string;
 }
@@ -135,7 +137,7 @@ async function readInlinedAttachments(
     // guard in `contextManager.inlineFiles`.
     let abs: string;
     try {
-      abs = resolveInsideWorkspace(workspacePath, rel);
+      abs = await realpathInsideWorkspace(workspacePath, rel);
     } catch {
       parts.push(`<file path="${safeRel}" error="unreadable" />`);
       continue;
@@ -163,8 +165,15 @@ export async function estimateTokens(input: EstimateInput): Promise<EstimateResu
   const workspacePath = input.workspacePath ?? '';
 
   let inlined = '';
-  if (workspacePath && attachments.length > 0) {
-    inlined = await readInlinedAttachments(workspacePath, attachments);
+  if (workspacePath) {
+    if (input.attachmentMeta && input.attachmentMeta.length > 0) {
+      inlined = await resolveAttachmentsForInline({
+        attachmentMeta: input.attachmentMeta,
+        workspacePath
+      });
+    } else if (attachments.length > 0) {
+      inlined = await readInlinedAttachments(workspacePath, attachments);
+    }
   }
   const combined = inlined ? `${prompt}\n\n${inlined}` : prompt;
 

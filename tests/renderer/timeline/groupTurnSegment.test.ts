@@ -5,12 +5,8 @@
 import { describe, expect, it } from 'vitest';
 import type { DisplayRow } from '@renderer/components/timeline/shared/projectSubagentRows';
 import {
-  categorizeActivityRow,
-  groupActivityByCategory,
   partitionTurnSegment,
-  reorderTurnSegment,
-  resolveTurnActivityDurationMs,
-  type PartitionedTurn
+  reorderTurnSegment
 } from '@renderer/components/timeline/shared/groupTurnSegment';
 import { reorderRowsWithinTurns } from '@renderer/components/timeline/shared/turnRowOrdering';
 
@@ -37,7 +33,8 @@ const toolGroup = (key: string): DisplayRow => ({
 const runComplete = (key: string): DisplayRow => ({
   kind: 'run-complete',
   key,
-  durationMs: 4200
+  durationMs: 4200,
+  completedAt: 1_700_000_004_200
 });
 
 describe('groupTurnSegment', () => {
@@ -123,53 +120,4 @@ describe('groupTurnSegment', () => {
     ]);
   });
 
-  it('categorizes activity rows into lane buckets', () => {
-    expect(categorizeActivityRow({ kind: 'reasoning-line', key: 'r', id: 'r' })).toBe(
-      'reasoning'
-    );
-    expect(categorizeActivityRow(toolGroup('tg'))).toBe('tools');
-    expect(
-      categorizeActivityRow({ kind: 'delegate-batch', key: 'd', subagentIds: ['s1', 's2'] })
-    ).toBe('delegates');
-    expect(
-      categorizeActivityRow({ kind: 'agent-thought', key: 't', content: 'note' })
-    ).toBe('status');
-  });
-
-  it('groups activity rows by category preserving order', () => {
-    const activity: DisplayRow[] = [
-      toolGroup('tg-1'),
-      { kind: 'reasoning-line', key: 'thought', id: 'thought' },
-      { kind: 'phase', key: 'ph', label: 'Exploring' }
-    ];
-    const grouped = groupActivityByCategory(activity);
-    expect(grouped.tools.map((r) => r.key)).toEqual(['tg-1']);
-    expect(grouped.reasoning.map((r) => r.key)).toEqual(['thought']);
-    expect(grouped.status.map((r) => r.key)).toEqual(['ph']);
-  });
-
-  it('prefers run-complete duration and falls back to reasoning spans', () => {
-    const withRunComplete: PartitionedTurn = {
-      prompt: prompt('p1'),
-      activity: [{ kind: 'reasoning-line', key: 'thought', id: 'thought-1' }],
-      response: assistant('a1'),
-      footer: [runComplete('rc-1')],
-      agentStream: [
-        { kind: 'reasoning-line', key: 'thought', id: 'thought-1' },
-        assistant('a1')
-      ]
-    };
-    expect(resolveTurnActivityDurationMs(withRunComplete)).toBe(4200);
-
-    const withoutRunComplete: PartitionedTurn = {
-      ...withRunComplete,
-      footer: [],
-      agentStream: withRunComplete.agentStream
-    };
-    expect(
-      resolveTurnActivityDurationMs(withoutRunComplete, {
-        'thought-1': { startedAt: 1000, endedAt: 3500 }
-      })
-    ).toBe(2500);
-  });
 });

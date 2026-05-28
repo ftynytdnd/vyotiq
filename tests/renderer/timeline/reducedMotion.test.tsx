@@ -55,7 +55,7 @@ afterEach(() => {
 describe('Live phase headings under prefers-reduced-motion', () => {
   it('keeps gold phase heading classes on the DOM', () => {
     const { container } = render(<ReasoningLineRow id="r1" />);
-    expect(container.innerHTML).toContain('text-accent-gold');
+    expect(container.innerHTML).toContain('vx-timeline-phase-live');
     expect(container.innerHTML).not.toContain('vyotiq-shimmer-text');
   });
 });

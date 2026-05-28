@@ -259,10 +259,11 @@ describe('TokenUsagePill — active state', () => {
       />
     );
     const title = container.querySelector('button')?.getAttribute('title') ?? '';
-    expect(title).toContain('Pre-flight: 21.6k baseline + 142 draft');
-    expect(title).toContain('· system prompt: 18.5k');
-    expect(title).toContain('· tools: 3.1k');
-    expect(title).toContain('· history: 0');
+    expect(title).toContain('Context:');
+    expect(title).toContain('Context (pre-flight): 21.6k tok baseline + 142 tok draft');
+    expect(title).toContain('· system prompt: 18.5k tok');
+    expect(title).toContain('· tools: 3.1k tok');
+    expect(title).toContain('· history: 0 tok');
   });
 
   it('hides the baseline section once authoritative usage is available', () => {
@@ -282,7 +283,8 @@ describe('TokenUsagePill — active state', () => {
       />
     );
     const title = container.querySelector('button')?.getAttribute('title') ?? '';
-    expect(title).not.toContain('Pre-flight:');
+    expect(title).not.toContain('Context (pre-flight):');
+    expect(title).toContain('Run total (latest turn):');
     expect(title).toContain('Prompt: 18.2k');
   });
 

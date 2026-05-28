@@ -5,7 +5,8 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { Search, X } from 'lucide-react';
 import { cn } from '../../../lib/cn.js';
-import { chromePopoverPanelClassName } from '../../ui/SurfaceShell.js';
+import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/shellIcons.js';
+import { appPopoverPanelClassName } from '../../ui/SurfaceShell.js';
 
 const MARK_CLASS = 'vyotiq-timeline-find-mark';
 
@@ -75,13 +76,12 @@ export function TimelineFindBar({
   return (
     <div
       className={cn(
-        'sticky top-2 z-40 mb-2 flex items-center gap-2 px-1',
-        chromePopoverPanelClassName,
-        'border border-border-subtle/40 bg-surface-raised/95 px-2 py-1.5 shadow-md backdrop-blur-sm'
+        'sticky top-2 z-40 mb-2 flex items-center gap-2 px-2 py-1.5 backdrop-blur-sm',
+        appPopoverPanelClassName
       )}
       role="search"
     >
-      <Search className="h-3.5 w-3.5 shrink-0 text-text-faint" strokeWidth={2.25} />
+      <Search className={cn(SHELL_ROW_ICON_CLASS, 'text-text-faint')} strokeWidth={SHELL_ACTION_ICON_STROKE} />
       <input
         ref={inputRef}
         type="search"
@@ -94,19 +94,19 @@ export function TimelineFindBar({
           }
         }}
         placeholder="Find in conversation…"
-        className="min-w-0 flex-1 bg-transparent text-row text-text-primary outline-none placeholder:text-text-faint"
+        className="vx-input min-w-0 flex-1 border-b-0 py-0 text-row"
         aria-label="Find in conversation"
       />
-      <span className="shrink-0 font-mono text-meta text-text-faint">
+      <span className="shrink-0 font-mono vx-caption">
         {debouncedQuery ? matchCount : '—'}
       </span>
       <button
         type="button"
         onClick={onClose}
-        className="rounded-inner p-0.5 text-text-faint hover:bg-surface-hover hover:text-text-secondary"
+        className="vx-btn vx-btn-quiet rounded-[4px] p-0.5"
         aria-label="Close find"
       >
-        <X className="h-3.5 w-3.5" strokeWidth={2.25} />
+        <X className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
       </button>
     </div>
   );

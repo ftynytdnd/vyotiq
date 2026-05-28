@@ -5,10 +5,10 @@
  * human-readable summary in the timeline instead of a raw `POST
  * … 402 Payment Required` dump.
  *
- * The RETRY policy itself is UNCHANGED (per spec) — `runLoop.ts`
- * still consumes `MAX_SELF_CORRECTION_ATTEMPTS = 3` attempts regardless
- * of error kind. This file only classifies and describes errors, it
- * does NOT gate retries.
+ * Non-recoverable kinds (`billing`, `auth`, `model-not-found`,
+ * `endpoint-missing`) terminate the run loop immediately — retrying
+ * cannot fix user configuration. Transient kinds (`rate-limit`,
+ * `server`, `unknown`) still use `MAX_SELF_CORRECTION_ATTEMPTS`.
  */
 
 type ProviderErrorKind =
@@ -221,4 +221,16 @@ function clip(s: string): string {
 /** Narrowing helper for the timeline / toast surfaces in the renderer. */
 export function isProviderError(err: unknown): err is ProviderError {
   return err instanceof ProviderError;
+}
+
+const NON_RECOVERABLE_PROVIDER_ERROR_KINDS: ReadonlySet<ProviderErrorKind> = new Set([
+  'billing',
+  'auth',
+  'model-not-found',
+  'endpoint-missing'
+]);
+
+/** Provider failures that should not consume the self-correction retry budget. */
+export function isNonRecoverableProviderError(err: unknown): err is ProviderError {
+  return isProviderError(err) && NON_RECOVERABLE_PROVIDER_ERROR_KINDS.has(err.kind);
 }

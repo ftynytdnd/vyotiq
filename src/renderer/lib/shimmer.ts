@@ -1,8 +1,8 @@
 /**
- * Shimmer class composition helpers + per-instance phase offset.
+ * Shimmer class composition helper + per-instance phase offset.
  *
- * `shimmerText` / `shimmerPill` toggle the `vyotiq-shimmer-text` /
- * `vyotiq-shimmer-pill` utilities declared in `index.css` based on a
+ * `shimmerText` toggles the `vyotiq-shimmer-text` utility declared in
+ * `index.css` based on a
  * boolean flag. Each helper preserves any extra classes passed through
  * the `extra` parameter — important so existing color / italic / size
  * classes (e.g. `text-text-muted`, `italic`, `text-[12px]`) compose
@@ -27,11 +27,6 @@ import { cn } from './cn.js';
 /** Gradient-sweep text. Composes with any existing color classes. */
 export function shimmerText(active: boolean, extra?: string): string {
   return cn(active && 'vyotiq-shimmer-text', extra);
-}
-
-/** Small-pill shimmer variant (tuned for 10px labels in status pills). */
-export function shimmerPill(active: boolean, extra?: string): string {
-  return cn(active && 'vyotiq-shimmer-pill', extra);
 }
 
 /**

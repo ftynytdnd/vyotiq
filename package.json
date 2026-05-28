@@ -20,7 +20,10 @@
     "flip-fuses": "node scripts/flipFuses.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/geist": "^5.2.9",
+    "@fontsource-variable/geist-mono": "^5.2.8",
     "clsx": "^2.1.1",
+    "electron-updater": "^6.8.3",
     "fast-glob": "^3.3.3",
     "gpt-tokenizer": "^3.4.0",
     "highlight.js": "^11.11.1",

@@ -5,7 +5,6 @@
 
 import type { ReactNode } from 'react';
 import type { DisplayRow } from '../shared/projectSubagentRows.js';
-import { LiveStatusRow } from '../rows/LiveStatusRow.js';
 import {
   timelineActivityLaneClassName,
   timelineTurnInnerGapClassName
@@ -16,19 +15,13 @@ interface TurnInlineStreamProps {
   rows: DisplayRow[];
   renderRow: (row: DisplayRow) => ReactNode;
   /** Append live telemetry after the inline stream when the run is active. */
-  showLiveStatus?: boolean;
 }
 
 export function TurnInlineStream({
   rows,
-  renderRow,
-  showLiveStatus = false
+  renderRow
 }: TurnInlineStreamProps) {
-  const hasResponse = rows.some((r) => r.kind === 'assistant-text');
-  const hasReasoning = rows.some((r) => r.kind === 'reasoning-line');
-  const showTelemetry = showLiveStatus && !(showLiveStatus && !rows.length && hasResponse);
-
-  if (rows.length === 0 && !showTelemetry) return null;
+  if (rows.length === 0) return null;
 
   return (
     <div
@@ -46,12 +39,6 @@ export function TurnInlineStream({
       {rows.map((row) => (
         <div key={row.key}>{renderRow(row)}</div>
       ))}
-      {showTelemetry && (
-        <LiveStatusRow
-          suppressStreamProse={hasResponse}
-          suppressStreamReasoning={hasReasoning}
-        />
-      )}
     </div>
   );
 }

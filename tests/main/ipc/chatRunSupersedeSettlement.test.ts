@@ -96,7 +96,6 @@ vi.mock('@main/checkpoints/index.js', () => ({
 }));
 
 vi.mock('@main/checkpoints/reviewSessions.js', () => ({
-  getReviewSession: vi.fn(async () => null),
   reviewSessionBlocksSend: vi.fn(() => false)
 }));
 

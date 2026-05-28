@@ -40,6 +40,15 @@ interface ProviderStore {
   ) => Promise<void>;
 }
 
+/** Enabled provider ids — stable input for boot-time discover effect deps. */
+export function selectEnabledProviderIds(providers: ReadonlyArray<ProviderConfig>): string[] {
+  const out: string[] = [];
+  for (const p of providers) {
+    if (p.enabled) out.push(p.id);
+  }
+  return out;
+}
+
 export const useProviderStore = create<ProviderStore>((set, get) => ({
   providers: [],
   loading: false,

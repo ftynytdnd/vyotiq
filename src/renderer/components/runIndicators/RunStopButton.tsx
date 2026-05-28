@@ -1,5 +1,6 @@
 import { Square } from 'lucide-react';
 import { cn } from '../../lib/cn.js';
+import { SHELL_MICRO_ICON_CLASS, SHELL_MICRO_ICON_STROKE } from '../../lib/shellIcons.js';
 import { useChatStore } from '../../store/useChatStore.js';
 
 interface RunStopButtonProps {
@@ -24,7 +25,7 @@ export function RunStopButton({ runId, conversationTitle }: RunStopButtonProps) 
         'hover:opacity-100 focus-visible:opacity-100 hover:text-text-primary'
       )}
     >
-      <Square className="h-3 w-3 fill-current" strokeWidth={2.25} />
+      <Square className={cn(SHELL_MICRO_ICON_CLASS, 'fill-current')} strokeWidth={SHELL_MICRO_ICON_STROKE} />
     </button>
   );
 }

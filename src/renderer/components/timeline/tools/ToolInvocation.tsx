@@ -21,7 +21,7 @@ import { UnknownInvocation } from './UnknownInvocation.js';
 interface ToolInvocationProps {
   call?: ToolCall;
   result?: ToolResult;
-  /** When true, render the compact nested variant used inside SubAgentTrace. */
+  /** When true, render the compact nested variant for delegated tool rows. */
   dense?: boolean;
   /** Persistent key for expand/collapse state via useTimelineUiStore. */
   rowKey?: string;
@@ -45,6 +45,7 @@ interface ToolInvocationProps {
   retryCount?: number;
   /** When set, overrides the bespoke renderer's live auto-expand signal. */
   liveAutoExpand?: boolean;
+  groupExpanded?: boolean;
 }
 
 export function ToolInvocation({
@@ -55,7 +56,8 @@ export function ToolInvocation({
   partial,
   diffStream,
   retryCount,
-  liveAutoExpand
+  liveAutoExpand,
+  groupExpanded
 }: ToolInvocationProps) {
   // Default to the unknown sentinel rather than misclassifying as bash.
   const name: ToolName = (call?.name ?? result?.name ?? 'unknown') as ToolName;
@@ -86,6 +88,7 @@ export function ToolInvocation({
           {...(diffStream ? { diffStream } : {})}
           {...(retryCount && retryCount > 1 ? { retryCount } : {})}
           {...(liveAutoExpand !== undefined ? { liveAutoExpand } : {})}
+          {...(groupExpanded ? { groupExpanded } : {})}
         />
       );
     case 'delete':

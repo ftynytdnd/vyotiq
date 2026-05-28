@@ -15,6 +15,7 @@ import { pendingDiffInsetClassName } from '../../checkpoints/pending/pendingPane
 import { DiffStatsBadge } from '../tools/shared/DiffStatsBadge.js';
 import { chromeBadgeClassName } from '../../ui/SurfaceShell.js';
 import { cn } from '../../../lib/cn.js';
+import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/shellIcons.js';
 
 interface RevertFileRowProps {
   change: RewindFileChange;
@@ -48,14 +49,14 @@ export function RevertFileRow({ change }: RevertFileRowProps) {
           <>
             <Icon
               className={cn(
-                'h-3.5 w-3.5 shrink-0',
+                SHELL_ROW_ICON_CLASS,
                 change.kind === 'create'
                   ? 'text-accent'
                   : change.kind === 'delete'
                     ? 'text-danger'
                     : 'text-text-muted'
               )}
-              strokeWidth={2}
+              strokeWidth={SHELL_ACTION_ICON_STROKE}
             />
             <div
               className="min-w-0 flex-1 truncate text-row text-text-secondary"
@@ -70,7 +71,7 @@ export function RevertFileRow({ change }: RevertFileRowProps) {
                 className={cn(chromeBadgeClassName, 'shrink-0 gap-1')}
                 title="This entry was already reverted manually"
               >
-                <Undo2 className="h-3 w-3" strokeWidth={2.25} />
+                <Undo2 className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
                 Reverted
               </span>
             )}

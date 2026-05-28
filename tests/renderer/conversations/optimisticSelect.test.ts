@@ -8,11 +8,12 @@
 
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { useChatStore } from '@renderer/store/useChatStore';
-import { useConversationsStore } from '@renderer/store/useConversationsStore';
+import { useConversationsStore, __resetSelectSpinnerForTests } from '@renderer/store/useConversationsStore';
 import { useWorkspaceStore } from '@renderer/store/useWorkspaceStore';
 import { chatSliceFixture } from '../../_fixtures/chatSlice';
 
 beforeEach(() => {
+  __resetSelectSpinnerForTests();
   useChatStore.setState({
     slices: {},
     runIdToConv: {},
@@ -33,7 +34,8 @@ beforeEach(() => {
     ],
     activeIdByWorkspace: { 'ws-test': 'conv-A' },
     hydratedIds: new Set<string>(),
-    loading: false
+    loading: false,
+    selecting: false
   });
   useWorkspaceStore.setState({
     list: [{ id: 'ws-test', path: '/tmp/ws', label: 'ws', addedAt: 0 }],
@@ -87,6 +89,32 @@ describe('useConversationsStore.select — optimistic mirror flip', () => {
 
     expect(readSpy).not.toHaveBeenCalled();
     expect(useChatStore.getState().conversationId).toBe('conv-B');
+  });
+
+  it('clears selecting when prewarm lets a superseding select short-circuit', async () => {
+    let resolveRead: ((v: { id: string; events: never[] } | null) => void) | null = null;
+    window.vyotiq.conversations.read = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveRead = resolve;
+        })
+    ) as never;
+
+    const pending = useConversationsStore.getState().select('conv-A');
+    expect(useConversationsStore.getState().selecting).toBe(true);
+
+    // DockChatStrip prewarm landed while the first JSONL read is still awaiting.
+    useConversationsStore.setState({
+      hydratedIds: new Set<string>(['conv-A'])
+    });
+
+    // App boot effect re-selects the same id once the slice is hydrated.
+    await useConversationsStore.getState().select('conv-A');
+
+    resolveRead!({ id: 'conv-A', events: [] });
+    await pending;
+
+    expect(useConversationsStore.getState().selecting).toBe(false);
   });
 });
 

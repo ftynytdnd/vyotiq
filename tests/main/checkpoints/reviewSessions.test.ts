@@ -1,10 +1,10 @@
 /**
- * reviewSessions — PR-style review persistence.
+ * reviewSessions — read-only legacy `reviews.json` loader (Phase 1).
  */
 
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { vi } from 'vitest';
 
@@ -19,117 +19,93 @@ vi.mock('electron', () => ({
   }
 }));
 
-describe('reviewSessions', () => {
+async function seedReviewSession(
+  workspaceId: string,
+  conversationId: string,
+  session: Record<string, unknown>
+): Promise<void> {
+  const { reviewsFile } = await import('../../../src/main/checkpoints/paths.js');
+  const path = reviewsFile(workspaceId);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, JSON.stringify({ [conversationId]: session }), 'utf8');
+}
+
+describe('reviewSessions (read-only)', () => {
   beforeEach(async () => {
     userDataRoot.path = await mkdtemp(join(tmpdir(), 'vyotiq-reviews-'));
+    vi.resetModules();
   });
 
   afterEach(async () => {
     await rm(userDataRoot.path, { recursive: true, force: true });
   });
 
-  it('creates session, adds comment, sets decision', async () => {
-    const {
-      ensureReviewSession,
-      addReviewComment,
-      setReviewDecision,
-      getReviewSession
-    } = await import('../../../src/main/checkpoints/reviewSessions.js');
-
-    const ws = 'ws-1';
-    const conv = 'conv-1';
-
-    const session = await ensureReviewSession({
-      workspaceId: ws,
+  it('loads an existing session from reviews.json', async () => {
+    const ws = 'ws-read';
+    const conv = 'conv-read';
+    await seedReviewSession(ws, conv, {
       conversationId: conv,
-      runId: 'run-a'
-    });
-    expect(session.conversationId).toBe(conv);
-    expect(session.comments).toEqual([]);
-
-    const comment = await addReviewComment({
       workspaceId: ws,
-      conversationId: conv,
-      filePath: 'src/a.ts',
-      body: '  needs tests  '
+      startedAt: 1,
+      updatedAt: 2,
+      comments: [],
+      decision: 'approve'
     });
-    expect(comment.body).toBe('needs tests');
 
-    const decided = await setReviewDecision({
-      workspaceId: ws,
-      conversationId: conv,
-      decision: 'approve',
-      filePath: 'src/a.ts'
-    });
-    expect(decided.decision).toBe('approve');
-    expect(decided.fileDecisions?.['src/a.ts']).toBe('approve');
-
+    const { getReviewSession } = await import('../../../src/main/checkpoints/reviewSessions.js');
     const loaded = await getReviewSession(ws, conv);
-    expect(loaded?.comments).toHaveLength(1);
+    expect(loaded?.decision).toBe('approve');
   });
 
-  it('stores line anchor and git base ref', async () => {
-    const {
-      ensureReviewSession,
-      addReviewComment,
-      setReviewGitBaseRef,
-      getReviewSession
-    } = await import('../../../src/main/checkpoints/reviewSessions.js');
+  it('returns null when no session exists', async () => {
+    const { getReviewSession } = await import('../../../src/main/checkpoints/reviewSessions.js');
+    expect(await getReviewSession('ws-missing', 'conv-missing')).toBeNull();
+  });
+});
 
-    const ws = 'ws-line';
-    const conv = 'conv-line';
-    await ensureReviewSession({ workspaceId: ws, conversationId: conv });
-    const comment = await addReviewComment({
-      workspaceId: ws,
-      conversationId: conv,
-      filePath: 'a.ts',
-      body: 'nit',
-      line: 42
-    });
-    expect(comment.line).toBe(42);
-    await setReviewGitBaseRef({ workspaceId: ws, conversationId: conv, ref: 'main' });
-    const loaded = await getReviewSession(ws, conv);
-    expect(loaded?.gitBaseRef).toBe('main');
+describe('reviewSessionBlocksSend', () => {
+  beforeEach(async () => {
+    userDataRoot.path = await mkdtemp(join(tmpdir(), 'vyotiq-review-gate-'));
+    vi.resetModules();
   });
 
-  it('does not advance cache when persist fails', async () => {
-    const { ensureReviewSession, addReviewComment, getReviewSession } = await import(
+  afterEach(async () => {
+    await rm(userDataRoot.path, { recursive: true, force: true });
+  });
+
+  it('returns true when decision is request_changes', async () => {
+    const ws = 'ws-gate';
+    const conv = 'conv-gate';
+    await seedReviewSession(ws, conv, {
+      conversationId: conv,
+      workspaceId: ws,
+      startedAt: 1,
+      updatedAt: 2,
+      comments: [],
+      decision: 'request_changes'
+    });
+
+    const { reviewSessionBlocksSend } = await import(
       '../../../src/main/checkpoints/reviewSessions.js'
     );
-
-    const ws = 'ws-persist-fail';
-    const conv = 'conv-persist-fail';
-    await ensureReviewSession({ workspaceId: ws, conversationId: conv });
-
-    const atomic = await import('../../../src/main/checkpoints/atomicWrite.js');
-    const spy = vi.spyOn(atomic, 'atomicWriteJson').mockRejectedValueOnce(new Error('disk full'));
-
-    await expect(
-      addReviewComment({
-        workspaceId: ws,
-        conversationId: conv,
-        filePath: 'a.ts',
-        body: 'should not stick'
-      })
-    ).rejects.toThrow(/disk full/i);
-
-    const loaded = await getReviewSession(ws, conv);
-    expect(loaded?.comments ?? []).toHaveLength(0);
-    spy.mockRestore();
+    expect(await reviewSessionBlocksSend(ws, conv)).toBe(true);
   });
 
-  it('rejects empty comment body', async () => {
-    const { addReviewComment, ensureReviewSession } = await import(
+  it('returns false for approve or missing session', async () => {
+    const { reviewSessionBlocksSend } = await import(
       '../../../src/main/checkpoints/reviewSessions.js'
     );
-    await ensureReviewSession({ workspaceId: 'ws-2', conversationId: 'c-2' });
-    await expect(
-      addReviewComment({
-        workspaceId: 'ws-2',
-        conversationId: 'c-2',
-        filePath: 'x.ts',
-        body: '   '
-      })
-    ).rejects.toThrow(/empty/i);
+    const ws = 'ws-ok';
+    const conv = 'conv-ok';
+    await seedReviewSession(ws, conv, {
+      conversationId: conv,
+      workspaceId: ws,
+      startedAt: 1,
+      updatedAt: 2,
+      comments: [],
+      decision: 'approve'
+    });
+    expect(await reviewSessionBlocksSend(ws, conv)).toBe(false);
+    expect(await reviewSessionBlocksSend(ws, 'missing')).toBe(false);
   });
 });

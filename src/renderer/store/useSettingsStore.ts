@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { AppSettings } from '@shared/types/ipc.js';
 import type { ModelSelection } from '@shared/types/provider.js';
 import type { ChatPermissions } from '@shared/types/chat.js';
-import { DEFAULT_PERMISSIONS } from '@shared/constants.js';
+import { DEFAULT_PERMISSIONS, TOKEN_BUDGET_WARNING_DEFAULT_TOKENS } from '@shared/constants.js';
 import { vyotiq } from '../lib/ipc.js';
 import { logger } from '../lib/logger.js';
 
@@ -31,6 +31,7 @@ interface SettingsStore {
    * Other workspaces' entries are left untouched.
    */
   setLastModelByWorkspace: (workspaceId: string, sel: ModelSelection) => Promise<void>;
+  toggleFavoriteModel: (providerId: string, modelId: string) => Promise<void>;
   /**
    * Persist a per-workspace permission override patch. Merges
    * `patch` into any existing override for the workspace; flags not
@@ -96,6 +97,8 @@ interface SettingsStore {
     workspaceId: string,
     value: boolean
   ) => Promise<void>;
+  /** Persist the global token-budget warning threshold (absolute tokens). */
+  setTokenBudgetWarningTokens: (tokens: number) => Promise<void>;
 }
 
 /**
@@ -139,10 +142,39 @@ export function workspaceHasPermissionOverride(
   return entry !== undefined && Object.keys(entry).length > 0;
 }
 
+/**
+ * Resolved absolute token count for timeline budget-warning rows.
+ * Layered: global default ← `ui.tokenBudgetWarningTokens` ← per-workspace
+ * override in `ui.tokenBudgetWarningByWorkspace`.
+ */
+export function selectEffectiveTokenBudgetWarning(
+  settings: AppSettings,
+  workspaceId: string | null
+): number {
+  const wsOverride =
+    workspaceId !== null
+      ? settings.ui?.tokenBudgetWarningByWorkspace?.[workspaceId]
+      : undefined;
+  if (typeof wsOverride === 'number' && wsOverride > 0) return wsOverride;
+  const global = settings.ui?.tokenBudgetWarningTokens;
+  if (typeof global === 'number' && global > 0) return global;
+  return TOKEN_BUDGET_WARNING_DEFAULT_TOKENS;
+}
+
 /** Gate UI hydration until disk settings have been read at least once. */
 export function selectSettingsReady(state: Pick<SettingsStore, 'loading' | 'initialLoadDone'>): boolean {
   return state.initialLoadDone && !state.loading;
 }
+
+/**
+ * Stable empty fallbacks for Zustand selectors. Inline `?? []` / `?? {}`
+ * allocates a fresh reference every render; `useSyncExternalStore` treats
+ * that as a change, `forceStoreRerender` schedules another pass, and React
+ * eventually bails with error #185. See `useCheckpointsStore` EMPTY_PENDING.
+ */
+export const EMPTY_FAVORITE_MODELS: readonly string[] = Object.freeze([]);
+export const EMPTY_LAST_MODEL_BY_WORKSPACE: Readonly<Record<string, ModelSelection>> =
+  Object.freeze({});
 
 export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
   settings: { permissions: DEFAULT_PERMISSIONS },
@@ -239,6 +271,7 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     const gate = ui.gatePromptOnPendingByWorkspace ?? {};
     const approveAuto = ui.approveAutoAcceptPendingByWorkspace ?? {};
     const gateReview = ui.gatePromptOnReviewRequestChangesByWorkspace ?? {};
+    const tokenBudget = ui.tokenBudgetWarningByWorkspace ?? {};
     const collapsed = ui.collapsedWorkspaces ?? [];
     const inAny =
       workspaceId in active ||
@@ -248,6 +281,7 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
       workspaceId in gate ||
       workspaceId in approveAuto ||
       workspaceId in gateReview ||
+      workspaceId in tokenBudget ||
       collapsed.includes(workspaceId);
     if (!inAny) return;
     // Build cleaned copies. Spread + delete keeps the other entries
@@ -270,6 +304,8 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     delete nextApproveAuto[workspaceId];
     const nextGateReview = { ...gateReview };
     delete nextGateReview[workspaceId];
+    const nextTokenBudget = { ...tokenBudget };
+    delete nextTokenBudget[workspaceId];
     const nextCollapsed = collapsed.filter((id) => id !== workspaceId);
     const nextUi = {
       ...ui,
@@ -280,6 +316,7 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
       gatePromptOnPendingByWorkspace: nextGate,
       approveAutoAcceptPendingByWorkspace: nextApproveAuto,
       gatePromptOnReviewRequestChangesByWorkspace: nextGateReview,
+      tokenBudgetWarningByWorkspace: nextTokenBudget,
       collapsedWorkspaces: nextCollapsed
     };
     const updated = await vyotiq.settings.set({ ui: nextUi });
@@ -328,6 +365,15 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     setState({ settings: { ...getState().settings, ...updated } });
   },
 
+  setTokenBudgetWarningTokens: async (tokens) => {
+    const normalized = Math.max(1, Math.round(tokens));
+    const current = getState().settings;
+    if (current.ui?.tokenBudgetWarningTokens === normalized) return;
+    const ui = { ...(current.ui ?? {}), tokenBudgetWarningTokens: normalized };
+    const updated = await vyotiq.settings.set({ ui });
+    setState({ settings: { ...getState().settings, ...updated } });
+  },
+
   setLastModelByWorkspace: async (workspaceId, sel) => {
     const current = getState().settings;
     const prev = current.ui?.lastModelByWorkspace ?? {};
@@ -345,6 +391,18 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     }
     const next = { ...prev, [workspaceId]: { providerId: sel.providerId, modelId: sel.modelId } };
     const ui = { ...(current.ui ?? {}), lastModelByWorkspace: next };
+    const updated = await vyotiq.settings.set({ ui });
+    setState({ settings: { ...getState().settings, ...updated } });
+  },
+
+  toggleFavoriteModel: async (providerId, modelId) => {
+    const current = getState().settings;
+    const key = `${providerId}::${modelId}`;
+    const prev = current.ui?.favoriteModels ?? [];
+    const set = new Set(prev);
+    if (set.has(key)) set.delete(key);
+    else set.add(key);
+    const ui = { ...(current.ui ?? {}), favoriteModels: [...set] };
     const updated = await vyotiq.settings.set({ ui });
     setState({ settings: { ...getState().settings, ...updated } });
   }

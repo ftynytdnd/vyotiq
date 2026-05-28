@@ -1,6 +1,9 @@
 {
   "plugins": {
-    "linear": {
+    "cursor-team-kit": {
+      "enabled": true
+    },
+    "continual-learning": {
       "enabled": true
     }
   }

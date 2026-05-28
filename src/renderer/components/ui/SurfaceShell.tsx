@@ -14,24 +14,16 @@ import { cn } from '../../lib/cn.js';
 export type SurfaceShellPadding = 'none' | 'compact' | 'content' | 'nested';
 
 /** Base shell — composer footer and panels that need a distinct container. */
-export const surfaceShellClassName = cn(
-  'overflow-hidden rounded-inner',
-  'border border-border-subtle/18 bg-surface-raised/10',
-  'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.025)]'
-);
+const surfaceShellClassName = 'surface-shell';
 
 /** Optional focus-within glow for interactive shells (composer input area). */
-export const surfaceShellFocusClassName = cn(
-  'transition-[border-color,box-shadow] duration-150',
-  'focus-within:border-border-subtle/35',
-  'focus-within:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04),0_0_0_1px_rgba(255,255,255,0.02)]'
-);
+const surfaceShellFocusClassName = 'surface-shell-focus';
 
 const PADDING_CLASS: Record<SurfaceShellPadding, string> = {
   none: '',
-  compact: 'px-2 py-1',
-  content: 'px-3 py-2',
-  nested: 'px-2.5 py-1.5'
+  compact: 'px-1.5 py-0.5',
+  content: 'px-2.5 py-1.5',
+  nested: 'px-2 py-1'
 };
 
 export function surfaceShellInnerClassName(
@@ -46,14 +38,8 @@ export const surfaceListClassName = cn(
   'flex flex-col gap-0.5 overflow-y-auto p-1'
 );
 
-/** Hairline edge between chrome regions (dock, footer, secondary zone). */
-export const chromeEdgeClassName = 'border-border-subtle/10';
-
-/** Floating menu / popover panel (`elev-1`). */
-export const chromePopoverPanelClassName = cn('elev-1 rounded-card bg-surface-overlay');
-
-/** Large picker panel (`elev-2`, model picker). */
-export const chromeElev2PanelClassName = cn('elev-2 rounded-card bg-surface-overlay');
+/** Floating menu / popover panel (Vyotiq UI). */
+export const chromePopoverPanelClassName = 'vx-popover-panel';
 
 /**
  * Ghost toolbar control — transparent at rest.
@@ -64,11 +50,14 @@ export const chromeElev2PanelClassName = cn('elev-2 rounded-card bg-surface-over
  */
 export function chromePillClassName(active?: boolean): string {
   return cn(
-    'app-no-drag inline-flex h-6 items-center justify-center rounded-inner',
-    'text-text-muted transition-colors duration-150',
-    'hover:bg-surface-hover hover:text-text-primary',
-    active && 'bg-surface-hover text-text-primary'
+    'app-no-drag vx-btn vx-btn-quiet inline-flex h-6 items-center justify-center px-1.5',
+    active && 'bg-chrome-hover-soft text-text-primary'
   );
+}
+
+/** Composer / dock toolbar control — ghost at rest, soft fill when active. */
+export function chromeToolbarButtonClassName(active?: boolean): string {
+  return cn('vx-btn vx-btn-quiet app-no-drag', active && 'bg-chrome-hover-soft text-text-primary');
 }
 
 /** Persistent compact chip (token gauge, count badges) — always has a fill. */
@@ -80,34 +69,28 @@ export function chromeMeterClassName(className?: string): string {
 }
 
 /** Selected list/tab row (dock, strip tabs, inspector). */
-export const chromeTabActiveClassName = 'bg-surface-hover text-text-primary';
+export const chromeTabActiveClassName = 'vx-tab-pill-active';
 
 /** Idle list/tab row — transparent until hover. */
-export const chromeTabIdleClassName =
-  'text-text-muted hover:bg-surface-hover/60 hover:text-text-secondary';
+export const chromeTabIdleClassName = 'vx-tab-pill-idle';
 
 /** Filter chip (run id, path filters) — accent when selected. */
 export function chromeFilterChipClassName(active?: boolean): string {
   return cn(
-    'rounded-inner px-1.5 py-0.5 transition-colors duration-150',
+    'vx-filter-chip',
     active
       ? 'bg-accent-soft/60 text-accent'
-      : 'text-text-muted hover:bg-surface-hover hover:text-text-secondary'
+      : undefined
   );
 }
 
-/** Inset tray for segmented controls (binary mode toggles). */
+/** Inset tray for segmented controls (Vyotiq UI `vx-segment`). */
 export function chromeSegmentedTrayClassName(compact = false): string {
-  return compact
-    ? 'inline-flex items-center rounded-inner bg-surface-overlay/30 p-0.5'
-    : 'flex overflow-hidden rounded-inner bg-surface-base';
+  return compact ? 'vx-segment inline-flex' : 'vx-segment vx-segment-fluid flex w-full';
 }
 
 /** Compact search/filter row — tint only on focus. */
-export const chromeSearchRowClassName = cn(
-  'flex items-center gap-1 rounded-inner border border-border-subtle/40 px-2 py-0.5 text-meta',
-  'focus-within:border-border-subtle focus-within:bg-surface-hover/40'
-);
+export const chromeSearchRowClassName = 'vx-search-row';
 
 /** Static status badge (Undone, attribution) — border, no fill. */
 export const chromeBadgeClassName = cn(
@@ -115,11 +98,7 @@ export const chromeBadgeClassName = cn(
 );
 
 /** Compact ghost action on timeline rows (Inspect, Undo). */
-export const chromeRowActionClassName = cn(
-  'app-no-drag inline-flex items-center gap-0.5 rounded-inner px-1.5 py-0.5 text-meta',
-  'text-text-secondary transition-colors duration-150',
-  'hover:bg-surface-hover hover:text-text-primary'
-);
+export const chromeRowActionClassName = cn('app-no-drag vx-timeline-action');
 
 /** Inline placeholder / empty copy — border, no fill. */
 export const chromeInsetNoteClassName = cn(
@@ -132,22 +111,64 @@ export const chromeProgressTrackClassName = cn(
   'border border-border-subtle/15 bg-surface-raised/25'
 );
 
-/** Settings / secondary-zone card shell (list panes, empty states). */
-export const chromeSettingsCardClassName = cn(
-  'rounded-card border border-border-subtle/18 bg-surface-raised/10'
+/** Settings / secondary-zone list shell (Vyotiq UI section body rhythm). */
+export const chromeSettingsCardClassName = 'vx-section-body rounded-none border-0 bg-transparent p-0';
+
+/** List-empty body copy inside settings / checkpoint lists. */
+export const chromeListEmptyBodyClassName = 'vx-row vx-caption py-4 text-text-muted';
+
+/** Secondary-zone list empty (settings providers, checkpoint runs/files). */
+export const chromeListEmptyClassName = cn(
+  chromeSettingsCardClassName,
+  chromeListEmptyBodyClassName
 );
 
-/** Settings override row wash. */
-export const chromeSettingsInsetRowClassName = cn(
-  'rounded-inner bg-surface-base/30 px-3 py-2'
+/** Filtered-empty copy inside a populated list (model filter, dock search). */
+export const chromeNoMatchesClassName = cn(
+  'px-2.5 py-2 text-row text-text-muted'
 );
+
+/** Horizontal inset matching the dialog body padding. */
+const secondaryZonePanelInsetXClassName = 'px-[clamp(0.875rem,3vw,1rem)]';
+
+/** Scrollable panel body inset below a full-bleed tab strip. */
+export const secondaryZonePanelContentClassName = cn(
+  secondaryZonePanelInsetXClassName,
+  'pb-[clamp(1rem,3vw,1.25rem)]'
+);
+
+/** Settings / Checkpoints tab strip wrapper (Vyotiq UI tab bar supplies the edge). */
+export const secondaryZoneTabStripClassName = cn(
+  'mb-0 shrink-0 min-w-0',
+  secondaryZonePanelInsetXClassName
+);
+
+/** Vyotiq UI panel chrome (secondary zone PanelFrame). */
+export const appPanelFrameClassName = 'vx-panel-frame flex h-full min-h-0 flex-col';
+/** Dialog overlay — content-sized height (no viewport stretch). */
+export const appDialogFrameClassName =
+  'vx-panel-frame flex h-auto max-h-[80vh] min-h-0 w-full flex-col';
+export const appPanelHeadClassName = 'vx-panel-head app-no-drag';
+/** Dialog body — grows with content up to frame max-height. */
+export const appDialogBodyClassName =
+  'vx-panel-body scrollbar-stealth min-h-0 shrink-0 overflow-y-auto';
+
+/** Composer footer shell (ChatFooter). */
+export const appComposerShellClassName = 'vx-composer-shell';
+
+/** Composer textarea inside {@link appComposerShellClassName}. */
+export const appComposerTextareaClassName = 'vx-composer-textarea scrollbar-stealth';
+
+/** Floating popover panel (menus, pickers) — Vyotiq UI elev. */
+export const appPopoverPanelClassName = 'vx-popover-panel';
+
+/** Inset note with optional body tone override (review/diff empties). */
+export function chromeEmptyNoteClassName(tone: 'default' | 'muted' = 'default'): string {
+  return cn(chromeInsetNoteClassName, tone === 'muted' && 'text-text-muted');
+}
 
 /** Ghost text button in settings rows (Reset, secondary actions). */
-export const chromeGhostRowButtonClassName = cn(
-  'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-inner px-2.5 text-row',
-  'text-text-muted transition-colors duration-150',
-  'hover:bg-surface-hover hover:text-text-primary'
-);
+export const chromeGhostRowButtonClassName = 'vx-btn vx-btn-quiet inline-flex shrink-0 items-center gap-1.5';
 
 /** Square icon-only ghost action (sub-agent trace, row toolbars). */
 export const chromeIconActionClassName = cn(
@@ -187,14 +208,6 @@ export const chromeScrollListClassName = cn(
 export const chromeFloatingToolbarClassName = cn(
   'rounded-inner border border-border-subtle/40 bg-surface-raised/80 px-0.5 py-0.5 backdrop-blur-sm'
 );
-
-/** Composer attachment / chip tray — light border, no solid box. */
-export const chromeChipTrayClassName = cn(
-  'rounded-inner border border-border-subtle/15 bg-surface-raised/40 px-2 py-1'
-);
-
-/** Faint log-line wash (agent thoughts, status). */
-export const chromeLogWashClassName = 'rounded-inner bg-surface-overlay/20';
 
 /** Hover-revealed square icon (copy on code blocks). */
 export function chromeRevealIconActionClassName(className?: string): string {
@@ -237,11 +250,6 @@ export function chromeFileKindBadgeClassName(
     kind === 'create' ? 'success' : kind === 'delete' ? 'danger' : 'neutral',
     'shrink-0 font-mono uppercase'
   );
-}
-
-/** Square icon-only variant of {@link chromePillClassName}. */
-export function chromeIconPillClassName(active?: boolean): string {
-  return cn(chromePillClassName(active), 'w-6 shrink-0');
 }
 
 export interface SurfaceShellProps extends HTMLAttributes<HTMLElement> {

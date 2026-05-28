@@ -157,7 +157,9 @@ export function applySubagentLifecycleTimelineEvent(
       const existing = state.subagents[event.subagentId];
       const isTerminal =
         existing?.status === 'done' ||
+        existing?.status === 'partial' ||
         existing?.status === 'failed' ||
+        existing?.status === 'malformed' ||
         existing?.status === 'aborted';
       if (existing && !isTerminal && existing.status !== 'pending') {
         return state;

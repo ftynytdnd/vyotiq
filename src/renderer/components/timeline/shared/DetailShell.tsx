@@ -5,10 +5,6 @@
 
 import { type ReactNode } from 'react';
 import { cn } from '../../../lib/cn.js';
-import {
-  SurfaceShell,
-  surfaceShellInnerClassName
-} from '../../ui/SurfaceShell.js';
 
 interface DetailShellProps {
   children: ReactNode;
@@ -42,12 +38,8 @@ export function DetailShell({
   }
 
   return (
-    <div className={cn('mt-0.5', className)}>
-      <SurfaceShell
-        className={cn('flex flex-col', gap, surfaceShellInnerClassName('nested'))}
-      >
-        {children}
-      </SurfaceShell>
+    <div className={cn('mt-0.5 vx-timeline-detail-shell', className)}>
+      <div className={cn('flex flex-col', gap)}>{children}</div>
     </div>
   );
 }

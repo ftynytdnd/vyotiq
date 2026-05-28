@@ -21,17 +21,27 @@ import { Plus, RefreshCcw, Save, FilePlus2, FolderOpen } from 'lucide-react';
 import type { MemoryEntry } from '@shared/types/ipc.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { Button } from '../ui/Button.js';
-import { Spinner } from '../ui/Spinner.js';
-import { ConfirmDialog } from '../ui/ConfirmDialog.js';
+import { LoadingHint } from '../ui/LoadingHint.js';
+import { DestructiveConfirm } from '../ui/DestructiveConfirm.js';
 import { PromptDialog } from '../ui/PromptDialog.js';
 import { TextField } from '../ui/TextField.js';
-import { Eyebrow } from '../ui/Eyebrow.js';
 import { Tabs, type TabItem } from '../ui/Tabs.js';
 import { MarkdownBody } from '../timeline/markdown/MarkdownBody.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
+import { useChatStore } from '../../store/useChatStore.js';
+import { formatTimestamp } from '../checkpoints/formatTimestamp.js';
 import { useToastStore } from '../../store/useToastStore.js';
-import { chromeSettingsCardClassName } from '../ui/SurfaceShell.js';
+import {
+  ShellCaption,
+  ShellFieldActions,
+  ShellFieldLabel,
+  ShellRow,
+  ShellSection,
+  ShellStack
+} from '../ui/ShellSection.js';
+import { chromeListEmptyBodyClassName, chromeListEmptyClassName } from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
+import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../lib/shellIcons.js';
 
 type Scope = 'global' | 'workspace';
 type ViewMode = 'edit' | 'preview';
@@ -54,6 +64,7 @@ interface DraftState {
 
 export function MemoryPanel({ layout = 'split' }: { layout?: 'split' | 'stack' }) {
   const ws = useWorkspaceStore((s) => s.info);
+  const conversationId = useChatStore((s) => s.conversationId);
   const showToast = useToastStore((s) => s.show);
   const [scope, setScope] = useState<Scope>('global');
   const [list, setList] = useState<MemoryEntry[]>([]);
@@ -136,7 +147,13 @@ export function MemoryPanel({ layout = 'split' }: { layout?: 'split' | 'stack' }
   const onSave = async () => {
     if (!draft) return;
     try {
-      await vyotiq.memory.write(scope, draft.key, draft.content);
+      await vyotiq.memory.write(
+        scope,
+        draft.key,
+        draft.content,
+        undefined,
+        scope === 'workspace' ? conversationId ?? undefined : undefined
+      );
       await refresh(draft.key);
       showToast(`Saved ${draft.key}`, 'success');
     } catch (err: unknown) {
@@ -150,7 +167,13 @@ export function MemoryPanel({ layout = 'split' }: { layout?: 'split' | 'stack' }
     const key = rawKey.trim();
     if (!key) return;
     const seed = `# ${key}\n\n`;
-    await vyotiq.memory.write('workspace', key, seed);
+    await vyotiq.memory.write(
+      'workspace',
+      key,
+      seed,
+      undefined,
+      conversationId ?? undefined
+    );
     // List entries now return the topic-only key (no `.md` suffix) —
     // strip the extension the user may have typed so the selection
     // matches the sanitized backend key. See
@@ -193,210 +216,205 @@ export function MemoryPanel({ layout = 'split' }: { layout?: 'split' | 'stack' }
   };
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
-        <Tabs<Scope>
-          items={SCOPE_TABS}
-          value={scope}
-          onChange={setScope}
-          variant="strip"
-          ariaLabel="Memory scope"
-        />
-        <div className="ml-auto flex items-center gap-2">
-          <Button size="sm" variant="ghost" onClick={() => void refresh(activeKey ?? undefined)} disabled={loading}>
-            <RefreshCcw className="h-3.5 w-3.5" strokeWidth={2.25} />
-            Refresh
-          </Button>
-        </div>
-      </div>
+    <ShellStack>
+      <ShellSection title="Scope">
+        <ShellRow>
+          <ShellFieldLabel>Memory scope</ShellFieldLabel>
+          <ShellCaption>Switch between global meta-rules and per-workspace notes.</ShellCaption>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <Tabs<Scope>
+              items={SCOPE_TABS}
+              value={scope}
+              onChange={setScope}
+              variant="segmented"
+              size="md"
+              ariaLabel="Memory scope"
+              className="min-w-0 flex-1"
+            />
+            <Button variant="ghost" onClick={() => void refresh(activeKey ?? undefined)} disabled={loading}>
+              <RefreshCcw className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
+              Refresh
+            </Button>
+          </div>
+        </ShellRow>
+      </ShellSection>
 
       {isWorkspaceScope && !workspaceReady ? (
-        <div
-          className={cn(
-            chromeSettingsCardClassName,
-            'px-4 py-6 text-center text-row text-text-muted'
-          )}
-        >
-          Pick a workspace first. Workspace notes live inside <span className="font-mono">.vyotiq/memory/</span>.
+        <div className={chromeListEmptyClassName}>
+          Pick a workspace first. Workspace notes live inside{' '}
+          <span className="font-mono">.vyotiq/memory/</span>.
         </div>
       ) : (
-        <div
-          className={cn(
-            'gap-3',
-            layout === 'stack' ? 'flex flex-col' : 'grid grid-cols-[180px_1fr]'
-          )}
-        >
-          <div
-            className={cn(
-              'flex flex-col gap-1 overflow-y-auto p-2',
-              chromeSettingsCardClassName,
-              layout === 'stack' ? 'max-h-36' : 'max-h-[420px]'
-            )}
-          >
-            {loading && (
-              <div className="flex items-center gap-2 px-2 py-1 text-row text-text-muted">
-                <Spinner /> Loading…
-              </div>
-            )}
-            {!loading && list.length === 0 && (
-              <div className="px-2 py-1 text-row text-text-muted">
-                {scope === 'global' ? 'No meta-rules yet.' : 'No notes yet.'}
-              </div>
-            )}
-            {list.map((entry) => (
-              <button
-                key={entry.key}
-                type="button"
-                onClick={() => onSelect(entry.key)}
-                className={cn(
-                  'flex w-full flex-col items-start gap-0.5 rounded-inner px-2 py-1.5 text-left text-row transition-colors duration-150',
-                  entry.key === activeKey
-                    ? 'bg-surface-hover text-text-primary'
-                    : 'text-text-muted hover:bg-surface-hover hover:text-text-primary'
-                )}
-              >
-                <span className="truncate font-mono">{entry.key}</span>
-                <span className="text-meta text-text-faint">
-                  {new Date(entry.updatedAt).toLocaleString()}
-                </span>
-              </button>
-            ))}
+        <ShellSection title={scope === 'global' ? 'meta-rules.md' : 'Workspace notes'}>
+          <div className="vx-memory-split">
             {scope === 'workspace' && (
-              <button
-                type="button"
-                onClick={() => setNewNoteOpen(true)}
-                className={cn(
-                  'mt-1 inline-flex items-center gap-1.5 rounded-inner px-2 py-1.5 text-row',
-                  'text-text-muted transition-colors duration-150',
-                  'hover:bg-surface-hover hover:text-text-primary'
+              <ul className="vx-memory-list" aria-label="Workspace notes">
+                {loading && (
+                  <li>
+                    <div className="flex items-center gap-2 px-2 py-1 vx-caption">
+                      <LoadingHint message="Loading…" className="py-2" />
+                    </div>
+                  </li>
                 )}
-              >
-                <FilePlus2 className="h-3.5 w-3.5" strokeWidth={2.25} />
-                New note
-              </button>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-2">
-            {draft ? (
-              <>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="min-w-0 truncate font-mono text-row text-text-secondary">
-                    {draft.key}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Tabs<ViewMode>
-                      items={VIEW_MODE_TABS}
-                      value={viewMode}
-                      onChange={setViewMode}
-                      variant="segmented"
-                      size="sm"
-                      ariaLabel="Note view mode"
-                    />
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => void onReveal()}
-                      title="Reveal in file manager"
-                    >
-                      <FolderOpen className="h-3.5 w-3.5" strokeWidth={2.25} />
-                      Reveal
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      disabled={!draft.dirty}
-                      onClick={() => void onSave()}
-                    >
-                      <Save className="h-3.5 w-3.5" strokeWidth={2.25} />
-                      Save
-                    </Button>
-                  </div>
-                </div>
-                {viewMode === 'edit' ? (
-                  <textarea
-                    value={draft.content}
-                    onChange={(e) =>
-                      setDraft((d) => (d ? { ...d, content: e.target.value, dirty: true } : d))
-                    }
-                    spellCheck={false}
-                    className={cn(
-                      'w-full resize-none rounded-inner bg-surface-base p-3',
-                      'font-mono text-row leading-relaxed text-text-primary',
-                      'outline-none focus:outline-none',
-                      layout === 'stack' ? 'h-[240px]' : 'h-[360px]'
-                    )}
-                  />
-                ) : (
-                  <div
-                    className={cn(
-                      'scrollbar-stealth w-full overflow-y-auto rounded-inner bg-surface-base p-3',
-                      layout === 'stack' ? 'h-[240px]' : 'h-[360px]'
-                    )}
-                  >
-                    {draft.content.trim().length === 0 ? (
-                      <div className="text-row italic text-text-faint">
-                        Empty note. Switch to Edit to add content.
-                      </div>
+                {!loading && list.length === 0 && (
+                  <li>
+                    <div className={cn(chromeListEmptyBodyClassName, 'px-2 text-left')}>
+                      No notes yet.
+                    </div>
+                  </li>
+                )}
+                {list.map((entry) => (
+                  <li key={entry.key}>
+                    {pendingSelectKey === entry.key ? (
+                      <DestructiveConfirm
+                        variant="inline"
+                        open
+                        twoStep={false}
+                        context={entry.key}
+                        question="Discard unsaved edits?"
+                        confirmLabel="Discard"
+                        cancelLabel="Keep editing"
+                        onConfirm={confirmSelect}
+                        onCancel={() => setPendingSelectKey(null)}
+                      />
                     ) : (
-                      <MarkdownBody text={draft.content} />
+                      <button
+                        type="button"
+                        onClick={() => onSelect(entry.key)}
+                        className="vx-memory-list-item flex flex-col items-start gap-0.5"
+                        data-active={entry.key === activeKey ? 'true' : 'false'}
+                      >
+                        <span className="truncate w-full text-left">{entry.key}</span>
+                        {entry.lastReferencedAt != null && (
+                          <span className="truncate w-full text-left text-meta text-text-faint">
+                            Last in chat: {entry.lastReferencedConversationTitle ?? 'Chat'} ·{' '}
+                            {formatTimestamp(entry.lastReferencedAt)}
+                          </span>
+                        )}
+                      </button>
                     )}
+                  </li>
+                ))}
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => setNewNoteOpen(true)}
+                    className="vx-memory-list-item inline-flex items-center gap-1.5"
+                  >
+                    <FilePlus2 className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
+                    New note
+                  </button>
+                </li>
+              </ul>
+            )}
+
+            <div className="vx-memory-editor">
+              {draft ? (
+                <>
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0 flex flex-col gap-0.5">
+                      <div className="truncate font-mono text-row text-text-secondary">
+                        {draft.key}
+                      </div>
+                      {(list.find((e) => e.key === draft.key) ?? list[0])?.lastReferencedAt != null && (
+                        <span className="truncate text-meta text-text-faint">
+                          Last in chat:{' '}
+                          {(list.find((e) => e.key === draft.key) ?? list[0])
+                            ?.lastReferencedConversationTitle ?? 'Chat'}{' '}
+                          ·{' '}
+                          {formatTimestamp(
+                            (list.find((e) => e.key === draft.key) ?? list[0])!.lastReferencedAt!
+                          )}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Tabs<ViewMode>
+                        items={VIEW_MODE_TABS}
+                        value={viewMode}
+                        onChange={setViewMode}
+                        variant="segmented"
+                        size="sm"
+                        ariaLabel="Note view mode"
+                      />
+                      <Button
+                        variant="ghost"
+                        onClick={() => void onReveal()}
+                        title="Reveal in file manager"
+                      >
+                        <FolderOpen className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
+                        Reveal
+                      </Button>
+                      <Button variant="primary" disabled={!draft.dirty} onClick={() => void onSave()}>
+                        <Save className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
+                        Save
+                      </Button>
+                    </div>
                   </div>
-                )}
-                {scope === 'global' && (
-                  <div className={cn(chromeSettingsCardClassName, 'flex flex-col gap-1.5 p-3')}>
-                    <Eyebrow as="span" size="row">
-                      Append a new rule (date-stamped)
-                    </Eyebrow>
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  {viewMode === 'edit' ? (
+                    <textarea
+                      value={draft.content}
+                      onChange={(e) =>
+                        setDraft((d) => (d ? { ...d, content: e.target.value, dirty: true } : d))
+                      }
+                      spellCheck={false}
+                      rows={layout === 'stack' ? 10 : 14}
+                      className={cn('vx-textarea', layout === 'stack' ? 'min-h-[240px]' : 'min-h-[360px]')}
+                    />
+                  ) : (
+                    <div
+                      className={cn(
+                        'scrollbar-stealth vx-textarea overflow-y-auto',
+                        layout === 'stack' ? 'min-h-[240px]' : 'min-h-[360px]'
+                      )}
+                    >
+                      {draft.content.trim().length === 0 ? (
+                        <div className="vx-caption italic">Empty note. Switch to Edit to add content.</div>
+                      ) : (
+                        <MarkdownBody text={draft.content} />
+                      )}
+                    </div>
+                  )}
+                  {scope === 'global' && (
+                    <ShellRow>
+                      <ShellFieldLabel>Append a new rule (date-stamped)</ShellFieldLabel>
                       <TextField
-                        className="min-w-0 flex-1"
+                        className="mt-1"
                         value={appendDraft}
                         onChange={(e) => setAppendDraft(e.target.value)}
                         placeholder='e.g. "Prefer TypeScript over JavaScript."'
                       />
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={appendDraft.trim().length === 0}
-                        onClick={() => void onAppendGlobal()}
-                      >
-                        <Plus className="h-3.5 w-3.5" strokeWidth={2.25} />
-                        Append
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div
-          className={cn(
-            chromeSettingsCardClassName,
-            'px-4 py-6 text-center text-row text-text-muted'
-          )}
-        >
-                {loading || contentLoading ? 'Loading…' : 'Select an entry above.'}
-              </div>
-            )}
+                      <ShellFieldActions>
+                        <Button
+                          variant="secondary"
+                          disabled={appendDraft.trim().length === 0}
+                          onClick={() => void onAppendGlobal()}
+                        >
+                          <Plus className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
+                          Append
+                        </Button>
+                      </ShellFieldActions>
+                    </ShellRow>
+                  )}
+                </>
+              ) : (
+                <div className={cn(chromeListEmptyBodyClassName, 'px-2 text-left')}>
+                  {loading || contentLoading
+                    ? 'Loading…'
+                    : scope === 'global'
+                      ? 'Loading meta-rules…'
+                      : 'Select an entry above.'}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </ShellSection>
       )}
 
-      <div className="text-row text-text-faint">
+      <ShellCaption>
         Agent V reads relevant notes automatically at the start of each turn and may append to
         meta-rules when you issue persistent corrections.
-      </div>
-
-      <ConfirmDialog
-        open={pendingSelectKey !== null}
-        title="Discard unsaved changes?"
-        message="You have unsaved edits in the current note. Switching will discard them."
-        confirmLabel="Discard"
-        cancelLabel="Keep editing"
-        variant="danger"
-        onConfirm={confirmSelect}
-        onCancel={() => setPendingSelectKey(null)}
-      />
+      </ShellCaption>
 
       <PromptDialog
         open={newNoteOpen}
@@ -414,7 +432,6 @@ export function MemoryPanel({ layout = 'split' }: { layout?: 'split' | 'stack' }
         onSubmit={(v) => void onCreateNote(v)}
         onCancel={() => setNewNoteOpen(false)}
       />
-    </div>
+    </ShellStack>
   );
 }
-

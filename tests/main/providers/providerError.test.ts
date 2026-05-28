@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   classifyProviderError,
+  isNonRecoverableProviderError,
   isProviderError,
   ProviderError
 } from '@main/providers/providerError';
@@ -171,6 +172,20 @@ describe('classifyProviderError — friendlyMessage', () => {
     expect(err.message).not.toContain(baseInput.body);
     // The raw body is still preserved for triage:
     expect(err.rawBody).toBe(baseInput.body);
+  });
+});
+
+describe('isNonRecoverableProviderError', () => {
+  it('returns true for billing/auth/model-not-found/endpoint-missing', () => {
+    expect(isNonRecoverableProviderError(make(402))).toBe(true);
+    expect(isNonRecoverableProviderError(make(401))).toBe(true);
+  });
+
+  it('returns false for rate-limit and server errors', () => {
+    const rate = classifyProviderError({ ...baseInput, status: 429 });
+    expect(isNonRecoverableProviderError(rate)).toBe(false);
+    const server = classifyProviderError({ ...baseInput, status: 503 });
+    expect(isNonRecoverableProviderError(server)).toBe(false);
   });
 });
 

@@ -2,49 +2,29 @@
  * Renders the user's prompt as flush markdown-ready text in the agent
  * reading column (no card, no eyebrow, no right-alignment).
  *
- * The May 2026 timeline restyle dropped the previous right-aligned
- * raised card + `You` eyebrow chrome in favor of a Cursor-style
- * single-column reading rail: every turn now shares the same flush
- * left edge so the prompt and the agent's reply sit on one vertical
- * column. User vs agent distinction is carried by content rhythm
- * (the prompt is rendered first in the turn block and exposes its
- * Copy/Edit/Revert affordances flush against the right edge of the
- * column). Long prompts still collapse behind a fade and expand into
- * an internally scrollable area.
- *
- * The hover-reveal action strip carries three quiet affordances:
- *   - `Copy` — clipboard write of the prompt content.
- *   - `Edit` — opens the rewind-preview modal in EDIT mode for this
- *     turn. The user can amend the original prompt text inline; on
- *     confirm the modal first rewinds (atomic file + transcript
- *     rollback to before the prompt) and THEN dispatches the edited
- *     text as a fresh send. Disabled when no provider is mounted,
- *     while the conversation is processing, or when no `id` is
- *     supplied (legacy fixtures).
- *   - `Revert` — opens the same rewind-preview modal in REVERT mode.
- *     Pure rollback to the moment before the prompt. Disabled while
- *     the active conversation is `isProcessing` so the rewind never
- *     races a still-streaming run.
- *
- * The Edit / Revert affordances carry an inline numeric badge showing
- * how many file edits the prompt's turn produced.
+ * Hover-reveal actions: Copy and Edit (rewind + resend).
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Copy, Check, Pencil, Undo2 } from 'lucide-react';
+import { Copy, Check, Pencil } from 'lucide-react';
+import type { PromptAttachmentMeta } from '@shared/types/chat.js';
+import { PromptAttachmentCards } from '../../composer/PromptAttachmentCards.js';
 import { cn } from '../../../lib/cn.js';
+import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/shellIcons.js';
 import { safeCopy } from '../../../lib/clipboard.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import { useRevertPrompt } from '../revert/RevertPromptContext.js';
 import {
   timelineActionPillClassName,
-  timelineAgentColumnClassName
+  timelineAgentColumnClassName,
+  timelineUserPromptBodyClassName
 } from '../shared/rowStyles.js';
 
 interface UserPromptRowProps {
   id?: string;
   runId?: string;
   content: string;
+  attachments?: PromptAttachmentMeta[];
   /** Last turn while the agent is still running. */
   live?: boolean;
 }
@@ -53,7 +33,13 @@ const COLLAPSED_MAX_PX = 144;
 
 const EXPANDED_MAX_PX = 320;
 
-export function UserPromptRow({ id, runId, content, live = false }: UserPromptRowProps) {
+export function UserPromptRow({
+  id,
+  runId,
+  content,
+  attachments = [],
+  live = false
+}: UserPromptRowProps) {
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [overflows, setOverflows] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -72,10 +58,6 @@ export function UserPromptRow({ id, runId, content, live = false }: UserPromptRo
       : isProcessing
         ? ' is unavailable while this conversation is running'
         : null;
-  const revertTitleBase =
-    baseUnavailableTitle === null
-      ? 'Revert to before this message'
-      : `Revert${baseUnavailableTitle}`;
   const editTitleBase =
     baseUnavailableTitle === null
       ? 'Edit and resend this message'
@@ -84,7 +66,6 @@ export function UserPromptRow({ id, runId, content, live = false }: UserPromptRo
     actionAvailable && fileEditCount > 0
       ? ` (${fileEditCount} file change${fileEditCount === 1 ? '' : 's'})`
       : '';
-  const revertTitle = `${revertTitleBase}${fileSuffix}`;
   const editTitle = `${editTitleBase}${fileSuffix}`;
 
   useLayoutEffect(() => {
@@ -128,7 +109,8 @@ export function UserPromptRow({ id, runId, content, live = false }: UserPromptRo
         <div
           ref={bubbleRef}
           className={cn(
-            'whitespace-pre-wrap text-body leading-relaxed text-text-primary',
+            'vx-timeline-user-bubble pl-3',
+            timelineUserPromptBodyClassName,
             showToggle && !expanded && 'overflow-hidden',
             showToggle && expanded && 'overflow-y-auto scrollbar-stealth max-h-80'
           )}
@@ -136,6 +118,9 @@ export function UserPromptRow({ id, runId, content, live = false }: UserPromptRo
         >
           {content}
         </div>
+        {attachments.length > 0 && (
+          <PromptAttachmentCards items={attachments} className="mt-2" />
+        )}
         {showToggle && !expanded && (
           <div
             aria-hidden
@@ -151,13 +136,13 @@ export function UserPromptRow({ id, runId, content, live = false }: UserPromptRo
       >
         <PromptAction
           label="Copy"
-          icon={<Copy className="h-3 w-3" strokeWidth={2.25} />}
-          copiedIcon={<Check className="h-3 w-3 text-success" strokeWidth={2.25} />}
+          icon={<Copy className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />}
+          copiedIcon={<Check className={cn(SHELL_ROW_ICON_CLASS, 'text-success')} strokeWidth={SHELL_ACTION_ICON_STROKE} />}
           onClick={() => safeCopy(content, { context: 'user-prompt' })}
         />
         <PromptAction
           label="Edit"
-          icon={<Pencil className="h-3 w-3" strokeWidth={2.25} />}
+          icon={<Pencil className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />}
           {...(actionAvailable && fileEditCount > 0 ? { badge: fileEditCount } : {})}
           disabled={!actionAvailable}
           title={editTitle}
@@ -166,26 +151,12 @@ export function UserPromptRow({ id, runId, content, live = false }: UserPromptRo
             revertCtx.requestEditAndResend({ promptEventId: id, content });
           }}
         />
-        <PromptAction
-          label="Revert"
-          icon={<Undo2 className="h-3 w-3" strokeWidth={2.25} />}
-          {...(actionAvailable && fileEditCount > 0 ? { badge: fileEditCount } : {})}
-          disabled={!actionAvailable}
-          title={revertTitle}
-          onClick={() => {
-            if (!actionAvailable || !id || !revertCtx) return;
-            revertCtx.requestRevert({ promptEventId: id });
-          }}
-        />
       </div>
       {showToggle && (
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className={cn(
-            'self-start rounded-inner px-1.5 py-0.5 text-row text-text-faint transition-colors duration-150',
-            'hover:bg-surface-hover hover:text-text-primary'
-          )}
+          className="self-start vx-btn vx-btn-quiet px-1.5 py-0.5 text-chat-meta"
           aria-expanded={expanded}
         >
           {expanded ? 'Show less' : 'Show more'}
@@ -263,7 +234,7 @@ function PromptAction({
       {!copied && typeof badge === 'number' && badge > 0 && (
         <span
           aria-hidden
-          className="ml-0.5 min-w-[1ch] tabular-nums text-meta text-text-muted"
+          className="ml-0.5 min-w-[1ch] tabular-nums text-chat-meta text-text-muted"
         >
           {badge}
         </span>

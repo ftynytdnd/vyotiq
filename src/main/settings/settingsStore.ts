@@ -58,6 +58,24 @@ function derivePermissions(
  * and we don't want to manufacture a synthetic `{ allowAuto: false }`
  * for entries that had no opinion.
  */
+/**
+ * Effective `allowAuto` for a workspace — global settings merged with
+ * per-workspace override. Used by orchestrator-adjacent IPC that must
+ * not trust renderer-supplied permission flags.
+ */
+export function resolvePermissionsForWorkspace(
+  settings: AppSettings,
+  workspaceId: string | undefined
+): { allowAuto: boolean } {
+  const global = settings.permissions ?? DEFAULT_PERMISSIONS;
+  if (!workspaceId) return global;
+  const override = settings.ui?.permissionsByWorkspace?.[workspaceId];
+  if (typeof override?.allowAuto === 'boolean') {
+    return { allowAuto: override.allowAuto };
+  }
+  return global;
+}
+
 function derivePartial(
   raw: (LegacyPermissions & Partial<{ allowAuto: boolean }>) | undefined
 ): Partial<{ allowAuto: boolean }> | undefined {

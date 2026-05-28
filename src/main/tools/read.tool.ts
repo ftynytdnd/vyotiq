@@ -144,6 +144,28 @@ export const readTool: Tool = {
       // canonical downstream path stays text-based.
       buf = Buffer.from(text, 'utf8');
     } else {
+      const noBomEnc = detectUtf16NoBom(buf);
+      if (noBomEnc !== null) {
+        const text = decodeUtf16NoBom(buf, noBomEnc);
+        const decodedProbe = text.slice(0, 8192);
+        let decodedNonText = 0;
+        for (let i = 0; i < decodedProbe.length; i++) {
+          const code = decodedProbe.charCodeAt(i);
+          if (code === 0) {
+            return binaryRefusal(
+              id,
+              started,
+              a.path,
+              `NUL after ${noBomEnc} (no BOM) at char ${i}`
+            );
+          }
+          if ((code < 9 || (code > 13 && code < 32)) && code < 128) decodedNonText++;
+        }
+        if (decodedProbe.length > 0 && decodedNonText > decodedProbe.length * 0.05) {
+          return binaryRefusal(id, started, a.path, `${noBomEnc} no-BOM but >5% control bytes`);
+        }
+        buf = Buffer.from(text, 'utf8');
+      } else {
       const probe = buf.subarray(0, Math.min(8192, buf.length));
       let nonText = 0;
       for (let i = 0; i < probe.length; i++) {
@@ -158,9 +180,11 @@ export const readTool: Tool = {
       if (probe.length > 0 && nonText > probe.length * 0.05) {
         return binaryRefusal(id, started, a.path, `${nonText} control bytes in first ${probe.length}`);
       }
+      }
     }
 
     const text = buf.toString('utf8');
+    const garbled = detectGarbledText(text);
     const lines = text.split('\n');
     const start = Math.max(1, a.startLine ?? 1);
     const end = Math.min(lines.length, a.endLine ?? lines.length);
@@ -171,8 +195,11 @@ export const readTool: Tool = {
     const relPath = workspaceRelative(ctx.workspacePath, abs);
 
     const header =
-      `# ${relPath} (lines ${start}-${end} of ${lines.length}${truncated ? ', TRUNCATED' : ''})\n` +
-      `# Each line is prefixed with "     N\\t" — strip this prefix before passing content to \`edit\`'s oldString.`;
+      `# ${relPath} (lines ${start}-${end} of ${lines.length}${truncated ? ', TRUNCATED' : ''}${garbled ? ', GARBLED ENCODING' : ''})\n` +
+      `# Each line is prefixed with "     N\\t" — strip this prefix before passing content to \`edit\`'s oldString.` +
+      (garbled
+        ? '\n# Warning: decoded text may be garbled — verify encoding before editing.'
+        : '');
     return {
       id,
       name: 'read',
@@ -185,7 +212,8 @@ export const readTool: Tool = {
         toLine: end,
         totalLines: lines.length,
         content: slice.join('\n'),
-        truncated
+        truncated,
+        ...(garbled ? { garbled: true } : {})
       },
       durationMs: Date.now() - started
     };
@@ -276,5 +304,62 @@ function bomDecode(
   return out.join('');
 }
 
+/**
+ * Detect UTF-16 LE/BE without a BOM via alternating NUL-byte runs.
+ * ASCII in UTF-16 LE is `char, 0x00, char, 0x00…`; BE is `0x00, char…`.
+ */
+function detectUtf16NoBom(buf: Buffer): 'utf-16le' | 'utf-16be' | null {
+  const probeLen = Math.min(buf.length, 8192);
+  if (probeLen < 4) return null;
+  let oddNulls = 0;
+  let evenNulls = 0;
+  let oddPrintable = 0;
+  let evenPrintable = 0;
+  const pairs = Math.floor(probeLen / 2);
+  for (let i = 0; i < probeLen; i++) {
+    const b = buf[i]!;
+    if (i % 2 === 0) {
+      if (b === 0) evenNulls++;
+      else if (b >= 32 && b < 127) evenPrintable++;
+    } else {
+      if (b === 0) oddNulls++;
+      else if (b >= 32 && b < 127) oddPrintable++;
+    }
+  }
+  if (pairs < 2) return null;
+  if (oddNulls / pairs >= 0.35 && evenPrintable / pairs >= 0.25) return 'utf-16le';
+  if (evenNulls / pairs >= 0.35 && oddPrintable / pairs >= 0.25) return 'utf-16be';
+  return null;
+}
+
+function decodeUtf16NoBom(buf: Buffer, enc: 'utf-16le' | 'utf-16be'): string {
+  if (enc === 'utf-16le') return buf.toString('utf16le');
+  const swapped = Buffer.alloc(buf.length);
+  for (let i = 0; i + 1 < buf.length; i += 2) {
+    swapped[i] = buf[i + 1]!;
+    swapped[i + 1] = buf[i]!;
+  }
+  return swapped.toString('utf16le');
+}
+
+/** Flag text that likely decoded with the wrong encoding. */
+function detectGarbledText(text: string): boolean {
+  const sample = text.slice(0, 8192);
+  if (sample.length === 0) return false;
+  let suspicious = 0;
+  for (let i = 0; i < sample.length; i++) {
+    const ch = sample[i]!;
+    const code = sample.charCodeAt(i);
+    if (code === 0 || ch === '?' || code === 0xfffd) suspicious++;
+  }
+  return suspicious / sample.length > 0.12;
+}
+
 /** Exported for unit tests; not part of the runtime public surface. */
-export const __testing = { detectBomEncoding, bomDecode };
+export const __testing = {
+  detectBomEncoding,
+  bomDecode,
+  detectUtf16NoBom,
+  decodeUtf16NoBom,
+  detectGarbledText
+};

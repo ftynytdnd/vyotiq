@@ -30,7 +30,7 @@ export function ChatComposerZone({
       className={cn(
         embedded && footerMode && 'px-0 pb-0 pt-0',
         embedded && !footerMode && 'px-6 pb-2 pt-3',
-        !embedded && 'shrink-0 border-t border-border-subtle/10 bg-surface-base/40 px-6 pb-3 pt-3'
+        !embedded && 'shrink-0 px-4 pb-3 pt-2'
       )}
     >
       <div

@@ -29,6 +29,7 @@ import { normalizeMathShortcuts } from '@shared/text/mathShortcuts.js';
 import { chromeCodeSurfaceClassName } from '../../ui/SurfaceShell.js';
 import { CodeLanguageEyebrow } from '../shared/CodeLanguageEyebrow.js';
 import { cn } from '../../../lib/cn.js';
+import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/shellIcons.js';
 import { safeCopy } from '../../../lib/clipboard.js';
 import { TaskCheckbox } from './TaskCheckbox.js';
 
@@ -48,6 +49,7 @@ const REHYPE_PLUGINS: MdProps['rehypePlugins'] = [
 
 const MD_COMPONENTS: MdProps['components'] = {
   pre: PreWithCopy,
+  table: TableWithWrap,
   a: ({ href, children, ...rest }) => (
     <a
       href={href}
@@ -109,7 +111,17 @@ export function MarkdownBody({ text, className }: MarkdownBodyProps) {
     [sanitizedText]
   );
 
-  return <div className={cn('vyotiq-md', className)}>{tree}</div>;
+  return <div className={cn('vyotiq-md vx-timeline-md vx-prose', className)}>{tree}</div>;
+}
+
+function TableWithWrap({ children, ...rest }: ComponentProps<'table'>) {
+  return (
+    <div className="vx-timeline-md-table-wrap">
+      <table className="vx-timeline-md-table" {...rest}>
+        {children}
+      </table>
+    </div>
+  );
 }
 
 function preChildrenText(children?: ReactNode): string {
@@ -192,20 +204,19 @@ function PreWithCopy({ children }: { children?: ReactNode }) {
         className={cn(
           'app-no-drag absolute right-2 top-2 opacity-0 transition-opacity duration-150',
           // Match `<pre>` fence via {@link chromeCodeSurfaceClassName}; hover
-          // lifts to `bg-surface-hover` so the affordance reads on hover.
+          // uses Vyotiq UI quiet button wash on the copy affordance.
           chromeCodeSurfaceClassName(
-            'flex h-6 w-6 items-center justify-center text-text-muted'
+            'vx-btn vx-btn-quiet flex h-6 w-6 items-center justify-center text-text-muted'
           ),
-          'group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100',
-          'hover:bg-surface-hover hover:text-text-primary'
+          'group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100'
         )}
         aria-label="Copy code"
         title={copied ? 'Copied' : 'Copy'}
       >
         {copied ? (
-          <Check className="h-3.5 w-3.5 text-success" strokeWidth={2.25} />
+          <Check className={cn(SHELL_ROW_ICON_CLASS, 'text-success')} strokeWidth={SHELL_ACTION_ICON_STROKE} />
         ) : (
-          <Copy className="h-3.5 w-3.5" strokeWidth={2.25} />
+          <Copy className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
         )}
       </button>
     </div>

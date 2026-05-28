@@ -5,7 +5,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { verifySubagentOutput } from '@main/orchestrator/verifier';
+import {
+  applyNoToolUseWithFilesCheck,
+  verifySubagentOutput,
+  verifySubagentRun
+} from '@main/orchestrator/verifier';
 
 describe('verifySubagentOutput', () => {
   it('flags missing <result> as malformed', () => {
@@ -52,5 +56,63 @@ describe('verifySubagentOutput', () => {
     );
     expect(v.structural).toBe('ok');
     expect(v.status).toBe('partial');
+  });
+});
+
+describe('applyNoToolUseWithFilesCheck (P2b)', () => {
+  const okEnvelope =
+    '<result><status>success</status><summary>Done.</summary></result>';
+
+  it('downgrades ok verdict when files assigned, zero tools, zero inlines', () => {
+    const base = verifySubagentOutput(okEnvelope);
+    expect(base.structural).toBe('ok');
+    const v = applyNoToolUseWithFilesCheck(base, {
+      delegateFiles: ['src/foo.ts'],
+      toolResultCount: 0,
+      inlinedFileCount: 0
+    });
+    expect(v.structural).toBe('malformed');
+    expect(v.attrs['reason']).toBe('no-tool-use-with-files');
+  });
+
+  it('keeps ok when host inlined at least one file (seedCachedRead excuse)', () => {
+    const base = verifySubagentOutput(okEnvelope);
+    const v = applyNoToolUseWithFilesCheck(base, {
+      delegateFiles: ['src/foo.ts'],
+      toolResultCount: 0,
+      inlinedFileCount: 1
+    });
+    expect(v.structural).toBe('ok');
+  });
+
+  it('keeps ok when the worker issued tools even with zero inlines', () => {
+    const base = verifySubagentOutput(okEnvelope);
+    const v = applyNoToolUseWithFilesCheck(base, {
+      delegateFiles: ['src/foo.ts'],
+      toolResultCount: 2,
+      inlinedFileCount: 0
+    });
+    expect(v.structural).toBe('ok');
+  });
+
+  it('does not override an existing malformed envelope verdict', () => {
+    const base = verifySubagentOutput('no envelope');
+    expect(base.structural).toBe('malformed');
+    const v = applyNoToolUseWithFilesCheck(base, {
+      delegateFiles: ['src/foo.ts'],
+      toolResultCount: 0,
+      inlinedFileCount: 0
+    });
+    expect(v.attrs['reason']).toBe('missing-envelope');
+  });
+
+  it('verifySubagentRun applies P2b in one call', () => {
+    const v = verifySubagentRun(okEnvelope, {
+      delegateFiles: ['a.ts', 'b.ts'],
+      toolResultCount: 0,
+      inlinedFileCount: 0
+    });
+    expect(v.structural).toBe('malformed');
+    expect(v.attrs['reason']).toBe('no-tool-use-with-files');
   });
 });

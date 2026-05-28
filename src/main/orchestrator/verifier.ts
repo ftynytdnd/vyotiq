@@ -52,3 +52,47 @@ export function verifySubagentOutput(text: string): SubagentVerdict {
     attrs: { status: parsed.status }
   };
 }
+
+/** Host-side context for structural checks beyond the `<result>` envelope. */
+export interface VerifySubagentContext {
+  /** Resolved delegate paths (post workspace validation). */
+  delegateFiles: readonly string[];
+  toolResultCount: number;
+  /**
+   * Files whose bodies were inlined at spawn. When > 0, a worker may
+   * legitimately finish with zero tool results (host satisfied reads).
+   */
+  inlinedFileCount: number;
+}
+
+/**
+ * P2b — delegate assigned files but produced no tool evidence and no
+ * host-inlined bodies. Downgrades an otherwise-ok envelope so the
+ * orchestrator retries instead of trusting a hallucinated summary.
+ */
+export function applyNoToolUseWithFilesCheck(
+  verdict: SubagentVerdict,
+  ctx: VerifySubagentContext
+): SubagentVerdict {
+  if (verdict.structural !== 'ok') return verdict;
+  if (ctx.delegateFiles.length === 0) return verdict;
+  if (ctx.toolResultCount > 0) return verdict;
+  if (ctx.inlinedFileCount > 0) return verdict;
+
+  return {
+    ...verdict,
+    structural: 'malformed',
+    attrs: {
+      malformed: 'true',
+      reason: 'no-tool-use-with-files',
+      ...(verdict.status !== undefined ? { status: verdict.status } : {})
+    }
+  };
+}
+
+export function verifySubagentRun(
+  text: string,
+  ctx: VerifySubagentContext
+): SubagentVerdict {
+  return applyNoToolUseWithFilesCheck(verifySubagentOutput(text), ctx);
+}

@@ -3,7 +3,7 @@
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { ContextSummaryRow } from '@renderer/components/timeline/rows/ContextSummaryRow';
 import { useChatStore } from '@renderer/store/useChatStore';
 import type { ContextSummaryAcc } from '@renderer/components/timeline/reducer/types';
@@ -52,11 +52,11 @@ describe('ContextSummaryRow markdown', () => {
       }
     });
     const { container } = render(<ContextSummaryRow summaryId={SUMMARY_ID} live />);
-    expect(container.innerHTML).toContain('text-accent-gold');
+    expect(container.innerHTML).toContain('vx-timeline-phase-live');
     expect(container.textContent ?? '').toContain('Compressing 2 messages');
   });
 
-  it('renders settled expanded body through MarkdownBody', () => {
+  it('renders settled expanded body through MarkdownBody', async () => {
     useChatStore.setState({
       summaries: {
         [SUMMARY_ID]: makeSummary({
@@ -68,10 +68,13 @@ describe('ContextSummaryRow markdown', () => {
       }
     });
     const { container } = render(<ContextSummaryRow summaryId={SUMMARY_ID} />);
-    const toggle = container.querySelector('button');
+    const toggle = container.querySelector('button[aria-label*="Expand"]');
     expect(toggle).not.toBeNull();
-    toggle!.click();
-    expect(container.querySelector('.vyotiq-md')).not.toBeNull();
+    await act(async () => {
+      toggle!.click();
+    });
+    expect(container.textContent ?? '').toContain('Summary');
+    expect(container.querySelector('.vyotiq-md, .vx-timeline-md')).not.toBeNull();
   });
 
   it('renders streaming partial markdown in collapsed preview', () => {

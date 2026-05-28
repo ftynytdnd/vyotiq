@@ -20,7 +20,7 @@ describe('AgentThoughtRow severity', () => {
     const span = container.querySelector('span');
     expect(span?.textContent).toBe('thinking quietly');
     expect(span?.className).toMatch(/italic/);
-    expect(span?.className).toMatch(/text-text-faint/);
+    expect(span?.className).toMatch(/vx-caption/);
     // No alert glyph in info mode.
     expect(container.querySelector('svg')).toBeNull();
   });
@@ -41,7 +41,7 @@ describe('AgentThoughtRow severity', () => {
       <AgentThoughtRow content="Investigating layout overlap…" live />
     );
     const span = container.querySelector('span');
-    expect(span?.className).toMatch(/text-accent-gold/);
+    expect(span?.className).toMatch(/vx-timeline-phase-live/);
     expect(span?.className).not.toMatch(/vyotiq-shimmer-text/);
   });
 });

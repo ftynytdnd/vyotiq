@@ -31,7 +31,8 @@ import {
   BASH_MAX_TIMEOUT_MS,
   BASH_SNAPSHOT_MAX_ENTRIES,
   BASH_SNAPSHOT_MAX_BYTES_PER_FILE,
-  BASH_SNAPSHOT_MAX_TOTAL_BYTES
+  BASH_SNAPSHOT_MAX_TOTAL_BYTES,
+  BASH_SNAPSHOT_HUGE_TREE_FILES
 } from '@shared/constants.js';
 import { recordChange } from '../checkpoints/index.js';
 import { computeDiffHunks } from '@shared/text/diff/computeDiffHunks.js';
@@ -71,9 +72,11 @@ const BASH_SCAN_IGNORE = new Set([
   'dist',
   'out',
   '.next',
+  '.next/cache',
   '.turbo',
   '.cache',
   '.parcel-cache',
+  '.eslintcache',
   '.svelte-kit',
   '.angular',
   '.expo',
@@ -88,7 +91,17 @@ const BASH_SCAN_IGNORE = new Set([
   // Build tooling (other languages)
   'build',
   'target',
+  'target/release',
   '.gradle',
+  '.cargo',
+  // Rust / Go / PHP vendoring
+  'vendor',
+  // Infra / IaC
+  '.terraform',
+  '.serverless',
+  '.aws-sam',
+  // Docs / static site generators
+  '.docusaurus',
   // Python
   '__pycache__',
   '.venv',
@@ -172,6 +185,8 @@ export async function scanWorkspaceForBash(
   const entries = new Map<string, PreSnapshotEntry>();
   let truncated = false;
   let capturedBytes = 0;
+  let filesSeen = 0;
+  let hugeTree = false;
   const stack: string[] = [root];
   while (stack.length > 0) {
     if (signal?.aborted) {
@@ -215,6 +230,15 @@ export async function scanWorkspaceForBash(
         continue;
       }
       if (!de.isFile()) continue;
+      filesSeen += 1;
+      if (!hugeTree && filesSeen > BASH_SNAPSHOT_HUGE_TREE_FILES) {
+        hugeTree = true;
+        truncated = true;
+        capturedBytes = 0;
+        for (const entry of entries.values()) {
+          entry.preBody = undefined;
+        }
+      }
       let st: import('node:fs').Stats;
       try {
         // `fs.stat` follows symlinks; we already excluded them above
@@ -228,6 +252,7 @@ export async function scanWorkspaceForBash(
       }
       let preBody: string | undefined;
       if (
+        !hugeTree &&
         st.size <= BASH_SNAPSHOT_MAX_BYTES_PER_FILE &&
         capturedBytes + st.size <= BASH_SNAPSHOT_MAX_TOTAL_BYTES
       ) {
@@ -240,8 +265,11 @@ export async function scanWorkspaceForBash(
         } catch {
           /* unreadable — fall through to mtime-only */
         }
-      } else {
+      } else if (!hugeTree) {
         truncated = true;
+      }
+      if (hugeTree && preBody !== undefined) {
+        preBody = undefined;
       }
       entries.set(child, {
         mtimeMs: st.mtimeMs,
@@ -559,6 +587,33 @@ function platformShell(): { cmd: string; args: (command: string) => string[] } {
   };
 }
 
+const KILL_GRACE_MS = 3000;
+
+/**
+ * Kill a bash child and any descendants. Unix uses a detached process
+ * group (`kill(-pid, …)`); Windows uses `taskkill /T /F`.
+ */
+export function killBashProcessTree(pid: number, signal: 'SIGTERM' | 'SIGKILL' = 'SIGTERM'): void {
+  if (!Number.isFinite(pid) || pid <= 0) return;
+  if (process.platform === 'win32') {
+    const force = signal === 'SIGKILL' ? ['/F'] : [];
+    spawn('taskkill', ['/PID', String(pid), '/T', ...force], {
+      windowsHide: true,
+      stdio: 'ignore'
+    }).unref?.();
+    return;
+  }
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    try {
+      process.kill(pid, signal);
+    } catch {
+      /* noop */
+    }
+  }
+}
+
 /**
  * Privacy-allowlisted env for the bash child. See the call-site comment
  * in `run()` for the full rationale (Audit fix H-01). The allowlist is
@@ -621,6 +676,22 @@ const BASH_ENV_ALLOWLIST = new Set<string>([
  */
 const SECRET_NAME_RE = /(?:^|_)(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|API|AUTH|CREDENTIAL|BEARER|COOKIE|SESSION)(?:_|$)/i;
 
+/** Credential-shaped env names never forwarded to the bash child. */
+const CREDENTIAL_ENV_DENYLIST: ReadonlyArray<RegExp> = [
+  /^STRIPE_/i,
+  /^AWS_/i,
+  /^GITHUB_/i,
+  /^DATABASE_URL$/i,
+  /^MONGO_URI$/i,
+  /^REDIS_URL$/i,
+  /^VYOTIQ_/i
+];
+
+function isDeniedBashEnvName(name: string): boolean {
+  if (SECRET_NAME_RE.test(name)) return true;
+  return CREDENTIAL_ENV_DENYLIST.some((re) => re.test(name));
+}
+
 function buildBashEnv(): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = {};
   for (const name of BASH_ENV_ALLOWLIST) {
@@ -628,7 +699,7 @@ function buildBashEnv(): NodeJS.ProcessEnv {
     if (typeof v !== 'string' || v.length === 0) continue;
     // Belt-and-suspenders: even allowlisted names get the secret-shape
     // check. A user with `LANG_API_TOKEN=…` (unusual) is still safe.
-    if (SECRET_NAME_RE.test(name)) continue;
+    if (isDeniedBashEnvName(name)) continue;
     out[name] = v;
   }
   return out;
@@ -840,8 +911,10 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
         resolveResult(result);
       };
 
+      const isWin = process.platform === 'win32';
       const child = spawn(cmd, argsFor(command), {
         cwd: ctx.workspacePath,
+        detached: !isWin,
         // PRIVACY BOUNDARY (Audit fix H-01): build a minimal env allowlist
         // instead of inheriting `process.env`. The Prime Directives
         // explicitly forbid transmitting environment variables to
@@ -882,20 +955,11 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
       // matches the documented contract. On *nix the SIGTERM gives
       // long-running children (test runners, build tools) a chance to
       // flush stdio and clean up tmp files before being torn down.
-      const KILL_GRACE_MS = 1000;
       const killHard = (): void => {
-        try {
-          child.kill('SIGKILL');
-        } catch {
-          /* noop */
-        }
+        if (child.pid !== undefined) killBashProcessTree(child.pid, 'SIGKILL');
       };
       const killGraceful = (): void => {
-        try {
-          child.kill('SIGTERM');
-        } catch {
-          /* noop */
-        }
+        if (child.pid !== undefined) killBashProcessTree(child.pid, 'SIGTERM');
         // Escalate to SIGKILL if the child is still alive after the grace.
         setTimeout(() => {
           if (!settled) killHard();
@@ -1039,6 +1103,15 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
             log.debug('post-bash scan skipped: read-only command heuristic');
             return;
           }
+          ctx.emit({
+            kind: 'phase',
+            id: randomUUID(),
+            ts: Date.now(),
+            label: 'Scanning workspace for mutations…',
+            tooltip:
+              'Post-bash mtime scan — detecting file changes to record checkpoints or audit-only rows.',
+            ...(ctx.subagentId ? { subagentId: ctx.subagentId } : {})
+          });
           // Audit fix H-03: post-bash scan must respect the run-scoped
           // signal. Without these checks the scan walks the entire
           // workspace tree after bash settles, and every

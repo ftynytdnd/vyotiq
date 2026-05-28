@@ -13,7 +13,6 @@
 
 import { useState } from 'react';
 import { useChatStore } from '../../store/useChatStore.js';
-import { Eyebrow } from '../ui/Eyebrow.js';
 import { SurfaceShell } from '../ui/SurfaceShell.js';
 import { Tabs, type TabItem } from '../ui/Tabs.js';
 import type { ContextSummaryAcc } from '../timeline/reducer/types.js';
@@ -38,16 +37,14 @@ export function RawDiffView({ summaryId }: RawDiffViewProps) {
   if (!acc) return null;
 
   return (
-    <div className="flex flex-col gap-2 border-b border-border-subtle/30 py-3">
-      <div className="flex items-center gap-1">
-        <Eyebrow as="span" bold className="mr-2">
-          Most recent summary
-        </Eyebrow>
+    <div className="vx-row flex flex-col gap-2 border-b border-border-subtle/30">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="vx-field-label mb-0 mr-2">Most recent summary</span>
         <Tabs<Tab>
           items={TABS}
           value={tab}
           onChange={setTab}
-          variant="strip"
+          variant="underline"
           ariaLabel="Summary diff view"
         />
       </div>

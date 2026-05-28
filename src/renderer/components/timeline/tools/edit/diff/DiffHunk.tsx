@@ -114,11 +114,7 @@ export const DiffHunk = forwardRef<HTMLDivElement, DiffHunkProps>(
                     toggleDiffFold(foldScopeKey, item.foldId);
                   }}
                   className={cn(
-                    'mx-1 my-0.5 flex w-[calc(100%-0.5rem)] items-center gap-2',
-                    'rounded-inner border border-dashed border-border-subtle/40',
-                    'px-2 py-0.5 text-meta italic text-text-faint',
-                    'transition-colors duration-150',
-                    'hover:border-border-subtle hover:bg-surface-hover hover:text-text-secondary'
+                    'vx-diff-fold mx-1 my-0.5 flex w-[calc(100%-0.5rem)] items-center gap-2 px-2 py-0.5'
                   )}
                 >
                   … {item.hidden} unchanged line{item.hidden === 1 ? '' : 's'} — expand

@@ -4,9 +4,7 @@
  */
 
 import { useEffect, useMemo } from 'react';
-import { reviewSessionBlocksSend } from '@shared/checkpoints/reviewSessionBlocksSend.js';
 import {
-  reviewCacheKey,
   useCheckpointsStore,
   usePendingChanges
 } from '../../../store/useCheckpointsStore.js';
@@ -34,25 +32,9 @@ export function usePendingChangesTimelineRow(conversationId: string | null) {
       ? s.settings.ui?.gatePromptOnPendingByWorkspace?.[activeWorkspaceId] === true
       : false
   );
-  const reviewGateOn = useSettingsStore((s) =>
-    activeWorkspaceId
-      ? s.settings.ui?.gatePromptOnReviewRequestChangesByWorkspace?.[activeWorkspaceId] ===
-          true
-      : false
-  );
-  const reviewSession = useCheckpointsStore((s) =>
-    conversationId && activeWorkspaceId
-      ? (s.reviewByConversation[reviewCacheKey(activeWorkspaceId, conversationId)] ?? null)
-      : null
-  );
-  const reviewBlocksSend =
-    reviewGateOn && reviewSession ? reviewSessionBlocksSend(reviewSession) : false;
 
   const persistedExpanded = useTimelineUiStore((s) =>
     s.isExpanded(conversationId, PENDING_CHANGES_ROW_KEY)
-  );
-  const userOverridden = useTimelineUiStore((s) =>
-    s.hasManualOverride(conversationId, PENDING_CHANGES_ROW_KEY)
   );
   const setExpanded = useTimelineUiStore((s) => s.setExpanded);
 
@@ -91,8 +73,7 @@ export function usePendingChangesTimelineRow(conversationId: string | null) {
     [pending, filters.runId, filters.pathQuery]
   );
 
-  const gateAutoExpand = gateOn && pending.length > 0;
-  const expanded = userOverridden ? persistedExpanded : gateAutoExpand || persistedExpanded;
+  const expanded = persistedExpanded;
 
   const onToggleExpand = () => {
     if (!conversationId) return;
@@ -108,15 +89,17 @@ export function usePendingChangesTimelineRow(conversationId: string | null) {
   };
 
   const onRejectAll = async () => {
-    const results = await Promise.all(
-      visiblePending.map((p) =>
-        useCheckpointsStore.getState().reject(p.entryId, p.conversationId)
-      )
-    );
-    const failed = results.filter((r) => !r.ok).length;
+    const ordered = [...visiblePending].sort((a, b) => b.createdAt - a.createdAt);
+    let failed = 0;
+    for (const p of ordered) {
+      const result = await useCheckpointsStore
+        .getState()
+        .reject(p.entryId, p.conversationId);
+      if (!result.ok) failed += 1;
+    }
     if (failed === 0) return;
     showToast(
-      `${failed} of ${results.length} revert${results.length === 1 ? '' : 's'} failed — see Checkpoints log`,
+      `${failed} of ${ordered.length} revert${ordered.length === 1 ? '' : 's'} failed — see Checkpoints log`,
       'danger'
     );
   };
@@ -140,8 +123,6 @@ export function usePendingChangesTimelineRow(conversationId: string | null) {
     visibleAdditions,
     visibleDeletions,
     gateOn,
-    reviewGateOn,
-    reviewBlocksSend,
     runIds,
     filters,
     expanded,

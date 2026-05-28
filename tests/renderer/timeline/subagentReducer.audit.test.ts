@@ -86,6 +86,48 @@ describe('audit A1 — subagent-pending re-use semantics', () => {
     expect(snap?.startedAt).toBe(10);
   });
 
+  it('resets the snapshot when the existing id is terminal (partial)', () => {
+    let s: TimelineState = baseState;
+
+    s = applyTimelineEvent(s, {
+      kind: 'subagent-pending',
+      id: 'p1', ts: 1,
+      subagentId: 'A1',
+      task: 'Round 1 task',
+      files: ['a.ts'],
+      tools: ['read']
+    });
+    s = applyTimelineEvent(s, {
+      kind: 'subagent-spawn',
+      id: 'sp1', ts: 2,
+      subagentId: 'A1',
+      task: 'Round 1 task',
+      files: ['a.ts'],
+      tools: ['read']
+    });
+    s = applyTimelineEvent(s, {
+      kind: 'subagent-status',
+      id: 'st1', ts: 3,
+      subagentId: 'A1',
+      status: 'partial'
+    });
+
+    s = applyTimelineEvent(s, {
+      kind: 'subagent-pending',
+      id: 'p2', ts: 10,
+      subagentId: 'A1',
+      task: 'Round 2 task',
+      files: ['b.ts'],
+      tools: ['edit']
+    });
+
+    const snap = s.subagents['A1'];
+    expect(snap?.task).toBe('Round 2 task');
+    expect(snap?.files).toEqual(['b.ts']);
+    expect(snap?.status).toBe('pending');
+    expect(snap?.steps).toEqual([]);
+  });
+
   it('drops a re-pending when the existing snapshot is still running (no churn)', () => {
     let s: TimelineState = baseState;
 

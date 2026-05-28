@@ -8,15 +8,18 @@
  *   - the filter input (or a breadcrumb in `@`-mention controlled mode)
  *   - the result list rendering and pick dispatch
  *
- * Surface palette stays aligned with `PermissionsMenu` and `Dropdown`.
+ * Surface palette stays aligned with `PermissionModePill` and `Dropdown`.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { File, Folder, X } from 'lucide-react';
-import { chromePopoverPanelClassName } from '../ui/SurfaceShell.js';
+import { chromeNoMatchesClassName, appPopoverPanelClassName } from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
+import {
+  SHELL_ACTION_ICON_STROKE,
+  SHELL_ROW_ICON_CLASS
+} from '../../lib/shellIcons.js';
 import { Eyebrow } from '../ui/Eyebrow.js';
-import { TextField } from '../ui/TextField.js';
 import { getWorkspaceTree } from '../../lib/workspaceTreeCache.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useChatStore } from '../../store/useChatStore.js';
@@ -130,7 +133,7 @@ export function AttachmentPicker({
 
   return (
     <div
-      className={cn(chromePopoverPanelClassName, 'w-80 p-1.5')}
+      className={cn(appPopoverPanelClassName, 'w-80 p-1.5')}
     >
       {isControlled ? (
         // In `@`-mention mode, the filter is driven by the textarea — show
@@ -140,23 +143,22 @@ export function AttachmentPicker({
         </Eyebrow>
       ) : (
         <div className="px-1 pb-1.5">
-          <TextField
+          <input
             ref={inputRef}
+            type="search"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter files…"
-            size="sm"
-            tone="base"
-            className="w-full"
+            className="vx-input w-full text-row"
           />
         </div>
       )}
       <div className="max-h-72 overflow-y-auto" aria-live="polite">
         {loading && (
-          <div className="px-2 py-2 text-row text-text-muted">Loading workspace…</div>
+          <div className={chromeNoMatchesClassName}>Loading workspace…</div>
         )}
         {!loading && filtered.length === 0 && (
-          <div className="px-2 py-2 text-row text-text-muted">
+          <div className={chromeNoMatchesClassName}>
             {tree && tree.length === 0
               ? 'Pick a workspace first.'
               : 'No matches.'}
@@ -177,23 +179,27 @@ export function AttachmentPicker({
                   onClose();
                 }}
                 className={cn(
-                  'flex w-full items-center gap-2 rounded-inner px-2 py-1 text-left text-row transition-colors duration-150',
-                  'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+                  'vx-dropdown-item flex w-full items-center gap-2',
                   (isDir || isSelected) && 'opacity-40 cursor-not-allowed hover:bg-transparent'
                 )}
               >
                 {isDir ? (
-                  <Folder className="h-3.5 w-3.5 shrink-0 text-text-faint" strokeWidth={2} />
+                  <Folder className={cn(SHELL_ROW_ICON_CLASS, 'text-text-faint')} strokeWidth={SHELL_ACTION_ICON_STROKE} />
                 ) : (
-                  <File className="h-3.5 w-3.5 shrink-0 text-text-faint" strokeWidth={2} />
+                  <File className={cn(SHELL_ROW_ICON_CLASS, 'text-text-faint')} strokeWidth={SHELL_ACTION_ICON_STROKE} />
                 )}
                 <span className="truncate font-mono">{cleaned}</span>
-                {isSelected && <X className="ml-auto h-3 w-3 text-text-faint" strokeWidth={2.25} />}
+                {isSelected && (
+                  <X
+                    className={cn(SHELL_ROW_ICON_CLASS, 'ml-auto text-text-faint')}
+                    strokeWidth={SHELL_ACTION_ICON_STROKE}
+                  />
+                )}
               </button>
             );
           })}
       </div>
-      <div className="border-t border-border-subtle/30 px-2 pt-1.5 text-meta text-text-faint">
+      <div className="px-2 pt-1.5 text-meta text-text-faint">
         Files only. Selected files are inlined into the agent's context.
       </div>
       {truncation.truncated && (

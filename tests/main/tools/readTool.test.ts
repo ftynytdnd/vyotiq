@@ -59,6 +59,17 @@ describe('read.tool BOM detection', () => {
     expect(result.error).toBeUndefined();
   });
 
+  it('reads a UTF-16 LE file without BOM via alternating-null heuristic', async () => {
+    const body = 'const legacy = true;\n';
+    const encoded = Buffer.from(body, 'utf16le');
+    const target = join(ws, 'legacy-no-bom.ps1');
+    await fs.writeFile(target, encoded);
+
+    const result = await readTool.run({ path: 'legacy-no-bom.ps1' }, ctxFor(ws));
+    expect(result.ok).toBe(true);
+    expect(result.output).toContain('const legacy = true;');
+  });
+
   it('reads a UTF-8 BOM file (EF BB BF) without choking on the BOM', async () => {
     const body = 'const answer = 42;\n';
     const encoded = Buffer.concat([

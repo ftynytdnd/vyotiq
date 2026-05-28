@@ -77,7 +77,7 @@ describe('LiveStreamCard', () => {
     const { container } = render(
       <LiveStreamCard summaryId={SUMMARY_ID} conversationId={CONV_ID} />
     );
-    expect(container.innerHTML).toContain('text-accent-gold');
+    expect(container.innerHTML).toContain('vx-timeline-phase-live');
     expect(container.textContent ?? '').toContain('Compressing 1 message');
   });
 

@@ -263,6 +263,14 @@ export const CONTEXT_SUMMARY_DEFAULT_TRIGGER_RATIO = 0.7;
 export const CONTEXT_SUMMARY_DEFAULT_KEEP_RECENT_TURNS = 4;
 export const CONTEXT_SUMMARY_MIN_MESSAGES_TO_SUMMARIZE = 6;
 export const CONTEXT_SUMMARY_DEFAULT_MAX_RETRIES = 2;
+/** Default absolute token count before the timeline budget-warning row appears. */
+export const TOKEN_BUDGET_WARNING_DEFAULT_TOKENS = 128_000;
+/**
+ * Legacy ratio fallback when no absolute threshold is configured. Kept
+ * for tests and callers that pass only `contextWindow` without a
+ * settings-backed threshold.
+ */
+export const TOKEN_BUDGET_WARNING_DEFAULT_RATIO = 0.7;
 /**
  * Filename of the optional per-workspace summarizer-prompt override.
  * Placed at `<workspace>/.vyotiq/context-summarizer.md`. When present
@@ -298,8 +306,11 @@ export const CONTEXT_SUMMARY_MAX_FINAL_CHARS = 32_000;
  */
 export const MAX_USER_PROMPT_BYTES = 1_048_576; // 1 MiB
 
-/** Max attachment paths per `chat:send` / token-estimate request. */
-export const MAX_CHAT_ATTACHMENTS = 32;
+/** Max attachments per message (composer shows N/10). */
+export const MAX_CHAT_ATTACHMENTS = 10;
+
+/** Per-file size cap for external attachment ingest (10 MB). */
+export const MAX_ATTACHMENT_FILE_BYTES = 10 * 1024 * 1024;
 
 /**
  * Prefix for synthetic run ids used by idle-mode manual summarization.
@@ -345,6 +356,12 @@ export const READ_MAX_BYTES = 512 * 1024; // 512 KB
 export const BASH_SNAPSHOT_MAX_ENTRIES = 500;
 export const BASH_SNAPSHOT_MAX_BYTES_PER_FILE = 512 * 1024; // 512 KiB per file
 export const BASH_SNAPSHOT_MAX_TOTAL_BYTES = 8 * 1024 * 1024; // 8 MiB total
+/**
+ * When a workspace walk sees more than this many files, skip capturing
+ * pre-snapshot bodies (mtime-only + audit-only mutations). Avoids pinning
+ * memory on monorepos while still surfacing that bash touched paths.
+ */
+export const BASH_SNAPSHOT_HUGE_TREE_FILES = 50_000;
 
 /** IPC channel names — single source of truth. */
 export const IPC = {
@@ -360,6 +377,8 @@ export const IPC = {
   // Workspace (single active — preserved for back-compat title bar / tools)
   WORKSPACE_GET: 'workspace:get',
   WORKSPACE_PICK: 'workspace:pick',
+  /** Open the folder picker and return a path without activating a workspace. */
+  WORKSPACE_PICK_DIRECTORY: 'workspace:pick-directory',
   WORKSPACE_SET: 'workspace:set',
   WORKSPACE_LIST_TREE: 'workspace:list-tree',
   // Workspaces registry (multi)
@@ -524,6 +543,8 @@ export const IPC = {
    * sidebar's drag-between-workspaces affordance.
    */
   CONVERSATIONS_MOVE: 'conversations:move',
+  CONVERSATIONS_ARCHIVE: 'conversations:archive',
+  CONVERSATIONS_UNARCHIVE: 'conversations:unarchive',
 
   // Checkpoints (file-change review + revert)
   /** Returns the workspace summary (runs, files, usage). */
@@ -583,27 +604,9 @@ export const IPC = {
    * confirms the modal preview.
    */
   CHECKPOINTS_REWIND_TO_PROMPT: 'checkpoints:rewind-to-prompt',
-  /**
-   * main → renderer (broadcast). Emitted when an entry is accepted /
-   * rejected / pruned / reverted so every renderer view can refresh
-   * without polling.
-   */
-  /** Read PR-style review session for a conversation. */
-  CHECKPOINTS_GET_REVIEW: 'checkpoints:get-review',
-  /** Ensure a review session exists for a conversation. */
-  CHECKPOINTS_ENSURE_REVIEW: 'checkpoints:ensure-review',
-  /** Append a file-anchored review comment. */
-  CHECKPOINTS_ADD_REVIEW_COMMENT: 'checkpoints:add-review-comment',
-  /** Set approve / request_changes / comment metadata. */
-  CHECKPOINTS_SET_REVIEW_DECISION: 'checkpoints:set-review-decision',
   /** Unified diff vs git ref (default HEAD) for one file. */
   CHECKPOINTS_GIT_BASE_DIFF: 'checkpoints:git-base-diff',
-  /** Persist git base ref on a review session. */
-  CHECKPOINTS_SET_REVIEW_GIT_REF: 'checkpoints:set-review-git-ref',
   CHECKPOINTS_LIST_GIT_REFS: 'checkpoints:list-git-refs',
-  CHECKPOINTS_EXPORT_REVIEW: 'checkpoints:export-review',
-  CHECKPOINTS_IMPORT_REVIEW: 'checkpoints:import-review',
-  CHECKPOINTS_SET_REVIEW_REVIEWER: 'checkpoints:set-review-reviewer',
   CHECKPOINTS_CHANGED: 'checkpoints:changed',
   /**
    * main → renderer (broadcast). Emitted when a conversation's
@@ -629,6 +632,16 @@ export const IPC = {
    * abused to open arbitrary filesystem locations.
    */
   APP_REVEAL_PATH: 'app:reveal-path',
+  APP_SET_THEME_SOURCE: 'app:set-theme-source',
+  APP_CHECK_UPDATES: 'app:check-updates',
+  /** Play the OS warning / exclamation sound (destructive confirm UX). */
+  APP_PLAY_WARNING_SOUND: 'app:play-warning-sound',
+
+  ATTACHMENTS_PICK: 'attachments:pick',
+  ATTACHMENTS_INGEST_PATHS: 'attachments:ingest-paths',
+  ATTACHMENTS_READ_TEXT: 'attachments:read-text',
+  ATTACHMENTS_FILE_URL: 'attachments:file-url',
+  ATTACHMENTS_OPEN: 'attachments:open',
 
   // Renderer → main log relay (error boundary, etc.)
   RENDERER_LOG: 'renderer:log'

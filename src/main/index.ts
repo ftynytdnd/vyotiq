@@ -11,13 +11,14 @@ import { app, BrowserWindow } from 'electron';
 import { createMainWindow } from './window/createMainWindow.js';
 import { registerIpc } from './ipc/registerIpc.js';
 import { logger, installCrashHandlers } from './logging/logger.js';
+import { assertHarnessBoot } from './harness/harnessLoader.js';
 import { flushAll as flushConversations } from './conversations/conversationStore.js';
 import { flushAll as flushCheckpoints } from './checkpoints/index.js';
 import { flushWorkspaceState } from './workspace/workspaceState.js';
 import { clearAllPending as drainPendingConfirms } from './orchestrator/confirmBus.js';
 import { abortRun, listActiveRuns } from './orchestrator/AgentV.js';
 import { abortAllIdleSummaries } from './orchestrator/contextSummarizer/idleSummaryRuntime.js';
-
+import { sweepOrphanAttachments } from './attachments/gc.js';
 const log = logger.child('boot');
 
 // Single-instance lock. Vyotiq is an always-on desktop agent that owns
@@ -76,10 +77,22 @@ app.on('second-instance', () => {
 
 async function bootstrap() {
   installCrashHandlers();
+  assertHarnessBoot();
   await app.whenReady();
 
   registerIpc();
   log.info('app ready; ipc registered');
+
+  // Attachment GC: conversation-delete hook is always active (see
+  // `deleteAttachmentsForConversation`). The orphan sweeper runs once
+  // after a 30 s idle delay to reclaim dirs from crashed / partial
+  // deletes without impacting boot time.
+  const gcTimer = setTimeout(() => {
+    sweepOrphanAttachments().catch((err) =>
+      log.warn('orphan attachment sweep failed', { err })
+    );
+  }, 30_000);
+  gcTimer.unref();
 
   await createMainWindow();
 

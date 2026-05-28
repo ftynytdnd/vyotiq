@@ -40,6 +40,18 @@ import {
 
 const log = logger.child('ipc/workspace');
 
+async function pickDirectoryPath(): Promise<string | null> {
+  const result = await dialog.showOpenDialog({
+    title: 'Choose a workspace folder for Agent V',
+    properties: ['openDirectory', 'createDirectory']
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    log.info('workspace picker cancelled');
+    return null;
+  }
+  return result.filePaths[0]!;
+}
+
 // Hard cap on filesystem paths arriving over IPC. Windows PATH_MAX is
 // 32 767 chars in long-path mode but no legitimate workspace root
 // ever approaches that — capping at 4 KB matches the `providers`
@@ -50,17 +62,13 @@ export function registerWorkspaceIpc(): void {
   wrapIpcHandler(IPC.WORKSPACE_GET, async () => getWorkspace());
 
   wrapIpcHandler(IPC.WORKSPACE_PICK, async () => {
-    const result = await dialog.showOpenDialog({
-      title: 'Choose a workspace folder for Agent V',
-      properties: ['openDirectory', 'createDirectory']
-    });
-    if (result.canceled || result.filePaths.length === 0) {
-      // Return null (do not throw) so Electron does not log
-      // "Error occurred in handler for …" on a benign dismiss.
-      log.info('workspace picker cancelled');
-      return null;
-    }
-    return setWorkspace(result.filePaths[0]!);
+    const picked = await pickDirectoryPath();
+    if (!picked) return null;
+    return setWorkspace(picked);
+  });
+
+  wrapIpcHandler(IPC.WORKSPACE_PICK_DIRECTORY, async (): Promise<string | null> => {
+    return pickDirectoryPath();
   });
 
   wrapIpcHandler(IPC.WORKSPACE_SET, async (_event, path: string) => {

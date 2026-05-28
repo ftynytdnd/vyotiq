@@ -48,6 +48,7 @@ export async function runSubAgentPool(specs: SubAgentSpec[], deps: PoolDeps): Pr
 
   async function worker(): Promise<void> {
     while (true) {
+      if (deps.signal.aborted) return;
       const next = idx++;
       if (next >= specs.length) return;
       const spec = specs[next]!;
@@ -146,6 +147,7 @@ export async function runSubAgentPool(specs: SubAgentSpec[], deps: PoolDeps): Pr
           task: spec.task,
           output: '',
           toolResults: [],
+          inlinedFileCount: 0,
           status,
           error: msg
         };

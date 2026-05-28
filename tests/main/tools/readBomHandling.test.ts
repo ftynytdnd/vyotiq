@@ -13,7 +13,8 @@
 import { describe, expect, it } from 'vitest';
 import { __testing } from '@main/tools/read.tool';
 
-const { detectBomEncoding, bomDecode } = __testing;
+const { detectBomEncoding, bomDecode, detectUtf16NoBom, decodeUtf16NoBom, detectGarbledText } =
+  __testing;
 
 describe('detectBomEncoding', () => {
   it('detects the UTF-8 BOM (EF BB BF)', () => {
@@ -98,5 +99,42 @@ describe('bomDecode', () => {
       0x00, 0x00, 0x00, 0x43
     ]);
     expect(bomDecode(buf, 'utf-32be')).toBe('ABC');
+  });
+});
+
+describe('detectUtf16NoBom', () => {
+  it('detects UTF-16 LE from alternating NUL pattern (no BOM)', () => {
+    const buf = Buffer.from('hi', 'utf16le');
+    expect(detectUtf16NoBom(buf)).toBe('utf-16le');
+  });
+
+  it('detects UTF-16 BE from alternating NUL pattern (no BOM)', () => {
+    const buf = Buffer.from([0x00, 0x68, 0x00, 0x69]); // BE "hi"
+    expect(detectUtf16NoBom(buf)).toBe('utf-16be');
+  });
+
+  it('returns null for plain UTF-8 ASCII', () => {
+    expect(detectUtf16NoBom(Buffer.from('hello world'))).toBeNull();
+  });
+});
+
+describe('decodeUtf16NoBom', () => {
+  it('decodes UTF-16 LE bodies', () => {
+    expect(decodeUtf16NoBom(Buffer.from('ab', 'utf16le'), 'utf-16le')).toBe('ab');
+  });
+
+  it('decodes UTF-16 BE bodies via byte swap', () => {
+    const buf = Buffer.from([0x00, 0x41, 0x00, 0x42]);
+    expect(decodeUtf16NoBom(buf, 'utf-16be')).toBe('AB');
+  });
+});
+
+describe('detectGarbledText', () => {
+  it('flags high replacement / question-mark ratio', () => {
+    expect(detectGarbledText('????????normal')).toBe(true);
+  });
+
+  it('passes clean ASCII text', () => {
+    expect(detectGarbledText('export const x = 1;\n')).toBe(false);
   });
 });

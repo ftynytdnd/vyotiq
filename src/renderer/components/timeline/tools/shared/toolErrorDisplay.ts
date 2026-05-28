@@ -14,8 +14,3 @@ export function toolErrorBody(result: ToolResult | undefined): string {
   if (result.output && result.output.length > 0) return result.output;
   return result.error ?? '';
 }
-
-/** Collapsed one-line error hint (already trimmed by caller when needed). */
-export function collapsedToolErrorHint(hint: string): string {
-  return hint;
-}

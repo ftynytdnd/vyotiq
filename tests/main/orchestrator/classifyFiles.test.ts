@@ -64,6 +64,32 @@ describe('classifyFiles — sandbox containment', () => {
     expect(out.missing).toEqual([]);
   });
 
+  it('resolves an absolute path through a symlinked workspace root (junction regression)', async (ctx) => {
+    const parent = await fs.mkdtemp(join(tmpdir(), 'vyotiq-cf-symlink-'));
+    const realWs = join(parent, 'real');
+    const linkWs = join(parent, 'link');
+    await fs.mkdir(realWs, { recursive: true });
+    try {
+      await fs.symlink(realWs, linkWs, process.platform === 'win32' ? 'junction' : 'dir');
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === 'EPERM' || code === 'ENOENT') {
+        await fs.rm(parent, { recursive: true, force: true }).catch(() => undefined);
+        ctx.skip();
+        return;
+      }
+      throw err;
+    }
+    const absViaLink = join(linkWs, 'linked-inside.txt');
+    await fs.writeFile(join(realWs, 'linked-inside.txt'), 'linked');
+
+    const out = await classifyFiles([absViaLink], linkWs);
+    expect(out.resolved).toEqual([absViaLink]);
+    expect(out.missing).toEqual([]);
+
+    await fs.rm(parent, { recursive: true, force: true });
+  });
+
   it('marks an absolute sibling-prefix path as missing (H1 regression)', async () => {
     // The sibling's absolute path BEGINS with the workspace path as
     // a string prefix (`<parent>/ws` vs `<parent>/ws-sibling`). The

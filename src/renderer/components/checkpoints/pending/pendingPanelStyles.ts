@@ -1,124 +1,102 @@
 /**
  * Shared layout + surface tokens for the pending-changes panel.
+ * Aligned with Vyotiq UI semantic tokens.
  */
 
 import { cn } from '../../../lib/cn.js';
-import { chromeMeterClassName, surfaceShellClassName } from '../../ui/SurfaceShell.js';
+import {
+  chromeMeterClassName,
+  chromeNoMatchesClassName,
+  chromeStatusPillClassName,
+  appComposerShellClassName
+} from '../../ui/SurfaceShell.js';
 
 /** Aligned columns: chevron · path · stats · actions */
 export const pendingFileRowGridTemplate =
   'grid-cols-[1.25rem_minmax(0,1fr)_4rem_minmax(0,auto)]';
 
-/** Outer timeline-tail shell. */
+/** Outer timeline-tail shell — flat composer surface. */
 export function pendingPanelShellClassName(gateOn: boolean): string {
   return cn(
-    surfaceShellClassName,
+    appComposerShellClassName,
     'flex w-full min-w-0 flex-col overflow-hidden',
-    gateOn && 'bg-accent-soft/[0.04]'
+    gateOn && 'bg-danger-soft'
   );
 }
 
 export const pendingPanelHeaderClassName = cn(
-  'flex w-full min-w-0 flex-col gap-1 border-b border-border-subtle/15 px-2 py-1.5'
+  'flex w-full min-w-0 flex-col gap-0.5',
+  'px-2 py-1'
 );
 
 export const pendingPanelTitleRowClassName = cn(
-  'flex w-full min-w-0 items-center gap-2'
+  'flex w-full min-w-0 items-center gap-1.5'
 );
 
 export const pendingPanelTitleButtonClassName = cn(
-  'app-no-drag flex min-w-0 flex-1 items-center gap-2 rounded-inner px-0.5 py-0.5 text-left',
-  'transition-colors duration-150 hover:bg-surface-hover/30'
+  'app-no-drag flex min-w-0 flex-1 items-center gap-2 rounded-line px-0.5 py-0.5 text-left',
+  'transition-[background,color] duration-160 hover:bg-chrome-hover'
 );
 
 export const pendingPanelToolbarRowClassName = cn(
-  'flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pl-6'
+  'flex w-full min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 pl-5'
 );
 
 export const pendingPanelMetaRowClassName = cn(
-  'flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 text-meta text-text-muted'
+  'flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-meta text-text-muted'
 );
 
 export const pendingPanelFiltersRowClassName = cn(
-  'flex w-full min-w-0 flex-wrap items-center gap-2 border-t border-border-subtle/10 pt-1.5 pl-6'
+  'flex w-full min-w-0 flex-wrap items-center gap-1.5',
+  'pt-1 pl-5'
 );
 
 export const pendingPanelListClassName = cn(
-  'flex w-full min-w-0 flex-col divide-y divide-border-subtle/12'
+  'flex w-full min-w-0 flex-col gap-0.5'
 );
 
 export const pendingPanelListScrollClassName = cn(
-  'scrollbar-stealth max-h-[min(24vh,14rem)] min-h-0 w-full min-w-0 overflow-y-auto'
+  'scrollbar-stealth max-h-[min(20vh,12rem)] min-h-0 w-full min-w-0 overflow-y-auto'
 );
 
-export const pendingPanelEmptyClassName = cn(
-  'px-3 py-4 text-row text-text-muted'
-);
+/** @deprecated Use {@link chromeNoMatchesClassName} — kept for pending panel imports. */
+export const pendingPanelEmptyClassName = chromeNoMatchesClassName;
 
 export const pendingPanelCountChipClassName = cn(
   chromeMeterClassName('shrink-0 px-1.5 py-px tabular-nums text-text-secondary')
 );
 
 export function pendingGatePillClassName(gateOn: boolean): string {
-  return cn(
-    'inline-flex shrink-0 items-center rounded-inner px-1.5 py-px text-meta',
-    gateOn
-      ? 'bg-warning-soft/25 text-warning-strong'
-      : 'border border-border-subtle/25 text-text-faint'
-  );
+  return chromeStatusPillClassName(gateOn ? 'warning' : 'neutral', 'shrink-0');
 }
 
-export function pendingReviewBlockPillClassName(): string {
-  return cn(
-    'inline-flex shrink-0 items-center rounded-inner px-1.5 py-px text-meta',
-    'bg-danger-soft/25 text-danger-strong'
-  );
-}
-
-export function pendingReviewDecisionBadgeClassName(
-  decision: 'approve' | 'request_changes'
-): string {
-  // `chromeMeterClassName` is a FUNCTION exported from `SurfaceShell.tsx`
-  // and MUST be invoked. Passing the bare reference to `cn(...)` silently
-  // strips the badge of `inline-flex h-6 items-center rounded-inner
-  // bg-surface-overlay font-mono text-meta` (clsx coerces function args
-  // to ""). The trailing `'shrink-0 font-mono text-meta'` only happened
-  // to keep the chip *partially* readable because two of its tokens
-  // overlapped the lost surface — the rounded fill and 24-px alignment
-  // were silently missing. Match the call shape used elsewhere in this
-  // file (line ~59) and at every other consumer.
-  return cn(
-    chromeMeterClassName('shrink-0'),
-    decision === 'approve'
-      ? 'text-success-strong'
-      : 'text-danger-strong'
-  );
-}
-
+/** File row — `vx-memory-list-item` hover rhythm. */
 export const pendingFileRowGridClassName = cn(
-  'grid w-full min-w-0 items-center gap-x-2 px-2 py-1 text-left',
+  'grid w-full min-w-0 items-center gap-x-1.5 px-2 py-1 text-left',
   pendingFileRowGridTemplate,
-  'transition-colors duration-150 hover:bg-surface-hover/35'
+  'rounded-line transition-[background,color] duration-160',
+  'hover:bg-chrome-hover'
 );
 
 export const pendingFileRowNestedGridClassName = cn(
   pendingFileRowGridClassName,
-  'border-l border-border-subtle/25 py-0.5 pl-3 pr-2'
+  'border-l border-border-subtle/22 py-0.5 pl-3 pr-2'
 );
 
 export const pendingRunGroupHeaderClassName = cn(
   pendingFileRowGridClassName,
-  'border-b border-border-subtle/10 text-meta uppercase tracking-wide text-text-faint'
+  'text-meta text-text-faint'
 );
 
 export const pendingExpandButtonClassName = cn(
-  'app-no-drag flex shrink-0 items-center justify-center rounded-inner p-0.5',
-  'text-text-muted transition-colors duration-150',
-  'hover:bg-surface-hover/50 hover:text-text-primary'
+  'app-no-drag vx-btn vx-btn-quiet flex shrink-0 items-center justify-center p-0.5'
 );
 
+/** Diff inset — `vx-textarea` surface rhythm. */
 export const pendingDiffInsetClassName = cn(
-  'mx-2 mb-1 border border-border-subtle/12 bg-surface-raised/10'
+  'mx-2 mb-1 overflow-hidden rounded-inner',
+  'border border-border-subtle/28',
+  'bg-surface-base/35'
 );
 
 export function pendingKindDotClassName(
@@ -132,3 +110,10 @@ export function pendingKindDotClassName(
   );
 }
 
+/** Column header row for pending file list. */
+export const pendingListHeaderClassName = cn(
+  'sticky top-0 z-[1] grid items-center gap-x-1.5',
+  'bg-surface-base/92 px-2 py-0.5 backdrop-blur-[8px]',
+  pendingFileRowGridTemplate,
+  'vx-field-label mb-0'
+);

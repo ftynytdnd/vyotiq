@@ -19,6 +19,12 @@ export function malformedReasonFromAttrs(
   if (reason === 'iteration-cap') {
     return 'Sub-agent reached its iteration cap before producing a verifiable result.';
   }
+  if (reason === 'no-tool-use-with-files') {
+    return (
+      'Sub-agent was assigned files but used no tools and received no ' +
+      'host-inlined file bodies — the result cannot be verified.'
+    );
+  }
   if (attrs['malformed'] === 'true') {
     return 'Sub-agent finished without a structured result envelope.';
   }

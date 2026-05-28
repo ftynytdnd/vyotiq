@@ -61,11 +61,9 @@ describe('WireBreakdown', () => {
     expect(text).toContain('18.4k');
     expect(text).toContain('3.1k');
     expect(text).toContain('14.7k');
-    // Footer total + ceiling + pct.
-    expect(text).toContain('36.2k');
-    expect(text).toContain('128k');
-    // 36200 / 128000 = ~28.2% → 28% rounded.
-    expect(text).toContain('28%');
+    // Footer shows percent only (token total lives in the header badge).
+    expect(text).toContain('28.3%');
+    expect(text).not.toContain('36.2k');
   });
 
   it('returns null (renders nothing) when framing total is zero', () => {
@@ -96,7 +94,7 @@ describe('WireBreakdown', () => {
     // Total / total = 100%; the footer must not show a `/ ceiling`
     // suffix when none was supplied.
     const text = container.textContent ?? '';
-    expect(text).toContain('100%');
+    expect(text).toContain('100.0%');
     expect(text).not.toContain('/ 128k');
   });
 
@@ -114,7 +112,7 @@ describe('WireBreakdown', () => {
         )}
       />
     );
-    expect(container.textContent ?? '').toContain('<1%');
+    expect(container.textContent ?? '').toContain('<0.1%');
   });
 
   /**
@@ -188,16 +186,13 @@ describe('WireBreakdown', () => {
     );
     const btn = container.querySelector('button');
     expect(btn).not.toBeNull();
-    expect(btn!.getAttribute('aria-expanded')).toBe('false');
-    // Closed by default — none of the envelope labels appear yet.
-    // (The "Host environment" label is the most distinctive; the
-    // others overlap with the eyebrow / harness phrasing or could
-    // appear as substrings of other labels.)
-    expect(container.textContent ?? '').not.toContain('Host environment');
-    expect(container.textContent ?? '').not.toContain('Recent memory');
+    expect(btn!.getAttribute('aria-expanded')).toBe('true');
+    // Expanded by default — envelope sub-rows are visible.
+    expect(container.textContent ?? '').toContain('Host environment');
+    expect(container.textContent ?? '').toContain('Recent memory');
   });
 
-  it('reveals envelope sub-rows on click and collapses on second click', () => {
+  it('collapses envelope sub-rows on click and expands on second click', () => {
     const { container } = render(
       <WireBreakdown
         snapshot={snapshot(
@@ -217,28 +212,24 @@ describe('WireBreakdown', () => {
       />
     );
     const btn = container.querySelector('button')!;
-    expect(btn.getAttribute('aria-expanded')).toBe('false');
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+    expect(container.textContent ?? '').toContain('Host environment');
 
-    // First click — expand.
+    // First click — collapse.
+    fireEvent.click(btn);
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+    const collapsed = container.textContent ?? '';
+    expect(collapsed).not.toContain('Host environment');
+    expect(collapsed).not.toContain('Recent memory');
+
+    // Second click — expand again.
     fireEvent.click(btn);
     expect(btn.getAttribute('aria-expanded')).toBe('true');
     const expanded = container.textContent ?? '';
     expect(expanded).toContain('Harness body');
     expect(expanded).toContain('Host environment');
     expect(expanded).toContain('Recent memory');
-    // Token counts visible in the sub-rows. `formatTokenCount`
-    // drops the trailing `.0` for whole-k values (12_000 → "12k")
-    // but keeps it for fractional ones (1_020 → "1.0k"). The other
-    // rows in this suite already use the same formatter and
-    // confirm the pattern.
     expect(expanded).toContain('12k');
     expect(expanded).toContain('1.0k');
-
-    // Second click — collapse.
-    fireEvent.click(btn);
-    expect(btn.getAttribute('aria-expanded')).toBe('false');
-    const collapsed = container.textContent ?? '';
-    expect(collapsed).not.toContain('Host environment');
-    expect(collapsed).not.toContain('Recent memory');
   });
 });

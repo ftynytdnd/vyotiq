@@ -31,6 +31,8 @@
 
 import { create } from 'zustand';
 import { isIdleSummaryRunId } from '@shared/contextSummary/idleSummaryRunId.js';
+import { repairNonTerminalSubagents } from '@shared/transcript/repairNonTerminalSubagents.js';
+import type { TimelineEvent } from '@shared/types/chat.js';
 import { vyotiq } from '../lib/ipc.js';
 import { logger } from '../lib/logger.js';
 import { randomId } from '../lib/ids.js';
@@ -51,10 +53,38 @@ import {
   emptySlice
 } from './chatStoreTypes.js';
 import { mirrorOf } from './chatStoreMirror.js';
+import {
+  salvageSliceSubagents,
+  shouldUnloadIdleSlice,
+  unloadIdleSlice
+} from './chatStoreRam.js';
 
 export { __resetTotalRunUsageCacheForTests } from './chatStoreTotalRunUsage.js';
 
 const log = logger.child('chat-store');
+
+function conversationHasActiveRun(
+  conversationId: string,
+  slices: Record<string, ChatSlice>,
+  runIdToConv: Record<string, string>
+): boolean {
+  const slice = slices[conversationId];
+  if (slice?.isProcessing || slice?.runId) return true;
+  for (const convId of Object.values(runIdToConv)) {
+    if (convId === conversationId) return true;
+  }
+  return false;
+}
+
+function prepareTranscriptEventsForLoad(
+  conversationId: string,
+  events: TimelineEvent[],
+  slices: Record<string, ChatSlice>,
+  runIdToConv: Record<string, string>
+): TimelineEvent[] {
+  const closeWhenIdle = !conversationHasActiveRun(conversationId, slices, runIdToConv);
+  return repairNonTerminalSubagents(events, { closeWhenIdle });
+}
 
 /**
  * Cancel the in-flight work for `runId`. Idle summarizer side-runs are
@@ -94,6 +124,18 @@ function updateSlice(
 ): Record<string, ChatSlice> {
   const prev = slices[id] ?? emptySlice(id);
   return { ...slices, [id]: updater(prev) };
+}
+
+function withSalvagedSlice(slice: ChatSlice): ChatSlice {
+  return salvageSliceSubagents(slice);
+}
+
+function maybeUnloadIdleSlice(prevId: string | null, getSlices: () => Record<string, ChatSlice>, setSlices: (next: Record<string, ChatSlice>) => void): void {
+  if (!prevId) return;
+  const slice = getSlices()[prevId];
+  if (!shouldUnloadIdleSlice(slice)) return;
+  setSlices({ ...getSlices(), [prevId]: unloadIdleSlice(slice) });
+  useConversationsStore.getState().markSliceUnloaded(prevId);
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -156,24 +198,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return;
     }
     set((s) => {
-      const nextSlices = updateSlice(s.slices, convId, (prev) =>
-        prev.runId === runId
-          ? {
-            ...prev,
-            isProcessing: false,
-            runId: null,
-            runStartedAt: null,
-            // Audit fix C3: clear the orchestrator-scoped run-status
-            // slot on terminal transitions so the next run's first
-            // event can't briefly display the previous run's last
-            // phase. `LiveStatusRow` is gated on `isProcessing` so
-            // nothing visibly changes today, but the slot is part of
-            // the public selector surface and dangling stale
-            // telemetry is a real footgun for any future consumer.
-            latestOrchestratorRunStatus: undefined
-          }
-          : prev
-      );
+      const nextSlices = updateSlice(s.slices, convId, (prev) => {
+        const cleared =
+          prev.runId === runId
+            ? {
+                ...prev,
+                isProcessing: false,
+                runId: null,
+                runStartedAt: null,
+                latestOrchestratorRunStatus: undefined
+              }
+            : prev;
+        return withSalvagedSlice(cleared);
+      });
       // Prune the mapping so subsequent late events don't keep
       // resurrecting the dispatch path — and `runIdToConv` doesn't
       // grow unboundedly across long sessions. The parallel
@@ -221,14 +258,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => {
       const nextSlices = updateSlice(s.slices, convId, (prev) => {
         if (prev.runId !== runId) return prev;
-        return {
+        return withSalvagedSlice({
           ...prev,
           isProcessing: false,
           runId: null,
           runStartedAt: null,
           // Audit fix C3 — see `finishRun`.
           latestOrchestratorRunStatus: undefined
-        };
+        });
       });
       const nextMap: Record<string, string> = { ...s.runIdToConv };
       delete nextMap[runId];
@@ -254,8 +291,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       set((s) => ({ ...s, ...EMPTY_MIRROR, slices: s.slices, runIdToConv: s.runIdToConv }));
       return;
     }
-    const rebuilt = rebuildTimelineState(events);
     set((s) => {
+      const prepared = prepareTranscriptEventsForLoad(
+        conversationId,
+        events,
+        s.slices,
+        s.runIdToConv
+      );
+      const rebuilt = rebuildTimelineState(prepared);
       // Preserve any in-flight `runId / isProcessing / runStartedAt`
       // already on the slice — this is the entire point of the
       // registry: switching a transcript view in must NOT clobber an
@@ -313,8 +356,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   setActiveConversation: (conversationId) => {
+    const prevId = get().conversationId;
     if (conversationId === null) {
       set((s) => ({ ...s, ...EMPTY_MIRROR, slices: s.slices, runIdToConv: s.runIdToConv }));
+      maybeUnloadIdleSlice(
+        prevId,
+        () => get().slices,
+        (nextSlices) => set((s) => ({ ...s, slices: nextSlices }))
+      );
       return;
     }
     set((s) => {
@@ -322,9 +371,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const nextSlices = s.slices[conversationId] ? s.slices : { ...s.slices, [conversationId]: slice };
       return { ...s, slices: nextSlices, ...mirrorOf(slice) };
     });
+    if (prevId && prevId !== conversationId) {
+      maybeUnloadIdleSlice(
+        prevId,
+        () => get().slices,
+        (nextSlices) => set((s) => ({ ...s, slices: nextSlices }))
+      );
+    }
   },
 
   dropConversation: (conversationId) => {
+    useCheckpointsStore.getState().dropConversation(conversationId);
     set((s) => {
       if (!s.slices[conversationId]) return s;
       const nextSlices = { ...s.slices };
@@ -463,9 +520,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         permissions,
         conversationId: boundId,
         ...(workspaceId ? { workspaceId } : {}),
-        ...(options?.attachments && options.attachments.length > 0
-          ? { attachments: options.attachments }
-          : {})
+        ...(options?.attachmentMeta && options.attachmentMeta.length > 0
+          ? {
+              attachmentMeta: options.attachmentMeta,
+              ...(options.promptEventId ? { promptEventId: options.promptEventId } : {})
+            }
+          : options?.attachments && options.attachments.length > 0
+            ? { attachments: options.attachments }
+            : {})
       });
       if (!reply) {
         throw new Error('chat:send rejected by main process (no reply).');
@@ -507,8 +569,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
         if (
           reply.kind === 'pending-checkpoints' ||
-          reply.kind === 'review-request-changes' ||
-          reply.kind === 'review-gate-error' ||
           reply.kind === 'pending-gate-error'
         ) {
           if (reply.kind === 'pending-checkpoints') {
@@ -519,18 +579,49 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                 'danger'
               );
             void useCheckpointsStore.getState().refreshPending(reply.conversationId);
-          } else if (reply.kind === 'review-request-changes') {
-            useToastStore
-              .getState()
-              .show(
-                'Review has Request changes — update review metadata or clear the decision before sending (when gate is on in checkpoint settings).',
-                'danger'
-              );
-          } else if (reply.kind === 'pending-gate-error') {
+          } else {
             useToastStore
               .getState()
               .show(
                 'Could not verify pending checkpoints — fix checkpoint storage or turn off “Gate send on pending changes” before sending.',
+                'danger'
+              );
+          }
+          useSecondaryZoneStore.getState().openCheckpoints('review', {
+            conversationId: reply.conversationId,
+            ...(workspaceId ? { workspaceId } : {})
+          });
+          set((s) => {
+            const nextMap: Record<string, string> = { ...s.runIdToConv };
+            delete nextMap[runId];
+            const nextModelMap: Record<string, string> = { ...s.runIdToModel };
+            delete nextModelMap[runId];
+            const nextSlices = updateSlice(s.slices, boundId, (prev) => ({
+              ...prev,
+              runId: null,
+              isProcessing: false,
+              runStartedAt: null
+            }));
+            const patch = {
+              slices: nextSlices,
+              runIdToConv: nextMap,
+              runIdToModel: nextModelMap
+            };
+            return s.conversationId === boundId
+              ? { ...s, ...patch, ...mirrorOf(nextSlices[boundId]!) }
+              : { ...s, ...patch };
+          });
+          return;
+        }
+        if (
+          reply.kind === 'review-request-changes' ||
+          reply.kind === 'review-gate-error'
+        ) {
+          if (reply.kind === 'review-request-changes') {
+            useToastStore
+              .getState()
+              .show(
+                'Resolve review feedback before sending — open Checkpoints → Review and address the request-changes decision.',
                 'danger'
               );
           } else {
@@ -541,7 +632,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                 'danger'
               );
           }
-          useSecondaryZoneStore.getState().openReview({
+          useSecondaryZoneStore.getState().openCheckpoints('review', {
             conversationId: reply.conversationId,
             ...(workspaceId ? { workspaceId } : {})
           });
@@ -829,7 +920,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // disk read and this call.
       const existing = s.slices[conversationId];
       if (existing && existing.events.length > 0) return s;
-      const rebuilt = rebuildTimelineState(events);
+      const prepared = prepareTranscriptEventsForLoad(
+        conversationId,
+        events,
+        s.slices,
+        s.runIdToConv
+      );
+      const rebuilt = rebuildTimelineState(prepared);
       const fresh: ChatSlice = {
         ...emptySlice(conversationId),
         events: rebuilt.events,

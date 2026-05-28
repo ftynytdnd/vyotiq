@@ -270,10 +270,10 @@ export type RewindPreviewResult = RewindPreview | { ok: false; error: RewindErro
  * workspace. Does **not** imply git merge or auto-accept of pending
  * edits unless the user explicitly Accepts in the pending panel.
  */
-export type ReviewDecision = 'comment' | 'approve' | 'request_changes';
+type ReviewDecision = 'comment' | 'approve' | 'request_changes';
 
 /** One user comment anchored to a file path in a review session. */
-export interface FileReviewComment {
+interface FileReviewComment {
   id: string;
   filePath: string;
   body: string;
@@ -310,21 +310,6 @@ export interface GitRefOption {
   group: 'builtin' | 'local' | 'remote';
 }
 
-/**
- * Exported review bundle written beside the workspace root.
- *
- * `pendingChanges` is a snapshot for audit/handoff. Pass
- * `restorePending: true` on import to merge rows into the pending store
- * (existing `entryId` values are skipped).
- */
-export interface ReviewExportBundle {
-  version: 1;
-  exportedAt: number;
-  session: ReviewSession;
-  /** Metadata snapshot at export time; not replayed on import by default. */
-  pendingChanges: PendingChange[];
-}
-
 /** Result of `checkpoints:git-base-diff`. */
 export type GitBaseDiffResult =
   | { ok: true; patch: string; ref: string }
@@ -334,16 +319,6 @@ export type GitBaseDiffResult =
 export type ListGitRefsResult =
   | { ok: true; options: GitRefOption[]; head: string }
   | { ok: false; reason: 'not-a-repo' | 'git-error'; message?: string };
-
-export type ReviewExportResult = { exportPath: string; bytes: number };
-
-/** Result of `checkpoints:import-review`. */
-export type ReviewImportResult = {
-  session: ReviewSession;
-  applied: 'merge' | 'replace';
-  /** Present when `restorePending` was requested. */
-  pendingRestore?: { restored: number; skipped: number };
-};
 
 export type RewindResult =
   | {

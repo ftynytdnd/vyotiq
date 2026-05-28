@@ -16,12 +16,47 @@
  * cannot drift.
  */
 
-import { app, shell } from 'electron';
+import { app, nativeTheme, shell } from 'electron';
+import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { IPC, SETTINGS_FILE } from '@shared/constants.js';
 import type { AppInfo, AppRevealTarget } from '@shared/types/ipc.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 import { assertEnum } from './validate.js';
+import { logger } from '../logging/logger.js';
+
+const log = logger.child('app-ipc');
+
+/** Best-effort OS warning sound for destructive confirm UX. */
+function playWarningSound(): void {
+  try {
+    if (process.platform === 'darwin') {
+      spawn('afplay', ['/System/Library/Sounds/Funk.aiff'], {
+        stdio: 'ignore',
+        detached: true
+      }).unref();
+      return;
+    }
+    if (process.platform === 'win32') {
+      spawn(
+        'powershell.exe',
+        ['-NoProfile', '-Command', '[System.Media.SystemSounds]::Exclamation.Play()'],
+        { stdio: 'ignore', windowsHide: true, detached: true }
+      ).unref();
+      return;
+    }
+    spawn('paplay', ['/usr/share/sounds/freedesktop/stereo/dialog-warning.oga'], {
+      stdio: 'ignore',
+      detached: true
+    })
+      .on('error', () => {
+        spawn('printf', ['\a'], { stdio: 'ignore', detached: true }).unref();
+      })
+      .unref();
+  } catch (err) {
+    log.debug('playWarningSound failed', { err });
+  }
+}
 
 const REVEAL_TARGETS = ['userData', 'settings', 'log'] as const;
 
@@ -93,4 +128,37 @@ export function registerAppIpc(): void {
       shell.showItemInFolder(absolute);
     }
   );
+
+  wrapIpcHandler(
+    IPC.APP_SET_THEME_SOURCE,
+    async (_event, mode: 'dark' | 'light' | 'system'): Promise<void> => {
+      assertEnum('app:setThemeSource', 'mode', mode, ['dark', 'light', 'system'] as const);
+      nativeTheme.themeSource = mode;
+    }
+  );
+
+  wrapIpcHandler(IPC.APP_PLAY_WARNING_SOUND, async (): Promise<void> => {
+    playWarningSound();
+  });
+
+  wrapIpcHandler(IPC.APP_CHECK_UPDATES, async (): Promise<{ updateAvailable: boolean; version?: string }> => {
+    if (!app.isPackaged) {
+      return { updateAvailable: false };
+    }
+    try {
+      const mod = (await import('electron-updater')) as {
+        autoUpdater: {
+          autoDownload: boolean;
+          checkForUpdates: () => Promise<{ updateInfo?: { version?: string } } | null>;
+        };
+      };
+      mod.autoUpdater.autoDownload = false;
+      const result = await mod.autoUpdater.checkForUpdates();
+      const ver = result?.updateInfo?.version;
+      return { updateAvailable: Boolean(ver), version: ver };
+    } catch (err) {
+      log.warn('checkForUpdates failed', { err });
+      throw err instanceof Error ? err : new Error(String(err));
+    }
+  });
 }

@@ -1,18 +1,21 @@
 /**
- * Attachment button. Opens the workspace file picker; selections become
- * `<attached_files>` in the orchestrator's context envelope.
+ * Attachment button. Unified attach menu: workspace picker or system file
+ * dialog. Workspace selections become `<attached_files>` in the orchestrator
+ * context envelope; external files are copied under userData first.
  *
  * The picker body is hosted via the portal-based `Popover` primitive so
- * it escapes the composer's `overflow-hidden` clip. Outside-click,
- * Escape, and resize/scroll re-anchoring are handled by `Popover`.
+ * it escapes the composer's `overflow-hidden` clip.
  */
 
-import { useRef } from 'react';
-import { Plus } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { FolderOpen, HardDrive, Plus } from 'lucide-react';
 import { Popover } from '../ui/Popover.js';
 import { AttachmentPicker } from './AttachmentPicker.js';
-import { chromePillClassName } from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
+import { chromeToolbarButtonClassName, appPopoverPanelClassName } from '../ui/SurfaceShell.js';
+import { SHELL_CHROME_ICON_CLASS, SHELL_CHROME_ICON_STROKE } from '../../lib/shellIcons.js';
+
+type AttachView = 'source' | 'workspace';
 
 interface AttachmentButtonProps {
   open: boolean;
@@ -20,11 +23,9 @@ interface AttachmentButtonProps {
   onClose: () => void;
   selected: string[];
   onPick: (path: string) => void;
-  /**
-   * Optional controlled-filter passthrough for the embedded picker. When
-   * the Composer's `@`-mention trigger is driving the popover, the parent
-   * supplies these to keep the textarea token and the picker in lockstep.
-   */
+  onPickFromComputer: () => void;
+  /** When true, skip the source menu and open the workspace picker directly. */
+  workspaceOnly?: boolean;
   controlledFilter?: string;
   onControlledFilterChange?: (next: string) => void;
 }
@@ -35,57 +36,95 @@ export function AttachmentButton({
   onClose,
   selected,
   onPick,
+  onPickFromComputer,
+  workspaceOnly = false,
   controlledFilter,
   onControlledFilterChange
 }: AttachmentButtonProps) {
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const [view, setView] = useState<AttachView>('source');
   const count = selected.length;
   const hasSelection = count > 0;
-  // Persistent attachment count, so the user can confirm `@`-mention
-  // landings or a previous pick without scanning the chip strip
-  // (which may be wrapping off-screen or scrolled out of view).
+
+  useEffect(() => {
+    if (!open) {
+      setView(workspaceOnly ? 'workspace' : 'source');
+    } else if (workspaceOnly) {
+      setView('workspace');
+    }
+  }, [open, workspaceOnly]);
+
   const title = hasSelection
-    ? `Attach files from workspace · ${count} selected`
-    : 'Attach files from workspace';
+    ? `Attach files · ${count} selected`
+    : 'Attach files';
+
+  const handleOpen = () => {
+    if (open) {
+      onClose();
+      return;
+    }
+    if (workspaceOnly) {
+      setView('workspace');
+    } else {
+      setView('source');
+    }
+    onOpen();
+  };
+
   return (
     <>
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => (open ? onClose() : onOpen())}
-        aria-label={
-          hasSelection
-            ? `Attach files from workspace, ${count} selected`
-            : 'Attach files from workspace'
-        }
+        onClick={handleOpen}
+        aria-label={hasSelection ? `Attach files, ${count} selected` : 'Attach files'}
         aria-haspopup="dialog"
         aria-expanded={open}
         title={title}
         className={cn(
-          chromePillClassName(open || hasSelection),
+          chromeToolbarButtonClassName(open || hasSelection),
           'shrink-0',
-          hasSelection ? 'gap-0.5 px-1' : 'w-6'
+          hasSelection ? 'gap-0.5 px-1' : 'h-[1.625rem] w-[1.625rem] px-0'
         )}
       >
-        <Plus className="h-3.5 w-3.5" strokeWidth={2.25} />
+        <Plus className={SHELL_CHROME_ICON_CLASS} strokeWidth={SHELL_CHROME_ICON_STROKE} />
         {hasSelection && (
-          <span className="font-mono text-meta text-text-secondary">{count}</span>
+          <span className="font-mono text-chat-meta text-text-secondary">{count}</span>
         )}
       </button>
-      <Popover
-        open={open}
-        onClose={onClose}
-        triggerRef={triggerRef}
-        align="start"
-      >
-        <AttachmentPicker
-          open={open}
-          onClose={onClose}
-          selected={selected}
-          onPick={onPick}
-          {...(controlledFilter !== undefined ? { controlledFilter } : {})}
-          {...(onControlledFilterChange ? { onControlledFilterChange } : {})}
-        />
+      <Popover open={open} onClose={onClose} triggerRef={triggerRef} align="start">
+        {view === 'source' ? (
+          <div className={cn(appPopoverPanelClassName, 'min-w-[12rem] p-1')}>
+            <button
+              type="button"
+              className="vx-menu-row flex w-full items-center gap-2 rounded-inner px-2 py-1.5 text-left text-row hover:bg-chrome-hover-soft/60"
+              onClick={() => setView('workspace')}
+            >
+              <FolderOpen className={SHELL_CHROME_ICON_CLASS} strokeWidth={SHELL_CHROME_ICON_STROKE} />
+              From workspace
+            </button>
+            <button
+              type="button"
+              className="vx-menu-row flex w-full items-center gap-2 rounded-inner px-2 py-1.5 text-left text-row hover:bg-chrome-hover-soft/60"
+              onClick={() => {
+                onClose();
+                onPickFromComputer();
+              }}
+            >
+              <HardDrive className={SHELL_CHROME_ICON_CLASS} strokeWidth={SHELL_CHROME_ICON_STROKE} />
+              From computer
+            </button>
+          </div>
+        ) : (
+          <AttachmentPicker
+            open={open}
+            onClose={onClose}
+            selected={selected}
+            onPick={onPick}
+            {...(controlledFilter !== undefined ? { controlledFilter } : {})}
+            {...(onControlledFilterChange ? { onControlledFilterChange } : {})}
+          />
+        )}
       </Popover>
     </>
   );

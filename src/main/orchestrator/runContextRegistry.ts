@@ -124,7 +124,9 @@ const generations = new Map<string, number>();
  * Returns the assigned `generation` for generation-safe `unregister`.
  */
 export function registerRunContext(handle: RunContextHandle): number {
-  if (handles.has(handle.runId)) {
+  const prior = handles.get(handle.runId);
+  if (prior) {
+    prior.abortSummary();
     log.warn('registerRunContext: handle already exists for runId — overwriting', {
       runId: handle.runId,
       conversationId: handle.conversationId

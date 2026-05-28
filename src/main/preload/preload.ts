@@ -37,6 +37,7 @@ const api: VyotiqApi = {
   workspace: {
     get: () => ipcRenderer.invoke(IPC.WORKSPACE_GET),
     pick: () => ipcRenderer.invoke(IPC.WORKSPACE_PICK),
+    pickDirectory: () => ipcRenderer.invoke(IPC.WORKSPACE_PICK_DIRECTORY),
     set: (path: string) => ipcRenderer.invoke(IPC.WORKSPACE_SET, path),
     listTree: (opts) => ipcRenderer.invoke(IPC.WORKSPACE_LIST_TREE, opts),
     list: () => ipcRenderer.invoke(IPC.WORKSPACES_LIST),
@@ -83,7 +84,9 @@ const api: VyotiqApi = {
     rename: (id, title) => ipcRenderer.invoke(IPC.CONVERSATIONS_RENAME, id, title),
     remove: (id) => ipcRenderer.invoke(IPC.CONVERSATIONS_REMOVE, id),
     move: (id, targetWorkspaceId) =>
-      ipcRenderer.invoke(IPC.CONVERSATIONS_MOVE, id, targetWorkspaceId)
+      ipcRenderer.invoke(IPC.CONVERSATIONS_MOVE, id, targetWorkspaceId),
+    archive: (id) => ipcRenderer.invoke(IPC.CONVERSATIONS_ARCHIVE, id),
+    unarchive: (id) => ipcRenderer.invoke(IPC.CONVERSATIONS_UNARCHIVE, id)
   },
 
   tools: {
@@ -100,8 +103,8 @@ const api: VyotiqApi = {
   memory: {
     list: (scope, opts) => ipcRenderer.invoke(IPC.MEMORY_LIST, scope, opts),
     read: (scope, key) => ipcRenderer.invoke(IPC.MEMORY_READ, scope, key),
-    write: (scope, key, content, mode) =>
-      ipcRenderer.invoke(IPC.MEMORY_WRITE, scope, key, content, mode),
+    write: (scope, key, content, mode, conversationId) =>
+      ipcRenderer.invoke(IPC.MEMORY_WRITE, scope, key, content, mode, conversationId),
     reveal: (scope, key) => ipcRenderer.invoke(IPC.MEMORY_REVEAL, scope, key)
   },
 
@@ -141,46 +144,10 @@ const api: VyotiqApi = {
       ipcRenderer.invoke(IPC.CHECKPOINTS_PREVIEW_REWIND, input),
     rewindToPrompt: (input) =>
       ipcRenderer.invoke(IPC.CHECKPOINTS_REWIND_TO_PROMPT, input),
-    getReview: (workspaceId: string, conversationId: string) =>
-      ipcRenderer.invoke(IPC.CHECKPOINTS_GET_REVIEW, workspaceId, conversationId),
-    ensureReview: (input: { workspaceId: string; conversationId: string; runId?: string }) =>
-      ipcRenderer.invoke(IPC.CHECKPOINTS_ENSURE_REVIEW, input),
-    addReviewComment: (input: {
-      workspaceId: string;
-      conversationId: string;
-      filePath: string;
-      body: string;
-      line?: number;
-    }) => ipcRenderer.invoke(IPC.CHECKPOINTS_ADD_REVIEW_COMMENT, input),
-    setReviewGitBaseRef: (input: {
-      workspaceId: string;
-      conversationId: string;
-      ref: string;
-    }) => ipcRenderer.invoke(IPC.CHECKPOINTS_SET_REVIEW_GIT_REF, input),
-    setReviewDecision: (input: {
-      workspaceId: string;
-      conversationId: string;
-      decision: import('@shared/types/checkpoint.js').ReviewDecision;
-      filePath?: string;
-    }) => ipcRenderer.invoke(IPC.CHECKPOINTS_SET_REVIEW_DECISION, input),
     gitBaseDiff: (workspaceId: string, filePath: string, ref?: string) =>
       ipcRenderer.invoke(IPC.CHECKPOINTS_GIT_BASE_DIFF, workspaceId, filePath, ref),
     listGitRefs: (workspaceId: string) =>
       ipcRenderer.invoke(IPC.CHECKPOINTS_LIST_GIT_REFS, workspaceId),
-    setReviewReviewer: (input: {
-      workspaceId: string;
-      conversationId: string;
-      reviewerLabel: string;
-    }) => ipcRenderer.invoke(IPC.CHECKPOINTS_SET_REVIEW_REVIEWER, input),
-    exportReview: (input: { workspaceId: string; conversationId: string }) =>
-      ipcRenderer.invoke(IPC.CHECKPOINTS_EXPORT_REVIEW, input),
-    importReview: (input: {
-      workspaceId: string;
-      conversationId: string;
-      filePath?: string;
-      mode?: 'merge' | 'replace';
-      restorePending?: boolean;
-    }) => ipcRenderer.invoke(IPC.CHECKPOINTS_IMPORT_REVIEW, input),
     onChanged: (cb) => on<[string]>(IPC.CHECKPOINTS_CHANGED, (workspaceId) => cb(workspaceId)),
     onTranscriptRewound: (cb) =>
       on<[string]>(IPC.CONVERSATION_TRANSCRIPT_REWOUND, (conversationId) => cb(conversationId))
@@ -228,7 +195,18 @@ const api: VyotiqApi = {
 
   app: {
     info: () => ipcRenderer.invoke(IPC.APP_INFO_GET),
-    revealPath: (target) => ipcRenderer.invoke(IPC.APP_REVEAL_PATH, target)
+    revealPath: (target) => ipcRenderer.invoke(IPC.APP_REVEAL_PATH, target),
+    setThemeSource: (mode) => ipcRenderer.invoke(IPC.APP_SET_THEME_SOURCE, mode),
+    checkForUpdates: () => ipcRenderer.invoke(IPC.APP_CHECK_UPDATES),
+    playWarningSound: () => ipcRenderer.invoke(IPC.APP_PLAY_WARNING_SOUND)
+  },
+
+  attachments: {
+    pick: (input) => ipcRenderer.invoke(IPC.ATTACHMENTS_PICK, input),
+    ingestPaths: (input) => ipcRenderer.invoke(IPC.ATTACHMENTS_INGEST_PATHS, input),
+    readText: (input) => ipcRenderer.invoke(IPC.ATTACHMENTS_READ_TEXT, input),
+    fileUrl: (input) => ipcRenderer.invoke(IPC.ATTACHMENTS_FILE_URL, input),
+    open: (input) => ipcRenderer.invoke(IPC.ATTACHMENTS_OPEN, input)
   },
 
   log: (level, message, fields) =>
