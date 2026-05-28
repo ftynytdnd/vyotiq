@@ -135,6 +135,8 @@ export type ToolData =
     /** Populated on create. Full file content the model just wrote. */
     createdContent?: string;
     replacedOccurrences?: number;
+    /** Checkpoint pending-entry id when the edit was recorded. */
+    entryId?: string;
   }
   | {
     /**

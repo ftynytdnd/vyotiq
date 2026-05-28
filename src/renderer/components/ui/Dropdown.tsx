@@ -20,8 +20,7 @@
  * flowing settings layout, so the simpler positioning is preserved.
  *
  * Surface palette:
- *   - Trigger : `bg-surface-overlay` resting → `bg-surface-hover` on
- *     hover / open, with `text-text-secondary` → `text-text-primary`.
+ *   - Trigger : ghost {@link chromePillClassName} (fill on hover / open).
  *   - Panel   : `elev-1` on `bg-surface-overlay` rounded-card.
  *   - Rows    : same hover transition as the rest of the app's row
  *     family; `bg-surface-hover` is the active-selected tint.
@@ -29,6 +28,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { chromePillClassName, chromePopoverPanelClassName } from './SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
 import { Eyebrow } from './Eyebrow.js';
 
@@ -201,10 +201,9 @@ export function Dropdown<T extends string>({
         aria-expanded={open}
         aria-controls={open ? listboxId : undefined}
         className={cn(
-          'inline-flex h-8 max-w-64 items-center gap-1.5 rounded-inner px-2.5 text-row',
-          'bg-surface-overlay text-text-secondary transition-colors duration-150',
-          'hover:bg-surface-hover hover:text-text-primary',
-          open && 'bg-surface-hover text-text-primary',
+          chromePillClassName(open),
+          'h-8 max-w-64 gap-1.5 px-2.5 text-row text-text-secondary',
+          open && 'text-text-primary',
           'disabled:cursor-not-allowed disabled:opacity-50'
         )}
       >
@@ -226,8 +225,8 @@ export function Dropdown<T extends string>({
             focusedIdx === -1 ? undefined : `${listboxId}-row-${focusedIdx}`
           }
           className={cn(
-            'elev-1 absolute z-50 mt-1.5 max-h-80 min-w-60 overflow-y-auto rounded-card p-1',
-            'bg-surface-overlay'
+            chromePopoverPanelClassName,
+            'absolute z-50 mt-1.5 max-h-80 min-w-60 overflow-y-auto p-1'
           )}
           style={{ right: 0 }}
         >

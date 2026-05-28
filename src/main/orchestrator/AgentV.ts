@@ -14,6 +14,8 @@ import type {
   TimelineEvent
 } from '@shared/types/chat.js';
 import type { ActiveRunInfo } from '@shared/types/ipc.js';
+import { IPC } from '@shared/constants.js';
+import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import { wrapXml } from './envelope/index.js';
 import { inlineFiles } from './contextManager.js';
 import { replayTranscript } from './replay/index.js';
@@ -72,11 +74,21 @@ interface ActiveRun {
    * lookup and surface as confusing provider errors.
    */
   providerId: string;
+  /** Model id selected for this run (composer model picker). */
+  modelId: string;
   /** Wall-clock ms when the run was registered. */
   startedAt: number;
 }
 
 const activeRuns = new Map<string, ActiveRun>();
+
+/** Abort every in-flight run and notify the renderer with a shared error. */
+export function abortAllActiveRunsWithError(message: string): void {
+  for (const info of listActiveRuns()) {
+    abortRun(info.runId);
+    safeWebContentsSend(IPC.CHAT_ERROR, info.runId, message);
+  }
+}
 
 export function abortRun(runId: string): void {
   const run = activeRuns.get(runId);
@@ -131,6 +143,7 @@ export function listActiveRuns(): ActiveRunInfo[] {
       runId,
       ...(run.conversationId ? { conversationId: run.conversationId } : {}),
       ...(run.workspaceId ? { workspaceId: run.workspaceId } : {}),
+      modelId: run.modelId,
       startedAt: run.startedAt
     });
   }
@@ -226,6 +239,7 @@ export async function startRun(
     conversationId: input.conversationId,
     workspaceId: input.workspaceId,
     providerId: input.selection.providerId,
+    modelId: input.selection.modelId,
     startedAt: Date.now()
   });
 

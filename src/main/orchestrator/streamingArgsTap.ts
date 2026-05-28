@@ -26,6 +26,45 @@
 import { PartialJsonParser } from '@shared/text/partialJsonParser.js';
 import type { DiffStreamer } from './diffStreamer.js';
 
+/**
+ * Conservative tool-name inference when the provider streams argument
+ * bytes before the tool `name` frame lands. Only returns a value when
+ * the parsed object carries unambiguous keys — false positives would
+ * paint the wrong diff surface.
+ */
+function inferToolFromParsedArgs(
+  parsed: Record<string, unknown> | null
+): string | undefined {
+  if (!parsed) return undefined;
+  const command = parsed['command'];
+  if (typeof command === 'string' && command.length > 0) return 'bash';
+  const body = parsed['body'];
+  const title = parsed['title'];
+  if (typeof body === 'string' && body.length > 0) {
+    if (typeof title === 'string' || typeof parsed['path'] !== 'string') return 'report';
+  }
+  const path = parsed['path'];
+  if (typeof path === 'string' && path.length > 0) {
+    if (
+      parsed['create'] === true ||
+      'oldString' in parsed ||
+      'newString' in parsed ||
+      'content' in parsed
+    ) {
+      return 'edit';
+    }
+    if (
+      !('oldString' in parsed) &&
+      !('newString' in parsed) &&
+      !('content' in parsed) &&
+      parsed['create'] !== true
+    ) {
+      return 'delete';
+    }
+  }
+  return undefined;
+}
+
 export interface StreamingArgsTap {
   /**
    * Forward a fresh args-buffer snapshot for one in-flight tool
@@ -79,7 +118,6 @@ export function createStreamingArgsTap(diffStreamer: DiffStreamer): StreamingArg
     argsBuf,
     subagentId
   ) => {
-    if (!name) return;
     let parser = argsParsers.get(callId);
     if (!parser) {
       parser = new PartialJsonParser();
@@ -89,15 +127,14 @@ export function createStreamingArgsTap(diffStreamer: DiffStreamer): StreamingArg
     try {
       parsed = parser.feed(argsBuf);
     } catch {
-      // Parser already self-isolates errors; this catch is the
-      // belt-and-suspenders fallback so a malformed stream can
-      // never bring down the orchestrator loop.
       argsParsers.delete(callId);
       return;
     }
+    const resolvedName = name ?? inferToolFromParsedArgs(parsed);
+    if (!resolvedName) return;
     diffStreamer.onArgsDelta({
       callId,
-      name,
+      name: resolvedName,
       parsed,
       ...(subagentId !== undefined ? { subagentId } : {})
     });

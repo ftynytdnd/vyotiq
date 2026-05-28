@@ -19,6 +19,8 @@ import { useMemo } from 'react';
 import { useProviderStore } from '../../store/useProviderStore.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { Dropdown, type DropdownItem } from '../ui/Dropdown.js';
+import { chromeEdgeClassName } from '../ui/SurfaceShell.js';
+import { cn } from '../../lib/cn.js';
 import { formatTokenCount } from '../../lib/formatTokens.js';
 
 export function DefaultModelRow({ embedded = false }: { embedded?: boolean }) {
@@ -54,11 +56,13 @@ export function DefaultModelRow({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <div
-      className={
+      className={cn(
+        'border-b py-3',
+        chromeEdgeClassName,
         embedded
-          ? 'flex flex-col gap-2 border-b border-border-subtle/30 py-3'
-          : 'flex items-start justify-between gap-4 border-b border-border-subtle/30 py-3'
-      }
+          ? 'flex flex-col gap-2'
+          : 'flex items-start justify-between gap-4'
+      )}
     >
       <div className="min-w-0 flex-1">
         <div className="text-body text-text-primary">Default model</div>

@@ -38,6 +38,11 @@ import { useEffect, useRef, useState } from 'react';
 import { BarChart2, Pencil } from 'lucide-react';
 import type { TokenUsage } from '@shared/types/chat.js';
 import { cn } from '../../lib/cn.js';
+import {
+  chromeMeterClassName,
+  chromeProgressTrackClassName
+} from '../ui/SurfaceShell.js';
+import { dockChatMeterBarClassName } from '../dock/dockShared.js';
 import { formatTokenCount, parseTokenCount } from '../../lib/formatTokens.js';
 
 export interface TokenUsagePillBaseline {
@@ -157,8 +162,8 @@ export function TokenUsagePill({
         aria-label="Context window ceiling"
         title="Set this model's context-window ceiling. Accepts 128k, 1.5M, or raw integers. Empty clears the override."
         className={cn(
-          'h-6 w-24 rounded-inner bg-surface-overlay px-1.5 font-mono text-meta',
-          'text-text-primary outline-none focus:outline-none ring-1 ring-accent/60 placeholder:text-text-muted'
+          chromeMeterClassName('w-24 px-1.5 text-text-primary'),
+          'outline-none focus:outline-none ring-1 ring-accent/60 placeholder:text-text-muted'
         )}
       />
     );
@@ -190,7 +195,7 @@ export function TokenUsagePill({
         ? 'Click to open the Context Inspector (manual summarize, per-message overrides, set ceiling).'
         : 'Click to set a ceiling (e.g. 128k, 1M).');
     const pillClass = cn(
-      'group relative inline-flex h-6 shrink-0 items-center gap-1 rounded-inner bg-surface-overlay px-1.5 text-meta',
+      chromeMeterClassName('group relative shrink-0 gap-1 px-1.5'),
       'text-warning transition-colors duration-150 hover:bg-surface-hover'
     );
     if (onOpenInspector) {
@@ -204,8 +209,11 @@ export function TokenUsagePill({
             className="inline-flex items-center gap-1 hover:bg-transparent"
           >
             <BarChart2 className="h-3 w-3" strokeWidth={2} />
-            <span className="font-mono">{formatTokenCount(used)} / </span>
-            <span className="font-mono">set ceiling</span>
+            <span className="font-mono">{formatTokenCount(used)}</span>
+            <span className="text-text-faint" aria-hidden>·</span>
+            <span className="font-medium text-warning-strong underline decoration-warning/40 underline-offset-2">
+              set ceiling
+            </span>
           </button>
           <button
             type="button"
@@ -228,8 +236,11 @@ export function TokenUsagePill({
         className={pillClass}
       >
         <BarChart2 className="h-3 w-3" strokeWidth={2} />
-        <span className="font-mono">{formatTokenCount(used)} / </span>
-        <span className="font-mono">set ctx</span>
+        <span className="font-mono">{formatTokenCount(used)}</span>
+        <span className="text-text-faint" aria-hidden>·</span>
+        <span className="font-medium text-warning-strong underline decoration-warning/40 underline-offset-2">
+          set ctx
+        </span>
         <Pencil
           className="h-2.5 w-2.5 opacity-0 group-hover:opacity-70"
           strokeWidth={2}
@@ -251,8 +262,7 @@ export function TokenUsagePill({
 
   const toneClass =
     ratio >= 0.9 ? 'text-danger' : ratio >= 0.7 ? 'text-warning' : 'text-text-secondary';
-  const barClass =
-    ratio >= 0.9 ? 'bg-danger/70' : ratio >= 0.7 ? 'bg-warning/70' : 'bg-accent/60';
+  const barClass = dockChatMeterBarClassName(ratio);
 
   const title = buildBreakdownTitle({
     used,
@@ -276,7 +286,7 @@ export function TokenUsagePill({
     : `${title}`;
 
   const activePillClass = cn(
-    'group relative inline-flex h-6 shrink-0 items-center gap-1 overflow-hidden rounded-inner bg-surface-overlay px-1.5 text-meta',
+    chromeMeterClassName('group relative shrink-0 gap-1 overflow-hidden px-1.5'),
     'transition-colors duration-150 hover:bg-surface-hover',
     toneClass
   );
@@ -297,33 +307,42 @@ export function TokenUsagePill({
     </>
   );
   const progressBar = (
-    <span
-      aria-hidden
-      className={cn('absolute bottom-0 left-0 h-[1px] transition-[width]', barClass)}
-      style={{ width: barWidth }}
-    />
+    <span aria-hidden className={cn(chromeProgressTrackClassName, 'h-1 w-full min-w-[4.5rem]')}>
+      <span
+        className={cn(
+          'absolute inset-y-0 left-0 rounded-pill transition-[width] duration-150',
+          barClass
+        )}
+        style={{ width: barWidth }}
+      />
+    </span>
   );
 
   if (onOpenInspector) {
     return (
-      <div className={activePillClass} title={primaryTitle}>
-        <button
-          type="button"
-          onClick={primaryAction}
-          aria-label={primaryLabel}
-          className="inline-flex items-center gap-1"
-        >
-          {activeLabel}
-        </button>
-        <button
-          type="button"
-          onClick={openEditor}
-          aria-label="Edit context window ceiling"
-          title="Edit ceiling"
-          className="relative z-[1] ml-0.5 inline-flex items-center opacity-0 transition-opacity group-hover:opacity-70 hover:opacity-100 focus-visible:opacity-100"
-        >
-          <Pencil className="h-2.5 w-2.5" strokeWidth={2} />
-        </button>
+      <div
+        className={cn(activePillClass, 'flex min-w-0 flex-col gap-0.5 py-1')}
+        title={primaryTitle}
+      >
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={primaryAction}
+            aria-label={primaryLabel}
+            className="inline-flex min-w-0 flex-1 items-center gap-1"
+          >
+            {activeLabel}
+          </button>
+          <button
+            type="button"
+            onClick={openEditor}
+            aria-label="Edit context window ceiling"
+            title="Edit ceiling"
+            className="inline-flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-70 hover:opacity-100 focus-visible:opacity-100"
+          >
+            <Pencil className="h-2.5 w-2.5" strokeWidth={2} />
+          </button>
+        </div>
         {progressBar}
       </div>
     );
@@ -334,15 +353,17 @@ export function TokenUsagePill({
       type="button"
       onClick={primaryAction}
       aria-label={primaryLabel}
-      className={activePillClass}
+      className={cn(activePillClass, 'flex min-w-0 flex-col gap-0.5 py-1')}
       title={primaryTitle}
     >
-      {activeLabel}
-      <Pencil
-        className="h-2.5 w-2.5 opacity-0 group-hover:opacity-70"
-        strokeWidth={2}
-        aria-hidden
-      />
+      <span className="inline-flex items-center gap-1">
+        {activeLabel}
+        <Pencil
+          className="h-2.5 w-2.5 opacity-0 group-hover:opacity-70"
+          strokeWidth={2}
+          aria-hidden
+        />
+      </span>
       {progressBar}
     </button>
   );

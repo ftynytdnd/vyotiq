@@ -169,3 +169,46 @@ describe('deriveRows — edit + file-edit merge fold', () => {
     expect(fileEditGroups.length).toBe(1);
   });
 });
+
+describe('deriveRows — partial tool synthesis ordering', () => {
+  it('appends synthesized partial tool rows at the turn tail during a live run', () => {
+    const events: TimelineEvent[] = [
+      { kind: 'user-prompt', id: 'p1', ts: 1, content: 'go' },
+      { kind: 'agent-text-delta', id: 'a1', ts: 2, delta: 'Answer first on wire.' },
+      { kind: 'agent-text-end', id: 'a1', ts: 3 }
+    ];
+    const partials = {
+      partial1: {
+        callId: 'partial1',
+        name: 'read',
+        index: 0,
+        argsBuf: '{"path":"src/a.ts"}',
+        parsed: { path: 'src/a.ts' },
+        ts: 4
+      }
+    };
+    const rows = deriveRows(events, { partialToolCallArgs: partials, runActive: true });
+    const kinds = rows.map((r) => r.kind);
+    const assistantIdx = kinds.indexOf('assistant-text');
+    const toolIdx = kinds.indexOf('tool-group');
+    expect(toolIdx).toBeGreaterThanOrEqual(0);
+    expect(assistantIdx).toBeGreaterThanOrEqual(0);
+    expect(toolIdx).toBeGreaterThan(assistantIdx);
+  });
+
+  it('keeps settled transcript rows in wire order (no activity-first reorder)', () => {
+    const events: TimelineEvent[] = [
+      { kind: 'user-prompt', id: 'p1', ts: 1, content: 'go' },
+      { kind: 'agent-text-delta', id: 'a1', ts: 2, delta: 'Answer first on wire.' },
+      { kind: 'agent-text-end', id: 'a1', ts: 3 },
+      { kind: 'tool-call', id: 'c1', ts: 4, call: { id: 'call-1', name: 'read', args: { path: 'a.ts' } } }
+    ];
+    const rows = deriveRows(events, { runActive: false });
+    const kinds = rows.map((r) => r.kind);
+    const assistantIdx = kinds.indexOf('assistant-text');
+    const toolIdx = kinds.indexOf('tool-group');
+    expect(toolIdx).toBeGreaterThanOrEqual(0);
+    expect(assistantIdx).toBeGreaterThanOrEqual(0);
+    expect(toolIdx).toBeGreaterThan(assistantIdx);
+  });
+});

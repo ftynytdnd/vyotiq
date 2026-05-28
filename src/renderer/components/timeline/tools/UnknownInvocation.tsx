@@ -7,7 +7,7 @@
  * removed, a corrupted persisted transcript, etc.).
  */
 
-import { CircleHelp } from 'lucide-react';
+import { useMemo } from 'react';
 import type { ToolCall, ToolResult } from '@shared/types/tool.js';
 import { InvocationShell } from './shared/InvocationShell.js';
 import { DetailPane } from './shared/DetailPane.js';
@@ -29,7 +29,10 @@ export function UnknownInvocation({ call, result, dense, rowKey }: UnknownInvoca
         : '(unspecified)';
   const summary = `Unknown tool: ${requestedName}`;
   const errorHint = result?.error ?? 'unknown tool';
-  const args = call?.args ? JSON.stringify(call.args, null, 2) : '';
+  const args = useMemo(
+    () => (call?.args ? JSON.stringify(call.args, null, 2) : ''),
+    [call?.args]
+  );
 
   const detail = (
     <>
@@ -48,7 +51,6 @@ export function UnknownInvocation({ call, result, dense, rowKey }: UnknownInvoca
 
   return (
     <InvocationShell
-      Icon={CircleHelp}
       title="unknown"
       summary={summary}
       mono
@@ -57,6 +59,8 @@ export function UnknownInvocation({ call, result, dense, rowKey }: UnknownInvoca
       detail={detail}
       {...(dense ? { dense } : {})}
       {...(rowKey ? { rowKey } : {})}
+      call={call}
+      result={result}
     />
   );
 }

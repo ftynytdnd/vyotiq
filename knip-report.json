@@ -1,0 +1,19 @@
+﻿{
+  "issues": [],
+  "unusedExportedTypes": [
+    "ParseDelegatesResult",
+    "RunLoopResult",
+    "SanitizeStats",
+    "ToolCall",
+    "SseInactivityWatch",
+    "PreSnapshotEntry",
+    "ValidatedToolset",
+    "ComposerTokenBaseline",
+    "SettingsTabId",
+    "TimelineRowKind",
+    "TabsVariant",
+    "TabsSize"
+  ],
+  "generatedAt": "2026-05-24",
+  "note": "No unused exports; 12 unused exported types (barrel/intentional surfaces)."
+}

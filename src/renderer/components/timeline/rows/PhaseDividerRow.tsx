@@ -17,8 +17,23 @@ import { TimelineDividerRow } from './TimelineDividerRow.js';
 
 interface PhaseDividerRowProps {
   label: string;
+  /**
+   * Optional developer-facing detail (e.g. harness contract, raw ids)
+   * surfaced as a hover tooltip on the divider label. Kept out of the
+   * user-facing `label` so the divider's visible copy stays clean of
+   * literal `<delegate>` / `<result>` XML — see the C-phase audit fix.
+   */
+  tooltip?: string;
 }
 
-export function PhaseDividerRow({ label }: PhaseDividerRowProps) {
-  return <TimelineDividerRow label={label} variant="phase" />;
+export function PhaseDividerRow({ label, tooltip }: PhaseDividerRowProps) {
+  return (
+    <div data-row-kind="phase" className="vyotiq-stepfade-once">
+      <TimelineDividerRow
+      label={label}
+      variant="phase"
+      {...(tooltip ? { tooltip } : {})}
+      />
+    </div>
+  );
 }

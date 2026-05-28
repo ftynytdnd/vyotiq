@@ -15,6 +15,8 @@
  */
 
 import { forwardRef, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { chromePillClassName } from '../../ui/SurfaceShell.js';
+import { TITLEBAR_MENU_PANEL_CLASS } from '../titlebarShared.js';
 import { cn } from '../../../lib/cn.js';
 
 export type MenuOpenSource = 'mouse' | 'keyboard';
@@ -111,13 +113,7 @@ export const Menu = forwardRef<HTMLButtonElement, MenuProps>(function Menu(
         onClick={onOpen}
         onMouseEnter={onHover}
         onKeyDown={onLabelKeyDown}
-        className={cn(
-          'inline-flex h-7 items-center rounded-inner px-2 text-row',
-          'transition-colors duration-150',
-          open
-            ? 'bg-surface-overlay text-text-primary'
-            : 'text-text-muted hover:bg-surface-hover hover:text-text-primary'
-        )}
+        className={cn(chromePillClassName(open), 'px-2.5 text-row')}
       >
         {label}
       </button>
@@ -125,10 +121,7 @@ export const Menu = forwardRef<HTMLButtonElement, MenuProps>(function Menu(
         <div
           ref={panelRef}
           role="menu"
-          className={cn(
-            'elev-1 absolute left-0 top-full z-[80] mt-1 min-w-50 rounded-card p-1',
-            'bg-surface-overlay'
-          )}
+          className={TITLEBAR_MENU_PANEL_CLASS}
         >
           {children}
         </div>

@@ -116,7 +116,13 @@ export interface SubAgentDeps {
    * inside the owning sub-agent's trace.
    */
   onFileEdit?: (
-    info: { filePath: string; additions: number; deletions: number; created: boolean },
+    info: {
+      filePath: string;
+      additions: number;
+      deletions: number;
+      created: boolean;
+      entryId?: string;
+    },
     subagentId: string
   ) => void;
   /**
@@ -142,6 +148,15 @@ export interface SubAgentDeps {
    * execution without re-parsing the payload.
    */
   onRunStatus?: (event: TimelineEvent, subagentId: string) => void;
+  /**
+   * Passthrough for persistent timeline events that `handleToolCalls`
+   * / `runToolByName` emit but aren't covered by the streaming hooks
+   * above — e.g. `checkpoint-entry`, `checkpoint-bash-mutation`,
+   * sub-agent re-delegation `phase` rows. Without this, those events
+   * never reach IPC/JSONL even though the pending panel still updates
+   * via checkpoint `broadcast()`.
+   */
+  onTimelineEvent?: (event: TimelineEvent, subagentId: string) => void;
   /**
    * Streaming worker text + reasoning hooks. Lift the same delta
    * surface the orchestrator's `handleAssistantTurn` already emits,
@@ -642,10 +657,14 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
       const subagentEmit = (event: TimelineEvent) => {
         if (event.kind === 'tool-call' && event.subagentId === spec.id) {
           deps.onToolCall?.(event.call, spec.id);
-        } else if (event.kind === 'tool-result' && event.subagentId === spec.id) {
+          return;
+        }
+        if (event.kind === 'tool-result' && event.subagentId === spec.id) {
           allResults.push(event.result);
           deps.onToolResult?.(event.result, spec.id);
-        } else if (event.kind === 'file-edit' && event.subagentId === spec.id) {
+          return;
+        }
+        if (event.kind === 'file-edit' && event.subagentId === spec.id) {
           // The shared helper does not have access to the `created`
           // boolean (it would require ToolData inside the event); pull
           // it off the matching tool-result if available.
@@ -659,18 +678,20 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
               filePath: event.filePath,
               additions: event.additions,
               deletions: event.deletions,
-              created
+              created,
+              ...(event.entryId ? { entryId: event.entryId } : {})
             },
             spec.id
           );
-        } else if (event.kind === 'run-status' && event.detail?.subagentId === spec.id) {
-          // `handleToolCalls` may emit per-tool `running-tool` status
-          // when a `subagentId` is present (it currently scopes that
-          // emission to orchestrator-level rounds — see the helper —
-          // but routing the kind here keeps the contract symmetric so
-          // future surfaces ride through unchanged).
-          deps.onRunStatus?.(event, spec.id);
+          return;
         }
+        if (event.kind === 'run-status' && event.detail?.subagentId === spec.id) {
+          // `handleToolCalls` emits per-tool `running-tool` status with
+          // `detail.subagentId` set for worker-scoped rounds.
+          deps.onRunStatus?.(event, spec.id);
+          return;
+        }
+        deps.onTimelineEvent?.(event, spec.id);
       };
 
       const summary = await handleToolCalls(finishedCalls, messages, subagentEmit, {
@@ -755,8 +776,9 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
         toolResults: allResults,
         status: 'failed',
         error:
-          'sub-agent emitted no text, no tool calls, and no <result> envelope ' +
-          '— nothing to wrap; treating as failed without recovery prompt'
+          'Sub-agent finished without producing any output (no text, no tool ' +
+          'calls, no result envelope) — nothing to verify; treating the round ' +
+          'as failed.'
       };
     }
     if (status === 'malformed' && !textNoResultNudged && iter < SUBAGENT_MAX_ITERATIONS - 1) {
@@ -804,7 +826,8 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
     });
     const error =
       status === 'malformed'
-        ? 'No <result> envelope — host requires <result><status>…</status></result>'
+        ? 'Sub-agent finished without a structured result envelope — ' +
+        'the orchestrator cannot verify success.'
         : undefined;
     return {
       id: spec.id,

@@ -11,11 +11,13 @@
  */
 
 import {
+  isValidElement,
   useEffect,
   useMemo,
   useRef,
   useState,
   type ComponentProps,
+  type InputHTMLAttributes,
   type ReactNode
 } from 'react';
 import { Check, Copy } from 'lucide-react';
@@ -24,8 +26,11 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { stripEmoji } from '@shared/text/emoji.js';
 import { normalizeMathShortcuts } from '@shared/text/mathShortcuts.js';
+import { chromeCodeSurfaceClassName } from '../../ui/SurfaceShell.js';
+import { CodeLanguageEyebrow } from '../shared/CodeLanguageEyebrow.js';
 import { cn } from '../../../lib/cn.js';
 import { safeCopy } from '../../../lib/clipboard.js';
+import { TaskCheckbox } from './TaskCheckbox.js';
 
 interface MarkdownBodyProps {
   text: string;
@@ -44,11 +49,36 @@ const REHYPE_PLUGINS: MdProps['rehypePlugins'] = [
 const MD_COMPONENTS: MdProps['components'] = {
   pre: PreWithCopy,
   a: ({ href, children, ...rest }) => (
-    <a href={href} target="_blank" rel="noreferrer noopener" {...rest}>
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer noopener"
+      referrerPolicy="no-referrer"
+      {...rest}
+    >
       {children}
     </a>
-  )
+  ),
+  // GFM task-list checkboxes (`- [x] …` / `- [ ] …`) — remark-gfm
+  // renders these as `<input type="checkbox" disabled>` inside an
+  // `<li class="task-list-item">`. The native browser checkbox reads
+  // as a glaring white square on the stealth-dark surface (visible
+  // in the audit screenshots as awkward UI artifacts inside the
+  // assistant's `Current Progress Status` list). The override here
+  // swaps the native control for a small stealth-dark icon matching
+  // the lucide vocabulary used by `<PreWithCopy>` and the timeline
+  // action pills, and the CSS rule in `renderer/index.css`
+  // (`.vyotiq-md li.task-list-item`) removes the parent list disc
+  // and tightens the leading so the icon sits flush with the prose.
+  input: ({ type, checked, ...rest }: InputCheckboxOverrideProps) => {
+    if (type === 'checkbox') {
+      return <TaskCheckbox checked={!!checked} />;
+    }
+    return <input type={type} checked={checked} {...rest} />;
+  }
 };
+
+type InputCheckboxOverrideProps = InputHTMLAttributes<HTMLInputElement>;
 
 export function MarkdownBody({ text, className }: MarkdownBodyProps) {
   // Compose the two display-side text normalizers in one memo so we
@@ -82,11 +112,45 @@ export function MarkdownBody({ text, className }: MarkdownBodyProps) {
   return <div className={cn('vyotiq-md', className)}>{tree}</div>;
 }
 
+function preChildrenText(children?: ReactNode): string {
+  const walk = (node: ReactNode): string => {
+    if (node == null || typeof node === 'boolean') return '';
+    if (typeof node === 'string' || typeof node === 'number') return String(node);
+    if (Array.isArray(node)) return node.map(walk).join('');
+    if (isValidElement<{ children?: ReactNode }>(node)) return walk(node.props.children);
+    return '';
+  };
+  return walk(children);
+}
+
+function extractCodeLanguage(children?: ReactNode): string | undefined {
+  const walk = (node: ReactNode): string | undefined => {
+    if (node == null || typeof node === 'boolean') return undefined;
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        const found = walk(child);
+        if (found) return found;
+      }
+      return undefined;
+    }
+    if (!isValidElement<{ className?: string; children?: ReactNode }>(node)) return undefined;
+    const cls = node.props.className;
+    if (typeof cls === 'string') {
+      const match = cls.match(/\blanguage-([\w-]+)\b/);
+      if (match?.[1]) return match[1];
+    }
+    return walk(node.props.children);
+  };
+  return walk(children);
+}
+
 function PreWithCopy({ children }: { children?: ReactNode }) {
   const preRef = useRef<HTMLPreElement>(null);
   const [copied, setCopied] = useState(false);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
+  const isEmpty = preChildrenText(children).trim().length === 0;
+  const language = useMemo(() => extractCodeLanguage(children), [children]);
 
   // Clear the "Copied" reset timer on unmount so a copy click immediately
   // before a re-render (e.g. timeline rebuild) doesn't trigger a setState
@@ -100,6 +164,8 @@ function PreWithCopy({ children }: { children?: ReactNode }) {
       }
     };
   }, []);
+
+  if (isEmpty) return null;
 
   const onCopy = () => {
     const txt = preRef.current?.innerText ?? '';
@@ -118,18 +184,18 @@ function PreWithCopy({ children }: { children?: ReactNode }) {
 
   return (
     <div className="relative group">
+      {language && <CodeLanguageEyebrow language={language} />}
       <pre ref={preRef}>{children}</pre>
       <button
         type="button"
         onClick={onCopy}
         className={cn(
-          'app-no-drag absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-inner',
-          // `bg-surface-overlay` matches the `<pre>` background (see
-          // `.vyotiq-md pre` in `index.css`) so the button reads as
-          // part of the fence chrome rather than a foreign chip
-          // floating above it. Hover lifts to `bg-surface-hover` to
-          // surface the affordance against the fence's own surface.
-          'bg-surface-overlay text-text-muted opacity-0 transition-opacity duration-150',
+          'app-no-drag absolute right-2 top-2 opacity-0 transition-opacity duration-150',
+          // Match `<pre>` fence via {@link chromeCodeSurfaceClassName}; hover
+          // lifts to `bg-surface-hover` so the affordance reads on hover.
+          chromeCodeSurfaceClassName(
+            'flex h-6 w-6 items-center justify-center text-text-muted'
+          ),
           'group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100',
           'hover:bg-surface-hover hover:text-text-primary'
         )}

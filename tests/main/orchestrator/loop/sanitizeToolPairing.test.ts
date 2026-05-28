@@ -15,6 +15,13 @@ import {
   sanitizeToolCallPairingWithStats
 } from '@main/orchestrator/loop/sanitizeToolPairing';
 
+type SanitizeStats = ReturnType<typeof sanitizeToolCallPairingWithStats>['stats'];
+
+function expectZeroStats(stats: SanitizeStats): void {
+  expect(stats.injectedStubs).toBe(0);
+  expect(stats.droppedOrphans).toBe(0);
+}
+
 function asst(toolCallIds: string[], content: string | null = ''): ChatMessage {
   return {
     role: 'assistant',
@@ -184,8 +191,7 @@ describe('sanitizeToolCallPairing', () => {
         { role: 'assistant', content: 'a' }
       ];
       const out = sanitizeToolCallPairingWithStats(msgs);
-      expect(out.stats.injectedStubs).toBe(0);
-      expect(out.stats.droppedOrphans).toBe(0);
+      expectZeroStats(out.stats);
       expect(out.messages).toHaveLength(msgs.length);
     });
 

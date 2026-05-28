@@ -265,6 +265,86 @@ export type RewindPreviewResult = RewindPreview | { ok: false; error: RewindErro
  * counts so the renderer can paint a "reverted N files, removed M
  * transcript events" toast.
  */
+/**
+ * PR-style review metadata (slice 1). Stored in `reviews.json` per
+ * workspace. Does **not** imply git merge or auto-accept of pending
+ * edits unless the user explicitly Accepts in the pending panel.
+ */
+export type ReviewDecision = 'comment' | 'approve' | 'request_changes';
+
+/** One user comment anchored to a file path in a review session. */
+export interface FileReviewComment {
+  id: string;
+  filePath: string;
+  body: string;
+  ts: number;
+  /** Optional 1-based line anchor (slice 2). */
+  line?: number;
+}
+
+/**
+ * Review session for a conversation's pending changeset. Keyed by
+ * `conversationId` in `reviews.json`.
+ */
+export interface ReviewSession {
+  conversationId: string;
+  workspaceId: string;
+  /** Primary run when the session was opened (informational). */
+  runId?: string;
+  startedAt: number;
+  updatedAt: number;
+  /** Latest overall decision (metadata only in default post-hoc mode). */
+  decision?: ReviewDecision;
+  comments: FileReviewComment[];
+  /** Optional per-file decision metadata. */
+  fileDecisions?: Record<string, ReviewDecision>;
+  /** Git ref for "compare to base" in review UI (default HEAD). */
+  gitBaseRef?: string;
+  /** Display name for who performed this review (local metadata). */
+  reviewerLabel?: string;
+}
+
+/** One selectable git ref in the review compare UI. */
+export interface GitRefOption {
+  ref: string;
+  group: 'builtin' | 'local' | 'remote';
+}
+
+/**
+ * Exported review bundle written beside the workspace root.
+ *
+ * `pendingChanges` is a snapshot for audit/handoff. Pass
+ * `restorePending: true` on import to merge rows into the pending store
+ * (existing `entryId` values are skipped).
+ */
+export interface ReviewExportBundle {
+  version: 1;
+  exportedAt: number;
+  session: ReviewSession;
+  /** Metadata snapshot at export time; not replayed on import by default. */
+  pendingChanges: PendingChange[];
+}
+
+/** Result of `checkpoints:git-base-diff`. */
+export type GitBaseDiffResult =
+  | { ok: true; patch: string; ref: string }
+  | { ok: false; reason: 'not-a-repo' | 'path-escaped' | 'git-error' | 'empty'; message?: string };
+
+/** Result of `checkpoints:list-git-refs`. */
+export type ListGitRefsResult =
+  | { ok: true; options: GitRefOption[]; head: string }
+  | { ok: false; reason: 'not-a-repo' | 'git-error'; message?: string };
+
+export type ReviewExportResult = { exportPath: string; bytes: number };
+
+/** Result of `checkpoints:import-review`. */
+export type ReviewImportResult = {
+  session: ReviewSession;
+  applied: 'merge' | 'replace';
+  /** Present when `restorePending` was requested. */
+  pendingRestore?: { restored: number; skipped: number };
+};
+
 export type RewindResult =
   | {
     ok: true;

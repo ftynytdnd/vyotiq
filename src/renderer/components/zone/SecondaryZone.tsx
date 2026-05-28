@@ -10,6 +10,7 @@ import {
   SECONDARY_ZONE_WIDTH
 } from '../../store/useSecondaryZoneStore.js';
 import { PanelFrame } from './PanelFrame.js';
+import { chromeEdgeClassName } from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
 
 const SettingsPanel = lazy(() =>
@@ -21,6 +22,11 @@ const CheckpointsPanel = lazy(() =>
 const ContextInspectorZonePanel = lazy(() =>
   import('../contextInspector/index.js').then((m) => ({
     default: m.ContextInspectorZonePanel
+  }))
+);
+const ReviewDrawerPanel = lazy(() =>
+  import('../checkpoints/review/ReviewDrawerPanel.js').then((m) => ({
+    default: m.ReviewDrawerPanel
   }))
 );
 
@@ -107,7 +113,9 @@ export function SecondaryZone() {
         ? 'Checkpoint history'
         : panel === 'inspector'
           ? 'Context Inspector'
-          : undefined;
+          : panel === 'review'
+            ? 'Review pending changes'
+            : undefined;
 
   return (
     <aside
@@ -117,7 +125,7 @@ export function SecondaryZone() {
       className={cn(
         'min-w-0 shrink-0 overflow-hidden transition-[width] duration-200 ease-out',
         panel
-          ? 'border-l border-border-subtle/25 bg-surface-raised'
+          ? cn('border-l bg-surface-raised/20', chromeEdgeClassName)
           : 'pointer-events-none border-0'
       )}
       style={panel ? { width: panelWidth } : { width: 0 }}
@@ -156,6 +164,18 @@ export function SecondaryZone() {
             )}
             {panel === 'inspector' && (
               <ContextInspectorZonePanel onClose={close} embedded />
+            )}
+            {panel === 'review' && (
+              <PanelFrame
+                title="Review"
+                onClose={close}
+                contentClassName="flex min-h-0 flex-col overflow-hidden p-0"
+                className="h-full"
+              >
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 py-3">
+                  <ReviewDrawerPanel />
+                </div>
+              </PanelFrame>
             )}
           </Suspense>
         </div>

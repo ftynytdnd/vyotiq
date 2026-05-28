@@ -7,8 +7,9 @@
  *
  *   - Sub-agent id + status pill (running / done / failed / aborted).
  *   - Click-cycle token-usage pill (`current` / `peak` / `cumulative`).
- *   - Per-worker live-status phase line (shimmer cadence) WHEN the
- *     worker is actually streaming and no accumulator is open.
+ *   - Per-worker live-status phase line (gold for exploring / shimmer
+ *     for connection-wait phases) WHEN the worker is actually streaming
+ *     and no accumulator is open.
  *   - Failure message (red, with `AlertTriangle`) when terminal
  *     state landed with one.
  *
@@ -22,9 +23,15 @@
  */
 
 import { useState } from 'react';
-import { AlertTriangle, BarChart2, Bot } from 'lucide-react';
+import { AlertTriangle, BarChart2 } from 'lucide-react';
 import { stripEmoji } from '@shared/text/emoji.js';
 import type { SubAgentSnapshot, TokenUsageAggregate } from '../reducer/types.js';
+import {
+  chromeMeterClassName,
+  chromePillClassName,
+  chromeStatusPillClassName,
+  type ChromeStatusTone
+} from '../../ui/SurfaceShell.js';
 import { cn } from '../../../lib/cn.js';
 import { formatTokenCount } from '../../../lib/formatTokens.js';
 import {
@@ -32,6 +39,11 @@ import {
   formatTokensPerSecond
 } from '../../contextInspector/inspectorFormat.js';
 import { shimmerPill, shimmerStyle, shimmerText } from '../../../lib/shimmer.js';
+import {
+  resolveLivePhaseHeadline,
+  timelinePhaseHeadingClassName,
+  isGoldLivePhase
+} from '../shared/rowStyles.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import {
   useProviderStore,
@@ -56,60 +68,75 @@ export function SubAgentHeader({ snap }: SubAgentHeaderProps) {
   // how `SubAgentResult.tsx` already paints the `<status>partial`
   // envelope status. Live states (pending / running) keep their accent
   // tone for shimmer continuity.
-  const statusPillClass =
-    snap.status === 'done'
-      ? 'bg-success-soft text-success'
-      : snap.status === 'partial'
-        ? 'bg-warning-soft text-warning'
-        : snap.status === 'malformed'
-          ? 'bg-warning-soft text-warning'
-          : snap.status === 'failed' || snap.status === 'aborted'
-            ? 'bg-danger-soft text-danger'
-            : 'bg-accent-soft text-accent';
+  const statusTone = subAgentStatusTone(snap.status);
 
   return (
-    <div className="flex items-start gap-2">
-      <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-faint" strokeWidth={2} />
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-1.5 text-row text-text-muted">
-          <span className="font-medium text-text-secondary">Sub-agent {snap.id}</span>
+    <div className="min-w-0">
+      <div className="flex flex-wrap items-center gap-1.5 text-row text-text-muted">
+        <span className="font-medium text-text-secondary">Sub-agent {snap.id}</span>
+        <span className={chromeStatusPillClassName(statusTone)}>
           <span
-            className={cn(
-              'rounded-inner px-1.5 py-0.5 text-meta font-medium capitalize',
-              'inline-flex h-6 items-center',
-              statusPillClass
-            )}
+            className={shimmerPill(isLive)}
+            style={isLive ? shimmerStyle(`subagent-pill:${snap.id}`) : undefined}
           >
-            <span
-              className={shimmerPill(isLive)}
-              style={isLive ? shimmerStyle(`subagent-pill:${snap.id}`) : undefined}
-            >
-              {snap.status}
-            </span>
+            {snap.status}
           </span>
-          {snap.usage && <SubAgentUsagePill usage={snap.usage} />}
-          {snap.usage && <SubAgentContextChip usage={snap.usage} subagentId={snap.id} />}
-        </div>
-        {shouldShowLiveStatus(snap) && snap.liveStatus && (
-          <div
-            role="status"
-            aria-live="polite"
-            className={cn('mt-1 line-clamp-1 text-meta', shimmerText(true, 'text-text-faint'))}
-            style={shimmerStyle(`subagent-phase:${snap.id}:${snap.liveStatus.phase}`)}
-          >
-            {snap.liveStatus.label}
-          </div>
-        )}
-        {snap.message && (
-          <div className="mt-1 flex items-start gap-1.5 text-row text-danger">
-            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" strokeWidth={2.25} />
-            <span className="line-clamp-2">{stripEmoji(snap.message)}</span>
-          </div>
-        )}
+        </span>
+        {snap.usage && <SubAgentUsagePill usage={snap.usage} />}
+        {snap.usage && <SubAgentContextChip usage={snap.usage} subagentId={snap.id} />}
       </div>
+      {shouldShowLiveStatus(snap) && snap.liveStatus && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={cn(
+            'mt-1 line-clamp-1 text-meta',
+            isGoldLivePhase(snap.liveStatus.phase)
+              ? timelinePhaseHeadingClassName(true)
+              : shimmerText(true, 'text-text-faint')
+          )}
+          style={
+            isGoldLivePhase(snap.liveStatus.phase)
+              ? undefined
+              : shimmerStyle(`subagent-phase:${snap.id}:${snap.liveStatus.phase}`)
+          }
+        >
+          {resolveLivePhaseHeadline(snap.liveStatus.phase, snap.liveStatus.label)}
+          {snap.liveStatus.phase === 'running-tool' && snap.liveStatus.toolName && (
+            <span className="ml-1.5 font-mono text-text-faint">
+              · {snap.liveStatus.toolName}
+            </span>
+          )}
+        </div>
+      )}
+      {snap.message && (
+        <div
+          className="mt-1 flex items-start gap-1.5 text-row text-danger"
+          title={
+            snap.status === 'malformed'
+              ? `${stripEmoji(snap.message)}\n\n${HARNESS_CONTRACT_TOOLTIP}`
+              : stripEmoji(snap.message)
+          }
+        >
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" strokeWidth={2.25} />
+          <span className="line-clamp-2">{stripEmoji(snap.message)}</span>
+        </div>
+      )}
     </div>
   );
 }
+
+/**
+ * Harness-side contract for the `<result>` envelope. Surfaced as a
+ * hover tooltip on the malformed AlertTriangle row so a developer
+ * inspecting why a sub-agent failed can still see what the host
+ * expected, without leaking the literal XML into the user-facing
+ * copy. Kept private to this file — promote to an export when a
+ * second surface (focus modal, inspector) wants to reuse it.
+ */
+const HARNESS_CONTRACT_TOOLTIP =
+  'Expected envelope: <result><status>success|partial|failed</status>' +
+  '<summary>one sentence</summary><details>…</details></result>';
 
 /**
  * Whether to render the per-worker live-status line under the
@@ -123,7 +150,7 @@ export function SubAgentHeader({ snap }: SubAgentHeaderProps) {
  *   2. **No accumulator is actively streaming right now.** Once any
  *      iteration's reasoning OR text accumulator is open and
  *      non-empty, the in-flight panel inside `SubAgentRunFlow`
- *      already carries the shimmer cadence; the header line would
+ *      already carries the gold phase heading; the header line would
  *      contradict it.
  *   3. **`liveStatus.ts` is fresh relative to closed accumulators.**
  *      The reducer keeps `liveStatus` set across an entire
@@ -220,9 +247,9 @@ function SubAgentUsagePill({ usage }: { usage: TokenUsageAggregate }) {
       }}
       title={tooltip}
       className={cn(
-        'inline-flex h-6 items-center gap-1 rounded-inner bg-surface-overlay px-1.5 text-meta text-text-faint',
-        'hover:bg-surface-hover hover:text-text-secondary',
-        'transition-colors duration-150'
+        chromePillClassName(false),
+        'gap-1 px-1.5 text-meta text-text-faint',
+        'hover:text-text-secondary'
       )}
     >
       <BarChart2 className="h-2.5 w-2.5" strokeWidth={2} />
@@ -313,12 +340,18 @@ function SubAgentContextChip({
   return (
     <span
       title={tooltip}
-      className={cn(
-        'inline-flex h-6 items-center rounded-inner bg-surface-overlay px-1.5 text-meta font-mono',
-        toneClass
-      )}
+      className={chromeMeterClassName(cn('px-1.5 font-mono', toneClass))}
     >
       {pctLabel} ctx
     </span>
   );
+}
+
+function subAgentStatusTone(
+  status: SubAgentSnapshot['status']
+): ChromeStatusTone {
+  if (status === 'done') return 'success';
+  if (status === 'partial' || status === 'malformed') return 'warning';
+  if (status === 'failed' || status === 'aborted') return 'danger';
+  return 'accent';
 }

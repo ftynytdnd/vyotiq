@@ -1,23 +1,5 @@
 /**
- * PendingChangesList — body of the pending-changes panel.
- *
- * Two grouping modes:
- *   - Single-run case → render flush, no sub-headers (matches the
- *     pre-grouping visual density).
- *   - Multi-run case  → group by `runId` under collapsible
- *     sub-headers; each group shows its own +/- totals.
- *
- * Virtualisation-light: when more than 60 entries are present the
- * list mounts each row inside an `IntersectionObserver`-backed
- * placeholder so off-screen rows defer their `PendingChangeDiff`
- * mount (which reads checkpoint blobs) until they actually scroll
- * into view. The DOM still renders the row's header row eagerly so
- * the scrollbar dimensions and accept-all bulk action remain
- * accurate; only the expanded diff body is deferred.
- *
- * Memory-leak hygiene: the observer is owned by `LazyMountRow` and
- * disconnected on unmount. Rows that have ever been observed-as-
- * intersecting stay mounted (no thrash on quick scroll passes).
+ * PendingChangesList — scrollable body of the pending-changes panel.
  */
 
 import {
@@ -29,38 +11,138 @@ import {
 } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { PendingChange } from '@shared/types/checkpoint.js';
-import { PendingChangeRow } from '../PendingChangeRow.js';
-import { groupByRun, type RunBucket } from './groupPendingByPath.js';
-import { timelineRowHeaderClassName } from '../../timeline/shared/rowStyles.js';
+import { PendingChangeFileGroup } from './PendingChangeFileGroup.js';
+import { PendingChangesListHeader } from './PendingFileRowShell.js';
+import {
+  groupByFilePath,
+  groupByFolder,
+  groupByRun,
+  type FolderBucket,
+  type RunBucket
+} from './groupPendingByPath.js';
+import {
+  pendingExpandButtonClassName,
+  pendingFileRowGridTemplate,
+  pendingPanelListClassName,
+  pendingRunGroupHeaderClassName
+} from './pendingPanelStyles.js';
+import { timelineRowChevronClassName } from '../../timeline/shared/rowStyles.js';
 import { cn } from '../../../lib/cn.js';
 
 const VIRTUALIZATION_THRESHOLD = 60;
 
 interface PendingChangesListProps {
   pending: readonly PendingChange[];
+  groupByFolderMode?: boolean;
 }
 
-export function PendingChangesList({ pending }: PendingChangesListProps) {
+export function PendingChangesList({
+  pending,
+  groupByFolderMode = false
+}: PendingChangesListProps) {
+  const folderGroups = useMemo(
+    () => (groupByFolderMode ? groupByFolder(pending) : []),
+    [groupByFolderMode, pending]
+  );
   const groups = useMemo(() => groupByRun(pending), [pending]);
+  const singleRunFileGroups = useMemo(
+    () => (groups.length === 1 ? groupByFilePath(groups[0]!.entries) : []),
+    [groups]
+  );
   const shouldVirtualise = pending.length > VIRTUALIZATION_THRESHOLD;
+
+  if (groupByFolderMode && folderGroups.length > 0) {
+    return (
+      <>
+        <PendingChangesListHeader />
+        <div className={pendingPanelListClassName}>
+          {folderGroups.map((bucket) => (
+            <FolderGroup key={bucket.folder || '(root)'} bucket={bucket} virtualise={shouldVirtualise} />
+          ))}
+        </div>
+      </>
+    );
+  }
 
   if (groups.length === 1) {
     return (
-      <div className="flex flex-col">
-        {groups[0]!.entries.map((p) => (
-          <RowFrame key={p.entryId} virtualise={shouldVirtualise}>
-            <PendingChangeRow change={p} />
-          </RowFrame>
-        ))}
-      </div>
+      <>
+        <PendingChangesListHeader />
+        <div className={pendingPanelListClassName}>
+          {singleRunFileGroups.map((g) => (
+            <PendingChangeFileGroup
+              key={g.filePath}
+              entries={g.entries}
+              virtualise={shouldVirtualise}
+              RowFrame={RowFrame}
+            />
+          ))}
+        </div>
+      </>
     );
   }
 
   return (
-    <div className="flex flex-col">
+    <>
+      <PendingChangesListHeader />
+      <div className={pendingPanelListClassName}>
       {groups.map((g) => (
         <RunGroup key={g.runId} group={g} virtualise={shouldVirtualise} />
       ))}
+      </div>
+    </>
+  );
+}
+
+function FolderGroup({
+  bucket,
+  virtualise
+}: {
+  bucket: FolderBucket;
+  virtualise: boolean;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const fileGroups = groupByFilePath(bucket.entries);
+  const label = bucket.folder.length > 0 ? bucket.folder : '(root)';
+  const additions = bucket.entries.reduce((a, e) => a + e.additions, 0);
+  const deletions = bucket.entries.reduce((a, e) => a + e.deletions, 0);
+
+  return (
+    <div className="flex flex-col">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className={cn(pendingRunGroupHeaderClassName, 'grid', pendingFileRowGridTemplate)}
+        aria-expanded={expanded}
+        aria-label={expanded ? 'Collapse folder group' : 'Expand folder group'}
+      >
+        <span className={pendingExpandButtonClassName}>
+          {expanded ? (
+            <ChevronDown className={timelineRowChevronClassName} strokeWidth={2} />
+          ) : (
+            <ChevronRight className={timelineRowChevronClassName} strokeWidth={2} />
+          )}
+        </span>
+        <span className="min-w-0 truncate font-mono normal-case tracking-normal text-text-muted">
+          {label} · {fileGroups.length} file{fileGroups.length === 1 ? '' : 's'}
+        </span>
+        <span className="justify-self-end font-mono tabular-nums text-text-faint">
+          +{additions} −{deletions}
+        </span>
+        <span aria-hidden />
+      </button>
+      {expanded && (
+        <div className={pendingPanelListClassName}>
+          {fileGroups.map((fileGroup) => (
+            <PendingChangeFileGroup
+              key={fileGroup.filePath}
+              entries={fileGroup.entries}
+              virtualise={virtualise}
+              RowFrame={RowFrame}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -73,37 +155,48 @@ function RunGroup({
   virtualise: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const fileGroups = groupByFilePath(group.entries);
   const additions = group.entries.reduce((a, e) => a + e.additions, 0);
   const deletions = group.entries.reduce((a, e) => a + e.deletions, 0);
+  const fileCount = fileGroups.length;
+  const editCount = group.entries.length;
 
   return (
-    <div className="flex flex-col border-t border-border-subtle/30">
+    <div className="flex flex-col">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className={cn(timelineRowHeaderClassName, 'text-left')}
+        className={cn(pendingRunGroupHeaderClassName, 'grid', pendingFileRowGridTemplate)}
         aria-label={expanded ? 'Collapse run group' : 'Expand run group'}
         aria-expanded={expanded}
       >
-        {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-chevron" strokeWidth={2} />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-chevron" strokeWidth={2} />
-        )}
-        <div className="min-w-0 flex-1 truncate text-meta text-text-muted">
-          Run {group.runId.slice(0, 8)} · {group.entries.length} change
-          {group.entries.length === 1 ? '' : 's'}
-        </div>
-        <div className="shrink-0 text-meta text-text-faint">
+        <span className={pendingExpandButtonClassName}>
+          {expanded ? (
+            <ChevronDown className={timelineRowChevronClassName} strokeWidth={2} />
+          ) : (
+            <ChevronRight className={timelineRowChevronClassName} strokeWidth={2} />
+          )}
+        </span>
+        <span className="min-w-0 truncate font-mono normal-case tracking-normal text-text-muted">
+          run {group.runId.slice(0, 8)}
+          {fileCount < editCount
+            ? ` · ${fileCount} files · ${editCount} edits`
+            : ` · ${editCount} change${editCount === 1 ? '' : 's'}`}
+        </span>
+        <span className="justify-self-end font-mono tabular-nums text-text-faint">
           +{additions} −{deletions}
-        </div>
+        </span>
+        <span aria-hidden />
       </button>
       {expanded && (
-        <div className="flex flex-col">
-          {group.entries.map((p) => (
-            <RowFrame key={p.entryId} virtualise={virtualise}>
-              <PendingChangeRow change={p} />
-            </RowFrame>
+        <div className={pendingPanelListClassName}>
+          {fileGroups.map((fileGroup) => (
+            <PendingChangeFileGroup
+              key={fileGroup.filePath}
+              entries={fileGroup.entries}
+              virtualise={virtualise}
+              RowFrame={RowFrame}
+            />
           ))}
         </div>
       )}
@@ -111,14 +204,6 @@ function RunGroup({
   );
 }
 
-/**
- * Lazy mount frame for a pending-change row. When `virtualise` is
- * false (the common case under the threshold) this is a no-op pass-
- * through. When true, the inner row is only mounted once the frame
- * has been observed intersecting the viewport at least once. The
- * intersect-once latch keeps quick scroll passes from thrashing
- * mount/unmount on rows that briefly leave and re-enter the viewport.
- */
 function RowFrame({
   virtualise,
   children
@@ -139,8 +224,6 @@ function LazyMountRow({ children }: { children: ReactNode }) {
     const el = ref.current;
     if (!el) return;
     if (typeof IntersectionObserver === 'undefined') {
-      // Environments without IO (older browsers / test stubs) get
-      // an immediate mount to preserve correctness over efficiency.
       setShouldMount(true);
       return;
     }

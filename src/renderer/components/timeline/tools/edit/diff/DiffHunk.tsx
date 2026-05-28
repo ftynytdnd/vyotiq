@@ -16,44 +16,49 @@
  * specific hunk into view without coupling to the DOM structure.
  */
 
-import { forwardRef, useMemo, useState } from 'react';
+import { forwardRef, useMemo } from 'react';
 import type { DiffHunk as DiffHunkModel } from '@shared/types/tool.js';
+import { chromeCodeStickyHeaderClassName } from '../../../../ui/SurfaceShell.js';
 import { cn } from '../../../../../lib/cn.js';
+import { useTimelineUiStore } from '../../../../../store/useTimelineUiStore.js';
 import { DiffLine } from './DiffLine.js';
 import {
   buildIntraLineMap,
   findLastStreamingLineIdx
 } from './useIntraLineHighlight.js';
 import { buildFoldedItems } from './softFold.js';
+import type { ReviewLinePickProps } from './diffLinePick.js';
 
 /** Cap on lines rendered inside a single hunk's `<pre>`. */
 const MAX_VISIBLE_LINES_PER_HUNK = 200;
 
 export type DiffViewVariant = 'preview' | 'authoritative' | 'partial';
 
+/** Empty set reused when a diff fold scope has no expansions yet. */
+const EMPTY_FOLD_SET: ReadonlySet<string> = new Set();
+
 interface DiffHunkProps {
   hunk: DiffHunkModel;
   idx: number;
   variant: DiffViewVariant;
+  foldScopeKey: string;
+  lineWrap?: boolean;
+  linePick?: ReviewLinePickProps;
 }
 
 export const DiffHunk = forwardRef<HTMLDivElement, DiffHunkProps>(
-  function DiffHunk({ hunk, idx, variant }, ref) {
-    // Per-hunk fold-expansion memory. Keyed by the same `foldId`
-    // strings `buildFoldedItems` produces so the user's "expand"
-    // clicks survive intra-hunk re-renders driven by parent state
-    // (e.g. the navigator setting an active hunk).
-    const [expandedFolds, setExpandedFolds] = useState<ReadonlySet<string>>(
-      () => new Set()
+  function DiffHunk({ hunk, idx, variant, foldScopeKey, lineWrap = true, linePick }, ref) {
+    const expandedFolds = useTimelineUiStore(
+      (s) => s.diffFoldExpandedByScope[foldScopeKey] ?? EMPTY_FOLD_SET
     );
+    const toggleDiffFold = useTimelineUiStore((s) => s.toggleDiffFold);
 
     const visibleLines = hunk.lines.slice(0, MAX_VISIBLE_LINES_PER_HUNK);
     const hiddenLineCount = hunk.lines.length - visibleLines.length;
 
     // Staggered settle is reserved for authoritative diffs. Preview
-    // and partial diffs already have row-level shimmer signalling
-    // in-flight state; layering settle on top would read as a
-    // double-animation.
+    // and partial diffs use typography-only in-flight styling;
+    // layering settle on top would read as a double-animation.
     const settle = variant === 'authoritative';
 
     // In `partial` mode, the very last `+` or `-` line is the one
@@ -90,10 +95,15 @@ export const DiffHunk = forwardRef<HTMLDivElement, DiffHunkProps>(
             : undefined
         }
       >
-        <div className="sticky top-0 z-[1] bg-surface-overlay px-1 font-mono text-meta text-text-faint">
+        <div className={chromeCodeStickyHeaderClassName}>
           @@ -{hunk.oldStart} +{hunk.newStart} @@
         </div>
-        <pre className="whitespace-pre font-mono text-row leading-relaxed">
+        <pre
+          className={cn(
+            'font-mono text-row leading-relaxed',
+            lineWrap ? 'whitespace-pre-wrap' : 'whitespace-pre overflow-x-auto'
+          )}
+        >
           {foldedItems.map((item) => {
             if (item.kind === 'fold') {
               return (
@@ -101,11 +111,7 @@ export const DiffHunk = forwardRef<HTMLDivElement, DiffHunkProps>(
                   key={item.foldId}
                   type="button"
                   onClick={() => {
-                    setExpandedFolds((prev) => {
-                      const next = new Set(prev);
-                      next.add(item.foldId);
-                      return next;
-                    });
+                    toggleDiffFold(foldScopeKey, item.foldId);
                   }}
                   className={cn(
                     'mx-1 my-0.5 flex w-[calc(100%-0.5rem)] items-center gap-2',
@@ -138,15 +144,27 @@ export const DiffHunk = forwardRef<HTMLDivElement, DiffHunkProps>(
               oldCursor++;
             }
             const intra = intraLineMap.get(lineIndex);
-            const isStreamingTip = lineIndex === lastStreamingIdx;
             return (
               <DiffLine
                 key={lineIndex}
                 line={line}
                 oldNo={oldNo}
                 newNo={newNo}
+                isStreamingTip={
+                  variant === 'partial' && lineIndex === lastStreamingIdx
+                }
                 {...(intra ? { intra } : {})}
-                {...(isStreamingTip ? { isStreamingTip } : {})}
+                {...(linePick
+                  ? {
+                    linePick: {
+                      highlightLine: linePick.highlightLine,
+                      onPick: (pick) => {
+                        const n = pick.newLine ?? pick.oldLine;
+                        if (n !== null) linePick.onPick(n);
+                      }
+                    }
+                  }
+                  : {})}
               />
             );
           })}

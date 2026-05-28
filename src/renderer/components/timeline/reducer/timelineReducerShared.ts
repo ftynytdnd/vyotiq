@@ -80,6 +80,7 @@ export function ensureSnapshot(
     files: [],
     missingFiles: [],
     tools: [],
+    unknownTools: [],
     status: 'running',
     startedAt: ts,
     steps: [],

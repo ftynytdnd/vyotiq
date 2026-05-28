@@ -26,6 +26,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, ListOrdered } from 'lucide-react';
 import type { DiffHunk } from '@shared/types/tool.js';
+import {
+  chromeFloatingToolbarClassName,
+  chromeIconActionClassName,
+  chromePopoverPanelClassName
+} from '../../../../ui/SurfaceShell.js';
 import { cn } from '../../../../../lib/cn.js';
 
 interface DiffNavigatorProps {
@@ -81,9 +86,8 @@ export function DiffNavigator({
   return (
     <div
       className={cn(
-        'sticky right-1.5 top-1.5 z-20 ml-auto flex items-center gap-0.5 self-end',
-        'rounded-inner bg-surface-overlay/90 px-0.5 py-0.5 backdrop-blur-sm',
-        'border border-border-subtle/40'
+        'ml-auto flex items-center gap-0.5',
+        chromeFloatingToolbarClassName
       )}
     >
       <NavIconButton title="Previous hunk" onClick={onPrev}>
@@ -113,9 +117,8 @@ export function DiffNavigator({
             role="listbox"
             aria-label="Jump to hunk"
             className={cn(
-              'absolute right-0 top-full z-30 mt-1 max-h-64 w-56 overflow-y-auto',
-              'scrollbar-stealth rounded-inner border border-border-subtle/60',
-              'bg-surface-raised shadow-lg'
+              chromePopoverPanelClassName,
+              'absolute right-0 top-full z-30 mt-1 max-h-64 w-56 overflow-y-auto p-0 shadow-lg'
             )}
           >
             {hunks.map((h, i) => (
@@ -169,11 +172,7 @@ function NavIconButton({
       onClick={onClick}
       title={title}
       aria-label={title}
-      className={cn(
-        'app-no-drag inline-flex h-6 w-6 items-center justify-center rounded-inner',
-        'text-text-faint transition-colors duration-150',
-        'hover:bg-surface-hover hover:text-text-secondary'
-      )}
+      className={cn(chromeIconActionClassName, 'hover:text-text-secondary')}
     >
       {children}
     </button>

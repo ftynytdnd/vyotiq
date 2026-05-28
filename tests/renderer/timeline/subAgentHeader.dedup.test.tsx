@@ -84,7 +84,7 @@ describe('SubAgentHeader de-duplication', () => {
     // Post-A4: the header no longer carries a task line at all, so
     // there is nothing to shimmer when the task is still arriving.
     // The pending cue lives on the OUTER collapsed `SubAgentTrace`
-    // row (whose `Delegated` label shimmers while live). The header
+    // row (typography only — chevron + muted label while live). The header
     // simply renders the id + status pill without crashing.
     const { container } = render(<SubAgentHeader snap={snap({ task: '', status: 'pending' })} />);
     expect(container.textContent).not.toContain('(task pending)');

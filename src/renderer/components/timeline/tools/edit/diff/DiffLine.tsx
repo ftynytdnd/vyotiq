@@ -15,13 +15,21 @@
 import type { DiffLine as DiffLineModel } from '@shared/types/tool.js';
 import { cn } from '../../../../../lib/cn.js';
 import type { IntraLineHighlight } from './useIntraLineHighlight.js';
+import type { DiffLinePick } from './diffLinePick.js';
+import { pickAnchorLine } from './diffLinePick.js';
 
 interface DiffLineProps {
   line: DiffLineModel;
   oldNo: number | null;
   newNo: number | null;
   intra?: IntraLineHighlight;
+  /** Trailing blinking caret when this row is the partial-stream tip. */
   isStreamingTip?: boolean;
+  /** Review mode: click a line to anchor a comment. */
+  linePick?: {
+    highlightLine: number | null;
+    onPick: (pick: DiffLinePick) => void;
+  };
 }
 
 export function DiffLine({
@@ -29,15 +37,46 @@ export function DiffLine({
   oldNo,
   newNo,
   intra,
-  isStreamingTip
+  isStreamingTip = false,
+  linePick
 }: DiffLineProps) {
+  const anchor = pickAnchorLine({ newLine: newNo, oldLine: oldNo });
+  const highlighted =
+    linePick &&
+    anchor !== null &&
+    linePick.highlightLine !== null &&
+    anchor === linePick.highlightLine;
+
+  const pickable = linePick && anchor !== null;
+
   return (
     <div
+      role={pickable ? 'button' : undefined}
+      tabIndex={pickable ? 0 : undefined}
+      onClick={
+        pickable
+          ? () => {
+            linePick.onPick({ newLine: newNo, oldLine: oldNo });
+          }
+          : undefined
+      }
+      onKeyDown={
+        pickable
+          ? (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              linePick.onPick({ newLine: newNo, oldLine: oldNo });
+            }
+          }
+          : undefined
+      }
       className={cn(
         'flex items-stretch px-1',
         line.kind === '+' && (intra ? 'bg-success/[0.05] text-success' : 'bg-success/10 text-success'),
         line.kind === '-' && (intra ? 'bg-danger/[0.05] text-danger' : 'bg-danger/10 text-danger'),
-        line.kind === ' ' && 'text-text-secondary'
+        line.kind === ' ' && 'text-text-secondary',
+        pickable && 'cursor-pointer hover:bg-surface-hover/80',
+        highlighted && 'ring-1 ring-inset ring-border-strong/60 bg-surface-hover/50'
       )}
     >
       <GutterCell n={oldNo} />
@@ -58,12 +97,7 @@ export function DiffLine({
         ) : (
           line.text
         )}
-        {isStreamingTip && (
-          <span
-            aria-hidden="true"
-            className="vyotiq-stream-cursor ml-px inline-block h-[1em] w-[0.55ch] align-text-bottom"
-          />
-        )}
+        {isStreamingTip && <span className="vyotiq-stream-cursor" aria-hidden />}
       </span>
     </div>
   );

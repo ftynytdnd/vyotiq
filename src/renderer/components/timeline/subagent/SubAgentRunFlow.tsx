@@ -43,16 +43,18 @@
 import { useMemo } from 'react';
 import type { SubAgentSnapshot } from '../reducer/types.js';
 import { shouldSynthesizePartialToolEntry } from '../reducer/partialToolVisibility.js';
+import type { ToolName } from '@shared/types/tool.js';
 import {
   editChildPath,
+  pickToolName,
   type FileEditGroupChild,
   type Row,
   type ToolGroupChild
 } from '../reducer/deriveRows.js';
-import type { ToolName } from '@shared/types/tool.js';
 import { ToolGroupRow } from '../rows/ToolGroupRow.js';
 import { FileEditGroupRow } from '../rows/FileEditGroupRow.js';
 import { ReasoningPanel, TextPanel } from './iterationPanels.js';
+import { ScopeFileStrip } from '../delegation/ScopeFileStrip.js';
 
 interface SubAgentRunFlowProps {
   snap: SubAgentSnapshot;
@@ -108,13 +110,6 @@ const KNOWN_SUBAGENT_TOOLS: readonly ToolName[] = [
   'report',
   'unknown'
 ];
-
-function pickToolName(raw: string | undefined): ToolName {
-  if (raw && (KNOWN_SUBAGENT_TOOLS as readonly string[]).includes(raw)) {
-    return raw as ToolName;
-  }
-  return 'unknown';
-}
 
 /**
  * Build the chronological item list and fold it into renderable
@@ -223,6 +218,27 @@ export function buildSubAgentFlow(snap: SubAgentSnapshot): FlowGroup[] {
       const s = it.step;
       const name: ToolName = (s.call?.name ?? s.result?.name ?? 'unknown') as ToolName;
       openEdit = null;
+      if (name === 'edit' && s.result && !s.result.ok) {
+        const path = editChildPath({
+          callId: s.callId,
+          ...(s.call ? { call: s.call } : {}),
+          ...(s.result ? { result: s.result } : {})
+        });
+        if (openTool && openTool.toolName === 'edit' && openTool.children.length > 0) {
+          const lastIdx = openTool.children.length - 1;
+          const last = openTool.children[lastIdx]!;
+          const lastPath = editChildPath(last);
+          if (last.result && !last.result.ok && lastPath === path && path.length > 0) {
+            const nextChildren = openTool.children.slice();
+            nextChildren[lastIdx] = {
+              ...last,
+              retryCount: (last.retryCount ?? 1) + 1
+            };
+            openTool.children = nextChildren;
+            continue;
+          }
+        }
+      }
       if (!openTool || openTool.toolName !== name) {
         const next: Extract<FlowGroup, { kind: 'tool-group' }> = {
           kind: 'tool-group',
@@ -276,7 +292,8 @@ export function buildSubAgentFlow(snap: SubAgentSnapshot): FlowGroup[] {
         key: it.edit.key,
         filePath: it.edit.filePath,
         additions: it.edit.additions,
-        deletions: it.edit.deletions
+        deletions: it.edit.deletions,
+        ...(it.edit.entryId ? { entryId: it.edit.entryId } : {})
       };
       openEdit.children = [...openEdit.children, child];
       continue;
@@ -350,8 +367,16 @@ export function SubAgentRunFlow({ snap }: SubAgentRunFlowProps) {
     ]
   );
   if (groups.length === 0) return null;
+  const scopeFiles = snap.files ?? [];
+  const showScopeStrip =
+    scopeFiles.length > 0 &&
+    groups.some(
+      (g) =>
+        (g.kind === 'tool-group' && g.toolName === 'edit') || g.kind === 'file-edit-group'
+    );
   return (
     <div className="flex flex-col gap-1.5">
+      {showScopeStrip && <ScopeFileStrip files={scopeFiles} />}
       {groups.map((g) => {
         if (g.kind === 'iteration') {
           return (
@@ -377,6 +402,7 @@ export function SubAgentRunFlow({ snap }: SubAgentRunFlowProps) {
             key={g.key}
             rowKey={`${snap.id}:${g.key}`}
             items={g.children}
+            subagentId={snap.id}
           />
         );
       })}

@@ -40,6 +40,11 @@
   --color-accent: oklch(0.74 0.14 290);
   --color-accent-soft: oklch(0.74 0.14 290 / 0.18);
   --color-accent-strong: oklch(0.80 0.16 290);
+  /* Live phase headings — warm gold accent for streaming status lines
+     (Exploring, Writing, …). Distinct from steel-violet focus/links. */
+  --color-accent-gold: oklch(0.82 0.12 75);
+  --color-accent-gold-soft: oklch(0.82 0.12 75 / 0.14);
+  --color-accent-gold-strong: oklch(0.88 0.14 75);
   --color-success: oklch(0.78 0.16 150);
   --color-danger: oklch(0.70 0.20 25);
   --color-warning: oklch(0.82 0.15 80);
@@ -253,8 +258,74 @@ textarea {
   }
 }
 
-.vyotiq-stepfade {
+/* One-shot entrance for rows that arrive once and then update in place.
+   Live streaming rows MUST NOT replay stepfade on every parent remount —
+   that produces the ghost-line stacking seen in Electron compositor
+   captures. Use `.vyotiq-stepfade-once` instead. */
+.vyotiq-stepfade-once {
   animation: vyotiq-stepfade 180ms ease-out;
+  animation-fill-mode: both;
+}
+
+/* Crossfade for live status label swaps — replaces React `key=` remounts
+   that left stale shimmer layers painted underneath. */
+@keyframes vyotiq-reveal-text {
+  from {
+    opacity: 0.35;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.vyotiq-reveal-text {
+  animation: vyotiq-reveal-text 220ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vyotiq-reveal-text {
+    animation: none;
+  }
+}
+
+/* Flush inline streaming prose — no card shell; Cursor-style reading flow. */
+.vyotiq-stream-md {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.vyotiq-stream-md .vyotiq-stream-heading:first-child {
+  margin-top: 0;
+}
+
+@keyframes vyotiq-stream-cursor {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+.vyotiq-stream-cursor {
+  display: inline-block;
+  width: 0.45em;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  opacity: 1;
+  animation: vyotiq-stream-cursor 650ms step-end infinite;
+  will-change: opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vyotiq-stream-cursor {
+    animation: none;
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -442,43 +513,6 @@ textarea {
     animation-delay: calc(var(--vyotiq-hunk-idx, 0) * 28ms);
   }
 
-  /* ---------------------------------------------------------------------------
-     Streaming-cursor blink — rendered at the tail of the last `+` / `-`
-     line in a `partial` EditDiffView. Telegraphs "more bytes still
-     arriving" without competing with the row-level shimmer (which the
-     `InvocationShell` already paints on the collapsed line).
-
-     Reduced-motion users see a static caret bar via the no-keyframe
-     fallback below — same visual presence, no blink.
-     --------------------------------------------------------------------------- */
-  @keyframes vyotiq-stream-cursor-blink {
-
-    0%,
-    50% {
-      opacity: 1;
-    }
-
-    50.01%,
-    100% {
-      opacity: 0;
-    }
-  }
-
-  .vyotiq-stream-cursor {
-    background-color: currentColor;
-    animation: vyotiq-stream-cursor-blink 900ms steps(2, end) infinite;
-    border-radius: 1px;
-  }
-}
-
-/* Reduced-motion fallback: keep the cursor visible as a static bar so
-   the streaming UI still has a tail marker, just without the blink. */
-@media (prefers-reduced-motion: reduce) {
-  .vyotiq-stream-cursor {
-    background-color: currentColor;
-    opacity: 0.6;
-    border-radius: 1px;
-  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -519,6 +553,8 @@ textarea {
   line-height: 1.6;
   color: var(--color-text-primary);
   word-break: break-word;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 .vyotiq-md>*:first-child {
@@ -581,6 +617,17 @@ textarea {
 
 .vyotiq-md li>p {
   margin: 0.1em 0;
+}
+
+/* GFM task-list items — `- [x] …` / `- [ ] …`. The custom `<TaskCheckbox>`
+   icon (rendered by the MarkdownBody `input` override) sits inline at the
+   start of the item; suppress the parent list's disc marker and align the
+   item flush-left so the icon reads as the leading affordance instead of
+   trailing a redundant bullet point. */
+.vyotiq-md li.task-list-item {
+  list-style: none;
+  margin-left: -1.15em;
+  padding-left: 0;
 }
 
 .vyotiq-md a {

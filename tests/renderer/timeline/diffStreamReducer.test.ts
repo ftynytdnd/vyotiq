@@ -101,6 +101,27 @@ describe('applyTimelineEvent — diff-stream', () => {
     expect(entry.diffStream!.hunks).toEqual(hunks);
   });
 
+  it('preserves an existing diffStream when args-delta arrives after it', () => {
+    let s = applyTimelineEvent(INITIAL_TIMELINE_STATE, diffStream('c1', { ts: 1 }));
+    s = applyTimelineEvent(s, {
+      kind: 'tool-call-args-delta',
+      id: 'd1',
+      ts: 2,
+      callId: 'c1',
+      name: 'edit',
+      index: 0,
+      argsBuf: '{"path":"a.ts","oldString":"line two","newString":"LINE TWO"}'
+    });
+    const entry = s.partialToolCallArgs['c1']!;
+    expect(entry.parsed).toEqual({
+      path: 'a.ts',
+      oldString: 'line two',
+      newString: 'LINE TWO'
+    });
+    expect(entry.diffStream).toBeDefined();
+    expect(entry.diffStream!.hunks).toEqual(hunks);
+  });
+
   it('folds a sub-agent-scope diff-stream into the matching snapshot', () => {
     let s = applyTimelineEvent(INITIAL_TIMELINE_STATE, {
       kind: 'subagent-spawn',
@@ -119,6 +140,48 @@ describe('applyTimelineEvent — diff-stream', () => {
     expect(entry!.diffStream).toBeDefined();
     expect(entry!.diffStream!.hunks).toEqual(hunks);
     // Orchestrator-scope slot stays empty.
+    expect(s.partialToolCallArgs['c1']).toBeUndefined();
+  });
+
+  it('preserves sub-agent diffStream when args-delta arrives after it', () => {
+    let s = applyTimelineEvent(INITIAL_TIMELINE_STATE, {
+      kind: 'subagent-spawn',
+      id: 'sp-1',
+      ts: 1,
+      subagentId: 'sub-1',
+      task: 't',
+      files: [],
+      tools: []
+    });
+    s = applyTimelineEvent(s, diffStream('c1', { subagentId: 'sub-1', ts: 2 }));
+    s = applyTimelineEvent(s, {
+      kind: 'tool-call-args-delta',
+      id: 'd1',
+      ts: 3,
+      callId: 'c1',
+      name: 'edit',
+      index: 0,
+      argsBuf: '{"path":"a.ts","oldString":"line two","newString":"LINE TWO"}',
+      subagentId: 'sub-1'
+    });
+    const entry = s.subagents['sub-1']!.partialToolCallArgs['c1']!;
+    expect(entry.parsed).toEqual({
+      path: 'a.ts',
+      oldString: 'line two',
+      newString: 'LINE TWO'
+    });
+    expect(entry.diffStream).toBeDefined();
+    expect(entry.diffStream!.hunks).toEqual(hunks);
+  });
+
+  it('seeds a sub-agent snapshot when diff-stream arrives before subagent-spawn', () => {
+    const s = applyTimelineEvent(
+      INITIAL_TIMELINE_STATE,
+      diffStream('c1', { subagentId: 'sub-early', ts: 2 })
+    );
+    const sub = s.subagents['sub-early'];
+    expect(sub).toBeDefined();
+    expect(sub!.partialToolCallArgs['c1']!.diffStream).toBeDefined();
     expect(s.partialToolCallArgs['c1']).toBeUndefined();
   });
 

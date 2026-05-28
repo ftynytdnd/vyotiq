@@ -35,14 +35,14 @@
 
 import { isStreamInactivityError } from './streamInactivity.js';
 
-export interface SseInactivityWatch {
+interface SseInactivityWatch {
   /** Combined caller signal + idle-timeout signal. */
   readonly signal: AbortSignal;
   /** Called on every read that returned at least one byte. */
   poke(): void;
 }
 
-export interface SseReadOptions {
+interface SseReadOptions {
   /** Open response body stream. The reader is acquired internally. */
   body: ReadableStream<Uint8Array>;
   /** Inactivity watchdog — its `signal` is honored by `reader.read()`. */
@@ -169,18 +169,3 @@ export function pickSseDataLine(frame: string): string | null {
   return dataChunks.join('\n');
 }
 
-/**
- * Helper that picks the `event:` name out of an SSE frame. Returns
- * an empty string when the frame has no `event:` line — the SSE
- * default is the `message` event, but Anthropic's stream emits an
- * explicit `event:` for every frame, so we surface the empty-string
- * fallback to the caller and let it decide.
- */
-export function pickSseEventName(frame: string): string {
-  const lines = frame.split('\n');
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (line.startsWith('event:')) return line.slice(6).trim();
-  }
-  return '';
-}

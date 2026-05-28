@@ -59,7 +59,26 @@ describe('LiveStatusRow — sub-agent delegation UX', () => {
     });
     const { container } = render(<LiveStatusRow />);
     expect(container.innerHTML).not.toBe('');
-    expect(container.innerHTML).toContain('vyotiq-shimmer-text');
+    expect(container.innerHTML).toContain('Streaming response');
+    expect(container.innerHTML).toContain('text-accent-gold');
+  });
+
+  it('uses the same Thinking label for live reasoning as the inline reasoning row', async () => {
+    await act(async () => {
+      useChatStore.setState({
+        isProcessing: true,
+        runStartedAt: Date.now(),
+        assistantTexts: {},
+        reasoningTexts: {
+          orch: { id: 'orch', done: false, text: 'planning', startedAt: Date.now() }
+        }
+      });
+    });
+
+    const { container } = render(<LiveStatusRow />);
+
+    expect(container.textContent ?? '').toContain('Thinking');
+    expect(container.textContent ?? '').not.toContain('Reasoning');
   });
 
   it('delegating phase click expands and scrolls to latest sub-agent row', async () => {

@@ -38,11 +38,14 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { DiffHunk as DiffHunkModel } from '@shared/types/tool.js';
+import { chromeCodeSurfaceClassName } from '../../../../ui/SurfaceShell.js';
 import { cn } from '../../../../../lib/cn.js';
 import { DiffHunk, type DiffViewVariant } from './DiffHunk.js';
 import { DiffNavigator } from './DiffNavigator.js';
+import { DiffMinimap } from './DiffMinimap.js';
 import { DiffCopyButton } from './DiffCopyButton.js';
 import { hunksToPatch } from './hunksToPatch.js';
+import type { ReviewLinePickProps } from './diffLinePick.js';
 
 /** Cap on hunks rendered into the DOM per diff. */
 const MAX_VISIBLE_HUNKS = 30;
@@ -57,16 +60,19 @@ interface DiffViewerProps {
    * review comfortable.
    */
   maxHeightClass?: string;
+  linePick?: ReviewLinePickProps;
 }
 
 export function DiffViewer({
   hunks,
   variant,
-  maxHeightClass = 'max-h-96'
+  maxHeightClass = 'max-h-96',
+  linePick
 }: DiffViewerProps) {
   const instanceId = useId();
   const [showAll, setShowAll] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
+  const [lineWrap, setLineWrap] = useState(true);
 
   const visibleHunks = showAll ? hunks : hunks.slice(0, MAX_VISIBLE_HUNKS);
   const overflowHunks = hunks.length - visibleHunks.length;
@@ -80,13 +86,21 @@ export function DiffViewer({
     hunkRefs.current.length = visibleHunks.length;
   }, [visibleHunks.length]);
 
-  // Reset showAll + activeIdx when the underlying hunks identity
-  // flips (e.g. partial → authoritative on settle). Avoids stale
-  // pointer to a hunk that no longer exists.
+  const hunksResetKey = useMemo(() => {
+    if (hunks.length === 0) return '0';
+    const first = hunks[0]!;
+    const last = hunks[hunks.length - 1]!;
+    return `${hunks.length}:${first.oldStart}:${first.newStart}:${last.oldStart}:${last.newStart}`;
+  }, [hunks]);
+
+  // Reset showAll + activeIdx when the underlying hunk structure
+  // changes (e.g. partial → authoritative on settle). Depend on a
+  // stable content key — not the array identity — so parent re-renders
+  // that rebuild the same hunks don't discard the user's position.
   useEffect(() => {
     setActiveIdx(0);
     setShowAll(false);
-  }, [hunks]);
+  }, [hunksResetKey]);
 
   const plainText = useMemo(() => hunksToPatch(hunks), [hunks]);
 
@@ -123,45 +137,67 @@ export function DiffViewer({
       data-variant={variant}
       data-edit-diff-instance={instanceId}
       className={cn(
-        'group/diff scrollbar-stealth relative flex flex-col gap-2',
-        'overflow-auto rounded-inner bg-surface-overlay px-2 py-2',
+        'group/diff relative flex flex-col gap-2',
+        chromeCodeSurfaceClassName('px-2 py-2'),
         maxHeightClass
       )}
     >
       {variant !== 'partial' && hunks.length > 0 && (
         <DiffCopyButton text={plainText} />
       )}
-      <DiffNavigator
-        hunks={visibleHunks}
-        activeIdx={activeIdx}
-        onPrev={onPrev}
-        onNext={onNext}
-        onJump={onJump}
-      />
-      {visibleHunks.map((hunk, i) => (
-        <DiffHunk
-          key={i}
-          ref={(el) => {
-            hunkRefs.current[i] = el;
-          }}
-          hunk={hunk}
-          idx={i}
-          variant={variant}
-        />
-      ))}
-      {overflowHunks > 0 && (
+      <div className="sticky top-1.5 z-20 ml-auto flex items-center gap-1 self-end">
         <button
           type="button"
-          onClick={() => setShowAll(true)}
+          onClick={() => setLineWrap((v) => !v)}
           className={cn(
-            'self-start rounded-inner px-2 py-0.5 text-meta italic',
-            'text-text-faint hover:text-text-secondary hover:bg-surface-hover',
-            'transition-colors duration-150'
+            'rounded-inner px-2 py-0.5 text-meta text-text-faint',
+            'transition-colors duration-150 hover:bg-surface-hover hover:text-text-secondary'
           )}
+          aria-pressed={lineWrap}
+          title={lineWrap ? 'Disable line wrap' : 'Enable line wrap'}
         >
-          … {overflowHunks} more hunk{overflowHunks === 1 ? '' : 's'} — show all
+          {lineWrap ? 'Wrap' : 'No wrap'}
         </button>
-      )}
+        <DiffNavigator
+          hunks={visibleHunks}
+          activeIdx={activeIdx}
+          onPrev={onPrev}
+          onNext={onNext}
+          onJump={onJump}
+        />
+      </div>
+      <div className="flex min-h-0 flex-1 gap-1">
+        <div className="flex min-w-0 flex-1 flex-col gap-2 overflow-y-auto">
+          {visibleHunks.map((hunk, i) => (
+            <DiffHunk
+              key={i}
+              ref={(el) => {
+                hunkRefs.current[i] = el;
+              }}
+              hunk={hunk}
+              idx={i}
+              variant={variant}
+              foldScopeKey={`${instanceId}:hunk:${i}`}
+              lineWrap={lineWrap}
+              {...(linePick ? { linePick } : {})}
+            />
+          ))}
+          {overflowHunks > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowAll(true)}
+              className={cn(
+                'self-start rounded-inner px-2 py-0.5 text-meta italic',
+                'text-text-faint hover:text-text-secondary hover:bg-surface-hover',
+                'transition-colors duration-150'
+              )}
+            >
+              … {overflowHunks} more hunk{overflowHunks === 1 ? '' : 's'} — show all
+            </button>
+          )}
+        </div>
+        <DiffMinimap hunks={visibleHunks} activeIdx={activeIdx} onJump={onJump} />
+      </div>
     </div>
   );
 }

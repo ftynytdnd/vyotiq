@@ -1,189 +1,163 @@
 /**
- * SubAgentTrace - compact sub-agent row with optional nested execution detail.
+ * SubAgentTrace — inline expandable row; Run / Brief / Result tabs in timeline.
  *
- * Collapsed:
- *   [chevron] [bot-icon] Delegated "<task>" · N steps · M edits [actions] [status]
+ * May 2026 restyle: the row is now a Cursor-style dot-prefixed line.
  *
- * Expanded:
- *   SubAgentHeader, chronological SubAgentRunFlow, and structured result.
+ *   [● task title]                       [model badge] [chevron]
+ *   [italic subtitle from liveStatus → snap.message]
+ *
+ *   - The dot lives in the `text-accent-gold-strong` family while the
+ *     worker is live and fades to `text-text-muted` on settle.
+ *   - The model badge floats to the right (provider · model) when the
+ *     snapshot's `model` slot is populated. Older transcripts predating
+ *     the field hide the badge silently.
+ *   - The subtitle is resolved by `subtitleResolver.ts` and reflects
+ *     the freshest concrete activity signal (in-flight tool action,
+ *     trailing sentence of a streaming reasoning/text accumulator,
+ *     or `liveStatus.label`). On settle it surfaces the parsed
+ *     `<summary>` from the result envelope plus a quiet
+ *     `done in Xs`, falling back to `snap.message` for failed
+ *     terminals or just `done in Xs` when nothing else is available.
+ *
+ * Stats (`N steps · M edits · +A −D`) moved into the expanded body —
+ * `SubAgentDetailTabs` already surfaces them inside the briefing
+ * tab, so duplicating them on the collapsed line would be noise.
  */
 
-import { Bot, ChevronDown, ChevronRight } from 'lucide-react';
+import { useMemo } from 'react';
 import { useChatStore } from '../../../store/useChatStore.js';
-import { useTimelineUiStore } from '../../../store/useTimelineUiStore.js';
-import { SubAgentHeader } from './SubAgentHeader.js';
-import { SubAgentRunFlow } from './SubAgentRunFlow.js';
-import { SubAgentResult } from './SubAgentResult.js';
 import { SubAgentActions } from './SubAgentActions.js';
-import { SubAgentBriefing } from './briefing/SubAgentBriefing.js';
+import { SubAgentDetailTabs } from './SubAgentDetailTabs.js';
 import { SubAgentFocusModal } from './focus/SubAgentFocusModal.js';
 import { useSubAgentFocus } from './focus/useSubAgentFocus.js';
-import { StatusIcon } from '../tools/shared/StatusIcon.js';
 import { DetailShell } from '../shared/DetailShell.js';
-import { cn } from '../../../lib/cn.js';
-import { shimmerStyle, shimmerText } from '../../../lib/shimmer.js';
-import { SurfaceShell } from '../../ui/SurfaceShell.js';
+import { TimelineRowHeader } from '../shared/TimelineRowHeader.js';
+import { useTimelineRowExpand } from '../shared/useTimelineRowExpand.js';
+import { subagentHasInflightDiff } from '../shared/toolInflight.js';
 import {
-  timelineRowChevronClassName,
-  timelineRowHeaderClassName,
-  timelineRowIconClassName
+  timelineModelBadgeClassName,
+  timelineSubAgentDotClassName,
+  timelineSubAgentSubtitleClassName
 } from '../shared/rowStyles.js';
+import { resolveSubAgentSubtitle } from './subtitleResolver.js';
+import { cn } from '../../../lib/cn.js';
 
 interface SubAgentTraceProps {
   subagentId: string;
+  /** Nested under a delegate batch row — compact id + task header. */
+  nested?: boolean;
 }
 
-export function SubAgentTrace({ subagentId }: SubAgentTraceProps) {
+export function SubAgentTrace({ subagentId, nested = false }: SubAgentTraceProps) {
   const snap = useChatStore((s) => s.subagents[subagentId]);
-  const shouldAutoExpand = useChatStore((s) => {
-    const current = s.subagents[subagentId];
-    if (!current || (current.status !== 'pending' && current.status !== 'running')) {
-      return false;
-    }
-    let liveCount = 0;
-    let latestStartedAt = Number.NEGATIVE_INFINITY;
-    let latestId: string | null = null;
-    for (const sa of Object.values(s.subagents)) {
-      if (sa.status !== 'pending' && sa.status !== 'running') continue;
-      liveCount++;
-      if (sa.startedAt >= latestStartedAt) {
-        latestStartedAt = sa.startedAt;
-        latestId = sa.id;
-      }
-    }
-    return liveCount <= 1 || latestId === subagentId;
-  });
   const conversationId = useChatStore((s) => s.conversationId);
   const rowKey = `sub:${subagentId}`;
-  const persistedExpanded = useTimelineUiStore((s) => s.isExpanded(conversationId, rowKey));
-  const userOverridden = useTimelineUiStore((s) => s.hasManualOverride(conversationId, rowKey));
-  const setExpanded = useTimelineUiStore((s) => s.setExpanded);
+  const liveAutoExpand = useMemo(
+    () => (snap ? subagentHasInflightDiff(snap) : false),
+    [snap?.partialToolCallArgs, snap?.steps]
+  );
+  const { expanded, onToggle } = useTimelineRowExpand({ rowKey, liveAutoExpand });
   const focus = useSubAgentFocus();
 
   if (!snap) return null;
 
   const isLive = snap.status === 'pending' || snap.status === 'running';
-  const expanded = userOverridden ? persistedExpanded : (shouldAutoExpand || persistedExpanded);
-  const ok: boolean | null =
-    snap.status === 'pending' || snap.status === 'running'
-      ? null
-      : snap.status === 'done' || snap.status === 'partial'
-        ? true
-        : false;
-  const hasOutput = typeof snap.output === 'string' && snap.output.trim().length > 0;
+  const isFailed =
+    snap.status === 'failed' || snap.status === 'aborted' || snap.status === 'malformed';
 
-  const onToggle = () => {
-    if (!conversationId) return;
-    setExpanded(conversationId, rowKey, !expanded);
-  };
-
-  const stepCount = snap.steps.length;
-  const fileCount = snap.fileEdits.length;
   const touchedFiles = uniqueTouchedFiles(snap.fileEdits.map((f) => f.filePath));
-  const editStats = summarizeEdits(snap.fileEdits);
+  const subtitle = resolveSubAgentSubtitle(snap);
+  const taskLabel = snap.task ? quote(snap.task, nested ? 72 : 96) : '';
 
   return (
-    <SurfaceShell
-      focusGlow={isLive}
+    <div
       data-row-kind="subagent-line"
       data-subagent-id={subagentId}
       className={cn(
-        'flex flex-col gap-1',
-        !isLive && (snap.status === 'done' || snap.status === 'partial') && 'opacity-90'
+        'vyotiq-stepfade-once flex flex-col',
+        !nested && !isLive && (snap.status === 'done' || snap.status === 'partial') && 'opacity-90'
       )}
     >
-      <div
-        className={cn(
-          'group flex w-full items-center gap-1.5',
-          conversationId ? 'cursor-pointer' : 'cursor-default'
-        )}
+      <TimelineRowHeader
+        expanded={expanded}
+        onToggle={onToggle}
+        expandable={!!conversationId}
+        chevronOnRight
+        trailing={
+          snap.model ? (
+            <span
+              className={timelineModelBadgeClassName}
+              title={`Model: ${snap.model.providerId} · ${snap.model.modelId}`}
+              aria-label={`Model ${snap.model.modelId}`}
+            >
+              <span className="truncate">{snap.model.modelId}</span>
+            </span>
+          ) : undefined
+        }
+        actions={
+          <SubAgentActions
+            output={snap.output}
+            touchedFiles={touchedFiles}
+            onFocus={focus.open}
+          />
+        }
       >
-        <button
-          type="button"
-          onClick={onToggle}
-          disabled={!conversationId}
-          aria-expanded={expanded}
+        <span
           className={cn(
-            timelineRowHeaderClassName,
-            'min-w-0 flex-1',
-            conversationId ? 'cursor-pointer' : 'cursor-default'
+            'inline-flex min-w-0 max-w-full items-center gap-1.5 truncate text-row',
+            isFailed && 'text-danger',
+            isLive ? 'text-text-secondary' : 'text-text-muted'
           )}
         >
-          {expanded ? (
-            <ChevronDown className={timelineRowChevronClassName} strokeWidth={2} />
-          ) : (
-            <ChevronRight className={timelineRowChevronClassName} strokeWidth={2} />
-          )}
-          <Bot
-            className={cn(
-              timelineRowIconClassName,
-              isLive
-                ? 'text-accent'
-                : snap.status === 'failed' || snap.status === 'aborted'
-                  ? 'text-danger'
-                  : 'text-text-muted'
-            )}
-            strokeWidth={2}
-          />
-          <div
-            className={shimmerText(
-              isLive,
-              cn(
-                'min-w-0 flex-1 truncate text-row',
-                isLive ? 'text-text-secondary' : 'text-text-muted'
-              )
-            )}
-            style={isLive ? shimmerStyle(`subagent:${subagentId}`) : undefined}
-          >
-            <span className={cn('font-medium', isLive ? 'text-text-primary' : 'text-text-secondary')}>
-              Delegated
+          <span className={timelineSubAgentDotClassName(isLive)} aria-hidden />
+          {nested ? (
+            <span className="min-w-0 truncate">
+              <span className="font-mono text-text-faint">{subagentId}</span>
+              {taskLabel && (
+                <>
+                  {' '}
+                  <span className="text-text-secondary">{taskLabel}</span>
+                </>
+              )}
             </span>
-            {snap.task && (
-              <>
-                {' '}
-                <span className={isLive ? 'text-text-secondary' : 'text-text-muted'}>
-                  {quote(snap.task, 96)}
-                </span>
-              </>
-            )}
-            {(stepCount > 0 || fileCount > 0) && (
-              <span className="text-text-muted">
-                {' · '}
-                {stepCount} step{stepCount === 1 ? '' : 's'}
-                {fileCount > 0 && ` · ${fileCount} edit${fileCount === 1 ? '' : 's'}`}
+          ) : (
+            <span className="min-w-0 truncate">
+              <span className={cn('font-medium', isLive ? 'text-text-primary' : 'text-text-secondary')}>
+                Delegated
               </span>
-            )}
-            {editStats.total > 0 && (
-              <span className="text-text-faint">
-                {' · '}
-                +{editStats.additions} -{editStats.deletions}
-              </span>
-            )}
-          </div>
-        </button>
-        <SubAgentActions
-          output={snap.output}
-          touchedFiles={touchedFiles}
-          onFocus={focus.open}
-          className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
-        />
-        <StatusIcon ok={ok} size="sm" className="mr-1 shrink-0" />
-      </div>
+              {taskLabel && (
+                <>
+                  {' '}
+                  <span className={isLive ? 'text-text-secondary' : 'text-text-muted'}>
+                    {taskLabel}
+                  </span>
+                </>
+              )}
+            </span>
+          )}
+        </span>
+      </TimelineRowHeader>
+
+      {subtitle && (
+        <div
+          className={cn(
+            timelineSubAgentSubtitleClassName,
+            isFailed && 'text-danger/80'
+          )}
+          aria-label="Sub-agent status"
+        >
+          {subtitle}
+        </div>
+      )}
 
       {expanded && (
-        <DetailShell gap="gap-1.5">
-          <SubAgentHeader snap={snap} />
-          <SubAgentBriefing snap={snap} />
-          <SubAgentRunFlow snap={snap} />
-          {hasOutput && <SubAgentResult output={snap.output!} />}
+        <DetailShell variant="flush" gap="gap-1.5">
+          <SubAgentDetailTabs snap={snap} idPrefix={snap.id} />
         </DetailShell>
       )}
-      <SubAgentFocusModal
-        open={focus.isOpen}
-        onClose={focus.close}
-        snap={snap}
-      />
-    </SurfaceShell>
+
+      <SubAgentFocusModal open={focus.isOpen} onClose={focus.close} snap={snap} />
+    </div>
   );
 }
 
@@ -203,16 +177,3 @@ function uniqueTouchedFiles(files: string[]): string[] {
   return out;
 }
 
-function summarizeEdits(edits: Array<{ additions: number; deletions: number }>): {
-  total: number;
-  additions: number;
-  deletions: number;
-} {
-  let additions = 0;
-  let deletions = 0;
-  for (const edit of edits) {
-    additions += edit.additions;
-    deletions += edit.deletions;
-  }
-  return { total: additions + deletions, additions, deletions };
-}

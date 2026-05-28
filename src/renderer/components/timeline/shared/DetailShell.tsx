@@ -15,15 +15,34 @@ interface DetailShellProps {
   /** Tailwind gap class. Defaults to `gap-1.5`. */
   gap?: string;
   className?: string;
+  /** `nested` = inset shell; `flush` = tight bare stack; `flat` = spaced bare stack. */
+  variant?: 'nested' | 'flush' | 'flat';
 }
 
 export function DetailShell({
   children,
   gap = 'gap-1.5',
-  className
+  className,
+  variant = 'nested'
 }: DetailShellProps) {
+  if (variant === 'flush') {
+    return (
+      <div className={cn('mt-0 flex flex-col gap-1', className)}>
+        {children}
+      </div>
+    );
+  }
+
+  if (variant === 'flat') {
+    return (
+      <div className={cn('mt-0.5 flex flex-col', gap, className)}>
+        {children}
+      </div>
+    );
+  }
+
   return (
-    <div className={cn('mt-1', className)}>
+    <div className={cn('mt-0.5', className)}>
       <SurfaceShell
         className={cn('flex flex-col', gap, surfaceShellInnerClassName('nested'))}
       >

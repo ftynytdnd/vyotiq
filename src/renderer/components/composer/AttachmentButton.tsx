@@ -11,6 +11,7 @@ import { useRef } from 'react';
 import { Plus } from 'lucide-react';
 import { Popover } from '../ui/Popover.js';
 import { AttachmentPicker } from './AttachmentPicker.js';
+import { chromePillClassName } from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
 
 interface AttachmentButtonProps {
@@ -61,10 +62,8 @@ export function AttachmentButton({
         aria-expanded={open}
         title={title}
         className={cn(
-          'app-no-drag inline-flex h-6 shrink-0 items-center justify-center rounded-inner',
-          'bg-surface-overlay text-text-muted transition-colors duration-150',
-          'hover:bg-surface-hover hover:text-text-primary',
-          open && 'bg-surface-hover text-text-primary',
+          chromePillClassName(open || hasSelection),
+          'shrink-0',
           hasSelection ? 'gap-0.5 px-1' : 'w-6'
         )}
       >

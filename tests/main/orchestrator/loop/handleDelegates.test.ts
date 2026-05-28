@@ -814,7 +814,7 @@ describe('handleDelegates — malformed, read-shard warn, host verification', ()
         output: 'worker prose but no result envelope',
         toolResults: [],
         status: 'malformed' as const,
-        error: 'No <result> envelope'
+        error: 'Sub-agent finished without a structured result envelope — the orchestrator cannot verify success.'
       };
       deps.onResult?.(run);
       return [run];
@@ -849,36 +849,6 @@ describe('handleDelegates — malformed, read-shard warn, host verification', ()
     expect(envelope?.content).toMatch(/reason="missing-envelope"/);
   });
 
-  it('emits a phase warning when most delegates are read-only line shards', async () => {
-    vi.mocked(runSubAgentPool).mockResolvedValueOnce([]);
-
-    const events: TimelineEvent[] = [];
-    const counters: DelegationCounters = {
-      consecutiveBadRounds: 0,
-      perTaskBadStreak: new Map()
-    };
-
-    await handleDelegates(
-      [
-        { id: 'r1', task: 'Read src/a.ts lines 1-40', files: ['src/a.ts'], tools: [] },
-        { id: 'r2', task: 'Read src/a.ts lines 41-80', files: ['src/a.ts'], tools: [] },
-        { id: 'r3', task: 'Read src/a.ts lines 81-120', files: ['src/a.ts'], tools: [] },
-        { id: 'c1', task: 'Create src/b.ts', files: ['src/b.ts'], tools: [] }
-      ],
-      [],
-      counters,
-      (e) => events.push(e),
-      baseOpts
-    );
-
-    const warn = events.find(
-      (e): e is Extract<TimelineEvent, { kind: 'phase' }> =>
-        e.kind === 'phase' && e.label.includes('read-only line-range shards')
-    );
-    expect(warn).toBeDefined();
-    expect(warn!.label).toContain('3/4');
-  });
-
   it('injects host_verification XML from verifyDelegateArtifacts', async () => {
     vi.mocked(verifyDelegateArtifacts).mockResolvedValueOnce([
       { path: 'src/new.ts', ok: true, detail: '42 bytes' }
@@ -909,5 +879,67 @@ describe('handleDelegates — malformed, read-shard warn, host verification', ()
     const body = messages[0]?.content ?? '';
     expect(body).toContain('<host_verification>');
     expect(body).toContain('src/new.ts');
+  });
+});
+
+/**
+ * May 2026 restyle — sub-agent rows surface a tiny model badge sourced
+ * from `subagent-spawn.model` (the authoritative selection emitted
+ * after directive validation; pending may also carry it but spawn
+ * wins on reconciliation). This regression pins the contract that
+ * `handleDelegates` stamps the orchestrator's `opts.selection` on
+ * every spawn event it emits, so the renderer can paint the badge
+ * the moment the worker materializes.
+ */
+describe('handleDelegates — sub-agent model badge emission', () => {
+  it('stamps opts.selection on every emitted subagent-spawn event', async () => {
+    vi.mocked(runSubAgentPool).mockImplementationOnce(async (specs, deps) => {
+      const runs = specs.map((spec) => {
+        const run = {
+          id: spec.id,
+          task: spec.task,
+          output:
+            '<result><status>success</status><summary>ok</summary></result>',
+          toolResults: [],
+          status: 'success' as const
+        };
+        // Mirror the real pool's contract: invoke `onSpawn` so the
+        // matching emit-side branch in `handleDelegates` fires.
+        deps.onSpawn?.({ id: spec.id, task: spec.task, files: spec.files, tools: spec.tools });
+        deps.onResult?.(run);
+        return run;
+      });
+      return runs;
+    });
+
+    const messages: ChatMessage[] = [];
+    const events: TimelineEvent[] = [];
+    const counters: DelegationCounters = {
+      consecutiveBadRounds: 0,
+      perTaskBadStreak: new Map()
+    };
+
+    await handleDelegates(
+      [
+        { id: 'A1', task: 'first', files: [], tools: [] },
+        { id: 'A2', task: 'second', files: [], tools: [] }
+      ],
+      messages,
+      counters,
+      (e) => events.push(e),
+      {
+        ...baseOpts,
+        selection: { providerId: 'anthropic', modelId: 'claude-test' }
+      }
+    );
+
+    const spawns = events.filter((e) => e.kind === 'subagent-spawn') as Extract<
+      TimelineEvent,
+      { kind: 'subagent-spawn' }
+    >[];
+    expect(spawns).toHaveLength(2);
+    for (const event of spawns) {
+      expect(event.model).toEqual({ providerId: 'anthropic', modelId: 'claude-test' });
+    }
   });
 });

@@ -4,10 +4,13 @@
  * the gutter.
  */
 
-import { FileText } from 'lucide-react';
 import type { ToolCall, ToolResult } from '@shared/types/tool.js';
 import { InvocationShell } from './shared/InvocationShell.js';
+import { chromeCodeGutterClassName, chromeCodePanelClassName } from '../../ui/SurfaceShell.js';
+import { cn } from '../../../lib/cn.js';
+import { splitLinesUpTo, countLines } from '../../../lib/strings.js';
 import { DetailPane } from './shared/DetailPane.js';
+import { toolErrorBody, toolErrorHint } from './shared/toolErrorDisplay.js';
 
 interface ReadInvocationProps {
   call?: ToolCall;
@@ -41,13 +44,12 @@ export function ReadInvocation({ call, result, dense, rowKey }: ReadInvocationPr
       ? (result.error ?? 'no path')
       : '(no path)';
 
-  const errorHint = result && !result.ok ? result.error : undefined;
+  const errorHint = toolErrorHint(result);
 
   let detail: React.ReactNode = undefined;
   if (data) {
-    const lines = data.content.split('\n');
-    const shown = lines.slice(0, MAX_LINES_VISIBLE);
-    const overflow = lines.length - shown.length;
+    const shown = splitLinesUpTo(data.content, MAX_LINES_VISIBLE);
+    const overflow = countLines(data.content) - shown.length;
     detail = (
       <DetailPane
         label={
@@ -56,8 +58,8 @@ export function ReadInvocation({ call, result, dense, rowKey }: ReadInvocationPr
             : `content (${path})`
         }
       >
-        <div className="scrollbar-stealth flex max-h-96 overflow-auto rounded-inner bg-surface-raised">
-          <div className="sticky left-0 select-none border-r border-border-subtle/40 bg-surface-overlay px-2 py-1.5 font-mono text-meta text-text-faint">
+        <div className={cn(chromeCodePanelClassName, 'max-h-96')}>
+          <div className={chromeCodeGutterClassName}>
             {shown.map((_, i) => (
               <div key={i} className="leading-relaxed">
                 {data.fromLine + i}
@@ -76,15 +78,7 @@ export function ReadInvocation({ call, result, dense, rowKey }: ReadInvocationPr
       </DetailPane>
     );
   } else if (result && !result.ok) {
-    // Defect 2 fix: surface the actionable message (`result.output`)
-    // here, not the short `result.error` tag. The collapsed-row
-    // `errorHint` slot still uses the tag — it's a one-line
-    // breadcrumb — but the expanded danger pane is the right place
-    // for the paragraph-length guidance the tool returned.
-    const body =
-      result.output && result.output.length > 0
-        ? result.output
-        : (result.error ?? '');
+    const body = toolErrorBody(result);
     detail = (
       <DetailPane label="error" tone="danger">
         <div className="font-mono text-row text-danger whitespace-pre-wrap">
@@ -96,7 +90,6 @@ export function ReadInvocation({ call, result, dense, rowKey }: ReadInvocationPr
 
   return (
     <InvocationShell
-      Icon={FileText}
       title="read"
       summary={summary}
       mono
@@ -105,6 +98,8 @@ export function ReadInvocation({ call, result, dense, rowKey }: ReadInvocationPr
       {...(detail !== undefined ? { detail } : {})}
       {...(dense ? { dense } : {})}
       {...(rowKey ? { rowKey } : {})}
+      call={call}
+      result={result}
     />
   );
 }

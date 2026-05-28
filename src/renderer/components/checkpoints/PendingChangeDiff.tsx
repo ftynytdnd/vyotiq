@@ -39,13 +39,19 @@ import { useCheckpointsStore } from '../../store/useCheckpointsStore.js';
 import { EditDiffView } from '../timeline/tools/edit/EditDiffView.js';
 import { CodeBlock } from '../timeline/tools/shared/CodeBlock.js';
 import { synthesizeCreateHunks } from '../timeline/tools/edit/synthesizeDiffPreview.js';
+import { chromeInsetNoteClassName } from '../ui/SurfaceShell.js';
 import { computeDiffHunksClient } from './diffClient.js';
+import type { ReviewLinePickProps } from '../timeline/tools/edit/diff/diffLinePick.js';
 
 interface PendingChangeDiffProps {
   workspaceId: string;
   kind: CheckpointChangeKind;
   preHash?: string;
   postHash?: string;
+  /** Taller diff container for review modal (full-screen comfortable). */
+  maxHeightClass?: string;
+  /** Click diff lines to anchor review comments. */
+  linePick?: ReviewLinePickProps;
 }
 
 interface BlobsState {
@@ -58,7 +64,9 @@ export function PendingChangeDiff({
   workspaceId,
   kind,
   preHash,
-  postHash
+  postHash,
+  maxHeightClass,
+  linePick
 }: PendingChangeDiffProps) {
   const readBlob = useCheckpointsStore((s) => s.readBlob);
   const [blobs, setBlobs] = useState<BlobsState>({ pre: null, post: null, loaded: false });
@@ -87,7 +95,7 @@ export function PendingChangeDiff({
 
   if (!blobs.loaded) {
     return (
-      <div className="rounded-inner bg-surface-overlay px-3 py-2 text-row text-text-faint">
+      <div className={chromeInsetNoteClassName}>
         Loading diff…
       </div>
     );
@@ -96,7 +104,7 @@ export function PendingChangeDiff({
   if (kind === 'create') {
     if (blobs.post === null) {
       return (
-        <div className="rounded-inner bg-surface-overlay px-3 py-2 text-row text-text-faint">
+        <div className={chromeInsetNoteClassName}>
           Snapshot missing — the post-state blob is no longer in the checkpoint store.
         </div>
       );
@@ -113,6 +121,8 @@ export function PendingChangeDiff({
         key="pending-create"
         hunks={synthesizeCreateHunks(blobs.post)}
         variant="authoritative"
+        {...(maxHeightClass ? { maxHeightClass } : {})}
+        {...(linePick ? { linePick } : {})}
       />
     );
   }
@@ -120,7 +130,7 @@ export function PendingChangeDiff({
   if (kind === 'delete') {
     if (blobs.pre === null) {
       return (
-        <div className="rounded-inner bg-surface-overlay px-3 py-2 text-row text-text-faint">
+        <div className={chromeInsetNoteClassName}>
           Snapshot missing — the pre-state blob is no longer in the checkpoint store.
         </div>
       );
@@ -131,10 +141,17 @@ export function PendingChangeDiff({
   // modify
   if (hunks.length === 0) {
     return (
-      <div className="rounded-inner bg-surface-overlay px-3 py-2 text-row text-text-faint">
+      <div className={chromeInsetNoteClassName}>
         No textual changes.
       </div>
     );
   }
-  return <EditDiffView hunks={hunks} variant="authoritative" />;
+  return (
+    <EditDiffView
+      hunks={hunks}
+      variant="authoritative"
+      {...(maxHeightClass ? { maxHeightClass } : {})}
+      {...(linePick ? { linePick } : {})}
+    />
+  );
 }

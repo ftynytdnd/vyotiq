@@ -120,8 +120,13 @@ export function registerMemoryIpc(): void {
       if (mode !== undefined) {
         assertEnum('memory:write', 'mode', mode, MEMORY_WRITE_MODES);
       }
+      const isAppend = mode === 'append' || (mode === undefined && key === 'append');
+      if (scope === 'workspace' && isAppend) {
+        throw new Error(
+          'memory:write append mode is not supported for workspace notes — use set (overwrite) instead.'
+        );
+      }
       if (scope === 'global') {
-        const isAppend = mode === 'append' || (mode === undefined && key === 'append');
         if (isAppend) {
           await appendGlobalMetaRule(content);
         } else {
@@ -136,11 +141,6 @@ export function registerMemoryIpc(): void {
         };
         return entry;
       }
-      // Workspace notes don't support append today (the editor is a
-      // full textarea — there is no append affordance). Silently
-      // accept `mode: 'append'` here as overwrite to keep the wire
-      // shape symmetric across scopes; revisit if a workspace-note
-      // append affordance ever lands.
       const note = await writeWorkspaceNote(key, content);
       const entry: MemoryEntry = {
         scope,

@@ -30,6 +30,21 @@ export interface FolderBucket {
   entries: PendingChange[];
 }
 
+export interface FilePathBucket {
+  workspaceId: string;
+  filePath: string;
+  entries: PendingChange[];
+}
+
+export function fileGroupKey(workspaceId: string, filePath: string): string {
+  return `${workspaceId}\u0000${filePath}`;
+}
+
+export interface PendingStats {
+  additions: number;
+  deletions: number;
+}
+
 export function groupByRun(pending: readonly PendingChange[]): RunBucket[] {
   const byRun = new Map<string, PendingChange[]>();
   for (const p of pending) {
@@ -38,6 +53,38 @@ export function groupByRun(pending: readonly PendingChange[]): RunBucket[] {
     else byRun.set(p.runId, [p]);
   }
   return Array.from(byRun, ([runId, entries]) => ({ runId, entries }));
+}
+
+/** Sum diff stats across one or more pending rows. */
+export function aggregatePendingStats(
+  entries: readonly PendingChange[]
+): PendingStats {
+  let additions = 0;
+  let deletions = 0;
+  for (const entry of entries) {
+    additions += entry.additions;
+    deletions += entry.deletions;
+  }
+  return { additions, deletions };
+}
+
+/**
+ * Buckets pending rows by `(workspaceId, filePath)`. Multiple checkpoint
+ * entries for the same path in one workspace collapse into one group.
+ */
+export function groupByFilePath(pending: readonly PendingChange[]): FilePathBucket[] {
+  const byKey = new Map<string, PendingChange[]>();
+  for (const p of pending) {
+    const key = fileGroupKey(p.workspaceId, p.filePath);
+    const arr = byKey.get(key);
+    if (arr) arr.push(p);
+    else byKey.set(key, [p]);
+  }
+  return Array.from(byKey, ([, entries]) => ({
+    workspaceId: entries[0]!.workspaceId,
+    filePath: entries[0]!.filePath,
+    entries
+  }));
 }
 
 export function groupByFolder(pending: readonly PendingChange[]): FolderBucket[] {
@@ -100,4 +147,13 @@ export function applyPendingFilters(
     out.push(p);
   }
   return out;
+}
+
+/** Count distinct file paths in a pending list. */
+export function countDistinctFilePaths(pending: readonly PendingChange[]): number {
+  const seen = new Set<string>();
+  for (const p of pending) {
+    seen.add(fileGroupKey(p.workspaceId, p.filePath));
+  }
+  return seen.size;
 }

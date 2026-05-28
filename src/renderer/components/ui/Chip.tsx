@@ -15,8 +15,8 @@
  *
  * Tones map to the existing text tokens — no new colors, no new opacity
  * literals, no new radii. Optional `pressed` flips the chip into a
- * "selected/active" state by promoting the resting tint to
- * `bg-surface-hover text-text-primary` so toggle-style chip rows
+ * "selected/active" state via `bg-surface-hover text-text-primary`
+ * so toggle-style chip rows
  * (model preset selection, status filters) read correctly without
  * the caller hand-rolling the active class string. `disabled` mutes
  * the chip and suppresses pointer events.
@@ -68,7 +68,10 @@ export type ChipProps = StaticChipProps | InteractiveChipProps;
 export function Chip(props: ChipProps) {
   const { tone = 'muted', className, title, children } = props;
   const base = cn(
-    'inline-flex items-center gap-1 rounded-full bg-surface-overlay px-2 py-0.5 text-meta',
+    'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-meta',
+    props.as === 'button'
+      ? ''
+      : 'border border-border-subtle/25',
     TONE_CLASS[tone],
     className
   );
@@ -89,7 +92,8 @@ export function Chip(props: ChipProps) {
           pressed
             ? 'bg-surface-hover text-text-primary'
             : 'hover:bg-surface-hover hover:text-text-primary',
-          disabled && 'cursor-not-allowed opacity-50 hover:bg-surface-overlay hover:text-text-muted'
+          disabled &&
+            'cursor-not-allowed opacity-50 hover:bg-transparent hover:text-text-muted'
         )}
       >
         {children}

@@ -4,11 +4,12 @@
  * without creating a cycle.
  */
 
-import type { TimelineEvent, TokenUsage } from '@shared/types/chat.js';
+import type { RunStatusPhase, TimelineEvent, TokenUsage } from '@shared/types/chat.js';
 import type {
   ContextMessageOverride,
   PersistedSummaryConfig
 } from '@shared/types/contextSummary.js';
+import type { ModelSelection } from '@shared/types/provider.js';
 import type { DiffHunk, ToolCall, ToolResult } from '@shared/types/tool.js';
 
 export interface AssistantTextAcc {
@@ -85,6 +86,7 @@ interface SubAgentFileEdit {
   additions: number;
   deletions: number;
   ts: number;
+  entryId?: string;
 }
 
 /**
@@ -106,7 +108,7 @@ export interface PartialToolCallArgs {
   index: number;
   argsBuf: string;
   parsed: Record<string, unknown> | null;
-  /** Wall-clock of the most recent delta. Drives shimmer keying. */
+  /** Wall-clock of the most recent args-delta. */
   ts: number;
   subagentId?: string;
   /**
@@ -128,8 +130,8 @@ export interface PartialToolCallArgs {
  * rendering picks it up without a parallel data path.
  */
 export interface DiffStreamSnapshot {
-  /** Source tool emitting the stream — `edit`, `delete`, or `bash`-write. */
-  tool: 'edit' | 'delete' | 'bash';
+  /** Source tool emitting the stream — `edit`, `delete`, `bash`, or `report`. */
+  tool: 'edit' | 'delete' | 'bash' | 'report';
   filePath: string;
   hunks: DiffHunk[];
   additions: number;
@@ -205,11 +207,12 @@ export interface TokenUsageAggregate {
  * status line under the matching trace card. Updated only while the
  * snapshot is in the `running` state; terminal transitions clear it.
  */
-interface SubAgentLiveStatus {
-  /** `connecting` / `awaiting-response` / `running-tool` / `retrying`. */
-  phase: string;
+export interface SubAgentLiveStatus {
+  phase: RunStatusPhase;
   label: string;
   ts: number;
+  /** Present while `phase === 'running-tool'`. */
+  toolName?: string;
 }
 
 export interface SubAgentSnapshot {
@@ -232,6 +235,11 @@ export interface SubAgentSnapshot {
    * snapshot's lifetime so the UI can surface the allowlist.
    */
   tools: string[];
+  /**
+   * Tool names requested on the delegate directive but not granted by
+   * policy. Surfaced as muted chips in the briefing scope list.
+   */
+  unknownTools: string[];
   status: SubAgentStatus;
   message?: string;
   output?: string;
@@ -247,8 +255,8 @@ export interface SubAgentSnapshot {
   usage?: TokenUsageAggregate;
   /**
    * Latest live-status phase for this worker (undefined before the
-   * first event and after a terminal transition). Drives an inline
-   * shimmer label under the sub-agent's header while the worker is
+   * first event and after a terminal transition). Drives the inline
+   * status line under the sub-agent header while the worker is
    * running. See `SubAgentLiveStatus` for the shape and the
    * `run-status` case in `applyTimelineEvent` for the routing rule.
    */
@@ -282,6 +290,16 @@ export interface SubAgentSnapshot {
    * `tool-call` event or when the run aborts. Always `{}` after replay.
    */
   partialToolCallArgs: Record<string, PartialToolCallArgs>;
+  /**
+   * Provider + model the orchestrator (or future per-delegate
+   * override) handed to this worker. Sourced from
+   * `subagent-pending.model` and/or `subagent-spawn.model`; the spawn
+   * value wins when both are present (verified after directive
+   * validation). Optional — old transcripts predating the field
+   * leave it `undefined`, in which case the renderer hides the
+   * sub-agent model badge silently.
+   */
+  model?: ModelSelection;
 }
 
 /**
@@ -352,6 +370,18 @@ export interface TimelineState {
    * it as they're applied.
    */
   settledCallIds: Record<string, true>;
+  /**
+   * FS-aware live diff snapshots keyed by `callId`. Survives the
+   * authoritative `tool-call` (unlike `partialToolCallArgs`) until
+   * the matching `tool-result` lands so settled edit rows can still
+   * auto-expand and paint streaming hunks.
+   */
+  liveDiffByCallId: Record<string, DiffStreamSnapshot>;
+  /**
+   * CallIds whose `tool-result` has been applied. Gates late
+   * `diff-stream` frames after a call completes.
+   */
+  toolResultSettledIds: Record<string, true>;
   /**
    * Per-runId count of `file-edit` events applied to the transcript.
    * Captures the full per-turn FS impact (orchestrator edits + every
@@ -453,6 +483,8 @@ export const INITIAL_TIMELINE_STATE: TimelineState = {
   subagents: {},
   partialToolCallArgs: {},
   settledCallIds: {},
+  liveDiffByCallId: {},
+  toolResultSettledIds: {},
   runIdToFileEditCount: {},
   summaries: {},
   messageOverrides: {}

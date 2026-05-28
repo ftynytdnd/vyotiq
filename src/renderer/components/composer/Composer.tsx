@@ -7,6 +7,11 @@ import { useComposerTokenEstimate } from './useComposerTokenEstimate.js';
 import { detectAtToken } from './atToken.js';
 import { RunningElsewhereHint } from './runningElsewhere/index.js';
 import { useComposerHistory } from './useComposerHistory.js';
+import {
+  chromeChipTrayClassName,
+  chromeEdgeClassName,
+  surfaceShellFocusClassName
+} from '../ui/SurfaceShell.js';
 import { Chip } from '../ui/Chip.js';
 import { useChatStore } from '../../store/useChatStore.js';
 import { useSecondaryZoneStore } from '../../store/useSecondaryZoneStore.js';
@@ -347,16 +352,18 @@ export function Composer({
           footerMode
             ? 'bg-transparent'
             : cn(
-                'rounded-card border border-border-subtle/30 bg-surface-raised',
-                textareaFocused ? 'elev-2-focused' : 'elev-2'
+                'rounded-card border border-border-subtle/18 bg-surface-raised/80',
+                textareaFocused ? 'elev-2-focused' : 'elev-2',
+                textareaFocused && surfaceShellFocusClassName
               )
         )}
       >
         {workspacePath && (
           <div
             className={cn(
-              'flex min-w-0 items-center gap-1.5 border-b border-border-subtle/25 text-meta text-text-muted',
-              footerMode ? 'px-2 py-1' : 'px-3 py-1.5'
+              'flex min-w-0 items-center gap-1.5 border-b text-meta text-text-muted',
+              chromeEdgeClassName,
+              footerMode ? 'px-2 py-0.5' : 'px-3 py-1'
             )}
           >
             <FolderOpen className="h-3 w-3 shrink-0" strokeWidth={2} aria-hidden />
@@ -366,7 +373,7 @@ export function Composer({
           </div>
         )}
         {attachments.length > 0 && (
-          <div className="flex min-w-0 flex-wrap items-center gap-1 rounded-inner bg-surface-raised/80 px-2 py-1">
+          <div className={cn(chromeChipTrayClassName, 'flex min-w-0 flex-wrap items-center gap-1')}>
             {attachments.map((p) => (
               <Chip
                 key={p}

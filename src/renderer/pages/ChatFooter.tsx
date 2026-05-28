@@ -5,7 +5,7 @@
  * navigation live in the left-hand {@link LeftDock}.
  */
 
-import { SurfaceShell } from '../components/ui/SurfaceShell.js';
+import { chromeEdgeClassName, SurfaceShell } from '../components/ui/SurfaceShell.js';
 import { ChatComposerZone } from './ChatComposerZone.js';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { cn } from '../lib/cn.js';
@@ -26,8 +26,9 @@ export function ChatFooter({
   return (
     <div
       className={cn(
-        'shrink-0 border-t border-border-subtle/10',
-        'px-6 pb-[max(4px,env(safe-area-inset-bottom,0px))] pt-1.5'
+        'shrink-0 border-t',
+        chromeEdgeClassName,
+        'px-6 pb-[max(6px,env(safe-area-inset-bottom,0px))] pt-2'
       )}
     >
       <div

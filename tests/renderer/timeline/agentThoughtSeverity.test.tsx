@@ -20,7 +20,7 @@ describe('AgentThoughtRow severity', () => {
     const span = container.querySelector('span');
     expect(span?.textContent).toBe('thinking quietly');
     expect(span?.className).toMatch(/italic/);
-    expect(span?.className).toMatch(/text-text-muted/);
+    expect(span?.className).toMatch(/text-text-faint/);
     // No alert glyph in info mode.
     expect(container.querySelector('svg')).toBeNull();
   });
@@ -34,6 +34,15 @@ describe('AgentThoughtRow severity', () => {
     expect(text?.className).toMatch(/text-warning/);
     // The AlertTriangle icon must be present.
     expect(container.querySelector('svg')).not.toBeNull();
+  });
+
+  it('renders live info rows with gold phase heading', () => {
+    const { container } = render(
+      <AgentThoughtRow content="Investigating layout overlap…" live />
+    );
+    const span = container.querySelector('span');
+    expect(span?.className).toMatch(/text-accent-gold/);
+    expect(span?.className).not.toMatch(/vyotiq-shimmer-text/);
   });
 });
 

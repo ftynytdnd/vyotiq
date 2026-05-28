@@ -88,8 +88,8 @@ function ShortcutRow({ combo, label }: { combo: string; label: string }) {
       <span className="truncate text-text-secondary">{label}</span>
       <kbd
         className={cn(
-          'shrink-0 rounded-inner font-mono text-row text-text-muted',
-          'bg-surface-overlay px-1.5 py-0.5 tracking-tight'
+          'shrink-0 rounded-inner border border-border-subtle/30 px-1.5 py-0.5',
+          'font-mono text-row tracking-tight text-text-muted'
         )}
       >
         {combo}

@@ -459,5 +459,15 @@ describe('parseDelegatesWithDuplicates', () => {
       expect(out.directives.map((d) => d.id).sort()).toEqual(['A1', 'A2']);
       expect(out.malformedOpeners).toEqual([]);
     });
+
+    it('rejects compound task= directives via compoundTaskIds', () => {
+      const compound =
+        '- Read src/a.ts\n- Edit src/b.ts\n- Run tests and report';
+      const out = parseDelegatesWithDuplicates(
+        `<delegate id="A1" task="${compound}" />`
+      );
+      expect(out.directives).toEqual([]);
+      expect(out.compoundTaskIds).toEqual(['A1']);
+    });
   });
 });

@@ -8,6 +8,7 @@ import { forwardRef } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { useProviderStore } from '../../../store/useProviderStore.js';
+import { chromeBadgeClassName, chromePillClassName } from '../../ui/SurfaceShell.js';
 import { cn } from '../../../lib/cn.js';
 
 interface ModelPickerTriggerProps {
@@ -64,20 +65,13 @@ export const ModelPickerTrigger = forwardRef<HTMLButtonElement, ModelPickerTrigg
         className={cn(
           // `text-row` (11px) on the trigger, not `text-meta` (10px) —
           // the model id is the only one of the composer's pill
-          // controls that holds arbitrary user-supplied text, and
-          // 10px was painfully small for long ids (`claude-sonnet-
-          // 4-5-20250929-thinking`). Sibling permission / attach /
-          // send buttons stay at `text-meta` because their labels
-          // are fixed-width app-controlled. The trigger pill height
-          // (`h-6`) is unchanged.
-          'app-no-drag inline-flex h-6 min-w-0 max-w-[190px] items-center gap-1 rounded-inner px-1.5 text-row',
-          'bg-surface-overlay text-text-secondary transition-colors duration-150',
-          'hover:bg-surface-hover hover:text-text-primary',
-          open && 'bg-surface-hover text-text-primary'
+          // controls that holds arbitrary user-supplied text.
+          chromePillClassName(open),
+          'min-w-0 max-w-[190px] gap-1 px-1.5 text-row text-text-secondary'
         )}
       >
         {showProviderBadge && (
-          <span className="shrink-0 rounded-inner bg-surface-base px-1 py-0.5 text-meta text-text-faint">
+          <span className={cn(chromeBadgeClassName, 'shrink-0 px-1 py-0.5 font-normal')}>
             {provider!.name}
           </span>
         )}

@@ -20,8 +20,10 @@ import { useCallback, useEffect, useState } from 'react';
 export interface PendingFiltersState {
   runId: string | null;
   pathQuery: string;
+  groupByFolder: boolean;
   setRunId: (id: string | null) => void;
   setPathQuery: (q: string) => void;
+  setGroupByFolder: (on: boolean) => void;
   reset: () => void;
 }
 
@@ -30,10 +32,12 @@ export function usePendingChangesFilters(
 ): PendingFiltersState {
   const [runId, setRunId] = useState<string | null>(null);
   const [pathQuery, setPathQuery] = useState('');
+  const [groupByFolder, setGroupByFolder] = useState(false);
 
   const reset = useCallback(() => {
     setRunId(null);
     setPathQuery('');
+    setGroupByFolder(false);
   }, []);
 
   // Reset filters when the active conversation flips. Without this
@@ -44,5 +48,13 @@ export function usePendingChangesFilters(
     reset();
   }, [conversationId, reset]);
 
-  return { runId, pathQuery, setRunId, setPathQuery, reset };
+  return {
+    runId,
+    pathQuery,
+    groupByFolder,
+    setRunId,
+    setPathQuery,
+    setGroupByFolder,
+    reset
+  };
 }

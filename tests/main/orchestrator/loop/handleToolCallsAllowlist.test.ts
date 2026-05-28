@@ -170,6 +170,43 @@ describe('handleToolCalls — orchestrator allowlist enforcement', () => {
     for (const m of messages) {
       expect(m.content).not.toContain('not callable from the orchestrator');
     }
+    const phases = emit.mock.calls
+      .map(([e]) => e)
+      .filter((e) => e.kind === 'phase' && e.label === 'Exploring');
+    expect(phases).toHaveLength(0);
+    const statuses = emit.mock.calls
+      .map(([e]) => e)
+      .filter((e) => e.kind === 'run-status');
+    expect(statuses.length).toBeGreaterThanOrEqual(3);
+    for (const status of statuses) {
+      expect(status.label).toBe('Exploring');
+    }
+  });
+
+  it('emits Exploring run-status for sub-agent tool rounds', async () => {
+    const messages: ChatMessage[] = [];
+    const emit = vi.fn<(e: TimelineEvent) => void>();
+    await handleToolCalls(
+      [makePartialCall('read', JSON.stringify({ path: 'foo.ts' }), 'c1')],
+      messages,
+      emit,
+      { ...baseOpts, subagentId: 'A1', allowlist: ['read'] }
+    );
+    expect(runToolByName).toHaveBeenCalledTimes(1);
+    const statuses = emit.mock.calls
+      .map(([e]) => e)
+      .filter((e) => e.kind === 'run-status');
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]).toMatchObject({
+      kind: 'run-status',
+      phase: 'running-tool',
+      label: 'Exploring',
+      detail: { toolName: 'read', subagentId: 'A1' }
+    });
+    const phases = emit.mock.calls
+      .map(([e]) => e)
+      .filter((e) => e.kind === 'phase');
+    expect(phases).toHaveLength(0);
   });
 
   it('emits one consolidated phase row when delegate is refused in parallel', async () => {
@@ -213,5 +250,25 @@ describe('handleToolCalls — orchestrator allowlist enforcement', () => {
     // Crucially does NOT contain the orchestrator-only hint.
     expect(messages[0]!.content).not.toContain('not callable from the orchestrator');
     expect(messages[0]!.content).not.toContain('<delegate');
+  });
+
+  it('does not emit Exploring run-status when tool args fail to parse', async () => {
+    const messages: ChatMessage[] = [];
+    const emit = vi.fn<(e: TimelineEvent) => void>();
+    await handleToolCalls(
+      [makePartialCall('read', 'not-json', 'bad-args')],
+      messages,
+      emit,
+      { ...baseOpts, allowlist: ORCHESTRATOR_TOOLS }
+    );
+    expect(runToolByName).not.toHaveBeenCalled();
+    const statuses = emit.mock.calls
+      .map(([e]) => e)
+      .filter((e) => e.kind === 'run-status');
+    expect(statuses).toHaveLength(0);
+    const phases = emit.mock.calls
+      .map(([e]) => e)
+      .filter((e) => e.kind === 'phase');
+    expect(phases).toHaveLength(0);
   });
 });

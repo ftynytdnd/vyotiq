@@ -359,4 +359,28 @@ describe('stripDelegatesForDisplay', () => {
     );
     expect(out).toBe('Vue uses <template> blocks.');
   });
+
+  // Mid-stream orchestration often opens a ``` fence before emitting
+  // `<delegate />` tags. After the tail-partial orch strip removes the
+  // unfinished directive, the fence opener must not survive — otherwise
+  // ReactMarkdown renders an empty gray `<pre>` bar under the plan prose.
+  it('drops a trailing open fence left after stripping a partial delegate', () => {
+    const input =
+      'Plan:\n1. Analyze.\n2. Draft README.\n3. Generate docs.\n\n' +
+      '```xml\n<delegate id="A1" task="Create README"';
+    const out = stripDelegatesForDisplay(input);
+    expect(out).toBe(
+      'Plan:\n1. Analyze.\n2. Draft README.\n3. Generate docs.'
+    );
+    expect(out).not.toContain('```');
+  });
+
+  it('drops a trailing open fence with no body yet', () => {
+    const input =
+      'Plan:\n1. Analyze.\n2. Draft README.\n3. Generate docs.\n\n```xml\n';
+    const out = stripDelegatesForDisplay(input);
+    expect(out).toBe(
+      'Plan:\n1. Analyze.\n2. Draft README.\n3. Generate docs.'
+    );
+  });
 });

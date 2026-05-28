@@ -2,13 +2,8 @@
  * Live-streaming summary view surfaced inside the Inspector while a
  * summarization is mid-stream.
  *
- * Visual contract: matches the row pattern in
- * `CheckpointSettingsPanel`'s "Disk usage" / "Prune" / "Export" blocks
- * — `Eyebrow` header on a `border-b border-border-subtle/30` row,
- * monospace body underneath. No nested card chrome. The streaming
- * pre-blocks reuse the `bg-surface-raised/60` tone the timeline's
- * `ContextSummaryRow` already uses for its expanded body, so the two
- * surfaces feel like the same artifact.
+ * Visual contract: matches `ContextSummaryRow` — gold phase headline
+ * while compressing, `StreamingMarkdownBody` for live/settled prose.
  */
 
 import { cn } from '../../lib/cn.js';
@@ -17,9 +12,10 @@ import { useContextSummaryStore } from '../../store/useContextSummaryStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { Button } from '../ui/Button.js';
 import { Eyebrow } from '../ui/Eyebrow.js';
-import { SurfaceShell } from '../ui/SurfaceShell.js';
-import { shimmerStyle, shimmerText } from '../../lib/shimmer.js';
+import { chromeBadgeClassName, SurfaceShell } from '../ui/SurfaceShell.js';
 import { formatTokenCount } from '../../lib/formatTokens.js';
+import { StreamingMarkdownBody } from '../timeline/markdown/StreamingMarkdownBody.js';
+import { timelinePhaseHeadingClassName } from '../timeline/shared/rowStyles.js';
 
 interface LiveStreamCardProps {
   summaryId: string;
@@ -37,7 +33,7 @@ export function LiveStreamCard({ summaryId, conversationId }: LiveStreamCardProp
   const busy = useContextSummaryStore((s) => s.busy);
   const showToast = useToastStore((s) => s.show);
   if (!acc) return null;
-  const isShimmering = acc.status === 'pending' || acc.status === 'streaming';
+  const isLiveCompressing = acc.status === 'pending' || acc.status === 'streaming';
   const headline = (() => {
     const count = acc.replacedMessageIds.length;
     switch (acc.status) {
@@ -67,7 +63,7 @@ export function LiveStreamCard({ summaryId, conversationId }: LiveStreamCardProp
     }
   })();
   const body = acc.status === 'ended' && acc.finalText ? acc.finalText : acc.text;
-  const headlineTone = acc.status === 'aborted' ? 'text-danger' : 'text-text-secondary';
+  const headlineTone = acc.status === 'aborted' ? 'text-danger' : undefined;
 
   return (
     <div className="flex flex-col gap-2 border-b border-border-subtle/30 py-3">
@@ -80,8 +76,12 @@ export function LiveStreamCard({ summaryId, conversationId }: LiveStreamCardProp
           className={cn('inline-block h-1.5 w-1.5 shrink-0 rounded-full', dotTone)}
         />
         <span
-          className={cn('text-row', headlineTone, isShimmering && shimmerText(true))}
-          style={isShimmering ? shimmerStyle(`live:${summaryId}`) : undefined}
+          className={cn(
+            'text-row',
+            isLiveCompressing
+              ? cn(timelinePhaseHeadingClassName(true), 'truncate')
+              : cn('text-text-secondary', headlineTone)
+          )}
         >
           {headline}
         </span>
@@ -91,9 +91,7 @@ export function LiveStreamCard({ summaryId, conversationId }: LiveStreamCardProp
           </span>
         )}
         {acc.undone && (
-          <span className="ml-auto rounded-inner bg-surface-overlay px-1.5 py-0.5 text-meta text-text-muted">
-            Undone
-          </span>
+          <span className={cn(chromeBadgeClassName, 'ml-auto')}>Undone</span>
         )}
       </div>
       {acc.reasoningText.length > 0 && acc.status !== 'aborted' && (
@@ -101,13 +99,7 @@ export function LiveStreamCard({ summaryId, conversationId }: LiveStreamCardProp
           <Eyebrow as="span">Reasoning</Eyebrow>
           <SurfaceShell padded padding="nested">
             <pre className="whitespace-pre-wrap break-words font-mono text-row italic text-text-faint">
-            {acc.reasoningText}
-            {isShimmering && (
-              <span
-                aria-hidden
-                className="vyotiq-stream-cursor ml-0.5 inline-block h-3 w-[6px] align-middle"
-              />
-            )}
+              {acc.reasoningText}
             </pre>
           </SurfaceShell>
         </div>
@@ -118,22 +110,20 @@ export function LiveStreamCard({ summaryId, conversationId }: LiveStreamCardProp
             {acc.status === 'ended' ? 'Compressed body' : 'Live body'}
           </Eyebrow>
           <SurfaceShell padded padding="nested">
-            <pre className="scrollbar-stealth max-h-[28vh] overflow-y-auto whitespace-pre-wrap break-words font-mono text-row text-text-secondary">
-            {body}
-            {isShimmering && (
-              <span
-                aria-hidden
-                className="vyotiq-stream-cursor ml-0.5 inline-block h-3 w-[6px] align-middle"
+            <div className="scrollbar-stealth max-h-[28vh] overflow-y-auto">
+              <StreamingMarkdownBody
+                text={body}
+                done={acc.status === 'ended'}
+                className="text-row text-text-secondary"
               />
-            )}
-            </pre>
+            </div>
           </SurfaceShell>
         </div>
       )}
       {acc.status === 'aborted' && acc.reason && (
         <div className="text-row text-danger">{acc.reason}</div>
       )}
-      {isShimmering && (
+      {isLiveCompressing && (
         <div className="flex justify-end">
           <Button
             size="sm"

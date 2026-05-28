@@ -93,7 +93,8 @@ const api: VyotiqApi = {
       on<[Parameters<typeof cb>[0]]>(IPC.TOOLS_REQUEST_CONFIRM, cb),
     onConfirmCancel: (cb) => on<[string]>(IPC.TOOLS_CANCEL_CONFIRM, (id) => cb(id)),
     respondConfirm: (id, reply) =>
-      ipcRenderer.invoke(IPC.TOOLS_CONFIRM_RESPONSE, id, reply)
+      ipcRenderer.invoke(IPC.TOOLS_CONFIRM_RESPONSE, id, reply),
+    rerun: (input) => ipcRenderer.invoke(IPC.TOOLS_RERUN, input)
   },
 
   memory: {
@@ -140,6 +141,46 @@ const api: VyotiqApi = {
       ipcRenderer.invoke(IPC.CHECKPOINTS_PREVIEW_REWIND, input),
     rewindToPrompt: (input) =>
       ipcRenderer.invoke(IPC.CHECKPOINTS_REWIND_TO_PROMPT, input),
+    getReview: (workspaceId: string, conversationId: string) =>
+      ipcRenderer.invoke(IPC.CHECKPOINTS_GET_REVIEW, workspaceId, conversationId),
+    ensureReview: (input: { workspaceId: string; conversationId: string; runId?: string }) =>
+      ipcRenderer.invoke(IPC.CHECKPOINTS_ENSURE_REVIEW, input),
+    addReviewComment: (input: {
+      workspaceId: string;
+      conversationId: string;
+      filePath: string;
+      body: string;
+      line?: number;
+    }) => ipcRenderer.invoke(IPC.CHECKPOINTS_ADD_REVIEW_COMMENT, input),
+    setReviewGitBaseRef: (input: {
+      workspaceId: string;
+      conversationId: string;
+      ref: string;
+    }) => ipcRenderer.invoke(IPC.CHECKPOINTS_SET_REVIEW_GIT_REF, input),
+    setReviewDecision: (input: {
+      workspaceId: string;
+      conversationId: string;
+      decision: import('@shared/types/checkpoint.js').ReviewDecision;
+      filePath?: string;
+    }) => ipcRenderer.invoke(IPC.CHECKPOINTS_SET_REVIEW_DECISION, input),
+    gitBaseDiff: (workspaceId: string, filePath: string, ref?: string) =>
+      ipcRenderer.invoke(IPC.CHECKPOINTS_GIT_BASE_DIFF, workspaceId, filePath, ref),
+    listGitRefs: (workspaceId: string) =>
+      ipcRenderer.invoke(IPC.CHECKPOINTS_LIST_GIT_REFS, workspaceId),
+    setReviewReviewer: (input: {
+      workspaceId: string;
+      conversationId: string;
+      reviewerLabel: string;
+    }) => ipcRenderer.invoke(IPC.CHECKPOINTS_SET_REVIEW_REVIEWER, input),
+    exportReview: (input: { workspaceId: string; conversationId: string }) =>
+      ipcRenderer.invoke(IPC.CHECKPOINTS_EXPORT_REVIEW, input),
+    importReview: (input: {
+      workspaceId: string;
+      conversationId: string;
+      filePath?: string;
+      mode?: 'merge' | 'replace';
+      restorePending?: boolean;
+    }) => ipcRenderer.invoke(IPC.CHECKPOINTS_IMPORT_REVIEW, input),
     onChanged: (cb) => on<[string]>(IPC.CHECKPOINTS_CHANGED, (workspaceId) => cb(workspaceId)),
     onTranscriptRewound: (cb) =>
       on<[string]>(IPC.CONVERSATION_TRANSCRIPT_REWOUND, (conversationId) => cb(conversationId))

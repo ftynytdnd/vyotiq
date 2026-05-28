@@ -42,8 +42,8 @@ describe('EditInvocation error pane (defect 2)', () => {
       durationMs: 1
     };
     render(<EditInvocation call={call} result={result} />);
-    // Collapsed: the inline errorHint keeps the short tag.
-    expect(screen.getByText('ambiguous')).toBeInTheDocument();
+    // Collapsed: errorHint surfaces the first actionable line.
+    expect(screen.getByText(AMBIGUOUS_OUTPUT)).toBeInTheDocument();
 
     // Expand. The button label is the row's title — "edit".
     await userEvent.click(screen.getByRole('button', { name: /edit/i }));

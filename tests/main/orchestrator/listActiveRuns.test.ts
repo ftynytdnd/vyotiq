@@ -157,11 +157,13 @@ describe('listActiveRuns / abort surfaces', () => {
     expect(ids).toEqual(['r1', 'r2']);
     expect(runs.find((r) => r.runId === 'r1')).toMatchObject({
       conversationId: 'cA',
-      workspaceId: 'wA'
+      workspaceId: 'wA',
+      modelId: 'm1'
     });
     expect(runs.find((r) => r.runId === 'r2')).toMatchObject({
       conversationId: 'cB',
-      workspaceId: 'wB'
+      workspaceId: 'wB',
+      modelId: 'm1'
     });
     // `startedAt` is present and recent.
     for (const r of runs) {

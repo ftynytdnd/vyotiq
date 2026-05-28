@@ -22,9 +22,11 @@ import {
 } from '../orchestrator/AgentV.js';
 import {
   abortIdleSummary as abortIdleSummaryFor,
+  abortIdleSummaryByRunId,
   awaitIdleSummary as awaitIdleSummaryFor,
   hasIdleSummary as hasIdleSummaryFor
 } from '../orchestrator/contextSummarizer/idleSummaryRuntime.js';
+import { isIdleSummaryRunId } from '@shared/contextSummary/idleSummaryRunId.js';
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import {
   appendEvent,
@@ -40,12 +42,21 @@ import {
   acceptAll as checkpointsAcceptAll,
   listPending as checkpointsListPending
 } from '../checkpoints/index.js';
+import {
+  getReviewSession,
+  reviewSessionBlocksSend
+} from '../checkpoints/reviewSessions.js';
 import { listWorkspaces } from '../workspace/workspaceState.js';
 import { getSettings } from '../settings/settingsStore.js';
 import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 import { assertString } from './validate.js';
 import { assertChatSendInput } from './chatValidate.js';
+import {
+  armRunSettlement,
+  awaitRunSettlement,
+  settleRun
+} from './runSettlement.js';
 
 const log = logger.child('ipc/chat');
 
@@ -288,13 +299,10 @@ export function registerChatIpc(): void {
         });
       }
       for (const rid of priorRunIds) abortRun(rid);
-      // Wait for the aborted runs' tail emits to finish writing into
-      // the JSONL before this run reads it. `abortRun` only flips the
-      // signal; the in-flight `appendEvent(cid, …).catch(…)` calls
-      // queued from the prior runs' `emit` are fire-and-forget and may
-      // still be flushing to disk when we hit `readTranscript` below.
-      // The drain is per-conversation and is a no-op when no chain
-      // exists, so this is microsecond-cheap on the happy path.
+      // Await prior run coalescer flush + append drain before reading
+      // the JSONL — `abortRun` alone does not wait for `onDone`'s
+      // `flushAll()` in the prior closure.
+      await awaitRunSettlement(cid);
       await drainAppendChain(cid);
     }
 
@@ -404,12 +412,56 @@ export function registerChatIpc(): void {
           };
         }
       } catch (err) {
-        // A pending-list failure must not block sending — fall through
-        // to the legacy auto-accept path. Worst case the user sees
-        // the prior behavior they had before this gate was wired.
-        log.warn('gatePromptOnPending check failed; falling through', { err });
+        // Fail closed when the gate is enabled — mirror review gate (F-IPC-002).
+        log.warn('gatePromptOnPending check failed; blocking send', {
+          conversationId: cid,
+          err
+        });
+        return {
+          ok: false,
+          kind: 'pending-gate-error',
+          conversationId: cid
+        };
       }
-    } else {
+    }
+
+    let gateReviewRequestChanges = false;
+    try {
+      const settings = await getSettings();
+      gateReviewRequestChanges =
+        settings.ui?.gatePromptOnReviewRequestChangesByWorkspace?.[
+          workspaceIdForRun
+        ] === true;
+    } catch (err) {
+      log.warn('failed to read gateReviewRequestChanges; defaulting to off', { err });
+    }
+    if (gateReviewRequestChanges) {
+      try {
+        const session = await getReviewSession(workspaceIdForRun, cid);
+        if (session && reviewSessionBlocksSend(session)) {
+          log.info('chat:send blocked by review request_changes', { conversationId: cid });
+          return {
+            ok: false,
+            kind: 'review-request-changes',
+            conversationId: cid
+          };
+        }
+      } catch (err) {
+        // Fail closed when the gate is enabled — do not start a run if we
+        // cannot verify review state (review finding F-IPC-001).
+        log.warn('gateReviewRequestChanges check failed; blocking send', {
+          conversationId: cid,
+          err
+        });
+        return {
+          ok: false,
+          kind: 'review-gate-error',
+          conversationId: cid
+        };
+      }
+    }
+
+    if (!gatePromptOnPending) {
       try {
         // Pass the live workspace id list so `acceptAll` can warm
         // every workspace's pending bucket from disk before the
@@ -486,10 +538,14 @@ export function registerChatIpc(): void {
      */
     const tombstonedSummaryIds = new Set<string>();
 
+    let persistFailureMessage: string | null = null;
     const persistEvent = (event: TimelineEvent): void => {
-      appendEvent(cid, event).catch((err) =>
-        log.warn('appendEvent failed', { conversationId: cid, kind: event.kind, err })
-      );
+      appendEvent(cid, event).catch((err) => {
+        const message =
+          err instanceof Error ? err.message : 'Failed to persist transcript event';
+        persistFailureMessage = message;
+        log.warn('appendEvent failed', { conversationId: cid, kind: event.kind, err });
+      });
     };
 
     const flushBuf = (buf: DeltaBuf | undefined): void => {
@@ -555,6 +611,8 @@ export function registerChatIpc(): void {
     // this run; the next `chat:send` for the same conversation gets
     // its own fresh flag.
     let runFinalized = false;
+
+    armRunSettlement(cid);
 
     void startRun({ ...input, conversationId: cid, workspaceId: workspaceIdForRun }, {
       emit: (event: TimelineEvent) => {
@@ -824,9 +882,17 @@ export function registerChatIpc(): void {
         // drainAppendChain settles so the post-finalisation guard
         // is armed by the time fire-and-forget tasks try to emit.
         runFinalized = true;
+        const terminalMessage = persistFailureMessage;
         drainAppendChain(cid)
           .catch(() => undefined)
-          .finally(() => safeSend(IPC.CHAT_DONE, input.runId));
+          .finally(() => {
+            settleRun(cid);
+            if (terminalMessage) {
+              safeSend(IPC.CHAT_ERROR, input.runId, terminalMessage);
+            } else {
+              safeSend(IPC.CHAT_DONE, input.runId);
+            }
+          });
       },
       onError: (message: string) => {
         // Same durability contract as `onDone`. The error path is
@@ -835,17 +901,32 @@ export function registerChatIpc(): void {
         // here can corrupt the next run's replay.
         flushAll();
         runFinalized = true;
+        const terminalMessage = persistFailureMessage ?? message;
         drainAppendChain(cid)
           .catch(() => undefined)
-          .finally(() => safeSend(IPC.CHAT_ERROR, input.runId, message));
+          .finally(() => {
+            settleRun(cid);
+            safeSend(IPC.CHAT_ERROR, input.runId, terminalMessage);
+          });
       }
-    }, priorTranscript);
+    }, priorTranscript).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error('startRun failed', { runId: input.runId, conversationId: cid, err });
+      flushAll();
+      runFinalized = true;
+      settleRun(cid);
+      safeSend(IPC.CHAT_ERROR, input.runId, message);
+    });
 
     return { ok: true as const, conversationId: cid };
   });
 
   wrapIpcHandler(IPC.CHAT_ABORT, async (_event, runId: string) => {
     assertString('chat:abort', 'runId', runId);
+    if (isIdleSummaryRunId(runId)) {
+      abortIdleSummaryByRunId(runId);
+      return;
+    }
     abortRun(runId);
   });
 

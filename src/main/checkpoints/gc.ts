@@ -20,9 +20,17 @@ import {
   appendRow
 } from './fileIndex.js';
 import { iterateBlobs, deleteBlob } from './blobStore.js';
-import { workspaceDir, blobsDir, runsDir, filesDir, pendingFile } from './paths.js';
+import {
+  workspaceDir,
+  blobsDir,
+  runsDir,
+  filesDir,
+  pendingFile,
+  reviewsFile
+} from './paths.js';
 import { clearWorkspace as clearPending } from './pendingChanges.js';
 import { forgetEntriesForRun, forgetEntriesForWorkspace } from './index.js';
+import { pruneOrphanedReviewSessions } from './reviewSessions.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child('checkpoints/gc');
@@ -119,11 +127,13 @@ export async function pruneOlderThan(
   }
   const keep = await collectReferencedHashes(workspaceId);
   const removedBlobs = await sweepBlobs(workspaceId, keep);
+  const removedReviews = await pruneOrphanedReviewSessions(workspaceId);
   log.info('prune complete', {
     workspaceId,
     cutoffMs,
     removedRuns: doomedRuns.size,
-    removedBlobs
+    removedBlobs,
+    removedReviews
   });
   return { removedRuns: doomedRuns.size, removedBlobs };
 }
@@ -148,6 +158,11 @@ export async function clearAll(workspaceId: string): Promise<PruneResult> {
     await fs.unlink(pendingFile(workspaceId));
   } catch {
     /* noop — `clearPending` already attempted */
+  }
+  try {
+    await fs.unlink(reviewsFile(workspaceId));
+  } catch {
+    /* noop — file may already be gone */
   }
   // Leave the workspace folder itself in place (it'll be recreated on
   // the next write) so any concurrent reads of the parent dir don't

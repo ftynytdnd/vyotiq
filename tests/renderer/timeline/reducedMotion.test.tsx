@@ -1,10 +1,7 @@
 /**
- * `prefers-reduced-motion: reduce` must not strip the shimmer classes
- * from the DOM — the visual effect is suppressed in CSS (the @media
- * block in `index.css` freezes animation and paints a static accent
- * tint). Keeping the markup deterministic regardless of motion
- * preference matches the rest of the app's accessibility model and
- * preserves snapshot parity.
+ * `prefers-reduced-motion: reduce` must keep live phase heading markup
+ * stable — gold phase labels use static text color (no shimmer animation),
+ * and `vyotiq-reveal-text` is suppressed in CSS under reduced motion.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -55,11 +52,10 @@ afterEach(() => {
   }
 });
 
-describe('Shimmer under prefers-reduced-motion', () => {
-  it('keeps shimmer classes on the DOM so CSS can take over', () => {
+describe('Live phase headings under prefers-reduced-motion', () => {
+  it('keeps gold phase heading classes on the DOM', () => {
     const { container } = render(<ReasoningLineRow id="r1" />);
-    // Classes must still be present — the @media block in index.css
-    // is responsible for halting animation and applying a static tint.
-    expect(container.innerHTML).toContain('vyotiq-shimmer-text');
+    expect(container.innerHTML).toContain('text-accent-gold');
+    expect(container.innerHTML).not.toContain('vyotiq-shimmer-text');
   });
 });

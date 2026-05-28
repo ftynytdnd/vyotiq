@@ -209,7 +209,15 @@ export type TimelineEvent =
    * assistant `ChatMessage.reasoning_signature` slot.
    */
   | { kind: 'agent-reasoning-end'; id: string; ts: number; subagentId?: string; signature?: string }
-  | { kind: 'phase'; id: string; ts: number; label: string }
+  /**
+   * Phase divider row. `label` is user-facing and MUST be free of literal
+   * harness XML (`<delegate>`, `<result>`, …). `tooltip`, when present,
+   * carries the developer-facing detail (technical contract, raw ids,
+   * full reason) and is surfaced via the divider's `title` attribute.
+   * Both fields persist in the JSONL transcript so historical replays
+   * keep the same tooltip surface.
+   */
+  | { kind: 'phase'; id: string; ts: number; label: string; tooltip?: string }
   /**
    * Mid-stream notice that the orchestrator has just emitted a fully-formed
    * `<delegate ... />` directive in the current assistant turn. Allows the
@@ -226,6 +234,18 @@ export type TimelineEvent =
     task: string;
     files: string[];
     tools: string[];
+    /**
+     * Orchestrator's selected provider + model at the moment the
+     * directive was parsed. Surfaced on the renderer so the
+     * sub-agent row can display a tiny model badge alongside the
+     * task title (Cursor-style "Composer 2.5 Fast" chip). Optional
+     * because (a) old transcripts predate this field and (b) future
+     * `<delegate model="..." />` overrides may carry a worker-
+     * specific model that would land on `subagent-spawn` instead.
+     * Defined here so the reducer's pending-→-spawn merge has the
+     * earliest available model the renderer can paint with.
+     */
+    model?: ModelSelection;
   }
   | {
     kind: 'subagent-spawn';
@@ -271,6 +291,15 @@ export type TimelineEvent =
      * Omitted on the wire when every requested tool was granted.
      */
     unknownTools?: string[];
+    /**
+     * Provider + model the orchestrator handed to this worker.
+     * Mirrors `subagent-pending.model` and — because spawn always
+     * fires with a verified model selection — is the source of truth
+     * for the renderer's sub-agent model badge after pending↔spawn
+     * reconciliation. Optional for backward compat with older
+     * transcripts; the renderer hides the badge when absent.
+     */
+    model?: ModelSelection;
   }
   | {
     kind: 'subagent-status';
@@ -376,8 +405,8 @@ export type TimelineEvent =
     ts: number;
     /** Same key family as `tool-call-args-delta`. */
     callId: string;
-    /** Source tool — `edit`, `delete`, or the synthetic `'bash'`. */
-    tool: 'edit' | 'delete' | 'bash';
+    /** Source tool — `edit`, `delete`, `bash`, or `report`. */
+    tool: 'edit' | 'delete' | 'bash' | 'report';
     /** Workspace-relative path the diff is against. */
     filePath: string;
     /** Cumulative hunk array, latest-wins per callId. */
@@ -415,6 +444,8 @@ export type TimelineEvent =
     additions: number;
     deletions: number;
     subagentId?: string;
+    /** Links this row to a checkpoint pending entry for inline Accept/Reject. */
+    entryId?: string;
   }
   /**
    * Token-usage report for a single streamed assistant turn. Emitted by the
@@ -736,6 +767,9 @@ export type TimelineEvent =
     subagentId?: string;
   };
 
+/** Phases for ephemeral `run-status` timeline events. */
+export type RunStatusPhase = Extract<TimelineEvent, { kind: 'run-status' }>['phase'];
+
 /** Sent from renderer to main to start an agent run. */
 export interface ChatSendInput {
   /** Stable id assigned by the renderer; used for delta + abort routing. */
@@ -771,7 +805,9 @@ export interface ChatSendInput {
  *   - `pending-checkpoints`: the run's workspace has
  *     `gatePromptOnPendingByWorkspace` set AND the conversation has
  *     unresolved pending checkpoint entries. The renderer surfaces a
- *     toast and opens the pending panel; no run is started.
+ *     toast and opens the review drawer; no run is started.
+ *   - `pending-gate-error`: pending gate is on but `listPending` failed;
+ *     send is blocked (fail closed, same UX as `review-gate-error`).
  *
  * Extending the union keeps the happy-path shape unchanged (legacy
  * renderers still assert `reply.ok === true`), but a future `ok: false`
@@ -786,6 +822,21 @@ export type ChatSendReply =
     /** How many pending entries are blocking the send. */
     count: number;
     /** Conversation the block applies to (echo of the input). */
+    conversationId: string;
+  }
+  | {
+    ok: false;
+    kind: 'review-request-changes';
+    conversationId: string;
+  }
+  | {
+    ok: false;
+    kind: 'review-gate-error';
+    conversationId: string;
+  }
+  | {
+    ok: false;
+    kind: 'pending-gate-error';
     conversationId: string;
   }
   | {

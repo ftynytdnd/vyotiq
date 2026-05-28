@@ -40,9 +40,12 @@ function publicKey(rawKey: string): string {
  * workspace is bound — callers must surface that as a user-visible
  * error rather than silently revealing nothing.
  */
-export async function workspaceNotePath(key: string): Promise<string | null> {
+export async function workspaceNotePath(
+  key: string,
+  workspacePath?: string
+): Promise<string | null> {
   try {
-    const ws = await requireWorkspace();
+    const ws = workspacePath ?? (await requireWorkspace());
     return join(memoryDir(ws), ensureMd(sanitizeKey(key)));
   } catch {
     return null;

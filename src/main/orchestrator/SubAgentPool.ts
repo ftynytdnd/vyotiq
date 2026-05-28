@@ -87,6 +87,9 @@ export async function runSubAgentPool(specs: SubAgentSpec[], deps: PoolDeps): Pr
         ...(deps.onRunStatus
           ? { onRunStatus: (event, subagentId) => deps.onRunStatus?.(event, subagentId) }
           : {}),
+        ...(deps.onTimelineEvent
+          ? { onTimelineEvent: (event, subagentId) => deps.onTimelineEvent?.(event, subagentId) }
+          : {}),
         // Per-sub-agent streaming text + reasoning. Forwarded so
         // `handleDelegates` can emit the matching `agent-*` timeline
         // events with `subagentId` attached. Audit fix §1.1.

@@ -27,7 +27,6 @@ import {
 import { bulkRemoveOrReparentByWorkspace } from '../conversations/conversationStore.js';
 import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
-import { IpcCancelledError } from './ipcCancelledError.js';
 // Audit fix 2026-06-P2-1 — runtime shape gates for workspace-channel
 // payloads. Path strings are capped at 4 KB (well above any
 // realistic OS path) and id strings keep the default 1 KB cap.
@@ -56,17 +55,10 @@ export function registerWorkspaceIpc(): void {
       properties: ['openDirectory', 'createDirectory']
     });
     if (result.canceled || result.filePaths.length === 0) {
-      // F-020: align with the multi-workspace `WORKSPACES_ADD` channel
-      // below, which already throws `workspace_add_cancelled`. The
-      // pre-fix branch silently returned the previous workspace info,
-      // which made it impossible for any future caller to distinguish
-      // "user cancelled" from "user re-picked the active one". The
-      // renderer's `useWorkspaceStore.pick()` already re-routes through
-      // `add()`, so this legacy channel currently has no production
-      // callers — alignment locks in a single mental model for any
-      // future revival.
+      // Return null (do not throw) so Electron does not log
+      // "Error occurred in handler for …" on a benign dismiss.
       log.info('workspace picker cancelled');
-      throw new IpcCancelledError('workspace_pick_cancelled');
+      return null;
     }
     return setWorkspace(result.filePaths[0]!);
   });
@@ -90,13 +82,10 @@ export function registerWorkspaceIpc(): void {
         properties: ['openDirectory', 'createDirectory']
       });
       if (result.canceled || result.filePaths.length === 0) {
+        // Return null (do not throw) — renderer treats as no-op; avoids
+        // Electron's stderr "Error occurred in handler" on dismiss.
         log.info('workspace add picker cancelled');
-        // Throw a friendly error so the renderer can suppress its
-        // toast — caller catches and treats as a no-op. `IpcCancelledError`
-        // is recognised by `wrapIpcHandler` and logged at `info`
-        // (not `error`) so cancelled dialogs don't generate stack-traced
-        // noise in `vyotiq.log`.
-        throw new IpcCancelledError('workspace_add_cancelled');
+        return null;
       }
       resolved = result.filePaths[0]!;
     }

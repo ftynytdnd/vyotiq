@@ -30,6 +30,7 @@
  */
 
 import { create } from 'zustand';
+import { isIdleSummaryRunId } from '@shared/contextSummary/idleSummaryRunId.js';
 import { vyotiq } from '../lib/ipc.js';
 import { logger } from '../lib/logger.js';
 import { randomId } from '../lib/ids.js';
@@ -38,6 +39,7 @@ import { useSettingsStore } from './useSettingsStore.js';
 import { useWorkspaceStore } from './useWorkspaceStore.js';
 import { useToastStore } from './useToastStore.js';
 import { useCheckpointsStore } from './useCheckpointsStore.js';
+import { useSecondaryZoneStore } from './useSecondaryZoneStore.js';
 import {
   applyTimelineEvent,
   rebuildTimelineState
@@ -53,6 +55,30 @@ import { mirrorOf } from './chatStoreMirror.js';
 export { __resetTotalRunUsageCacheForTests } from './chatStoreTotalRunUsage.js';
 
 const log = logger.child('chat-store');
+
+/**
+ * Cancel the in-flight work for `runId`. Idle summarizer side-runs are
+ * not in main `activeRuns` — route through `contextSummary.abortIdle`.
+ * Orchestrator runs use `chat.abort` (main also accepts idle ids as a
+ * fallback via `abortIdleSummaryByRunId`).
+ */
+async function dispatchAbortForRun(
+  runId: string,
+  conversationId: string | null | undefined
+): Promise<void> {
+  if (isIdleSummaryRunId(runId)) {
+    if (conversationId) {
+      await vyotiq.contextSummary.abortIdle(conversationId);
+      return;
+    }
+    log.debug('abort idle summary: no conversationId; falling back to chat.abort', {
+      runId
+    });
+    await vyotiq.chat.abort(runId);
+    return;
+  }
+  await vyotiq.chat.abort(runId);
+}
 
 /**
  * In-place slice mutation helper. Returns a new `slices` map with
@@ -479,17 +505,46 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           });
           return;
         }
-        if (reply.kind === 'pending-checkpoints') {
-          useToastStore
-            .getState()
-            .show(
-              `Resolve ${reply.count} pending change${reply.count === 1 ? '' : 's'} before sending — Accept or Reject each row in the pending changes row in the timeline.`,
-              'danger'
-            );
-          void useCheckpointsStore.getState().refreshPending(reply.conversationId);
-          // Roll back the optimistic isProcessing flag we set right
-          // before the IPC call so the composer's Stop button
-          // disappears and the user can edit / re-send.
+        if (
+          reply.kind === 'pending-checkpoints' ||
+          reply.kind === 'review-request-changes' ||
+          reply.kind === 'review-gate-error' ||
+          reply.kind === 'pending-gate-error'
+        ) {
+          if (reply.kind === 'pending-checkpoints') {
+            useToastStore
+              .getState()
+              .show(
+                `Resolve ${reply.count} pending change${reply.count === 1 ? '' : 's'} before sending — Accept or Reject each row in the pending changes row in the timeline.`,
+                'danger'
+              );
+            void useCheckpointsStore.getState().refreshPending(reply.conversationId);
+          } else if (reply.kind === 'review-request-changes') {
+            useToastStore
+              .getState()
+              .show(
+                'Review has Request changes — update review metadata or clear the decision before sending (when gate is on in checkpoint settings).',
+                'danger'
+              );
+          } else if (reply.kind === 'pending-gate-error') {
+            useToastStore
+              .getState()
+              .show(
+                'Could not verify pending checkpoints — fix checkpoint storage or turn off “Gate send on pending changes” before sending.',
+                'danger'
+              );
+          } else {
+            useToastStore
+              .getState()
+              .show(
+                'Could not verify review status — fix checkpoint storage or turn off “Gate send on review request changes” before sending.',
+                'danger'
+              );
+          }
+          useSecondaryZoneStore.getState().openReview({
+            conversationId: reply.conversationId,
+            ...(workspaceId ? { workspaceId } : {})
+          });
           set((s) => {
             const nextMap: Record<string, string> = { ...s.runIdToConv };
             delete nextMap[runId];
@@ -608,7 +663,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       );
       return { ...s, slices: nextSlices, ...mirrorOf(nextSlices[convId]!) };
     });
-    await vyotiq.chat.abort(id);
+    const targetConv = convId ?? get().runIdToConv[id];
+    await dispatchAbortForRun(id, targetConv);
   },
 
   abortRun: async (runId: string) => {
@@ -628,7 +684,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
       return { ...s, slices: nextSlices };
     });
-    await vyotiq.chat.abort(runId);
+    await dispatchAbortForRun(runId, convId);
   },
 
   rehydrateActiveRuns: (infos) => {
@@ -670,6 +726,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       for (const [rid, cid] of snapshotMap) {
         if (!(rid in nextMap)) nextMap[rid] = cid;
       }
+
+      const prevModels = s.runIdToModel;
+      const nextModels: Record<string, string> = {};
+      for (const [rid, modelId] of Object.entries(prevModels)) {
+        if (snapshotMap.has(rid)) nextModels[rid] = modelId;
+      }
+      for (const info of infos) {
+        if (info.modelId) nextModels[info.runId] = info.modelId;
+      }
+
       if (pruned > 0) {
         log.debug('rehydrateActiveRuns pruned stale runIds', { pruned });
       }
@@ -680,6 +746,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // is already true).
       let nextSlices = s.slices;
       let touched = Object.keys(nextMap).length !== Object.keys(prevMap).length;
+      touched =
+        touched ||
+        Object.keys(nextModels).length !== Object.keys(prevModels).length;
       for (const info of infos) {
         if (!info.conversationId) continue;
         const slice = nextSlices[info.conversationId];
@@ -695,9 +764,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (!touched) return s;
       const activeId = s.conversationId;
       if (activeId && nextSlices[activeId]) {
-        return { ...s, slices: nextSlices, runIdToConv: nextMap, ...mirrorOf(nextSlices[activeId]!) };
+        return {
+          ...s,
+          slices: nextSlices,
+          runIdToConv: nextMap,
+          runIdToModel: nextModels,
+          ...mirrorOf(nextSlices[activeId]!)
+        };
       }
-      return { ...s, slices: nextSlices, runIdToConv: nextMap };
+      return { ...s, slices: nextSlices, runIdToConv: nextMap, runIdToModel: nextModels };
     });
   },
 

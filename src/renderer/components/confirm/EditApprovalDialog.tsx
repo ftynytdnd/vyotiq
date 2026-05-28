@@ -36,6 +36,7 @@ import { EditDiffView } from '../timeline/tools/edit/EditDiffView.js';
 import { CodeBlock } from '../timeline/tools/shared/CodeBlock.js';
 import { synthesizeCreateHunks } from '../timeline/tools/edit/synthesizeDiffPreview.js';
 import { computeDiffHunksClient } from '../checkpoints/diffClient.js';
+import { chromeInsetNoteClassName, chromeStatusPillClassName } from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
 import { timelineRowHeaderClassName } from '../timeline/shared/rowStyles.js';
 
@@ -61,12 +62,12 @@ export function EditApprovalDialog({
   const Icon = operation === 'create' ? FilePlus : operation === 'delete' ? Trash2 : PencilLine;
   const verbLabel =
     operation === 'create' ? 'CREATE' : operation === 'delete' ? 'DELETE' : 'MODIFY';
-  const verbToneClass =
+  const verbTone =
     operation === 'delete'
-      ? 'bg-danger-soft text-danger'
+      ? 'danger'
       : operation === 'create'
-        ? 'bg-success-soft text-success'
-        : 'bg-surface-overlay text-text-muted';
+        ? 'success'
+        : 'neutral';
 
   const title =
     queuedBehind > 0 ? `Approve edit (+${queuedBehind} queued)` : 'Approve edit';
@@ -91,10 +92,7 @@ export function EditApprovalDialog({
         {/* Header row: kind badge + path + diff stats */}
         <div className={timelineRowHeaderClassName}>
           <span
-            className={cn(
-              'shrink-0 rounded-inner px-1.5 py-0.5 font-mono text-meta uppercase tracking-wider',
-              verbToneClass
-            )}
+            className={chromeStatusPillClassName(verbTone, 'shrink-0 font-mono uppercase tracking-wider')}
           >
             {verbLabel}
           </span>
@@ -114,7 +112,7 @@ export function EditApprovalDialog({
             <EditDiffView hunks={modifyHunks} variant="authoritative" />
           )}
           {operation === 'modify' && (!modifyHunks || modifyHunks.length === 0) && (
-            <div className="rounded-inner bg-surface-overlay px-3 py-2 text-row text-text-muted">
+            <div className={cn(chromeInsetNoteClassName, 'text-text-muted')}>
               No textual changes.
             </div>
           )}

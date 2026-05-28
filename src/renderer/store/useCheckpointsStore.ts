@@ -12,6 +12,8 @@ import type {
   CheckpointsSummary,
   FileHistoryRow,
   PendingChange,
+  ReviewImportResult,
+  ReviewSession,
   RewindPreviewResult,
   RewindResult
 } from '@shared/types/checkpoint.js';
@@ -22,9 +24,29 @@ import { useChatStore } from './useChatStore.js';
 
 const log = logger.child('checkpoints-store');
 
+/** Cache key for PR review metadata (scoped by workspace + conversation). */
+export function reviewCacheKey(workspaceId: string, conversationId: string): string {
+  return `${workspaceId}:${conversationId}`;
+}
+
+/** Stable fingerprint so decision/git ref changes refresh the timeline gate. */
+function reviewSessionFingerprint(session: ReviewSession | null): string {
+  if (!session) return 'null';
+  return JSON.stringify({
+    updatedAt: session.updatedAt,
+    decision: session.decision,
+    fileDecisions: session.fileDecisions,
+    commentCount: session.comments.length,
+    gitBaseRef: session.gitBaseRef,
+    reviewerLabel: session.reviewerLabel
+  });
+}
+
 interface CheckpointsStore {
   /** Pending changes keyed by conversationId. */
   pendingByConversation: Record<string, PendingChange[]>;
+  /** PR review session cache keyed by conversationId. */
+  reviewByConversation: Record<string, ReviewSession | null>;
   /** Summary keyed by workspaceId. */
   summaryByWorkspace: Record<string, CheckpointsSummary>;
   /** True while a summary fetch is in flight for a workspace. */
@@ -47,6 +69,15 @@ interface CheckpointsStore {
   initOnce: () => () => void;
   /** Refresh the pending list for a conversation. */
   refreshPending: (conversationId: string) => Promise<void>;
+  /** Refresh cached PR review metadata for a conversation. */
+  refreshReview: (conversationId: string, workspaceId: string) => Promise<void>;
+  /** Import review JSON into the current conversation. */
+  importReview: (
+    workspaceId: string,
+    conversationId: string,
+    filePath?: string,
+    opts?: { restorePending?: boolean }
+  ) => Promise<ReviewImportResult | null>;
   /** Refresh the workspace summary. */
   refreshSummary: (workspaceId: string) => Promise<void>;
   /**
@@ -123,6 +154,7 @@ interface CheckpointsStore {
 
 export const useCheckpointsStore = create<CheckpointsStore>((setState, getState) => ({
   pendingByConversation: {},
+  reviewByConversation: {},
   summaryByWorkspace: {},
   summaryLoading: {},
   suppressNextTranscriptRewound: new Set<string>(),
@@ -134,12 +166,27 @@ export const useCheckpointsStore = create<CheckpointsStore>((setState, getState)
     // boot effect.
     const offChanged = vyotiq.checkpoints.onChanged((workspaceId) => {
       const state = getState();
+      const wsFilter = workspaceId === '*' ? null : workspaceId;
       // Refresh every per-conversation pending list. The main side
       // doesn't tell us which conversations were touched, so we
       // simply re-fetch every cached one — the work is bounded by
       // the number of conversations the renderer currently holds.
       for (const cid of Object.keys(state.pendingByConversation)) {
         void getState().refreshPending(cid);
+        if (wsFilter) void getState().refreshReview(cid, wsFilter);
+      }
+      for (const key of Object.keys(state.reviewByConversation)) {
+        if (!wsFilter) {
+          const colon = key.indexOf(':');
+          if (colon > 0) {
+            const cid = key.slice(colon + 1);
+            const wsId = key.slice(0, colon);
+            void getState().refreshReview(cid, wsId);
+          }
+        } else if (key.startsWith(`${wsFilter}:`)) {
+          const cid = key.slice(wsFilter.length + 1);
+          void getState().refreshReview(cid, wsFilter);
+        }
       }
       // Refresh the summary for the affected workspace if cached.
       if (workspaceId && workspaceId !== '*' && state.summaryByWorkspace[workspaceId]) {
@@ -199,8 +246,54 @@ export const useCheckpointsStore = create<CheckpointsStore>((setState, getState)
       setState((s) => ({
         pendingByConversation: { ...s.pendingByConversation, [conversationId]: list }
       }));
+      const wsId = list[0]?.workspaceId;
+      if (wsId) void getState().refreshReview(conversationId, wsId);
     } catch (err) {
       log.warn('refreshPending failed', { conversationId, err });
+    }
+  },
+
+  refreshReview: async (conversationId: string, workspaceId: string) => {
+    if (!conversationId || !workspaceId) return;
+    try {
+      const session = await vyotiq.checkpoints.getReview(workspaceId, conversationId);
+      setState((s) => {
+        const key = reviewCacheKey(workspaceId, conversationId);
+        const prev = s.reviewByConversation[key] ?? null;
+        if (reviewSessionFingerprint(prev) === reviewSessionFingerprint(session)) {
+          return s;
+        }
+        return {
+          reviewByConversation: { ...s.reviewByConversation, [key]: session }
+        };
+      });
+    } catch (err) {
+      log.warn('refreshReview failed', { conversationId, err });
+    }
+  },
+
+  importReview: async (workspaceId, conversationId, filePath, opts) => {
+    try {
+      const result = await vyotiq.checkpoints.importReview({
+        workspaceId,
+        conversationId,
+        ...(filePath ? { filePath } : {}),
+        ...(opts?.restorePending ? { restorePending: true } : {})
+      });
+      setState((s) => ({
+        reviewByConversation: {
+          ...s.reviewByConversation,
+          [reviewCacheKey(workspaceId, conversationId)]: result.session
+        }
+      }));
+      if (result.pendingRestore && result.pendingRestore.restored > 0) {
+        void getState().refreshPending(conversationId);
+      }
+      return result;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('review_import_cancelled')) return null;
+      throw err;
     }
   },
 

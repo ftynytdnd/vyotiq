@@ -6,7 +6,7 @@
  * behave identically — they read/write the active entry.
  *
  * The registry shape is intentionally minimal: full list + active id +
- * a derived `info`. The bottom dock filters conversations against
+ * a derived `info`. The left navigation dock filters conversations against
  * each workspace's id; the title-bar / Composer / picker continue to
  * read `s.info` and never need to know about the registry.
  */
@@ -123,6 +123,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((setState, getState) => 
     setState({ loading: true });
     try {
       const entry = await vyotiq.workspace.add(path);
+      if (!entry) {
+        setState({ loading: false });
+        return null;
+      }
       // Optimistic registry update so the dock paints the new
       // group without waiting for the round-trip refresh. The main-
       // side `add` already activated the entry.
@@ -138,14 +142,6 @@ export const useWorkspaceStore = create<WorkspaceStore>((setState, getState) => 
       });
       return entry;
     } catch (err) {
-      // `workspace_add_cancelled` is the friendly throw from main when
-      // the user dismissed the picker — collapse it to a null return
-      // so callers can render "no toast, no error".
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg === 'workspace_add_cancelled' || msg.includes('workspace_add_cancelled')) {
-        setState({ loading: false });
-        return null;
-      }
       log.error('workspace.add failed', { err });
       setState({ loading: false });
       throw err;

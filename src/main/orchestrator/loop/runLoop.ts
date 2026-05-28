@@ -112,7 +112,7 @@ interface RunLoopOpts {
 }
 
 /** Outcome of a completed orchestrator loop (success, halt, or user abort). */
-export interface RunLoopResult {
+interface RunLoopResult {
   /** Set when the loop emitted a terminal `error` timeline row. */
   terminalError?: string;
 }
@@ -1086,7 +1086,8 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
       const {
         directives: delegates,
         duplicates: droppedDelegateIds,
-        malformedOpeners
+        malformedOpeners,
+        compoundTaskIds
       } = parseDelegatesWithDuplicates(turn.assistantText);
       if (droppedDelegateIds.length > 0) {
         const uniqueDropped = Array.from(new Set(droppedDelegateIds));
@@ -1099,9 +1100,12 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           id: randomUUID(),
           ts: Date.now(),
           label:
-            `Dropped duplicate <delegate> id${uniqueDropped.length === 1 ? '' : 's'}: ` +
-            uniqueDropped.join(', ') +
-            ' (only the first occurrence ran)'
+            `Skipped ${uniqueDropped.length} duplicate sub-agent request${uniqueDropped.length === 1 ? '' : 's'} ` +
+            `(${uniqueDropped.join(', ')}) — only the first occurrence ran.`,
+          tooltip:
+            `Internal: <delegate id="…"/> repeated within the same orchestrator turn ` +
+            `for id${uniqueDropped.length === 1 ? '' : 's'} ${uniqueDropped.join(', ')}. ` +
+            'First-occurrence-wins by design.'
         });
       }
       // Malformed-opener surface (review finding M7). The
@@ -1123,8 +1127,26 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           id: randomUUID(),
           ts: Date.now(),
           label:
-            `Rejected ${malformedOpeners.length} malformed <delegate> directive(s) — ` +
-            'check the directive shape against the harness contract.'
+            `Skipped ${malformedOpeners.length} malformed sub-agent request${malformedOpeners.length === 1 ? '' : 's'} ` +
+            '— the orchestrator could not parse the directive shape.',
+          tooltip:
+            'Internal: <delegate …/> opener did not match the harness directive shape. ' +
+            'Expected: <delegate id="…" task="…" [files="…"] [tools="…"] />.'
+        });
+      }
+      if (compoundTaskIds.length > 0) {
+        const uniqueCompound = Array.from(new Set(compoundTaskIds));
+        log.warn('rejected compound delegate task(s)', { ids: uniqueCompound });
+        emit({
+          kind: 'phase',
+          id: randomUUID(),
+          ts: Date.now(),
+          label:
+            `Rewrote ${uniqueCompound.length} sub-agent request${uniqueCompound.length === 1 ? '' : 's'} ` +
+            `(${uniqueCompound.join(', ')}) — each sub-agent gets exactly one task.`,
+          tooltip:
+            'Internal: <delegate task="…"> bundled multiple outcomes (compound directive). ' +
+            'Harness contract: one micro-task per <delegate/> so verification stays unambiguous.'
         });
       }
       if (delegates.length > 0) {
@@ -1272,6 +1294,11 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         err: err instanceof Error ? err.message : String(err)
       });
     }
+    log.info('orchestrator loop exit', {
+      runId: opts.input.runId,
+      conversationId: opts.input.conversationId,
+      workspaceId: opts.workspaceId
+    });
   }
   return {};
 }

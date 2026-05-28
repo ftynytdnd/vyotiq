@@ -25,6 +25,7 @@ import type {
   ContextMessageOverride,
   ContextSummaryRules
 } from '@shared/types/contextSummary.js';
+import { mintIdleSummaryRunId } from '@shared/contextSummary/idleSummaryRunId.js';
 import { logger } from '../lib/logger.js';
 import { vyotiq } from '../lib/ipc.js';
 import { useChatStore } from './useChatStore.js';
@@ -218,7 +219,7 @@ export const useContextSummaryStore = create<Store>()((set, get) => ({
       // BEFORE calling the IPC so the upcoming `CHAT_EVENT`
       // broadcasts route into the right slice. The matching
       // `chat:done` from main prunes the route entry on settle.
-      idleRunId = `idle-summary-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+      idleRunId = mintIdleSummaryRunId();
       useChatStore.getState().beginSideRun(idleRunId, cur.boundId);
       const result = await vyotiq.contextSummary.triggerManual(
         cur.boundId,

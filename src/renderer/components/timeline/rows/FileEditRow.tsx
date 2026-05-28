@@ -3,13 +3,16 @@
  * a group is expanded — matches the `InvocationShell` rhythm so file
  * edits and tool invocations read as a single timeline column.
  *
- * Hover reveals an `Open ↗` affordance that forwards to the main-
- * process `tools.openPath` IPC (opens the file in the OS default app).
+ * Accept/Reject for checkpointed edits lives in the pending-changes
+ * panel at the timeline tail; this row only surfaces path, stats, and
+ * a hover-gated Open affordance.
  */
 
 import { ArrowUpRight, FileCode } from 'lucide-react';
 import { vyotiq } from '../../../lib/ipc.js';
 import { DiffStatsBadge } from '../tools/shared/DiffStatsBadge.js';
+import { PendingEntryDot } from '../../checkpoints/shared/PendingEntryDot.js';
+import { usePendingEntryState } from '../../checkpoints/shared/usePendingEntryState.js';
 import { cn } from '../../../lib/cn.js';
 import { timelineRowHeaderClassName, timelineActionPillClassName } from '../shared/rowStyles.js';
 import { useToastStore } from '../../../store/useToastStore.js';
@@ -21,10 +24,21 @@ interface FileEditRowProps {
   filePath: string;
   additions: number;
   deletions: number;
+  entryId?: string;
+  runId?: string;
+  subagentId?: string;
 }
 
-export function FileEditRow({ filePath, additions, deletions }: FileEditRowProps) {
+export function FileEditRow({
+  filePath,
+  additions,
+  deletions,
+  entryId,
+  runId,
+  subagentId
+}: FileEditRowProps) {
   const showToast = useToastStore((s) => s.show);
+  const pending = usePendingEntryState({ entryId, filePath, runId, subagentId });
 
   const handleOpen = async () => {
     try {
@@ -37,7 +51,7 @@ export function FileEditRow({ filePath, additions, deletions }: FileEditRowProps
   };
 
   return (
-    <div className={cn('group', timelineRowHeaderClassName)}>
+    <div className={cn('group flex items-center gap-1', timelineRowHeaderClassName)}>
       <FileCode className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} />
       <div
         className="min-w-0 flex-1 truncate font-mono text-row text-text-primary"
@@ -50,6 +64,7 @@ export function FileEditRow({ filePath, additions, deletions }: FileEditRowProps
         deletions={deletions}
         className="shrink-0"
       />
+      {pending && <PendingEntryDot />}
       <button
         type="button"
         onClick={() => void handleOpen()}

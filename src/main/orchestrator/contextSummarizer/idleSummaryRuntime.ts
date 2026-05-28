@@ -120,6 +120,19 @@ export function abortIdleSummary(conversationId: string): boolean {
   return true;
 }
 
+/**
+ * Cancel idle summarization by synthetic `runId` (Composer Stop /
+ * `chat:abort` defense when the renderer routes through the wrong IPC).
+ */
+export function abortIdleSummaryByRunId(runId: string): boolean {
+  for (const handle of idleHandles.values()) {
+    if (handle.runId !== runId) continue;
+    handle.abort.abort();
+    return true;
+  }
+  return false;
+}
+
 /** Drain every in-flight idle summary at app shutdown. */
 export function abortAllIdleSummaries(): void {
   for (const conversationId of [...idleHandles.keys()]) {
@@ -145,10 +158,6 @@ export function hasIdleSummary(conversationId: string): boolean {
  * `LiveStreamCard` to the same `summaries[id]` accumulator the
  * timeline already paints.
  */
-export function getIdleRunId(conversationId: string): string | undefined {
-  return idleHandles.get(conversationId)?.runId;
-}
-
 /**
  * Read the active summaryId for an idle summary that has already
  * emitted its `context-summary-pending` event. Returns `undefined`

@@ -134,11 +134,52 @@ describe('createStreamingArgsTap', () => {
     void tap;
   });
 
-  it('drops deltas with no tool name (the streamer cannot classify them)', () => {
+  it('drops deltas with no tool name when args are not yet classifiable', () => {
     const fake = makeFakeStreamer();
     const tap = createStreamingArgsTap(fake.ref);
-    tap.argsDeltaTap('c1', undefined, '{"path":"a.ts"}');
+    tap.argsDeltaTap('c1', undefined, '{"foo":1}');
     expect(fake.onArgsDelta).not.toHaveBeenCalled();
+  });
+
+  it('infers edit from path+oldString when name is missing', () => {
+    const fake = makeFakeStreamer();
+    const tap = createStreamingArgsTap(fake.ref);
+    tap.argsDeltaTap(
+      'c1',
+      undefined,
+      '{"path":"a.ts","oldString":"x","newString":"y"}'
+    );
+    expect(fake.onArgsDelta).toHaveBeenCalledWith({
+      callId: 'c1',
+      name: 'edit',
+      parsed: { path: 'a.ts', oldString: 'x', newString: 'y' }
+    });
+  });
+
+  it('infers report from body+title when name is missing', () => {
+    const fake = makeFakeStreamer();
+    const tap = createStreamingArgsTap(fake.ref);
+    tap.argsDeltaTap(
+      'c1',
+      undefined,
+      '{"title":"Survey","body":"<html>"}'
+    );
+    expect(fake.onArgsDelta).toHaveBeenCalledWith({
+      callId: 'c1',
+      name: 'report',
+      parsed: { title: 'Survey', body: '<html>' }
+    });
+  });
+
+  it('infers bash from command when name is missing', () => {
+    const fake = makeFakeStreamer();
+    const tap = createStreamingArgsTap(fake.ref);
+    tap.argsDeltaTap('c1', undefined, '{"command":"echo hi > out.txt"}');
+    expect(fake.onArgsDelta).toHaveBeenCalledWith({
+      callId: 'c1',
+      name: 'bash',
+      parsed: { command: 'echo hi > out.txt' }
+    });
   });
 
   it('forwards onToolCallSettled to the streamer and drops the parser', () => {

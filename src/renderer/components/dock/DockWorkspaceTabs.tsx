@@ -21,7 +21,14 @@ import { cn } from '../../lib/cn.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useWorkspaceHasActiveRun } from '../../hooks/chat/index.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
-import { CONV_DRAG_MIME, DOCK_HOVER_ACTIONS, DOCK_TAB_FOCUS } from './dockShared.js';
+import {
+  CONV_DRAG_MIME,
+  DOCK_EMPTY_STATE_CLASS,
+  DOCK_HOVER_ACTIONS,
+  dockInlineActionClassName,
+  dockTabRowClassName
+} from './dockShared.js';
+import { chromePillClassName } from '../ui/SurfaceShell.js';
 import { useUiStore } from '../../store/useUiStore.js';
 import { handleDockVerticalTablistKeyDown } from './dockVerticalTablistKeyboard.js';
 
@@ -43,23 +50,20 @@ export function DockWorkspaceTabs() {
 
   if (loading && workspaces.length === 0) {
     return (
-      <div className="flex items-center gap-2 px-2 py-1 text-row text-text-faint">
-        <Spinner /> Loading workspaces…
+      <div className={cn(DOCK_EMPTY_STATE_CLASS, 'flex-row items-center')}>
+        <Spinner /> <span className="text-row text-text-faint">Loading workspaces…</span>
       </div>
     );
   }
 
   if (workspaces.length === 0) {
     return (
-      <div className="flex flex-col gap-2 px-2 py-1">
+      <div className={DOCK_EMPTY_STATE_CLASS}>
         <span className="text-row text-text-faint">No workspaces.</span>
         <button
           type="button"
           onClick={() => void addWorkspace()}
-          className={cn(
-            'app-no-drag rounded-inner px-2 py-0.5 text-row text-text-muted',
-            'transition-colors duration-150 hover:bg-surface-hover hover:text-text-primary'
-          )}
+          className={dockInlineActionClassName()}
         >
           Add workspace
         </button>
@@ -72,7 +76,7 @@ export function DockWorkspaceTabs() {
       ref={scrollRef}
       role="tablist"
       aria-label="Workspaces"
-      className="scrollbar-stealth flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1 pb-1"
+      className="scrollbar-stealth flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1 pb-1.5"
       onKeyDown={(e) => {
         handleDockVerticalTablistKeyDown({
           e,
@@ -97,11 +101,7 @@ export function DockWorkspaceTabs() {
         aria-label="Add workspace"
         title="Add workspace"
         onClick={() => void addWorkspace()}
-        className={cn(
-          'app-no-drag inline-flex h-7 w-full shrink-0 items-center justify-center gap-1 rounded-inner',
-          'text-row text-text-muted transition-colors duration-150',
-          'hover:bg-surface-hover hover:text-text-primary'
-        )}
+        className={cn(chromePillClassName(), 'gap-1 self-start px-1.5 text-row')}
       >
         <Plus className="h-3 w-3" strokeWidth={2.25} />
         <span>Add workspace</span>
@@ -165,12 +165,7 @@ function WorkspaceTab({ workspace, active, onActivate }: WorkspaceTabProps) {
           void moveConversation(conversationId, workspace.id);
         }}
         className={cn(
-          'group app-no-drag flex w-full max-w-none shrink-0 items-center gap-1 rounded-inner px-2 py-1',
-          'text-row transition-colors duration-150',
-          DOCK_TAB_FOCUS,
-          active
-            ? 'bg-surface-overlay text-text-primary'
-            : 'text-text-muted hover:bg-surface-hover/60 hover:text-text-secondary',
+          dockTabRowClassName(active, 'workspace'),
           hasActiveRun && 'vyotiq-shimmer-pill',
           dragOver && 'bg-surface-hover ring-1 ring-border-subtle/60'
         )}

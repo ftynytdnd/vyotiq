@@ -280,4 +280,39 @@ describe('handleAssistantTurn — mid-stream <delegate /> detection', () => {
     );
     expect(events2.filter((e) => e.kind === 'subagent-pending')).toHaveLength(1);
   });
+
+  it('stamps the orchestrator\u2019s provider+model on every emitted subagent-pending', async () => {
+    // May 2026 restyle: the renderer's sub-agent row shows a tiny
+    // model badge sourced from `subagent-pending.model` (with
+    // `subagent-spawn.model` later winning on reconciliation). The
+    // mid-stream parser MUST stamp the orchestrator's `req.providerId`
+    // + `req.model` on every pending event so the badge can paint
+    // the moment the directive lands \u2014 before the spawn round runs.
+    vi.mocked(streamChat).mockReturnValue(
+      asyncGen([
+        { contentDelta: '<delegate id="A1" task="task one" />' },
+        { contentDelta: '<delegate id="A2" task="task two" />' },
+        { finishReason: 'stop' }
+      ])
+    );
+    const events: TimelineEvent[] = [];
+    await handleAssistantTurn(
+      {
+        providerId: 'openai',
+        model: 'gpt-test',
+        messages: [],
+        signal: new AbortController().signal
+      },
+      (e) => events.push(e)
+    );
+
+    const pending = events.filter((e) => e.kind === 'subagent-pending') as Extract<
+      TimelineEvent,
+      { kind: 'subagent-pending' }
+    >[];
+    expect(pending).toHaveLength(2);
+    for (const event of pending) {
+      expect(event.model).toEqual({ providerId: 'openai', modelId: 'gpt-test' });
+    }
+  });
 });

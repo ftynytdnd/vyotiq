@@ -5,6 +5,7 @@ import { AttachmentButton } from './AttachmentButton.js';
 import { PermissionsMenu } from './PermissionsMenu.js';
 import { ModelPicker } from './modelPicker/index.js';
 import { SendButton } from './SendButton.js';
+import { chromeEdgeClassName, chromeIconPillClassName } from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
 
 interface ComposerToolbarProps {
@@ -55,10 +56,11 @@ export function ComposerToolbar({
   return (
     <div
       className={cn(
-        'flex min-w-0 flex-wrap items-center gap-x-0.5 gap-y-0.5',
+        'flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1',
         footerMode
-          ? 'px-1.5 py-0.5'
-          : 'border-t border-border-subtle/30 px-2 py-1.5'
+          ? 'border-t px-2 py-1'
+          : 'border-t px-2 py-1',
+        chromeEdgeClassName
       )}
     >
       <div className="flex min-w-0 flex-1 items-center gap-0.5">
@@ -78,22 +80,32 @@ export function ComposerToolbar({
           title="Voice input is not available yet"
           aria-label="Voice input (not available)"
           className={cn(
-            'app-no-drag inline-flex h-7 w-7 items-center justify-center rounded-inner',
-            'text-text-faint opacity-50 cursor-not-allowed'
+            chromeIconPillClassName(), 'cursor-not-allowed opacity-50'
           )}
         >
           <Mic className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
         </button>
       </div>
-      <div className="ml-auto flex min-w-0 max-w-full items-center justify-end gap-0.5">
-        <ModelPicker
-          value={model}
-          onChange={onModelChange}
-          onOpenProviders={onOpenProviders}
+      <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
+        <div className="min-w-0 shrink">
+          <ModelPicker
+            value={model}
+            onChange={onModelChange}
+            onOpenProviders={onOpenProviders}
+          />
+        </div>
+        <SendButton
+          onClick={onSend}
+          state={sendState}
+          disabled={!canSend && sendState !== 'processing'}
         />
-        <SendButton onClick={onSend} state={sendState} disabled={!canSend && sendState !== 'processing'} />
         {tokenUsageSlot && (
-          <div className={cn('flex shrink-0 items-center', compact && 'max-w-[9rem] overflow-hidden')}>
+          <div
+            className={cn(
+              'flex min-w-0 max-w-[12rem] shrink-0 items-center overflow-hidden',
+              compact && 'max-w-[10rem]'
+            )}
+          >
             {tokenUsageSlot}
           </div>
         )}
@@ -101,3 +113,4 @@ export function ComposerToolbar({
     </div>
   );
 }
+

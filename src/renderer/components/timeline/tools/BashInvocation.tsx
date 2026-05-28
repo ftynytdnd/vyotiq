@@ -17,14 +17,13 @@
  *   panes carry the authoritative result.
  */
 
-import { Terminal } from 'lucide-react';
 import type { ToolCall, ToolResult } from '@shared/types/tool.js';
 import type { DiffStreamSnapshot } from '../reducer/types.js';
 import { InvocationShell } from './shared/InvocationShell.js';
 import { DetailPane } from './shared/DetailPane.js';
 import { CodeBlock } from './shared/CodeBlock.js';
-import { DiffStatsBadge } from './shared/DiffStatsBadge.js';
-import { EditDiffView } from './edit/EditDiffView.js';
+import { DiffStreamPane } from './shared/DiffStreamPane.js';
+import { toolErrorBody, toolErrorHint } from './shared/toolErrorDisplay.js';
 
 interface BashInvocationProps {
   call?: ToolCall;
@@ -61,8 +60,8 @@ export function BashInvocation({ call, result, dense, rowKey, partial, diffStrea
   const showDiffStream =
     partial === true && diffStream !== undefined && diffStream.tool === 'bash';
 
-  const hasDetail = Boolean(command || data || result?.error || showDiffStream);
-  const errorHint = result && !result.ok ? result.error : undefined;
+  const hasDetail = Boolean(command || data || (result && !result.ok) || showDiffStream);
+  const errorHint = toolErrorHint(result);
 
   const detail = hasDetail ? (
     <>
@@ -71,26 +70,11 @@ export function BashInvocation({ call, result, dense, rowKey, partial, diffStrea
           <CodeBlock body={command} />
         </DetailPane>
       )}
-      {showDiffStream && (
-        <>
-          <div className="flex items-center gap-2 text-row text-text-muted">
-            <span className="font-mono truncate" title={diffStream.filePath}>
-              {diffStream.filePath}
-            </span>
-            <DiffStatsBadge
-              additions={diffStream.additions}
-              deletions={diffStream.deletions}
-              pending={!diffStream.settled}
-            />
-          </div>
-          <DetailPane label={diffStream.settled ? 'live write' : 'streaming write'}>
-            <EditDiffView
-              key={diffStream.settled ? 'bash-stream-settled' : 'bash-stream-live'}
-              hunks={diffStream.hunks}
-              variant={diffStream.settled ? 'authoritative' : 'partial'}
-            />
-          </DetailPane>
-        </>
+      {showDiffStream && diffStream && (
+        <DiffStreamPane
+          diffStream={diffStream}
+          label={diffStream.settled ? 'live write' : 'streaming write'}
+        />
       )}
       {data && data.stdout.length > 0 && (
         <DetailPane label={data.stdoutTruncated ? 'stdout (truncated)' : 'stdout'}>
@@ -114,9 +98,11 @@ export function BashInvocation({ call, result, dense, rowKey, partial, diffStrea
               : `exit: ${data.exitCode ?? '?'}`}
         </div>
       )}
-      {!data && result?.error && (
+      {!data && result && !result.ok && (
         <DetailPane label="error" tone="danger">
-          <CodeBlock body={result.error} tone="danger" />
+          <div className="font-mono text-row text-danger whitespace-pre-wrap">
+            {toolErrorBody(result)}
+          </div>
         </DetailPane>
       )}
     </>
@@ -131,7 +117,6 @@ export function BashInvocation({ call, result, dense, rowKey, partial, diffStrea
 
   return (
     <InvocationShell
-      Icon={Terminal}
       title="bash"
       summary={summary}
       mono
@@ -141,6 +126,9 @@ export function BashInvocation({ call, result, dense, rowKey, partial, diffStrea
       {...(dense ? { dense } : {})}
       {...(rowKey ? { rowKey } : {})}
       {...(liveAutoExpand ? { liveAutoExpand } : {})}
+      call={call}
+      result={result}
+      partial={partial}
     />
   );
 }

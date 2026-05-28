@@ -4,11 +4,11 @@
  * the rendered transcript / list.
  */
 
-import { History } from 'lucide-react';
 import type { ToolCall, ToolResult } from '@shared/types/tool.js';
 import { InvocationShell } from './shared/InvocationShell.js';
 import { DetailPane } from './shared/DetailPane.js';
 import { CodeBlock } from './shared/CodeBlock.js';
+import { toolErrorBody, toolErrorHint } from './shared/toolErrorDisplay.js';
 
 interface RecallInvocationProps {
   call?: ToolCall;
@@ -38,7 +38,7 @@ export function RecallInvocation({ call, result, dense, rowKey }: RecallInvocati
         ? `read ${targetId.slice(0, 8)}…`
         : 'read';
 
-  const errorHint = result && !result.ok ? result.error : undefined;
+  const errorHint = toolErrorHint(result);
 
   let detail: React.ReactNode = undefined;
   if (data?.preview) {
@@ -47,17 +47,18 @@ export function RecallInvocation({ call, result, dense, rowKey }: RecallInvocati
         <CodeBlock body={data.preview} />
       </DetailPane>
     );
-  } else if (result?.error) {
+  } else if (result && !result.ok) {
     detail = (
       <DetailPane label="error" tone="danger">
-        <CodeBlock body={result.error} tone="danger" />
+        <div className="font-mono text-row text-danger whitespace-pre-wrap">
+          {toolErrorBody(result)}
+        </div>
       </DetailPane>
     );
   }
 
   return (
     <InvocationShell
-      Icon={History}
       title="recall"
       summary={summary}
       mono
@@ -66,6 +67,8 @@ export function RecallInvocation({ call, result, dense, rowKey }: RecallInvocati
       {...(detail !== undefined ? { detail } : {})}
       {...(dense ? { dense } : {})}
       {...(rowKey ? { rowKey } : {})}
+      call={call}
+      result={result}
     />
   );
 }

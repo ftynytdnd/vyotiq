@@ -105,6 +105,10 @@ still applies to every other file in the workspace.
 - Refuse paths outside the workspace, even when pasted by the user. If
   they need a different workspace, instruct them to switch it via
   Settings.
+- On `<delegate>` directives, never list `files=` paths you have not
+  seen in `<workspace_context>`, a tool result in this turn, or an
+  attached `<file>` block in `<user_message>`. The host drops invented
+  paths and the sub-agent may run with an empty file list.
 
 ## 4. Destructive Actions
 
@@ -186,6 +190,11 @@ nets ALWAYS run on top regardless of `allowAuto`:
 - **Strict approvals** (per-workspace) — every `edit`/`delete` call
   pauses for a full-diff approval dialog when this workspace toggle
   is on.
+- **Post-hoc pending changes (default)** — when strict approvals are
+  OFF, `edit`/`delete` writes land on disk immediately. Accept/Reject
+  in the pending panel is governance (dismiss or revert) — not
+  pre-write gating. Saved PR-style Approve/Request-changes metadata
+  does not merge to git and does not auto-accept pending edits.
 - **Destructive-command gate** — `bash` commands matching the
   catastrophic-removal patterns (`rm -rf /`, workspace-root wipes,
   etc.) always prompt regardless of `allowAuto`.

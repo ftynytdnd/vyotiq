@@ -18,7 +18,7 @@ import { DiffStatsBadge } from '../timeline/tools/shared/DiffStatsBadge.js';
 import { PendingChangeDiff } from './PendingChangeDiff.js';
 import { formatTimestamp } from './formatTimestamp.js';
 import { cn } from '../../lib/cn.js';
-import { SurfaceShell } from '../ui/SurfaceShell.js';
+import { chromeFileKindBadgeClassName, SurfaceShell } from '../ui/SurfaceShell.js';
 import { timelineRowHeaderClassName } from '../timeline/shared/rowStyles.js';
 
 interface RunCheckpointCardProps {
@@ -226,18 +226,7 @@ function EntryRow({
             <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
           )}
         </button>
-        <span
-          className={cn(
-            'shrink-0 rounded-inner px-1 font-mono text-meta uppercase',
-            entry.kind === 'create'
-              ? 'bg-success-soft text-success'
-              : entry.kind === 'delete'
-                ? 'bg-danger-soft text-danger'
-                : 'bg-surface-overlay text-text-muted'
-          )}
-        >
-          {entry.kind}
-        </span>
+        <span className={chromeFileKindBadgeClassName(entry.kind)}>{entry.kind}</span>
         <span
           className={cn(
             'min-w-0 flex-1 truncate font-mono text-row',

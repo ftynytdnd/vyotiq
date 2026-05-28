@@ -41,6 +41,7 @@
 import React, { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+import { chromeEdgeClassName } from './SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
 import { IconButton } from './IconButton.js';
 
@@ -239,21 +240,28 @@ export function Modal({
         tabIndex={-1}
         className={cn(
           'elev-2 mx-4 flex max-h-[80vh] w-full flex-col overflow-hidden rounded-card',
-          'bg-surface-raised',
+          'border border-border-subtle/18 bg-surface-raised',
           size === 'md' && 'max-w-xl',
           size === 'lg' && 'max-w-3xl',
           size === 'xl' && 'max-w-6xl'
         )}
       >
-        <div className="flex items-center justify-between px-5 py-4">
-          <h2 id={titleId} className="text-body font-semibold text-text-primary">
+        <div
+          className={cn(
+            'flex items-center justify-between border-b px-5 py-3.5',
+            chromeEdgeClassName
+          )}
+        >
+          <h2 id={titleId} className="text-row font-semibold text-text-primary">
             {title}
           </h2>
           <IconButton label="Close" onClick={onClose}>
             <X className="h-4 w-4" strokeWidth={2.25} />
           </IconButton>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 pb-5">{children}</div>
+        <div className="scrollbar-stealth flex-1 overflow-y-auto px-5 pb-5 pt-1">
+          {children}
+        </div>
       </div>
     </div>,
     document.body

@@ -26,25 +26,21 @@
 
 import type { TimelineEvent } from '@shared/types/chat.js';
 import type { ToolCall, ToolName, ToolResult } from '@shared/types/tool.js';
-import { computeDiffOps } from '@shared/text/diff/computeDiffHunks.js';
 import type { DiffStreamSnapshot, PartialToolCallArgs, TokenUsageAggregate } from './types.js';
 import { foldTokenUsage } from './types.js';
-import { shouldSynthesizePartialToolEntry } from './partialToolVisibility.js';
+import { appendSynthesizedPartialRows } from './deriveRows/partials.js';
+import { flushRunToRows, type OpenRun, type OpenRunUsage } from './deriveRows/runBoundaries.js';
 
-/** Tool names recognised at the orchestrator + sub-agent level. Used
- *  for surrogate-call name lookup. Keep in sync with `ToolName`. */
-const KNOWN_TOOL_NAMES: readonly ToolName[] = [
-  'bash',
-  'ls',
-  'read',
-  'edit',
-  'delete',
-  'search',
-  'memory',
-  'recall',
-  'report',
-  'unknown'
-];
+import { editChildPath } from './deriveRows/groupTools.js';
+
+export {
+  toolGroupSummary,
+  editChildPath,
+  toolGroupDiffStats,
+  toolGroupStatus,
+  tailInFlightEditChildIndex
+} from './deriveRows/groupTools.js';
+export { pickToolName } from './deriveRows/partials.js';
 
 export interface ToolGroupChild {
   callId: string;
@@ -78,6 +74,8 @@ export interface ToolGroupChild {
    * `tool-call` event lands.
    */
   diffStream?: DiffStreamSnapshot;
+  /** Collapsed retry count for consecutive failed edits on the same path. */
+  retryCount?: number;
 }
 
 export interface FileEditGroupChild {
@@ -85,6 +83,7 @@ export interface FileEditGroupChild {
   filePath: string;
   additions: number;
   deletions: number;
+  entryId?: string;
 }
 
 export type Row =
@@ -107,7 +106,7 @@ export type Row =
   | { kind: 'assistant-text'; key: string; id: string }
   | { kind: 'reasoning-line'; key: string; id: string }
   | { kind: 'agent-thought'; key: string; content: string; severity?: 'info' | 'warn' }
-  | { kind: 'phase'; key: string; label: string }
+  | { kind: 'phase'; key: string; label: string; tooltip?: string }
   | { kind: 'error'; key: string; message: string }
   | { kind: 'subagent-line'; key: string; subagentId: string }
   | {
@@ -121,9 +120,22 @@ export type Row =
     key: string;
     children: FileEditGroupChild[];
   }
-  | { kind: 'run-complete'; key: string; durationMs: number; usage?: TokenUsageAggregate }
+  | {
+    kind: 'run-complete';
+    key: string;
+    durationMs: number;
+    usage?: TokenUsageAggregate;
+    editCount?: number;
+    fileCount?: number;
+  }
+  | {
+    kind: 'token-budget-warning';
+    key: string;
+    percent: number;
+    tokens?: number;
+    ceiling?: number;
+  }
   /**
-   * Inline marker that a context-summarization event lifecycle
    * exists at this position in the timeline. The row component
    * (`ContextSummaryRow`) reads the live state by `summaryId` from
    * `useChatStore.summaries[summaryId]` so streaming deltas paint
@@ -141,6 +153,8 @@ export interface DeriveRowsOptions {
    * gets its trailing closer exactly once.
    */
   runActive?: boolean;
+  /** Model context window — enables token-budget warning rows at 70%+. */
+  contextWindow?: number;
   /**
    * Live partial-args snapshots for orchestrator-level tool calls that
    * haven't yet emitted their authoritative `tool-call` event. When
@@ -163,6 +177,31 @@ export interface DeriveRowsOptions {
    * to the slot (the deriver falls back to the walk).
    */
   settledCallIds?: Record<string, true>;
+  /** Live FS diff keyed by callId — merged into settled tool-group children. */
+  liveDiffByCallId?: Record<string, import('./types.js').DiffStreamSnapshot>;
+}
+
+function enrichToolGroupsWithLiveDiff(
+  rows: Row[],
+  liveDiffByCallId: DeriveRowsOptions['liveDiffByCallId']
+): Row[] {
+  if (!liveDiffByCallId || Object.keys(liveDiffByCallId).length === 0) return rows;
+  return rows.map((row) => {
+    if (row.kind !== 'tool-group') return row;
+    let changed = false;
+    const children = row.children.map((child) => {
+      if (child.result) return child;
+      const diff = liveDiffByCallId[child.callId];
+      if (!diff) return child;
+      changed = true;
+      return {
+        ...child,
+        diffStream: diff,
+        partial: child.partial === true
+      };
+    });
+    return changed ? { ...row, children } : row;
+  });
 }
 
 export function deriveRows(
@@ -173,7 +212,6 @@ export function deriveRows(
   const seenText = new Set<string>();
   const seenReasoning = new Set<string>();
   const seenSubagent = new Set<string>();
-
   // Index of the last *open* tool-group per tool name so we can append to
   // it when the next event is a matching tool call/result. Reset by any
   // "breaker" event (see rules in the file header).
@@ -190,79 +228,13 @@ export function deriveRows(
   // closed and a single `run-complete` row is emitted carrying the
   // wall-clock total. The trailing run is closed at end-of-input only
   // when `opts.runActive` is false.
-  let openRun: { promptId: string; promptTs: number; lastTs: number } | null = null;
-  let openRunUsage: {
-    orchestrator?: TokenUsageAggregate;
-    subagents: Record<string, TokenUsageAggregate>;
-  } | null = null;
-
-  const combineRunUsage = (): TokenUsageAggregate | undefined => {
-    if (!openRunUsage) return undefined;
-    const parts: TokenUsageAggregate[] = [];
-    if (openRunUsage.orchestrator) parts.push(openRunUsage.orchestrator);
-    for (const id of Object.keys(openRunUsage.subagents).sort()) {
-      const usage = openRunUsage.subagents[id];
-      if (usage) parts.push(usage);
-    }
-    if (parts.length === 0) return undefined;
-    if (parts.length === 1) return parts[0];
-    let latest = parts[0]!.latest;
-    let peak = parts[0]!.peak;
-    let cumulative = parts[0]!.cumulative;
-    let samples = parts[0]!.samples;
-    let streamStartedAt = parts[0]!.streamStartedAt;
-    let streamEndedAt = parts[0]!.streamEndedAt;
-    for (let i = 1; i < parts.length; i++) {
-      const o = parts[i]!;
-      latest = {
-        promptTokens: latest.promptTokens + o.latest.promptTokens,
-        completionTokens: latest.completionTokens + o.latest.completionTokens,
-        totalTokens: latest.totalTokens + o.latest.totalTokens
-      };
-      cumulative = {
-        promptTokens: cumulative.promptTokens + o.cumulative.promptTokens,
-        completionTokens: cumulative.completionTokens + o.cumulative.completionTokens,
-        totalTokens: cumulative.totalTokens + o.cumulative.totalTokens
-      };
-      peak = {
-        promptTokens: Math.max(peak.promptTokens, o.peak.promptTokens),
-        completionTokens: Math.max(peak.completionTokens, o.peak.completionTokens),
-        totalTokens: Math.max(peak.totalTokens, o.peak.totalTokens)
-      };
-      samples += o.samples;
-      if (typeof o.streamStartedAt === 'number') {
-        streamStartedAt =
-          typeof streamStartedAt === 'number'
-            ? Math.min(streamStartedAt, o.streamStartedAt)
-            : o.streamStartedAt;
-      }
-      if (typeof o.streamEndedAt === 'number') {
-        streamEndedAt =
-          typeof streamEndedAt === 'number'
-            ? Math.max(streamEndedAt, o.streamEndedAt)
-            : o.streamEndedAt;
-      }
-    }
-    const out: TokenUsageAggregate = { latest, peak, cumulative, samples };
-    if (typeof streamStartedAt === 'number') out.streamStartedAt = streamStartedAt;
-    if (typeof streamEndedAt === 'number') out.streamEndedAt = streamEndedAt;
-    return out;
-  };
+  let openRun: OpenRun | null = null;
+  let openRunUsage: OpenRunUsage | null = null;
 
   const flushRun = () => {
-    if (!openRun) return;
-    const durationMs = openRun.lastTs - openRun.promptTs;
-    if (durationMs > 0) {
-      const usage = combineRunUsage();
-      out.push({
-        kind: 'run-complete',
-        key: `done:${openRun.promptId}`,
-        durationMs,
-        ...(usage !== undefined ? { usage } : {})
-      });
-    }
-    openRun = null;
-    openRunUsage = null;
+    const next = flushRunToRows(out, openRun, openRunUsage, opts.contextWindow);
+    openRun = next.openRun;
+    openRunUsage = next.openRunUsage;
   };
 
   const closeGroups = () => {
@@ -306,7 +278,7 @@ export function deriveRows(
       case 'user-prompt':
         closeGroups();
         flushRun();
-        openRun = { promptId: e.id, promptTs: e.ts, lastTs: e.ts };
+        openRun = { promptId: e.id, promptTs: e.ts, lastTs: e.ts, editCount: 0, filePaths: new Set() };
         out.push({
           kind: 'user-prompt',
           key: e.id,
@@ -372,7 +344,12 @@ export function deriveRows(
 
       case 'phase':
         closeGroups();
-        out.push({ kind: 'phase', key: e.id, label: e.label });
+        out.push({
+          kind: 'phase',
+          key: e.id,
+          label: e.label,
+          ...(e.tooltip ? { tooltip: e.tooltip } : {})
+        });
         break;
 
       case 'subagent-pending':
@@ -405,7 +382,12 @@ export function deriveRows(
           const row = out[existingGroupIdx] as Extract<Row, { kind: 'tool-group' }>;
           const children = row.children.slice();
           const prev = children[existingChildIdx]!;
-          children[existingChildIdx] = { ...prev, call: e.call };
+          children[existingChildIdx] = {
+            ...prev,
+            call: e.call,
+            partial: false,
+            diffStream: undefined
+          };
           out[existingGroupIdx] = { ...row, children };
           break;
         }
@@ -485,6 +467,11 @@ export function deriveRows(
           break; // rendered inside sub-agent trace
         }
 
+        if (openRun) {
+          openRun.editCount += 1;
+          if (e.filePath) openRun.filePaths.add(e.filePath);
+        }
+
         // Merge into the immediately-prior `edit` tool-group when its
         // last successful child targets the same path. Avoids the
         // duplicate "Edited X" + "Edited X +N -M" pair that previously
@@ -539,7 +526,8 @@ export function deriveRows(
             key: e.id,
             filePath: e.filePath,
             additions: e.additions,
-            deletions: e.deletions
+            deletions: e.deletions,
+            ...(e.entryId ? { entryId: e.entryId } : {})
           }
         ];
         out[groupIdx] = { ...row, children };
@@ -562,6 +550,15 @@ export function deriveRows(
               e.usage,
               e.ts
             );
+            const ceiling = opts.contextWindow;
+            const latest = openRunUsage.orchestrator?.latest.totalTokens;
+            if (typeof ceiling === 'number' && ceiling > 0 && typeof latest === 'number') {
+              const pct = latest / ceiling;
+              if (pct >= 0.7) {
+                openRun.tokenBudgetWarnPct = Math.min(100, Math.round(pct * 100));
+                openRun.tokenBudgetWarnTokens = latest;
+              }
+            }
           } else {
             openRunUsage.subagents[ownerKey] = foldTokenUsage(
               openRunUsage.subagents[ownerKey],
@@ -664,459 +661,10 @@ export function deriveRows(
   // the live position the user is watching.
   const partials = opts.partialToolCallArgs;
   if (partials) {
-    appendSynthesizedPartialRows(out, partials, opts.settledCallIds);
+    appendSynthesizedPartialRows(out, partials, opts.settledCallIds, true);
   }
   if (!opts.runActive) {
     flushRun();
   }
-  return out;
+  return enrichToolGroupsWithLiveDiff(out, opts.liveDiffByCallId);
 }
-
-/**
- * Walk `partialToolCallArgs` and append a synthesized `tool-group`
- * child for each entry whose callId hasn't already been observed as
- * a settled `tool-call`. Folds consecutive entries of the same tool
- * name into one group (mirroring the live-event rule).
- *
- * The synthesized `ToolCall` carries the parser's best-effort
- * snapshot in `args`; the renderer's bespoke per-tool components
- * already tolerate partial / missing keys (see `EditInvocation`,
- * `ReadInvocation`, etc.).
- */
-function appendSynthesizedPartialRows(
-  out: Row[],
-  partials: Record<string, PartialToolCallArgs>,
-  preComputedSettled?: Record<string, true>
-): void {
-  // Skip entries whose callId is already keyed in the events walk.
-  // The reducer drops the partial entry on `tool-call` so the only
-  // way this would matter is mid-frame inconsistency — defensive.
-  //
-  // Audit fix L-11: when the caller passes a pre-computed
-  // `settledCallIds` map (built into reducer state for the late-frame
-  // race guard), skip the O(R×C) walk over every tool-group row's
-  // children to derive the same set. Fall back to the walk for
-  // callers that don't have the slot.
-  const settledIds = new Set<string>();
-  if (preComputedSettled) {
-    for (const id of Object.keys(preComputedSettled)) settledIds.add(id);
-  } else {
-    for (const row of out) {
-      if (row.kind === 'tool-group') {
-        for (const c of row.children) settledIds.add(c.callId);
-      }
-    }
-  }
-  // Append in `index` order so parallel tool-call streams render in
-  // their wire order rather than `Object.keys` order.
-  const entries = Object.values(partials)
-    .filter((p) => !settledIds.has(p.callId))
-    .sort((a, b) => a.index - b.index);
-  if (entries.length === 0) return;
-
-  // Reuse the trailing group when its tool name matches the next
-  // partial entry — same grouping rule as live events.
-  for (const p of entries) {
-    if (!shouldSynthesizePartialToolEntry(p, KNOWN_TOOL_NAMES)) continue;
-    // Phase 2: when a diff-stream snapshot has landed before the
-    // first args-delta seeded a parsed name, prefer the
-    // diff-stream's tool field so the synthesized child renders
-    // under the right tool icon / verb.
-    const toolHint =
-      p.name === undefined && p.diffStream
-        ? p.diffStream.tool
-        : p.name;
-    const toolName = pickToolName(toolHint);
-    const child: ToolGroupChild = {
-      callId: p.callId,
-      call: {
-        id: p.callId,
-        name: toolName,
-        args: p.parsed ?? {}
-      },
-      partial: true,
-      ...(p.diffStream ? { diffStream: p.diffStream } : {})
-    };
-    const tail = out[out.length - 1];
-    if (tail && tail.kind === 'tool-group' && tail.toolName === toolName) {
-      const next: Extract<Row, { kind: 'tool-group' }> = {
-        ...tail,
-        children: [...tail.children, child]
-      };
-      out[out.length - 1] = next;
-    } else {
-      // Use the same `tg:${callId}` keyspace settled groups use so a
-      // partial-only group's manual expand/collapse override survives
-      // the partial → settled transition. The reducer's
-      // `appendSynthesizedPartialRows` filter already guarantees we
-      // never emit a duplicate of an existing settled `tg:${callId}`
-      // (the callId-in-out scan happens above), so there's no key
-      // collision risk. Audit fix — live diff visibility.
-      out.push({
-        kind: 'tool-group',
-        key: `tg:${p.callId}`,
-        toolName,
-        children: [child]
-      });
-    }
-  }
-}
-
-function pickToolName(raw: string | undefined): ToolName {
-  if (raw && (KNOWN_TOOL_NAMES as readonly string[]).includes(raw)) {
-    return raw as ToolName;
-  }
-  return 'unknown';
-}
-
-/**
- * Derive a verb + primary-arg label for a tool group.
- *
- * Returns the rolled-up summary like:
- *   `Read foo.tsx and 16 other files`
- *   `Searched "query" and 2 other queries`
- *   `Ran \`command\` and 3 other commands`
- * Used by the `ToolGroupRow` single-line renderer. Kept pure + sync so it
- * can be memoized at the call site.
- */
-export function toolGroupSummary(
-  toolName: ToolName,
-  children: ToolGroupChild[]
-): { verb: string; primary: string; suffix: string } {
-  const first = children[0];
-  const total = children.length;
-  const rest = Math.max(0, total - 1);
-  const primary = first ? extractPrimary(toolName, first) : '';
-  const verb = verbFor(toolName);
-  // Defect 3 (edit only): two edits to the same file previously read
-  // as "snake.py and 1 other file" — misleading because there's no
-  // OTHER file at all. When every `edit` child targets a single
-  // distinct path, switch the unit to "edit/edits" so the wording
-  // reflects what actually happened. Other tools keep their existing
-  // suffix unchanged.
-  let suffix = '';
-  if (rest > 0) {
-    if (toolName === 'edit' && countDistinctEditPaths(children) === 1) {
-      suffix = ` and ${rest} more edit${rest === 1 ? '' : 's'}`;
-    } else {
-      const unit = unitFor(toolName, rest === 1);
-      suffix = ` and ${rest} other ${unit}`;
-    }
-  }
-  return { verb, primary, suffix };
-}
-
-/**
- * Count how many distinct file paths an `edit` group's children
- * collectively address. Reads from `call.args.path` first (the
- * pre-result source, populated the moment the tool-call streams in)
- * and falls back to `result.data.filePath` for any child that has
- * already settled. Children with no resolvable path are ignored —
- * they don't contribute to the "same file?" determination.
- */
-function countDistinctEditPaths(children: ToolGroupChild[]): number {
-  const paths = new Set<string>();
-  for (const c of children) {
-    const p = editChildPath(c);
-    if (p) paths.add(p);
-  }
-  return paths.size;
-}
-
-/**
- * Resolve the file path an `edit` tool-group child targets, preferring
- * the authoritative `result.data.filePath` when settled and falling
- * back to the streamed `call.args.path`. Returns the empty string if
- * neither is populated (e.g. a still-streaming partial with no path
- * key yet).
- *
- * Exported so `SubAgentRunFlow` can reuse the exact same preference
- * order at the sub-agent level — both call sites need to identify
- * "edits to the same file" for diff-stats merging and the
- * `n other edits` summary unit, and divergent helpers risk silently
- * drifting (`SubAgentRunFlow` previously held a near-duplicate copy).
- */
-export function editChildPath(child: ToolGroupChild | undefined): string {
-  if (!child) return '';
-  const dataPath =
-    child.result?.data?.tool === 'edit' ? child.result.data.filePath : undefined;
-  if (typeof dataPath === 'string' && dataPath.length > 0) return dataPath;
-  const argPath = child.call?.args?.['path'];
-  if (typeof argPath === 'string' && argPath.length > 0) return argPath;
-  return '';
-}
-
-/**
- * Aggregate diff stats across all children of a tool-group. Three
- * sources fold into the badge:
- *
- *   1. **Settled `file-edit` merge** — `fileEditAdditions` /
- *      `fileEditDeletions` populated by the merge fold in the
- *      `case 'file-edit'` branch of `deriveRows`. The authoritative
- *      number; survives across renders.
- *
- *   2. **Authoritative `tool-result` diff stats** — for an edit that
- *      has settled but whose `file-edit` event hasn't merged yet
- *      (rare race). Falls back to `result.data.additions/deletions`
- *      so the badge isn't blank during the one-frame gap.
- *
- *   3. **Live partial preview** — for synthesised `partial: true`
- *      children, count `+`/`-` lines in the synthesised preview
- *      hunks derived from the streaming `oldString` / `newString`
- *      args. This is what drives the live `+N -M` counter while
- *      the model is still emitting bytes.
- *
- * Returns zeros when no source contributes (e.g. a streaming-only
- * group whose `oldString` hasn't started yet).
- */
-export function toolGroupDiffStats(children: ToolGroupChild[]): {
-  additions: number;
-  deletions: number;
-} {
-  let additions = 0;
-  let deletions = 0;
-  for (const c of children) {
-    // Path 1 — settled file-edit merge.
-    if (c.fileEditAdditions !== undefined || c.fileEditDeletions !== undefined) {
-      additions += c.fileEditAdditions ?? 0;
-      deletions += c.fileEditDeletions ?? 0;
-      continue;
-    }
-    // Path 2 — authoritative result without merge.
-    const data = c.result?.data;
-    if (data && data.tool === 'edit') {
-      additions += data.additions;
-      deletions += data.deletions;
-      continue;
-    }
-    // Path 3a — Phase 2 FS-aware live diff snapshot. When the
-    // main-process diff streamer has produced authoritative counts
-    // against the actual file body, use those directly. Takes
-    // precedence over the renderer-side synthesised preview because
-    // the FS-aware count reflects real surrounding context (hidden
-    // unchanged lines, line numbers, EOL handling).
-    if (c.partial && c.diffStream) {
-      additions += c.diffStream.additions;
-      deletions += c.diffStream.deletions;
-      continue;
-    }
-    // Path 3b — live partial preview synthesised renderer-side from
-    // the model's `oldString` / `newString`. Fallback for the
-    // pre-`diff-stream` window or for tools / files where the FS
-    // path can't compute (e.g. `create: true` against a not-yet-
-    // existing path).
-    if (c.partial && c.call) {
-      const counts = countPartialDiffLines(c.call.args ?? {});
-      additions += counts.additions;
-      deletions += counts.deletions;
-    }
-  }
-  return { additions, deletions };
-}
-
-/**
- * Count `+` / `-` lines that the renderer-side preview synthesiser
- * would produce for a streaming `edit` call's partial args. Mirrors
- * the LCS-based `synthesizeDiffPreview` exactly so the rolled-up
- * `+N -M` badge always agrees with what the expanded preview shows
- * line-for-line.
- *
- *   - `create: true` + partial `content` → every line in the
- *     accumulated content is a `+` line.
- *   - `oldString` + `newString` → run through the shared
- *     `computeDiffHunks` (same call the renderer makes when it
- *     paints the preview) and count `+` / `-` lines emitted.
- *     Unchanged lines are NOT counted — Phase 1.2 fix: the
- *     pre-1.2 implementation just split both strings and called
- *     every line a delete or an add, which inflated the badge for
- *     typo-sized edits where most lines were anchor context.
- *
- * Pure helper, called from `toolGroupDiffStats` on each render.
- * Bounded cost: the strings are the model's `oldString` /
- * `newString` only, never the full file body.
- */
-function countPartialDiffLines(args: Record<string, unknown>): {
-  additions: number;
-  deletions: number;
-} {
-  if (args['create'] === true) {
-    const content = args['content'];
-    if (typeof content !== 'string' || content.length === 0) {
-      return { additions: 0, deletions: 0 };
-    }
-    return { additions: content.split('\n').length, deletions: 0 };
-  }
-  const oldString = args['oldString'];
-  const newString = args['newString'];
-  if (typeof oldString !== 'string' || typeof newString !== 'string') {
-    return { additions: 0, deletions: 0 };
-  }
-  if (oldString.length === 0 && newString.length === 0) {
-    return { additions: 0, deletions: 0 };
-  }
-  // Use `computeDiffOps` (the unsegmented LCS walk) so the count
-  // matches `synthesizeDiffPreview` line-for-line. The hunk-
-  // segmenter in `computeDiffHunks` is for surrounding-context
-  // rendering — counting through it would either skip context
-  // lines (which we don't want to count anyway) or, with
-  // `context = 0`, truncate trailing changes after a context
-  // anchor. The flat op list avoids both pitfalls.
-  const ops = computeDiffOps(oldString, newString);
-  let additions = 0;
-  let deletions = 0;
-  for (const l of ops.lines) {
-    if (l.kind === '+') additions++;
-    else if (l.kind === '-') deletions++;
-  }
-  return { additions, deletions };
-}
-
-function verbFor(name: ToolName): string {
-  switch (name) {
-    case 'bash': return 'Ran';
-    case 'read': return 'Read';
-    case 'ls': return 'Listed';
-    case 'edit': return 'Edited';
-    case 'delete': return 'Deleted';
-    case 'search': return 'Searched';
-    case 'memory': return 'Memory';
-    case 'recall': return 'Recalled';
-    case 'report': return 'Wrote';
-    case 'unknown': return 'Unknown tool';
-  }
-}
-
-function unitFor(name: ToolName, singular: boolean): string {
-  switch (name) {
-    case 'bash': return singular ? 'command' : 'commands';
-    case 'read': return singular ? 'file' : 'files';
-    case 'ls': return singular ? 'path' : 'paths';
-    case 'edit': return singular ? 'file' : 'files';
-    case 'delete': return singular ? 'file' : 'files';
-    case 'search': return singular ? 'query' : 'queries';
-    case 'memory': return singular ? 'note' : 'notes';
-    case 'recall': return singular ? 'conversation' : 'conversations';
-    case 'report': return singular ? 'report' : 'reports';
-    case 'unknown': return singular ? 'invocation' : 'invocations';
-  }
-}
-
-function extractPrimary(name: ToolName, child: ToolGroupChild): string {
-  const args = child.call?.args ?? {};
-  const data = child.result?.data;
-  switch (name) {
-    case 'bash': {
-      const cmd =
-        typeof args['command'] === 'string'
-          ? (args['command'] as string)
-          : data?.tool === 'bash'
-            ? data.command
-            : '';
-      return cmd;
-    }
-    case 'read':
-    case 'ls':
-    case 'edit':
-    case 'delete': {
-      const raw =
-        typeof args['path'] === 'string'
-          ? (args['path'] as string)
-          : data?.tool === name && 'path' in data
-            ? (data as { path: string }).path
-            : data?.tool === 'edit'
-              ? data.filePath
-              : data?.tool === 'delete'
-                ? data.filePath
-                : '';
-      // The agent often passes `.` (or empty) to mean the workspace
-      // root. Surface that intent verbally instead of rendering a
-      // stray period after the verb (`Listed .` → `Listed workspace`).
-      const trimmed = raw.trim();
-      if (trimmed === '' || trimmed === '.' || trimmed === './') {
-        return name === 'ls' ? 'workspace' : trimmed;
-      }
-      return raw;
-    }
-    case 'search': {
-      const q =
-        typeof args['query'] === 'string'
-          ? (args['query'] as string)
-          : data?.tool === 'search'
-            ? data.query
-            : '';
-      return q;
-    }
-    case 'memory': {
-      const action =
-        typeof args['action'] === 'string'
-          ? (args['action'] as string)
-          : data?.tool === 'memory'
-            ? data.action
-            : '';
-      const key =
-        typeof args['key'] === 'string'
-          ? (args['key'] as string)
-          : data?.tool === 'memory' && data.key
-            ? data.key
-            : '';
-      return key ? `${action} ${key}` : action;
-    }
-    case 'recall': {
-      // Surface the action; for `read`, also show a short id prefix so
-      // collapsed groups carry the breadcrumb without printing a 36-
-      // char UUID.
-      const action =
-        typeof args['action'] === 'string'
-          ? (args['action'] as string)
-          : data?.tool === 'recall'
-            ? data.action
-            : '';
-      const targetId =
-        typeof args['conversationId'] === 'string'
-          ? (args['conversationId'] as string)
-          : data?.tool === 'recall' && data.conversationId
-            ? data.conversationId
-            : '';
-      if (action === 'read' && targetId) {
-        return `read ${targetId.slice(0, 8)}…`;
-      }
-      return action;
-    }
-    case 'report': {
-      // Surface the title once it lands (typed on `data`), or fall back
-      // to the in-flight `args.title` so the rolled-up row stays
-      // informative while the sub-agent is still authoring the body.
-      const title =
-        typeof args['title'] === 'string'
-          ? (args['title'] as string)
-          : data?.tool === 'report'
-            ? data.title
-            : '';
-      return title;
-    }
-    case 'unknown': {
-      // Surface whatever name the call/result reported (or empty if both
-      // are also `'unknown'`) so the rolled-up row remains informative.
-      const callName = child.call?.name;
-      const resultName = child.result?.name;
-      if (callName && callName !== 'unknown') return callName;
-      if (resultName && resultName !== 'unknown') return resultName;
-      return '';
-    }
-  }
-}
-
-/**
- * Derive the overall status for a tool group. Mirrors the per-row status
- * logic: running if any child is still in-flight, failed if any child's
- * result is !ok, otherwise done.
- */
-export function toolGroupStatus(children: ToolGroupChild[]): 'running' | 'done' | 'failed' {
-  let anyFailed = false;
-  for (const c of children) {
-    if (!c.result) return 'running';
-    if (!c.result.ok) anyFailed = true;
-  }
-  return anyFailed ? 'failed' : 'done';
-}
-

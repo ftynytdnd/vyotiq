@@ -8,6 +8,6 @@
 
 export { ORCHESTRATOR_TOOLS } from './orchestratorTools.js';
 export {
-    validateSubagentToolset,
-    validateSubagentToolsetDetailed
+  validateSubagentToolset,
+  validateSubagentToolsetDetailed
 } from './subagentTools.js';

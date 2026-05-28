@@ -73,24 +73,6 @@ export function labelForKind(kind: MessageKind): string {
 }
 
 /**
- * Short tone label for the row's effective decision. Used inside the
- * `MessageRow`'s 3-state segmented toggle to label the active option
- * without re-implementing capitalisation logic per row.
- */
-export function labelForDecision(
-  decision: ContextInspectorMessage['effectiveDecision']
-): string {
-  switch (decision) {
-    case 'keep':
-      return 'Keep';
-    case 'summarize':
-      return 'Summarize';
-    case 'drop':
-      return 'Drop';
-  }
-}
-
-/**
  * Sum the token estimates for every message that meets the predicate.
  * Used by the trigger bar's "Summarize now (≈X → Y tokens)" projection
  * — the projection is pure UI polish so we keep it dependency-free.

@@ -1,41 +1,24 @@
 /**
- * FileEditGroupRow — Cascade-style rolled-up line for a run of file-edit
- * events.
- *
- * Collapsed:
- *   [chevron] [icon]  Edited foo.tsx and 3 other files   [+N -M]
- *
- * Expanded: the existing `FileEditRow` cards (elevated, with `Open ↗`)
- * listed one per file so the user can still drill into each diff.
- *
- * Expansion state is persisted per-conversation via `useTimelineUiStore`.
+ * FileEditGroupRow — rolled-up line for consecutive file-edit events.
  */
 
 import { useMemo } from 'react';
-import { FileCode, ChevronDown, ChevronRight } from 'lucide-react';
 import type { FileEditGroupChild } from '../reducer/deriveRows.js';
 import { FileEditRow } from './FileEditRow.js';
 import { DiffStatsBadge } from '../tools/shared/DiffStatsBadge.js';
 import { DetailShell } from '../shared/DetailShell.js';
-import { useChatStore } from '../../../store/useChatStore.js';
-import { useTimelineUiStore } from '../../../store/useTimelineUiStore.js';
-import { cn } from '../../../lib/cn.js';
-import { SurfaceShell } from '../../ui/SurfaceShell.js';
-import {
-  timelineRowChevronClassName,
-  timelineRowHeaderClassName,
-  timelineRowIconClassName
-} from '../shared/rowStyles.js';
+import { TimelineRowHeader } from '../shared/TimelineRowHeader.js';
+import { useTimelineRowExpand } from '../shared/useTimelineRowExpand.js';
 
 interface FileEditGroupRowProps {
   rowKey: string;
   items: FileEditGroupChild[];
+  subagentId?: string;
+  runId?: string;
 }
 
-export function FileEditGroupRow({ rowKey, items }: FileEditGroupRowProps) {
-  const conversationId = useChatStore((s) => s.conversationId);
-  const expanded = useTimelineUiStore((s) => s.isExpanded(conversationId, rowKey));
-  const toggle = useTimelineUiStore((s) => s.toggle);
+export function FileEditGroupRow({ rowKey, items, subagentId, runId }: FileEditGroupRowProps) {
+  const { expanded, onToggle } = useTimelineRowExpand({ rowKey });
 
   const { primary, rest, additions, deletions } = useMemo(() => {
     let a = 0;
@@ -54,49 +37,43 @@ export function FileEditGroupRow({ rowKey, items }: FileEditGroupRowProps) {
 
   const suffix = rest > 0 ? ` and ${rest} other file${rest === 1 ? '' : 's'}` : '';
 
-  const onToggle = () => {
-    if (!conversationId) return;
-    toggle(conversationId, rowKey);
-  };
+  const label = (
+    <span className="inline-flex min-w-0 max-w-full items-baseline gap-1 truncate text-row">
+      <span className="font-medium text-text-primary">Edited</span>{' '}
+      <span className="font-mono text-text-secondary">{primary}</span>
+      {suffix && <span className="text-text-muted">{suffix}</span>}
+    </span>
+  );
 
   return (
-    <SurfaceShell className="flex flex-col gap-1">
-      <button
-        type="button"
-        onClick={onToggle}
-        disabled={!conversationId}
-        aria-expanded={expanded}
-        className={cn(
-          timelineRowHeaderClassName,
-          conversationId ? 'cursor-pointer' : 'cursor-default'
-        )}
+    <div className="vyotiq-stepfade-once flex flex-col" data-row-kind="file-edit-group">
+      <TimelineRowHeader
+        expanded={expanded}
+        onToggle={onToggle}
+        expandable
+        rowAnchorKey={rowKey}
+        trailing={
+          <DiffStatsBadge additions={additions} deletions={deletions} className="shrink-0" />
+        }
       >
-        {expanded ? (
-          <ChevronDown className={timelineRowChevronClassName} strokeWidth={2} />
-        ) : (
-          <ChevronRight className={timelineRowChevronClassName} strokeWidth={2} />
-        )}
-        <FileCode className={cn(timelineRowIconClassName, 'text-accent')} strokeWidth={2} />
-        <div className="min-w-0 flex-1 truncate text-row text-text-secondary">
-          <span className="font-medium text-text-primary">Edited</span>{' '}
-          <span className="font-mono">{primary}</span>
-          {suffix && <span className="text-text-muted">{suffix}</span>}
-        </div>
-        <DiffStatsBadge additions={additions} deletions={deletions} className="shrink-0" />
-      </button>
+        {label}
+      </TimelineRowHeader>
 
       {expanded && (
-        <DetailShell gap="gap-1">
+        <DetailShell variant="flat" gap="gap-1">
           {items.map((c) => (
             <FileEditRow
               key={c.key}
               filePath={c.filePath}
               additions={c.additions}
               deletions={c.deletions}
+              {...(c.entryId ? { entryId: c.entryId } : {})}
+              {...(subagentId ? { subagentId } : {})}
+              {...(runId ? { runId } : {})}
             />
           ))}
         </DetailShell>
       )}
-    </SurfaceShell>
+    </div>
   );
 }

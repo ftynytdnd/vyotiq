@@ -1,27 +1,78 @@
 /**
- * TurnBlock — hybrid turn-level shell grouping one user prompt and all
- * following agent rows until the next user prompt.
+ * TurnBlock — one user prompt and all following agent rows until the next
+ * user prompt. Agent-side content always renders as a single chronological
+ * inline stream (prose, tools, delegates interleaved in wire order).
  */
 
 import { type ReactNode } from 'react';
 import { cn } from '../../../lib/cn.js';
-import { SurfaceShell } from '../../ui/SurfaceShell.js';
+import type { DisplayRow } from './projectSubagentRows.js';
+import type { PartitionedTurn } from './groupTurnSegment.js';
+import { TurnActivitySummary } from '../activity/TurnActivitySummary.js';
+import { TurnInlineStream } from '../activity/TurnInlineStream.js';
+import {
+  timelineLiveTurnClassName,
+  timelineTurnOuterGapClassName,
+  timelineTurnZoneGapClassName,
+  timelineAgentColumnClassName
+} from './rowStyles.js';
 
 interface TurnBlockProps {
-  children: ReactNode;
-  /** Live run emphasis — composer-style focus glow on the turn shell. */
+  partitioned: PartitionedTurn;
+  renderRow: (row: DisplayRow) => ReactNode;
+  /** Live run — last turn while the conversation is processing. */
   live?: boolean;
   className?: string;
 }
 
-export function TurnBlock({ children, live = false, className }: TurnBlockProps) {
+export function TurnBlock({
+  partitioned,
+  renderRow,
+  live = false,
+  className
+}: TurnBlockProps) {
+  const { prompt, footer } = partitioned;
+  const showAgentStream = partitioned.agentStream.length > 0 || live;
+
   return (
-    <SurfaceShell
-      focusGlow={live}
-      className={cn('flex flex-col gap-1', className)}
+    <div
+      className={cn(
+        'relative flex flex-col py-0',
+        timelineTurnZoneGapClassName,
+        timelineTurnOuterGapClassName,
+        !live && 'vyotiq-stepfade-once',
+        timelineLiveTurnClassName(live),
+        className
+      )}
     >
-      {children}
-    </SurfaceShell>
+      {prompt && renderRow(prompt)}
+
+      <div className={timelineAgentColumnClassName}>
+        {showAgentStream &&
+          (live ? (
+            <TurnInlineStream
+              rows={partitioned.agentStream}
+              renderRow={renderRow}
+              showLiveStatus
+            />
+          ) : partitioned.activity.length > 0 ? (
+            <>
+              <TurnActivitySummary partitioned={partitioned} renderRow={renderRow} />
+              {partitioned.response && (
+                <div key={partitioned.response.key}>{renderRow(partitioned.response)}</div>
+              )}
+            </>
+          ) : (
+            partitioned.agentStream.map((row) => (
+              <div key={row.key}>{renderRow(row)}</div>
+            ))
+          ))}
+
+        {footer.map((row) => (
+          <div key={row.key}>{renderRow(row)}</div>
+        ))}
+      </div>
+    </div>
   );
 }
 

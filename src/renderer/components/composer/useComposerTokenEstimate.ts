@@ -41,7 +41,7 @@ export interface UseComposerTokenEstimateInput {
   conversationId?: string;
 }
 
-export interface ComposerTokenBaseline {
+interface ComposerTokenBaseline {
   /** Sum of system + history + tools. */
   total: number;
   /** Harness + envelopes + run-state, tokenized as a chat block. */

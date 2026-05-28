@@ -21,11 +21,11 @@ type SubagentStreamingEvent = Extract<
   TimelineEvent,
   {
     kind:
-      | 'agent-text-delta'
-      | 'agent-text-end'
-      | 'agent-text-aborted'
-      | 'agent-reasoning-delta'
-      | 'agent-reasoning-end';
+    | 'agent-text-delta'
+    | 'agent-text-end'
+    | 'agent-text-aborted'
+    | 'agent-reasoning-delta'
+    | 'agent-reasoning-end';
     subagentId?: string;
   }
 > & { subagentId: string };
@@ -181,7 +181,13 @@ export function applySubagentLifecycleTimelineEvent(
         assistantTexts: carryExisting ? existing.assistantTexts : {},
         reasoningTexts: carryExisting ? existing.reasoningTexts : {},
         iterationOrder: carryExisting ? existing.iterationOrder : [],
-        partialToolCallArgs: carryExisting ? existing.partialToolCallArgs : {}
+        partialToolCallArgs: carryExisting ? existing.partialToolCallArgs : {},
+        unknownTools: carryExisting ? existing.unknownTools : [],
+        // Pending carries the orchestrator's selected model when the
+        // mid-stream parser had it. Older transcripts leave the field
+        // undefined; the spawn merge below will overwrite it once the
+        // verified spawn event arrives.
+        ...(event.model ? { model: event.model } : carryExisting && existing.model ? { model: existing.model } : {})
       };
       return {
         ...state,
@@ -197,6 +203,10 @@ export function applySubagentLifecycleTimelineEvent(
         files: event.files.length > 0 ? event.files : existing?.files ?? [],
         missingFiles: event.missingFiles ?? existing?.missingFiles ?? [],
         tools: (event.tools?.length ?? 0) > 0 ? event.tools : existing?.tools ?? [],
+        unknownTools:
+          (event.unknownTools?.length ?? 0) > 0
+            ? (event.unknownTools ?? [])
+            : (existing?.unknownTools ?? []),
         status: 'running',
         startedAt: existing?.startedAt ?? event.ts,
         steps: existing?.steps ?? [],
@@ -204,7 +214,13 @@ export function applySubagentLifecycleTimelineEvent(
         assistantTexts: existing?.assistantTexts ?? {},
         reasoningTexts: existing?.reasoningTexts ?? {},
         iterationOrder: existing?.iterationOrder ?? [],
-        partialToolCallArgs: existing?.partialToolCallArgs ?? {}
+        partialToolCallArgs: existing?.partialToolCallArgs ?? {},
+        // Spawn wins over pending when both carry a model — by the
+        // time spawn fires the orchestrator has validated the
+        // directive and the selection is authoritative. Older
+        // transcripts that ran before the field existed leave the
+        // slot undefined; renderer hides the badge.
+        ...(event.model ? { model: event.model } : existing?.model ? { model: existing.model } : {})
       };
       return {
         ...state,

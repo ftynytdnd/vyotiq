@@ -13,6 +13,11 @@ import { Spinner } from '../ui/Spinner.js';
 import { Eyebrow } from '../ui/Eyebrow.js';
 import { Switch } from '../ui/Switch.js';
 import { Notice } from '../ui/Notice.js';
+import {
+  chromeEdgeClassName,
+  chromeGhostRowButtonClassName,
+  chromeSettingsInsetRowClassName
+} from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
 import {
   Brain,
@@ -36,8 +41,6 @@ import type { SettingsTabId } from '../../store/useSecondaryZoneStore.js';
 const settingsLog = logger.child('settings-panel');
 
 type TabId = SettingsTabId;
-
-export type { SettingsTabId };
 
 interface SettingsPanelProps {
   initialTab?: TabId;
@@ -78,7 +81,8 @@ export function SettingsPanel({ initialTab = 'providers', embedded = false }: Se
     <div className="flex min-h-0 flex-1 flex-col">
       <div
         className={cn(
-          'scrollbar-stealth flex shrink-0 items-center border-b border-border-subtle/40 pb-2',
+          'scrollbar-stealth flex shrink-0 items-center border-b pb-2',
+          chromeEdgeClassName,
           embedded ? 'gap-1 overflow-x-auto' : 'flex-wrap gap-1'
         )}
       >
@@ -176,7 +180,7 @@ function PermissionsTab({ embedded = false }: { embedded?: boolean }) {
             placeholder="https://example.com/search"
             size="md"
             tone="base"
-            className="min-w-0 flex-1 px-3 text-row transition-colors duration-150 focus:bg-surface-overlay"
+            className="min-w-0 flex-1 px-3 text-row transition-colors duration-150 focus:bg-surface-hover/40"
           />
           <Button
             size="sm"
@@ -240,7 +244,10 @@ function WorkspaceOverridesSection() {
           return (
             <li
               key={w.id}
-              className="flex items-start justify-between gap-3 rounded-inner bg-surface-base/30 px-3 py-2"
+              className={cn(
+                chromeSettingsInsetRowClassName,
+                'flex items-start justify-between gap-3'
+              )}
             >
               <div className="min-w-0 flex-1">
                 <div className="text-row text-text-primary">{w.label}</div>
@@ -259,7 +266,7 @@ function WorkspaceOverridesSection() {
                 type="button"
                 onClick={() => void clearOverride(w.id)}
                 title="Reset this workspace to the global default"
-                className="inline-flex h-8 items-center gap-1.5 rounded-inner px-2.5 text-row text-text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text-primary"
+                className={chromeGhostRowButtonClassName}
               >
                 <RotateCcw className="h-3.5 w-3.5" strokeWidth={2.25} />
                 <span>Reset</span>
@@ -475,3 +482,4 @@ function PathRow({
     </div>
   );
 }
+

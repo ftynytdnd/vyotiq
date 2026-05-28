@@ -56,7 +56,8 @@ Design complete Architecture and build and create me simple(but working and func
 - retry logic with exponential backof
 
 ## Create each tool in separate file instead of one
-   * Implement all of these Function Calling Tools:- Bash, ls, read, edit.
+   * Core function-calling tools (each in its own file under `src/main/tools/`): **bash**, **ls**, **read**, **edit**, plus **delete**, **search**, **memory**, **recall**, and **report** where policy allows.
+   * Orchestrator vs sub-agent exposure is enforced in `src/main/tools/policy/` (`toolSchemasFor` never registers forbidden tools on the wire).
 
 
 ***NO complex code-based harness at all, only natural language***
@@ -190,7 +191,7 @@ The Composer is the central hub for interacting with Agent V.
 - **Text Area:** Borderless, transparent background, auto-resizing. Muted placeholder text: "Ask Agent V anything. @ to mention files or folders".
 - **Bottom Toolbar (Inside Composer):**
   - Left side: A + icon for attachments and a "Permissions" dropdown.
-  - Right side: Model selector dropdown (to switch between local/cloud models), a microphone icon, and the Send Button.
+  - Right side: Model selector dropdown (to switch between local/cloud models), a microphone placeholder (voice input not yet implemented), and the Send Button.
 - **Send Button:** A distinct circular button. Active state = solid background with an UP arrow (↑). Processing state = Stop icon (Square ■).
 
 ## 4. Agent Interaction UI

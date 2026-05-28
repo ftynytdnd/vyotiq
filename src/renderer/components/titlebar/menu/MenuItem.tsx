@@ -27,8 +27,9 @@ export function MenuItem({ label, shortcut, disabled, onSelect, onAfterAction }:
         onAfterAction?.();
       }}
       className={cn(
-        'app-no-drag flex w-full items-center justify-between rounded-inner px-2.5 py-1 text-left text-row',
+        'app-no-drag flex w-full items-center justify-between rounded-inner px-2.5 py-1.5 text-left text-row',
         'transition-colors duration-150',
+        'focus-visible:outline-none focus-visible:bg-surface-hover focus-visible:text-text-primary',
         disabled
           ? 'text-text-faint cursor-not-allowed'
           : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'

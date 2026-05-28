@@ -42,9 +42,21 @@ interface ToolInvocationProps {
    * that consume it.
    */
   diffStream?: DiffStreamSnapshot;
+  retryCount?: number;
+  /** When set, overrides the bespoke renderer's live auto-expand signal. */
+  liveAutoExpand?: boolean;
 }
 
-export function ToolInvocation({ call, result, dense, rowKey, partial, diffStream }: ToolInvocationProps) {
+export function ToolInvocation({
+  call,
+  result,
+  dense,
+  rowKey,
+  partial,
+  diffStream,
+  retryCount,
+  liveAutoExpand
+}: ToolInvocationProps) {
   // Default to the unknown sentinel rather than misclassifying as bash.
   const name: ToolName = (call?.name ?? result?.name ?? 'unknown') as ToolName;
   switch (name) {
@@ -72,6 +84,8 @@ export function ToolInvocation({ call, result, dense, rowKey, partial, diffStrea
           rowKey={rowKey}
           partial={partial}
           {...(diffStream ? { diffStream } : {})}
+          {...(retryCount && retryCount > 1 ? { retryCount } : {})}
+          {...(liveAutoExpand !== undefined ? { liveAutoExpand } : {})}
         />
       );
     case 'delete':
@@ -88,11 +102,28 @@ export function ToolInvocation({ call, result, dense, rowKey, partial, diffStrea
     case 'search':
       return <SearchInvocation call={call} result={result} dense={dense} rowKey={rowKey} />;
     case 'memory':
-      return <MemoryInvocation call={call} result={result} dense={dense} rowKey={rowKey} />;
+      return (
+        <MemoryInvocation
+          call={call}
+          result={result}
+          dense={dense}
+          rowKey={rowKey}
+          partial={partial}
+        />
+      );
     case 'recall':
       return <RecallInvocation call={call} result={result} dense={dense} rowKey={rowKey} />;
     case 'report':
-      return <ReportInvocation call={call} result={result} dense={dense} rowKey={rowKey} />;
+      return (
+        <ReportInvocation
+          call={call}
+          result={result}
+          dense={dense}
+          rowKey={rowKey}
+          partial={partial}
+          {...(diffStream ? { diffStream } : {})}
+        />
+      );
     case 'unknown':
       return <UnknownInvocation call={call} result={result} dense={dense} rowKey={rowKey} />;
     default: {

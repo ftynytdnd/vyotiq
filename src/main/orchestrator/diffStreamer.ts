@@ -115,7 +115,7 @@ interface CallState {
    */
   lastHunks: DiffHunk[] | null;
   /** Tool kind cached alongside `lastHunks` for the settle re-emit. */
-  lastTool: 'edit' | 'delete' | 'bash' | null;
+  lastTool: 'edit' | 'delete' | 'bash' | 'report' | null;
   /** Aggregate stats cached alongside `lastHunks`. */
   lastAdditions: number;
   lastDeletions: number;
@@ -226,7 +226,12 @@ export class DiffStreamer {
     if (!snapshot.parsed) return; // not enough structure yet
     if (this.settledCallIds.has(snapshot.callId)) return; // post-settle straggler
     const tool = snapshot.name;
-    if (tool !== 'edit' && tool !== 'delete' && tool !== 'bash') return;
+    if (tool !== 'edit' && tool !== 'delete' && tool !== 'bash' && tool !== 'report') return;
+
+    if (tool === 'report') {
+      void this.handleReportDelta(snapshot);
+      return;
+    }
 
     // CREATE branch — sub-agents do every file create the system ever
     // performs (the orchestrator delegates ALL file ops). Pre-fix this
@@ -568,6 +573,84 @@ export class DiffStreamer {
       ...(cur.subagentId !== undefined ? { subagentId: cur.subagentId } : {})
     };
     this.deps.emit(event);
+  }
+
+  /**
+   * Emit a `diff-stream` for an in-flight `report` call. No disk read —
+   * the HTML `body` is synthesised as all-`+` hunks. The path is a
+   * preview under `.vyotiq/reports/` so the row shows where the
+   * deliverable will land.
+   */
+  private async handleReportDelta(snapshot: DiffStreamerArgsDelta): Promise<void> {
+    if (this.settledCallIds.has(snapshot.callId)) return;
+    const title = snapshot.parsed?.['title'];
+    const body = snapshot.parsed?.['body'];
+    if (typeof body !== 'string' || body.length === 0) return;
+
+    const callId = snapshot.callId;
+    let cur = this.states.get(callId);
+    if (cur && cur.closed) return;
+
+    const slug =
+      typeof title === 'string' && title.length > 0
+        ? title
+            .toLowerCase()
+            .replace(/[^a-z0-9\s-]+/g, '')
+            .replace(/\s+/g, '-')
+            .replace(/-{2,}/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 60) || 'report'
+        : 'report';
+    const previewPath = `.vyotiq/reports/${slug}-preview.html`;
+
+    const argsHash = `report:${slug}:${body.length}:${fnv1a(body)}`;
+    if (cur && cur.lastArgsHash === argsHash) return;
+
+    if (!cur) {
+      cur = {
+        runId: this.deps.runId,
+        callId,
+        ...(snapshot.subagentId !== undefined ? { subagentId: snapshot.subagentId } : {}),
+        filePath: previewPath,
+        body: '',
+        loading: null,
+        computing: false,
+        latestHash: '',
+        lastHunks: null,
+        lastTool: null,
+        lastAdditions: 0,
+        lastDeletions: 0,
+        lastArgsHash: '',
+        pendingArgs: null,
+        closed: false
+      };
+      this.states.set(callId, cur);
+    }
+    cur.lastArgsHash = argsHash;
+    cur.filePath = previewPath;
+
+    const hunks = synthesizeCreateHunks(body);
+    const stats = countHunkStats(hunks);
+    const renderHash = fnv1a(JSON.stringify(hunks));
+    if (renderHash === cur.latestHash) return;
+    cur.latestHash = renderHash;
+    cur.lastHunks = hunks;
+    cur.lastTool = 'report';
+    cur.lastAdditions = stats.additions;
+    cur.lastDeletions = stats.deletions;
+
+    this.deps.emit({
+      kind: 'diff-stream',
+      id: randomUUID(),
+      ts: Date.now(),
+      callId,
+      tool: 'report',
+      filePath: previewPath,
+      hunks,
+      additions: stats.additions,
+      deletions: stats.deletions,
+      ...(cur.subagentId !== undefined ? { subagentId: cur.subagentId } : {})
+    });
   }
 
   private async loadBody(callId: string, abs: string): Promise<string | null> {

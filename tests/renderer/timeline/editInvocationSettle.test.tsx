@@ -63,16 +63,14 @@ describe('EditInvocation — preview → authoritative settle', () => {
   it('transitions the pane label and the variant attr when result lands', async () => {
     const { rerender, container } = render(<EditInvocation call={call} />);
 
-    // Open the row.
-    await userEvent.click(screen.getByRole('button', { name: /edit/i }));
-
     // Pre-result: pane label "preview (pending)", variant=preview.
     expect(screen.getByText(/preview \(pending\)/i)).toBeInTheDocument();
     const previewNode = container.querySelector('[data-variant="preview"]');
     expect(previewNode).not.toBeNull();
 
-    // Result lands.
+    // Result lands — row auto-collapses when no longer in-flight.
     rerender(<EditInvocation call={call} result={makeResult()} />);
+    await userEvent.click(screen.getByRole('button', { name: /edit/i }));
 
     // Pane label flips to "diff"; preview marker is gone.
     expect(screen.queryByText(/preview \(pending\)/i)).toBeNull();

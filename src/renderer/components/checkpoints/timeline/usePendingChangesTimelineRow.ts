@@ -3,8 +3,10 @@
  * gate state, expand persistence, and bulk actions.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
+import { reviewSessionBlocksSend } from '@shared/checkpoints/reviewSessionBlocksSend.js';
 import {
+  reviewCacheKey,
   useCheckpointsStore,
   usePendingChanges
 } from '../../../store/useCheckpointsStore.js';
@@ -13,10 +15,10 @@ import { useToastStore } from '../../../store/useToastStore.js';
 import { useWorkspaceStore } from '../../../store/useWorkspaceStore.js';
 import { useTimelineUiStore } from '../../../store/useTimelineUiStore.js';
 import { usePendingChangesFilters } from '../pending/usePendingChangesFilters.js';
-import { applyPendingFilters } from '../pending/groupPendingByPath.js';
+import { applyPendingFilters, countDistinctFilePaths } from '../pending/groupPendingByPath.js';
 import { formatBytes } from '../formatBytes.js';
 
-export const PENDING_CHANGES_ROW_KEY = 'pending-changes';
+const PENDING_CHANGES_ROW_KEY = 'pending-changes';
 
 export function usePendingChangesTimelineRow(conversationId: string | null) {
   const pending = usePendingChanges(conversationId);
@@ -32,6 +34,19 @@ export function usePendingChangesTimelineRow(conversationId: string | null) {
       ? s.settings.ui?.gatePromptOnPendingByWorkspace?.[activeWorkspaceId] === true
       : false
   );
+  const reviewGateOn = useSettingsStore((s) =>
+    activeWorkspaceId
+      ? s.settings.ui?.gatePromptOnReviewRequestChangesByWorkspace?.[activeWorkspaceId] ===
+          true
+      : false
+  );
+  const reviewSession = useCheckpointsStore((s) =>
+    conversationId && activeWorkspaceId
+      ? (s.reviewByConversation[reviewCacheKey(activeWorkspaceId, conversationId)] ?? null)
+      : null
+  );
+  const reviewBlocksSend =
+    reviewGateOn && reviewSession ? reviewSessionBlocksSend(reviewSession) : false;
 
   const persistedExpanded = useTimelineUiStore((s) =>
     s.isExpanded(conversationId, PENDING_CHANGES_ROW_KEY)
@@ -42,7 +57,6 @@ export function usePendingChangesTimelineRow(conversationId: string | null) {
   const setExpanded = useTimelineUiStore((s) => s.setExpanded);
 
   const filters = usePendingChangesFilters(conversationId);
-  const [reviewOpen, setReviewOpen] = useState(false);
   const showToast = useToastStore((s) => s.show);
 
   useEffect(() => {
@@ -109,6 +123,7 @@ export function usePendingChangesTimelineRow(conversationId: string | null) {
 
   const visibleAdditions = visiblePending.reduce((a, p) => a + p.additions, 0);
   const visibleDeletions = visiblePending.reduce((a, p) => a + p.deletions, 0);
+  const visibleFileCount = countDistinctFilePaths(visiblePending);
 
   const usageLabel = summary
     ? `Checkpoints · ${summary.usage.runCount} run${summary.usage.runCount === 1 ? '' : 's'}`
@@ -118,17 +133,19 @@ export function usePendingChangesTimelineRow(conversationId: string | null) {
     : null;
 
   return {
+    activeWorkspaceId,
     pending,
     visiblePending,
+    visibleFileCount,
     visibleAdditions,
     visibleDeletions,
     gateOn,
+    reviewGateOn,
+    reviewBlocksSend,
     runIds,
     filters,
     expanded,
     onToggleExpand,
-    reviewOpen,
-    setReviewOpen,
     onAcceptAll,
     onRejectAll,
     usageLabel,

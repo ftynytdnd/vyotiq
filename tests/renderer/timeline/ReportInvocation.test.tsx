@@ -105,11 +105,12 @@ describe('ReportInvocation', () => {
     };
     render(<ReportInvocation call={makeCall({ title: 'denied' })} result={result} />);
 
-    // Collapsed row shows the inline error hint.
-    expect(screen.getByText('permission denied')).toBeInTheDocument();
+    // Collapsed row shows the inline error hint (first output line).
+    expect(screen.getAllByText('denied').length).toBeGreaterThanOrEqual(1);
 
     // Expand → the "ERROR" label + body in the detail pane.
     await userEvent.click(screen.getByRole('button', { name: /report/i }));
     expect(screen.getByText(/error/i)).toBeInTheDocument();
+    expect(screen.getAllByText('denied').length).toBeGreaterThanOrEqual(2);
   });
 });

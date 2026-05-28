@@ -30,6 +30,7 @@ import { Tabs, type TabItem } from '../ui/Tabs.js';
 import { MarkdownBody } from '../timeline/markdown/MarkdownBody.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
+import { chromeSettingsCardClassName } from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
 
 type Scope = 'global' | 'workspace';
@@ -210,7 +211,12 @@ export function MemoryPanel({ layout = 'split' }: { layout?: 'split' | 'stack' }
       </div>
 
       {isWorkspaceScope && !workspaceReady ? (
-        <div className="rounded-card bg-surface-overlay px-4 py-6 text-center text-row text-text-muted">
+        <div
+          className={cn(
+            chromeSettingsCardClassName,
+            'px-4 py-6 text-center text-row text-text-muted'
+          )}
+        >
           Pick a workspace first. Workspace notes live inside <span className="font-mono">.vyotiq/memory/</span>.
         </div>
       ) : (
@@ -222,7 +228,8 @@ export function MemoryPanel({ layout = 'split' }: { layout?: 'split' | 'stack' }
         >
           <div
             className={cn(
-              'flex flex-col gap-1 overflow-y-auto rounded-card bg-surface-overlay p-2',
+              'flex flex-col gap-1 overflow-y-auto p-2',
+              chromeSettingsCardClassName,
               layout === 'stack' ? 'max-h-36' : 'max-h-[420px]'
             )}
           >
@@ -337,7 +344,7 @@ export function MemoryPanel({ layout = 'split' }: { layout?: 'split' | 'stack' }
                   </div>
                 )}
                 {scope === 'global' && (
-                  <div className="flex flex-col gap-1.5 rounded-card bg-surface-overlay p-3">
+                  <div className={cn(chromeSettingsCardClassName, 'flex flex-col gap-1.5 p-3')}>
                     <Eyebrow as="span" size="row">
                       Append a new rule (date-stamped)
                     </Eyebrow>
@@ -362,7 +369,12 @@ export function MemoryPanel({ layout = 'split' }: { layout?: 'split' | 'stack' }
                 )}
               </>
             ) : (
-              <div className="rounded-card bg-surface-overlay px-4 py-6 text-center text-row text-text-muted">
+              <div
+          className={cn(
+            chromeSettingsCardClassName,
+            'px-4 py-6 text-center text-row text-text-muted'
+          )}
+        >
                 {loading || contentLoading ? 'Loading…' : 'Select an entry above.'}
               </div>
             )}

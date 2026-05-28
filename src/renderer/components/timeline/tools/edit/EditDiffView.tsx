@@ -37,12 +37,23 @@
 import type { DiffHunk } from '@shared/types/tool.js';
 import { DiffViewer } from './diff/DiffViewer.js';
 import type { DiffViewVariant } from './diff/DiffHunk.js';
+import type { ReviewLinePickProps } from './diff/diffLinePick.js';
 
 interface EditDiffViewProps {
   hunks: DiffHunk[];
   variant: DiffViewVariant;
+  /** Passed through to `DiffViewer` for tall review modals. */
+  maxHeightClass?: string;
+  linePick?: ReviewLinePickProps;
 }
 
-export function EditDiffView({ hunks, variant }: EditDiffViewProps) {
-  return <DiffViewer hunks={hunks} variant={variant} />;
+export function EditDiffView({ hunks, variant, maxHeightClass, linePick }: EditDiffViewProps) {
+  return (
+    <DiffViewer
+      hunks={hunks}
+      variant={variant}
+      {...(maxHeightClass ? { maxHeightClass } : {})}
+      {...(linePick ? { linePick } : {})}
+    />
+  );
 }

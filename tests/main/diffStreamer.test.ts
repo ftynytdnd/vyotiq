@@ -976,4 +976,35 @@ describe('DiffStreamer', () => {
     expect(Array.from(paths).some((p) => p.endsWith('b.ts'))).toBe(true);
     streamer.dispose();
   });
+
+  describe('report branch (HTML deliverable live preview)', () => {
+    it('emits a diff-stream with all-`+` hunks for a streaming report body', async () => {
+      const workspacePath = await mkTempWorkspace();
+      const { emit, events } = captureEmits();
+      const streamer = new DiffStreamer({
+        workspacePath,
+        runId: 'run-1',
+        emit
+      });
+      streamer.onArgsDelta({
+        callId: 'c-report-1',
+        name: 'report',
+        parsed: {
+          title: 'Project Health Survey',
+          body: '<html>\n<body>Hello</body>\n</html>'
+        }
+      });
+      await waitUntil(() => {
+        expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(1);
+      });
+      const ev = events.find(
+        (e): e is Extract<TimelineEvent, { kind: 'diff-stream' }> => e.kind === 'diff-stream'
+      );
+      expect(ev?.tool).toBe('report');
+      expect(ev?.filePath).toContain('.vyotiq/reports/');
+      expect(ev?.additions).toBeGreaterThan(0);
+      expect(ev?.deletions).toBe(0);
+      streamer.dispose();
+    });
+  });
 });

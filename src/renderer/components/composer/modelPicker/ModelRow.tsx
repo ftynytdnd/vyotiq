@@ -16,6 +16,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Check, Pencil } from 'lucide-react';
 import type { ModelInfo } from '@shared/types/provider.js';
+import { chromeMeterClassName, chromePillClassName } from '../../ui/SurfaceShell.js';
 import { cn } from '../../../lib/cn.js';
 import { formatTokenCount, parseTokenCount } from '../../../lib/formatTokens.js';
 import {
@@ -47,7 +48,7 @@ export function ModelRow({
       aria-selected={selected}
       onMouseEnter={onMouseEnter}
       className={cn(
-        'group flex w-full items-center gap-2 rounded-inner px-2 py-1.5 text-left text-row',
+        'group flex w-full items-center gap-2 rounded-inner px-2 py-1 text-left text-row',
         'transition-colors duration-150',
         focused
           ? 'bg-accent-soft text-text-primary'
@@ -152,8 +153,8 @@ function ContextWindowEditor({
         }}
         placeholder="e.g. 128k"
         className={cn(
-          'w-20 shrink-0 rounded-inner bg-surface-overlay px-1.5 py-0.5 font-mono text-meta',
-          'text-text-primary outline-none focus:outline-none ring-1 ring-accent/60'
+          chromeMeterClassName('w-20 shrink-0 px-1.5 py-0.5 text-text-primary'),
+          'outline-none focus:outline-none ring-1 ring-accent/60'
         )}
       />
     );
@@ -169,9 +170,9 @@ function ContextWindowEditor({
           : 'Set context window'
       }
       className={cn(
-        'inline-flex shrink-0 items-center gap-1 rounded-inner bg-surface-overlay px-1.5 py-0.5 font-mono text-meta',
-        'text-text-faint transition-colors duration-150',
-        'hover:bg-surface-hover hover:text-text-primary',
+        chromePillClassName(false),
+        'shrink-0 gap-1 px-1.5 py-0.5 font-mono text-meta text-text-faint',
+        'hover:text-text-primary',
         hasOverride && 'ring-1 ring-accent/40'
       )}
     >

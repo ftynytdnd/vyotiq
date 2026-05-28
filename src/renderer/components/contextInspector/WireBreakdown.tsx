@@ -26,6 +26,10 @@
 
 import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
+import {
+  chromeMeterClassName,
+  chromeProgressTrackClassName
+} from '../ui/SurfaceShell.js';
 import type { ContextInspectorSnapshot } from '@shared/types/contextSummary.js';
 import type { TokenUsage } from '@shared/types/chat.js';
 import { Eyebrow } from '../ui/Eyebrow.js';
@@ -194,7 +198,9 @@ export function WireBreakdown({
           ))}
           {toks !== null && (
             <span
-              className="inline-flex items-baseline gap-1 rounded-inner bg-surface-overlay px-1.5 py-0.5 text-meta font-mono text-text-secondary"
+              className={chromeMeterClassName(
+                'items-baseline gap-1 px-1.5 py-0.5 text-text-secondary'
+              )}
               title="Completion-token throughput, measured from the first streamed delta to the latest authoritative usage frame. Excludes hidden chain-of-thought tokens so the rate matches the typing speed perceived in the stream."
             >
               <span className="text-text-faint">·</span>
@@ -296,7 +302,7 @@ function BreakdownRow({
       </span>
       <span
         aria-hidden
-        className="relative h-1.5 flex-1 overflow-hidden rounded-pill bg-surface-overlay"
+        className={chromeProgressTrackClassName}
       >
         <span
           className={cn('absolute left-0 top-0 h-full rounded-pill', barTone)}

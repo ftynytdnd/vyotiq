@@ -107,6 +107,39 @@ describe('UserPromptRow collapse', () => {
     expect(queryByRole('button', { name: /show less/i })).not.toBeNull();
     expect(expanded.className).toMatch(/overflow-y-auto/);
   });
+
+  it('renders live prompts flush in the agent reading column with no card chrome', () => {
+    useChatStore.setState({ isProcessing: true });
+    const { container, queryByText, queryByRole } = render(
+      <UserPromptRow id="p-live" content="Analyze the screenshot and stream tool progress" live />
+    );
+
+    // Restyle contract: the May 2026 timeline dropped the raised
+    // `SurfaceShell` card, the `You` eyebrow, and right-alignment.
+    // The row now reads flush in the column rail.
+    expect(container.querySelector('.surface-shell')).toBeNull();
+    expect(queryByText('You')).toBeNull();
+    expect(container.firstElementChild?.className ?? '').not.toContain('items-end');
+    // Reading-column rail token still applied to the row wrapper.
+    expect(container.firstElementChild?.className ?? '').toContain('max-w-[46rem]');
+    expect(container.firstElementChild?.className ?? '').toContain('pl-3.5');
+    // Hover-revealed action strip still tagged for the live turn so
+    // `LiveStatusRow` continues to anchor itself correctly.
+    expect(container.querySelector('[data-live-prompt-actions="true"]')).not.toBeNull();
+    expect(container.textContent ?? '').toContain('Analyze the screenshot');
+    expect(queryByRole('button', { name: /copy/i })).not.toBeNull();
+    expect(queryByRole('button', { name: /edit.*unavailable/i })).not.toBeNull();
+  });
+
+  it('renders completed prompts flush with no You eyebrow', () => {
+    const { container, queryByText } = render(
+      <UserPromptRow content="hello" />
+    );
+    expect(container.querySelector('.surface-shell')).toBeNull();
+    expect(queryByText('You')).toBeNull();
+    expect(container.firstElementChild?.className ?? '').not.toContain('items-end');
+    expect(container.firstElementChild?.className ?? '').toContain('max-w-[46rem]');
+  });
 });
 
 /**

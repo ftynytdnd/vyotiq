@@ -12,7 +12,7 @@ interface DockSectionHeaderProps {
 
 export function DockSectionHeader({ label, className }: DockSectionHeaderProps) {
   return (
-    <Eyebrow bold className={cn('px-2 pb-0.5 text-text-muted', className)}>
+    <Eyebrow bold className={cn('shrink-0 px-2 pt-1.5 pb-0.5 text-text-muted', className)}>
       {label}
     </Eyebrow>
   );

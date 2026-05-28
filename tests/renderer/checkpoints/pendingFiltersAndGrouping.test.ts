@@ -6,7 +6,10 @@
 import { describe, expect, it } from 'vitest';
 import type { PendingChange } from '@shared/types/checkpoint';
 import {
+  aggregatePendingStats,
   applyPendingFilters,
+  countDistinctFilePaths,
+  groupByFilePath,
   groupByFolder,
   groupByRun,
   matchesPathFilter
@@ -38,6 +41,42 @@ describe('groupByRun', () => {
     expect(groups.map((g) => g.runId)).toEqual(['r-1', 'r-2']);
     expect(groups[0]!.entries.map((e) => e.entryId)).toEqual(['a', 'c']);
     expect(groups[1]!.entries.map((e) => e.entryId)).toEqual(['b']);
+  });
+});
+
+describe('groupByFilePath', () => {
+  it('buckets entries by filePath in original encounter order', () => {
+    const list = [
+      p({ entryId: 'a', filePath: 'src/a.ts' }),
+      p({ entryId: 'b', filePath: 'src/b.ts' }),
+      p({ entryId: 'c', filePath: 'src/a.ts', additions: 2 })
+    ];
+    const groups = groupByFilePath(list);
+    expect(groups.map((g) => g.filePath)).toEqual(['src/a.ts', 'src/b.ts']);
+    expect(groups[0]!.entries.map((e) => e.entryId)).toEqual(['a', 'c']);
+    expect(groups[1]!.entries.map((e) => e.entryId)).toEqual(['b']);
+  });
+});
+
+describe('aggregatePendingStats', () => {
+  it('sums additions and deletions across stacked entries', () => {
+    const stats = aggregatePendingStats([
+      p({ additions: 1, deletions: 2 }),
+      p({ additions: 4, deletions: 5 })
+    ]);
+    expect(stats).toEqual({ additions: 5, deletions: 7 });
+  });
+});
+
+describe('countDistinctFilePaths', () => {
+  it('counts unique file paths', () => {
+    expect(
+      countDistinctFilePaths([
+        p({ entryId: '1', filePath: 'src/a.ts' }),
+        p({ entryId: '2', filePath: 'src/a.ts' }),
+        p({ entryId: '3', filePath: 'src/b.ts' })
+      ])
+    ).toBe(2);
   });
 });
 

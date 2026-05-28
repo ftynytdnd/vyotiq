@@ -12,8 +12,7 @@ export function SendButton({ onClick, state, disabled }: SendButtonProps) {
   const isReady = state === 'ready';
 
   // Visual state matrix:
-  //   - idle       : muted surface, faint glyph, opacity-60 — the
-  //                  textarea is empty or no model is selected.
+  //   - idle       : ghost — faint glyph only until hover or ready.
   //   - ready      : full-strength white pill + a quiet accent halo
   //                  (`ring-1 ring-accent/40`) so the affordance reads
   //                  the moment the user has typed something. No shape
@@ -36,7 +35,7 @@ export function SendButton({ onClick, state, disabled }: SendButtonProps) {
           ? 'bg-text-primary text-surface-base hover:brightness-90'
           : isReady
             ? 'bg-text-primary text-surface-base ring-1 ring-accent/40 hover:brightness-95'
-            : 'bg-surface-overlay text-text-faint opacity-60'
+            : 'text-text-faint opacity-60 hover:bg-surface-hover'
       )}
     >
       {isProcessing ? (

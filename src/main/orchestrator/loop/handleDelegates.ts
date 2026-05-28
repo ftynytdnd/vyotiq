@@ -46,7 +46,7 @@ import { emitRunStatus } from './emitRunStatus.js';
 import { logger } from '../../logging/logger.js';
 import type { ArgsDeltaTap } from './handleAssistantTurn.js';
 import { validateSubagentToolsetDetailed } from '../../tools/policy/index.js';
-import { malformedReasonFromAttrs, isReadOnlyShardTask } from '../malformedReason.js';
+import { malformedReasonFromAttrs } from '../malformedReason.js';
 import {
   verifyDelegateArtifacts,
   formatHostVerificationXml
@@ -250,27 +250,6 @@ export async function handleDelegates(
     { delegates: delegates.length }
   );
 
-  const readShardCount = delegates.filter((d) => isReadOnlyShardTask(d.task)).length;
-  if (delegates.length > 4) {
-    emit({
-      kind: 'phase',
-      id: randomUUID(),
-      ts: Date.now(),
-      label:
-        `Large delegate batch (${delegates.length}) — prefer fewer, meaningful sub-tasks ` +
-        'with file content inlined via files= rather than many parallel read-only workers.'
-    });
-  } else if (delegates.length > 0 && readShardCount / delegates.length > 0.5) {
-    emit({
-      kind: 'phase',
-      id: randomUUID(),
-      ts: Date.now(),
-      label:
-        `${readShardCount}/${delegates.length} delegates look like read-only line-range shards — ` +
-        'orchestrator should read via ls/search and delegate one create/edit task with files= inline.'
-    });
-  }
-
   // Pull every pending checkpoint change for this conversation —
   // these are the file mutations the orchestrator's tool rounds have
   // performed so far that the user has not yet Accepted or Rejected.
@@ -344,7 +323,14 @@ export async function handleDelegates(
             : {}),
           ...(validated && validated.unknownTools.length > 0
             ? { unknownTools: validated.unknownTools }
-            : {})
+            : {}),
+          // Threaded from `opts.selection` so the renderer's
+          // sub-agent row carries the orchestrator's authoritative
+          // model badge after pending↔spawn reconciliation. A future
+          // `<delegate model="…" />` override would land here as a
+          // worker-specific selection; today the orchestrator and
+          // every worker share one model.
+          model: { ...opts.selection }
         });
       },
       onToolCall: (call, subagentId) => {
@@ -388,6 +374,7 @@ export async function handleDelegates(
           filePath: info.filePath,
           additions: info.additions,
           deletions: info.deletions,
+          ...(info.entryId ? { entryId: info.entryId } : {}),
           subagentId
         });
       },
@@ -420,6 +407,12 @@ export async function handleDelegates(
         // argument is therefore unused at this layer — kept on the
         // callback so the contract matches the other strict-attribution
         // hooks (`onToolCall`, `onToolResult`).
+        emit(event);
+      },
+      onTimelineEvent: (event) => {
+        // Persistent events from the shared tool loop that aren't
+        // covered by the streaming hooks — checkpoint audit rows,
+        // re-delegation phase dividers, etc.
         emit(event);
       },
       // Streaming worker text + reasoning. Each iteration's
@@ -692,7 +685,10 @@ export async function handleDelegates(
   // round — a small but real fidelity gap. The verdicts go in for
   // every outcome (continue / halt), and the halt-vs-continue
   // decision is made strictly afterward.
-  const hostLines = await verifyDelegateArtifacts(delegates, opts.workspacePath);
+  const hostLines = await verifyDelegateArtifacts(
+    validatedSpecs.map((s) => ({ id: s.id, task: s.task, files: s.files })),
+    opts.workspacePath
+  );
   const hostXml = formatHostVerificationXml(hostLines);
   let resultsBody = buildSubagentResultsEnvelope(
     verified.map((v) => ({ id: v.id, attrs: v.attrs, inner: v.inner }))

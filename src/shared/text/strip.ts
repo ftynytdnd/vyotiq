@@ -406,22 +406,6 @@ export function stripFencedCode(text: string): string {
 }
 
 /**
- * Strips paired and self-closing orchestration markup. Used by the main-
- * process parser when it needs to compute the agent's "clean" text after
- * removing directives. Covers the full `ORCHESTRATION_TAG_NAMES`
- * allowlist plus bare DSML envelopes — `parseDelegates` continues to
- * match ONLY `<delegate>`, so broadening the strip here cannot spawn
- * spurious sub-agents.
- */
-export function stripDelegateMarkup(text: string): string {
-  return text
-    .replace(ORCH_PAIR_RE, '')
-    .replace(ORCH_SELFCLOSE_RE, '')
-    .replace(BARE_ENVELOPE_RE, '')
-    .trim();
-}
-
-/**
  * Narrow strip that removes ONLY `<delegate>` tags (paired + self-
  * closing), leaving every other `ORCHESTRATION_TAG_NAMES` entry
  * (`<status>`, `<task>`, `<result>`, `<run_state>`, `<tool_calls>`,
@@ -430,8 +414,7 @@ export function stripDelegateMarkup(text: string): string {
  * Companion to `parseDelegates`: callers that already extracted the
  * delegate directives can reach for this to compute the
  * "non-delegate" remainder of an assistant turn without losing other
- * orchestration scaffolding the agent may have emitted (which the
- * broader `stripDelegateMarkup` would also remove). Also serves as a
+ * orchestration scaffolding the agent may have emitted. Also serves as a
  * parity-check surface for tests — the count of `<delegate` substrings
  * in the result must always be zero, and the run of `parseDelegates`
  * over the same input must agree on the delegate count.
@@ -506,9 +489,41 @@ function dropOrchestrationOnlyFences(text: string): string {
  * rendered as visible text by ReactMarkdown (no `rehype-raw` is
  * configured), so the escape-fallback is automatic.
  */
+/**
+ * Drop a trailing OPEN fence (no closing delimiter yet) from display text
+ * when it would render as an empty gray `<pre>` pill. Unlike
+ * `stripFencedCode` (parse path), we never unwrap pure-orchestration
+ * bodies for display — delegates belong in structured timeline rows.
+ *
+ * Illustration fences that still carry real prose/code mid-stream are
+ * left intact so a closing delimiter can arrive on the next delta.
+ */
+function stripTrailingOpenFencesForDisplay(text: string): string {
+  return text.replace(
+    TRAILING_OPEN_FENCE_RE,
+    (match, leading: string, _delim: string, body: string | undefined) => {
+      if (typeof body !== 'string') return leading;
+
+      const bodyAfterOrchStrip = body
+        .replace(ORCH_PAIR_RE, '')
+        .replace(ORCH_SELFCLOSE_RE, '')
+        .replace(BARE_ENVELOPE_RE, '')
+        .replace(STRIP_PARTIAL_ORCH_RE, '')
+        .replace(STRIP_PARTIAL_ENVELOPE_RE, '')
+        .trim();
+      ORCH_PAIR_RE.lastIndex = 0;
+      ORCH_SELFCLOSE_RE.lastIndex = 0;
+      BARE_ENVELOPE_RE.lastIndex = 0;
+
+      if (bodyAfterOrchStrip.length === 0) return leading;
+      return match;
+    }
+  );
+}
+
 export function stripDelegatesForDisplay(text: string): string {
   const preStripped = dropOrchestrationOnlyFences(text);
-  return withFencedRegionsMasked(preStripped, (masked) =>
+  const stripped = withFencedRegionsMasked(preStripped, (masked) =>
     masked
       .replace(ORCH_PAIR_RE, '')
       .replace(ORCH_SELFCLOSE_RE, '')
@@ -517,4 +532,5 @@ export function stripDelegatesForDisplay(text: string): string {
       .replace(STRIP_PARTIAL_ENVELOPE_RE, '')
       .replace(COLLAPSE_BLANKLINES_RE, '\n\n')
   ).trim();
+  return stripTrailingOpenFencesForDisplay(stripped).trim();
 }

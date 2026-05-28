@@ -87,6 +87,15 @@ interface SettingsStore {
     workspaceId: string,
     value: boolean
   ) => Promise<void>;
+  /** Approve in review mode also accepts pending rows for that file. */
+  setApproveAutoAcceptPendingForWorkspace: (
+    workspaceId: string,
+    value: boolean
+  ) => Promise<void>;
+  setGateReviewRequestChangesForWorkspace: (
+    workspaceId: string,
+    value: boolean
+  ) => Promise<void>;
 }
 
 /**
@@ -228,6 +237,8 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     const perms = ui.permissionsByWorkspace ?? {};
     const strict = ui.strictApprovalsByWorkspace ?? {};
     const gate = ui.gatePromptOnPendingByWorkspace ?? {};
+    const approveAuto = ui.approveAutoAcceptPendingByWorkspace ?? {};
+    const gateReview = ui.gatePromptOnReviewRequestChangesByWorkspace ?? {};
     const collapsed = ui.collapsedWorkspaces ?? [];
     const inAny =
       workspaceId in active ||
@@ -235,6 +246,8 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
       workspaceId in perms ||
       workspaceId in strict ||
       workspaceId in gate ||
+      workspaceId in approveAuto ||
+      workspaceId in gateReview ||
       collapsed.includes(workspaceId);
     if (!inAny) return;
     // Build cleaned copies. Spread + delete keeps the other entries
@@ -253,6 +266,10 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     delete nextStrict[workspaceId];
     const nextGate = { ...gate };
     delete nextGate[workspaceId];
+    const nextApproveAuto = { ...approveAuto };
+    delete nextApproveAuto[workspaceId];
+    const nextGateReview = { ...gateReview };
+    delete nextGateReview[workspaceId];
     const nextCollapsed = collapsed.filter((id) => id !== workspaceId);
     const nextUi = {
       ...ui,
@@ -261,6 +278,8 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
       permissionsByWorkspace: nextPerms,
       strictApprovalsByWorkspace: nextStrict,
       gatePromptOnPendingByWorkspace: nextGate,
+      approveAutoAcceptPendingByWorkspace: nextApproveAuto,
+      gatePromptOnReviewRequestChangesByWorkspace: nextGateReview,
       collapsedWorkspaces: nextCollapsed
     };
     const updated = await vyotiq.settings.set({ ui: nextUi });
@@ -285,6 +304,26 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     if ((prev[workspaceId] ?? false) === value) return;
     const next = { ...prev, [workspaceId]: value };
     const ui = { ...(current.ui ?? {}), gatePromptOnPendingByWorkspace: next };
+    const updated = await vyotiq.settings.set({ ui });
+    setState({ settings: { ...getState().settings, ...updated } });
+  },
+
+  setApproveAutoAcceptPendingForWorkspace: async (workspaceId, value) => {
+    const current = getState().settings;
+    const prev = current.ui?.approveAutoAcceptPendingByWorkspace ?? {};
+    if ((prev[workspaceId] ?? false) === value) return;
+    const next = { ...prev, [workspaceId]: value };
+    const ui = { ...(current.ui ?? {}), approveAutoAcceptPendingByWorkspace: next };
+    const updated = await vyotiq.settings.set({ ui });
+    setState({ settings: { ...getState().settings, ...updated } });
+  },
+
+  setGateReviewRequestChangesForWorkspace: async (workspaceId, value) => {
+    const current = getState().settings;
+    const prev = current.ui?.gatePromptOnReviewRequestChangesByWorkspace ?? {};
+    if ((prev[workspaceId] ?? false) === value) return;
+    const next = { ...prev, [workspaceId]: value };
+    const ui = { ...(current.ui ?? {}), gatePromptOnReviewRequestChangesByWorkspace: next };
     const updated = await vyotiq.settings.set({ ui });
     setState({ settings: { ...getState().settings, ...updated } });
   },

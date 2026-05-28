@@ -3,6 +3,10 @@
  * code fences). Reads from the chat-store accumulator so reruns and re-mounts
  * don't lose the buffered text.
  *
+ * While streaming, uses `StreamingMarkdownBody` for a token-aware partial
+ * renderer (Cursor-style flush inline prose). On settle, hands off to the
+ * full `MarkdownBody` for GFM + highlight.js.
+ *
  * The model sometimes emits internal `<delegate />` XML scaffolding around
  * its user-facing answer; `stripDelegatesForDisplay` removes it before the
  * text reaches the markdown parser.
@@ -11,6 +15,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Copy, Check, RefreshCcw } from 'lucide-react';
 import type { ModelSelection } from '@shared/types/provider.js';
+import { AGENT_NAME } from '@shared/constants.js';
 import { stripEmoji } from '@shared/text/emoji.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import {
@@ -18,12 +23,11 @@ import {
   selectEffectivePermissions
 } from '../../../store/useSettingsStore.js';
 import { useWorkspaceStore } from '../../../store/useWorkspaceStore.js';
-import { stripDelegatesForDisplay } from '../../../lib/text.js';
-import { MarkdownBody } from '../markdown/MarkdownBody.js';
+import { displayAssistantTurnText } from '../../../lib/text.js';
+import { StreamingMarkdownBody } from '../markdown/StreamingMarkdownBody.js';
 import { cn } from '../../../lib/cn.js';
 import { safeCopy } from '../../../lib/clipboard.js';
-import { SurfaceShell, surfaceShellInnerClassName } from '../../ui/SurfaceShell.js';
-import { timelineActionPillClassName } from '../shared/rowStyles.js';
+import { timelineActionPillClassName, timelineAssistantRowClassName } from '../shared/rowStyles.js';
 
 interface AssistantTextRowProps {
   id: string;
@@ -32,9 +36,6 @@ interface AssistantTextRowProps {
 
 export function AssistantTextRow({ id, model }: AssistantTextRowProps) {
   const acc = useChatStore((s) => s.assistantTexts[id]);
-  // Audit fix C2: read the most-recent prompt from the reducer-
-  // maintained mirror field (O(1) lookup) instead of reverse-walking
-  // the events array on every render.
   const lastUserPromptContent = useChatStore((s) => s.lastUserPromptContent);
   const isProcessing = useChatStore((s) => s.isProcessing);
   const conversationId = useChatStore((s) => s.conversationId);
@@ -45,8 +46,13 @@ export function AssistantTextRow({ id, model }: AssistantTextRowProps) {
   const permissions = selectEffectivePermissions(activeWorkspaceId, settings);
 
   const [copied, setCopied] = useState(false);
+  const [pendingRegenerate, setPendingRegenerate] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
+
+  useEffect(() => {
+    if (isProcessing) setPendingRegenerate(false);
+  }, [isProcessing]);
 
   useEffect(() => {
     return () => {
@@ -59,8 +65,10 @@ export function AssistantTextRow({ id, model }: AssistantTextRowProps) {
   }, []);
 
   if (!acc) return null;
-  const cleaned = stripDelegatesForDisplay(acc.text);
-  if (cleaned.length === 0) return null;
+  const cleaned = displayAssistantTurnText(acc.text);
+  const streamingEmpty = cleaned.length === 0 && !acc.done;
+
+  if (cleaned.length === 0 && acc.done) return null;
 
   const hasLastPrompt = typeof lastUserPromptContent === 'string' && lastUserPromptContent.length > 0;
   const canRegenerate =
@@ -81,15 +89,29 @@ export function AssistantTextRow({ id, model }: AssistantTextRowProps) {
 
   const handleRegenerate = () => {
     if (!canRegenerate || !model || !lastUserPromptContent) return;
+    setPendingRegenerate(true);
     void send(lastUserPromptContent, model, permissions);
   };
 
   return (
-    <div className="group flex flex-col gap-1">
-      <SurfaceShell className={surfaceShellInnerClassName('content')}>
-        <MarkdownBody text={cleaned} />
-      </SurfaceShell>
-      <div className="flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+    // Tail-stick is intentionally omitted here — the timeline-level
+    // sticky scroll bit keeps the viewport pinned during prose streams.
+    <div
+      className={timelineAssistantRowClassName}
+      data-row-kind="assistant-text"
+      aria-label={`${AGENT_NAME} response`}
+    >
+      <div className="flex flex-col gap-1.5">
+        {streamingEmpty ? (
+          <div
+            className="h-4 w-3/5 max-w-xs animate-pulse rounded-inner bg-surface-overlay/30"
+            aria-hidden
+          />
+        ) : (
+          <StreamingMarkdownBody text={acc.text} done={acc.done} />
+        )}
+      </div>
+      <div className="flex items-center gap-1 pt-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto">
         <button
           type="button"
           onClick={handleCopy}
@@ -112,8 +134,12 @@ export function AssistantTextRow({ id, model }: AssistantTextRowProps) {
             !canRegenerate && 'cursor-not-allowed opacity-40'
           )}
           title={canRegenerate ? 'Regenerate response' : 'Regenerate unavailable'}
+          aria-label={canRegenerate ? 'Regenerate response' : 'Regenerate unavailable'}
         >
-          <RefreshCcw className="h-3 w-3" strokeWidth={2.25} />
+          <RefreshCcw
+            className={cn('h-3 w-3', pendingRegenerate && 'animate-spin')}
+            strokeWidth={2.25}
+          />
           <span>Regenerate</span>
         </button>
       </div>

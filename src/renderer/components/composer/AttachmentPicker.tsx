@@ -13,6 +13,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { File, Folder, X } from 'lucide-react';
+import { chromePopoverPanelClassName } from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
 import { Eyebrow } from '../ui/Eyebrow.js';
 import { TextField } from '../ui/TextField.js';
@@ -129,10 +130,7 @@ export function AttachmentPicker({
 
   return (
     <div
-      className={cn(
-        'elev-1 w-80 rounded-card p-1.5',
-        'bg-surface-overlay'
-      )}
+      className={cn(chromePopoverPanelClassName, 'w-80 p-1.5')}
     >
       {isControlled ? (
         // In `@`-mention mode, the filter is driven by the textarea — show

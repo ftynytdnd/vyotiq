@@ -8,28 +8,28 @@
  * scroll-tracking + envelope-strip logic.
  *
  * Behaviour parity with the orchestrator-level rows (audit fix C4 / C5):
- *   - `ReasoningPanel` is a chevron-toggleable row that auto-collapses
- *     to `Thought for Ns` once `done` flips, mirroring
- *     `ReasoningLineRow`. A user click records a manual override; the
- *     auto-flip stops respecting `done` thereafter for the lifetime of
- *     the component instance.
+ *   - `ReasoningPanel` uses `TimelineRowHeader` + `useTimelineRowExpand`
+ *     (persisted expand, live auto-expand while streaming) mirroring
+ *     `ReasoningLineRow`.
  *   - `TextPanel` caps its body at `MAX_TEXT_BODY_H` with internal
  *     scroll + tail-stick so a 300-line worker report can't devour
  *     the viewport.
- *   - Neither panel applies `shimmerText` to the body. Shimmer cascades
- *     `-webkit-text-fill-color: transparent` into inline `<code>`
- *     children that re-declare their own background, leaving them as
- *     visible empty pills (audit fix C2). The streaming signal is
- *     carried by the row's header label / status pill instead.
+ *   - Neither panel applies shimmer to the body. Gold phase headings
+ *     on the row header carry the live signal instead.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Brain, ChevronDown, ChevronRight } from 'lucide-react';
-import { MarkdownBody } from '../markdown/MarkdownBody.js';
+import { useMemo } from 'react';
+import { Brain } from 'lucide-react';
+import { StreamingMarkdownBody } from '../markdown/StreamingMarkdownBody.js';
 import { cn } from '../../../lib/cn.js';
-import { shimmerStyle, shimmerText } from '../../../lib/shimmer.js';
 import { formatReasoningLabel } from '../../../lib/reasoningLabel.js';
-import { timelineRowChevronClassName, timelineRowHeaderClassName } from '../shared/rowStyles.js';
+import { DetailShell } from '../shared/DetailShell.js';
+import { TimelineRowHeader } from '../shared/TimelineRowHeader.js';
+import { useTimelineRowExpand } from '../shared/useTimelineRowExpand.js';
+import {
+  reasoningHeadlineClassName
+} from '../shared/rowStyles.js';
+import { useScrollTailStick } from '../shared/useScrollTailStick.js';
 import { stripDelegatesForDisplay } from '../../../lib/text.js';
 
 /** Cap on rendered reasoning body height — same rhythm as
@@ -48,10 +48,6 @@ const REASONING_BODY_MAX_H = 'max-h-48';
  */
 const TEXT_BODY_MAX_H = 'max-h-[28rem]';
 
-/** "Near bottom" tolerance for tail-tracking. Mirrors
- *  `ReasoningLineRow.STICK_TO_BOTTOM_PX`. */
-const STICK_TO_BOTTOM_PX = 16;
-
 interface ReasoningPanelProps {
   subagentId: string;
   iterationId: string;
@@ -69,30 +65,17 @@ export function ReasoningPanel({
   startedAt,
   endedAt
 }: ReasoningPanelProps) {
-  // Manual override mirrors `ReasoningLineRow`. `null` = no user
-  // interaction yet → fall back to the auto rule (`!done`). Once the
-  // user clicks the chevron, this becomes a concrete boolean and the
-  // auto-flip on `done` no longer fires.
-  const [override, setOverride] = useState<boolean | null>(null);
-  const expanded = override ?? !done;
+  const rowKey = `sub-reasoning:${subagentId}:${iterationId}`;
+  const { expanded, onToggle } = useTimelineRowExpand({
+    rowKey,
+    defaultExpanded: false,
+    liveAutoExpand: !done
+  });
 
-  const bodyRef = useRef<HTMLDivElement | null>(null);
-  const stickRef = useRef(true);
-
-  useEffect(() => {
-    if (!expanded || done) return;
-    const el = bodyRef.current;
-    if (!el) return;
-    if (stickRef.current) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [text, done, expanded]);
-
-  const onBodyScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const el = e.currentTarget;
-    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-    stickRef.current = distance <= STICK_TO_BOTTOM_PX;
-  };
+  const { bodyRef, onBodyScroll } = useScrollTailStick(text, {
+    active: !done,
+    expanded
+  });
 
   // Stopwatch label — shared with `ReasoningLineRow` via
   // `formatReasoningLabel` so the orchestrator and sub-agent reasoning
@@ -104,46 +87,29 @@ export function ReasoningPanel({
     done
   });
 
-  const onToggle = () => setOverride(!expanded);
+  const onToggleHeader = onToggle;
 
   return (
-    <div className="flex flex-col gap-1">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        className={cn(timelineRowHeaderClassName, 'cursor-pointer py-0.5')}
-      >
-        {expanded ? (
-          <ChevronDown className={timelineRowChevronClassName} strokeWidth={2} />
-        ) : (
-          <ChevronRight className={timelineRowChevronClassName} strokeWidth={2} />
-        )}
-        <Brain className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} />
-        <span
-          className={shimmerText(
-            streaming,
-            cn(
-              'min-w-0 flex-1 truncate text-row italic',
-              done ? 'text-text-muted' : 'text-text-secondary'
-            )
-          )}
-          style={streaming ? shimmerStyle(`subagent-reasoning:${subagentId}:${iterationId}`) : undefined}
-        >
-          {label}
+    <div className="vyotiq-stepfade-once flex flex-col">
+      <TimelineRowHeader expanded={expanded} onToggle={onToggleHeader}>
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <Brain className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} />
+          <span className={reasoningHeadlineClassName(streaming, 'subagent')}>{label}</span>
         </span>
-      </button>
+      </TimelineRowHeader>
       {expanded && (
-        <div
-          ref={bodyRef}
-          onScroll={onBodyScroll}
-          className={cn(
-            'whitespace-pre-wrap overflow-y-auto pl-7 pr-2 text-row italic leading-relaxed text-text-muted',
-            REASONING_BODY_MAX_H
-          )}
-        >
-          {text}
-        </div>
+        <DetailShell variant="flat">
+          <div
+            ref={bodyRef}
+            onScroll={onBodyScroll}
+            className={cn(
+              'overflow-y-auto whitespace-pre-wrap pr-1 text-row italic leading-relaxed text-text-muted',
+              REASONING_BODY_MAX_H
+            )}
+          >
+            {text}
+          </div>
+        </DetailShell>
       )}
     </div>
   );
@@ -229,23 +195,9 @@ export function TextPanel({ subagentId: _subagentId, iterationId: _iterationId, 
   // Tail-stick refs. While the worker is streaming we keep the body
   // pinned to the latest delta, but only if the user hasn't scrolled
   // away. Mirrors the orchestrator-level `ReasoningLineRow` pattern.
-  const bodyRef = useRef<HTMLDivElement | null>(null);
-  const stickRef = useRef(true);
-
-  useEffect(() => {
-    if (done) return;
-    const el = bodyRef.current;
-    if (!el) return;
-    if (stickRef.current) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [cleaned, done]);
-
-  const onBodyScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const el = e.currentTarget;
-    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-    stickRef.current = distance <= STICK_TO_BOTTOM_PX;
-  };
+  const { bodyRef, onBodyScroll } = useScrollTailStick(cleaned, {
+    active: !done
+  });
 
   // The worker may emit a turn whose entire body IS the envelope —
   // common when the model inlines the result directly without prose
@@ -255,26 +207,20 @@ export function TextPanel({ subagentId: _subagentId, iterationId: _iterationId, 
   // worker's identity, status, and steps.
   if (cleaned.length === 0) return null;
 
-  // No `shimmerText` on this wrapper. The shimmer technique relies on
-  // `background-clip: text` + `-webkit-text-fill-color: transparent`,
-  // both of which inherit to children. Inline `<code>` (and any other
-  // markdown child that re-declares its own `background`) breaks the
-  // gradient clip on the child while STILL inheriting the transparent
-  // text fill — leaving every backticked identifier as a sized empty
-  // pill in the rendered prose (see screenshot 2 in the audit).
-  // Streaming signal is carried by the row's status pill / header
-  // shimmer up the tree, never on a markdown body.
+  // Streaming signal is carried by gold phase headings on the status
+  // row / reasoning header — never on a markdown body.
   return (
     <div
       ref={bodyRef}
       onScroll={onBodyScroll}
       className={cn(
-        'overflow-y-auto px-2 py-0.5 text-text-secondary',
+        'vyotiq-stepfade-once overflow-y-auto px-2 py-0.5 text-text-secondary',
         TEXT_BODY_MAX_H
       )}
     >
-      <MarkdownBody
+      <StreamingMarkdownBody
         text={cleaned}
+        done={done}
         className="text-row leading-relaxed text-text-secondary"
       />
     </div>

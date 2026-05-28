@@ -45,6 +45,11 @@ export function pendingFile(workspaceId: string): string {
   return join(workspaceDir(workspaceId), 'pending.json');
 }
 
+/** PR-style review sessions (`conversationId` → session). */
+export function reviewsFile(workspaceId: string): string {
+  return join(workspaceDir(workspaceId), 'reviews.json');
+}
+
 export function blobPath(workspaceId: string, hash: string): string {
   // `<aa>/<sha256>` — keep the FULL hash as the filename so a single
   // glob (`blobs/*/<hash>`) can locate any blob without iterating.

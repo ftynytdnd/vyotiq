@@ -154,8 +154,7 @@ describe('Sub-agent live-create streaming \u2014 end-to-end', () => {
     expect(partialNode).not.toBeNull();
     // The streaming cursor is mounted \u2014 the visible "live caret"
     // signal. CSS animates the class via `vyotiq-stream-cursor`.
-    const cursor = container.querySelector('.vyotiq-stream-cursor');
-    expect(cursor).not.toBeNull();
+    expect(container.querySelector('.vyotiq-stream-cursor')).not.toBeNull();
     // The pane label is the friendly "new file streaming\u2026" copy
     // (NOT the modify-path "live diff" label) so the UX is
     // specifically the create-streaming surface.

@@ -19,6 +19,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/react';
 import { ToolGroupRow } from '@renderer/components/timeline/rows/ToolGroupRow';
+import { deriveRows } from '@renderer/components/timeline/reducer/deriveRows';
 import { useChatStore } from '@renderer/store/useChatStore';
 import { useTimelineUiStore } from '@renderer/store/useTimelineUiStore';
 import type { ToolGroupChild } from '@renderer/components/timeline/reducer/deriveRows';
@@ -180,26 +181,65 @@ describe('live streaming diff — auto-expand', () => {
     expect(container.querySelector('button')!.getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('auto-expands in-flight edit after tool-call lands (call pending, no result)', () => {
+    const child: ToolGroupChild = {
+      callId: 'c-live',
+      call: {
+        id: 'c-live',
+        name: 'edit',
+        args: { path: PATH, oldString: 'old_line', newString: 'STREAMING_NEW_LINE' }
+      }
+    };
+    const { container } = render(
+      <ToolGroupRow rowKey="tg:c-live" toolName="edit" items={[child]} />
+    );
+    expect(container.querySelector('button')!.getAttribute('aria-expanded')).toBe('true');
+    expect(container.textContent ?? '').toContain('STREAMING_NEW_LINE');
+  });
+
+  it('merges liveDiffByCallId into settled tool-group children via deriveRows', () => {
+    const events = [
+      { kind: 'user-prompt' as const, id: 'p1', ts: 1, content: 'go' },
+      {
+        kind: 'tool-call' as const,
+        id: 'tc1',
+        ts: 2,
+        call: {
+          id: 'c-live',
+          name: 'edit' as const,
+          args: { path: PATH, oldString: 'old_line', newString: 'STREAMING_NEW_LINE' }
+        }
+      }
+    ];
+    const diffStream: DiffStreamSnapshot = {
+      tool: 'edit',
+      filePath: PATH,
+      hunks: HUNKS,
+      additions: 1,
+      deletions: 1,
+      settled: false,
+      ts: 3
+    };
+    const rows = deriveRows(events, {
+      liveDiffByCallId: { 'c-live': diffStream }
+    });
+    const group = rows.find((r) => r.kind === 'tool-group');
+    expect(group?.kind === 'tool-group' && group.children[0]?.diffStream).toBeTruthy();
+  });
+
   it('keeps the inner edit row open as well — both layers auto-expand together', async () => {
     const { container } = render(
       <ToolGroupRow rowKey="tg:c-live" toolName="edit" items={[partialChild()]} />
     );
-    // After the parent auto-opens, the nested `InvocationShell` is
-    // rendered. Its trigger is the second <button> in the tree (the
-    // first is the group's own header). It MUST also report
-    // aria-expanded=true so the streaming `EditDiffView` is visible
-    // without a second click.
     const buttons = container.querySelectorAll('button');
     expect(buttons.length).toBeGreaterThanOrEqual(2);
     const innerBtn = buttons[1]!;
     expect(innerBtn.getAttribute('aria-expanded')).toBe('true');
-    // Sanity: clicking the inner button collapses just the inner row,
-    // not the parent. (Manual override on the inner shell only.)
     await act(async () => {
       fireEvent.click(innerBtn);
     });
     const after = container.querySelectorAll('button');
-    expect(after[0]!.getAttribute('aria-expanded')).toBe('true'); // group still live
-    expect(after[1]!.getAttribute('aria-expanded')).toBe('false'); // inner overridden
+    expect(after[0]!.getAttribute('aria-expanded')).toBe('true');
+    expect(after[1]!.getAttribute('aria-expanded')).toBe('false');
   });
 });

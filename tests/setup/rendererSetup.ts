@@ -139,6 +139,18 @@ function makeStubApi() {
       deleteRun: vi.fn(async () => ({ removed: true, droppedPending: 0 })),
       onChanged: subscribe
     },
+    contextSummary: {
+      inspect: vi.fn(async () => null),
+      getRules: vi.fn(async () => null),
+      triggerManual: vi.fn(async () => ({ ok: false, reason: 'stub' })),
+      undo: vi.fn(async () => ({ ok: false })),
+      abortIdle: vi.fn(async () => ({ ok: false })),
+      abortLive: vi.fn(async () => ({ ok: false })),
+      setMessageOverride: asyncNoop,
+      resetMessageOverrides: asyncNoop,
+      updateRules: vi.fn(async () => ({})),
+      onSnapshotChanged: subscribe
+    },
     log: noop
   };
 }

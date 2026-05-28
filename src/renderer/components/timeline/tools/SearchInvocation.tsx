@@ -5,11 +5,12 @@
  */
 
 import { useMemo } from 'react';
-import { Search, Globe } from 'lucide-react';
 import type { ToolCall, ToolResult, SearchMatch } from '@shared/types/tool.js';
 import { InvocationShell } from './shared/InvocationShell.js';
 import { DetailPane } from './shared/DetailPane.js';
+import { chromeCodeSurfaceClassName } from '../../ui/SurfaceShell.js';
 import { CodeBlock } from './shared/CodeBlock.js';
+import { toolErrorBody, toolErrorHint } from './shared/toolErrorDisplay.js';
 
 interface SearchInvocationProps {
   call?: ToolCall;
@@ -35,7 +36,7 @@ export function SearchInvocation({ call, result, dense, rowKey }: SearchInvocati
       : `"${query}" — ${hitCount} hit${hitCount === 1 ? '' : 's'}${data?.truncated ? ' (truncated)' : ''
       }`;
 
-  const errorHint = result && !result.ok ? result.error : undefined;
+  const errorHint = toolErrorHint(result);
 
   let detail: React.ReactNode = undefined;
   if (data && mode === 'local' && data.matches) {
@@ -46,17 +47,18 @@ export function SearchInvocation({ call, result, dense, rowKey }: SearchInvocati
         <CodeBlock body={data.webBody} />
       </DetailPane>
     );
-  } else if (result?.error) {
+  } else if (result && !result.ok) {
     detail = (
       <DetailPane label="error" tone="danger">
-        <CodeBlock body={result.error} tone="danger" />
+        <div className="font-mono text-row text-danger whitespace-pre-wrap">
+          {toolErrorBody(result)}
+        </div>
       </DetailPane>
     );
   }
 
   return (
     <InvocationShell
-      Icon={mode === 'web' ? Globe : Search}
       title={mode === 'web' ? 'web search' : 'search'}
       summary={summary}
       mono
@@ -65,6 +67,8 @@ export function SearchInvocation({ call, result, dense, rowKey }: SearchInvocati
       {...(detail !== undefined ? { detail } : {})}
       {...(dense ? { dense } : {})}
       {...(rowKey ? { rowKey } : {})}
+      call={call}
+      result={result}
     />
   );
 }
@@ -102,7 +106,7 @@ function LocalMatches({ matches }: { matches: SearchMatch[] }) {
 
   return (
     <DetailPane label="matches">
-      <div className="scrollbar-stealth flex max-h-96 flex-col gap-2 overflow-auto rounded-inner bg-surface-overlay px-2 py-2">
+      <div className={chromeCodeSurfaceClassName('flex max-h-96 flex-col gap-2 px-2 py-2')}>
         {groups.map(([path, rows]) => (
           <div key={path} className="flex flex-col">
             <div className="font-mono text-row text-text-primary">{path}</div>

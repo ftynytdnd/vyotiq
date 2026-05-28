@@ -19,11 +19,15 @@
 import { DetailPane } from '../tools/shared/DetailPane.js';
 import { CodeBlock } from '../tools/shared/CodeBlock.js';
 import { MarkdownBody } from '../markdown/MarkdownBody.js';
-import { parseResultEnvelope } from '@shared/text/resultPatterns.js';
-import { cn } from '../../../lib/cn.js';
+import { parseResultEnvelope, type ParsedResultEnvelope } from '@shared/text/resultPatterns.js';
+import { chromeStatusPillClassName } from '../../ui/SurfaceShell.js';
 
 interface SubAgentResultProps {
   output: string;
+  /** When true, the artifacts block is omitted (rendered elsewhere). */
+  omitArtifacts?: boolean;
+  /** Pre-parsed envelope — avoids duplicate parsing when the parent already has it. */
+  parsed?: ParsedResultEnvelope;
 }
 
 function extractSection(inner: string, tag: string): string | undefined {
@@ -32,18 +36,39 @@ function extractSection(inner: string, tag: string): string | undefined {
   return m ? (m[1] ?? '').trim() : undefined;
 }
 
-export function SubAgentResult({ output }: SubAgentResultProps) {
-  const parsed = parseResultEnvelope(output);
+export function SubAgentResult({
+  output,
+  omitArtifacts = false,
+  parsed: parsedProp
+}: SubAgentResultProps) {
+  const trimmed = output.trim();
+  const parsed = parsedProp ?? parseResultEnvelope(output);
   if (!parsed.found) {
     // No `<result>` envelope. The verifier classified this as
-    // `malformed`; surface the raw output under an honest label so
-    // the user can see what the worker actually produced. The
-    // empty-output case is already filtered upstream by
-    // `SubAgentTrace`'s `hasOutput` gate (audit fix A3 — that branch
-    // was unreachable here and was removed).
+    // `malformed`. Two sub-cases:
+    //   1. The worker emitted SOME body — surface it raw under an
+    //      honest label so the user can see what the worker
+    //      actually produced.
+    //   2. The worker emitted nothing at all (the
+    //      `hasNothingToWrap` early-out in `SubAgent.ts`, or an
+    //      aborted run that was promoted to the Result tab by the
+    //      always-show rule in `SubAgentDetailTabs`). Render a
+    //      muted explainer instead of an empty `<CodeBlock>` so
+    //      the pane reads as "nothing was captured" rather than
+    //      "here is empty content".
+    if (trimmed.length === 0) {
+      return (
+        <DetailPane label="sub-agent output (no envelope)">
+          <span className="text-row leading-relaxed text-text-muted">
+            No output captured from the worker — see the red status row
+            above for the failure reason.
+          </span>
+        </DetailPane>
+      );
+    }
     return (
       <DetailPane label="sub-agent output (no envelope)">
-        <CodeBlock body={output.trim()} />
+        <CodeBlock body={trimmed} />
       </DetailPane>
     );
   }
@@ -51,20 +76,19 @@ export function SubAgentResult({ output }: SubAgentResultProps) {
   const status = parsed.status ?? undefined;
   const summary = parsed.summary.length > 0 ? parsed.summary : undefined;
   const details = extractSection(inner, 'details');
-  const artifacts = extractSection(inner, 'artifacts');
+  const artifacts = omitArtifacts ? undefined : extractSection(inner, 'artifacts');
   return (
     <div className="flex flex-col gap-2">
       {status && (
         <div className="flex items-center gap-2 text-row">
           <span className="text-text-faint">status</span>
           <span
-            className={cn(
-              'rounded-inner px-1.5 py-0.5 text-meta font-medium capitalize',
+            className={chromeStatusPillClassName(
               status === 'success'
-                ? 'bg-success-soft text-success'
+                ? 'success'
                 : status === 'partial'
-                  ? 'bg-warning-soft text-warning'
-                  : 'bg-danger-soft text-danger'
+                  ? 'warning'
+                  : 'danger'
             )}
           >
             {status}

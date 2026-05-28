@@ -71,4 +71,11 @@ describe('registerSettingsIpc — SETTINGS_SET payload validation', () => {
     });
     expect(setSettingsMock).toHaveBeenCalledOnce();
   });
+
+  it('accepts approveAutoAcceptPendingByWorkspace per-workspace map', async () => {
+    await mockIpc.__invoke(IPC.SETTINGS_SET, {
+      ui: { approveAutoAcceptPendingByWorkspace: { 'ws-1': true } }
+    });
+    expect(setSettingsMock).toHaveBeenCalledOnce();
+  });
 });

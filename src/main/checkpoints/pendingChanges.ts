@@ -215,6 +215,37 @@ export async function flushAll(): Promise<void> {
   await Promise.all(Array.from(writeChains.values()));
 }
 
+/**
+ * Move every pending row for a conversation from one workspace bucket to
+ * another (conversation reparent). No-op when the source bucket is empty.
+ */
+export async function migrateConversationPending(
+  conversationId: string,
+  fromWorkspaceId: string,
+  toWorkspaceId: string
+): Promise<void> {
+  if (fromWorkspaceId === toWorkspaceId) return;
+  const fromBucket = await loadBucket(fromWorkspaceId);
+  const list = fromBucket[conversationId];
+  if (!list || list.length === 0) return;
+  delete fromBucket[conversationId];
+  cache.set(fromWorkspaceId, fromBucket);
+  await serialize(fromWorkspaceId, () => persistBucket(fromWorkspaceId, fromBucket));
+
+  const toBucket = await loadBucket(toWorkspaceId);
+  const migrated = list.map((p) => ({ ...p, workspaceId: toWorkspaceId }));
+  const existing = toBucket[conversationId] ?? [];
+  toBucket[conversationId] = [...existing, ...migrated];
+  cache.set(toWorkspaceId, toBucket);
+  await serialize(toWorkspaceId, () => persistBucket(toWorkspaceId, toBucket));
+  log.info('migrated pending rows on conversation move', {
+    conversationId,
+    fromWorkspaceId,
+    toWorkspaceId,
+    count: migrated.length
+  });
+}
+
 /** Clear cache for a workspace (used by `prune`). */
 export async function clearWorkspace(workspaceId: string): Promise<void> {
   cache.delete(workspaceId);

@@ -14,6 +14,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
+import { chromeRevealIconActionClassName } from '../../../../ui/SurfaceShell.js';
 import { cn } from '../../../../../lib/cn.js';
 import { safeCopy } from '../../../../../lib/clipboard.js';
 
@@ -61,10 +62,8 @@ export function DiffCopyButton({ text, className }: DiffCopyButtonProps) {
       title={done ? 'Copied' : 'Copy diff'}
       aria-label={done ? 'Copied' : 'Copy diff'}
       className={cn(
-        'absolute right-1.5 top-1.5 z-10 inline-flex h-6 w-6 items-center justify-center',
-        'rounded-inner text-text-faint transition-opacity duration-150',
-        'opacity-0 group-hover/diff:opacity-100 focus:opacity-100',
-        'hover:bg-surface-hover hover:text-text-secondary',
+        chromeRevealIconActionClassName('absolute right-1.5 top-1.5 z-10 group-hover/diff:opacity-100'),
+        'hover:text-text-secondary',
         className
       )}
     >

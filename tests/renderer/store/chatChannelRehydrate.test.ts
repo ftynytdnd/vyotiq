@@ -5,7 +5,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TimelineEvent } from '@shared/types/chat';
-import { bootstrapChatChannel } from '@renderer/store/chatChannel';
+import {
+  bootstrapChatChannel,
+  __vyotiqChatChannelInternal as pool
+} from '@renderer/store/chatChannel';
 import { useChatStore } from '@renderer/store/useChatStore';
 
 const bootOrder: string[] = [];
@@ -131,5 +134,43 @@ describe('bootstrapChatChannel rehydrate ordering', () => {
     });
 
     expect(useChatStore.getState().slices['conv-1']?.events).toHaveLength(1);
+  });
+
+  it('clears parser pool on second bootstrap (HMR teardown)', async () => {
+    const prevRaf = (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame;
+    (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame = undefined;
+
+    useChatStore.setState((s) => ({
+      ...s,
+      runIdToConv: { ...s.runIdToConv, 'run-1': 'conv-1' }
+    }));
+
+    const boot1 = bootstrapChatChannel();
+    resolveRuns([]);
+    await boot1;
+
+    const onEvent = (window as unknown as { __testOnEvent?: (runId: string, e: TimelineEvent) => void })
+      .__testOnEvent;
+    onEvent!('run-1', {
+      kind: 'tool-call-args-delta',
+      id: 'd1',
+      ts: 1,
+      callId: 'c1',
+      index: 0,
+      name: 'edit',
+      argsBuf: '{"path":"a.ts"'
+    });
+    // Parser is created when the delta is fed through feedParser on drain;
+    // enqueue alone only schedules the RAF batcher.
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(pool.parserPoolSize()).toBeGreaterThan(0);
+
+    const boot2 = bootstrapChatChannel();
+    resolveRuns([]);
+    await boot2;
+    expect(pool.parserPoolSize()).toBe(0);
+
+    (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame = prevRaf;
   });
 });

@@ -8,6 +8,7 @@
 
 import { X, AlertCircle, Info, CheckCircle2 } from 'lucide-react';
 import { useToastStore, type Toast } from '../../store/useToastStore.js';
+import { chromePopoverPanelClassName } from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
 
 export function ToastHost() {
@@ -67,7 +68,13 @@ function ToastRow({ toast, onDismiss, onPause, onResume }: ToastRowProps) {
       onFocusCapture={onPause}
       onBlurCapture={onResume}
       className={cn(
-        'elev-1 pointer-events-auto flex max-w-sm items-start gap-2 rounded-card bg-surface-overlay px-3 py-2'
+        chromePopoverPanelClassName,
+        'pointer-events-auto flex max-w-sm items-start gap-2 border-l-2 px-3 py-2',
+        toast.tone === 'success'
+          ? 'border-l-success'
+          : toast.tone === 'danger'
+            ? 'border-l-danger'
+            : 'border-l-accent/70'
       )}
     >
       <Icon className={cn('mt-0.5 h-3.5 w-3.5 shrink-0', toneClass)} strokeWidth={2.25} />

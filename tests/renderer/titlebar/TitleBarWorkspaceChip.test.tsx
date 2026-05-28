@@ -58,6 +58,7 @@ describe('TitleBar workspace chip', () => {
   it('shows workspace context in the dock when collapsed', () => {
     render(<LeftDock />);
     expect(screen.getByRole('button', { name: /Expand navigation.*Codex/i })).toBeInTheDocument();
+    expect(screen.getByText('Cod')).toBeInTheDocument();
   });
 
   it('shows workspace tabs in the dock when expanded', () => {

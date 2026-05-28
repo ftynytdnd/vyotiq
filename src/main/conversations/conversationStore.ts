@@ -901,8 +901,15 @@ export async function moveConversationToWorkspace(
       /* logged inside the appender */
     }
   }
+  const priorWorkspaceId = meta.workspaceId;
   meta.workspaceId = targetWorkspaceId;
   meta.updatedAt = Date.now();
+  if (priorWorkspaceId && priorWorkspaceId !== targetWorkspaceId) {
+    const { migrateConversationPending } = await import('../checkpoints/pendingChanges.js');
+    const { migrateConversationReview } = await import('../checkpoints/reviewSessions.js');
+    await migrateConversationPending(id, priorWorkspaceId, targetWorkspaceId);
+    await migrateConversationReview(id, priorWorkspaceId, targetWorkspaceId);
+  }
   log.info('conversation moved to workspace', {
     conversationId: id,
     targetWorkspaceId

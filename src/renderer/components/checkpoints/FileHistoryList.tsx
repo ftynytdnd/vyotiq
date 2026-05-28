@@ -20,7 +20,11 @@ import { computeDiffHunksClient } from './diffClient.js';
 import { formatTimestamp } from './formatTimestamp.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { cn } from '../../lib/cn.js';
-import { surfaceListClassName } from '../ui/SurfaceShell.js';
+import {
+  chromeFileKindBadgeClassName,
+  chromeInsetNoteClassName,
+  surfaceListClassName
+} from '../ui/SurfaceShell.js';
 import { timelineRowHeaderClassName } from '../timeline/shared/rowStyles.js';
 
 interface FileHistoryListProps {
@@ -203,16 +207,7 @@ function HistoryRow({
   return (
     <li className="group flex flex-col">
       <div className={timelineRowHeaderClassName}>
-        <span
-          className={cn(
-            'shrink-0 rounded-inner px-1 font-mono text-meta uppercase',
-            row.kind === 'create'
-              ? 'bg-success-soft text-success'
-              : row.kind === 'delete'
-                ? 'bg-danger-soft text-danger'
-                : 'bg-surface-overlay text-text-muted'
-          )}
-        >
+        <span className={chromeFileKindBadgeClassName(row.kind)}>
           {row.kind}
         </span>
         <span
@@ -287,21 +282,21 @@ function CompareWithCurrent({
 }) {
   if (state.loading) {
     return (
-      <div className="rounded-inner bg-surface-overlay px-3 py-2 text-row text-text-faint">
+      <div className={chromeInsetNoteClassName}>
         Loading comparison…
       </div>
     );
   }
   if (state.error) {
     return (
-      <div className="rounded-inner bg-surface-overlay px-3 py-2 text-row text-text-faint">
+      <div className={chromeInsetNoteClassName}>
         {state.error}
       </div>
     );
   }
   if (state.snapshot === null) {
     return (
-      <div className="rounded-inner bg-surface-overlay px-3 py-2 text-row text-text-faint">
+      <div className={chromeInsetNoteClassName}>
         Snapshot is missing — cannot compare.
       </div>
     );
@@ -321,7 +316,7 @@ function CompareWithCurrent({
   const hunks = computeDiffHunksClient(state.snapshot, state.current);
   if (hunks.length === 0) {
     return (
-      <div className="rounded-inner bg-surface-overlay px-3 py-2 text-row text-text-faint">
+      <div className={chromeInsetNoteClassName}>
         Current file matches this snapshot exactly.
       </div>
     );

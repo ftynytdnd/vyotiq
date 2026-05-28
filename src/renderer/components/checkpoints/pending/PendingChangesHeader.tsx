@@ -1,81 +1,68 @@
 /**
- * PendingChangesHeader — sticky header for the pending-changes
- * panel. Composes:
- *
- *   - Title + count + total +/- stats.
- *   - Gate label (`auto-accepted on next message` /
- *     `approve or reject before sending`).
- *   - Run filter pill — only rendered when ≥ 2 distinct runs are
- *     present.
- *   - Path filter input — substring match against `filePath`.
- *   - Workspace usage pill (clickable when `onOpenCheckpointSettings` is
- *     provided) — opens Settings → Checkpoints.
- *   - Bulk Accept / Reject buttons.
- *   - Optional `Review all` trigger that opens the lightbox mode.
- *
- * Keeps the existing surface tokens (`log-line`, `text-row`,
- * `rounded-inner`, `bg-surface-raised/60`) so the panel still reads
- * as a sibling of the timeline rather than a card-styled overlay.
+ * PendingChangesHeader — toolbar for the pending-changes panel.
  */
 
-import { ListChecks, Search, X, GalleryHorizontal } from 'lucide-react';
+import { ChevronDown, ChevronRight, Search, X } from 'lucide-react';
 import { Button } from '../../ui/Button.js';
 import { TextField } from '../../ui/TextField.js';
 import { cn } from '../../../lib/cn.js';
-import { SurfaceShell, surfaceShellInnerClassName } from '../../ui/SurfaceShell.js';
+import {
+  chromeFilterChipClassName,
+  chromeSearchRowClassName
+} from '../../ui/SurfaceShell.js';
+import { timelineRowChevronClassName } from '../../timeline/shared/rowStyles.js';
+import {
+  pendingExpandButtonClassName,
+  pendingGatePillClassName,
+  pendingReviewBlockPillClassName,
+  pendingPanelCountChipClassName,
+  pendingPanelFiltersRowClassName,
+  pendingPanelHeaderClassName,
+  pendingPanelMetaRowClassName,
+  pendingPanelTitleButtonClassName,
+  pendingPanelTitleRowClassName,
+  pendingPanelToolbarRowClassName
+} from './pendingPanelStyles.js';
 
-/**
- * Threshold (inclusive) at which the path filter renders even when
- * there is only one run in the panel. Below this, a small list is
- * usually short enough that visual scanning beats typing — the filter
- * row stays hidden so the header doesn't feel busy.
- *
- * The previous gate required `runIds.length > 1 || pathQuery.length > 0`
- * which left the path filter permanently unreachable in single-run
- * conversations (the input was the only surface that could grow
- * `pathQuery` past zero, and the input itself was hidden by the
- * gate). Promoting the gate so it also responds to entry count fixes
- * that wiring bug without making the filter row noisy on 1-2 row
- * panels.
- */
 const PATH_FILTER_AUTO_THRESHOLD = 5;
 
 interface PendingChangesHeaderProps {
-  /** Number of pending entries currently surviving the filters. */
   visibleCount: number;
-  /** Total entries in the panel (pre-filter). */
+  visibleFileCount: number;
   totalCount: number;
   visibleAdditions: number;
   visibleDeletions: number;
   gateOn: boolean;
-  /** Distinct run ids present in the panel. */
+  reviewGateOn?: boolean;
+  reviewBlocksSend?: boolean;
   runIds: readonly string[];
   selectedRunId: string | null;
   onSelectRunId: (runId: string | null) => void;
   pathQuery: string;
   onPathQueryChange: (q: string) => void;
-  /** Render the workspace usage pill. */
   usageLabel: string | null;
   usageTitle: string | null;
   onOpenCheckpointSettings?: () => void;
   onAcceptAll: () => void;
   onRejectAll: () => void;
-  /**
-   * When provided, a `Review all` trigger renders next to the
-   * header's bulk buttons. The pending panel mounts the matching
-   * lightbox in `PendingChangesReviewMode`.
-   */
   onReviewAll?: () => void;
-  /** When false, run/path filter row is hidden (timeline collapsed row). */
+  groupByFolder?: boolean;
+  onGroupByFolderChange?: (on: boolean) => void;
   filtersVisible?: boolean;
+  embedded?: boolean;
+  panelExpanded?: boolean;
+  onTogglePanel?: () => void;
 }
 
 export function PendingChangesHeader({
   visibleCount,
+  visibleFileCount,
   totalCount,
   visibleAdditions,
   visibleDeletions,
   gateOn,
+  reviewGateOn = false,
+  reviewBlocksSend = false,
   runIds,
   selectedRunId,
   onSelectRunId,
@@ -87,84 +74,189 @@ export function PendingChangesHeader({
   onAcceptAll,
   onRejectAll,
   onReviewAll,
-  filtersVisible = true
+  groupByFolder = false,
+  onGroupByFolderChange,
+  filtersVisible = true,
+  embedded = false,
+  panelExpanded,
+  onTogglePanel
 }: PendingChangesHeaderProps) {
   const gateLabel = gateOn
     ? 'approve or reject before sending'
     : 'auto-accepted on next message';
-  const showHeaderDiff = visibleCount > 1;
+  const reviewBlockLabel = 'send blocked — request changes in review';
   const filtered = visibleCount !== totalCount;
+  const showFileRollup =
+    visibleFileCount > 0 && visibleFileCount < visibleCount;
 
-  return (
-    <SurfaceShell className={cn('flex flex-col gap-1.5', surfaceShellInnerClassName('compact'))}>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <ListChecks className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} />
-        <div className="min-w-0 flex-1 basis-52 text-row text-text-secondary">
-          <span className="font-medium text-text-primary">
-            {visibleCount}
-            {filtered ? ` of ${totalCount}` : ''} pending change
-            {totalCount === 1 ? '' : 's'}
-          </span>{' '}
-          <span className="text-text-muted">
-            {showHeaderDiff && (
-              <>
-                +{visibleAdditions} −{visibleDeletions} ·{' '}
-              </>
-            )}
-            {gateLabel}
-          </span>
-        </div>
-        {usageLabel && onOpenCheckpointSettings && (
+  const countSummary = showFileRollup
+    ? `${visibleFileCount} file${visibleFileCount === 1 ? '' : 's'} · ${visibleCount} edit${visibleCount === 1 ? '' : 's'}`
+    : `${visibleCount}${filtered ? ` of ${totalCount}` : ''} pending change${visibleCount === 1 ? '' : 's'}`;
+
+  // E-phase audit: the previous `${files}/${edits}` chip (e.g. `10/23`)
+  // read like a progress fraction. Explicit unit suffixes make the two
+  // dimensions unmistakable while keeping the chip compact. The full
+  // spelling continues to live in the `countSummary` tooltip.
+  const countChip = showFileRollup
+    ? `${visibleFileCount}f · ${visibleCount}e`
+    : String(visibleCount);
+
+  const collapsed = embedded && !panelExpanded;
+  const expanded = embedded && panelExpanded;
+
+  const showFilters =
+    expanded &&
+    filtersVisible &&
+    (runIds.length > 1 ||
+      totalCount >= PATH_FILTER_AUTO_THRESHOLD ||
+      pathQuery.length > 0);
+
+  const body = (
+    <div
+      className={cn(
+        embedded && pendingPanelHeaderClassName,
+        collapsed && 'gap-0.5 border-b-0 py-1'
+      )}
+    >
+      <div className={pendingPanelTitleRowClassName}>
+        {embedded && onTogglePanel && (
           <button
             type="button"
-            onClick={onOpenCheckpointSettings}
-            className="shrink-0 text-meta text-text-muted hover:text-text-primary"
-            title={usageTitle ?? 'Open checkpoint settings'}
+            onClick={onTogglePanel}
+            aria-expanded={panelExpanded}
+            aria-label={panelExpanded ? 'Collapse pending changes' : 'Expand pending changes'}
+            className={pendingExpandButtonClassName}
           >
-            {usageLabel}
+            {panelExpanded ? (
+              <ChevronDown className={timelineRowChevronClassName} strokeWidth={2} />
+            ) : (
+              <ChevronRight className={timelineRowChevronClassName} strokeWidth={2} />
+            )}
           </button>
         )}
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          {onReviewAll && visibleCount > 0 && (
+
+        {embedded && onTogglePanel ? (
+          <button
+            type="button"
+            onClick={onTogglePanel}
+            className={pendingPanelTitleButtonClassName}
+            aria-expanded={panelExpanded}
+          >
+            <span className="truncate text-row font-medium text-text-primary">Pending changes</span>
+            <span className={pendingPanelCountChipClassName} title={countSummary}>
+              {countChip}
+            </span>
+            {collapsed && (
+              <>
+                <span className={cn(pendingGatePillClassName(gateOn), 'max-w-[12rem] truncate')}>
+                  {gateLabel}
+                </span>
+                {reviewGateOn && reviewBlocksSend && (
+                  <span
+                    className={cn(pendingReviewBlockPillClassName(), 'max-w-[14rem] truncate')}
+                  >
+                    {reviewBlockLabel}
+                  </span>
+                )}
+              </>
+            )}
+          </button>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="truncate text-row font-medium text-text-primary">Pending changes</span>
+            <span className={pendingPanelCountChipClassName} title={countSummary}>
+              {countChip}
+            </span>
+          </div>
+        )}
+
+        <div className="flex shrink-0 items-center gap-1">
+          {!collapsed && onReviewAll && visibleCount >= 1 && (
             <Button
               size="sm"
               variant="ghost"
               onClick={onReviewAll}
               aria-label="Review all changes"
-              title="Review all changes one at a time"
+              title="Review all changes one file at a time"
             >
-              <GalleryHorizontal className="mr-1 h-3 w-3" strokeWidth={2.25} />
               Review
             </Button>
           )}
-          <Button size="sm" variant="ghost" onClick={onRejectAll}>
-            Reject all
-          </Button>
+          {(!collapsed || gateOn) && (
+            <Button size="sm" variant="ghost" onClick={onRejectAll}>
+              {collapsed ? 'Reject' : 'Reject all'}
+            </Button>
+          )}
           <Button size="sm" variant="primary" onClick={onAcceptAll}>
-            Accept all
+            {collapsed ? 'Accept' : 'Accept all'}
           </Button>
         </div>
       </div>
-      {filtersVisible &&
-        (runIds.length > 1 ||
-          totalCount >= PATH_FILTER_AUTO_THRESHOLD ||
-          pathQuery.length > 0) && (
-          <div className="flex flex-wrap items-center gap-2">
-            {runIds.length > 1 && (
-              <RunFilter
-                runIds={runIds}
-                selectedRunId={selectedRunId}
-                onSelectRunId={onSelectRunId}
-              />
+
+      {expanded && (
+        <div className={pendingPanelToolbarRowClassName}>
+          <div className={pendingPanelMetaRowClassName}>
+            <span className={pendingGatePillClassName(gateOn)}>{gateLabel}</span>
+            {reviewGateOn && reviewBlocksSend && (
+              <span className={pendingReviewBlockPillClassName()}>{reviewBlockLabel}</span>
             )}
-            <PathFilterInput
-              value={pathQuery}
-              onChange={onPathQueryChange}
-            />
+            {visibleCount > 0 && (visibleAdditions > 0 || visibleDeletions > 0) && (
+              <span className="font-mono tabular-nums text-text-faint">
+                +{visibleAdditions} −{visibleDeletions}
+              </span>
+            )}
+            <span className="text-text-faint">{countSummary}</span>
+            {usageLabel && onOpenCheckpointSettings && (
+              <>
+                <span className="text-text-faint/40">·</span>
+                <button
+                  type="button"
+                  onClick={onOpenCheckpointSettings}
+                  className="text-text-muted hover:text-text-primary"
+                  title={usageTitle ?? 'Open checkpoint settings'}
+                >
+                  {usageLabel}
+                </button>
+              </>
+            )}
           </div>
-        )}
-    </SurfaceShell>
+        </div>
+      )}
+
+      {collapsed && visibleCount > 0 && (visibleAdditions > 0 || visibleDeletions > 0) && (
+        <div className={cn(pendingPanelToolbarRowClassName, 'pt-0')}>
+          <span className="font-mono tabular-nums text-meta text-text-faint">
+            +{visibleAdditions} −{visibleDeletions}
+          </span>
+        </div>
+      )}
+
+      {showFilters && (
+        <div className={pendingPanelFiltersRowClassName}>
+          {runIds.length > 1 && (
+            <RunFilter
+              runIds={runIds}
+              selectedRunId={selectedRunId}
+              onSelectRunId={onSelectRunId}
+            />
+          )}
+          <PathFilterInput value={pathQuery} onChange={onPathQueryChange} />
+          {onGroupByFolderChange && (
+            <button
+              type="button"
+              onClick={() => onGroupByFolderChange(!groupByFolder)}
+              className={chromeFilterChipClassName(groupByFolder)}
+              aria-pressed={groupByFolder}
+            >
+              By folder
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
+
+  return body;
 }
 
 function RunFilter({
@@ -182,12 +274,7 @@ function RunFilter({
       <button
         type="button"
         onClick={() => onSelectRunId(null)}
-        className={cn(
-          'rounded-inner px-1.5 py-0.5 transition-colors duration-150',
-          selectedRunId === null
-            ? 'bg-accent-soft/60 text-accent'
-            : 'bg-surface-overlay text-text-muted hover:bg-surface-hover hover:text-text-secondary'
-        )}
+        className={chromeFilterChipClassName(selectedRunId === null)}
       >
         all
       </button>
@@ -198,10 +285,8 @@ function RunFilter({
           onClick={() => onSelectRunId(runId)}
           title={runId}
           className={cn(
-            'rounded-inner px-1.5 py-0.5 font-mono transition-colors duration-150',
-            selectedRunId === runId
-              ? 'bg-accent-soft/60 text-accent'
-              : 'bg-surface-overlay text-text-muted hover:bg-surface-hover hover:text-text-secondary'
+            chromeFilterChipClassName(selectedRunId === runId),
+            'font-mono'
           )}
         >
           {runId.slice(0, 8)}
@@ -218,20 +303,8 @@ function PathFilterInput({
   value: string;
   onChange: (value: string) => void;
 }) {
-  // The outer `<label>` carries the surface + hairline border and
-  // wraps the leading icon + trailing clear button. The inner
-  // `TextField` uses `tone="transparent"` so it inherits the
-  // wrapper's background instead of stacking its own — preserves
-  // the pre-migration look while routing through the shared
-  // primitive.
   return (
-    <label
-      className={cn(
-        'group/path-filter ml-auto flex items-center gap-1 rounded-inner border border-border-subtle/40',
-        'bg-surface-overlay px-2 py-0.5 text-meta',
-        'focus-within:border-border-subtle focus-within:bg-surface-overlay/80'
-      )}
-    >
+    <label className={cn(chromeSearchRowClassName, 'group/path-filter ml-auto')}>
       <Search className="h-3 w-3 text-text-faint" strokeWidth={2} />
       <TextField
         type="text"

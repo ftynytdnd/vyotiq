@@ -50,6 +50,7 @@ import {
 } from '../../../store/useSettingsStore.js';
 import { RevertFileRow } from './RevertFileRow.js';
 import type { RevertIntent } from './RevertPromptContext.js';
+import { chromeInsetNoteClassName, chromeScrollListClassName } from '../../ui/SurfaceShell.js';
 import { cn } from '../../../lib/cn.js';
 
 interface RevertPreviewModalProps {
@@ -348,7 +349,7 @@ export function RevertPreviewModal({
                   : 'Confirming will only rewind the conversation transcript.'}
               </Notice>
             ) : (
-              <div className="scrollbar-stealth flex max-h-[36vh] flex-col overflow-y-auto rounded-inner bg-surface-overlay/60">
+              <div className={cn(chromeScrollListClassName, 'flex max-h-[36vh] flex-col')}>
                 {phase.preview.files.map((f) => (
                   <RevertFileRow key={f.entryId} change={f} />
                 ))}
@@ -395,7 +396,7 @@ function PromptPreviewBanner({
   const preview = trimmed.length > 200 ? `${trimmed.slice(0, 200)}…` : trimmed;
   return (
     <div className="space-y-2">
-      <div className="rounded-inner bg-surface-overlay px-3 py-2 text-row text-text-secondary">
+      <div className={cn(chromeInsetNoteClassName, 'text-text-secondary')}>
         <Eyebrow>
           Reverting to before this message
         </Eyebrow>
@@ -447,7 +448,7 @@ const EditPromptBanner = forwardRef<HTMLTextAreaElement, EditPromptBannerProps>(
     const isEmpty = trimmed.length === 0;
     return (
       <div className="space-y-2">
-        <div className="rounded-inner bg-surface-overlay px-3 py-2">
+        <div className={cn(chromeInsetNoteClassName, 'text-text-primary')}>
           <Eyebrow className="flex items-center gap-1.5">
             <Pencil className="h-3 w-3" strokeWidth={2.25} />
             Edit and resend
@@ -476,18 +477,18 @@ const EditPromptBanner = forwardRef<HTMLTextAreaElement, EditPromptBannerProps>(
           )}
         </div>
         {isEmpty && (
-          <div className="rounded-inner bg-surface-overlay px-3 py-1.5 text-row text-warning">
+          <div className={cn(chromeInsetNoteClassName, 'py-1.5 text-warning')}>
             The edited message is empty. Type something to send.
           </div>
         )}
         {!isEmpty && !editChanged && (
-          <div className="rounded-inner bg-surface-overlay px-3 py-1.5 text-row text-text-muted">
+          <div className={cn(chromeInsetNoteClassName, 'py-1.5 text-text-muted')}>
             Message is unchanged — sending will resubmit the original prompt
             after the rewind.
           </div>
         )}
         {modelMissing && (
-          <div className="rounded-inner bg-surface-overlay px-3 py-1.5 text-row text-warning">
+          <div className={cn(chromeInsetNoteClassName, 'py-1.5 text-warning')}>
             No model is selected — pick one in the composer before resending.
           </div>
         )}

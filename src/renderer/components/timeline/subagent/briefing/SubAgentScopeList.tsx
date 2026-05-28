@@ -29,29 +29,55 @@ import { cn } from '../../../../lib/cn.js';
 
 interface SubAgentScopeListProps {
   tools: readonly string[];
+  unknownTools?: readonly string[];
   okFiles: readonly string[];
   missingFiles: readonly string[];
 }
 
 export function SubAgentScopeList({
   tools,
+  unknownTools = [],
   okFiles,
   missingFiles
 }: SubAgentScopeListProps) {
   const hasTools = tools.length > 0;
+  const hasUnknown = unknownTools.length > 0;
   const hasFiles = okFiles.length > 0 || missingFiles.length > 0;
-  if (!hasTools && !hasFiles) return null;
+  if (!hasTools && !hasUnknown && !hasFiles) return null;
 
   return (
     <DetailPane label="scope">
       <SurfaceShell padded padding="content">
         {hasTools && <ToolList tools={tools} />}
-        {hasTools && hasFiles && (
+        {hasUnknown && <UnknownToolList tools={unknownTools} />}
+        {(hasTools || hasUnknown) && hasFiles && (
           <div className="h-px w-full bg-border-subtle/30" aria-hidden="true" />
         )}
         {hasFiles && <FileList okFiles={okFiles} missingFiles={missingFiles} />}
       </SurfaceShell>
     </DetailPane>
+  );
+}
+
+function UnknownToolList({ tools }: { tools: readonly string[] }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <Eyebrow as="span" className="mb-0.5 inline-flex items-center gap-1.5 text-text-faint">
+        <Wrench className="h-3 w-3" strokeWidth={2} />
+        Not granted
+      </Eyebrow>
+      <ul className="flex flex-wrap gap-1">
+        {tools.map((toolName) => (
+          <li
+            key={toolName}
+            className="rounded-inner border border-border-subtle/40 bg-surface-raised/60 px-1.5 py-px font-mono text-meta text-text-faint line-through decoration-text-faint/50"
+            title={`${toolName} was requested but not granted to this sub-agent`}
+          >
+            {toolName}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

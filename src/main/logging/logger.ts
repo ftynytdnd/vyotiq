@@ -181,6 +181,13 @@ export function installCrashHandlers(): void {
   installed = true;
   process.on('unhandledRejection', (reason) => {
     logger.error('unhandledRejection', { reason: serializeError(reason) });
+    void import('../orchestrator/AgentV.js')
+      .then(({ abortAllActiveRunsWithError }) =>
+        abortAllActiveRunsWithError(
+          'An unexpected error interrupted the run. Check the log for details.'
+        )
+      )
+      .catch(() => undefined);
   });
   process.on('uncaughtException', (err) => {
     logger.error('uncaughtException', { error: serializeError(err) });

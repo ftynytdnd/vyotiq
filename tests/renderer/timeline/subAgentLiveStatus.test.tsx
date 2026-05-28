@@ -53,7 +53,7 @@ describe('SubAgentHeader — pre-first-byte status suppression', () => {
 
   it('suppresses the status line once a reasoning accumulator opens', () => {
     // Reasoning has started — the in-flight panel inside the run-flow
-    // already carries the shimmer cadence, so the header line is
+    // already carries the gold phase heading, so the header line is
     // redundant and STALE (it still says "Awaiting first token..." but
     // tokens are clearly arriving). Must not render.
     const { container } = render(
@@ -112,6 +112,24 @@ describe('SubAgentHeader — pre-first-byte status suppression', () => {
       />
     );
     expect(container.textContent ?? '').not.toContain('Awaiting first token');
+  });
+
+  it('shows gold Exploring for running-tool live status', () => {
+    const { container } = render(
+      <SubAgentHeader
+        snap={makeSnap({
+          liveStatus: {
+            phase: 'running-tool',
+            label: 'Exploring',
+            ts: 300,
+            toolName: 'read'
+          }
+        })}
+      />
+    );
+    expect(container.textContent ?? '').toContain('Exploring');
+    expect(container.innerHTML).toContain('text-accent-gold');
+    expect(container.textContent ?? '').toContain('read');
   });
 
   it('re-surfaces the label when a NEW iteration\'s connecting event lands after iter-N closed', () => {

@@ -17,13 +17,9 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import type { TimelineEvent } from '@shared/types/chat.js';
+import type { RunStatusPhase, TimelineEvent } from '@shared/types/chat.js';
 
-/** Extracted here so call sites don't need to re-derive the union. */
-export type RunStatusPhase = Extract<
-  TimelineEvent,
-  { kind: 'run-status' }
->['phase'];
+export type { RunStatusPhase };
 
 export type RunStatusDetail = NonNullable<
   Extract<TimelineEvent, { kind: 'run-status' }>['detail']

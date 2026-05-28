@@ -2,7 +2,7 @@
  * Executes a batch of tool calls produced by ANY agent loop (orchestrator
  * or sub-agent) and emits the matching timeline events. The orchestrator's
  * catalogue is restricted by `tools/policy/orchestratorTools.ts` (only
- * `ls`, `read`, `memory` reach here at orchestrator level); sub-agents
+ * `ls`, `memory`, and `recall` reach here at orchestrator level); sub-agents
  * pass a per-task `allowlist` to refuse anything outside their granted
  * toolset. Both call sites used to maintain near-duplicate copies of this
  * loop — the duplication is now collapsed here so the id-locking,
@@ -28,6 +28,40 @@ import { emitRunStatus } from './emitRunStatus.js';
 import { logger } from '../../logging/logger.js';
 
 const log = logger.child('orchestrator/handleToolCalls');
+
+function emitSyntheticToolFailure(
+  tc: PartialToolCall,
+  emit: (event: TimelineEvent) => void,
+  messages: ChatMessage[],
+  opts: HandleToolCallsOpts,
+  output: string,
+  error: string
+): void {
+  const callId = tc.id ?? randomUUID();
+  if (!tc.id) tc.id = callId;
+  const name = (tc.name ?? 'unknown') as ToolName;
+  const syntheticResult = {
+    id: callId,
+    name,
+    ok: false as const,
+    output,
+    error,
+    durationMs: 0
+  };
+  emit({
+    kind: 'tool-result',
+    id: randomUUID(),
+    ts: Date.now(),
+    result: syntheticResult,
+    ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
+  });
+  messages.push({
+    role: 'tool',
+    tool_call_id: callId,
+    name: tc.name ?? 'unknown',
+    content: output
+  });
+}
 
 /**
  * Coerce a streaming-tool-call's `argumentsBuf` into the
@@ -180,7 +214,8 @@ export async function handleToolCalls(
   let refused = 0;
   let childRedelegations = 0;
   let orchestratorDelegateRefusals = 0;
-  for (const tc of finishedToolCalls) {
+  for (let i = 0; i < finishedToolCalls.length; i++) {
+    const tc = finishedToolCalls[i]!;
     // Honor `opts.signal.aborted` between tool calls so a supersede
     // (new `chat:send` on the same conversation) or explicit Stop
     // cannot leak a half-round's tool-result events into the
@@ -191,12 +226,36 @@ export async function handleToolCalls(
     // of order. Review finding H3.
     if (opts.signal.aborted) {
       log.debug('tool round aborted mid-iteration', {
-        remaining: finishedToolCalls.length - (attempted + refused),
+        remaining: finishedToolCalls.length - i,
         subagentId: opts.subagentId
       });
+      for (let j = i; j < finishedToolCalls.length; j++) {
+        const rem = finishedToolCalls[j]!;
+        refused += 1;
+        emitSyntheticToolFailure(
+          rem,
+          emit,
+          messages,
+          opts,
+          'Tool call aborted because the run was stopped or superseded.',
+          'aborted'
+        );
+      }
       break;
     }
-    if (!tc.name) continue;
+    if (!tc.name) {
+      refused += 1;
+      if (!tc.id) tc.id = randomUUID();
+      emitSyntheticToolFailure(
+        tc,
+        emit,
+        messages,
+        opts,
+        'Tool call missing a name — cannot execute.',
+        'missing tool name'
+      );
+      continue;
+    }
     // Defensive — runLoop guarantees `tc.id` is populated before this
     // function runs, but if a caller forgets, fall back to a fresh UUID
     // and IMMEDIATELY persist it on the partial so every downstream use
@@ -325,15 +384,14 @@ export async function handleToolCalls(
       });
       continue;
     }
-    // Live status only for orchestrator-level tool rounds. Sub-agent
-    // tool execution is surfaced by the sub-agent's own trace card, so
-    // bubbling it up into the top-level status row would produce a
-    // confusing double signal when multiple sub-agents run in parallel.
-    if (opts.subagentId === undefined) {
-      emitRunStatus(emit, 'running-tool', `Running tool: ${tc.name}…`, {
-        toolName: tc.name
-      });
-    }
+    // Live status for every dispatched tool — orchestrator tail row and
+    // sub-agent trace cards surface "Exploring" via ephemeral
+    // `run-status` (no persisted phase divider — that duplicated the
+    // tail row every tool round).
+    emitRunStatus(emit, 'running-tool', 'Exploring', {
+      toolName: tc.name,
+      ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
+    });
     attempted += 1;
     const result = await runToolByName(tc.name, parsed, {
       workspacePath: opts.workspacePath,
@@ -374,6 +432,7 @@ export async function handleToolCalls(
         filePath: result.data.filePath,
         additions: result.data.additions,
         deletions: result.data.deletions,
+        ...(result.data.entryId ? { entryId: result.data.entryId } : {}),
         ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
       });
     }

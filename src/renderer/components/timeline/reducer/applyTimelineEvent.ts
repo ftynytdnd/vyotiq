@@ -295,8 +295,20 @@ export function applyTimelineEvent(
       };
     }
     case 'tool-result': {
+      const resultId = event.result.id;
+      const { [resultId]: _dropLive, ...nextLiveDiff } = state.liveDiffByCallId;
+      void _dropLive;
+      const toolResultSettledIds = {
+        ...state.toolResultSettledIds,
+        [resultId]: true as const
+      };
       if (!event.subagentId) {
-        return { ...state, events: appendTimelineEvent(state.events, event, mutate) };
+        return {
+          ...state,
+          events: appendTimelineEvent(state.events, event, mutate),
+          liveDiffByCallId: nextLiveDiff,
+          toolResultSettledIds
+        };
       }
       const cur = ensureSnapshot(state.subagents, event.subagentId, event.ts);
       const steps = upsertStep(cur.steps, {
@@ -307,6 +319,8 @@ export function applyTimelineEvent(
       return {
         ...state,
         events: appendTimelineEvent(state.events, event, mutate),
+        liveDiffByCallId: nextLiveDiff,
+        toolResultSettledIds,
         subagents: { ...state.subagents, [event.subagentId]: { ...cur, steps } }
       };
     }
@@ -336,7 +350,8 @@ export function applyTimelineEvent(
           filePath: event.filePath,
           additions: event.additions,
           deletions: event.deletions,
-          ts: event.ts
+          ts: event.ts,
+          ...(event.entryId ? { entryId: event.entryId } : {})
         }
       ];
       return {
@@ -393,7 +408,7 @@ export function applyTimelineEvent(
       // Routing rules:
       //   - When `detail.subagentId` is present and the snapshot is
       //     non-terminal, fold into `subagent.liveStatus` so the
-      //     per-worker trace card carries its own shimmer.
+      //     per-worker trace card carries its own live status line.
       //   - Otherwise the event is orchestrator-scoped: store it in
       //     `latestOrchestratorRunStatus` for `LiveStatusRow` to read
       //     directly (O(1) lookup, no event scan).
@@ -404,6 +419,7 @@ export function applyTimelineEvent(
         // should never resurrect a settled row.
         if (
           cur.status === 'done' ||
+          cur.status === 'partial' ||
           cur.status === 'failed' ||
           cur.status === 'malformed' ||
           cur.status === 'aborted'
@@ -412,7 +428,12 @@ export function applyTimelineEvent(
         }
         const next: SubAgentSnapshot = {
           ...cur,
-          liveStatus: { phase: event.phase, label: event.label, ts: event.ts }
+          liveStatus: {
+            phase: event.phase,
+            label: event.label,
+            ts: event.ts,
+            ...(event.detail?.toolName ? { toolName: event.detail.toolName } : {})
+          }
         };
         return {
           ...state,
@@ -459,7 +480,9 @@ export function applyTimelineEvent(
         events: appendTimelineEvent(state.events, event, mutate),
         lastUserPromptId: event.id,
         lastUserPromptContent: event.content,
-        settledCallIds: {}
+        settledCallIds: {},
+        liveDiffByCallId: {},
+        toolResultSettledIds: {}
       };
     case 'agent-thought':
     case 'phase':
@@ -497,13 +520,11 @@ export function applyTimelineEvent(
       // afterwards merges with the existing entry.
       //
       // Audit fix H3: drop late frames that race the synchronous
-      // `tool-call` dispatch. The settle re-emit (audit fix H8)
+      // tool-call dispatch. The settle re-emit (audit fix H8)
       // intentionally lands BEFORE `tool-call` and is therefore
       // accepted (the settledCallIds gate hasn't fired yet); any
-      // frame after the tool-call is a stale leftover from an
-      // in-flight LCS compute and would resurrect an orphan
-      // partial entry that survives until the next event.
-      if (state.settledCallIds[event.callId]) return state;
+      // frame after the tool-result is a stale leftover.
+      if (state.toolResultSettledIds[event.callId]) return state;
       const snapshot = {
         tool: event.tool,
         filePath: event.filePath,
@@ -514,8 +535,10 @@ export function applyTimelineEvent(
         ts: event.ts
       };
       if (event.subagentId) {
-        const cur = state.subagents[event.subagentId];
-        if (!cur) return state; // drop diff-stream for unknown sub-agents
+        // Audit fix M-18 parity: auto-create the snapshot if the
+        // diff-stream arrives before `subagent-pending` / `-spawn`
+        // (same fail-soft synthesis as `tool-call-args-delta`).
+        const cur = ensureSnapshot(state.subagents, event.subagentId, event.ts);
         const existing = cur.partialToolCallArgs[event.callId];
         const nextEntry: PartialToolCallArgs = existing
           ? { ...existing, diffStream: snapshot, ts: event.ts }
@@ -539,6 +562,10 @@ export function applyTimelineEvent(
                 [event.callId]: nextEntry
               }
             }
+          },
+          liveDiffByCallId: {
+            ...state.liveDiffByCallId,
+            [event.callId]: snapshot
           }
         };
       }
@@ -558,6 +585,10 @@ export function applyTimelineEvent(
         partialToolCallArgs: {
           ...state.partialToolCallArgs,
           [event.callId]: nextEntry
+        },
+        liveDiffByCallId: {
+          ...state.liveDiffByCallId,
+          [event.callId]: snapshot
         }
       };
     }
@@ -591,15 +622,6 @@ export function applyTimelineEvent(
         opts.preParsedArgs !== undefined
           ? opts.preParsedArgs
           : safeParsePartial(event.argsBuf);
-      const entry: PartialToolCallArgs = {
-        callId: event.callId,
-        ...(event.name !== undefined ? { name: event.name } : {}),
-        index: event.index,
-        argsBuf: event.argsBuf,
-        parsed,
-        ts: event.ts,
-        ...(event.subagentId !== undefined ? { subagentId: event.subagentId } : {})
-      };
       if (event.subagentId) {
         // Audit fix M-18: auto-create the snapshot if the args-delta
         // arrives before the matching `subagent-pending` / `-spawn`
@@ -611,6 +633,21 @@ export function applyTimelineEvent(
         // sub-agent's eventual `subagent-pending` event will merge
         // into the already-materialised snapshot.
         const cur = ensureSnapshot(state.subagents, event.subagentId, event.ts);
+        const existing = cur.partialToolCallArgs[event.callId];
+        const entry: PartialToolCallArgs = {
+          callId: event.callId,
+          ...(event.name !== undefined
+            ? { name: event.name }
+            : existing?.name !== undefined
+              ? { name: existing.name }
+              : {}),
+          index: event.index,
+          argsBuf: event.argsBuf,
+          parsed,
+          ts: event.ts,
+          subagentId: event.subagentId,
+          ...(existing?.diffStream ? { diffStream: existing.diffStream } : {})
+        };
         const nextSnap: SubAgentSnapshot = {
           ...cur,
           partialToolCallArgs: {
@@ -623,6 +660,20 @@ export function applyTimelineEvent(
           subagents: { ...state.subagents, [event.subagentId]: nextSnap }
         };
       }
+      const existing = state.partialToolCallArgs[event.callId];
+      const entry: PartialToolCallArgs = {
+        callId: event.callId,
+        ...(event.name !== undefined
+          ? { name: event.name }
+          : existing?.name !== undefined
+            ? { name: existing.name }
+            : {}),
+        index: event.index,
+        argsBuf: event.argsBuf,
+        parsed,
+        ts: event.ts,
+        ...(existing?.diffStream ? { diffStream: existing.diffStream } : {})
+      };
       return {
         ...state,
         partialToolCallArgs: {

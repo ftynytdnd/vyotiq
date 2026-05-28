@@ -1,28 +1,60 @@
 /**
- * Trailing run closer — quiet label without horizontal rules so the
- * timeline doesn't sprawl a hairline into the footer gap.
+ * Trailing run closer — quiet flush log line (no horizontal rules).
  */
 
 import { formatTokenCount } from '../../../lib/formatTokens.js';
 import type { TokenUsageAggregate } from '../reducer/types.js';
+import { cn } from '../../../lib/cn.js';
+import { timelineLogRowClassName } from '../shared/rowStyles.js';
 
 interface RunCompleteRowProps {
   durationMs: number;
   usage?: TokenUsageAggregate;
+  editCount?: number;
+  fileCount?: number;
 }
 
-export function RunCompleteRow({ durationMs, usage }: RunCompleteRowProps) {
+export function RunCompleteRow({
+  durationMs,
+  usage,
+  editCount,
+  fileCount
+}: RunCompleteRowProps) {
   const tokenLabel =
     usage && usage.cumulative.totalTokens > 0
       ? formatTokenCount(usage.cumulative.totalTokens)
       : null;
 
+  const stats: string[] = [];
+  if (typeof editCount === 'number' && editCount > 0) {
+    stats.push(`${editCount} edit${editCount === 1 ? '' : 's'}`);
+  }
+  if (typeof fileCount === 'number' && fileCount > 0) {
+    stats.push(`${fileCount} file${fileCount === 1 ? '' : 's'}`);
+  }
+
+  const durationLabel = formatDuration(durationMs);
+  const ariaParts = [...stats, `completed in ${durationLabel}`];
+  if (tokenLabel) ariaParts.push(`${tokenLabel} tokens`);
+
   return (
     <div
-      className="py-0.5 text-center text-meta text-text-faint"
-      aria-label={`Run completed in ${formatDuration(durationMs)}${tokenLabel ? `, ${tokenLabel} tokens` : ''}`}
+      className={cn(
+        'vyotiq-stepfade-once py-1 text-center text-meta text-text-faint',
+        timelineLogRowClassName
+      )}
+      data-row-kind="run-complete"
+      aria-label={ariaParts.join(', ')}
     >
-      done in {formatDuration(durationMs)}
+      {stats.length > 0 && (
+        <>
+          {stats.join(' · ')}
+          <span aria-hidden className="mx-1.5 text-text-faint/50">
+            ·
+          </span>
+        </>
+      )}
+      done in {durationLabel}
       {tokenLabel !== null && (
         <>
           <span aria-hidden className="mx-1.5 text-text-faint/50">
@@ -35,7 +67,7 @@ export function RunCompleteRow({ durationMs, usage }: RunCompleteRowProps) {
   );
 }
 
-function formatDuration(ms: number): string {
+export function formatDuration(ms: number): string {
   if (!Number.isFinite(ms) || ms <= 0) return '0s';
   if (ms < 1000) return `${Math.round(ms)}ms`;
   const totalSeconds = ms / 1000;

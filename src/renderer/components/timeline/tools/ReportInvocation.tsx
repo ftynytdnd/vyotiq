@@ -1,25 +1,25 @@
 /**
  * Bespoke renderer for the `report` tool.
  *
- * Surfaces the title, workspace-relative path, on-disk size, and chart
- * library badge in the collapsed row. The expanded detail pane carries
- * an explicit "Open in browser" button that hands the file to the OS
- * default browser via the existing `tools.openPath` IPC channel —
- * `tools.ipc.ts` already enforces symlink-aware sandbox containment on
- * that handler, so we don't need to re-validate here.
- *
- * Errors render the standard `error` detail pane the other tool cards
- * use, keeping the failure surface consistent with `EditInvocation` etc.
+ * Surfaces the title, workspace-relative path, on-disk size, and an
+ * Open-in-browser affordance when settled. While the call is in flight,
+ * paints the streaming HTML body as all-`+` diff lines (same rhythm as
+ * `EditInvocation` create previews).
  */
 
-import { useState } from 'react';
-import { ExternalLink, FileText } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ExternalLink } from 'lucide-react';
 import type { ToolCall, ToolResult } from '@shared/types/tool.js';
+import type { DiffStreamSnapshot } from '../reducer/types.js';
 import { InvocationShell } from './shared/InvocationShell.js';
 import { DetailPane } from './shared/DetailPane.js';
-import { CodeBlock } from './shared/CodeBlock.js';
+import { DiffStreamPane } from './shared/DiffStreamPane.js';
+import { EditDiffView } from './edit/EditDiffView.js';
+import { synthesizeReportPreview } from './report/synthesizeReportPreview.js';
 import { cn } from '../../../lib/cn.js';
+import { timelineActionPillClassName } from '../shared/rowStyles.js';
 import { openWorkspaceFile } from '../../../lib/openPath.js';
+import { toolErrorBody, toolErrorHint } from './shared/toolErrorDisplay.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import { useConversationsStore } from '../../../store/useConversationsStore.js';
 
@@ -28,20 +28,35 @@ interface ReportInvocationProps {
   result?: ToolResult;
   dense?: boolean;
   rowKey?: string;
+  partial?: boolean;
+  diffStream?: DiffStreamSnapshot;
 }
 
-export function ReportInvocation({ call, result, dense, rowKey }: ReportInvocationProps) {
+export function ReportInvocation({
+  call,
+  result,
+  dense,
+  rowKey,
+  partial,
+  diffStream
+}: ReportInvocationProps) {
   const data = result?.data?.tool === 'report' ? result.data : null;
   const argTitle =
     typeof call?.args?.['title'] === 'string' ? (call.args['title'] as string) : '';
 
   const title = data?.title ?? argTitle ?? 'report';
-
-  // Collapsed-row summary: just the title (mono looks wrong for a
-  // human-authored title; we keep it sans-serif).
   const summary = title;
 
-  const errorHint = result && !result.ok ? result.error : undefined;
+  const preview = useMemo(
+    () => (!result && call?.args ? synthesizeReportPreview(call.args) : null),
+    [result, call?.args]
+  );
+  const visibleDiffStream =
+    diffStream && diffStream.tool === 'report' && diffStream.hunks.length > 0
+      ? diffStream
+      : null;
+
+  const errorHint = toolErrorHint(result);
 
   let detail: React.ReactNode = undefined;
   if (data) {
@@ -58,17 +73,39 @@ export function ReportInvocation({ call, result, dense, rowKey }: ReportInvocati
         </DetailPane>
       </div>
     );
-  } else if (result?.error) {
+  } else if (result && !result.ok) {
     detail = (
       <DetailPane label="error" tone="danger">
-        <CodeBlock body={result.error} tone="danger" />
+        <div className="font-mono text-row text-danger whitespace-pre-wrap">
+          {toolErrorBody(result)}
+        </div>
+      </DetailPane>
+    );
+  } else if (visibleDiffStream) {
+    detail = (
+      <DiffStreamPane
+        diffStream={visibleDiffStream}
+        label={visibleDiffStream.settled ? 'live report' : 'streaming report'}
+      />
+    );
+  } else if (preview) {
+    detail = (
+      <DetailPane label={partial ? 'report streaming…' : 'report (pending)'}>
+        <EditDiffView
+          key={partial ? 'report-partial' : 'report-pending'}
+          hunks={preview.hunks}
+          variant={partial ? 'partial' : 'preview'}
+        />
       </DetailPane>
     );
   }
 
+  const liveAutoExpand =
+    !result &&
+    (partial === true || diffStream != null || preview != null || call != null);
+
   return (
     <InvocationShell
-      Icon={FileText}
       title="report"
       summary={summary}
       ok={result ? result.ok : null}
@@ -76,6 +113,10 @@ export function ReportInvocation({ call, result, dense, rowKey }: ReportInvocati
       {...(detail !== undefined ? { detail } : {})}
       {...(dense ? { dense } : {})}
       {...(rowKey ? { rowKey } : {})}
+      {...(liveAutoExpand ? { liveAutoExpand } : {})}
+      call={call}
+      result={result}
+      partial={partial}
     />
   );
 }
@@ -86,17 +127,17 @@ interface OpenInBrowserButtonProps {
 
 function OpenInBrowserButton({ filePath }: OpenInBrowserButtonProps) {
   const [busy, setBusy] = useState(false);
-  // Pin the open to the active conversation's workspace so a report
-  // produced in workspace A still opens correctly when the user has
-  // navigated to workspace B (and B happens to have a same-relative
-  // file under `.vyotiq/reports/`). Failures bubble through a toast
-  // via `openWorkspaceFile`, replacing the previous inline error
-  // banner — the toast is global and visually consistent with every
-  // other artifact-open in the app.
+  const mountedRef = useRef(true);
   const activeConvId = useChatStore((s) => s.conversationId);
   const workspaceId = useConversationsStore((s) =>
     activeConvId ? s.list.find((m) => m.id === activeConvId)?.workspaceId : undefined
   );
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const onClick = async () => {
     if (busy) return;
@@ -107,7 +148,7 @@ function OpenInBrowserButton({ filePath }: OpenInBrowserButtonProps) {
         context: 'report-card'
       });
     } finally {
-      setBusy(false);
+      if (mountedRef.current) setBusy(false);
     }
   };
 
@@ -117,9 +158,8 @@ function OpenInBrowserButton({ filePath }: OpenInBrowserButtonProps) {
       onClick={() => void onClick()}
       disabled={busy}
       className={cn(
-        'app-no-drag inline-flex items-center gap-1.5 self-start rounded-inner',
-        'bg-surface-raised px-2.5 py-1 text-row text-text-primary',
-        'transition-colors duration-150 hover:bg-surface-hover',
+        timelineActionPillClassName,
+        'app-no-drag self-start px-2.5 py-1 text-text-primary',
         'disabled:cursor-not-allowed disabled:opacity-50'
       )}
       title={`Open ${filePath} in your default browser`}
@@ -131,13 +171,12 @@ function OpenInBrowserButton({ filePath }: OpenInBrowserButtonProps) {
 }
 
 function SizeBadge({ bytes }: { bytes: number }) {
-  // Compact, human-readable: <1 MB → KB, ≥1 MB → MB.
   const text =
     bytes >= 1024 * 1024
       ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
       : `${(bytes / 1024).toFixed(1)} KB`;
   return (
-    <span className="rounded bg-surface-overlay px-1.5 py-0.5 text-meta font-mono text-text-faint">
+    <span className="rounded-inner border border-border-subtle/25 px-1.5 py-0.5 font-mono text-meta text-text-faint">
       {text}
     </span>
   );

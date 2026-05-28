@@ -21,12 +21,18 @@ import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { useSecondaryZoneStore } from '../../store/useSecondaryZoneStore.js';
+import {
+  chromeEdgeClassName,
+  chromeGhostRowButtonClassName,
+  chromeSettingsInsetRowClassName
+} from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
 import { formatBytes } from './formatBytes.js';
 
 function settingsRowClass(compact: boolean): string {
   return cn(
-    'border-b border-border-subtle/30 py-3',
+    'border-b py-3',
+    chromeEdgeClassName,
     compact ? 'flex flex-col gap-3' : 'flex items-start justify-between gap-4'
   );
 }
@@ -46,6 +52,12 @@ export function CheckpointSettingsPanel({ embedded = false }: { embedded?: boole
   );
   const setGatePromptOnPendingForWorkspace = useSettingsStore(
     (s) => s.setGatePromptOnPendingForWorkspace
+  );
+  const setApproveAutoAcceptPendingForWorkspace = useSettingsStore(
+    (s) => s.setApproveAutoAcceptPendingForWorkspace
+  );
+  const setGateReviewRequestChangesForWorkspace = useSettingsStore(
+    (s) => s.setGateReviewRequestChangesForWorkspace
   );
   const summary = useCheckpointsStore((s) =>
     activeWorkspaceId ? s.summaryByWorkspace[activeWorkspaceId] : undefined
@@ -69,6 +81,10 @@ export function CheckpointSettingsPanel({ embedded = false }: { embedded?: boole
   const strict = activeWorkspaceId ? strictMap[activeWorkspaceId] === true : false;
   const gateMap = settings.ui?.gatePromptOnPendingByWorkspace ?? {};
   const gate = activeWorkspaceId ? gateMap[activeWorkspaceId] === true : false;
+  const approveAutoMap = settings.ui?.approveAutoAcceptPendingByWorkspace ?? {};
+  const approveAuto = activeWorkspaceId ? approveAutoMap[activeWorkspaceId] === true : false;
+  const gateReviewMap = settings.ui?.gatePromptOnReviewRequestChangesByWorkspace ?? {};
+  const gateReview = activeWorkspaceId ? gateReviewMap[activeWorkspaceId] === true : false;
 
   const setStrict = async (value: boolean) => {
     if (!activeWorkspaceId) return;
@@ -78,6 +94,16 @@ export function CheckpointSettingsPanel({ embedded = false }: { embedded?: boole
   const setGate = async (value: boolean) => {
     if (!activeWorkspaceId) return;
     await setGatePromptOnPendingForWorkspace(activeWorkspaceId, value);
+  };
+
+  const setApproveAuto = async (value: boolean) => {
+    if (!activeWorkspaceId) return;
+    await setApproveAutoAcceptPendingForWorkspace(activeWorkspaceId, value);
+  };
+
+  const setGateReview = async (value: boolean) => {
+    if (!activeWorkspaceId) return;
+    await setGateReviewRequestChangesForWorkspace(activeWorkspaceId, value);
   };
 
   const onExport = async () => {
@@ -189,6 +215,39 @@ export function CheckpointSettingsPanel({ embedded = false }: { embedded?: boole
         />
       </div>
 
+      <div className={settingsRowClass(embedded)}>
+        <div className="min-w-0 flex-1">
+          <div className="text-body text-text-primary">Approve accepts pending (review mode)</div>
+          <div className="mt-0.5 text-row leading-relaxed text-text-muted">
+            When on, clicking Approve in the pending-changes review lightbox also accepts every
+            pending checkpoint row for that file. When off (default), Approve only saves review
+            metadata — you still Accept or Reject in the panel.
+          </div>
+        </div>
+        <Switch
+          size="md"
+          value={approveAuto}
+          onChange={(v) => void setApproveAuto(v)}
+          ariaLabel="Approve accepts pending changes in review mode"
+        />
+      </div>
+
+      <div className={settingsRowClass(embedded)}>
+        <div className="min-w-0 flex-1">
+          <div className="text-body text-text-primary">Gate send on review request changes</div>
+          <div className="mt-0.5 text-row leading-relaxed text-text-muted">
+            When on, sending a new message is blocked while PR review metadata has Request
+            changes for that conversation. Approve the file or change the decision to continue.
+          </div>
+        </div>
+        <Switch
+          size="md"
+          value={gateReview}
+          onChange={(v) => void setGateReview(v)}
+          ariaLabel="Gate send on review request changes"
+        />
+      </div>
+
       <div className="flex flex-col gap-2 border-b border-border-subtle/30 py-3">
         <Eyebrow as="span" bold>
           Disk usage
@@ -216,7 +275,7 @@ export function CheckpointSettingsPanel({ embedded = false }: { embedded?: boole
             onChange={(e) => setPruneDays(e.target.value)}
             size="md"
             tone="base"
-            className="w-24 transition-colors duration-150 focus:bg-surface-overlay"
+            className="w-24 transition-colors duration-150 focus:bg-surface-hover/40"
           />
           <span className="text-row text-text-muted">days</span>
           <Button size="sm" variant="secondary" onClick={() => void onPrune()}>
@@ -336,7 +395,10 @@ function WorkspaceCheckpointOverridesSection() {
           return (
             <li
               key={w.id}
-              className="flex items-start justify-between gap-3 rounded-inner bg-surface-base/30 px-3 py-2"
+              className={cn(
+                chromeSettingsInsetRowClassName,
+                'flex items-start justify-between gap-3'
+              )}
             >
               <div className="min-w-0 flex-1">
                 <div className="text-row text-text-primary">{w.label}</div>
@@ -348,7 +410,7 @@ function WorkspaceCheckpointOverridesSection() {
                 type="button"
                 onClick={() => void onReset(w.id)}
                 title="Reset this workspace's checkpoint overrides"
-                className="inline-flex h-8 items-center gap-1.5 rounded-inner px-2.5 text-row text-text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text-primary"
+                className={chromeGhostRowButtonClassName}
               >
                 <RotateCcw className="h-3.5 w-3.5" strokeWidth={2.25} />
                 <span>Reset</span>

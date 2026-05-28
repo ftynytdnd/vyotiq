@@ -1,10 +1,9 @@
 /**
- * Synchronous post-delegate filesystem checks for create/edit-style tasks.
+ * Synchronous post-delegate filesystem checks for mutation-style tasks.
  */
 
 import { access, readFile, stat } from 'node:fs/promises';
-import { join } from 'node:path';
-import type { ParsedDelegate } from './envelope/index.js';
+import { realpathInsideWorkspace } from '../tools/sandbox.js';
 
 export interface HostVerificationLine {
   path: string;
@@ -12,21 +11,36 @@ export interface HostVerificationLine {
   detail: string;
 }
 
+export interface DelegateArtifactSpec {
+  id: string;
+  task: string;
+  /** Workspace-relative paths resolved at spawn time. */
+  files: readonly string[];
+}
+
+/** Broader mutation-task heuristic than bare create/edit prefixes. */
+const MUTATION_TASK_RE =
+  /\b(create|edit|fix|update|implement|add|write|modify|patch|refactor|rename|build)\b|`[^`]+`/i;
+
+function taskNeedsArtifactCheck(task: string): boolean {
+  return MUTATION_TASK_RE.test(task.trim());
+}
+
 export async function verifyDelegateArtifacts(
-  delegates: ParsedDelegate[],
+  entries: readonly DelegateArtifactSpec[],
   workspacePath: string
 ): Promise<HostVerificationLine[]> {
   const lines: HostVerificationLine[] = [];
-  for (const d of delegates) {
-    const task = d.task.trim().toLowerCase();
-    const isCreateEdit =
-      task.startsWith('create ') ||
-      task.startsWith('edit ') ||
-      task.includes('create `') ||
-      task.includes('edit `');
-    if (!isCreateEdit) continue;
-    for (const rel of d.files) {
-      const abs = join(workspacePath, rel);
+  for (const entry of entries) {
+    if (!taskNeedsArtifactCheck(entry.task)) continue;
+    for (const rel of entry.files) {
+      let abs: string;
+      try {
+        abs = await realpathInsideWorkspace(workspacePath, rel);
+      } catch {
+        lines.push({ path: rel, ok: false, detail: 'outside workspace' });
+        continue;
+      }
       try {
         await access(abs);
         const st = await stat(abs);
@@ -52,10 +66,25 @@ export async function verifyDelegateArtifacts(
   return lines;
 }
 
+function escapeXmlAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function escapeXmlText(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 export function formatHostVerificationXml(lines: HostVerificationLine[]): string {
   if (lines.length === 0) return '';
   const inner = lines
-    .map((l) => `<file path="${l.path}" ok="${l.ok ? 'true' : 'false'}">${l.detail}</file>`)
+    .map(
+      (l) =>
+        `<file path="${escapeXmlAttr(l.path)}" ok="${l.ok ? 'true' : 'false'}">${escapeXmlText(l.detail)}</file>`
+    )
     .join('\n');
   return `<host_verification>\n${inner}\n</host_verification>`;
 }

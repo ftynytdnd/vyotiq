@@ -9,11 +9,16 @@ import { useConversationsStore, useActiveConversationId } from '../store/useConv
 import type { ModelSelection } from '@shared/types/provider.js';
 import { useWorkspaceStore } from '../store/useWorkspaceStore.js';
 import { Button } from '../components/ui/Button.js';
-import { SurfaceShell, surfaceShellInnerClassName } from '../components/ui/SurfaceShell.js';
 import { FolderOpen } from 'lucide-react';
 import { AGENT_NAME } from '@shared/constants.js';
 import { cn } from '../lib/cn.js';
 import { useSecondaryZoneStore } from '../store/useSecondaryZoneStore.js';
+
+const EXAMPLE_PROMPTS = [
+  'Summarize this repo and list the main entry points.',
+  'Find where authentication is handled and explain the flow.',
+  'Add a focused unit test for the most recent change.'
+] as const;
 
 interface ChatPageProps {
   onOpenProviders: () => void;
@@ -26,6 +31,10 @@ export function ChatPage({
   onOpenCheckpointSettings
 }: ChatPageProps) {
   const events = useChatStore((s) => s.events);
+  const conversationId = useChatStore((s) => s.conversationId);
+  const setDraft = useChatStore((s) => s.setDraft);
+  const newConversation = useConversationsStore((s) => s.newConversation);
+  const selectConversation = useConversationsStore((s) => s.select);
   const providers = useProviderStore((s) => s.providers);
   const workspaceInfo = useWorkspaceStore((s) => s.info);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
@@ -196,9 +205,20 @@ export function ChatPage({
   /** Adaptive reading width — narrows when the secondary zone is open. */
   const contentWidth = zoneOpen ? 'max-w-2xl' : 'max-w-3xl';
 
+  const applyExamplePrompt = async (prompt: string) => {
+    let cid = conversationId;
+    if (!cid) {
+      const meta = await newConversation();
+      if (!meta) return;
+      cid = meta.id;
+      await selectConversation(meta.id);
+    }
+    setDraft(cid, prompt);
+  };
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="scrollbar-stealth flex-1 overflow-y-auto px-6 pb-1">
+      <div className="scrollbar-stealth flex-1 overflow-y-auto scroll-pb-6 px-6 pb-8 antialiased">
         <div className={cn('mx-auto w-full transition-[max-width] duration-200 ease-out', contentWidth)}>
           {isFresh && (
             <div className={cn('flex flex-col items-start justify-center px-2 pb-8 pt-10', emptyMinH)}>
@@ -208,9 +228,24 @@ export function ChatPage({
                     What should {AGENT_NAME} work on here?
                   </div>
                   {!needsSetup && (
-                    <div className="mt-2 max-w-md text-row text-text-muted">
-                      Describe a task in the composer below.
-                    </div>
+                    <>
+                      <div className="mt-2 max-w-md text-row text-text-muted">
+                        Describe a task in the composer below, or try one of these:
+                      </div>
+                      <ul className="mt-4 flex max-w-lg flex-col gap-1.5">
+                        {EXAMPLE_PROMPTS.map((prompt) => (
+                          <li key={prompt}>
+                            <button
+                              type="button"
+                              onClick={() => void applyExamplePrompt(prompt)}
+                              className="w-full rounded-inner border border-border-subtle/25 px-3 py-2 text-left text-row text-text-secondary transition-colors duration-150 hover:border-border-subtle/45 hover:bg-surface-hover/40 hover:text-text-primary"
+                            >
+                              {prompt}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
                   )}
                 </>
               ) : (
@@ -230,30 +265,26 @@ export function ChatPage({
                 chrome or suggestion grid.
               */}
               {!workspaceInfo.path && (
-                <SurfaceShell className={cn('mt-6', surfaceShellInnerClassName('compact'))}>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-row text-text-muted">
-                      Pick a workspace to begin.
-                    </span>
-                    <Button variant="primary" size="sm" onClick={() => void pickWorkspace()}>
-                      <FolderOpen className="h-3 w-3" strokeWidth={2.25} />
-                      Open workspace…
-                    </Button>
-                  </div>
-                </SurfaceShell>
+                <div className="mt-6 flex flex-wrap items-center gap-3">
+                  <span className="text-row text-text-muted">
+                    Pick a workspace to begin.
+                  </span>
+                  <Button variant="primary" size="sm" onClick={() => void pickWorkspace()}>
+                    <FolderOpen className="h-3 w-3" strokeWidth={2.25} />
+                    Open workspace…
+                  </Button>
+                </div>
               )}
 
               {workspaceInfo.path && !hasProviders && (
-                <SurfaceShell className={cn('mt-6', surfaceShellInnerClassName('compact'))}>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-row text-text-muted">
-                      No AI provider configured yet.
-                    </span>
-                    <Button variant="primary" size="sm" onClick={onOpenProviders}>
-                      Configure provider
-                    </Button>
-                  </div>
-                </SurfaceShell>
+                <div className="mt-6 flex flex-wrap items-center gap-3">
+                  <span className="text-row text-text-muted">
+                    No AI provider configured yet.
+                  </span>
+                  <Button variant="primary" size="sm" onClick={onOpenProviders}>
+                    Configure provider
+                  </Button>
+                </div>
               )}
             </div>
           )}

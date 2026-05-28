@@ -51,6 +51,15 @@ interface TimelineUiStore {
   hasManualOverride: (conversationId: string | null, rowKey: string) => boolean;
   /** Clear every row key for a given conversation. */
   clearConversation: (conversationId: string) => void;
+
+  /**
+   * Session-only diff context-fold expansion keyed by
+   * `${diffInstanceId}:hunk:${hunkIdx}`. Not persisted — survives
+   * intra-hunk re-renders and partial→authoritative variant flips
+   * within the same viewer instance.
+   */
+  diffFoldExpandedByScope: Record<string, ReadonlySet<string>>;
+  toggleDiffFold: (scopeKey: string, foldId: string) => void;
 }
 
 // F-010 / F-015 note: `persistTimer` and `pendingExpanded` are
@@ -113,6 +122,7 @@ export function flushTimelineUiPersistence(): void {
 export const useTimelineUiStore = create<TimelineUiStore>((set, get) => ({
   expandedByConvo: {},
   manualOverrideByConvo: {},
+  diffFoldExpandedByScope: {},
   hydrated: false,
 
   hydrate: (persisted) => {
@@ -197,5 +207,18 @@ export const useTimelineUiStore = create<TimelineUiStore>((set, get) => ({
     }
     set({ expandedByConvo: restExpanded, manualOverrideByConvo: restOverrides });
     if (get().hydrated) persistLater(restExpanded);
+  },
+
+  toggleDiffFold: (scopeKey, foldId) => {
+    const cur = get().diffFoldExpandedByScope[scopeKey] ?? new Set<string>();
+    const next = new Set(cur);
+    if (next.has(foldId)) next.delete(foldId);
+    else next.add(foldId);
+    set({
+      diffFoldExpandedByScope: {
+        ...get().diffFoldExpandedByScope,
+        [scopeKey]: next
+      }
+    });
   }
 }));

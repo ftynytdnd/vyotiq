@@ -69,7 +69,8 @@ describe('PendingChangesTimelineRow', () => {
       }));
     });
     const { container } = render(<PendingChangesTimelineRow />);
-    expect(container.textContent ?? '').toContain('1 pending change');
+    expect(container.textContent ?? '').toContain('Pending changes');
+    expect(container.textContent ?? '').toContain('auto-accepted on next message');
     expect(container.querySelector('[aria-expanded="true"]')).toBeNull();
   });
 
@@ -104,9 +105,10 @@ describe('PendingChangesTimelineRow', () => {
       }));
     });
     const { container } = render(<PendingChangesTimelineRow />);
-    const btn = Array.from(container.querySelectorAll('button')).find((b) =>
-      (b.textContent ?? '').includes('Accept all')
-    );
+    const btn = Array.from(container.querySelectorAll('button')).find((b) => {
+      const text = (b.textContent ?? '').trim();
+      return text === 'Accept' || text === 'Accept all';
+    });
     expect(btn).toBeTruthy();
     fireEvent.click(btn!);
     expect(acceptAll).toHaveBeenCalledWith(CONVO);

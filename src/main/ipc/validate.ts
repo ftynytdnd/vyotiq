@@ -196,6 +196,26 @@ export function assertConfirmResponse(
   }
 }
 
+/** SHA-256 content hash used by the checkpoint blob store (64 lowercase hex). */
+const BLOB_HASH_RE = /^[0-9a-f]{64}$/;
+
+/**
+ * Assert a checkpoint blob hash — exactly 64 lowercase hex digits.
+ * Rejects path segments (`../`, slashes) and non-hex before `blobPath`.
+ */
+export function assertBlobHash(
+  channel: string,
+  field: string,
+  value: unknown
+): asserts value is string {
+  assertString(channel, field, value, { maxBytes: 64 });
+  if (!BLOB_HASH_RE.test(value)) {
+    throw new Error(
+      `${channel}: ${field} must be a 64-character lowercase hex SHA-256 hash`
+    );
+  }
+}
+
 /** Assert that `value` is one of the supplied literal strings. */
 export function assertEnum<T extends string>(
   channel: string,

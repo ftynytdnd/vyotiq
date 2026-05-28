@@ -22,8 +22,6 @@ import type {
   SubAgentSnapshot
 } from '@renderer/components/timeline/reducer/types';
 import type { ToolGroupChild } from '@renderer/components/timeline/reducer/deriveRows';
-import { Terminal } from 'lucide-react';
-
 const REASONING_ID = 'r-stream';
 
 async function seedReasoning(acc: ReasoningTextAcc): Promise<void> {
@@ -116,7 +114,7 @@ beforeEach(() => {
 });
 
 describe('ReasoningLineRow shimmer', () => {
-  it('applies shimmer text while streaming (done === false)', async () => {
+  it('applies gold phase heading while streaming (done === false)', async () => {
     await seedReasoning({
       id: REASONING_ID,
       text: 'thinking…',
@@ -125,20 +123,13 @@ describe('ReasoningLineRow shimmer', () => {
     });
     const { container } = render(<ReasoningLineRow id={REASONING_ID} />);
     const button = container.querySelector('button');
-    // Label is the last span inside the button — shimmer text carries
-    // through `extra` so existing size/tone classes still present.
     const labels = button?.querySelectorAll('span');
     const labelClass = Array.from(labels ?? []).map((s) => s.className).join(' ');
-    expect(labelClass).toMatch(/vyotiq-shimmer-text/);
-    // The label must carry a per-instance phase offset so concurrent
-    // streaming surfaces desync naturally.
-    const labelWithStyle = Array.from(labels ?? []).find((s) =>
-      s.className.includes('vyotiq-shimmer-text')
-    );
-    expect(labelWithStyle?.getAttribute('style') ?? '').toMatch(/--shimmer-offset:\s*-\d+ms/);
+    expect(labelClass).toMatch(/text-accent-gold/);
+    expect(labelClass).not.toMatch(/vyotiq-shimmer-text/);
   });
 
-  it('removes shimmer once reasoning completes (done === true)', async () => {
+  it('removes gold phase styling once reasoning completes (done === true)', async () => {
     await seedReasoning({
       id: REASONING_ID,
       text: 'thinking…',
@@ -150,7 +141,7 @@ describe('ReasoningLineRow shimmer', () => {
     const button = container.querySelector('button');
     const labels = button?.querySelectorAll('span');
     const labelClass = Array.from(labels ?? []).map((s) => s.className).join(' ');
-    expect(labelClass).not.toMatch(/vyotiq-shimmer-text/);
+    expect(labelClass).not.toMatch(/text-accent-gold/);
   });
 });
 
@@ -191,22 +182,47 @@ describe('LiveStatusRow shimmer', () => {
     const { container } = render(<LiveStatusRow />);
     expect(container.innerHTML).toBe('');
   });
+
+  it('uses gold Exploring headline during running-tool phase', async () => {
+    await act(async () => {
+      useChatStore.setState({
+        isProcessing: true,
+        runStartedAt: Date.now(),
+        latestOrchestratorRunStatus: {
+          kind: 'run-status',
+          id: 'rs-explore',
+          ts: Date.now(),
+          phase: 'running-tool',
+          label: 'Exploring',
+          detail: { toolName: 'read' }
+        },
+        assistantTexts: {},
+        reasoningTexts: {},
+        subagents: {}
+      });
+    });
+    const { container } = render(<LiveStatusRow />);
+    expect(container.textContent ?? '').toContain('Exploring');
+    expect(container.innerHTML).toContain('text-accent-gold');
+    expect(container.textContent ?? '').toContain('read');
+    expect(container.innerHTML).not.toContain('vyotiq-shimmer-text');
+  });
 });
 
-describe('AgentThoughtRow shimmer', () => {
-  it('shimmers info-severity text when `live` is true', () => {
+describe('AgentThoughtRow live phase heading', () => {
+  it('uses gold phase heading for info-severity text when `live` is true', () => {
     const { container } = render(<AgentThoughtRow content="pondering" live />);
     const span = container.querySelector('span');
-    expect(span?.className).toMatch(/vyotiq-shimmer-text/);
-    // Existing style classes must survive.
+    expect(span?.className).toMatch(/text-accent-gold/);
     expect(span?.className).toMatch(/italic/);
-    expect(span?.className).toMatch(/text-text-muted/);
+    expect(span?.className ?? '').not.toMatch(/vyotiq-shimmer-text/);
   });
 
-  it('does NOT shimmer when `live` is false', () => {
+  it('does NOT use gold when `live` is false', () => {
     const { container } = render(<AgentThoughtRow content="pondering" live={false} />);
     const span = container.querySelector('span');
-    expect(span?.className ?? '').not.toMatch(/vyotiq-shimmer-text/);
+    expect(span?.className ?? '').not.toMatch(/text-accent-gold/);
+    expect(span?.className).toMatch(/text-text-faint/);
   });
 
   it('never shimmers warnings even when `live`', () => {
@@ -217,36 +233,27 @@ describe('AgentThoughtRow shimmer', () => {
   });
 });
 
-describe('SubAgentTrace shimmer + PendingDot removal', () => {
-  it('shimmers pending / running text and omits `(task pending)` and the pending dot', async () => {
+describe('SubAgentTrace — chevron-only row chrome', () => {
+  it('omits shimmer and `(task pending)` while pending', async () => {
     await seedSubagent(makeSnap({ status: 'pending', task: '' }));
     const { container } = render(<SubAgentTrace subagentId="S1" />);
-    expect(container.innerHTML).toMatch(/vyotiq-shimmer-text/);
+    expect(container.innerHTML).not.toMatch(/vyotiq-shimmer-text/);
     expect(container.textContent ?? '').not.toContain('(task pending)');
-    // The former pending dot was a 2x2 rounded-full span with
-    // `animate-pulse`. It must no longer render.
     expect(container.querySelector('span.animate-pulse')).toBeNull();
   });
 
-  it('strips shimmer once the sub-agent is done', async () => {
-    await seedSubagent(makeSnap({ status: 'done', output: '<result><status>success</status></result>' }));
-    const { container } = render(<SubAgentTrace subagentId="S1" />);
-    const button = container.querySelector('button');
-    // At least the top-level Delegated div must not shimmer.
-    const delegatedDiv = button?.querySelector('div');
-    expect(delegatedDiv?.className ?? '').not.toMatch(/vyotiq-shimmer-text/);
-  });
-
-  it('auto-expands only the latest live sub-agent when multiple workers run', async () => {
+  it('keeps collapsed one-liners until expanded', async () => {
     await seedSubagents([
-      makeSnap({ id: 'S1', startedAt: 1, status: 'running' }),
-      makeSnap({ id: 'S2', startedAt: 2, status: 'running' })
+      makeSnap({ id: 'S1', startedAt: 1, status: 'running', task: 'worker one' }),
+      makeSnap({ id: 'S2', startedAt: 2, status: 'running', task: 'worker two' })
     ]);
     const older = render(<SubAgentTrace subagentId="S1" />);
-    expect(older.container.textContent ?? '').not.toContain('Sub-agent S1');
+    expect(older.container.textContent ?? '').toContain('worker one');
+    expect(older.container.textContent ?? '').not.toContain('Thought for');
 
     const latest = render(<SubAgentTrace subagentId="S2" />);
-    expect(latest.container.textContent ?? '').toContain('Sub-agent S2');
+    expect(latest.container.textContent ?? '').toContain('worker two');
+    expect(latest.container.querySelector('[role="dialog"]')).toBeNull();
   });
 });
 
@@ -262,15 +269,15 @@ describe('SubAgentHeader status pill shimmer', () => {
   });
 });
 
-describe('ToolGroupRow shimmer', () => {
-  it('shimmers summary text while at least one child is in-flight', () => {
+describe('ToolGroupRow — chevron-only row chrome', () => {
+  it('does not shimmer while a child is in-flight', () => {
     const { container } = render(
       <ToolGroupRow rowKey="tg:1" toolName="bash" items={[callChild(false)]} />
     );
-    expect(container.innerHTML).toMatch(/vyotiq-shimmer-text/);
+    expect(container.innerHTML).not.toMatch(/vyotiq-shimmer-text/);
   });
 
-  it('drops shimmer once every child has a result', () => {
+  it('stays shimmer-free once every child has a result', () => {
     const { container } = render(
       <ToolGroupRow rowKey="tg:2" toolName="bash" items={[callChild(true)]} />
     );
@@ -278,23 +285,21 @@ describe('ToolGroupRow shimmer', () => {
   });
 });
 
-describe('InvocationShell shimmer', () => {
-  it('shimmers the summary when `ok === null`', () => {
+describe('InvocationShell — chevron-only row chrome', () => {
+  it('does not shimmer while pending (`ok === null`)', () => {
     const { container } = render(
       <InvocationShell
-        Icon={Terminal}
         title="bash"
         summary="echo hi"
         ok={null}
       />
     );
-    expect(container.innerHTML).toMatch(/vyotiq-shimmer-text/);
+    expect(container.innerHTML).not.toMatch(/vyotiq-shimmer-text/);
   });
 
-  it('drops shimmer when the invocation has resolved', () => {
+  it('stays shimmer-free once resolved', () => {
     const { container } = render(
       <InvocationShell
-        Icon={Terminal}
         title="bash"
         summary="echo hi"
         ok

@@ -20,6 +20,10 @@ import { useModelOptions } from './useModelOptions.js';
 import { ProviderGroupHeader } from './ProviderGroupHeader.js';
 import { ModelRow } from './ModelRow.js';
 import { TextField } from '../../ui/TextField.js';
+import {
+  chromeElev2PanelClassName,
+  chromeSearchRowClassName
+} from '../../ui/SurfaceShell.js';
 import { cn } from '../../../lib/cn.js';
 
 interface ModelPickerPanelProps {
@@ -112,11 +116,11 @@ export function ModelPickerPanel({ value, onChange, onClose }: ModelPickerPanelP
     <div
       onKeyDown={onKeyDown}
       className={cn(
-        'elev-2 flex max-h-[60vh] w-[320px] flex-col rounded-card p-1',
-        'bg-surface-overlay'
+        chromeElev2PanelClassName,
+        'flex max-h-[60vh] w-[320px] flex-col p-1'
       )}
     >
-      <div className="flex items-center gap-2 border-b border-border-subtle/60 px-2 py-1.5">
+      <div className={cn(chromeSearchRowClassName, 'mx-1 mb-1 mt-1 border-0 bg-transparent')}>
         <Search className="h-3.5 w-3.5 shrink-0 text-text-muted" strokeWidth={2} />
         <TextField
           ref={inputRef}

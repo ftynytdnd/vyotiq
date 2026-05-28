@@ -10,8 +10,8 @@
  *   - **strip** (default): horizontal row of pill buttons. Matches the
  *     `app-no-drag rounded-inner px-2.5 py-1 text-row` shape the
  *     CheckpointsView and ContextInspectorPanel tab strips already
- *     use. Active = `bg-surface-overlay text-text-primary`,
- *     inactive = `text-text-muted hover:text-text-primary`. The
+ *     use. Active = {@link chromeTabActiveClassName}, idle =
+ *     {@link chromeTabIdleClassName}. The
  *     buttons sit FLUSH (no chrome wrapper) so the caller's own
  *     layout (`flex items-center gap-1` etc.) drives positioning.
  *
@@ -35,7 +35,8 @@
  *     all current call sites already implement).
  *
  * Design tokens used:
- *   - `bg-surface-overlay` / `bg-surface-hover` / `bg-surface-raised`
+ *   - `chromeTabActiveClassName` / `chromeTabIdleClassName` /
+ *     `bg-surface-raised`
  *   - `text-text-primary` / `text-text-muted` / `text-text-secondary`
  *   - `rounded-inner` / `rounded-line`
  *   - `text-row` / `text-meta`
@@ -46,10 +47,12 @@
  */
 
 import { useRef, type ReactNode } from 'react';
+import {
+  chromeSegmentedTrayClassName,
+  chromeTabActiveClassName,
+  chromeTabIdleClassName
+} from './SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
-
-export type TabsVariant = 'strip' | 'segmented';
-export type TabsSize = 'sm' | 'md';
 
 export interface TabItem<T extends string = string> {
   id: T;
@@ -74,9 +77,9 @@ interface TabsProps<T extends string = string> {
   value: T;
   onChange: (next: T) => void;
   /** Defaults to `'strip'`. */
-  variant?: TabsVariant;
+  variant?: 'strip' | 'segmented';
   /** Only applies to `variant="segmented"`. Defaults to `'md'`. */
-  size?: TabsSize;
+  size?: 'sm' | 'md';
   /** Forwarded to the container's `aria-label`. */
   ariaLabel?: string;
   /**
@@ -141,13 +144,10 @@ export function Tabs<T extends string = string>({
 
   if (variant === 'segmented') {
     // Inset segmented control. Wrapper carries the surface
-    // (`bg-surface-overlay`) and the buttons swap active / inactive
+    // (soft tray tint) and the buttons swap active / inactive
     // tints inside. Mirrors the `MemoryPanel.ViewModeToggle` and the
     // `AddProviderForm.DialectSwitch` shape exactly.
-    const wrapperClass =
-      size === 'sm'
-        ? 'inline-flex items-center rounded-inner bg-surface-overlay p-0.5'
-        : 'flex overflow-hidden rounded-inner bg-surface-base';
+    const wrapperClass = chromeSegmentedTrayClassName(size === 'sm');
     return (
       <div
         role="tablist"
@@ -233,15 +233,11 @@ export function Tabs<T extends string = string>({
               stripNav
                 ? cn(
                     'bg-surface-overlay/30 hover:bg-surface-hover/60',
-                    active
-                      ? 'bg-surface-hover text-text-primary'
-                      : 'text-text-muted hover:text-text-secondary'
+                    active ? chromeTabActiveClassName : chromeTabIdleClassName
                   )
-                : cn(
-                    active
-                      ? 'bg-surface-overlay text-text-primary'
-                      : 'text-text-muted hover:text-text-primary'
-                  ),
+                : active
+                  ? chromeTabActiveClassName
+                  : chromeTabIdleClassName,
               item.disabled && 'cursor-not-allowed opacity-50'
             )}
           >

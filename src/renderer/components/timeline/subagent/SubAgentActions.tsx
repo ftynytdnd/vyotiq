@@ -15,6 +15,7 @@ import {
 } from 'react';
 import { Check, Copy, FileCode, Maximize2 } from 'lucide-react';
 import { stripEmoji } from '@shared/text/emoji.js';
+import { chromeIconActionClassName } from '../../ui/SurfaceShell.js';
 import { cn } from '../../../lib/cn.js';
 import { safeCopy } from '../../../lib/clipboard.js';
 import { openWorkspaceFile } from '../../../lib/openPath.js';
@@ -142,11 +143,7 @@ function IconAction({
       aria-label={title}
       title={title}
       onClick={onClick}
-      className={cn(
-        'app-no-drag inline-flex h-6 w-6 items-center justify-center rounded-inner',
-        'text-text-faint transition-colors duration-150',
-        'hover:bg-surface-hover hover:text-text-primary'
-      )}
+      className={chromeIconActionClassName}
     >
       {children}
     </button>

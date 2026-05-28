@@ -4,7 +4,7 @@
  * map, and the load/select/rename/remove flows.
  *
  * Multi-workspace model:
- *   - `list` is the FULL cross-workspace history. The bottom dock
+ *   - `list` is the FULL cross-workspace history. The left navigation dock
  *     filters by `meta.workspaceId`; the orchestrator's
  *     `<prior_conversations>` envelope filters via the main-side
  *     `listConversations(workspaceId)` overload so this list never

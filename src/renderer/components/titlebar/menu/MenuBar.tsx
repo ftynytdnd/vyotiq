@@ -124,7 +124,7 @@ export function MenuBar({ fileActions, viewActions }: MenuBarProps) {
   };
 
   return (
-    <div role="menubar" aria-label="Application" className="flex items-stretch gap-0.5">
+    <div role="menubar" aria-label="Application" className="flex items-center gap-1">
       <Menu
         ref={refs.file}
         label="File"

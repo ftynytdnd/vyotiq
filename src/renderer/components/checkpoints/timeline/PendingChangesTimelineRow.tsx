@@ -1,20 +1,20 @@
 /**
  * Collapsible pending-changes row at the timeline tail.
- * Collapsed by default; auto-expands when gate-on is enabled.
  */
 
-import { ChevronDown, ChevronRight } from 'lucide-react';
 import { PendingChangesHeader } from '../pending/PendingChangesHeader.js';
 import { PendingChangesList } from '../pending/PendingChangesList.js';
-import { PendingChangesReviewMode } from '../pending/PendingChangesReviewMode.js';
 import { usePendingChangesTimelineRow } from './usePendingChangesTimelineRow.js';
 import { useChatStore } from '../../../store/useChatStore.js';
-import { SurfaceShell, surfaceShellInnerClassName } from '../../ui/SurfaceShell.js';
+import { useSecondaryZoneStore } from '../../../store/useSecondaryZoneStore.js';
 import { cn } from '../../../lib/cn.js';
-import { timelineRowChevronClassName, timelineRowHeaderClassName } from '../../timeline/shared/rowStyles.js';
+import {
+  pendingPanelEmptyClassName,
+  pendingPanelListScrollClassName,
+  pendingPanelShellClassName
+} from '../pending/pendingPanelStyles.js';
 
 interface PendingChangesTimelineRowProps {
-  /** Opens Settings → Checkpoints (usage pill). */
   onOpenCheckpointSettings?: () => void;
 }
 
@@ -22,22 +22,25 @@ export function PendingChangesTimelineRow({
   onOpenCheckpointSettings
 }: PendingChangesTimelineRowProps) {
   const conversationId = useChatStore((s) => s.conversationId);
+  const openReview = useSecondaryZoneStore((s) => s.openReview);
   const row = usePendingChangesTimelineRow(conversationId);
 
   if (!row.hasEntries) return null;
 
   const {
+    activeWorkspaceId,
     pending,
     visiblePending,
+    visibleFileCount,
     visibleAdditions,
     visibleDeletions,
     gateOn,
+    reviewGateOn,
+    reviewBlocksSend,
     runIds,
     filters,
     expanded,
     onToggleExpand,
-    reviewOpen,
-    setReviewOpen,
     onAcceptAll,
     onRejectAll,
     usageLabel,
@@ -46,47 +49,47 @@ export function PendingChangesTimelineRow({
 
   return (
     <>
-      <SurfaceShell className={cn('flex flex-col gap-0', surfaceShellInnerClassName('compact'))}>
-        <div className="flex items-start gap-0.5">
-          <button
-            type="button"
-            onClick={onToggleExpand}
-            aria-expanded={expanded}
-            aria-label={expanded ? 'Collapse pending changes' : 'Expand pending changes'}
-            className={cn(timelineRowHeaderClassName, 'shrink-0 rounded-inner hover:bg-surface-hover/40')}
-          >
-            {expanded ? (
-              <ChevronDown className={timelineRowChevronClassName} strokeWidth={2} />
-            ) : (
-              <ChevronRight className={timelineRowChevronClassName} strokeWidth={2} />
-            )}
-          </button>
-          <div className="min-w-0 flex-1">
-            <PendingChangesHeader
-              visibleCount={visiblePending.length}
-              totalCount={pending.length}
-              visibleAdditions={visibleAdditions}
-              visibleDeletions={visibleDeletions}
-              gateOn={gateOn}
-              runIds={runIds}
-              selectedRunId={filters.runId}
-              onSelectRunId={filters.setRunId}
-              pathQuery={filters.pathQuery}
-              onPathQueryChange={filters.setPathQuery}
-              usageLabel={usageLabel}
-              usageTitle={usageTitle}
-              {...(onOpenCheckpointSettings ? { onOpenCheckpointSettings } : {})}
-              onAcceptAll={onAcceptAll}
-              onRejectAll={onRejectAll}
-              onReviewAll={() => setReviewOpen(true)}
-              filtersVisible={expanded}
-            />
-          </div>
-        </div>
+      <div
+        className={cn(
+          pendingPanelShellClassName(gateOn || (reviewGateOn && reviewBlocksSend)),
+          'vyotiq-stepfade-once'
+        )}
+      >
+        <PendingChangesHeader
+          visibleCount={visiblePending.length}
+          visibleFileCount={visibleFileCount}
+          totalCount={pending.length}
+          visibleAdditions={visibleAdditions}
+          visibleDeletions={visibleDeletions}
+          gateOn={gateOn}
+          reviewGateOn={reviewGateOn}
+          reviewBlocksSend={reviewBlocksSend}
+          runIds={runIds}
+          selectedRunId={filters.runId}
+          onSelectRunId={filters.setRunId}
+          pathQuery={filters.pathQuery}
+          onPathQueryChange={filters.setPathQuery}
+          usageLabel={usageLabel}
+          usageTitle={usageTitle}
+          {...(onOpenCheckpointSettings ? { onOpenCheckpointSettings } : {})}
+          onAcceptAll={onAcceptAll}
+          onRejectAll={onRejectAll}
+          onReviewAll={() => {
+            if (conversationId && activeWorkspaceId) {
+              openReview({ conversationId, workspaceId: activeWorkspaceId });
+            }
+          }}
+          groupByFolder={filters.groupByFolder}
+          onGroupByFolderChange={filters.setGroupByFolder}
+          filtersVisible={expanded}
+          embedded
+          panelExpanded={expanded}
+          onTogglePanel={onToggleExpand}
+        />
         {expanded && (
-          <div className="scrollbar-stealth ml-5 flex max-h-[min(28vh,16rem)] min-h-0 flex-col overflow-y-auto py-0.5">
+          <div className={cn('vyotiq-expand-panel', pendingPanelListScrollClassName)}>
             {visiblePending.length === 0 ? (
-              <div className="px-3 py-4 text-row text-text-muted">
+              <div className={pendingPanelEmptyClassName}>
                 No pending changes match the current filters.
                 <button
                   type="button"
@@ -97,16 +100,14 @@ export function PendingChangesTimelineRow({
                 </button>
               </div>
             ) : (
-              <PendingChangesList pending={visiblePending} />
+              <PendingChangesList
+                pending={visiblePending}
+                groupByFolderMode={filters.groupByFolder}
+              />
             )}
           </div>
         )}
-      </SurfaceShell>
-      <PendingChangesReviewMode
-        open={reviewOpen}
-        onClose={() => setReviewOpen(false)}
-        entries={visiblePending}
-      />
+      </div>
     </>
   );
 }

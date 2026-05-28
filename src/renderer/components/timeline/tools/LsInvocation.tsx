@@ -3,11 +3,12 @@
  * compact file/folder table in the expanded detail.
  */
 
-import { FolderTree, Folder, FileText } from 'lucide-react';
+import { Folder, FileText } from 'lucide-react';
 import type { ToolCall, ToolResult } from '@shared/types/tool.js';
 import { InvocationShell } from './shared/InvocationShell.js';
 import { DetailPane } from './shared/DetailPane.js';
 import { SurfaceShell } from '../../ui/SurfaceShell.js';
+import { toolErrorBody, toolErrorHint } from './shared/toolErrorDisplay.js';
 
 interface LsInvocationProps {
   call?: ToolCall;
@@ -30,7 +31,7 @@ export function LsInvocation({ call, result, dense, rowKey }: LsInvocationProps)
     ? `${path} — ${count} entr${count === 1 ? 'y' : 'ies'}${data.truncated ? ' (truncated)' : ''}`
     : `ls ${path}`;
 
-  const errorHint = result && !result.ok ? result.error : undefined;
+  const errorHint = toolErrorHint(result);
 
   const detail = data ? (
     <DetailPane label={`listing (depth ${data.depth})`}>
@@ -58,22 +59,15 @@ export function LsInvocation({ call, result, dense, rowKey }: LsInvocationProps)
       </SurfaceShell>
     </DetailPane>
   ) : result && !result.ok ? (
-    // Defect 2 fix: surface the actionable message (`result.output`)
-    // here instead of the short `result.error` tag. The
-    // collapsed-row `errorHint` slot still carries the tag for the
-    // one-line breadcrumb.
     <DetailPane label="error" tone="danger">
       <div className="font-mono text-row text-danger whitespace-pre-wrap">
-        {result.output && result.output.length > 0
-          ? result.output
-          : (result.error ?? '')}
+        {toolErrorBody(result)}
       </div>
     </DetailPane>
   ) : undefined;
 
   return (
     <InvocationShell
-      Icon={FolderTree}
       title="ls"
       summary={summary}
       mono
@@ -82,6 +76,8 @@ export function LsInvocation({ call, result, dense, rowKey }: LsInvocationProps)
       {...(detail !== undefined ? { detail } : {})}
       {...(dense ? { dense } : {})}
       {...(rowKey ? { rowKey } : {})}
+      call={call}
+      result={result}
     />
   );
 }

@@ -15,9 +15,19 @@ import { DockChatMoveMenu } from './DockChatMoveMenu.js';
 import { filterDockChats } from './filterDockChats.js';
 import {
   CONV_DRAG_MIME,
+  DOCK_CHAT_METER_TRACK_CLASS,
+  DOCK_CHAT_TAB_INNER_CLASS,
+  DOCK_CHAT_TAB_STACK_CLASS,
+  DOCK_EMPTY_STATE_CLASS,
   DOCK_HOVER_ACTIONS,
-  DOCK_TAB_FOCUS
+  dockChatMeterBarClassName,
+  dockInlineActionClassName,
+  dockTabRowClassName
 } from './dockShared.js';
+import {
+  useProviderStore,
+  selectEffectiveContextWindow
+} from '../../store/useProviderStore.js';
 import { useConversationProcessing } from '../../hooks/chat/index.js';
 import { PeakContextBadge } from '../chat/PeakContextBadge.js';
 import { useChatRowFocus } from '../../hooks/chat/index.js';
@@ -97,7 +107,7 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
 
   if (!workspaceId) {
     return (
-      <div className="flex flex-1 flex-col px-2 py-1 text-row text-text-faint">
+      <div className={cn(DOCK_EMPTY_STATE_CLASS, 'flex-1 text-row text-text-faint')}>
         Open a workspace to see chats.
       </div>
     );
@@ -105,7 +115,7 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
 
   if (loading && list.length === 0) {
     return (
-      <div className="flex flex-1 items-center gap-2 px-2 py-1 text-row text-text-faint">
+      <div className={cn(DOCK_EMPTY_STATE_CLASS, 'flex-1 flex-row items-center text-row text-text-faint')}>
         <Spinner /> Loading…
       </div>
     );
@@ -115,7 +125,7 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
     const count = entries.length;
     const runningEntries = entries.filter((e) => runningIds.has(e.id));
     return (
-      <div className="flex min-h-0 flex-1 flex-col gap-2 px-2 py-1">
+      <div className={cn(DOCK_EMPTY_STATE_CLASS, 'min-h-0 flex-1')}>
         {runningEntries.map((runningEntry) => {
           const runningRunId = useChatStore.getState().slices[runningEntry.id]?.runId;
           if (!runningRunId) return null;
@@ -142,10 +152,7 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
         <button
           type="button"
           onClick={() => workspaceId && toggleWorkspaceCollapsed(workspaceId)}
-          className={cn(
-            'app-no-drag rounded-inner px-2 py-0.5 text-row text-text-muted',
-            'transition-colors duration-150 hover:bg-surface-hover hover:text-text-primary'
-          )}
+          className={dockInlineActionClassName()}
         >
           Expand
         </button>
@@ -155,7 +162,7 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
 
   if (entries.length === 0) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col gap-2 px-2 py-1">
+      <div className={cn(DOCK_EMPTY_STATE_CLASS, 'min-h-0 flex-1')}>
         <span className="text-row text-text-faint">
           {isFiltering ? 'No matches.' : 'No chats yet.'}
         </span>
@@ -163,10 +170,7 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
           <button
             type="button"
             onClick={() => void newConversationFor(workspaceId)}
-            className={cn(
-              'app-no-drag rounded-inner px-2 py-0.5 text-row text-text-muted',
-              'transition-colors duration-150 hover:bg-surface-hover hover:text-text-primary'
-            )}
+            className={dockInlineActionClassName()}
           >
             New chat
           </button>
@@ -180,7 +184,7 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
       ref={scrollRef}
       role="tablist"
       aria-label="Chats in workspace"
-      className="scrollbar-stealth flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1 pb-1"
+      className="scrollbar-stealth flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1 pb-1.5"
       onKeyDown={(e) => {
         handleDockVerticalTablistKeyDown({
           e,
@@ -253,14 +257,11 @@ function ChatTab({ entry, displayTitle, active, onSelect, onRename, onRemove }: 
           e.dataTransfer.effectAllowed = 'move';
         }}
         className={cn(
-          'group app-no-drag flex w-full max-w-none shrink-0 items-center gap-1 rounded-inner px-2 py-1',
-          'text-row transition-colors duration-150',
-          DOCK_TAB_FOCUS,
-          active
-            ? 'bg-surface-overlay text-text-primary'
-            : 'text-text-muted hover:bg-surface-hover/60 hover:text-text-secondary'
+          dockTabRowClassName(active, 'chat'),
+          DOCK_CHAT_TAB_STACK_CLASS
         )}
       >
+        <div className={DOCK_CHAT_TAB_INNER_CLASS}>
         {editing ? (
           <input
             ref={inputRef}
@@ -330,6 +331,8 @@ function ChatTab({ entry, displayTitle, active, onSelect, onRename, onRemove }: 
             )}
           </span>
         )}
+        </div>
+        {active && <DockChatContextMeter meta={entry} />}
       </div>
       <ConfirmDialog
         open={deleteOpen}
@@ -344,6 +347,38 @@ function ChatTab({ entry, displayTitle, active, onSelect, onRename, onRemove }: 
         onCancel={() => setDeleteOpen(false)}
       />
     </>
+  );
+}
+
+/** Bottom context meter on the active chat tab (peak prompt vs ceiling). */
+function DockChatContextMeter({ meta }: { meta: ConversationMeta }) {
+  const slicePeak = useChatStore(
+    (s) => s.slices[meta.id]?.orchestratorUsage?.peak.promptTokens
+  );
+  const providers = useProviderStore((s) => s.providers);
+  const peakPromptTokens = Math.max(
+    meta.peakPromptTokens ?? 0,
+    typeof slicePeak === 'number' ? slicePeak : 0
+  );
+  const providerId = meta.lastProviderId;
+  const modelId = meta.lastModelId;
+  if (!providerId || !modelId) return null;
+  const ceiling = selectEffectiveContextWindow(providers, providerId, modelId);
+  if (typeof ceiling !== 'number' || ceiling <= 0) return null;
+  const ratio = Math.min(1, peakPromptTokens / ceiling);
+  const pct = Math.round(ratio * 100);
+  return (
+    <div className="px-2 pb-1" aria-hidden>
+      <span className={DOCK_CHAT_METER_TRACK_CLASS}>
+        <span
+          className={cn(
+            'absolute inset-y-0 left-0 rounded-pill transition-[width] duration-150',
+            dockChatMeterBarClassName(ratio)
+          )}
+          style={{ width: `${Math.min(100, pct)}%` }}
+        />
+      </span>
+    </div>
   );
 }
 

@@ -3,8 +3,8 @@
  *
  * Visual contract: matches `CheckpointsView`'s tab strip exactly —
  * a row of `app-no-drag rounded-inner px-2.5 py-1` buttons with
- * `bg-surface-overlay text-text-primary` for the active tab and the
- * standard hover transition for the inactive ones. Body uses the
+ * {@link chromeTabActiveClassName} for the active tab and ghost idle
+ * tabs (via shared `Tabs` strip variant). Body uses the
  * same `bg-surface-raised/60` monospace pre block the inline
  * timeline row already uses, so the same compressed body looks
  * identical whether the user reads it in the timeline or the

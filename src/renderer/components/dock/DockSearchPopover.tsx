@@ -1,15 +1,18 @@
 /**
- * Inline dock search above the footer toolbar (Ctrl/Cmd+K or Search button).
+ * Inline dock search inside the footer shell (Ctrl/Cmd+K or Search button).
  */
 
 import { useEffect, useRef } from 'react';
 import { Search, X } from 'lucide-react';
-import { DOCK_BORDER_OPACITY } from './dockShared.js';
+import { chromeEdgeClassName, chromeSearchRowClassName } from '../ui/SurfaceShell.js';
 import { filterDockChats } from './filterDockChats.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useChatStore } from '../../store/useChatStore.js';
+import { TextField } from '../ui/TextField.js';
+import { chromeIconPillClassName } from '../ui/SurfaceShell.js';
+import { cn } from '../../lib/cn.js';
 
 function collectRunningIds(): Set<string> {
   const set = new Set<string>();
@@ -27,7 +30,12 @@ export function DockSearchPopover() {
     <div
       role="search"
       aria-label="Search chats"
-      className={`border-b ${DOCK_BORDER_OPACITY} px-2 py-1.5`}
+      className={cn(
+        chromeSearchRowClassName,
+        'border-b bg-transparent',
+        chromeEdgeClassName,
+        'mx-2 mb-1 mt-0.5 px-2 py-1'
+      )}
     >
       <DockSearchInput />
     </div>
@@ -50,10 +58,12 @@ function DockSearchInput() {
   }, []);
 
   return (
-    <div className="flex items-center gap-1.5">
-      <Search className="h-3 w-3 shrink-0 text-text-faint" strokeWidth={2} aria-hidden />
-      <input
+    <>
+      <Search className="h-3.5 w-3.5 shrink-0 text-text-muted" strokeWidth={2} aria-hidden />
+      <TextField
         ref={inputRef}
+        size="sm"
+        tone="transparent"
         value={query}
         aria-label="Search chats"
         onChange={(e) => setQuery(e.target.value)}
@@ -88,16 +98,16 @@ function DockSearchInput() {
           }
         }}
         placeholder="Search chats in this workspace…"
-        className="min-w-0 flex-1 bg-transparent text-row text-text-primary outline-none placeholder:text-text-muted"
+        className="min-w-0 flex-1 px-0"
       />
       <button
         type="button"
         aria-label="Close search"
         onClick={() => setOpen(false)}
-        className="app-no-drag inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-inner text-text-faint hover:text-text-primary"
+        className={chromeIconPillClassName()}
       >
         <X className="h-3 w-3" strokeWidth={2.25} />
       </button>
-    </div>
+    </>
   );
 }

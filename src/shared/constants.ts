@@ -301,6 +301,13 @@ export const MAX_USER_PROMPT_BYTES = 1_048_576; // 1 MiB
 /** Max attachment paths per `chat:send` / token-estimate request. */
 export const MAX_CHAT_ATTACHMENTS = 32;
 
+/**
+ * Prefix for synthetic run ids used by idle-mode manual summarization.
+ * Not registered in main `activeRuns` — cancel via
+ * `CONTEXT_SUMMARY_ABORT_IDLE`, not `CHAT_ABORT`.
+ */
+export const IDLE_SUMMARY_RUN_ID_PREFIX = 'idle-summary-';
+
 /** Tool execution. */
 export const BASH_TIMEOUT_MS = 30_000;
 /** Upper bound for per-invocation `timeoutMs` overrides from the model. */
@@ -490,6 +497,8 @@ export const IPC = {
    * lingers visible after main has already failed-closed the request.
    */
   TOOLS_CANCEL_CONFIRM: 'tools:cancel-confirm',
+  /** renderer → main: re-execute a settled read/search/bash/ls tool call. */
+  TOOLS_RERUN: 'tools:rerun',
 
   // Memory
   MEMORY_LIST: 'memory:list',
@@ -579,6 +588,22 @@ export const IPC = {
    * rejected / pruned / reverted so every renderer view can refresh
    * without polling.
    */
+  /** Read PR-style review session for a conversation. */
+  CHECKPOINTS_GET_REVIEW: 'checkpoints:get-review',
+  /** Ensure a review session exists for a conversation. */
+  CHECKPOINTS_ENSURE_REVIEW: 'checkpoints:ensure-review',
+  /** Append a file-anchored review comment. */
+  CHECKPOINTS_ADD_REVIEW_COMMENT: 'checkpoints:add-review-comment',
+  /** Set approve / request_changes / comment metadata. */
+  CHECKPOINTS_SET_REVIEW_DECISION: 'checkpoints:set-review-decision',
+  /** Unified diff vs git ref (default HEAD) for one file. */
+  CHECKPOINTS_GIT_BASE_DIFF: 'checkpoints:git-base-diff',
+  /** Persist git base ref on a review session. */
+  CHECKPOINTS_SET_REVIEW_GIT_REF: 'checkpoints:set-review-git-ref',
+  CHECKPOINTS_LIST_GIT_REFS: 'checkpoints:list-git-refs',
+  CHECKPOINTS_EXPORT_REVIEW: 'checkpoints:export-review',
+  CHECKPOINTS_IMPORT_REVIEW: 'checkpoints:import-review',
+  CHECKPOINTS_SET_REVIEW_REVIEWER: 'checkpoints:set-review-reviewer',
   CHECKPOINTS_CHANGED: 'checkpoints:changed',
   /**
    * main → renderer (broadcast). Emitted when a conversation's

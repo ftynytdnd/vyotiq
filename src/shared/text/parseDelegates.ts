@@ -20,10 +20,12 @@ export interface ParsedDelegate {
   tools: string[];
 }
 
-export interface ParseDelegatesResult {
+interface ParseDelegatesResult {
   directives: ParsedDelegate[];
   duplicates: string[];
   malformedOpeners: string[];
+  /** Directive ids rejected because `task=` bundles multiple outcomes. */
+  compoundTaskIds: string[];
 }
 
 const TAG_CLOSE_OR_NEXT_ATTR = '\\s*(?:\\/?>|[\\w-]+\\s*=)';
@@ -78,7 +80,16 @@ export function parseDelegatesWithDuplicates(text: string): ParseDelegatesResult
     });
   }
   const malformedOpeners: string[] = [];
-  return { directives: found, duplicates, malformedOpeners };
+  const compoundTaskIds: string[] = [];
+  const directives: ParsedDelegate[] = [];
+  for (const d of found) {
+    if (looksLikeCompoundDelegateTask(d.task)) {
+      compoundTaskIds.push(d.id);
+    } else {
+      directives.push(d);
+    }
+  }
+  return { directives, duplicates, malformedOpeners, compoundTaskIds };
 }
 
 /**
@@ -107,14 +118,28 @@ export function displayAssistantTurnText(text: string): string {
   return `${plan}\n\n${tail}`;
 }
 
-/** Strip trailing plan headings from intent prose (headings only). */
-export function trimTrailingExecutionPlanHeading(text: string): string {
-  return text
-    .replace(
-      /\n*(?:#{1,6}\s*)?(?:\*{1,2})?\s*(?:Execution|Analysis)\s+Plan\s*(?:\*{1,2})?\s*:?\s*$/im,
-      ''
-    )
-    .trim();
+/**
+ * Heuristic: `task=` likely bundles multiple outcomes. The harness
+ * mandates one micro-task per `<delegate>`; this does not block spawn —
+ * it surfaces a timeline `phase` breadcrumb for the user and model.
+ */
+export function looksLikeCompoundDelegateTask(task: string): boolean {
+  const t = task.trim();
+  if (t.length < 24) return false;
+
+  const lines = t.split(/\n/).map((l) => l.trim()).filter(Boolean);
+  let bulletCount = 0;
+  for (const line of lines) {
+    // Unordered bullets signal multiple outcomes; ordered "1." lists often
+    // enumerate sub-steps of a single deliverable.
+    if (/^[-*•]\s+\S/.test(line)) bulletCount++;
+  }
+  if (bulletCount >= 2) return true;
+
+  const semiParts = t.split(';').filter((p) => p.trim().length >= 12);
+  if (semiParts.length >= 2) return true;
+
+  return false;
 }
 
 export { stripDelegateOnlyMarkup as stripDelegates } from './strip.js';

@@ -21,7 +21,11 @@ import type { Tool } from './types.js';
 import { describeConfirmFailure } from './types.js';
 import type { ToolResult } from '@shared/types/tool.js';
 import type { CheckpointChangeKind } from '@shared/types/checkpoint.js';
-import { bashNeedsEscapeConfirm, isDestructiveCommand } from './sandbox.js';
+import {
+  bashNeedsEscapeConfirm,
+  findSymlinksEscapingWorkspace,
+  isDestructiveCommand
+} from './sandbox.js';
 import {
   BASH_TIMEOUT_MS,
   BASH_MAX_TIMEOUT_MS,
@@ -93,7 +97,7 @@ const BASH_SCAN_IGNORE = new Set([
   '.vyotiq'
 ]);
 
-export interface PreSnapshotEntry {
+interface PreSnapshotEntry {
   /** File mtime in ms. `null` if the file didn't exist during pre-scan. */
   mtimeMs: number | null;
   /**
@@ -126,6 +130,27 @@ export interface PreSnapshot {
 function looksBinary(body: string): boolean {
   const probe = body.length > 8192 ? body.slice(0, 8192) : body;
   return probe.includes('\0');
+}
+
+/** Skip the expensive post-exit mtime walk for common read-only commands. */
+function bashCommandLikelyMutates(command: string): boolean {
+  const c = command.trim();
+  if (!c) return false;
+  if (
+    /^(git\s+(status|log|diff|show|branch|rev-parse|grep)|npm\s+(test|run|ci)|pnpm\s|yarn\s|npx\s+vitest|cargo\s+(test|check)|go\s+test|pytest)\b/i.test(
+      c
+    )
+  ) {
+    return false;
+  }
+  if (
+    /^(cat|head|tail|less|more|type|Get-Content|ls|dir|pwd|whoami|echo|print|wc|find\s|grep|rg\s)\b/i.test(
+      c
+    )
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -746,6 +771,25 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
       }
     }
 
+    const escapeSymlinks = await findSymlinksEscapingWorkspace(ctx.workspacePath).catch(
+      () => [] as string[]
+    );
+    if (escapeSymlinks.length > 0) {
+      const listed = escapeSymlinks.slice(0, 5).join(', ');
+      const more =
+        escapeSymlinks.length > 5 ? ` (+${escapeSymlinks.length - 5} more)` : '';
+      return {
+        id,
+        name: 'bash',
+        ok: false,
+        output:
+          `Bash blocked: workspace contains symlink(s) pointing outside the sandbox: ${listed}${more}. ` +
+          'Remove or replace them before running shell commands.',
+        error: 'symlink-escape',
+        durationMs: Date.now() - started
+      };
+    }
+
     const { cmd, args: argsFor } = platformShell();
     const requested =
       typeof a.timeoutMs === 'number' && a.timeoutMs > 0 ? a.timeoutMs : BASH_TIMEOUT_MS;
@@ -991,6 +1035,10 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
         //      paths exist. A flurry of these implies the agent is
         //      bypassing the `edit` / `delete` tools with bash.
         const runPostBashScan = async (): Promise<void> => {
+          if (!bashCommandLikelyMutates(command)) {
+            log.debug('post-bash scan skipped: read-only command heuristic');
+            return;
+          }
           // Audit fix H-03: post-bash scan must respect the run-scoped
           // signal. Without these checks the scan walks the entire
           // workspace tree after bash settles, and every

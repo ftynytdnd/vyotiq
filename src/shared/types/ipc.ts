@@ -13,16 +13,25 @@ import type {
 import type {
   ChatSendInput,
   ChatSendReply,
+  ChatPermissions,
   Conversation,
   ConversationMeta,
   TimelineEvent
 } from './chat.js';
+import type { RegisteredToolName } from './tool.js';
 import type {
   CheckpointRunManifest,
   CheckpointRevertResult,
   CheckpointsSummary,
   FileHistoryRow,
   PendingChange,
+  FileReviewComment,
+  GitBaseDiffResult,
+  ListGitRefsResult,
+  ReviewDecision,
+  ReviewExportResult,
+  ReviewImportResult,
+  ReviewSession,
   RewindPreviewResult,
   RewindResult
 } from './checkpoint.js';
@@ -91,6 +100,21 @@ export interface ConfirmRequest {
  * interprets `'accept-all'` as "approved this one AND set the latch".
  */
 export type ConfirmResponse = boolean | { approved: boolean; acceptAllRemaining?: boolean };
+
+export interface ToolRerunInput {
+  conversationId: string;
+  toolName: RegisteredToolName;
+  args: Record<string, unknown>;
+  permissions: ChatPermissions;
+}
+
+export type ToolRerunReply =
+  | { ok: true; callId: string }
+  | {
+    ok: false;
+    reason: 'tool-not-rerunnable' | 'unknown-conversation' | 'execution-failed';
+    message?: string;
+  };
 
 export interface AppSettings {
   defaultModel?: { providerId: string; modelId: string };
@@ -210,6 +234,16 @@ export interface AppSettings {
      */
     gatePromptOnPendingByWorkspace?: Record<string, boolean>;
     /**
+     * When `true`, clicking Approve in PR-style review auto-accepts
+     * pending checkpoint rows for that file. Default off (metadata only).
+     */
+    approveAutoAcceptPendingByWorkspace?: Record<string, boolean>;
+    /**
+     * When `true`, `chat:send` is blocked while PR review metadata has
+     * `request_changes` for the conversation.
+     */
+    gatePromptOnReviewRequestChangesByWorkspace?: Record<string, boolean>;
+    /**
      * Per-workspace context-summarization rule overrides. Each entry is
      * a partial `ContextSummaryRules` that wins over the global
      * `contextSummary` slot for runs pinned to that workspace. Layered
@@ -272,6 +306,8 @@ export interface ActiveRunInfo {
   conversationId?: string;
   workspaceId?: string;
   startedAt?: number;
+  /** Model id for the run — used to re-seed `runIdToModel` after reload. */
+  modelId?: string;
 }
 
 /**
@@ -353,7 +389,8 @@ export interface VyotiqApi {
   // ---- Workspace ----
   workspace: {
     get(): Promise<WorkspaceInfo>;
-    pick(): Promise<WorkspaceInfo>;
+    /** `null` when the user dismisses the folder picker. */
+    pick(): Promise<WorkspaceInfo | null>;
     set(path: string): Promise<WorkspaceInfo>;
     listTree(opts?: { depth?: number; workspaceId?: string }): Promise<WorkspaceTreeResult>;
 
@@ -362,9 +399,9 @@ export interface VyotiqApi {
     /**
      * Add a workspace. If `path` is omitted, opens the OS picker —
      * matches the existing `pick()` UX. The added workspace is also
-     * activated. Returns the new entry.
+     * activated. Returns the new entry, or `null` when the picker is dismissed.
      */
-    add(path?: string): Promise<WorkspaceEntry>;
+    add(path?: string): Promise<WorkspaceEntry | null>;
     /** Activate a workspace by id (already registered). */
     setActive(id: string): Promise<WorkspacesState>;
     /** Rename a workspace's display label (path is immutable). */
@@ -531,6 +568,8 @@ export interface VyotiqApi {
      * the run.
      */
     respondConfirm(id: string, reply: ConfirmResponse): Promise<void>;
+    /** Re-run a settled read/ls/search/bash tool against the workspace. */
+    rerun(input: ToolRerunInput): Promise<ToolRerunReply>;
   };
 
   // ---- Memory ----
@@ -545,9 +584,8 @@ export interface VyotiqApi {
      *
      * `mode` defaults to `'set'` (overwrite). Pass `'append'` to add a
      * line to an existing entry without rewriting the whole body.
-     * Currently `'append'` is only honored for `scope: 'global'` —
-     * workspace notes are always overwritten because their editor is
-     * full-textarea (no append affordance in the UI).
+     * `'append'` is only supported for `scope: 'global'`. Workspace
+     * scope rejects append with an error (full-textarea editor only).
      *
      * F-022: prior wire shape used the magic key `'append'` to
      * disambiguate the mode, which conflicted with the `key`
@@ -643,6 +681,55 @@ export interface VyotiqApi {
       workspaceId: string;
       promptEventId: string;
     }): Promise<RewindResult>;
+    /** PR-style review session (metadata). */
+    getReview(workspaceId: string, conversationId: string): Promise<ReviewSession | null>;
+    ensureReview(input: {
+      workspaceId: string;
+      conversationId: string;
+      runId?: string;
+    }): Promise<ReviewSession>;
+    addReviewComment(input: {
+      workspaceId: string;
+      conversationId: string;
+      filePath: string;
+      body: string;
+      line?: number;
+    }): Promise<FileReviewComment>;
+    setReviewGitBaseRef(input: {
+      workspaceId: string;
+      conversationId: string;
+      ref: string;
+    }): Promise<ReviewSession>;
+    setReviewDecision(input: {
+      workspaceId: string;
+      conversationId: string;
+      decision: ReviewDecision;
+      filePath?: string;
+    }): Promise<ReviewSession>;
+    /** Unified diff vs git ref for one workspace-relative path. */
+    gitBaseDiff(
+      workspaceId: string,
+      filePath: string,
+      ref?: string
+    ): Promise<GitBaseDiffResult>;
+    listGitRefs(workspaceId: string): Promise<ListGitRefsResult>;
+    setReviewReviewer(input: {
+      workspaceId: string;
+      conversationId: string;
+      reviewerLabel: string;
+    }): Promise<ReviewSession>;
+    exportReview(input: {
+      workspaceId: string;
+      conversationId: string;
+    }): Promise<ReviewExportResult>;
+    importReview(input: {
+      workspaceId: string;
+      conversationId: string;
+      filePath?: string;
+      mode?: 'merge' | 'replace';
+      /** Merge bundle `pendingChanges` into the pending store (skip duplicate entryIds). */
+      restorePending?: boolean;
+    }): Promise<ReviewImportResult>;
     /**
      * Subscribe to checkpoint-store mutations. Fired on every accept /
      * reject / revert / prune / export so renderer views can refresh

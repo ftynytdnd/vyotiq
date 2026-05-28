@@ -24,6 +24,9 @@
    --color-accent             Vyotiq steel violet. Active CTAs, focus halos, links.
    --color-accent-soft        Translucent accent for selection / hover-tint.
    --color-accent-strong      Pressed / high-emphasis accent (hover on CTA).
+   --color-accent-gold        Live phase headings (Exploring, streaming status).
+   --color-accent-gold-soft   Soft gold wash for live phase surfaces.
+   --color-accent-gold-strong Brightest gold for phase headline text.
    --color-success            Diff additions, success toasts.
    --color-success-soft       Soft success wash (e.g. status pill backgrounds).
    --color-success-strong     Bright success fill (status dots, strong text).
@@ -76,5 +79,38 @@
      compact   px-2 py-1     dock tabs, row headers
      content   px-3 py-2     markdown / prompt body
      nested    px-2.5 py-1.5 expanded detail panels
+
+   Chrome helpers (SurfaceShell.tsx exports):
+     chromeEdgeClassName         hairline between chrome regions
+     chromePillClassName         ghost control — fill on hover / active
+     chromeIconPillClassName     square icon variant (w-6)
+     chromeTabActiveClassName    selected list/tab row
+     chromeTabIdleClassName      idle tab — transparent until hover
+     chromeFilterChipClassName   filter chips (accent when selected)
+     chromeSegmentedTrayClassName  segmented tab tray (sm = soft tint)
+     chromeSearchRowClassName    path/search row — tint on focus only
+     chromeMeterClassName        persistent gauge chips (token pill)
+     chromeBadgeClassName        static status badge (border, no fill)
+     chromeRowActionClassName    compact ghost row action (Inspect, Undo)
+     chromeInsetNoteClassName    empty/placeholder copy (border, no fill)
+     chromeProgressTrackClassName  progress bar track
+     chromePopoverPanelClassName   elev-1 floating menu/popover
+     chromeElev2PanelClassName     elev-2 picker panel (model picker)
+     chromeSettingsCardClassName   settings list / empty card shell
+     chromeSettingsInsetRowClassName  settings override row wash
+     chromeGhostRowButtonClassName settings Reset / row actions
+     chromeIconActionClassName     square ghost icon button (h-6)
+     chromeCodeSurfaceClassName    code / diff scroll surfaces
+     chromeCodePanelClassName      raised read-tool panel
+     chromeCodeGutterClassName     line-number gutter
+     chromeScrollListClassName     soft modal scroll lists
+     chromeFloatingToolbarClassName  diff navigator bar
+     chromeChipTrayClassName       composer attachment tray
+     chromeStatusPillClassName     semantic status (success/warn/danger)
+     chromeFileKindBadgeClassName  checkpoint file kind badge
+
+   Dock helpers (dockShared.ts):
+     DOCK_TAB_*                  aliases chromeTab* for dock rows
+     DOCK_EMPTY_STATE_CLASS      empty copy without background box
 
    --------------------------------------------------------------------------- */

@@ -20,9 +20,9 @@
  *   3. **Pre-result preview** — `tool-call` event landed, matching
  *      `tool-result` not yet received. Synthesized from the call's
  *      own arguments via `synthesizeDiffPreview`. Pane label:
- *      `preview (pending)` / `new file (pending)`. The row's
- *      shimmer cadence in `InvocationShell` already carries the
- *      in-flight signal; no extra motion layered on top.
+ *      `preview (pending)` / `new file (pending)`. The row header
+ *      uses typography-only in-flight styling; no extra motion on
+ *      the diff stats badge.
  *
  *   4. **No detail** — call has no synthesizable args and no result
  *      yet. Row collapses without an expand affordance, matching the
@@ -35,14 +35,17 @@
  */
 
 import { useMemo } from 'react';
-import { PencilLine, FilePlus } from 'lucide-react';
 import type { ToolCall, ToolResult } from '@shared/types/tool.js';
 import type { DiffStreamSnapshot } from '../reducer/types.js';
 import { InvocationShell } from './shared/InvocationShell.js';
+import { DiffStreamPane } from './shared/DiffStreamPane.js';
+import { toolErrorBody, toolErrorHint } from './shared/toolErrorDisplay.js';
 import { DetailPane } from './shared/DetailPane.js';
 import { DiffStatsBadge } from './shared/DiffStatsBadge.js';
 import { CodeBlock } from './shared/CodeBlock.js';
 import { EditDiffView } from './edit/EditDiffView.js';
+import { PendingEntryDot } from '../../checkpoints/shared/PendingEntryDot.js';
+import { usePendingEntryState } from '../../checkpoints/shared/usePendingEntryState.js';
 import {
   synthesizeCreateHunks,
   synthesizeDiffPreview,
@@ -75,25 +78,40 @@ interface EditInvocationProps {
    * file too large, etc.).
    */
   diffStream?: DiffStreamSnapshot;
+  retryCount?: number;
+  /** Parent override — e.g. tool-group tail in-flight edit only. */
+  liveAutoExpand?: boolean;
 }
 
-export function EditInvocation({ call, result, dense, rowKey, partial, diffStream }: EditInvocationProps) {
+export function EditInvocation({
+  call,
+  result,
+  dense,
+  rowKey,
+  partial,
+  diffStream,
+  retryCount,
+  liveAutoExpand: liveAutoExpandOverride
+}: EditInvocationProps) {
   const data = result?.data?.tool === 'edit' ? result.data : null;
   const argCreate = call?.args?.['create'] === true;
   const argPath =
     typeof call?.args?.['path'] === 'string' ? (call.args['path'] as string) : '';
   const path = data?.filePath ?? argPath;
-  const created = data?.created ?? argCreate;
 
   // The call's own arguments are enough to synthesize a predictive
-  // diff. Memoised on the args reference so re-renders during the
-  // row's shimmer cycle don't re-walk the buffers. Total — returns
+  // diff. Memoised on the args reference so re-renders during
+  // streaming args updates don't re-walk the buffers. Total — returns
   // null instead of throwing on bad input, so we never need a
   // try/catch in the render path.
   const preview: DiffPreview | null = useMemo(
     () => synthesizeDiffPreview(call?.args ?? null),
     [call?.args]
   );
+  const visibleDiffStream =
+    diffStream && diffStream.tool === 'edit' && diffStream.hunks.length > 0
+      ? diffStream
+      : null;
 
   // Defect 1: the summary slot must NOT prefix the verb. The shared
   // `InvocationShell` already carries the tool name in its title
@@ -102,7 +120,8 @@ export function EditInvocation({ call, result, dense, rowKey, partial, diffStrea
   // showed up in the screenshot. The icon switch above is what
   // tells the user this is a create vs a modify, so the summary
   // can stay path-only (matches `ReadInvocation` / `LsInvocation`).
-  const summary = path ? path : 'edit';
+  const summary =
+    path && retryCount && retryCount > 1 ? `${path} · ${retryCount} tries` : path ? path : 'edit';
 
   // Defect 2: `result.error` is a short tag ("ambiguous",
   // "no match", "missing path", …) intended for the collapsed
@@ -110,13 +129,8 @@ export function EditInvocation({ call, result, dense, rowKey, partial, diffStrea
   // *actionable* message that lives in `result.output`. Prefer
   // output when it's non-empty; fall back to the tag only when
   // the tool didn't populate output.
-  const errorHint = result && !result.ok ? result.error : undefined;
-  const errorBody =
-    result && !result.ok
-      ? result.output && result.output.length > 0
-        ? result.output
-        : (result.error ?? '')
-      : '';
+  const errorHint = toolErrorHint(result);
+  const errorBody = toolErrorBody(result);
 
   // ───────────────────────────────────────────────────────────
   // Detail pane composition — four precedence-ordered branches.
@@ -199,45 +213,18 @@ export function EditInvocation({ call, result, dense, rowKey, partial, diffStrea
         )}
       </>
     );
-  } else if (diffStream && diffStream.tool === 'edit' && !argCreate) {
-    // (3a) Phase 2 — FS-aware live diff. The main-process diff
-    // streamer has computed authoritative hunks against the actual
-    // on-disk file body, so we paint those instead of the
-    // renderer-side synthesised preview. Surrounding context
-    // lines, line numbers, and EOL handling all match what the
-    // settled `tool-result` will eventually carry.
-    //
-    // `diffStream.settled` flips when the authoritative `tool-call`
-    // event lands but before the matching `tool-result` arrives.
-    // The renderer drops the partial-shimmer state at that point
-    // even though the result hasn't fully landed yet, mirroring
-    // the visual settle the synthesised path uses.
+  } else if (visibleDiffStream && !argCreate) {
     detail = (
-      <>
-        <div className="flex items-center gap-2 text-row text-text-muted">
-          <span className="font-mono truncate" title={diffStream.filePath}>
-            {diffStream.filePath}
-          </span>
-          <DiffStatsBadge
-            additions={diffStream.additions}
-            deletions={diffStream.deletions}
-            pending={!diffStream.settled}
-          />
-        </div>
-        <DetailPane label={diffStream.settled ? 'live diff' : 'streaming diff'}>
-          <EditDiffView
-            key={diffStream.settled ? 'diff-stream-settled' : 'diff-stream-live'}
-            hunks={diffStream.hunks}
-            variant={diffStream.settled ? 'authoritative' : 'partial'}
-          />
-        </DetailPane>
-      </>
+      <DiffStreamPane
+        diffStream={visibleDiffStream}
+        label={visibleDiffStream.settled ? 'live diff' : 'streaming diff'}
+      />
     );
   } else if (preview) {
     // (3b) Pre-result preview. Result hasn't landed yet AND the
     // FS-aware streamer hasn't produced a snapshot yet (or this is
     // a `create: true` call against a non-existent path); surface
-    // the call's intent so the user has more than a shimmering row
+    // the call's intent so the user has more than a path-only row
     // path to look at. Tagged `partial` when the upstream tool-group
     // child carries the partial flag — i.e. the args were a
     // streaming partial-JSON snapshot. That switches the diff into
@@ -289,12 +276,20 @@ export function EditInvocation({ call, result, dense, rowKey, partial, diffStrea
   // the two layers move together. Renderer-side preview is enough
   // to flip the signal even when the FS-aware streamer hasn't
   // landed a frame yet (rare but possible).
-  const liveAutoExpand =
-    partial === true && (diffStream != null || preview != null);
+  const computedLiveAutoExpand =
+    !result &&
+    (partial === true || diffStream != null || preview != null || call != null);
+  const liveAutoExpand = liveAutoExpandOverride ?? computedLiveAutoExpand;
+
+  const pending = usePendingEntryState({
+    ...(data?.entryId ? { entryId: data.entryId } : {}),
+    filePath: path
+  });
+  const actions =
+    data && result?.ok && pending ? <PendingEntryDot className="mr-0.5" /> : undefined;
 
   return (
     <InvocationShell
-      Icon={created ? FilePlus : PencilLine}
       title="edit"
       summary={summary}
       mono
@@ -303,7 +298,11 @@ export function EditInvocation({ call, result, dense, rowKey, partial, diffStrea
       {...(detail !== undefined ? { detail } : {})}
       {...(dense ? { dense } : {})}
       {...(rowKey ? { rowKey } : {})}
-      {...(liveAutoExpand ? { liveAutoExpand } : {})}
+      liveAutoExpand={liveAutoExpand}
+      {...(actions ? { actions } : {})}
+      call={call}
+      result={result}
+      partial={partial}
     />
   );
 }

@@ -1,6 +1,6 @@
 /**
  * Unit tests for `formatReasoningLabel`. Pins the contract that
- * `ReasoningLineRow` and `SubAgentBody.ReasoningPanel` share:
+ * `ReasoningLineRow` and `iterationPanels.ReasoningPanel` share:
  *
  *   - Live (`done=false`) → `Thinking…`
  *   - Settled (`done=true`) → `Thought for Ns` where N is the rounded

@@ -142,7 +142,13 @@ export async function handleAssistantTurn(
             subagentId: d.id,
             task: d.task,
             files: d.files,
-            tools: d.tools
+            tools: d.tools,
+            // Carry the orchestrator's selected provider + model so the
+            // renderer's sub-agent row can paint a tiny model badge from
+            // the moment the directive is parsed mid-stream. `req` is the
+            // outer-scope `ChatStreamRequest` already passed into this
+            // handler; both fields are non-optional on the request shape.
+            model: { providerId: req.providerId, modelId: req.model }
           });
         }
       },

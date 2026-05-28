@@ -69,6 +69,7 @@ const ORPHAN_STUB =
  * triage breadcrumb without polluting the timeline with one event per
  * stub.
  */
+/** Stats returned by `sanitizeToolCallPairingWithStats` (exported for tests). */
 interface SanitizeStats {
   /** Stub `role:'tool'` messages injected after assistants with unpaired `tool_calls`. */
   injectedStubs: number;

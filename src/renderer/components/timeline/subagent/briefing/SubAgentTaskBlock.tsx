@@ -25,6 +25,7 @@ import { stripEmoji } from '@shared/text/emoji.js';
 import { MarkdownBody } from '../../markdown/MarkdownBody.js';
 import { DetailPane } from '../../tools/shared/DetailPane.js';
 import { SurfaceShell } from '../../../ui/SurfaceShell.js';
+import { chromeRevealIconActionClassName } from '../../../ui/SurfaceShell.js';
 import { cn } from '../../../../lib/cn.js';
 import { safeCopy } from '../../../../lib/clipboard.js';
 
@@ -90,11 +91,8 @@ export function SubAgentTaskBlock({ task }: SubAgentTaskBlockProps) {
           onClick={onCopy}
           title={copied ? 'Copied task' : 'Copy task'}
           aria-label={copied ? 'Copied task' : 'Copy task'}
-          className={cn(
-            'absolute right-1.5 top-1.5 inline-flex h-6 w-6 items-center justify-center rounded-inner',
-            'text-text-faint transition-opacity duration-150',
-            'opacity-0 group-hover/task:opacity-100 focus:opacity-100',
-            'hover:bg-surface-hover hover:text-text-secondary'
+          className={chromeRevealIconActionClassName(
+            'absolute right-1.5 top-1.5 group-hover/task:opacity-100 hover:text-text-secondary'
           )}
         >
           {copied ? (

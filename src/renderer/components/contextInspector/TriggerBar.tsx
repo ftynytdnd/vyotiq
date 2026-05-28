@@ -92,7 +92,7 @@ export function TriggerBar({ snapshot, rules }: TriggerBarProps) {
   };
 
   return (
-    <div className="flex flex-col gap-2 py-3">
+    <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-baseline gap-2">
         <Eyebrow as="span" bold>
           Summarize now
@@ -102,7 +102,7 @@ export function TriggerBar({ snapshot, rules }: TriggerBarProps) {
         </span>
         {snapshot.workspaceOverridePresent && (
           <span
-            className="ml-auto inline-flex items-center gap-1 rounded-inner bg-surface-overlay px-2 py-0.5 text-meta text-text-secondary"
+            className="ml-auto inline-flex items-center gap-1 rounded-inner border border-border-subtle/25 px-2 py-0.5 text-meta text-text-secondary"
             title="A workspace .vyotiq/context-summarizer.md is in effect. The bundled summarizer prompt is overridden for this workspace."
           >
             <Layers className="h-3 w-3" strokeWidth={2} />

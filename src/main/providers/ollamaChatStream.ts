@@ -429,7 +429,10 @@ function* framesToDeltas(
       // the executor with `args = "..."` instead of a record and
       // surfacing as a misleading "missing <param>" error downstream.
       // No partial streaming on this transport — a single
-      // `argumentsDelta` carries the full payload.
+      // `argumentsDelta` carries the full payload. Live diff UI on
+      // Ollama therefore appears as an instant full preview (with
+      // auto-expanded tool rows) rather than frame-by-frame growth;
+      // incremental `diff-stream` cadence requires OpenAI/Anthropic.
       const rawArgs = tc.function.arguments;
       const argsJson =
         typeof rawArgs === 'string'

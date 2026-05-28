@@ -165,6 +165,49 @@ async function realpathWorkspaceRoot(workspaceRoot: string): Promise<string> {
   }
 }
 
+/**
+ * Walk the workspace tree and return workspace-relative paths of symlinks
+ * whose target resolves outside the real workspace root. Used to block bash
+ * before the shell can follow escape links at runtime.
+ */
+export async function findSymlinksEscapingWorkspace(
+  workspaceRoot: string,
+  opts?: { maxHits?: number }
+): Promise<string[]> {
+  const maxHits = opts?.maxHits ?? 8;
+  const escapes: string[] = [];
+  const realRoot = await realpathWorkspaceRoot(workspaceRoot);
+  const stack: string[] = [workspaceRoot];
+
+  while (stack.length > 0 && escapes.length < maxHits) {
+    const dir = stack.pop()!;
+    let entries: import('node:fs').Dirent[];
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const de of entries) {
+      if (de.name === '.git' || de.name === 'node_modules') continue;
+      const abs = resolve(dir, de.name);
+      if (de.isSymbolicLink()) {
+        try {
+          const target = await fs.realpath(abs);
+          const rel = relative(realRoot, target);
+          if (rel.startsWith('..') || isAbsolute(rel)) {
+            escapes.push(workspaceRelative(workspaceRoot, abs));
+          }
+        } catch {
+          /* dangling symlink — shell may still fail closed */
+        }
+        continue;
+      }
+      if (de.isDirectory()) stack.push(abs);
+    }
+  }
+  return escapes;
+}
+
 /** Display-friendly relative path within the workspace. */
 export function workspaceRelative(workspaceRoot: string, abs: string): string {
   const rel = relative(workspaceRoot, abs);
@@ -228,7 +271,7 @@ const DESTRUCTIVE_PATTERNS: RegExp[] = [
   /\b(?:Get-ChildItem|gci|ls)\b[^|]*\|[^|]*\b(?:Remove-Item|ri|rm|del)\b/i,
   /\bmkfs\b/i,
   /\bdd\b\s+if=.*of=\/dev\//i,
-  /\bgit\s+(reset\s+--hard|clean\s+-fdx|push\s+--force|branch\s+-D|reflog\s+expire)/i,
+  /\bgit\s+(reset\s+--hard|clean\s+-fdx|push\s+(?:--force|-f)\b|branch\s+-D|reflog\s+expire)/i,
   /:\(\)\s*\{\s*:\|:&\s*\}/, // fork bomb
   /shutdown\b|reboot\b/i,
   /\bDel\b\s+\/[fqsr]+\s+[A-Z]:\\/i,

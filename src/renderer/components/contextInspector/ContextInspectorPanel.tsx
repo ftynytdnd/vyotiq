@@ -32,6 +32,7 @@ import { Tabs, type TabItem } from '../ui/Tabs.js';
 import { useChatStore } from '../../store/useChatStore.js';
 import { useContextSummaryStore } from '../../store/useContextSummaryStore.js';
 import { useSecondaryZoneStore } from '../../store/useSecondaryZoneStore.js';
+import { chromeEdgeClassName } from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
 import { formatTokenCount } from '../../lib/formatTokens.js';
 import { formatRatioPercent, ratioBand } from './inspectorFormat.js';
@@ -159,7 +160,12 @@ export function ContextInspectorBody() {
                   conversationId={snapshot.conversationId}
                 />
               </div>
-              <div className="sticky bottom-0 shrink-0 border-t border-border-subtle/30 bg-surface-raised/95 backdrop-blur-sm">
+              <div
+                className={cn(
+                  'sticky bottom-0 shrink-0 border-t bg-surface-base/80 px-3 py-2 backdrop-blur-sm',
+                  chromeEdgeClassName
+                )}
+              >
                 <TriggerBar snapshot={snapshot} rules={rules} />
               </div>
             </div>

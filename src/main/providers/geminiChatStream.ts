@@ -37,7 +37,10 @@
  *     thoughtSignature?: "..." }`. Gemini sends the FULL function
  *     call in one part (no streaming of args), so we synthesize a
  *     single `toolCallDelta` carrying the complete arguments JSON
- *     plus the thoughtSignature.
+ *     plus the thoughtSignature. Live diff UI on Gemini therefore
+ *     lands as one full preview frame (auto-expanded rows) rather
+ *     than incremental hunks; OpenAI/Anthropic transports stream
+ *     tool-arg fragments for frame-by-frame diff growth.
  *   - Final `usageMetadata` is CUMULATIVE per turn (matches
  *     Anthropic's pattern). We REPLACE on each frame; never sum.
  *
@@ -52,7 +55,6 @@
 import type { ChatStreamRequest, ChatStreamDelta } from './chatClient.js';
 import type { ChatMessage, TokenUsage } from '@shared/types/chat.js';
 import type { ProviderWithKey } from '@shared/types/provider.js';
-import type { ToolCall } from '@shared/types/tool.js';
 import { logger } from '../logging/logger.js';
 import { classifyProviderError, ProviderError } from './providerError.js';
 import { acquire, markRateLimited, markSuccess } from './providerRateGuard.js';
@@ -629,5 +631,3 @@ export const __geminiInternals = {
   toCanonicalUsage
 };
 
-/** Type-only re-export so test files can use the canonical shape. */
-export type { ToolCall };

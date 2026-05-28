@@ -40,6 +40,7 @@ import { render } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { EditInvocation } from '@renderer/components/timeline/tools/EditInvocation';
 import type { ToolCall, ToolResult } from '@shared/types/tool';
+import type { DiffStreamSnapshot } from '@renderer/components/timeline/reducer/types';
 
 describe('Created-file rendering — settled (timeline)', () => {
   it('renders settled `data.created` content via EditDiffView with all-`+` lines', async () => {
@@ -90,7 +91,7 @@ describe('Created-file rendering — settled (timeline)', () => {
 });
 
 describe('Created-file rendering — streaming preview (timeline)', () => {
-  it('renders a live `partial` variant with the streaming cursor for in-flight creates', async () => {
+  it('renders a live `partial` variant with a trailing stream cursor for in-flight creates', async () => {
     const call: ToolCall = {
       id: 'c-create-stream',
       name: 'edit',
@@ -111,10 +112,7 @@ describe('Created-file rendering — streaming preview (timeline)', () => {
     // renders (not just an empty diff shell).
     expect(container.textContent ?? '').toContain('STREAM_LINE_1');
     expect(container.textContent ?? '').toContain('STREAM_LINE_2');
-    // The trailing streaming cursor — the `vyotiq-stream-cursor`
-    // animation class — proves the live caret rides the tail line.
-    const cursor = container.querySelector('.vyotiq-stream-cursor');
-    expect(cursor).not.toBeNull();
+    expect(container.querySelector('.vyotiq-stream-cursor')).not.toBeNull();
   });
 
   it('renders a non-streaming `preview` variant when partial flag is off', async () => {
@@ -126,9 +124,6 @@ describe('Created-file rendering — streaming preview (timeline)', () => {
       args: { path: 'src/pending-new.ts', create: true, content: 'hello\n' }
     };
     const { container } = render(<EditInvocation call={call} />);
-    // Open the row.
-    const btn = container.querySelector('button')!;
-    await userEvent.click(btn);
 
     const previewNode = container.querySelector('[data-variant="preview"]');
     expect(previewNode).not.toBeNull();
@@ -136,6 +131,33 @@ describe('Created-file rendering — streaming preview (timeline)', () => {
     expect(container.textContent ?? '').toContain('hello');
     // No live cursor on the non-streaming preview.
     expect(container.querySelector('.vyotiq-stream-cursor')).toBeNull();
+  });
+
+  it('falls back to synthesized preview when live diffStream has no hunks yet', () => {
+    const call: ToolCall = {
+      id: 'c-empty-stream',
+      name: 'edit',
+      args: {
+        path: 'src/empty-stream.ts',
+        oldString: 'before',
+        newString: 'after'
+      }
+    };
+    const diffStream: DiffStreamSnapshot = {
+      tool: 'edit',
+      filePath: 'src/empty-stream.ts',
+      hunks: [],
+      additions: 0,
+      deletions: 0,
+      settled: false,
+      ts: 1
+    };
+    const { container } = render(
+      <EditInvocation call={call} partial diffStream={diffStream} />
+    );
+    expect(container.querySelector('[data-variant="partial"]')).not.toBeNull();
+    expect(container.textContent ?? '').toContain('after');
+    expect(container.querySelector('.vyotiq-stream-cursor')).not.toBeNull();
   });
 });
 

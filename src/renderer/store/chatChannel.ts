@@ -713,7 +713,12 @@ export async function bootstrapChatChannel(): Promise<void> {
             if (key.startsWith(surrogatePrefix)) parserPool.delete(key);
           }
         }
-        useChatStore.getState().applyEvent(runId, event);
+        if (runId.startsWith('manual:')) {
+          const conversationId = runId.slice('manual:'.length);
+          useChatStore.getState().applyConversationEvent(conversationId, event);
+        } else {
+          useChatStore.getState().applyEvent(runId, event);
+        }
       } catch (err) {
         log.warn('chat:event listener threw', { runId, err });
       }

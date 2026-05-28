@@ -1,49 +1,66 @@
 /**
- * TimelineDividerRow — shared "hairline + label + hairline" row used by
- * both `PhaseDividerRow` (orchestrator phase transitions) and
- * `RunCompleteRow` (end-of-turn closer). Both surfaces want the same
- * structure (border-divider rule on each side of a faint label) but
- * with slightly different rhythm:
+ * TimelineDividerRow — shared centered label row used by both
+ * `PhaseDividerRow` (orchestrator phase transitions) and
+ * `RunCompleteRow` (end-of-turn closer).
  *
- *   - `phase`         — a soft transition that can repeat several
- *                        times in a run, paired with `text-row`
- *                        at `py-1 gap-3`.
- *   - `run-complete`  — a louder end-of-run closer, paired with
- *                        `text-meta` at `py-2 gap-2` so the divider
- *                        breathes a little before the next run.
+ * Visual contract (May 2026 restyle): a single quiet centered label,
+ * no horizontal hairline rules on either side. The earlier
+ * "hairline + label + hairline" interstitial added two horizontal
+ * rules per phase event and one above every run-complete row;
+ * collectively they fragmented the reading column. Both surfaces
+ * now read as plain log lines that breathe via vertical rhythm only.
+ *
+ *   - `phase`         — soft transition; `text-row` at `py-1`.
+ *   - `run-complete`  — louder end-of-run closer; `text-row` at `py-2`
+ *                       so the divider breathes a little more before
+ *                       the next turn block.
  *
  * Public callers continue to import `PhaseDividerRow` and
- * `RunCompleteRow` so `Timeline.tsx`'s switch-arms don't change; this
- * component is the internal de-duplication of their visual contract.
+ * `RunCompleteRow` so `Timeline.tsx`'s switch-arms don't change.
  */
 
 import { cn } from '../../../lib/cn.js';
+import { isPhaseHeadlineLabel, timelinePhaseHeadingClassName } from '../shared/rowStyles.js';
 
 type TimelineDividerVariant = 'phase' | 'run-complete';
 
 interface TimelineDividerRowProps {
   label: string;
   variant?: TimelineDividerVariant;
+  /**
+   * Optional hover tooltip surfaced via the label span's native `title`
+   * attribute. Used by phase dividers to carry developer-facing detail
+   * (raw `<delegate>` / `<result>` contract, full reason text) without
+   * polluting the user-facing `label`. `cursor-help` is applied so the
+   * hint affordance is discoverable.
+   */
+  tooltip?: string;
 }
 
-const VARIANT_CLASS: Record<
-  TimelineDividerVariant,
-  { wrap: string; text: string }
-> = {
-  phase: { wrap: 'gap-3 py-1', text: 'text-row' },
-  'run-complete': { wrap: 'gap-2 py-2', text: 'text-row' }
+const VARIANT_WRAP: Record<TimelineDividerVariant, string> = {
+  phase: 'py-1',
+  'run-complete': 'py-2'
 };
 
 export function TimelineDividerRow({
   label,
-  variant = 'phase'
+  variant = 'phase',
+  tooltip
 }: TimelineDividerRowProps) {
-  const v = VARIANT_CLASS[variant];
+  const wrap = VARIANT_WRAP[variant];
+  const goldHeadline = variant === 'phase' && isPhaseHeadlineLabel(label);
   return (
-    <div className={cn('flex items-center', v.wrap)}>
-      <span className="h-px flex-1 bg-border-divider" />
-      <span className={cn(v.text, 'text-text-muted')}>{label}</span>
-      <span className="h-px flex-1 bg-border-divider" />
+    <div className={cn('flex items-center justify-center', wrap)}>
+      <span
+        className={cn(
+          'text-row',
+          goldHeadline ? timelinePhaseHeadingClassName() : 'text-text-muted',
+          tooltip && 'cursor-help'
+        )}
+        {...(tooltip ? { title: tooltip } : {})}
+      >
+        {label}
+      </span>
     </div>
   );
 }

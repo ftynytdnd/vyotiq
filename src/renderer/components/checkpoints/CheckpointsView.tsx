@@ -3,7 +3,10 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { History, Files as FilesIcon } from 'lucide-react';
+import { History, Files as FilesIcon, ClipboardCheck } from 'lucide-react';
+import { useChatStore } from '../../store/useChatStore.js';
+import { usePendingChanges } from '../../store/useCheckpointsStore.js';
+import { Button } from '../ui/Button.js';
 import { Spinner } from '../ui/Spinner.js';
 import { Tabs, type TabItem } from '../ui/Tabs.js';
 import { useCheckpointsStore } from '../../store/useCheckpointsStore.js';
@@ -17,7 +20,7 @@ import { cn } from '../../lib/cn.js';
 import { surfaceListClassName } from '../ui/SurfaceShell.js';
 import { timelineRowHeaderClassName } from '../timeline/shared/rowStyles.js';
 
-type Tab = 'runs' | 'files';
+type Tab = 'runs' | 'files' | 'review';
 
 /** Checkpoints history body for the secondary zone. */
 export function CheckpointsPanel({ embedded = false }: { embedded?: boolean }) {
@@ -32,6 +35,9 @@ export function CheckpointsPanel({ embedded = false }: { embedded?: boolean }) {
     activeWorkspaceId ? s.summaryLoading[activeWorkspaceId] === true : false
   );
   const openCheckpointSettings = useSecondaryZoneStore((s) => s.openSettings);
+  const openReview = useSecondaryZoneStore((s) => s.openReview);
+  const conversationId = useChatStore((s) => s.conversationId);
+  const pending = usePendingChanges(conversationId);
 
   useEffect(() => {
     if (!activeWorkspaceId) return;
@@ -55,6 +61,11 @@ export function CheckpointsPanel({ embedded = false }: { embedded?: boolean }) {
       id: 'files',
       label: 'Files',
       icon: <FilesIcon className="h-3.5 w-3.5" strokeWidth={2} />
+    },
+    {
+      id: 'review',
+      label: 'Review',
+      icon: <ClipboardCheck className="h-3.5 w-3.5" strokeWidth={2} />
     }
   ];
 
@@ -122,6 +133,28 @@ export function CheckpointsPanel({ embedded = false }: { embedded?: boolean }) {
           embedded={embedded}
           onBack={() => setFilePicked(null)}
         />
+      )}
+
+      {activeWorkspaceId && tab === 'review' && (
+        <div className="flex flex-col gap-3">
+          <p className="text-row text-text-muted">
+            {pending.length > 0
+              ? `${pending.length} pending change${pending.length === 1 ? '' : 's'} in the active conversation.`
+              : 'No pending changes in the active conversation.'}
+          </p>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={!conversationId || pending.length === 0}
+            onClick={() => {
+              if (conversationId && activeWorkspaceId) {
+                openReview({ conversationId, workspaceId: activeWorkspaceId });
+              }
+            }}
+          >
+            Open review drawer
+          </Button>
+        </div>
       )}
     </div>
   );

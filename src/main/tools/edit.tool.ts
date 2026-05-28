@@ -250,11 +250,9 @@ Create a new file:
       }
       const stats = diffStats('', a.content);
       const rel = workspaceRelative(ctx.workspacePath, abs);
-      // Checkpoint: record the post-state so a later Reject/revert can
-      // unlink the file. Best-effort — a checkpoint-store failure must
-      // not mask a successful write from the model's perspective.
+      let entryId: string | undefined;
       try {
-        await recordChange({
+        const entry = await recordChange({
           runId: ctx.runId,
           conversationId: ctx.conversationId,
           workspaceId: ctx.workspaceId,
@@ -267,6 +265,7 @@ Create a new file:
           ...(ctx.subagentId ? { subagentId: ctx.subagentId } : {}),
           emit: ctx.emit
         });
+        entryId = entry.id;
       } catch {
         /* logged inside the store */
       }
@@ -281,7 +280,8 @@ Create a new file:
           additions: stats.additions,
           deletions: 0,
           created: true,
-          createdContent: a.content
+          createdContent: a.content,
+          ...(entryId ? { entryId } : {})
         },
         durationMs: Date.now() - started
       };
@@ -400,11 +400,9 @@ Create a new file:
     const stats = diffStats(original, updated);
     const hunks = computeDiffHunks(original, updated);
     const rel = workspaceRelative(ctx.workspacePath, abs);
-    // Checkpoint: snapshot pre + post bodies so the user can revert
-    // this edit later. Best-effort — store failures must not mask the
-    // successful write.
+    let entryId: string | undefined;
     try {
-      await recordChange({
+      const entry = await recordChange({
         runId: ctx.runId,
         conversationId: ctx.conversationId,
         workspaceId: ctx.workspaceId,
@@ -419,6 +417,7 @@ Create a new file:
         ...(ctx.subagentId ? { subagentId: ctx.subagentId } : {}),
         emit: ctx.emit
       });
+      entryId = entry.id;
     } catch {
       /* logged inside the store */
     }
@@ -434,7 +433,8 @@ Create a new file:
         deletions: stats.deletions,
         created: false,
         hunks,
-        replacedOccurrences: a.replaceAll ? occ : 1
+        replacedOccurrences: a.replaceAll ? occ : 1,
+        ...(entryId ? { entryId } : {})
       },
       durationMs: Date.now() - started
     };

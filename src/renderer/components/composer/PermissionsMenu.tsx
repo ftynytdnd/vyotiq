@@ -1,5 +1,6 @@
 import { ShieldCheck, ShieldAlert, ChevronDown, RotateCcw } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { chromePillClassName, chromePopoverPanelClassName } from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
 import {
   useSettingsStore,
@@ -70,12 +71,7 @@ export function PermissionsMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
         title={`Permissions: ${perms.allowAuto ? 'Fully Auto Mode on' : 'Confirm each gated action'}`}
-        className={cn(
-          'app-no-drag inline-flex h-6 shrink-0 items-center gap-1 rounded-inner px-1.5 text-meta',
-          'bg-surface-overlay text-text-muted transition-colors duration-150',
-          'hover:bg-surface-hover hover:text-text-primary',
-          open && 'bg-surface-hover text-text-primary'
-        )}
+        className={cn(chromePillClassName(open), 'shrink-0 gap-1 px-1.5 text-meta')}
       >
         {perms.allowAuto ? (
           <ShieldCheck className="h-3 w-3" strokeWidth={2.25} />
@@ -91,7 +87,7 @@ export function PermissionsMenu() {
         triggerRef={triggerRef}
         align="start"
       >
-        <div className="elev-1 w-72 rounded-card bg-surface-overlay p-2">
+        <div className={cn(chromePopoverPanelClassName, 'w-72 p-2')}>
           {/*
             Workspace label — reminds the user that toggles here are
             scoped. Hidden when there is no active workspace (boot

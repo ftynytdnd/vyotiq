@@ -6,7 +6,8 @@
 import { shell } from 'electron';
 import { IPC } from '@shared/constants.js';
 import { settleConfirm } from '../orchestrator/confirmBus.js';
-import type { ConfirmResponse } from '@shared/types/ipc.js';
+import type { ConfirmResponse, ToolRerunInput } from '@shared/types/ipc.js';
+import { executeToolRerun } from './toolRerun.js';
 import { realpathInsideWorkspace } from '../tools/sandbox.js';
 import {
   requireWorkspace,
@@ -15,7 +16,9 @@ import {
 import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 import {
+  assertBoolean,
   assertConfirmResponse,
+  assertObject,
   assertOptionalString,
   assertString
 } from './validate.js';
@@ -73,4 +76,14 @@ export function registerToolsIpc(): void {
       settleConfirm(id, reply);
     }
   );
+
+  wrapIpcHandler(IPC.TOOLS_RERUN, async (_event, input: ToolRerunInput) => {
+    assertObject('tools:rerun', 'input', input);
+    assertString('tools:rerun', 'conversationId', input.conversationId);
+    assertString('tools:rerun', 'toolName', input.toolName);
+    assertObject('tools:rerun', 'args', input.args);
+    assertObject('tools:rerun', 'permissions', input.permissions);
+    assertBoolean('tools:rerun', 'permissions.allowAuto', input.permissions.allowAuto);
+    return executeToolRerun(input);
+  });
 }

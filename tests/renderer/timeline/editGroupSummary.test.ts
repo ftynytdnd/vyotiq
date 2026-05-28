@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { toolGroupSummary } from '@renderer/components/timeline/reducer/deriveRows';
+import { tailInFlightEditChildIndex, toolGroupSummary } from '@renderer/components/timeline/reducer/deriveRows';
 import type { ToolGroupChild } from '@renderer/components/timeline/reducer/deriveRows';
 import type { ToolCall } from '@shared/types/tool';
 
@@ -99,5 +99,48 @@ describe('toolGroupSummary — edit branch', () => {
     // less misleading there (multiple reads against the same file are
     // semantically distinct reads of different ranges).
     expect(out.suffix).toBe(' and 1 other file');
+  });
+
+  it('labels local search invocations as grep-style trace rows', () => {
+    const call: ToolCall = {
+      id: 'search:local',
+      name: 'search',
+      args: { mode: 'local', query: 'scrollbar-stealth-mask-image' }
+    };
+    const out = toolGroupSummary('search', [{ callId: call.id, call }]);
+
+    expect(out.verb).toBe('Grepped');
+    expect(out.primary).toBe('scrollbar-stealth-mask-image');
+  });
+
+  it('keeps web search wording distinct from local grep', () => {
+    const call: ToolCall = {
+      id: 'search:web',
+      name: 'search',
+      args: { mode: 'web', query: 'OpenAI docs' }
+    };
+    const out = toolGroupSummary('search', [{ callId: call.id, call }]);
+
+    expect(out.verb).toBe('Searched');
+    expect(out.primary).toBe('OpenAI docs');
+  });
+});
+
+describe('tailInFlightEditChildIndex', () => {
+  it('returns the last in-flight child index', () => {
+    const settled = editChild('a.py');
+    settled.result = { ok: true, name: 'edit', output: '', data: { tool: 'edit', filePath: 'a.py', additions: 1, deletions: 0, hunks: [] } };
+    const children: ToolGroupChild[] = [
+      settled,
+      { ...editChild('a.py'), partial: true },
+      { ...editChild('a.py'), diffStream: { tool: 'edit', filePath: 'a.py', hunks: [], additions: 0, deletions: 0, settled: false } }
+    ];
+    expect(tailInFlightEditChildIndex(children)).toBe(2);
+  });
+
+  it('returns null when every child has settled', () => {
+    const settled = editChild('a.py');
+    settled.result = { ok: true, name: 'edit', output: '', data: { tool: 'edit', filePath: 'a.py', additions: 1, deletions: 0, hunks: [] } };
+    expect(tailInFlightEditChildIndex([settled])).toBeNull();
   });
 });

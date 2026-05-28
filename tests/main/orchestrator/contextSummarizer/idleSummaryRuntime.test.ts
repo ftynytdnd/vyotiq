@@ -73,6 +73,7 @@ vi.mock('@main/orchestrator/contextSummarizer/index.js', () => ({
 
 import {
   abortIdleSummary,
+  abortIdleSummaryByRunId,
   awaitIdleSummary,
   hasIdleSummary,
   triggerIdleSummary,
@@ -174,6 +175,40 @@ describe('idleSummaryRuntime', () => {
     expect(abortIdleSummary(meta.id)).toBe(true);
     await awaitIdleSummary(meta.id);
     expect(hasIdleSummary(meta.id)).toBe(false);
+  });
+
+  it('abortIdleSummaryByRunId aborts by synthetic run id', async () => {
+    const meta = await createConversation('ws-1');
+    await appendEvent(meta.id, {
+      kind: 'user-prompt',
+      id: 'prompt-by-run',
+      ts: Date.now(),
+      content: 'stop via run id'
+    });
+
+    maybeRunSummarization.mockImplementationOnce(
+      async (opts: { signal: AbortSignal }) => {
+        await new Promise<void>((resolve, reject) => {
+          if (opts.signal.aborted) {
+            reject(new DOMException('aborted', 'AbortError'));
+            return;
+          }
+          opts.signal.addEventListener('abort', () => {
+            reject(new DOMException('aborted', 'AbortError'));
+          });
+          setTimeout(resolve, 50);
+        });
+        return { ok: false as const, reason: 'aborted' };
+      }
+    );
+
+    const runId = 'idle-summary-test-run-id';
+    await triggerIdleSummary(meta.id, runId);
+    expect(hasIdleSummary(meta.id)).toBe(true);
+    expect(abortIdleSummaryByRunId(runId)).toBe(true);
+    await awaitIdleSummary(meta.id);
+    expect(hasIdleSummary(meta.id)).toBe(false);
+    expect(abortIdleSummaryByRunId('unknown-id')).toBe(false);
   });
 
   it('undoIdleSummary rejects when a later user-prompt exists', async () => {

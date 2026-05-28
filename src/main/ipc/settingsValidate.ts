@@ -31,6 +31,8 @@ const UI_RECORD_KEYS = [
   'permissionsByWorkspace',
   'strictApprovalsByWorkspace',
   'gatePromptOnPendingByWorkspace',
+  'approveAutoAcceptPendingByWorkspace',
+  'gatePromptOnReviewRequestChangesByWorkspace',
   'contextSummaryByWorkspace'
 ] as const;
 
@@ -140,6 +142,52 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
     for (const [wsId, flag] of Object.entries(map)) {
       assertString(channel, 'patch.ui.gatePromptOnPendingByWorkspace key', wsId);
       assertBoolean(channel, `patch.ui.gatePromptOnPendingByWorkspace[${wsId}]`, flag);
+    }
+  }
+  if (
+    'approveAutoAcceptPendingByWorkspace' in ui &&
+    ui.approveAutoAcceptPendingByWorkspace !== undefined
+  ) {
+    assertObject(
+      channel,
+      'patch.ui.approveAutoAcceptPendingByWorkspace',
+      ui.approveAutoAcceptPendingByWorkspace
+    );
+    const map = ui.approveAutoAcceptPendingByWorkspace as Record<string, unknown>;
+    assertRecordKeyCount(
+      channel,
+      'patch.ui.approveAutoAcceptPendingByWorkspace',
+      map,
+      UI_RECORD_MAX_KEYS
+    );
+    for (const [wsId, flag] of Object.entries(map)) {
+      assertString(channel, 'patch.ui.approveAutoAcceptPendingByWorkspace key', wsId);
+      assertBoolean(channel, `patch.ui.approveAutoAcceptPendingByWorkspace[${wsId}]`, flag);
+    }
+  }
+  if (
+    'gatePromptOnReviewRequestChangesByWorkspace' in ui &&
+    ui.gatePromptOnReviewRequestChangesByWorkspace !== undefined
+  ) {
+    assertObject(
+      channel,
+      'patch.ui.gatePromptOnReviewRequestChangesByWorkspace',
+      ui.gatePromptOnReviewRequestChangesByWorkspace
+    );
+    const map = ui.gatePromptOnReviewRequestChangesByWorkspace as Record<string, unknown>;
+    assertRecordKeyCount(
+      channel,
+      'patch.ui.gatePromptOnReviewRequestChangesByWorkspace',
+      map,
+      UI_RECORD_MAX_KEYS
+    );
+    for (const [wsId, flag] of Object.entries(map)) {
+      assertString(channel, 'patch.ui.gatePromptOnReviewRequestChangesByWorkspace key', wsId);
+      assertBoolean(
+        channel,
+        `patch.ui.gatePromptOnReviewRequestChangesByWorkspace[${wsId}]`,
+        flag
+      );
     }
   }
   if ('contextSummaryByWorkspace' in ui && ui.contextSummaryByWorkspace !== undefined) {

@@ -33,7 +33,7 @@ describe('EditInvocation — pre-result synthetic preview', () => {
         })}
       />
     );
-    await userEvent.click(screen.getByRole('button', { name: /edit/i }));
+    // In-flight edit rows auto-expand — no click needed.
     // Pane label distinguishes preview from authoritative diff.
     expect(screen.getByText(/preview \(pending\)/i)).toBeInTheDocument();
     // The new "return 2" line is rendered as an addition and the old
@@ -71,17 +71,12 @@ describe('EditInvocation — pre-result synthetic preview', () => {
         })}
       />
     );
-    await userEvent.click(screen.getByRole('button', { name: /edit/i }));
     expect(screen.getByText(/new file \(pending\)/i)).toBeInTheDocument();
     expect(screen.getByText(/export const HELLO = 1;/)).toBeInTheDocument();
   });
 
   it('does not render the preview pane when args are incomplete', async () => {
     render(<EditInvocation call={call({ path: 'src/foo.ts' })} />);
-    // With no oldString/newString and no create+content, there is
-    // nothing to preview. The row collapses cleanly — no expand
-    // chevron means the button is disabled.
-    const btn = screen.getByRole('button', { name: /edit/i });
-    expect(btn).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /edit/i })).toBeNull();
   });
 });
