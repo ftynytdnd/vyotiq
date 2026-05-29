@@ -64,13 +64,6 @@ describe('token strictness', () => {
     expect(css).toContain('@theme');
   });
 
-  it('mockup preview chrome uses tokens only when present', () => {
-    const mockupPath = join(root, '.ui-mockup/src/mockup.css');
-    if (!existsSync(mockupPath)) return;
-    const css = readFileSync(mockupPath, 'utf8');
-    expect(findLiteralViolations(css)).toEqual([]);
-  });
-
   it('renderer TS/TSX components do not embed color literals', () => {
     const rendererDir = join(root, 'src/renderer');
     const files = collectFiles(rendererDir, /\.(tsx|ts)$/);

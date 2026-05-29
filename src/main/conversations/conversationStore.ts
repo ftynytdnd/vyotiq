@@ -54,7 +54,7 @@ const appendChains: Map<string, Promise<void>> = new Map();
  * defeat the race between an in-flight async `appendEvent` (queued from
  * `chat.ipc.ts:emit`) and a `conversations:remove` call: without this set
  * the appender's "auto-create on missing meta" recovery path would
- * resurrect the conversation in the sidebar after the user deleted it.
+ * resurrect the conversation in the dock after the user deleted it.
  *
  * Entries are timestamped and garbage-collected after `REMOVED_IDS_TTL_MS`
  * — a long session with many create/delete cycles would otherwise leak
@@ -184,7 +184,7 @@ async function loadIndex(): Promise<ConversationMeta[]> {
  * Stamp every meta missing a `workspaceId` with the legacy / active
  * workspace id, scheduling a single flush at the end. Pre-multi-
  * workspace `index.json` blobs have no `workspaceId` field; without
- * this migration the new sidebar tree wouldn't know where to nest
+ * this migration the new dock tree wouldn't know where to nest
  * them and `recall` / `<prior_conversations>` filtering would break.
  *
  * Idempotent: when every meta is already stamped, this is a no-op
@@ -283,10 +283,6 @@ function findMeta(id: string): ConversationMeta | undefined {
 function bumpMeta(meta: ConversationMeta): void {
   meta.updatedAt = Date.now();
   meta.eventCount += 1;
-  // Move to front so the sidebar shows recents first. `splice` + `unshift`
-  // is a no-op when the entry is already at index 0, so we don't need to
-  // guard on the index — the simpler invariant (always re-pin to head)
-  // reads more honestly.
   const list = indexCache!;
   const idx = list.findIndex((m) => m.id === meta.id);
   if (idx >= 0) {
@@ -352,7 +348,7 @@ export async function createConversation(workspaceId: string): Promise<Conversat
  * conversations stamped with that id (used by the orchestrator's
  * `<prior_conversations>` envelope and the `recall` tool). Without
  * an argument, returns the full cross-workspace list — that is what
- * the renderer's sidebar tree groups itself.
+ * the renderer's dock tree groups itself.
  */
 export async function listConversations(workspaceId?: string): Promise<ConversationMeta[]> {
   const all = await loadIndex();
@@ -475,7 +471,7 @@ export async function removeConversation(id: string): Promise<void> {
  * Ordering invariant: meta is bumped (updatedAt / eventCount / head-pin)
  * ONLY after the disk append actually succeeds. Earlier versions bumped
  * before the write resolved, so a transient EBUSY would leave in-memory
- * eventCount ahead of disk and the sidebar would show counts that didn't
+ * eventCount ahead of disk and the dock would show counts that didn't
  * match a fresh reload.
  */
 export async function appendEvent(id: string, event: TimelineEvent): Promise<void> {
@@ -530,11 +526,6 @@ export async function appendEvent(id: string, event: TimelineEvent): Promise<voi
     let meta = findMeta(id);
     if (!meta) {
       log.warn('append to unknown conversation; auto-creating', { id });
-      // Resolve a workspace id for the recovered meta so it shows up
-      // under a real group in the sidebar tree. Best-effort: prefer
-      // the active workspace; leave undefined when nothing is
-      // registered (the next migration pass on the next boot will
-      // stamp it).
       let recoveryWorkspaceId: string | undefined;
       try {
         const active = await getActiveWorkspace();
@@ -624,7 +615,7 @@ export async function drainAppendChain(id: string): Promise<void> {
  * same `${path}.tmp` rename pattern as the rest of the store.
  *
  * Returns `{ removedCount, kept }` so callers can update UI state
- * (renderer event slice, sidebar event count) without a follow-up
+ * (renderer event slice, dock event count) without a follow-up
  * `readTranscript`. `kept` is the number of events that survived the
  * trim; `meta.eventCount` is updated to the same number.
  *
@@ -737,8 +728,6 @@ export async function truncateTranscriptFrom(
     const removedCount = totalSeen - kept.length;
     meta.eventCount = kept.length;
     meta.updatedAt = Date.now();
-    // Move to front so the sidebar still surfaces this conversation
-    // as the most-recently-touched (the user just acted on it).
     const list = indexCache!;
     const idx = list.findIndex((m) => m.id === meta.id);
     if (idx > 0) {
@@ -903,9 +892,6 @@ export async function moveConversationToWorkspace(
   if (meta.workspaceId === targetWorkspaceId) {
     return { ...meta };
   }
-  // Validate the target workspace is registered. Without this check a
-  // typo / stale id would land the conversation in a workspaceId that
-  // no sidebar group can render — invisible chat.
   const wsState = await listWorkspaces();
   if (!wsState.workspaces.some((w) => w.id === targetWorkspaceId)) {
     throw new Error(`Unknown target workspace id: ${targetWorkspaceId}`);

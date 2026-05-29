@@ -2,7 +2,7 @@
  * Flat rules form for the Context Inspector / Settings → Context tab.
  *
  * Visual contract: Vyotiq UI row pattern (`ShellRow`, `ShellRowSplit`,
- * `vx-segment`) matching Settings → Permissions and the mockup kit.
+ * `vx-segment`) matching Settings → Permissions.
  */
 
 import { useEffect, useMemo, useState } from 'react';

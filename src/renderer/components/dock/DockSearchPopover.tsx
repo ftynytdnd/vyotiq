@@ -5,20 +5,12 @@
 import { useEffect, useRef } from 'react';
 import { Search, X } from 'lucide-react';
 import { filterDockChats } from './filterDockChats.js';
+import { collectRunningChatIds } from './collectRunningChatIds.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
-import { useChatStore } from '../../store/useChatStore.js';
 import { cn } from '../../lib/cn.js';
 import { SHELL_CHROME_ICON_CLASS, SHELL_CHROME_ICON_STROKE, SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../lib/shellIcons.js';
-
-function collectRunningIds(): Set<string> {
-  const set = new Set<string>();
-  for (const [id, slice] of Object.entries(useChatStore.getState().slices)) {
-    if (slice.isProcessing) set.add(id);
-  }
-  return set;
-}
 
 export function DockSearchPopover() {
   const open = useDockSearchStore((s) => s.open);
@@ -62,6 +54,7 @@ function DockSearchInput() {
         onKeyDown={(e) => {
           if (e.key === 'Escape') {
             e.preventDefault();
+            e.stopPropagation();
             setOpen(false);
             return;
           }
@@ -79,7 +72,7 @@ function DockSearchInput() {
               activeWs,
               query,
               true,
-              collectRunningIds(),
+              collectRunningChatIds(),
               activeId
             );
             const top = matches[0];

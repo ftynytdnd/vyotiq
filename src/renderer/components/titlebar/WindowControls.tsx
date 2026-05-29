@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Minus, Square, X, Copy } from 'lucide-react';
 import { vyotiq } from '../../lib/ipc.js';
-import { TITLEBAR_WINDOW_ZONE_CLASS } from './titlebarShared.js';
 import { cn } from '../../lib/cn.js';
 import {
   SHELL_CHROME_ICON_CLASS,
@@ -18,7 +17,7 @@ export function WindowControls() {
   }, []);
 
   return (
-    <div className={TITLEBAR_WINDOW_ZONE_CLASS}>
+    <>
       <WindowControlButton
         label="Minimize"
         onClick={() => void vyotiq.window.minimize()}
@@ -45,7 +44,7 @@ export function WindowControls() {
       >
         <X className={SHELL_CHROME_ICON_CLASS} strokeWidth={SHELL_WINDOW_ICON_STROKE} />
       </WindowControlButton>
-    </div>
+    </>
   );
 }
 

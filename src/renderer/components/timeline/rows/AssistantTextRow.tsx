@@ -27,11 +27,14 @@ import { timelineActionPillClassName, timelineAssistantRowClassName } from '../s
 
 interface AssistantTextRowProps {
   id: string;
+  subagentId?: string;
   model?: ModelSelection | null;
 }
 
-export function AssistantTextRow({ id, model: _model }: AssistantTextRowProps) {
-  const acc = useChatStore((s) => s.assistantTexts[id]);
+export function AssistantTextRow({ id, subagentId, model: _model }: AssistantTextRowProps) {
+  const acc = useChatStore((s) =>
+    subagentId ? s.subagents[subagentId]?.assistantTexts[id] : s.assistantTexts[id]
+  );
 
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

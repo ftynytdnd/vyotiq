@@ -8,15 +8,16 @@ import { type ReactNode } from 'react';
 import { cn } from '../../../lib/cn.js';
 import type { DisplayRow } from './projectSubagentRows.js';
 import type { PartitionedTurn } from './groupTurnSegment.js';
-import { TurnInlineStream } from '../activity/TurnInlineStream.js';
-import { TurnActivitySummary } from '../activity/TurnActivitySummary.js';
 import { TurnRunningMeta } from '../activity/TurnRunningMeta.js';
+import { StreamWeaveStream } from '../delegation/StreamWeaveStream.js';
 import {
   timelineLiveTurnClassName,
   timelineTurnOuterGapClassName,
   timelineTurnZoneGapClassName,
-  timelineAgentColumnClassName
+  timelineAgentColumnClassName,
+  timelineActivityLaneClassName
 } from './rowStyles.js';
+import { splitContextSummaryRows } from './contextSummaryRows.js';
 
 interface TurnBlockProps {
   partitioned: PartitionedTurn;
@@ -33,7 +34,8 @@ export function TurnBlock({
   className
 }: TurnBlockProps) {
   const { prompt, footer } = partitioned;
-  const showAgentStream = partitioned.agentStream.length > 0 || live;
+  const { contextSummaryRows, inlineStreamRows } = splitContextSummaryRows(partitioned.agentStream);
+  const showAgentStream = inlineStreamRows.length > 0 || live;
 
   return (
     <div
@@ -51,17 +53,14 @@ export function TurnBlock({
       {prompt && renderRow(prompt)}
 
       <div className={timelineAgentColumnClassName}>
-        {(live || partitioned.activity.length > 0) && (
-          <TurnActivitySummary activityRows={partitioned.activity} live={live} />
+        {contextSummaryRows.map((row) => (
+          <div key={row.key} className={timelineActivityLaneClassName}>
+            {renderRow(row)}
+          </div>
+        ))}
+        {showAgentStream && (
+          <StreamWeaveStream rows={inlineStreamRows} renderRow={renderRow} live={live} />
         )}
-        {showAgentStream &&
-          (live ? (
-            <TurnInlineStream rows={partitioned.agentStream} renderRow={renderRow} />
-          ) : (
-            partitioned.agentStream.map((row) => (
-              <div key={row.key}>{renderRow(row)}</div>
-            ))
-          ))}
 
         {live && footer.length === 0 && <TurnRunningMeta live={live} />}
         {footer.map((row) => (

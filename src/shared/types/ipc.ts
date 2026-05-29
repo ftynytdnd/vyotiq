@@ -152,7 +152,7 @@ export interface AppSettings {
      */
     dockExpanded?: boolean;
     /**
-     * Expanded left dock width in px. Default 260; clamped 220–360.
+     * Expanded left dock width in px. Default 200; clamped 180–320.
      */
     dockWidth?: number;
     /**
@@ -276,6 +276,8 @@ export interface AppSettings {
     firstLaunch?: boolean;
     /** Last Settings subnav tab. */
     lastSettingsTab?: string;
+    /** Last Checkpoints subnav tab (`runs`, `files`, or `review`). */
+    lastCheckpointsTab?: string;
   };
 }
 
@@ -296,7 +298,7 @@ export interface WorkspaceEntry {
    * most recent reachability check (boot or explicit retry). The
    * registry entry is preserved so the user can fix the mount and
    * retry — the flag is purely advisory and lets the renderer paint
-   * a warning chip on the sidebar group. Optional in the type so
+   * a warning chip on the dock workspace group. Optional in the type so
    * existing settings blobs without the field deserialise unchanged.
    */
   unreachable?: boolean;
@@ -305,7 +307,7 @@ export interface WorkspaceEntry {
 /**
  * Multi-workspace registry exposed to the renderer. `activeId` is the
  * workspace currently in focus in the UI; `workspaces[]` is the full
- * set the sidebar tree renders. May be empty on first launch (no
+ * set the dock tree renders. May be empty on first launch (no
  * workspace picked yet).
  */
 export interface WorkspacesState {
@@ -422,7 +424,7 @@ export interface VyotiqApi {
     set(path: string): Promise<WorkspaceInfo>;
     listTree(opts?: { depth?: number; workspaceId?: string }): Promise<WorkspaceTreeResult>;
 
-    /** Full multi-workspace registry. Used by the sidebar tree. */
+    /** Full multi-workspace registry. Used by the dock tree. */
     list(): Promise<WorkspacesState>;
     /**
      * Add a workspace. If `path` is omitted, opens the OS picker —
@@ -539,7 +541,7 @@ export interface VyotiqApi {
     /**
      * List conversations. When `workspaceId` is supplied, only
      * conversations stamped with that id are returned; otherwise the
-     * full cross-workspace list is returned (used by the sidebar tree
+     * full cross-workspace list is returned (used by the dock tree
      * to render every group in one pass).
      */
     list(workspaceId?: string): Promise<ConversationMeta[]>;

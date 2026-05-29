@@ -75,7 +75,7 @@ export interface ContextEnvelopes {
    *
    * Bounded to `PRIOR_CONVERSATIONS_LIMIT` rows (most-recent first)
    * so the envelope never grows past a few hundred chars regardless
-   * of sidebar size.
+   * of conversation-index size.
    */
   priorConversationsXml: string;
 }
@@ -123,7 +123,7 @@ async function sessionContextBody(
 
 /** Cap on rows surfaced in `<prior_conversations>`. Tuned low so the
  *  envelope stays cheap; the agent can call `recall` with `action:'list'`
- *  for the full sidebar when it actually needs it. */
+ *  for the full dock conversation list when it actually needs it. */
 const PRIOR_CONVERSATIONS_LIMIT = 5;
 
 /**

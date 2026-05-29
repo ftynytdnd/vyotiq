@@ -18,6 +18,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowDown } from 'lucide-react';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { useChatStore } from '../../store/useChatStore.js';
 import { useSecondaryZoneStore } from '../../store/useSecondaryZoneStore.js';
@@ -32,16 +33,13 @@ import { UserPromptRow } from './rows/UserPromptRow.js';
 import { AssistantTextRow } from './rows/AssistantTextRow.js';
 import { ReasoningLineRow } from './rows/ReasoningLineRow.js';
 import { AgentThoughtRow } from './rows/AgentThoughtRow.js';
-import { PhaseDividerRow } from './rows/PhaseDividerRow.js';
 import { ErrorRow } from './rows/ErrorRow.js';
 import { ToolGroupRow } from './rows/ToolGroupRow.js';
 import { FileEditGroupRow } from './rows/FileEditGroupRow.js';
 import { RunCompleteRow } from './rows/RunCompleteRow.js';
 import { TokenBudgetWarningRow } from './rows/TokenBudgetWarningRow.js';
 import { ContextSummaryRow } from './rows/ContextSummaryRow.js';
-import { SubAgentGroup } from './subagent/SubAgentGroup.js';
-import { SubAgentTrace } from './subagent/SubAgentTrace.js';
-import { projectSubagentRows, type DisplayRow } from './shared/projectSubagentRows.js';
+import type { DisplayRow } from './shared/displayRowTypes.js';
 import { PendingChangesTimelineRow } from '../checkpoints/timeline/index.js';
 import { RowAnchor } from './shared/RowAnchor.js';
 import { TimelineFindBar } from './shared/TimelineFindBar.js';
@@ -50,6 +48,7 @@ import { TurnBlock, groupRowsIntoTurns } from './shared/TurnBlock.js';
 import { partitionTurnSegment } from './shared/groupTurnSegment.js';
 import { timelineStackClassName } from './shared/rowStyles.js';
 import { cn } from '../../lib/cn.js';
+import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../lib/shellIcons.js';
 import { useFloatingLiveDiffAutoOpen } from './hooks/useFloatingLiveDiffAutoOpen.js';
 import { computeTailScrollKey } from './shared/computeTailScrollKey.js';
 
@@ -104,6 +103,7 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
    * ref is the source of truth; `setSticky` mirrors it for the view.
    */
   const stickyRef = useRef(true);
+  const [sticky, setSticky] = useState(true);
 
   /**
    * Mirrors `parent.scrollTop <= AT_TOP_PX` so the `Top` pill can hide
@@ -162,12 +162,7 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
 
   useFloatingLiveDiffAutoOpen(rows);
 
-  const displayRows = useMemo(
-    () => projectSubagentRows(rows),
-    [rows]
-  );
-
-  const turnSegments = useMemo(() => groupRowsIntoTurns(displayRows), [displayRows]);
+  const turnSegments = useMemo(() => groupRowsIntoTurns(rows), [rows]);
   const lastTurnIndex = turnSegments.length - 1;
   const assistantTexts = useChatStore((s) => s.assistantTexts);
   const reasoningTexts = useChatStore((s) => s.reasoningTexts);
@@ -175,13 +170,13 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
   const tailScrollKey = useMemo(
     () =>
       computeTailScrollKey(
-        displayRows,
+        rows,
         assistantTexts,
         reasoningTexts,
         summaries,
         liveDiffByCallId
       ),
-    [displayRows, assistantTexts, reasoningTexts, summaries, liveDiffByCallId]
+    [rows, assistantTexts, reasoningTexts, summaries, liveDiffByCallId]
   );
 
   // Note: a `userPromptIndices` memo lived here previously. The `g j` /
@@ -192,6 +187,7 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
   const updateSticky = (next: boolean) => {
     if (stickyRef.current === next) return;
     stickyRef.current = next;
+    setSticky(next);
   };
 
   const scheduleScroll = (fn: () => void) => {
@@ -424,6 +420,22 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
           />
         </div>
         <div ref={bottomRef} className="h-px w-full shrink-0" aria-hidden />
+        {!sticky && events.length > 0 && (
+          <div className="pointer-events-none sticky bottom-4 z-30 -mt-10 flex justify-center">
+            <button
+              type="button"
+              onClick={() => {
+                updateSticky(true);
+                scrollToTail(true);
+              }}
+              className="elev-1 pointer-events-auto flex items-center gap-1.5 rounded-full border border-border-subtle/30 bg-surface-sidebar/95 px-3 py-1.5 text-row text-text-primary backdrop-blur-sm transition-colors hover:bg-chrome-hover"
+              aria-label="Jump to latest"
+            >
+              <ArrowDown className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} aria-hidden />
+              Latest
+            </button>
+          </div>
+        )}
       </div>
     </>
   );
@@ -445,12 +457,8 @@ function renderRow(
   liveTurn = false
 ) {
   switch (r.kind) {
-    case 'subagent-group':
-      return (
-        <SubAgentGroup key={r.key} subagentIds={r.subagentIds} />
-      );
     case 'subagent-line':
-      return <SubAgentTrace key={r.key} subagentId={r.subagentId} />;
+      return null;
     case 'user-prompt':
       return (
         <UserPromptRow
@@ -465,9 +473,22 @@ function renderRow(
         />
       );
     case 'assistant-text':
-      return <AssistantTextRow key={r.key} id={r.id} model={model} />;
+      return (
+        <AssistantTextRow
+          key={r.key}
+          id={r.id}
+          {...(r.subagentId ? { subagentId: r.subagentId } : {})}
+          model={model}
+        />
+      );
     case 'reasoning-line':
-      return <ReasoningLineRow key={r.key} id={r.id} />;
+      return (
+        <ReasoningLineRow
+          key={r.key}
+          id={r.id}
+          {...(r.subagentId ? { subagentId: r.subagentId } : {})}
+        />
+      );
     case 'agent-thought':
       return (
         <AgentThoughtRow
@@ -475,14 +496,6 @@ function renderRow(
           content={r.content}
           {...(r.severity ? { severity: r.severity } : {})}
           live={liveTurn}
-        />
-      );
-    case 'phase':
-      return (
-        <PhaseDividerRow
-          key={r.key}
-          label={r.label}
-          {...(r.tooltip ? { tooltip: r.tooltip } : {})}
         />
       );
     case 'error':

@@ -51,11 +51,13 @@ interface SecondaryZoneStore {
   settingsTab: SettingsTabId;
   checkpointsTab: CheckpointsTab;
   openSettings: (tab?: SettingsTabId) => void;
-  openCheckpoints: (tab?: CheckpointsTab, opts?: OpenCheckpointsOpts) => void;
+  openCheckpoints: (tab?: CheckpointsTab, opts?: OpenCheckpointsOpts) => Promise<void>;
   /** Opens the inspector panel and loads data for the bound id. */
   openInspector: (id: string, mode?: 'live' | 'idle') => void;
   /** Remember the last settings tab the user viewed. */
   setSettingsTab: (tab: SettingsTabId) => void;
+  /** Remember the last checkpoints sub-tab the user viewed. */
+  setCheckpointsTab: (tab: CheckpointsTab) => void;
   close: () => void;
   /** Close every floating overlay (secondary, preview, live diff). */
   closeAllOverlays: () => void;
@@ -67,7 +69,6 @@ function isSettingsTabId(value: string | undefined): value is SettingsTabId {
   return value !== undefined && SETTINGS_TAB_IDS.includes(value as SettingsTabId);
 }
 
-/** Clears every floating overlay slot (secondary, preview, live diff). */
 function clearOverlaySlot(panel: SecondaryPanel | null): void {
   if (panel === 'inspector') {
     useContextSummaryStore.getState().close();
@@ -76,17 +77,24 @@ function clearOverlaySlot(panel: SecondaryPanel | null): void {
   useFloatingLiveDiffStore.getState().close();
 }
 
-function refreshCheckpointsForOpen(opts?: OpenCheckpointsOpts): void {
-  const cid = opts?.conversationId;
-  if (cid) {
-    void useCheckpointsStore.getState().refreshPending(cid);
-  }
+function isCheckpointsTab(value: string | undefined): value is CheckpointsTab {
+  return value === 'runs' || value === 'files' || value === 'review';
 }
 
 function resolveSettingsTab(tab: SettingsTabId | undefined, fallback: SettingsTabId): SettingsTabId {
   if (tab) return tab;
   const persisted = useSettingsStore.getState().settings.ui?.lastSettingsTab;
   if (isSettingsTabId(persisted)) return persisted;
+  return fallback;
+}
+
+function resolveCheckpointsTab(
+  tab: CheckpointsTab | undefined,
+  fallback: CheckpointsTab
+): CheckpointsTab {
+  if (tab) return tab;
+  const persisted = useSettingsStore.getState().settings.ui?.lastCheckpointsTab;
+  if (isCheckpointsTab(persisted)) return persisted;
   return fallback;
 }
 
@@ -100,13 +108,15 @@ export const useSecondaryZoneStore = create<SecondaryZoneStore>((set, get) => ({
     const nextTab = resolveSettingsTab(tab, get().settingsTab);
     set({ panel: 'settings', settingsTab: nextTab });
   },
-  openCheckpoints: (tab = 'runs', opts) => {
+  openCheckpoints: async (tab?: CheckpointsTab, opts?: OpenCheckpointsOpts) => {
     const { panel } = get();
     clearOverlaySlot(panel);
-    refreshCheckpointsForOpen(opts);
     const cid = opts?.conversationId;
-    let resolvedTab = tab;
-    if (tab === 'runs' && cid) {
+    if (cid) {
+      await useCheckpointsStore.getState().refreshPending(cid);
+    }
+    let resolvedTab = resolveCheckpointsTab(tab, get().checkpointsTab);
+    if ((tab === undefined || tab === 'runs') && resolvedTab === 'runs' && cid) {
       const pending = useCheckpointsStore.getState().pendingByConversation[cid] ?? [];
       if (pending.length > 0) resolvedTab = 'review';
     }
@@ -122,6 +132,11 @@ export const useSecondaryZoneStore = create<SecondaryZoneStore>((set, get) => ({
     set({ settingsTab: tab });
     const ui = useSettingsStore.getState().settings.ui ?? {};
     void vyotiq.settings.set({ ui: { ...ui, lastSettingsTab: tab } });
+  },
+  setCheckpointsTab: (tab) => {
+    set({ checkpointsTab: tab });
+    const ui = useSettingsStore.getState().settings.ui ?? {};
+    void vyotiq.settings.set({ ui: { ...ui, lastCheckpointsTab: tab } });
   },
   close: () => {
     const { panel } = get();

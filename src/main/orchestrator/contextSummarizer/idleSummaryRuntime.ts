@@ -399,7 +399,7 @@ export async function triggerIdleSummary(
   // Use the caller-supplied synthetic runId. The renderer routes
   // by this id; the orchestrator's `activeRuns` and
   // `runContextRegistry` are NOT touched so any code that lists
-  // in-flight orchestrator runs (sidebar processing indicators,
+  // in-flight orchestrator runs (dock processing indicators,
   // abort cascades) stays accurate.
   const abort = new AbortController();
 

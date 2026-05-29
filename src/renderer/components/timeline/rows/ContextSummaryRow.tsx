@@ -29,7 +29,7 @@ function pickBodyForPreview(acc: ContextSummaryAcc): string {
   return acc.text;
 }
 
-function pickHeadline(acc: ContextSummaryAcc): string {
+export function pickContextSummaryHeadline(acc: ContextSummaryAcc): string {
   const count = acc.replacedMessageIds.length;
   switch (acc.status) {
     case 'pending':
@@ -66,7 +66,7 @@ export function ContextSummaryRow({ summaryId, live = false }: ContextSummaryRow
 
   if (!acc) return null;
 
-  const headline = pickHeadline(acc);
+  const headline = pickContextSummaryHeadline(acc);
   const previewBody = pickBodyForPreview(acc);
   const isLiveHeadline =
     (live || isStreamingSummary) &&

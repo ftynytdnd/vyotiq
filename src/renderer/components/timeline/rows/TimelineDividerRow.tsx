@@ -1,7 +1,7 @@
 /**
- * TimelineDividerRow — shared centered label row used by both
- * `PhaseDividerRow` (orchestrator phase transitions) and
- * `RunCompleteRow` (end-of-turn closer).
+ * TimelineDividerRow — shared centered label row used by
+ * `RunCompleteRow` (end-of-turn closer). Phase dividers are no longer
+ * rendered in the timeline.
  *
  * Visual contract (May 2026 restyle): a single quiet centered label,
  * no horizontal hairline rules on either side. The earlier
@@ -15,8 +15,8 @@
  *                       so the divider breathes a little more before
  *                       the next turn block.
  *
- * Public callers continue to import `PhaseDividerRow` and
- * `RunCompleteRow` so `Timeline.tsx`'s switch-arms don't change.
+ * Public callers continue to import `RunCompleteRow` so `Timeline.tsx`'s
+ * switch-arms don't change.
  */
 
 import { cn } from '../../../lib/cn.js';

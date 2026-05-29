@@ -82,7 +82,6 @@ export interface ChatStore extends ActiveMirror {
   abort: () => Promise<void>;
   abortRun: (runId: string) => Promise<void>;
   rehydrateActiveRuns: (infos: ActiveRunInfo[]) => void;
-  registerIdleRoute: (runId: string, conversationId: string) => void;
   beginSideRun: (runId: string, conversationId: string) => void;
   prewarmSlice: (conversationId: string, events: TimelineEvent[]) => void;
   setDraft: (conversationId: string, text: string) => void;

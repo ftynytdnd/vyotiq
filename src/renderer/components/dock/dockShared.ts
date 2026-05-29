@@ -1,5 +1,7 @@
 /** Shared constants and class strings for the left navigation dock. */
 
+import { useDockSearchStore } from '../../store/useDockSearchStore.js';
+import { useUiStore } from '../../store/useUiStore.js';
 import { cn } from '../../lib/cn.js';
 import {
   SHELL_DOCK_TAB_ICON_CLASS,
@@ -15,7 +17,7 @@ export const CONV_DRAG_MIME = 'application/x-vyotiq-conversation';
 export const DOCK_HOVER_ACTIONS =
   'hidden shrink-0 items-center group-hover:flex focus-within:flex';
 
-/** Lucide icon sizing — matches Vyotiq UI {@link vx-tab} (mockup kit). */
+/** Lucide icon sizing — matches Vyotiq UI {@link vx-tab}. */
 export const DOCK_TAB_ICON_CLASS = SHELL_DOCK_TAB_ICON_CLASS;
 export const DOCK_TAB_ICON_STROKE = SHELL_TAB_ICON_STROKE;
 
@@ -30,7 +32,6 @@ const DOCK_TAB_ROW_CLASS = cn('vx-dock-tab group app-no-drag shrink-0');
 export const DOCK_WIDTH_DEFAULT = 200;
 const DOCK_WIDTH_MIN = 180;
 export const DOCK_WIDTH_MAX = 320;
-export const DOCK_WIDTH_COLLAPSED_PX = 44;
 
 export const DOCK_INSET_CLASS = 'flex min-h-0 flex-1 flex-col gap-1 px-1.5';
 
@@ -49,7 +50,27 @@ export function dockInlineActionClassName(): string {
 }
 
 export const DOCK_RESIZE_HANDLE_CLASS =
-  'absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize';
+  'vx-dock-resize-handle absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize';
+
+/** Vertically centered dock anchor — rail sits mid-screen, not top-stretched. */
+export const DOCK_CENTER_CLASS = 'absolute left-4 top-1/2 z-(--z-dock-panel) -translate-y-1/2';
+
+export const DOCK_FLYOUT_CENTER_CLASS = cn(
+  'absolute left-4 top-1/2 z-(--z-dock-panel) flex max-h-[min(720px,calc(100vh-var(--titlebar-h)-2rem))] min-h-0 -translate-y-1/2 flex-col overflow-hidden'
+);
+
+export function dockFlyoutShellClassName(isResizing: boolean): string {
+  return cn(
+    'vx-dock-shell vx-dock-flyout app-no-drag',
+    DOCK_FLYOUT_CENTER_CLASS,
+    isResizing ? '' : 'transition-[width] duration-200 ease-out'
+  );
+}
+
+export const DOCK_RAIL_PILL_CLASS = cn(
+  'vx-dock-rail-pill vx-dock-shell app-no-drag',
+  DOCK_CENTER_CLASS
+);
 
 export const DOCK_WORKSPACE_PANEL_CAP = 3;
 
@@ -62,13 +83,6 @@ export function workspacePanelClassName(workspaceCount: number): string {
 
 export function clampDockWidth(width: number): number {
   return Math.min(DOCK_WIDTH_MAX, Math.max(DOCK_WIDTH_MIN, Math.round(width)));
-}
-
-export function dockWorkspaceIndicatorLabel(label: string | null): string {
-  if (!label || label.trim().length === 0) return '—';
-  const trimmed = label.trim();
-  if (trimmed.length <= 3) return trimmed;
-  return trimmed.slice(0, 3);
 }
 
 /** Active chat tab — stacks title row + context meter. */
@@ -96,4 +110,14 @@ export function dockChatMeterBarClassName(ratio: number): string {
   if (ratio >= 0.9) return 'bg-danger';
   if (ratio >= 0.7) return 'bg-warning';
   return 'bg-edge-light-meter';
+}
+
+/** Close dock search first, then collapse the expanded flyout. */
+export function dismissDockFlyout(): void {
+  const search = useDockSearchStore.getState();
+  if (search.open) {
+    search.setOpen(false);
+    return;
+  }
+  useUiStore.getState().setDockExpanded(false);
 }

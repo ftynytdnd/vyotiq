@@ -199,7 +199,7 @@ export async function setSettings(patch: Partial<AppSettings>): Promise<AppSetti
         ...migratedPermissions,
         ...(patch.permissions ?? {})
       },
-      // Deep-merge `ui` so a partial patch (e.g. just `sidebarOpen`)
+      // Deep-merge `ui` so a partial patch (e.g. just `dockExpanded` or legacy `sidebarOpen`)
       // doesn't clobber sibling fields written by other features.
       ui: {
         ...currentUi,

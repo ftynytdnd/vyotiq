@@ -5,6 +5,8 @@
 import { Settings } from 'lucide-react';
 import { WindowControls } from './WindowControls.js';
 import { HamburgerMenu } from './HamburgerMenu.js';
+import { TitleBarContext } from './TitleBarContext.js';
+import { TitleBarShortcutsHelp } from './TitleBarShortcutsHelp.js';
 import { type FileMenuActions } from './menu/menus/FileMenu.js';
 import { type ViewMenuActions } from './menu/menus/ViewMenu.js';
 import { chromeIconActionClassName } from '../ui/SurfaceShell.js';
@@ -36,9 +38,10 @@ export function TitleBar({ fileActions, viewActions, onOpenSettings }: TitleBarP
         <HamburgerMenu fileActions={fileActions} viewActions={viewActions} />
       </div>
 
-      <div className="min-w-0 flex-1" aria-hidden />
+      <TitleBarContext />
 
       <div className={TITLEBAR_ACTIONS_ZONE_CLASS}>
+        <TitleBarShortcutsHelp />
         <button
           type="button"
           aria-label="Settings"

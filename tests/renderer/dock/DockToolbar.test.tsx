@@ -4,12 +4,14 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { DockToolbar } from '@renderer/components/dock/DockToolbar';
 
 const baseProps = {
   searchOpen: false,
   onNewChat: vi.fn(),
   onToggleSearch: vi.fn(),
+  onOpenSettings: vi.fn(),
   onCollapse: vi.fn()
 };
 
@@ -25,5 +27,33 @@ describe('DockToolbar', () => {
     const btn = screen.getByRole('button', { name: 'New chat' });
     expect(btn).toBeInTheDocument();
     expect(btn.textContent?.trim()).toBe('');
+  });
+
+  it('shows Settings in horizontal footer toolbar', async () => {
+    const onOpenSettings = vi.fn();
+    render(
+      <DockToolbar
+        layout="horizontal"
+        {...baseProps}
+        onOpenSettings={onOpenSettings}
+        collapseIcon="left"
+      />
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    expect(onOpenSettings).toHaveBeenCalledOnce();
+  });
+
+  it('shows Settings in vertical collapsed rail', async () => {
+    const onOpenSettings = vi.fn();
+    render(
+      <DockToolbar
+        layout="vertical"
+        {...baseProps}
+        onOpenSettings={onOpenSettings}
+        collapseIcon="right"
+      />
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    expect(onOpenSettings).toHaveBeenCalledOnce();
   });
 });

@@ -244,7 +244,7 @@ describe('purgeWorkspaceFromUi — cascade on workspace.remove', () => {
   it('strips entries from strictApprovals / gate / collapsed even when permission maps are clean', async () => {
     // Regression for the P0 bug: pre-fix, purgeWorkspaceFromUi only
     // touched three maps, so a workspace whose only persisted state was
-    // a strict-approvals toggle (or a collapsed-sidebar entry) would
+    // a strict-approvals toggle (or a collapsed-dock entry) would
     // leak that id into settings.json forever. The new short-circuit
     // must trip on ANY of the six maps, and the patch must clear all of
     // them in one round-trip.

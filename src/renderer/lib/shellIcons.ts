@@ -1,6 +1,6 @@
 /**
 
- * Vyotiq UI Lucide scale — aligned with `.ui-mockup` kit.tsx and tab bodies.
+ * Vyotiq UI Lucide scale — aligned with tab bodies and dock chrome.
 
  *
 

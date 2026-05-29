@@ -1,12 +1,11 @@
 /**
- * LeftDock layout — expanded/collapsed width and tablist presence.
+ * LeftDock layout — floating rail + flyout overlay.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { LeftDock } from '@renderer/components/dock/LeftDock';
 import {
-  DOCK_WIDTH_COLLAPSED_PX,
   DOCK_WIDTH_DEFAULT,
   DOCK_WIDTH_MAX
 } from '@renderer/components/dock/dockShared';
@@ -14,6 +13,8 @@ import { useUiStore } from '@renderer/store/useUiStore';
 import { useWorkspaceStore } from '@renderer/store/useWorkspaceStore';
 import { useConversationsStore } from '@renderer/store/useConversationsStore';
 import { useDockSearchStore } from '@renderer/store/useDockSearchStore';
+
+const dockProps = { onOpenSettings: () => {} };
 
 beforeEach(() => {
   useUiStore.setState({
@@ -45,11 +46,12 @@ beforeEach(() => {
 });
 
 describe('LeftDock layout', () => {
-  it('renders expanded width and workspace/chat tablists', () => {
-    render(<LeftDock />);
-    const nav = screen.getByRole('navigation', { name: 'Workspace and session navigation' });
+  it('renders expanded flyout width and workspace/chat tablists', () => {
+    render(<LeftDock {...dockProps} />);
+    const nav = screen.getByRole('dialog', { name: 'Workspace and session navigation' });
     expect(nav).toHaveStyle({ width: `${DOCK_WIDTH_DEFAULT}px` });
-    expect(nav.className).toContain('bg-surface-base');
+    expect(nav.className).toContain('vx-dock-flyout');
+    expect(nav).toHaveAttribute('aria-modal', 'true');
     expect(nav).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText('Workspaces')).toBeInTheDocument();
     expect(screen.getByText('Chats')).toBeInTheDocument();
@@ -59,27 +61,33 @@ describe('LeftDock layout', () => {
     expect(screen.getByRole('separator', { name: 'Resize navigation dock' })).toBeInTheDocument();
   });
 
-  it('renders collapsed rail width with active workspace label', () => {
+  it('renders collapsed centered icon rail without workspace pill', () => {
     useUiStore.setState({ dockExpanded: false });
-    render(<LeftDock />);
-    const nav = screen.getByRole('navigation', { name: 'Workspace and session navigation' });
-    expect(nav).toHaveStyle({ width: `${DOCK_WIDTH_COLLAPSED_PX}px` });
+    render(<LeftDock {...dockProps} />);
+    const nav = screen.getByRole('navigation', { name: 'Workspace and session navigation rail' });
     expect(nav).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByRole('button', { name: /Expand navigation.*Codex/i })).toBeInTheDocument();
+    expect(nav.className).toContain('vx-dock-rail-pill');
+    expect(screen.queryByText('Cod')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Expand navigation' })).toBeInTheDocument();
+  });
+
+  it('shows dismiss backdrop when expanded', () => {
+    render(<LeftDock {...dockProps} />);
+    expect(screen.getByRole('button', { name: 'Close navigation' })).toBeInTheDocument();
   });
 
   it('uses dockWidth from the UI store when expanded', () => {
     useUiStore.setState({ dockWidth: 300 });
-    render(<LeftDock />);
-    const nav = screen.getByRole('navigation', { name: 'Workspace and session navigation' });
+    render(<LeftDock {...dockProps} />);
+    const nav = screen.getByRole('dialog', { name: 'Workspace and session navigation' });
     expect(nav).toHaveStyle({ width: '300px' });
   });
 
   it('clamps width during drag and persists on mouseup', () => {
     useUiStore.setState({ dockWidth: DOCK_WIDTH_DEFAULT, dockExpanded: true });
     const setDockWidth = vi.spyOn(useUiStore.getState(), 'setDockWidth');
-    render(<LeftDock />);
-    const nav = screen.getByRole('navigation', { name: 'Workspace and session navigation' });
+    render(<LeftDock {...dockProps} />);
+    const nav = screen.getByRole('dialog', { name: 'Workspace and session navigation' });
     const handle = screen.getByRole('separator', { name: 'Resize navigation dock' });
 
     fireEvent.mouseDown(handle, { clientX: 100 });
@@ -92,7 +100,7 @@ describe('LeftDock layout', () => {
 
   it('opens search above the footer toolbar', () => {
     useDockSearchStore.setState({ open: true, query: 'tri' });
-    render(<LeftDock />);
+    render(<LeftDock {...dockProps} />);
     const search = screen.getByRole('search', { name: 'Search chats' });
     const newChat = screen.getByRole('button', { name: 'New chat' });
     expect(search.compareDocumentPosition(newChat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -100,21 +108,39 @@ describe('LeftDock layout', () => {
 
   it('closes inline search when the dock collapses', () => {
     useDockSearchStore.setState({ open: true, query: 'tri' });
-    const { rerender } = render(<LeftDock />);
+    const { rerender } = render(<LeftDock {...dockProps} />);
     expect(useDockSearchStore.getState().open).toBe(true);
 
     useUiStore.setState({ dockExpanded: false });
-    rerender(<LeftDock />);
+    rerender(<LeftDock {...dockProps} />);
     expect(useDockSearchStore.getState().open).toBe(false);
     expect(useDockSearchStore.getState().query).toBe('');
   });
 
-  it('centers collapsed rail controls', () => {
+  it('centers collapsed rail as a floating pill', () => {
     useUiStore.setState({ dockExpanded: false });
-    render(<LeftDock />);
-    const expand = screen.getByRole('button', { name: /Expand navigation.*Codex/i });
-    const rail = expand.parentElement;
-    expect(rail?.className ?? '').toMatch(/items-center/);
-    expect(rail?.className ?? '').toMatch(/justify-center/);
+    render(<LeftDock {...dockProps} />);
+    const nav = screen.getByRole('navigation', { name: 'Workspace and session navigation rail' });
+    expect(nav.className).toMatch(/top-1\/2/);
+    expect(nav.className).toMatch(/-translate-y-1\/2/);
+    expect(nav.className).toMatch(/left-4/);
+  });
+
+  it('marks resize handle while dragging', () => {
+    render(<LeftDock {...dockProps} />);
+    const handle = screen.getByRole('separator', { name: 'Resize navigation dock' });
+    expect(handle).not.toHaveAttribute('data-resizing');
+
+    fireEvent.mouseDown(handle, { clientX: 100 });
+    expect(handle).toHaveAttribute('data-resizing', 'true');
+
+    fireEvent.mouseUp(window);
+    expect(handle).not.toHaveAttribute('data-resizing');
+  });
+
+  it('collapses dock when backdrop is clicked', () => {
+    render(<LeftDock {...dockProps} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Close navigation' }));
+    expect(useUiStore.getState().dockExpanded).toBe(false);
   });
 });

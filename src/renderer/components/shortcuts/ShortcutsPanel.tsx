@@ -41,6 +41,7 @@ export function ShortcutsPanel({ mod = platformModKey(), alt = platformAltKey() 
         <ShortcutRow combo={`${mod}+B`} label="Toggle navigation dock" />
         <ShortcutRow combo={`${mod}+K`} label="Search chats" />
         <ShortcutRow combo={`${alt}+\u2191 / ${alt}+\u2193`} label="Prev / next chat" />
+        <ShortcutRow combo="Esc" label="Close chat search, then collapse dock" />
       </ShortcutGroup>
       <ShortcutGroup title="Workspace">
         <ShortcutRow combo={`${mod}+N`} label="New conversation" />

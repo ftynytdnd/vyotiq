@@ -95,7 +95,7 @@ interface TabsProps<T extends string = string> {
    */
   stripCompact?: boolean;
   /**
-   * Underline tabs: always render icon + label (Vyotiq UI mockup rhythm).
+   * Underline tabs: always render icon + label (Vyotiq UI tab rhythm).
    * Adds `vx-tab-bar--labeled` so container queries never hide labels.
    */
   alwaysShowLabels?: boolean;

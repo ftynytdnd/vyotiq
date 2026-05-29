@@ -14,10 +14,8 @@
  *   - User prompt row carries no SurfaceShell card, no "You" eyebrow.
  *   - Assistant prose row carries no rounded/tinted lane fill and
  *     surfaces an `aria-label` on the row root.
- *   - Phase / run-complete dividers render no horizontal hairline
- *     rules around the label.
- *   - Sub-agent inline traces render collapsed in the activity stream
- *     with dot prefix and chevron (manual expand only).
+ *   - Phase rows are absent; run-complete dividers have no hairline rules.
+ *   - Delegation workers render in stream-weave blocks with worker tags.
  *   - Hover-revealed Copy/Edit/Revert + Copy/Regenerate strips are
  *     still present beneath the user and assistant rows.
  */
@@ -173,25 +171,22 @@ describe('Timeline row chrome — May 2026 restyle', () => {
     expect(assistant!.className).not.toMatch(/bg-surface-overlay/);
     expect(assistant!.className).not.toMatch(/rounded-inner/);
 
-    // 4. Phase + run-complete dividers render no horizontal hairlines.
-    const phase = container.querySelector('[data-row-kind="phase"]');
-    expect(phase).not.toBeNull();
-    expect(phase!.innerHTML).not.toMatch(/h-px[^"]*flex-1[^"]*bg-border-divider/);
+    // 4. No phase rows; run-complete dividers have no hairlines.
+    expect(container.querySelector('[data-row-kind="phase"]')).toBeNull();
     const runComplete = container.querySelector('[data-row-kind="run-complete"]');
     expect(runComplete).not.toBeNull();
     expect((runComplete as HTMLElement).className).not.toMatch(/border-t/);
     expect(runComplete!.innerHTML).not.toMatch(/h-px[^"]*flex-1[^"]*bg-border-divider/);
 
-    // 5. Sub-agent inline trace renders collapsed in the turn stream.
-    const subagent = container.querySelector('[data-row-kind="subagent-line"]');
-    expect(subagent).not.toBeNull();
-    expect(subagent!.querySelector('.vx-timeline-subagent-dot')).not.toBeNull();
-    expect(
-      subagent!.querySelector('button[aria-label="Expand sub-agent trace"]')
-    ).not.toBeNull();
+    // 5. Delegation workers use stream-weave chrome.
+    const delegationWorker = container.querySelector('[data-row-kind="delegation-worker"]');
+    expect(delegationWorker).not.toBeNull();
+    expect(delegationWorker!.querySelector('.vx-timeline-deleg-weave-tag')).not.toBeNull();
+    expect(delegationWorker!.textContent ?? '').toContain('read');
+    expect(delegationWorker!.querySelector('button')?.textContent ?? '').toMatch(/Show trace/i);
   });
 
-  it('renders sub-agent trace rows even when model metadata is absent', () => {
+  it('renders delegation worker blocks even when model metadata is absent', () => {
     seedSettledTurn({ withSubAgentModel: false });
     useTimelineUiStore.setState({
       expandedByConvo: { [CONV_ID]: new Set(['turn-activity:p1']) },
@@ -202,8 +197,8 @@ describe('Timeline row chrome — May 2026 restyle', () => {
 
     const { container } = render(<Timeline />);
 
-    const subagent = container.querySelector('[data-row-kind="subagent-line"]');
-    expect(subagent).not.toBeNull();
-    expect(subagent!.textContent ?? '').toContain('Read providers');
+    const delegationWorker = container.querySelector('[data-row-kind="delegation-worker"]');
+    expect(delegationWorker).not.toBeNull();
+    expect(delegationWorker!.textContent ?? '').toContain('read');
   });
 });

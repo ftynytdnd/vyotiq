@@ -26,10 +26,13 @@ function prefersReducedMotion(): boolean {
 
 interface ReasoningLineRowProps {
   id: string;
+  subagentId?: string;
 }
 
-export function ReasoningLineRow({ id }: ReasoningLineRowProps) {
-  const acc = useChatStore((s) => s.reasoningTexts[id]);
+export function ReasoningLineRow({ id, subagentId }: ReasoningLineRowProps) {
+  const acc = useChatStore((s) =>
+    subagentId ? s.subagents[subagentId]?.reasoningTexts[id] : s.reasoningTexts[id]
+  );
   const rowKey = `reasoning:${id}`;
   const accDone = acc?.done ?? true;
   const hasOrchestratorProse = useChatStore((s) => {

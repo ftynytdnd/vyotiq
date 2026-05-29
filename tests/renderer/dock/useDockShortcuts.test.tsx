@@ -16,6 +16,8 @@ function fireKey(key: string, init: Partial<KeyboardEventInit> = {}) {
   );
 }
 
+const dockProps = { onOpenSettings: () => {} };
+
 beforeEach(() => {
   useUiStore.setState({
     dockExpanded: false,
@@ -43,14 +45,14 @@ afterEach(() => {
 
 describe('useDockShortcuts via LeftDock mount', () => {
   it('Ctrl+B toggles dockExpanded', () => {
-    render(<LeftDock />);
+    render(<LeftDock {...dockProps} />);
     expect(useUiStore.getState().dockExpanded).toBe(false);
     fireKey('b', { ctrlKey: true });
     expect(useUiStore.getState().dockExpanded).toBe(true);
   });
 
   it('Ctrl+K expands dock and opens search', () => {
-    render(<LeftDock />);
+    render(<LeftDock {...dockProps} />);
     fireKey('k', { ctrlKey: true });
     expect(useUiStore.getState().dockExpanded).toBe(true);
     expect(useDockSearchStore.getState().open).toBe(true);
@@ -58,7 +60,7 @@ describe('useDockShortcuts via LeftDock mount', () => {
 
   it('Alt+ArrowDown selects the next conversation', () => {
     const select = vi.spyOn(useConversationsStore.getState(), 'select');
-    render(<LeftDock />);
+    render(<LeftDock {...dockProps} />);
     fireKey('ArrowDown', { altKey: true });
     expect(select).toHaveBeenCalledWith('c2');
   });
@@ -68,7 +70,7 @@ describe('useDockShortcuts via LeftDock mount', () => {
       activeIdByWorkspace: { 'ws-1': 'c2' }
     } as never);
     const select = vi.spyOn(useConversationsStore.getState(), 'select');
-    render(<LeftDock />);
+    render(<LeftDock {...dockProps} />);
     fireKey('ArrowUp', { altKey: true });
     expect(select).toHaveBeenCalledWith('c1');
   });
@@ -77,7 +79,7 @@ describe('useDockShortcuts via LeftDock mount', () => {
     const select = vi.spyOn(useConversationsStore.getState(), 'select');
     render(
       <>
-        <LeftDock />
+        <LeftDock {...dockProps} />
         <input data-testid="composer" />
       </>
     );
@@ -85,5 +87,48 @@ describe('useDockShortcuts via LeftDock mount', () => {
     input.focus();
     fireEvent.keyDown(input, { key: 'ArrowDown', altKey: true, bubbles: true });
     expect(select).not.toHaveBeenCalled();
+  });
+
+  it('Escape closes search when open', () => {
+    useUiStore.setState({ dockExpanded: true });
+    useDockSearchStore.setState({ open: true, query: 'tri' });
+    render(<LeftDock {...dockProps} />);
+    fireKey('Escape');
+    expect(useDockSearchStore.getState().open).toBe(false);
+    expect(useDockSearchStore.getState().query).toBe('');
+    expect(useUiStore.getState().dockExpanded).toBe(true);
+  });
+
+  it('Escape collapses expanded dock when search is closed', () => {
+    useUiStore.setState({ dockExpanded: true });
+    render(<LeftDock {...dockProps} />);
+    fireKey('Escape');
+    expect(useUiStore.getState().dockExpanded).toBe(false);
+  });
+
+  it('Escape through focused search input closes search without collapsing dock', () => {
+    useUiStore.setState({ dockExpanded: true });
+    useDockSearchStore.setState({ open: true, query: 'tri' });
+    render(<LeftDock {...dockProps} />);
+    const searchInput = screen.getByRole('searchbox', { name: 'Search chats' });
+    searchInput.focus();
+    fireEvent.keyDown(searchInput, { key: 'Escape', bubbles: true });
+    expect(useDockSearchStore.getState().open).toBe(false);
+    expect(useDockSearchStore.getState().query).toBe('');
+    expect(useUiStore.getState().dockExpanded).toBe(true);
+  });
+
+  it('Escape does not collapse dock while focus is in a text input', () => {
+    useUiStore.setState({ dockExpanded: true });
+    render(
+      <>
+        <LeftDock {...dockProps} />
+        <input data-testid="composer" />
+      </>
+    );
+    const input = screen.getByTestId('composer');
+    input.focus();
+    fireEvent.keyDown(input, { key: 'Escape', bubbles: true });
+    expect(useUiStore.getState().dockExpanded).toBe(true);
   });
 });

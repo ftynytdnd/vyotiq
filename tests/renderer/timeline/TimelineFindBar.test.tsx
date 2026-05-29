@@ -60,4 +60,33 @@ describe('TimelineFindBar debounce', () => {
     clearFindMarks(root);
     document.body.removeChild(root);
   });
+
+  it('steps through matches with Enter and Shift+Enter', () => {
+    const root = document.createElement('div');
+    root.textContent = 'alpha beta alpha';
+    document.body.appendChild(root);
+    const rootRef = { current: root };
+    const scrollSpy = vi.spyOn(window.HTMLElement.prototype, 'scrollIntoView');
+
+    render(<TimelineFindBar open onClose={() => undefined} rootRef={rootRef} />);
+
+    const input = screen.getByLabelText('Find in conversation');
+    fireEvent.change(input, { target: { value: 'alpha' } });
+    act(() => {
+      vi.advanceTimersByTime(150);
+    });
+
+    expect(screen.getByText('1/2')).toBeInTheDocument();
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(screen.getByText('2/2')).toBeInTheDocument();
+    expect(scrollSpy).toHaveBeenCalled();
+
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    expect(screen.getByText('1/2')).toBeInTheDocument();
+
+    scrollSpy.mockRestore();
+    clearFindMarks(root);
+    document.body.removeChild(root);
+  });
 });

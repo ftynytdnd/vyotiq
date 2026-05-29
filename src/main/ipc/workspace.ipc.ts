@@ -137,7 +137,7 @@ export function registerWorkspaceIpc(): void {
       // `conversations.list()` reflects the post-cascade state. When
       // `deleteConversations: false` we reparent into the surviving
       // workspaces — pick the one that will become active after the
-      // remove, so the orphaned chats don't disappear from the sidebar
+      // remove, so the orphaned chats don't disappear from the dock
       // tree.
       const before = await listWorkspaces();
       const remaining = before.workspaces.filter((w) => w.id !== id);
@@ -151,7 +151,7 @@ export function registerWorkspaceIpc(): void {
       }
       // If `remaining.length === 0` the user is removing their last
       // workspace; the conversations stay stamped with the now-defunct
-      // id and become invisible in the sidebar until a new workspace
+      // id and become invisible in the dock until a new workspace
       // is added (at which point they'll be reparented by the next
       // boot's migration, since `workspaceId` no longer matches any
       // registered entry). This is intentional — destroying the only

@@ -1,0 +1,125 @@
+.vx-timeline-deleg-body-inline {
+  line-height: inherit;
+}
+
+.vx-timeline-deleg-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--color-accent-gold);
+  animation: vx-timeline-deleg-blink 1s step-end infinite;
+}
+
+@keyframes vx-timeline-deleg-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.vx-timeline-deleg-stream-live {
+  opacity: 1;
+}
+
+.vx-timeline-deleg-tool-live {
+  color: var(--color-text-secondary);
+}
+
+.vx-timeline-deleg-tag-failed {
+  color: var(--color-danger);
+}
+
+.vx-timeline-deleg-tag-live {
+  color: var(--color-accent-gold);
+}
+
+.vx-timeline-deleg-weave {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.vx-timeline-deleg-weave-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.vx-timeline-deleg-weave-line {
+  line-height: 1.55;
+}
+
+.vx-timeline-deleg-weave-tag {
+  display: inline;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  vertical-align: baseline;
+  color: var(--color-text-secondary);
+}
+
+.vx-timeline-deleg-weave-fn {
+  margin-left: 0.125rem;
+  font-size: 0.625rem;
+  color: var(--color-text-faint);
+  vertical-align: super;
+  line-height: 0;
+}
+
+.vx-timeline-deleg-weave-footnotes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-top: 0.25rem;
+  padding-left: 1.25rem;
+}
+
+.vx-timeline-deleg-weave-footnote-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.vx-timeline-deleg-weave-footnote-item .vx-timeline-deleg-tool {
+  font-size: 0.625rem;
+}
+
+.vx-timeline-deleg-weave-reasoning :is(.vx-timeline-row-header, [data-row-kind='reasoning-line']) {
+  padding-left: 0;
+}
+
+.vx-timeline-deleg-lab {
+  margin-top: 0.375rem;
+  padding-top: 0.375rem;
+}
+
+.vx-timeline-deleg-lab-open {
+  margin-top: 0.25rem;
+}
+
+.vx-timeline-deleg-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+
+.vx-timeline-deleg-tool {
+  font-family: var(--font-mono);
+}
+
+@keyframes vx-timeline-deleg-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.vx-timeline-deleg-tag-live.vx-timeline-deleg-weave-tag {
+  animation: vx-timeline-deleg-pulse 1.4s ease-in-out infinite;
+}

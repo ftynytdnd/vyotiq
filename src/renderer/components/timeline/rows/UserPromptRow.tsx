@@ -2,11 +2,11 @@
  * Renders the user's prompt as flush markdown-ready text in the agent
  * reading column (no card, no eyebrow, no right-alignment).
  *
- * Hover-reveal actions: Copy and Edit (rewind + resend).
+ * Hover-reveal actions: Copy, Revert, and Edit (rewind + resend).
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Copy, Check, Pencil } from 'lucide-react';
+import { Copy, Check, Pencil, Undo2 } from 'lucide-react';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import { PromptAttachmentCards } from '../../composer/PromptAttachmentCards.js';
 import { cn } from '../../../lib/cn.js';
@@ -62,11 +62,16 @@ export function UserPromptRow({
     baseUnavailableTitle === null
       ? 'Edit and resend this message'
       : `Edit & resend${baseUnavailableTitle}`;
+  const revertTitleBase =
+    baseUnavailableTitle === null
+      ? 'Revert to before this message'
+      : `Revert${baseUnavailableTitle}`;
   const fileSuffix =
     actionAvailable && fileEditCount > 0
       ? ` (${fileEditCount} file change${fileEditCount === 1 ? '' : 's'})`
       : '';
   const editTitle = `${editTitleBase}${fileSuffix}`;
+  const revertTitle = `${revertTitleBase}${fileSuffix}`;
 
   useLayoutEffect(() => {
     const el = bubbleRef.current;
@@ -139,6 +144,17 @@ export function UserPromptRow({
           icon={<Copy className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />}
           copiedIcon={<Check className={cn(SHELL_ROW_ICON_CLASS, 'text-success')} strokeWidth={SHELL_ACTION_ICON_STROKE} />}
           onClick={() => safeCopy(content, { context: 'user-prompt' })}
+        />
+        <PromptAction
+          label="Revert"
+          icon={<Undo2 className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />}
+          {...(actionAvailable && fileEditCount > 0 ? { badge: fileEditCount } : {})}
+          disabled={!actionAvailable}
+          title={revertTitle}
+          onClick={() => {
+            if (!actionAvailable || !id || !revertCtx) return;
+            revertCtx.requestRevert({ promptEventId: id });
+          }}
         />
         <PromptAction
           label="Edit"

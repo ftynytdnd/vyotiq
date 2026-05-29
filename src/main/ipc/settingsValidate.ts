@@ -24,7 +24,7 @@ const UI_BOOLEAN_KEYS = ['sidebarOpen', 'dockExpanded', 'reducedMotion', 'firstL
 
 const UI_NUMERIC_KEYS = ['dockWidth'] as const;
 
-const UI_STRING_KEYS = ['theme', 'density', 'lastSettingsTab'] as const;
+const UI_STRING_KEYS = ['theme', 'density', 'lastSettingsTab', 'lastCheckpointsTab'] as const;
 
 const UI_RECORD_KEYS = [
   'expandedRows',
@@ -43,6 +43,7 @@ const UI_RECORD_KEYS = [
 
 const THEME_VALUES = ['dark', 'light', 'system'] as const;
 const DENSITY_VALUES = ['compact', 'balanced', 'airy'] as const;
+const CHECKPOINTS_TAB_VALUES = ['runs', 'files', 'review'] as const;
 
 /** Absolute token count for the timeline budget-warning row (Settings → Context). */
 const TOKEN_BUDGET_WARNING_MIN = 1_000;
@@ -99,6 +100,9 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
       }
       if (k === 'density') {
         assertEnum(channel, 'patch.ui.density', ui[k], DENSITY_VALUES);
+      }
+      if (k === 'lastCheckpointsTab') {
+        assertEnum(channel, 'patch.ui.lastCheckpointsTab', ui[k], CHECKPOINTS_TAB_VALUES);
       }
     }
   }

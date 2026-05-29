@@ -397,7 +397,7 @@ export const IPC = {
    * Re-stat a workspace's path and clear its `unreachable` flag if the
    * mount has come back. Returns the refreshed `WorkspacesState` so the
    * renderer can paint the cleared-state badge in one round-trip.
-   * Triggered from the sidebar's per-group warning chip.
+   * Triggered from the dock's per-group warning chip.
    */
   WORKSPACES_RETRY_REACHABILITY: 'workspaces:retry-reachability',
 
@@ -546,7 +546,7 @@ export const IPC = {
    * in-flight runs pinned to it (re-pinning workspaceId mid-run would
    * silently swap the orchestrator's sandbox), updates the meta's
    * `workspaceId`, and returns the refreshed meta. Used by the
-   * sidebar's drag-between-workspaces affordance.
+   * dock's drag-between-workspaces affordance.
    */
   CONVERSATIONS_MOVE: 'conversations:move',
   CONVERSATIONS_ARCHIVE: 'conversations:archive',

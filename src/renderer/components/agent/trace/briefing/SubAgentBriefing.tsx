@@ -1,6 +1,6 @@
 /**
  * SubAgentBriefing — task, granted tools, and scoped files for an
- * expanded sub-agent trace. Grouped delegate meta lives on `SubAgentGroup`.
+ * expanded sub-agent trace. Inline delegate rows use StreamWeave at render time.
  */
 
 import { useState } from 'react';

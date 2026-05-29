@@ -1,12 +1,12 @@
-/**
- * Pure transformer from `TimelineEvent[]` → a stable row-descriptor list
+﻿/**
+ * Pure transformer from `TimelineEvent[]` â†’ a stable row-descriptor list
  * rendered in the Cascade-style compact log.
  *
  * Behaviours:
  *   - Streaming deltas (text / reasoning) coalesce into a single row per id.
  *   - Consecutive tool-call/-result pairs of the *same* tool name fold into
- *     a single `tool-group` row: `Read foo.tsx` → `Read foo.tsx and 1 other
- *     file` → `Read foo.tsx and 2 other files`. Expanded, it shows each
+ *     a single `tool-group` row: `Read foo.tsx` â†’ `Read foo.tsx and 1 other
+ *     file` â†’ `Read foo.tsx and 2 other files`. Expanded, it shows each
  *     individual call as a nested row (each further expandable to the
  *     existing bespoke detail).
  *   - Consecutive `file-edit` events (non-sub-agent) fold into a single
@@ -17,11 +17,11 @@
  * text delta, reasoning delta, phase, subagent-spawn, user-prompt,
  * agent-thought, file-edit, error, subagent status/result.
  *
- *   - Each sub-agent becomes a single `subagent-line` row.
+ *   - Each sub-agent spawn becomes a `subagent-line` row; scoped text,
+ *     reasoning, tools, and file-edits emit as top-level rows tagged with
+ *     `subagentId` in wire order for inline delegation UI.
  *
- * Sub-agent tool-call/-result events (tagged with `subagentId`) are not
- * emitted as top-level rows — they remain nested inside the sub-agent
- * snapshot; timeline projects these into subagent-group / activity rows.
+ * Sub-agent scoped events are emitted inline (not nested in expand-only traces).
  */
 
 import type { PromptAttachmentMeta, TimelineEvent } from '@shared/types/chat.js';
@@ -31,8 +31,13 @@ import type { DiffStreamSnapshot, PartialToolCallArgs, TokenUsageAggregate } fro
 import { foldTokenUsage } from './types.js';
 import { appendSynthesizedPartialRows } from './deriveRows/partials.js';
 import { flushRunToRows, type OpenRun, type OpenRunUsage } from './deriveRows/runBoundaries.js';
-
-import { editChildPath } from './deriveRows/groupTools.js';
+import {
+  foldOrchestratorFileEdit,
+  foldScopedFileEdit,
+  foldToolCall,
+  foldToolResult,
+  type ScopedGroupState
+} from './deriveRows/scopedToolGroups.js';
 
 export {
   toolGroupSummary,
@@ -91,24 +96,23 @@ export type Row =
   | {
     kind: 'user-prompt';
     key: string;
-    /** Original `user-prompt` event id — used by the inline Revert button to bind the rewind to this turn. */
+    /** Original `user-prompt` event id â€” used by the inline Revert button to bind the rewind to this turn. */
     id: string;
     /**
      * Originating run id for this prompt's turn. Threaded through to
      * `UserPromptRow` so the inline Revert button can read its
      * per-turn file-edit count from `runIdToFileEditCount[runId]` and
      * render a numeric badge. Optional because legacy transcripts
-     * persisted before the field was added still deserialise — the
+     * persisted before the field was added still deserialise â€” the
      * badge simply renders no count for those turns.
      */
     runId?: string;
     content: string;
     attachments?: PromptAttachmentMeta[];
   }
-  | { kind: 'assistant-text'; key: string; id: string }
-  | { kind: 'reasoning-line'; key: string; id: string }
+  | { kind: 'assistant-text'; key: string; id: string; subagentId?: string }
+  | { kind: 'reasoning-line'; key: string; id: string; subagentId?: string }
   | { kind: 'agent-thought'; key: string; content: string; severity?: 'info' | 'warn' }
-  | { kind: 'phase'; key: string; label: string; tooltip?: string }
   | { kind: 'error'; key: string; message: string }
   | { kind: 'subagent-line'; key: string; subagentId: string }
   | {
@@ -116,11 +120,13 @@ export type Row =
     key: string;
     toolName: ToolName;
     children: ToolGroupChild[];
+    subagentId?: string;
   }
   | {
     kind: 'file-edit-group';
     key: string;
     children: FileEditGroupChild[];
+    subagentId?: string;
   }
   | {
     kind: 'run-complete';
@@ -156,10 +162,10 @@ export interface DeriveRowsOptions {
    * gets its trailing closer exactly once.
    */
   runActive?: boolean;
-  /** Model context window — used for warning-row percent / detail display. */
+  /** Model context window â€” used for warning-row percent / detail display. */
   contextWindow?: number;
   /**
-   * Absolute token threshold for budget-warning rows (from Settings →
+   * Absolute token threshold for budget-warning rows (from Settings â†’
    * Context). When omitted, falls back to `contextWindow *
    * TOKEN_BUDGET_WARNING_DEFAULT_RATIO` when a window is known.
    */
@@ -178,15 +184,15 @@ export interface DeriveRowsOptions {
   /**
    * Audit fix L-11. Pre-computed map of callIds the reducer has
    * already observed in an authoritative `tool-call` event. When
-   * provided, `appendSynthesizedPartialRows` skips its O(R×C) walk
+   * provided, `appendSynthesizedPartialRows` skips its O(RÃ—C) walk
    * over every `tool-group` row's children to recover the same set
-   * — Timeline forwards this from `state.settledCallIds`, which the
+   * â€” Timeline forwards this from `state.settledCallIds`, which the
    * reducer already maintains for the late-frame race guard.
    * Optional for back-compat with callers that don't have access
    * to the slot (the deriver falls back to the walk).
    */
   settledCallIds?: Record<string, true>;
-  /** Live FS diff keyed by callId — merged into settled tool-group children. */
+  /** Live FS diff keyed by callId â€” merged into settled tool-group children. */
   liveDiffByCallId?: Record<string, import('./types.js').DiffStreamSnapshot>;
 }
 
@@ -221,16 +227,12 @@ export function deriveRows(
   const seenText = new Set<string>();
   const seenReasoning = new Set<string>();
   const seenSubagent = new Set<string>();
-  // Index of the last *open* tool-group per tool name so we can append to
-  // it when the next event is a matching tool call/result. Reset by any
-  // "breaker" event (see rules in the file header).
-  let openToolGroupIdx: number | null = null;
-  let openFileEditGroupIdx: number | null = null;
-
-  // Track call → child record so a tool-result that arrives after the
-  // tool-call can patch the same child entry without adding a duplicate.
-  const callIdToGroupIdx = new Map<string, number>();
-  const callIdToChildIdx = new Map<string, number>();
+  const scopedGroups: ScopedGroupState = {
+    openToolGroupIdx: null,
+    openFileEditGroupIdx: null,
+    callIdToGroupIdx: new Map(),
+    callIdToChildIdx: new Map()
+  };
 
   // Track the currently-open run (a span starting at the most recent
   // `user-prompt` event). When a new prompt arrives the previous run is
@@ -247,14 +249,14 @@ export function deriveRows(
   };
 
   const closeGroups = () => {
-    openToolGroupIdx = null;
-    openFileEditGroupIdx = null;
+    scopedGroups.openToolGroupIdx = null;
+    scopedGroups.openFileEditGroupIdx = null;
   };
 
   /**
    * Defensive fail-soft for sub-agent visibility. The `subagent-line`
    * row is normally emitted by the `subagent-pending` / `subagent-spawn`
-   * branch below — but if either of those events is missing or arrives
+   * branch below â€” but if either of those events is missing or arrives
    * out of order, every sub-agent-scoped `tool-call` / `tool-result` /
    * `file-edit` would be invisible without this synthesis.
    */
@@ -272,7 +274,7 @@ export function deriveRows(
 
   for (const e of events) {
     // Extend the open run's tail timestamp with every event EXCEPT a
-    // following `user-prompt` — that prompt belongs to the next turn and
+    // following `user-prompt` â€” that prompt belongs to the next turn and
     // its `ts` would otherwise smuggle the user's idle/typing window
     // into the prior run's reported duration.
     if (
@@ -316,7 +318,13 @@ export function deriveRows(
         if (!seenText.has(e.id)) {
           seenText.add(e.id);
           closeGroups();
-          out.push({ kind: 'assistant-text', key: `text:${e.id}`, id: e.id });
+          if (e.subagentId) ensureSubagentLine(e.subagentId);
+          out.push({
+            kind: 'assistant-text',
+            key: `text:${e.id}`,
+            id: e.id,
+            ...(e.subagentId ? { subagentId: e.subagentId } : {})
+          });
         }
         break;
 
@@ -324,10 +332,12 @@ export function deriveRows(
         if (!seenReasoning.has(e.id)) {
           seenReasoning.add(e.id);
           closeGroups();
+          if (e.subagentId) ensureSubagentLine(e.subagentId);
           out.push({
             kind: 'reasoning-line',
             key: `thoughts:${e.id}`,
-            id: e.id
+            id: e.id,
+            ...(e.subagentId ? { subagentId: e.subagentId } : {})
           });
         }
         break;
@@ -356,12 +366,6 @@ export function deriveRows(
 
       case 'phase':
         closeGroups();
-        out.push({
-          kind: 'phase',
-          key: e.id,
-          label: e.label,
-          ...(e.tooltip ? { tooltip: e.tooltip } : {})
-        });
         break;
 
       case 'subagent-pending':
@@ -376,107 +380,29 @@ export function deriveRows(
         break;
 
       case 'tool-call': {
-        if (e.subagentId) {
-          ensureSubagentLine(e.subagentId);
-          break; // nested inside sub-agent trace
-        }
-        const toolName = e.call.name;
-
-        // Patch an existing child if we've already seen this callId (rare
-        // — e.g. echoed re-delivery).
-        const existingGroupIdx = callIdToGroupIdx.get(e.call.id);
-        const existingChildIdx = callIdToChildIdx.get(e.call.id);
-        if (
-          existingGroupIdx !== undefined &&
-          existingChildIdx !== undefined &&
-          out[existingGroupIdx]?.kind === 'tool-group'
-        ) {
-          const row = out[existingGroupIdx] as Extract<Row, { kind: 'tool-group' }>;
-          const children = row.children.slice();
-          const prev = children[existingChildIdx]!;
-          children[existingChildIdx] = {
-            ...prev,
-            call: e.call,
-            partial: false,
-            diffStream: undefined
-          };
-          out[existingGroupIdx] = { ...row, children };
-          break;
-        }
-
-        let groupIdx: number;
-        const curIdx = openToolGroupIdx;
-        if (curIdx === null || (out[curIdx] as Extract<Row, { kind: 'tool-group' }>).toolName !== toolName) {
-          out.push({
-            kind: 'tool-group',
-            key: `tg:${e.call.id}`,
-            toolName,
-            children: []
-          });
-          groupIdx = out.length - 1;
-          openToolGroupIdx = groupIdx;
-          openFileEditGroupIdx = null;
-        } else {
-          groupIdx = curIdx;
-        }
-        const row = out[groupIdx] as Extract<Row, { kind: 'tool-group' }>;
-        const children = [...row.children, { callId: e.call.id, call: e.call }];
-        out[groupIdx] = { ...row, children };
-        callIdToGroupIdx.set(e.call.id, groupIdx);
-        callIdToChildIdx.set(e.call.id, children.length - 1);
+        if (e.subagentId) ensureSubagentLine(e.subagentId);
+        foldToolCall(out, scopedGroups, e.call, e.subagentId);
         break;
       }
 
       case 'tool-result': {
-        if (e.subagentId) {
-          ensureSubagentLine(e.subagentId);
-          break;
-        }
-        const groupIdx = callIdToGroupIdx.get(e.result.id);
-        const childIdx = callIdToChildIdx.get(e.result.id);
-        if (
-          groupIdx !== undefined &&
-          childIdx !== undefined &&
-          out[groupIdx]?.kind === 'tool-group'
-        ) {
-          const row = out[groupIdx] as Extract<Row, { kind: 'tool-group' }>;
-          const children = row.children.slice();
-          const prev = children[childIdx]!;
-          children[childIdx] = { ...prev, result: e.result };
-          out[groupIdx] = { ...row, children };
-          break;
-        }
-
-        // Result arrived without a matching call. Create a new group from
-        // the result alone so we don't lose the signal.
-        const toolName = e.result.name;
-        let gIdx: number;
-        const curIdx = openToolGroupIdx;
-        if (curIdx === null || (out[curIdx] as Extract<Row, { kind: 'tool-group' }>).toolName !== toolName) {
-          out.push({
-            kind: 'tool-group',
-            key: `tg:${e.result.id}`,
-            toolName,
-            children: []
-          });
-          gIdx = out.length - 1;
-          openToolGroupIdx = gIdx;
-          openFileEditGroupIdx = null;
-        } else {
-          gIdx = curIdx;
-        }
-        const row = out[gIdx] as Extract<Row, { kind: 'tool-group' }>;
-        const children = [...row.children, { callId: e.result.id, result: e.result }];
-        out[gIdx] = { ...row, children };
-        callIdToGroupIdx.set(e.result.id, gIdx);
-        callIdToChildIdx.set(e.result.id, children.length - 1);
+        if (e.subagentId) ensureSubagentLine(e.subagentId);
+        foldToolResult(out, scopedGroups, e.result, e.subagentId);
         break;
       }
 
       case 'file-edit': {
+        if (e.subagentId) ensureSubagentLine(e.subagentId);
+        const editPayload = {
+          id: e.id,
+          filePath: e.filePath,
+          additions: e.additions,
+          deletions: e.deletions,
+          ...(e.entryId ? { entryId: e.entryId } : {})
+        };
         if (e.subagentId) {
-          ensureSubagentLine(e.subagentId);
-          break; // rendered inside sub-agent trace
+          foldScopedFileEdit(out, scopedGroups, editPayload, e.subagentId);
+          break;
         }
 
         if (openRun) {
@@ -484,65 +410,7 @@ export function deriveRows(
           if (e.filePath) openRun.filePaths.add(e.filePath);
         }
 
-        // Merge into the immediately-prior `edit` tool-group when its
-        // last successful child targets the same path. Avoids the
-        // duplicate "Edited X" + "Edited X +N -M" pair that previously
-        // rendered for every successful edit. Failed/no-op edits emit
-        // no `file-edit`, so they remain distinct rows with the error
-        // chip. The fold is conservative: only when the prior row is
-        // a tool-group of the `edit` tool AND its last child has a
-        // matching path with a successful result do we suppress the
-        // file-edit-group emission.
-        if (openToolGroupIdx !== null) {
-          const prior = out[openToolGroupIdx];
-          if (prior && prior.kind === 'tool-group' && prior.toolName === 'edit') {
-            const lastIdx = prior.children.length - 1;
-            const last = prior.children[lastIdx];
-            const lastPath = editChildPath(last);
-            if (
-              last &&
-              last.result &&
-              last.result.ok &&
-              lastPath === e.filePath
-            ) {
-              const children = prior.children.slice();
-              children[lastIdx] = {
-                ...last,
-                fileEditAdditions: (last.fileEditAdditions ?? 0) + e.additions,
-                fileEditDeletions: (last.fileEditDeletions ?? 0) + e.deletions
-              };
-              out[openToolGroupIdx] = { ...prior, children };
-              break;
-            }
-          }
-        }
-
-        openToolGroupIdx = null; // file-edits break tool-group runs
-        let groupIdx: number;
-        const curIdx = openFileEditGroupIdx;
-        if (curIdx === null) {
-          out.push({
-            kind: 'file-edit-group',
-            key: `fe:${e.id}`,
-            children: []
-          });
-          groupIdx = out.length - 1;
-          openFileEditGroupIdx = groupIdx;
-        } else {
-          groupIdx = curIdx;
-        }
-        const row = out[groupIdx] as Extract<Row, { kind: 'file-edit-group' }>;
-        const children = [
-          ...row.children,
-          {
-            key: e.id,
-            filePath: e.filePath,
-            additions: e.additions,
-            deletions: e.deletions,
-            ...(e.entryId ? { entryId: e.entryId } : {})
-          }
-        ];
-        out[groupIdx] = { ...row, children };
+        foldOrchestratorFileEdit(out, scopedGroups, editPayload);
         break;
       }
 
@@ -590,7 +458,7 @@ export function deriveRows(
         break;
 
       case 'run-status':
-        // Pure live-telemetry signal — surfaced in TurnActivitySummary /
+        // Pure live-telemetry signal â€” surfaced in TurnRunningMeta /
         // the tail of the timeline, never as an inline row. Deliberately
         // does not close tool groups: a `run-status` landing between
         // two consecutive `tool-call`s of the same name must NOT split
@@ -599,7 +467,7 @@ export function deriveRows(
 
       case 'tool-call-args-delta':
       case 'diff-stream':
-        // Ephemeral partial-args / FS-aware live diff — neither
+        // Ephemeral partial-args / FS-aware live diff â€” neither
         // emits its own row. Both fold into the matching
         // `partialToolCallArgs[callId]` entry; the in-flight
         // tool-group child is synthesised from that snapshot in a
@@ -630,7 +498,7 @@ export function deriveRows(
         // pulls every subsequent state change off
         // `useChatStore.summaries[summaryId]` so streaming
         // deltas paint without re-deriving rows. Closes any
-        // open tool/file-edit group — a summary is a structural
+        // open tool/file-edit group â€” a summary is a structural
         // boundary in the transcript.
         closeGroups();
         out.push({
@@ -665,7 +533,7 @@ export function deriveRows(
         // estimate. Surfaces ONLY on the composer pill / Inspector
         // chip via the aggregate's `inFlight` slot; no inline
         // timeline row. Same treatment as `run-status` /
-        // `token-usage` — pure telemetry, never a row.
+        // `token-usage` â€” pure telemetry, never a row.
         break;
 
       default: {
@@ -677,7 +545,7 @@ export function deriveRows(
   }
   // Append synthesized in-flight rows for partial tool calls that
   // haven't yet emitted their authoritative `tool-call` event. We
-  // append AFTER the event walk so they sit at the timeline tail —
+  // append AFTER the event walk so they sit at the timeline tail â€”
   // the live position the user is watching.
   if (!opts.runActive) {
     flushRun();

@@ -116,6 +116,7 @@ export default function App() {
     useShallow((s) => ({ liveDiffTarget: s.target, dismissLiveDiff: s.dismiss }))
   );
   const attachmentPreviewWidth = usePersistedPanelWidth('attachmentPreview');
+  const dockExpanded = useUiStore((s) => s.dockExpanded);
   const overlayOpen =
     secondaryPanel !== null ||
     previewAttachment !== null ||
@@ -452,11 +453,12 @@ export default function App() {
         onOpenSettings={() => openSettings()}
       />
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <LeftDock />
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <LeftDock onOpenSettings={() => openSettings()} />
           <main
             className="min-h-0 flex-1 overflow-hidden bg-surface-base"
-            aria-hidden={overlayOpen ? true : undefined}
+            inert={overlayOpen || dockExpanded ? true : undefined}
+            aria-hidden={overlayOpen || dockExpanded ? true : undefined}
           >
             <ChatPage
               onOpenProviders={() => openSettings('providers')}

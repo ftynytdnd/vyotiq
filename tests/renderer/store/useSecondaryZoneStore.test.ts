@@ -64,13 +64,13 @@ describe('useSecondaryZoneStore', () => {
     expect(useFloatingLiveDiffStore.getState().target?.callId).toBe('tc-2');
   });
 
-  it('closes attachment preview when opening checkpoints', () => {
+  it('closes attachment preview when opening checkpoints', async () => {
     useAttachmentPreviewStore.getState().open({
       name: 'x.png',
       storedPath: 'a/x.png',
       mimeType: 'image/png'
     });
-    useSecondaryZoneStore.getState().openCheckpoints('runs');
+    await useSecondaryZoneStore.getState().openCheckpoints('runs');
     expect(useAttachmentPreviewStore.getState().attachment).toBeNull();
     expect(useSecondaryZoneStore.getState().panel).toBe('checkpoints');
   });
@@ -104,6 +104,28 @@ describe('useSecondaryZoneStore', () => {
     expect(setSpy).toHaveBeenCalledWith(
       expect.objectContaining({ ui: expect.objectContaining({ lastSettingsTab: 'shortcuts' }) })
     );
+  });
+
+  it('setCheckpointsTab persists lastCheckpointsTab via settings IPC', async () => {
+    const setSpy = vi.spyOn(window.vyotiq.settings, 'set');
+    useSecondaryZoneStore.getState().setCheckpointsTab('files');
+    expect(useSecondaryZoneStore.getState().checkpointsTab).toBe('files');
+    expect(setSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ ui: expect.objectContaining({ lastCheckpointsTab: 'files' }) })
+    );
+  });
+
+  it('openCheckpoints restores persisted tab when tab arg omitted', async () => {
+    useSettingsStore.setState({
+      settings: { ui: { lastCheckpointsTab: 'files' } }
+    });
+    await useSecondaryZoneStore.getState().openCheckpoints();
+    expect(useSecondaryZoneStore.getState().checkpointsTab).toBe('files');
+  });
+
+  it('setCheckpointsTab remembers the active checkpoints sub-tab', () => {
+    useSecondaryZoneStore.getState().setCheckpointsTab('files');
+    expect(useSecondaryZoneStore.getState().checkpointsTab).toBe('files');
   });
 
   it('openSettings restores persisted tab when tab arg omitted', () => {

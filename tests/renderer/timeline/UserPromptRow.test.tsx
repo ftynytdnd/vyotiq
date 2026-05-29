@@ -10,6 +10,7 @@ import { UserPromptRow } from '@renderer/components/timeline/rows/UserPromptRow'
 import { RevertPromptProvider } from '@renderer/components/timeline/revert/RevertPromptContext';
 import { useChatStore } from '@renderer/store/useChatStore';
 import { useWorkspaceStore } from '@renderer/store/useWorkspaceStore';
+import { useCheckpointsStore } from '@renderer/store/useCheckpointsStore';
 
 let originalDescriptor: PropertyDescriptor | undefined;
 
@@ -151,7 +152,7 @@ describe('UserPromptRow edit affordance', () => {
     expect(btn.textContent ?? '').toMatch(/Edit.*3/);
   });
 
-  it('exposes Copy and Edit in the hover-reveal strip (no Revert)', () => {
+  it('exposes Copy, Revert, and Edit in the hover-reveal strip', () => {
     useChatStore.setState({ conversationId: 'c-1', isProcessing: false });
     useWorkspaceStore.setState({ activeId: 'ws-1' });
     const { queryByRole } = render(
@@ -160,7 +161,26 @@ describe('UserPromptRow edit affordance', () => {
       </RevertPromptProvider>
     );
     expect(queryByRole('button', { name: /Copy/i })).not.toBeNull();
+    expect(queryByRole('button', { name: /^Revert/i })).not.toBeNull();
     expect(queryByRole('button', { name: /^Edit/i })).not.toBeNull();
-    expect(queryByRole('button', { name: /Revert/i })).toBeNull();
+  });
+
+  it('opens the revert preview modal when Revert is clicked', () => {
+    useCheckpointsStore.setState((prev) => ({
+      ...prev,
+      previewRewind: vi.fn(async () => ({
+        ok: false as const,
+        error: { kind: 'no-run-binding' as const, promptEventId: 'p-7' }
+      }))
+    }));
+    useChatStore.setState({ conversationId: 'c-1', isProcessing: false });
+    useWorkspaceStore.setState({ activeId: 'ws-1' });
+    const { getByRole } = render(
+      <RevertPromptProvider>
+        <UserPromptRow id="p-7" content="please undo" />
+      </RevertPromptProvider>
+    );
+    fireEvent.click(getByRole('button', { name: /revert to before this message/i }));
+    expect(getByRole('dialog', { name: /Revert to before this message/i })).toBeInTheDocument();
   });
 });

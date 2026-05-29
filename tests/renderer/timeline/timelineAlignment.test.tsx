@@ -9,7 +9,6 @@ import { Timeline } from '@renderer/components/timeline/Timeline';
 import { useChatStore } from '@renderer/store/useChatStore';
 import { INITIAL_TIMELINE_STATE } from '@renderer/components/timeline/reducer/types';
 import type { TimelineEvent } from '@shared/types/chat';
-import { timelineAgentColumnReserveRightClassName } from '@renderer/components/timeline/shared/rowStyles';
 
 let originalScrollIntoView: typeof window.HTMLElement.prototype.scrollIntoView;
 let originalRaf: typeof window.requestAnimationFrame;
@@ -109,36 +108,28 @@ function seedDelegationTurn(withResponse = false) {
 }
 
 describe('Timeline inline column alignment', () => {
-  it('uses a flat activity lane inside a single pl-3 agent column', () => {
+  it('uses a flat agent column during delegation', () => {
     seedDelegationTurn(true);
 
     const { container } = render(<Timeline />);
 
     const agentColumn = container.querySelector('.timeline-agent-column');
-    const activityLane = container.querySelector('.timeline-activity-lane');
 
     expect(agentColumn).not.toBeNull();
     expect(agentColumn?.className ?? '').toContain('vx-timeline-agent-column');
-    expect(activityLane).not.toBeNull();
-    expect(activityLane?.className ?? '').not.toMatch(/\bborder-l\b/);
-    expect(activityLane?.className ?? '').not.toMatch(/\bpl-3\b/);
+    expect(container.querySelector('.vx-timeline-deleg-weave')).not.toBeNull();
   });
 
-  it('uses inline wire-order stream during live delegation (no category eyebrows)', () => {
+  it('uses stream weave during live delegation (no category eyebrows)', () => {
     seedDelegationTurn(true);
 
     const { container } = render(<Timeline />);
 
-    const inlineStream = container.querySelector('[data-turn-inline-stream]');
-    // May 2026 restyle: the visible AGENT_NAME eyebrow on the assistant
-    // prose row was removed in favor of an aria-label on the row root.
-    // Pin the structural contract instead — the assistant-text row
-    // must still live inside the inline wire-order stream.
+    const weaveStream = container.querySelector('.vx-timeline-deleg-weave');
     const assistantRow = container.querySelector('[data-row-kind="assistant-text"]');
 
-    expect(inlineStream).not.toBeNull();
+    expect(weaveStream).not.toBeNull();
     expect(assistantRow).not.toBeNull();
-    expect(assistantRow?.closest('[data-turn-inline-stream]')).not.toBeNull();
     expect(container.textContent ?? '').not.toContain('Delegates');
   });
 
@@ -151,19 +142,15 @@ describe('Timeline inline column alignment', () => {
     expect(container.textContent ?? '').not.toContain('Exploring');
   });
 
-  it('does not add a response separator during live inline streaming', () => {
+  it('does not add a response separator during live stream weave', () => {
     seedDelegationTurn(true);
 
     const { container } = render(<Timeline />);
 
-    const inlineStream = container.querySelector('[data-turn-inline-stream]');
+    const weaveStream = container.querySelector('.vx-timeline-deleg-weave');
     const assistant = container.querySelector('[data-row-kind="assistant-text"]');
 
-    expect(inlineStream?.contains(assistant)).toBe(true);
+    expect(weaveStream?.contains(assistant)).toBe(true);
     expect(container.querySelector('.border-t.border-border-subtle\\/15')).toBeNull();
-  });
-
-  it('jump chip gutter class is defined for legacy callers', () => {
-    expect(timelineAgentColumnReserveRightClassName).toBe('pr-[5.5rem]');
   });
 });

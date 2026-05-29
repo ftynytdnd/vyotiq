@@ -64,7 +64,7 @@ export function registerConversationsIpc(): void {
   });
   // Drag-between-workspaces. The store throws on unknown id / unknown
   // target workspace; the wrap layer surfaces the error to the renderer
-  // so the sidebar can show a toast instead of silently swallowing it.
+  // so the dock can show a toast instead of silently swallowing it.
   wrapIpcHandler(
     IPC.CONVERSATIONS_ARCHIVE,
     async (_e, id: string) => {

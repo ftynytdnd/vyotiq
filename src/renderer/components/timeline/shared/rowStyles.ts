@@ -20,9 +20,6 @@ export const timelineAgentColumnClassName = cn(
   'flex w-full flex-col'
 );
 
-/** Reserve right gutter when the jump-to-latest chip is visible. */
-export const timelineAgentColumnReserveRightClassName = 'pr-[5.5rem]';
-
 /** Vertical rhythm inside a single turn block (legacy flat segment map). */
 export const timelineTurnInnerGapClassName = 'gap-1.5';
 
@@ -57,7 +54,7 @@ export const timelineActivityLaneClassName = cn(
  * scaffolding was removed in the May 2026 restyle so assistant prose
  * flows directly in the column with the same rhythm as the activity
  * lane above it. The export remains a `flex flex-col gap-1.5` wrapper
- * so existing `:has()`-style child selectors in `TurnInlineStream`
+ * so existing `:has()`-style child selectors on the response lane
  * (`[&_[data-row-kind=assistant-text]]:*`) still resolve to a real
  * element. Only the painted tokens were dropped.
  */

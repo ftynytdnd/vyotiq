@@ -8,6 +8,7 @@ import { useChatStore } from '../../store/useChatStore.js';
 import { formatTokensPerSecond } from '../contextInspector/inspectorFormat.js';
 import {
   resolveLivePhaseHeadline,
+  shouldHideLivePhaseHeadline,
   timelinePhaseHeadingClassName
 } from '../timeline/shared/rowStyles.js';
 import { shimmerText } from '../../lib/shimmer.js';
@@ -35,14 +36,10 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip() {
   const label = useMemo(() => {
     if (!isProcessing) return null;
     if (latest) {
-      // Keep the footer strip concise — the timeline activity lane already
-      // surfaces the verbose "Awaiting first token from …" headline.
-      if (latest.phase === 'awaiting-response') {
-        return 'Awaiting response…';
-      }
+      if (shouldHideLivePhaseHeadline(latest.phase)) return null;
       return resolveLivePhaseHeadline(latest.phase, latest.label ?? 'Working…');
     }
-    return 'Awaiting response…';
+    return 'Starting…';
   }, [isProcessing, latest]);
 
   const tokRate = useMemo(() => {

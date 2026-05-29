@@ -1,9 +1,9 @@
 /**
- * Title bar — hamburger menu + settings (shortcuts moved to Settings nav).
+ * Title bar — hamburger menu, shortcuts help, and settings.
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TitleBar } from '@renderer/components/titlebar/TitleBar';
 
@@ -22,7 +22,7 @@ const viewActions = {
 };
 
 describe('TitleBar — shell chrome', () => {
-  it('renders hamburger menu and settings; no title-bar shortcuts popover', () => {
+  it('renders hamburger menu, shortcuts help, and settings', () => {
     render(
       <TitleBar
         fileActions={fileActions}
@@ -32,8 +32,21 @@ describe('TitleBar — shell chrome', () => {
     );
 
     expect(screen.getByRole('button', { name: 'Menu' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Keyboard shortcuts' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Settings' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Keyboard shortcuts' })).toBeNull();
+  });
+
+  it('opens the shortcuts reference popover from the title bar', () => {
+    render(
+      <TitleBar
+        fileActions={fileActions}
+        viewActions={viewActions}
+        onOpenSettings={() => {}}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keyboard shortcuts' }));
+    expect(screen.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
   });
 
   it('Settings click forwards through to onOpenSettings', async () => {

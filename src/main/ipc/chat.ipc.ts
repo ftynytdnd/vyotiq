@@ -223,7 +223,7 @@ export function registerChatIpc(): void {
 
     // Bind / auto-create the conversation. Auto-creation always uses the
     // run's resolved workspace id so a fresh chat lands under the right
-    // group in the sidebar tree.
+    // group in the dock tree.
     //
     // Post-fix, the renderer pre-creates the conversation in
     // `useChatStore.send` before dispatching — so this branch should
@@ -349,7 +349,7 @@ export function registerChatIpc(): void {
     // return — otherwise the renderer's `useConversationsStore.refresh()`
     // (triggered by `bindActive` after the IPC reply) can race the
     // microtask and pull the stale "New conversation" title. The earlier
-    // fire-and-forget pattern produced the screenshot where the sidebar
+    // fire-and-forget pattern produced the screenshot where the dock
     // still read `New conversation` while the agent was actively
     // streaming. The derivation is purely in-memory + scheduled flush;
     // awaiting it costs sub-millisecond on the happy path.

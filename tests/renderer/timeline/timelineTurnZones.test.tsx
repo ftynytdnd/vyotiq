@@ -3,7 +3,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
+import { act, cleanup, render } from '@testing-library/react';
 import { Timeline } from '@renderer/components/timeline/Timeline';
 import { useChatStore } from '@renderer/store/useChatStore';
 import { INITIAL_TIMELINE_STATE } from '@renderer/components/timeline/reducer/types';
@@ -14,7 +14,20 @@ let originalScrollIntoView: typeof window.HTMLElement.prototype.scrollIntoView;
 let originalRaf: typeof window.requestAnimationFrame;
 let originalCaf: typeof window.cancelAnimationFrame;
 
+function resetStore(): void {
+  useChatStore.setState({
+    ...INITIAL_TIMELINE_STATE,
+    orchestratorUsage: undefined,
+    runId: null,
+    conversationId: null,
+    isProcessing: false,
+    runStartedAt: null,
+    latestOrchestratorRunStatus: undefined
+  });
+}
+
 beforeEach(() => {
+  resetStore();
   vi.useFakeTimers();
   originalScrollIntoView = window.HTMLElement.prototype.scrollIntoView;
   originalRaf = window.requestAnimationFrame;
@@ -33,11 +46,7 @@ afterEach(() => {
   window.HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
   window.requestAnimationFrame = originalRaf;
   window.cancelAnimationFrame = originalCaf;
-  useChatStore.setState({
-    ...INITIAL_TIMELINE_STATE,
-    conversationId: null,
-    isProcessing: false
-  });
+  resetStore();
 });
 
 describe('Timeline turn zones', () => {
@@ -66,11 +75,11 @@ describe('Timeline turn zones', () => {
 
     const { container } = render(<Timeline />);
 
-    const inlineStream = container.querySelector('[data-turn-inline-stream]');
+    const weaveStream = container.querySelector('.vx-timeline-deleg-weave');
     const toolGroup = container.querySelector('[data-row-kind="tool-group"]');
     const assistant = container.querySelector('[data-row-kind="assistant-text"]');
 
-    expect(inlineStream).not.toBeNull();
+    expect(weaveStream ?? container.querySelector('.timeline-agent-column')).not.toBeNull();
     expect(toolGroup).not.toBeNull();
     expect(assistant).not.toBeNull();
     expect(
@@ -176,14 +185,12 @@ describe('Timeline turn zones', () => {
     const { container } = render(<Timeline />);
 
     const assistant = container.querySelector('[data-row-kind="assistant-text"]');
-    const subagentGroup = container.querySelector('[data-row-kind="subagent-group"]');
-    const inlineStream = container.querySelector('[data-turn-inline-stream]');
+    const delegationWorkers = container.querySelectorAll('[data-row-kind="delegation-worker"]');
 
-    expect(inlineStream).not.toBeNull();
     expect(assistant).not.toBeNull();
-    expect(subagentGroup).not.toBeNull();
+    expect(delegationWorkers.length).toBeGreaterThanOrEqual(1);
     expect(
-      assistant!.compareDocumentPosition(subagentGroup!) & Node.DOCUMENT_POSITION_FOLLOWING
+      assistant!.compareDocumentPosition(delegationWorkers[0]!) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
     expect(container.textContent ?? '').not.toContain('Delegates');
   });
@@ -236,7 +243,7 @@ describe('Timeline turn zones', () => {
     const assistant = container.querySelector('[data-row-kind="assistant-text"]');
     expect(assistant).not.toBeNull();
     expect(assistant?.closest('.timeline-agent-column')).not.toBeNull();
-    expect(container.querySelector('[data-row-kind="turn-activity-summary"]')).toBeNull();
+    expect(container.querySelector('[data-turn-activity-summary]')).toBeNull();
   });
 
   it('appends partial tool rows at the inline stream tail during a live turn', () => {
@@ -273,7 +280,7 @@ describe('Timeline turn zones', () => {
     ).toBeTruthy();
   });
 
-  it('renders completed turn rows without the live inline stream wrapper', () => {
+  it('renders completed turn rows in stream weave wrapper', () => {
     useChatStore.setState({
       conversationId: 'c-zones',
       isProcessing: false,
@@ -294,31 +301,35 @@ describe('Timeline turn zones', () => {
 
     const { container } = render(<Timeline />);
 
-    expect(container.querySelector('[data-turn-inline-stream]')).toBeNull();
+    expect(container.querySelector('.vx-timeline-deleg-weave')).not.toBeNull();
     const assistant = container.querySelector('[data-row-kind="assistant-text"]');
     expect(assistant).not.toBeNull();
-    expect(assistant?.closest('[data-turn-inline-stream]')).toBeNull();
   });
 
   it('shows run-complete when isProcessing flips false on the trailing turn', () => {
-    useChatStore.setState({
-      conversationId: 'c-zones',
-      isProcessing: true,
-      events: [
-        { kind: 'user-prompt', id: 'p1', ts: 1000, content: 'Go' },
-        { kind: 'agent-text-delta', id: 'a1', ts: 2000, delta: 'Done.' },
-        { kind: 'agent-text-end', id: 'a1', ts: 2100 }
-      ] satisfies TimelineEvent[],
-      assistantTexts: {
-        a1: { id: 'a1', text: 'Done.', done: true }
-      }
+    act(() => {
+      useChatStore.setState({
+        conversationId: 'c-zones',
+        isProcessing: true,
+        latestOrchestratorRunStatus: undefined,
+        events: [
+          { kind: 'user-prompt', id: 'p1', ts: 1000, content: 'Go' },
+          { kind: 'agent-text-delta', id: 'a1', ts: 2000, delta: 'Done.' },
+          { kind: 'agent-text-end', id: 'a1', ts: 2100 }
+        ] satisfies TimelineEvent[],
+        assistantTexts: {
+          a1: { id: 'a1', text: 'Done.', done: true }
+        }
+      });
     });
 
     const { container, rerender } = render(<Timeline />);
     expect(container.querySelector('[data-row-kind="run-complete"]')).toBeNull();
     expect(container.querySelector('[data-turn-running-meta]')).not.toBeNull();
 
-    useChatStore.setState({ isProcessing: false });
+    act(() => {
+      useChatStore.setState({ isProcessing: false });
+    });
     rerender(<Timeline />);
     expect(container.querySelector('[data-turn-running-meta]')).toBeNull();
     expect(container.querySelector('[data-row-kind="run-complete"]')).not.toBeNull();

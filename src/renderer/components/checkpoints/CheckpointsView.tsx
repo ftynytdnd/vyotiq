@@ -30,6 +30,7 @@ export function CheckpointsPanel({ embedded = false }: { embedded?: boolean }) {
   const conversationId = useChatStore((s) => s.conversationId);
   const pending = usePendingChanges(conversationId);
   const checkpointsTab = useSecondaryZoneStore((s) => s.checkpointsTab);
+  const setCheckpointsTab = useSecondaryZoneStore((s) => s.setCheckpointsTab);
   const [tab, setTab] = useState<Tab>(checkpointsTab);
   const [filePicked, setFilePicked] = useState<string | null>(null);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
@@ -122,7 +123,10 @@ export function CheckpointsPanel({ embedded = false }: { embedded?: boolean }) {
             <LeftSubnav<Tab>
               items={navItems}
               value={tab}
-              onChange={setTab}
+              onChange={(next) => {
+                setTab(next);
+                setCheckpointsTab(next);
+              }}
               ariaLabel="Checkpoints view"
               footer={
                 usage ? (

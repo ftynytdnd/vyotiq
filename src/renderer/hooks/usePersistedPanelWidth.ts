@@ -8,7 +8,7 @@ const PERSIST_DEBOUNCE_MS = 200;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingByKey: Record<string, number> = {};
 
-function flushPanelWidthsNow(): void {
+export function flushPanelWidthPersistence(): void {
   if (persistTimer !== null) {
     clearTimeout(persistTimer);
     persistTimer = null;
@@ -25,6 +25,8 @@ function flushPanelWidthsNow(): void {
   }
   void vyotiq.settings.set({
     ui: { ...ui, panelWidths: next }
+  }).catch(() => {
+    /* best-effort on unload */
   });
 }
 
@@ -37,12 +39,12 @@ export function usePersistedPanelWidth(widthKey: string) {
     (width: number) => {
       pendingByKey[widthKey] = width;
       if (persistTimer !== null) clearTimeout(persistTimer);
-      persistTimer = setTimeout(flushPanelWidthsNow, PERSIST_DEBOUNCE_MS);
+      persistTimer = setTimeout(flushPanelWidthPersistence, PERSIST_DEBOUNCE_MS);
     },
     [widthKey]
   );
 
-  useEffect(() => () => flushPanelWidthsNow(), []);
+  useEffect(() => () => flushPanelWidthPersistence(), []);
 
   return { initialWidth, onWidthChange };
 }

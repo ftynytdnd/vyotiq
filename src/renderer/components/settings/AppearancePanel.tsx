@@ -1,6 +1,7 @@
 import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { applyAppTheme, themePrefsFromSettings, type AppDensity, type AppThemeMode } from '../../lib/theme.js';
+import { useToastStore } from '../../store/useToastStore.js';
 import { ShellFieldLabel, ShellRow, ShellSection, ShellStack } from '../ui/ShellSection.js';
 import { Switch } from '../ui/Switch.js';
 
@@ -27,10 +28,16 @@ export function AppearancePanel() {
 
   const apply = (next: Partial<typeof ui>) => {
     const merged = { ...ui, ...next };
-    void vyotiq.settings.set({ ui: merged }).then(() => {
-      applyAppTheme(themePrefsFromSettings({ ...settings, ui: merged }));
-      void setSettings();
-    });
+    void vyotiq.settings
+      .set({ ui: merged })
+      .then(() => {
+        applyAppTheme(themePrefsFromSettings({ ...settings, ui: merged }));
+        void setSettings();
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        useToastStore.getState().show(`Could not save appearance settings: ${msg}`, 'danger');
+      });
   };
 
   return (

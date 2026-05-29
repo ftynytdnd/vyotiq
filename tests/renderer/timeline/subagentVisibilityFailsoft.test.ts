@@ -77,7 +77,7 @@ describe('deriveRows — sub-agent visibility fail-soft', () => {
     expect(rows.filter((r) => r.kind === 'subagent-line')).toHaveLength(1);
   });
 
-  it('produces one subagent-line and no top-level tool rows for full nested run without spawn', () => {
+  it('produces inline subagent tool and file-edit rows for full run without spawn', () => {
     const rows = deriveRows([
       USER_PROMPT,
       TOOL_CALL_EDIT_A1,
@@ -85,8 +85,12 @@ describe('deriveRows — sub-agent visibility fail-soft', () => {
       FILE_EDIT_A1
     ]);
     expect(rows.filter((r) => r.kind === 'subagent-line')).toHaveLength(1);
-    expect(rows.filter((r) => r.kind === 'tool-group')).toHaveLength(0);
-    expect(rows.filter((r) => r.kind === 'file-edit-group')).toHaveLength(0);
+    const toolGroups = rows.filter((r) => r.kind === 'tool-group');
+    expect(toolGroups).toHaveLength(1);
+    expect(toolGroups[0]).toMatchObject({ subagentId: 'A1' });
+    const fileEdits = rows.filter((r) => r.kind === 'file-edit-group');
+    expect(fileEdits).toHaveLength(1);
+    expect(fileEdits[0]).toMatchObject({ subagentId: 'A1' });
   });
 
   it('emits one subagent-line when spawn IS present', () => {
@@ -108,7 +112,7 @@ describe('deriveRows — sub-agent visibility fail-soft', () => {
     expect(rows.filter((r) => r.kind === 'subagent-line')).toHaveLength(1);
   });
 
-  it('closes orchestrator tool-groups on sub-agent boundary with subagent-line row', () => {
+  it('closes orchestrator tool-groups on sub-agent boundary and emits inline subagent tool row', () => {
     const rows = deriveRows([
       USER_PROMPT,
       {
@@ -126,7 +130,8 @@ describe('deriveRows — sub-agent visibility fail-soft', () => {
       }
     ]);
     const toolGroups = rows.filter((r) => r.kind === 'tool-group');
-    expect(toolGroups).toHaveLength(2);
+    expect(toolGroups).toHaveLength(3);
+    expect(toolGroups.some((g) => g.subagentId === 'A1')).toBe(true);
     expect(rows.filter((r) => r.kind === 'subagent-line')).toHaveLength(1);
   });
 

@@ -1,9 +1,9 @@
 /**
  * Title sanitization for auto-derived conversation titles.
  *
- * The first user prompt is used to seed the conversation's sidebar title.
+ * The first user prompt is used to seed the conversation's dock title.
  * Without sanitization, prompts like "## Launch multiple agents for X" land
- * in the sidebar with the literal `##` prefix, which looks broken and
+ * in the dock with the literal `##` prefix, which looks broken and
  * mismatches the rest of the stealth UI. This module strips the common
  * markdown decorations a user would naturally include and collapses
  * whitespace so titles render as plain prose.
@@ -39,7 +39,7 @@ function stripInline(s: string): string {
 }
 
 /**
- * Sanitize a raw user prompt into a clean sidebar title.
+ * Sanitize a raw user prompt into a clean dock title.
  *
  * Behavior:
  *   - Operates on the FIRST non-empty line (a prompt that opens with

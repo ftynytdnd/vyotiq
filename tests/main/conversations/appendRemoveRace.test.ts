@@ -5,7 +5,7 @@
  * conversation'` meta when fired against an unknown id. Combined with
  * `chat.ipc.ts:69-77` (which appends every event asynchronously), a
  * `chat:event` racing with `conversations:remove` could resurrect the
- * deleted conversation in the sidebar. The fix tombstones the id on
+ * deleted conversation in the dock. The fix tombstones the id on
  * remove so trailing appends no-op.
  */
 

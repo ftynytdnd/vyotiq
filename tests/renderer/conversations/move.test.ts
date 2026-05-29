@@ -2,7 +2,7 @@
  * `useConversationsStore.move` — renderer-side optimistic flip + rollback.
  *
  * Pinned invariants:
- *   1. Optimistic update lands BEFORE the IPC resolves (sidebar moves
+ *   1. Optimistic update lands BEFORE the IPC resolves (dock moves
  *      the row immediately; the IPC reconciles the meta on success).
  *   2. Source-workspace slot in `activeIdByWorkspace` is cleared if it
  *      pointed at the moved conversation. Without this fix-up, the

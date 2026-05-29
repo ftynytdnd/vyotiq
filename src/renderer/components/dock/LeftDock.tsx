@@ -1,36 +1,39 @@
 /**
- * LeftDock — workspace tabs + chat strip. Flat layout; highlights only on
- * active tabs, hover, open search, and running state — not boxed sections.
+ * LeftDock — floating rail + flyout panel for workspace tabs and chat strip.
+ * Collapsed: centered icon pill overlay. Expanded: flyout replaces rail with full lists.
  */
 
-import { FolderOpen } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { DockChatStrip } from './DockChatStrip.js';
+import { DockExpandBackdrop } from './DockExpandBackdrop.js';
 import { DockSearchPopover } from './DockSearchPopover.js';
 import { DockToolbar } from './DockToolbar.js';
 import { DockWorkspaceTabs } from './DockWorkspaceTabs.js';
 import { DockSectionHeader } from './DockSectionHeader.js';
 import {
   clampDockWidth,
-  dockWorkspaceIndicatorLabel,
+  dismissDockFlyout,
   DOCK_DIVIDER_H_CLASS,
   DOCK_FOOTER_CLASS,
   DOCK_INSET_CLASS,
+  DOCK_RAIL_PILL_CLASS,
   DOCK_RESIZE_HANDLE_CLASS,
-  DOCK_TAB_ICON_CLASS,
-  DOCK_TAB_ICON_STROKE,
-  DOCK_WIDTH_COLLAPSED_PX,
+  dockFlyoutShellClassName,
   workspacePanelClassName
 } from './dockShared.js';
+import { useDockFlyoutFocus } from './useDockFlyoutFocus.js';
 import { useDockShortcuts } from './useDockShortcuts.js';
 import { useUiStore } from '../../store/useUiStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
-import { useWorkspaceHasActiveRun } from '../../hooks/chat/useWorkspaceHasActiveRun.js';
 import { cn } from '../../lib/cn.js';
 
-export function LeftDock() {
+export interface LeftDockProps {
+  onOpenSettings: () => void;
+}
+
+export function LeftDock({ onOpenSettings }: LeftDockProps) {
   useDockShortcuts();
 
   const dockExpanded = useUiStore((s) => s.dockExpanded);
@@ -45,27 +48,17 @@ export function LeftDock() {
 
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
   const workspaces = useWorkspaceStore((s) => s.list);
-  const workspaceHasActiveRun = useWorkspaceHasActiveRun(activeWorkspaceId);
 
   const [liveWidth, setLiveWidth] = useState<number | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
   const dragWidthRef = useRef<number | null>(null);
   const moveHandlerRef = useRef<((ev: MouseEvent) => void) | null>(null);
   const upHandlerRef = useRef<(() => void) | null>(null);
+  const flyoutRef = useRef<HTMLElement>(null);
 
-  const activeWorkspaceLabel = useMemo(() => {
-    if (!activeWorkspaceId) return null;
-    return workspaces.find((w) => w.id === activeWorkspaceId)?.label ?? null;
-  }, [activeWorkspaceId, workspaces]);
+  const dismissFlyout = useCallback(() => dismissDockFlyout(), []);
 
-  const collapsedTooltip = useMemo(() => {
-    if (!activeWorkspaceId) return 'Expand navigation (Ctrl+B): open a workspace';
-    return `Expand navigation (Ctrl+B): ${activeWorkspaceLabel ?? 'workspace'}`;
-  }, [activeWorkspaceId, activeWorkspaceLabel]);
-
-  const indicatorShort = useMemo(
-    () => dockWorkspaceIndicatorLabel(activeWorkspaceLabel),
-    [activeWorkspaceLabel]
-  );
+  useDockFlyoutFocus(dockExpanded, flyoutRef, dismissFlyout);
 
   const handleToggleSearch = () => {
     if (!dockExpanded) setDockExpanded(true);
@@ -89,6 +82,7 @@ export function LeftDock() {
         upHandlerRef.current = null;
       }
       dragWidthRef.current = null;
+      setIsResizing(false);
     };
   }, []);
 
@@ -99,6 +93,7 @@ export function LeftDock() {
       const startWidth = dockWidth;
       dragWidthRef.current = startWidth;
       setLiveWidth(startWidth);
+      setIsResizing(true);
 
       const onMove = (ev: MouseEvent) => {
         const next = clampDockWidth(startWidth + (ev.clientX - startX));
@@ -116,6 +111,7 @@ export function LeftDock() {
         }
         dragWidthRef.current = null;
         setLiveWidth(null);
+        setIsResizing(false);
       };
 
       moveHandlerRef.current = onMove;
@@ -132,69 +128,60 @@ export function LeftDock() {
     searchOpen,
     onNewChat: () => void newConversation(),
     onToggleSearch: handleToggleSearch,
+    onOpenSettings,
     onCollapse: () => toggleDock()
   };
 
-  return (
+  const expandedPanel = (
     <nav
+      ref={flyoutRef}
+      role="dialog"
+      aria-modal="true"
       aria-label="Workspace and session navigation"
-      aria-expanded={dockExpanded}
-      className={cn(
-        'app-no-drag relative h-full min-h-0 shrink-0 overflow-hidden bg-surface-base',
-        liveWidth !== null ? '' : 'transition-[width] duration-200 ease-out'
-      )}
-      style={{
-        width: dockExpanded ? `${expandedWidthPx}px` : `${DOCK_WIDTH_COLLAPSED_PX}px`
-      }}
+      aria-expanded
+      className={dockFlyoutShellClassName(isResizing)}
+      style={{ width: `${expandedWidthPx}px` }}
     >
-      {dockExpanded ? (
-        <>
-          <div className={cn(DOCK_INSET_CLASS, 'h-full gap-0 py-1')}>
-            <div className={workspacePanelClassName(workspaces.length)}>
-              <DockSectionHeader label="Workspaces" />
-              <DockWorkspaceTabs />
-            </div>
-            <div className={DOCK_DIVIDER_H_CLASS} aria-hidden />
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <DockSectionHeader label="Chats" />
-              <DockChatStrip workspaceId={activeWorkspaceId} />
-            </div>
-            <div className={DOCK_FOOTER_CLASS}>
-              <DockSearchPopover />
-              <DockToolbar layout="horizontal" {...toolbarProps} collapseIcon="left" />
-            </div>
-          </div>
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize navigation dock"
-            onMouseDown={onResizeStart}
-            className={DOCK_RESIZE_HANDLE_CLASS}
-          />
-        </>
-      ) : (
-        <div className="flex h-full min-h-0 flex-col items-center justify-center gap-1.5 px-1 py-1.5">
-          <button
-            type="button"
-            onClick={() => setDockExpanded(true)}
-            aria-expanded={false}
-            aria-label={`Expand navigation: ${collapsedTooltip}`}
-            title={collapsedTooltip}
-            className={cn(
-              'vx-btn vx-btn-quiet h-6 w-6 shrink-0 px-0 font-mono text-meta',
-              workspaceHasActiveRun && 'vyotiq-shimmer-pill'
-            )}
-          >
-            {activeWorkspaceId ? (
-              <span className="truncate">{indicatorShort}</span>
-            ) : (
-              <FolderOpen className={DOCK_TAB_ICON_CLASS} strokeWidth={DOCK_TAB_ICON_STROKE} aria-hidden />
-            )}
-          </button>
-          <DockToolbar layout="vertical" {...toolbarProps} collapseIcon="right" />
+      <div className={cn(DOCK_INSET_CLASS, 'h-full gap-0 py-1')}>
+        <div className={workspacePanelClassName(workspaces.length)}>
+          <DockSectionHeader label="Workspaces" />
+          <DockWorkspaceTabs />
         </div>
-      )}
+        <div className={DOCK_DIVIDER_H_CLASS} aria-hidden />
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <DockSectionHeader label="Chats" />
+          <DockChatStrip workspaceId={activeWorkspaceId} />
+        </div>
+        <div className={DOCK_FOOTER_CLASS}>
+          <DockSearchPopover />
+          <DockToolbar layout="horizontal" {...toolbarProps} collapseIcon="left" />
+        </div>
+      </div>
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize navigation dock"
+        data-resizing={isResizing ? 'true' : undefined}
+        onMouseDown={onResizeStart}
+        className={DOCK_RESIZE_HANDLE_CLASS}
+      />
     </nav>
   );
-}
 
+  const collapsedRail = (
+    <nav
+      aria-label="Workspace and session navigation rail"
+      aria-expanded={false}
+      className={DOCK_RAIL_PILL_CLASS}
+    >
+      <DockToolbar layout="vertical" dockStyle {...toolbarProps} collapseIcon="right" />
+    </nav>
+  );
+
+  return (
+    <>
+      <DockExpandBackdrop />
+      {dockExpanded ? expandedPanel : collapsedRail}
+    </>
+  );
+}

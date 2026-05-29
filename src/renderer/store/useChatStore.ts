@@ -867,15 +867,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
   },
 
-  registerIdleRoute: (runId, conversationId) => {
-    set((s) => {
-      // Idempotent — re-registering the same pair is a no-op.
-      if (s.runIdToConv[runId] === conversationId) return s;
-      const nextMap = { ...s.runIdToConv, [runId]: conversationId };
-      return { ...s, runIdToConv: nextMap };
-    });
-  },
-
   beginSideRun: (runId, conversationId) => {
     const startedAt = Date.now();
     set((s) => {

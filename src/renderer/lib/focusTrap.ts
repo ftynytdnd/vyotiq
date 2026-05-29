@@ -41,6 +41,8 @@ export function bindFocusTrap({
   const onKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape' && onEscape) {
       if (disableEscape) return;
+      const root = getRoot?.() ?? rootProp ?? null;
+      if (root && !root.contains(document.activeElement)) return;
       e.preventDefault();
       onEscape();
       return;

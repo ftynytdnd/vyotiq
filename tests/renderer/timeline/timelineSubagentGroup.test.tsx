@@ -1,5 +1,5 @@
 ﻿/**
- * timelineSubagentGroup - inline sub-agent group projection end-to-end.
+ * timelineSubagentGroup - inline whisper-quotes delegation projection end-to-end.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -101,18 +101,18 @@ afterEach(() => {
 });
 
 describe('timelineSubagentGroup', () => {
-  it('renders one group with meta and two collapsed trace headers', () => {
+  it('renders two stream weave worker blocks without legacy group meta', () => {
     const { container } = render(<Timeline />);
 
-    const groups = container.querySelectorAll('[data-row-kind="subagent-group"]');
-    expect(groups).toHaveLength(1);
-    expect(container.textContent ?? '').toContain('Delegated');
-    expect(container.textContent ?? '').toContain('2 tasks');
-    expect(container.querySelectorAll('[data-row-kind="subagent-line"]')).toHaveLength(2);
-    expect(container.querySelector('[data-row-kind="delegate-batch"]')).toBeNull();
+    const workers = container.querySelectorAll('[data-row-kind="delegation-worker"]');
+    expect(workers).toHaveLength(2);
+    expect(container.querySelector('[data-row-kind="subagent-group"]')).toBeNull();
+    expect(container.textContent ?? '').not.toContain('Delegated');
+    expect(container.textContent ?? '').toContain('W1');
+    expect(container.textContent ?? '').toContain('W2');
   });
 
-  it('renders a single-worker group without meta line', async () => {
+  it('renders a single worker weave block for one delegate', async () => {
     await act(async () => {
       useChatStore.setState({
         events: [
@@ -157,10 +157,7 @@ describe('timelineSubagentGroup', () => {
     });
 
     const { container } = render(<Timeline />);
-    const group = container.querySelector('[data-row-kind="subagent-group"]');
-    expect(group).not.toBeNull();
-    expect(group!.textContent ?? '').not.toContain('Delegated');
-    expect(container.textContent ?? '').toContain('only one');
-    expect(container.querySelectorAll('[data-row-kind="subagent-line"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-row-kind="delegation-worker"]')).toHaveLength(1);
+    expect(container.textContent ?? '').toContain('W1');
   });
 });

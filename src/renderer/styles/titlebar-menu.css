@@ -1,0 +1,31 @@
+.vx-titlebar-hamburger-trigger[aria-expanded='true'] {
+  background: var(--color-chrome-hover-soft);
+  color: var(--color-text-primary);
+}
+
+.vx-titlebar-menu-panel {
+  padding: 0.3125rem;
+}
+
+.vx-titlebar-menu-item {
+  width: 100%;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-radius: var(--radius-line);
+  padding: 0.4375rem 0.5rem;
+  text-align: left;
+  font-size: var(--text-row);
+  line-height: 1.25;
+  color: var(--color-text-secondary);
+}
+
+.vx-titlebar-menu-item:hover:not(:disabled) {
+  background: var(--color-chrome-hover-soft);
+  color: var(--color-text-primary);
+}
+
+.vx-titlebar-menu-separator {
+  margin: 0.3125rem 0.375rem;
+  height: 1px;
+  background: color-mix(in oklch, var(--color-border-subtle) 30%, transparent);
+}

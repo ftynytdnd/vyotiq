@@ -1,6 +1,6 @@
 /**
  * `useWorkspaceStore.setActive` must flip `activeId` + the derived
- * `info` mirror SYNCHRONOUSLY so the sidebar tree highlight + chat
+ * `info` mirror SYNCHRONOUSLY so the dock tree highlight + chat
  * mirror downstream reactions don't stall behind the settings.json
  * disk write. On a persistence rejection, the store rolls back to
  * the prior state and surfaces a danger toast.
@@ -98,7 +98,7 @@ describe('useWorkspaceStore.setActive — optimistic flip', () => {
 });
 
 describe('useWorkspaceStore.remove', () => {
-  it('clears deleted workspace sidebar state and reconciles conversations', async () => {
+  it('clears deleted workspace dock state and reconciles conversations', async () => {
     const reconcileSpy = vi
       .spyOn(useConversationsStore.getState(), 'reconcileWithMain')
       .mockResolvedValue(undefined);

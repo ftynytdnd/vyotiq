@@ -24,7 +24,7 @@
  * (`getWorkspace` / `setWorkspace` / `requireWorkspace`) so every
  * existing tool/sandbox callsite stays compiling and behaviourally
  * identical — they read/write the *active* entry. New callers (the
- * orchestrator's per-run resolution, the workspaces sidebar tree)
+ * orchestrator's per-run resolution, the workspaces dock tree)
  * use the explicit `*ById` variants.
  */
 

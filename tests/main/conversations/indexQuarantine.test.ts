@@ -5,7 +5,7 @@
  * Pre-fix behavior: `loadIndex` caught every non-ENOENT error and
  * defaulted `indexCache = []`. The next `flushIndex` would then write
  * `[]` over the (potentially recoverable) corrupt file via the `.tmp +
- * rename` path, permanently destroying the sidebar. The post-fix
+ * rename` path, permanently destroying the dock index. The post-fix
  * contract: the unreadable file is quarantine-renamed to
  * `index.json.corrupt-<ts>` BEFORE the empty cache is accepted, and
  * only THEN does the store start fresh.
