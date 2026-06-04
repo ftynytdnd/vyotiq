@@ -35,6 +35,8 @@ function findLiteralViolations(source: string): string[] {
     const before = cleaned.slice(Math.max(0, idx - 24), idx);
     // `color-mix(in oklch, …)` is token-safe composition, not a raw literal.
     if (before.includes('color-mix(in ')) continue;
+    // `oklch(from var(--token) …)` derives from theme tokens, not a raw literal.
+    if (cleaned.slice(idx).startsWith('oklch(from ')) continue;
     hits.push(match[0]);
   }
   return hits;

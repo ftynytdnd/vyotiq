@@ -3,7 +3,7 @@
  */
 
 import { cn } from '../../../lib/cn.js';
-import { resolveSubAgentSubtitle } from '../../agent/trace/subtitleResolver.js';
+import { resolveSubAgentSubtitle } from './subtitleResolver.js';
 import type { SubAgentSnapshot } from '../reducer/types.js';
 import { PromptBody } from '../rows/PromptBody.js';
 import {

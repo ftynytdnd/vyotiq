@@ -193,7 +193,7 @@ describe('useGlobalShortcuts', () => {
     expect(toggleDevTools).not.toHaveBeenCalled();
   });
 
-  it('removes keydown and keyup listeners on unmount', () => {
+  it('removes the keydown listener on unmount', () => {
     const addSpy = vi.spyOn(window, 'addEventListener');
     const removeSpy = vi.spyOn(window, 'removeEventListener');
     const { unmount } = render(
@@ -204,12 +204,10 @@ describe('useGlobalShortcuts', () => {
       />
     );
     const addedKeydown = addSpy.mock.calls.filter((c) => c[0] === 'keydown').length;
-    const addedKeyup = addSpy.mock.calls.filter((c) => c[0] === 'keyup').length;
     expect(addedKeydown).toBeGreaterThan(0);
-    expect(addedKeyup).toBeGreaterThan(0);
+    expect(addSpy.mock.calls.filter((c) => c[0] === 'keyup').length).toBe(0);
     unmount();
     expect(removeSpy.mock.calls.filter((c) => c[0] === 'keydown').length).toBe(addedKeydown);
-    expect(removeSpy.mock.calls.filter((c) => c[0] === 'keyup').length).toBe(addedKeyup);
     addSpy.mockRestore();
     removeSpy.mockRestore();
   });

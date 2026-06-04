@@ -36,8 +36,8 @@
 
 import type { ToolName } from '@shared/types/tool.js';
 import { parseResultEnvelope } from '@shared/text/resultPatterns.js';
-import { formatDuration } from '../../timeline/rows/RunCompleteRow.js';
-import type { SubAgentSnapshot } from '../../timeline/reducer/types.js';
+import { formatDuration } from '../rows/RunCompleteRow.js';
+import type { SubAgentSnapshot } from '../reducer/types.js';
 
 /** Hard cap on the final string so the single-line clamp never has to truncate. */
 const MAX_LEN = 140;
