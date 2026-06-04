@@ -108,7 +108,6 @@ function makeStubApi() {
       checkForUpdates: vi.fn(async () => ({ updateAvailable: false }))
     },
     checkpoints: {
-      readBlob: vi.fn(async () => null),
       previewRewind: vi.fn(async (input: unknown) => ({ ok: true, ...(input as object) })),
       rewindToPrompt: vi.fn(async () => ({
         ok: true as const,

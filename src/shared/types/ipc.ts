@@ -822,13 +822,9 @@ export interface VyotiqApi {
 
 
 
-  // ---- Checkpoints (transcript rewind + diff blobs) ----
+  // ---- Checkpoints (transcript rewind) ----
 
   checkpoints: {
-
-    /** Read a snapshot blob's UTF-8 body (used for diff previews). */
-
-    readBlob(workspaceId: string, hash: string): Promise<string | null>;
 
     /**
 

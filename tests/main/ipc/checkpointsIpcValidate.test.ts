@@ -33,10 +33,6 @@ vi.mock('@main/checkpoints/rewindToPrompt.js', () => ({
   rewindToPrompt: (input: unknown) => rewindToPromptMock(input)
 }));
 
-vi.mock('@main/checkpoints/index.js', () => ({
-  readBlobBody: vi.fn()
-}));
-
 vi.mock('@main/workspace/workspaceState.js', () => ({
   listWorkspaces: vi.fn(async () => ({ activeId: null, workspaces: [] })),
   requireWorkspaceById: vi.fn(async () => '/tmp/ws')

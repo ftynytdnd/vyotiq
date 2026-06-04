@@ -13,7 +13,6 @@ import type {
   CheckpointChangeKind
 } from '@shared/types/checkpoint.js';
 import type { DiffHunk as ToolDiffHunk } from '@shared/types/tool.js';
-import { readBlob } from './blobStore.js';
 import {
   openRun as openRunInternal,
   finalizeRun as finalizeRunInternal,
@@ -77,9 +76,6 @@ export async function recordChange(opts: RecordChangeOpts): Promise<CheckpointEn
     source: opts.source
   };
 }
-
-/** Read a blob body — UTF-8 string or null. */
-export const readBlobBody = readBlob;
 
 /** Read a run manifest off disk (or from the open-run cache). */
 export async function getRunManifest(

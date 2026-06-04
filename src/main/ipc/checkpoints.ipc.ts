@@ -1,5 +1,5 @@
 /**
- * Checkpoints IPC — renderer surface for transcript rewind and diff blobs.
+ * Checkpoints IPC — renderer surface for transcript rewind.
  *
  * File-change recording, pending rows, and entry/run revert stay on the
  * main process (tools + `rewindToPrompt`). The deleted Checkpoints panel
@@ -9,21 +9,11 @@
 import { IPC } from '@shared/constants.js';
 import type { RewindPreviewResult, RewindResult } from '@shared/types/checkpoint.js';
 import { previewRewind, rewindToPrompt } from '../checkpoints/rewindToPrompt.js';
-import { readBlobBody } from '../checkpoints/index.js';
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
-import { assertBlobHash, assertString, assertObject } from './validate.js';
+import { assertString, assertObject } from './validate.js';
 
 export function registerCheckpointsIpc(): void {
-  wrapIpcHandler(
-    IPC.CHECKPOINTS_READ_BLOB,
-    async (_event, workspaceId: string, hash: string): Promise<string | null> => {
-      assertString('checkpoints:readBlob', 'workspaceId', workspaceId);
-      assertBlobHash('checkpoints:readBlob', 'hash', hash);
-      return readBlobBody(workspaceId, hash);
-    }
-  );
-
   wrapIpcHandler(
     IPC.CHECKPOINTS_PREVIEW_REWIND,
     async (

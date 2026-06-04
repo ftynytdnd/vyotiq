@@ -106,8 +106,6 @@ const api: VyotiqApi = {
   },
 
   checkpoints: {
-    readBlob: (workspaceId: string, hash: string) =>
-      ipcRenderer.invoke(IPC.CHECKPOINTS_READ_BLOB, workspaceId, hash),
     previewRewind: (input) =>
       ipcRenderer.invoke(IPC.CHECKPOINTS_PREVIEW_REWIND, input),
     rewindToPrompt: (input) =>

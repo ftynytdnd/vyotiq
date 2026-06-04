@@ -400,9 +400,7 @@ export const IPC = {
   CONVERSATIONS_ARCHIVE: 'conversations:archive',
   CONVERSATIONS_UNARCHIVE: 'conversations:unarchive',
 
-  // Checkpoints — renderer rewind + diff blobs (recording stays main-only)
-  /** Reads a snapshot blob (UTF-8) for diff previews. */
-  CHECKPOINTS_READ_BLOB: 'checkpoints:read-blob',
+  // Checkpoints — renderer rewind (recording stays main-only)
   /** Rewind impact preview (inline Revert modal). */
   CHECKPOINTS_PREVIEW_REWIND: 'checkpoints:preview-rewind',
   /** Atomic rewind to a user-prompt boundary. */
