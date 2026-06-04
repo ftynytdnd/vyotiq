@@ -26,7 +26,7 @@ import type { ChatStreamRequest, ChatStreamDelta } from './chatClient.js';
 import type { ChatMessage } from '@shared/types/chat.js';
 import type { ProviderWithKey } from '@shared/types/provider.js';
 import { logger } from '../logging/logger.js';
-import { classifyProviderError, ProviderError } from './providerError.js';
+import { classifyProviderError, ProviderError, looksRateLimited } from './providerError.js';
 import { acquire, markRateLimited, markSuccess } from './providerRateGuard.js';
 import { createInactivityWatch, isStreamInactivityError } from './streamInactivity.js';
 import { safeText } from './errorBody.js';
@@ -489,31 +489,6 @@ function* framesToDeltas(
   }
 }
 
-
-/**
- * Heuristic — does a mid-stream provider error message look like a
- * rate-limit / saturation signal that should feed the per-provider
- * cooldown gate?
- *
- * Patterns observed in the field (Ollama Cloud, OpenAI-compat shims
- * that error mid-body):
- *   - "too many concurrent requests"
- *   - "rate limit exceeded"
- *   - "you have hit the rate limit"
- *   - "request was throttled"
- *   - "429" embedded in a human message
- *
- * Conservative on purpose: a false positive only delays the next
- * retry against this provider by the standard backoff; a false
- * negative regresses to the pre-A-17 dog-pile behavior. We err on
- * the side of recognizing the signal.
- */
-const RATE_LIMIT_HINT_RE =
-  /\b(rate[\s-]?limit(?:ed|ing|s)?|too\s+many\s+(?:concurrent\s+)?(?:requests|connections)|concurrent\s+requests?\s+exceeded|throttl(?:ed|ing)|quota\s+exceeded|429)\b/i;
-
-function looksRateLimited(msg: string): boolean {
-  return RATE_LIMIT_HINT_RE.test(msg);
-}
 
 /** Shape of a single message on the Ollama `/api/chat` wire. */
 interface OllamaWireMessage {

@@ -251,3 +251,31 @@ export function isNonRecoverableProviderError(err: unknown): err is ProviderErro
     NON_RECOVERABLE_PROVIDER_ERROR_KINDS.has(err.kind)
   );
 }
+
+/**
+ * Heuristic — does a mid-stream provider error message look like a
+ * rate-limit / saturation signal that should feed the per-provider
+ * cooldown gate?
+ *
+ * Both stream transports surface mid-body errors on an already-200
+ * connection (Ollama Cloud's `{"error":"too many concurrent requests"}`,
+ * OpenAI-compat gateways' `data: {"error":{...}}`). The initial-rejection
+ * path only feeds `markRateLimited` on 429 / 5xx HTTP statuses, so
+ * without sniffing the text a saturated provider would let sibling
+ * sub-agents dog-pile on retry instead of staggering behind the gate.
+ *
+ * Patterns observed in the field:
+ *   - "too many concurrent requests" / "concurrent requests exceeded"
+ *   - "rate limit exceeded" / "you have hit the rate limit"
+ *   - "request was throttled" · "quota exceeded" · a bare "429"
+ *
+ * Conservative on purpose: a false positive only delays the next retry
+ * against this provider by the standard backoff; a false negative
+ * regresses to the dog-pile behavior. We err toward recognizing it.
+ */
+const RATE_LIMIT_HINT_RE =
+  /\b(rate[\s-]?limit(?:ed|ing|s)?|too\s+many\s+(?:concurrent\s+)?(?:requests|connections)|concurrent\s+requests?\s+exceeded|throttl(?:ed|ing)|quota\s+exceeded|429)\b/i;
+
+export function looksRateLimited(msg: string): boolean {
+  return RATE_LIMIT_HINT_RE.test(msg);
+}

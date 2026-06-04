@@ -13,7 +13,7 @@
 import type { ChatStreamRequest, ChatStreamDelta } from './chatClient.js';
 import type { ProviderWithKey } from '@shared/types/provider.js';
 import { logger } from '../logging/logger.js';
-import { classifyProviderError } from './providerError.js';
+import { classifyProviderError, ProviderError, looksRateLimited } from './providerError.js';
 import { acquire, markRateLimited, markSuccess } from './providerRateGuard.js';
 import { createInactivityWatch, isStreamInactivityError } from './streamInactivity.js';
 import { buildAttributionHeaders } from './attributionHeaders.js';
@@ -84,6 +84,16 @@ interface RawSseChunk {
     prompt_cache_hit_tokens?: number;
     prompt_cache_miss_tokens?: number;
   };
+  /**
+   * OpenAI-compat mid-stream error envelope. The HTTP response was 200
+   * and the stream opened, then the provider emits a single
+   * `data: {"error":{...}}` frame instead of a content/usage chunk —
+   * OpenRouter (upstream provider failure, mid-generation rate limit,
+   * moderation), Azure OpenAI, and several gateways (Together, Groq)
+   * all surface failures this way. OpenAI's own canonical error object
+   * is `{ message, type, code }`; some gateways send a bare string.
+   */
+  error?: { message?: string; type?: string; code?: string | number } | string;
 }
 
 /**
@@ -273,6 +283,36 @@ export async function* streamOpenAi(
       chunk = JSON.parse(payload) as RawSseChunk;
     } catch {
       return false;
+    }
+    // Mid-stream error envelope (`data: {"error":{...}}` on an already-
+    // 200 connection). Without this branch the frame carried no `usage`
+    // and no `choices`, so it fell through to `if (!choice) return false`
+    // and was silently dropped — the user saw a stuck spinner that
+    // finished with an empty response and no error. Promote it to a
+    // `ProviderError` so `runLoop`'s self-correction path engages, with
+    // the same rate-limit sniff + gate feed the Ollama transport uses
+    // (a mid-generation 429 from OpenRouter/Groq must stagger sibling
+    // sub-agents instead of letting them dog-pile on retry).
+    if (chunk.error !== undefined && chunk.error !== null) {
+      const errMsg =
+        typeof chunk.error === 'string'
+          ? chunk.error
+          : typeof chunk.error.message === 'string'
+            ? chunk.error.message
+            : 'Unknown mid-stream error from provider.';
+      const rateLimited = looksRateLimited(errMsg);
+      if (rateLimited) markRateLimited(req.providerId);
+      throw new ProviderError({
+        kind: rateLimited ? 'rate-limit' : 'server',
+        status: 200,
+        providerId: req.providerId,
+        providerName: provider.name,
+        friendlyMessage: rateLimited
+          ? `${provider.name}: Rate limit exceeded (mid-stream) — ${errMsg}`
+          : `${provider.name}: Mid-stream error — ${errMsg}`,
+        surface: 'chat',
+        rawBody: payload.slice(0, 1024)
+      });
     }
     if (chunk.usage) {
       const u = chunk.usage;
