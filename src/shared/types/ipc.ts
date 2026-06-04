@@ -18,6 +18,8 @@ import type {
 
   ProviderAttribution,
 
+  ThinkingEffort,
+
   ModelInfo
 
 } from './provider.js';
@@ -577,6 +579,10 @@ export interface VyotiqApi {
         /** OpenRouter app-attribution overrides; see ProviderConfig.attribution. */
 
         attribution?: ProviderAttribution;
+
+        /** Per-model thinking-effort overrides (shallow-merged store-side). */
+
+        modelThinking?: Record<string, ThinkingEffort>;
 
       }
 

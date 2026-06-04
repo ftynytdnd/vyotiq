@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  supportsForcedToolChoice,
-  supportsParallelToolCalls
+  supportsParallelToolCalls,
+  supportsToolChoice
 } from '@main/providers/capabilities.js';
 
 describe('supportsParallelToolCalls', () => {
@@ -17,10 +17,30 @@ describe('supportsParallelToolCalls', () => {
   });
 });
 
-describe('supportsForcedToolChoice', () => {
-  it('matches documented dialect behavior', () => {
-    expect(supportsForcedToolChoice('openai')).toBe(true);
-    expect(supportsForcedToolChoice('anthropic-native')).toBe(true);
-    expect(supportsForcedToolChoice('ollama-native')).toBe(false);
+describe('supportsToolChoice', () => {
+  it('omits tool_choice for always-thinking DeepSeek V4 models', () => {
+    // Default (no stored effort) ⇒ DeepSeek is in thinking mode ⇒ the
+    // field must be omitted to avoid the HTTP 400.
+    expect(supportsToolChoice('openai', 'deepseek-v4-flash', undefined)).toBe(false);
+    expect(supportsToolChoice('openai', 'deepseek-v4-pro', 'high')).toBe(false);
+    expect(supportsToolChoice('openai', 'deepseek-reasoner', 'medium')).toBe(false);
+  });
+
+  it('re-enables tool_choice when DeepSeek thinking is explicitly disabled', () => {
+    // `off` sends `thinking:{type:'disabled'}`, which makes forced
+    // tool_choice valid again.
+    expect(supportsToolChoice('openai', 'deepseek-v4-flash', 'off')).toBe(true);
+  });
+
+  it('allows tool_choice for non-DeepSeek OpenAI models regardless of effort', () => {
+    expect(supportsToolChoice('openai', 'gpt-5.3', 'high')).toBe(true);
+    expect(supportsToolChoice('openai', 'deepseek-v3.2', 'high')).toBe(true);
+  });
+
+  it('allows tool_choice for every other dialect', () => {
+    expect(supportsToolChoice('anthropic-native', 'claude-opus-4-7', 'high')).toBe(true);
+    expect(supportsToolChoice('gemini-native', 'gemini-3-pro', 'high')).toBe(true);
+    expect(supportsToolChoice('ollama-native', 'qwen3', 'high')).toBe(true);
+    expect(supportsToolChoice(undefined, 'whatever', undefined)).toBe(true);
   });
 });

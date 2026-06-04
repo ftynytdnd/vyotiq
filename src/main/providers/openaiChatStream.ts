@@ -23,6 +23,12 @@ import {
   stripReasoningContentForStrictDialects
 } from './sanitizeMessages.js';
 import { safeText } from './errorBody.js';
+import {
+  isDeepSeekThinkingModel,
+  mapDeepSeekThinking,
+  mapOpenAiReasoningEffort,
+  resolveThinkingEffort
+} from '@shared/providers/thinkingEffort.js';
 
 const log = logger.child('providers/chat/openai');
 
@@ -126,7 +132,16 @@ export async function* streamOpenAi(
   };
   if (req.tools && req.tools.length > 0) {
     body['tools'] = req.tools;
-    body['tool_choice'] = req.toolChoice ?? 'auto';
+    // Only forward `tool_choice` when the caller set one. An OMITTED
+    // choice (undefined) is deliberate for thinking models — DeepSeek
+    // V4 returns HTTP 400 ("Thinking mode does not support this
+    // tool_choice") for any forced/required value, and omitting the
+    // field falls back to the server default (`auto`), which is what we
+    // want. Sending an explicit `'auto'` here previously crashed those
+    // models on the very first turn.
+    if (req.toolChoice !== undefined) {
+      body['tool_choice'] = req.toolChoice;
+    }
     if (req.parallelToolCalls === true) {
       body['parallel_tool_calls'] = true;
     }
@@ -144,6 +159,18 @@ export async function* streamOpenAi(
   }
   if (typeof req.temperature === 'number') body['temperature'] = req.temperature;
   if (typeof req.maxTokens === 'number') body['max_tokens'] = req.maxTokens;
+
+  // Thinking-effort (2026). Normalized per-model effort → OpenAI-compat
+  // `reasoning_effort`. DeepSeek is always-thinking, so an explicit
+  // `off` disables it via the `thinking` body block (which also
+  // re-enables `tool_choice`); other OpenAI-compat reasoning models
+  // simply omit the field when effort is off/unset.
+  const effort = req.reasoningEffort ?? resolveThinkingEffort(provider, req.model);
+  const reasoningEffort = mapOpenAiReasoningEffort(effort);
+  if (reasoningEffort !== null) body['reasoning_effort'] = reasoningEffort;
+  if (isDeepSeekThinkingModel(req.model) && effort !== undefined) {
+    body['thinking'] = mapDeepSeekThinking(effort);
+  }
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',

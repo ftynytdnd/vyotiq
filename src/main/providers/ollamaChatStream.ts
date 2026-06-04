@@ -30,6 +30,7 @@ import { classifyProviderError, ProviderError } from './providerError.js';
 import { acquire, markRateLimited, markSuccess } from './providerRateGuard.js';
 import { createInactivityWatch, isStreamInactivityError } from './streamInactivity.js';
 import { safeText } from './errorBody.js';
+import { mapOllamaThink, resolveThinkingEffort } from '@shared/providers/thinkingEffort.js';
 
 const log = logger.child('providers/chat/ollama');
 
@@ -113,6 +114,12 @@ export async function* streamOllama(
   };
   if (req.tools && req.tools.length > 0) body['tools'] = req.tools;
   if (Object.keys(options).length > 0) body['options'] = options;
+  // Thinking-effort (2026). Ollama exposes a boolean `think` toggle on
+  // `/api/chat` (see docs.ollama.com/capabilities/thinking); any
+  // non-`off` effort enables it. Only sent when the user expressed a
+  // preference so non-thinking models aren't forced.
+  const ollamaEffort = req.reasoningEffort ?? resolveThinkingEffort(provider, req.model);
+  if (ollamaEffort !== undefined) body['think'] = mapOllamaThink(ollamaEffort);
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',

@@ -3,7 +3,12 @@
  */
 
 import { IPC } from '@shared/constants.js';
-import type { AddProviderInput, ProviderAttribution } from '@shared/types/provider.js';
+import type {
+  AddProviderInput,
+  ProviderAttribution,
+  ThinkingEffort
+} from '@shared/types/provider.js';
+import { THINKING_EFFORTS } from '@shared/providers/thinkingEffort.js';
 import {
   addProvider,
   listProviders,
@@ -104,6 +109,7 @@ export function registerProvidersIpc(): void {
       patch: Partial<AddProviderInput> & {
         enabled?: boolean;
         attribution?: ProviderAttribution;
+        modelThinking?: Record<string, ThinkingEffort>;
       }
     ) => {
       assertString('providers:update', 'id', id);
@@ -125,6 +131,17 @@ export function registerProvidersIpc(): void {
       }
       if ('enabled' in patch && patch.enabled !== undefined) {
         assertBoolean('providers:update', 'patch.enabled', patch.enabled);
+      }
+      if ('modelThinking' in patch && patch.modelThinking !== undefined) {
+        assertObject('providers:update', 'patch.modelThinking', patch.modelThinking);
+        for (const [modelId, effort] of Object.entries(patch.modelThinking)) {
+          assertEnum(
+            'providers:update',
+            `patch.modelThinking.${modelId}`,
+            effort,
+            THINKING_EFFORTS
+          );
+        }
       }
       if ('attribution' in patch && patch.attribution !== undefined) {
         assertObject('providers:update', 'patch.attribution', patch.attribution);

@@ -12,7 +12,6 @@ import {
   isWorkerFailedStatus,
   isWorkerPartialStatus
 } from './delegationHelpers.js';
-import { DelegationWorkerChips } from './DelegationWorkerChips.js';
 
 interface DelegationWorkerOutlineProps {
   snap: SubAgentSnapshot;
@@ -52,10 +51,10 @@ export function DelegationWorkerOutline({ snap }: DelegationWorkerOutlineProps) 
           </span>
         ) : null}
       </div>
-      <DelegationWorkerChips snap={snap} />
       {snap.task.trim().length > 0 ? (
         <PromptBody
           content={snap.task}
+          variant="single-line"
           bubbleClassName="border-l border-border-subtle/50"
         />
       ) : null}

@@ -1,8 +1,7 @@
 /**
- * The orchestration loop body — a CLOSED, schema-enforced forced-action
- * loop. Every decision turn is sent with `tool_choice: 'required'` (on
- * capable dialects), so "narrate without acting" is structurally
- * impossible and the legacy nudge/heuristic machinery is gone.
+ * The orchestration loop body. Decision turns offer tools with
+ * `tool_choice: 'auto'`; substantive prose-only answers end the run
+ * without forcing another tool round.
  *
  * Per iteration, in order:
  *   1. Refresh the dynamic envelopes (workspace context, recent memory,
@@ -17,10 +16,8 @@
  *      `finish`/`ask_user` are terminal and take precedence. A mixed
  *      continue+delegate turn uses `dispatchMixedTurn` (DAG batches via
  *      `depends_on`; independent tools and delegates run in parallel).
- *   4. No tool calls at all → degradation path (item 6): capable
- *      provider retries once then errors; `ollama-native` accepts
- *      substantive prose as an implicit finish, else one temp-0 retry,
- *      else a visible error.
+ *   4. No tool calls at all → substantive prose ends the run; otherwise
+ *      one retry, then a visible error.
  *
  * On the iteration cap (`MAX_TOTAL_ITERATIONS`) without a `finish`, one
  * final synthesis turn is issued with `tool_choice: 'none'` and its
@@ -57,10 +54,12 @@ import { isAbortError } from '../abortSignal.js';
 import { logger } from '../../logging/logger.js';
 import {
   isNonRecoverableProviderError,
+  isPermanentToolChoiceRejection,
   isProviderError
 } from '../../providers/providerError.js';
 import { getProviderWithKey } from '../../providers/providerStore.js';
-import { supportsForcedToolChoice } from '../../providers/capabilities.js';
+import { resolveThinkingEffort } from '@shared/providers/thinkingEffort.js';
+import type { ThinkingEffort } from '@shared/types/provider.js';
 import {
   MAX_DELEGATION_BAD_ROUNDS,
   MAX_SELF_CORRECTION_ATTEMPTS,
@@ -108,13 +107,10 @@ import {
 const log = logger.child('orch/runLoop');
 
 /**
- * Minimum length (chars) of plain assistant prose that a NON-FORCED
- * dialect (`ollama-native`, which ignores `tool_choice`) must produce
- * for the host to accept the turn as an IMPLICIT `finish`. Below this
- * the text is treated as an empty/announce-only stall and the loop does
- * one temp-0 retry before surfacing a visible error. Tuned so a real
- * one-sentence answer clears the bar while a bare "Okay." / "Working on
- * it…" does not.
+ * Minimum length (chars) of plain assistant prose for the host to accept
+ * a prose-only turn as an IMPLICIT `finish`. Below this, one retry then
+ * a visible error. Tuned so a real one-sentence answer clears the bar
+ * while a bare "Okay." / "Working on it…" does not.
  */
 const IMPLICIT_FINISH_MIN_CHARS = 40;
 
@@ -260,6 +256,14 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
 
     let providerName = await resolveProviderName(opts.input.selection.providerId);
     let providerDialect = await resolveProviderDialect(opts.input.selection.providerId);
+    let reasoningEffort = await resolveProviderThinking(
+      opts.input.selection.providerId,
+      opts.input.selection.modelId
+    );
+    // Run-scoped: flipped on once after a provider 400 that rejected the
+    // `tool_choice` field, so the next request omits it instead of
+    // terminating the run. See the error branch below.
+    let omitToolChoice = false;
 
     for (let iter = resume?.nextIteration ?? 0; iter < MAX_TOTAL_ITERATIONS; iter++) {
       if (opts.signal.aborted) return {};
@@ -269,6 +273,10 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           try {
             providerName = await resolveProviderName(opts.input.selection.providerId);
             providerDialect = await resolveProviderDialect(opts.input.selection.providerId);
+            reasoningEffort = await resolveProviderThinking(
+              opts.input.selection.providerId,
+              opts.input.selection.modelId
+            );
           } catch (err) {
             log.debug('per-iter provider name refresh failed; keeping prior', {
               providerId: opts.input.selection.providerId,
@@ -306,11 +314,12 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         if (sanitized.stats.injectedStubs > injectedStubsHighWater) {
           const newCount = sanitized.stats.injectedStubs - injectedStubsHighWater;
           injectedStubsHighWater = sanitized.stats.injectedStubs;
-          emit({
-            kind: 'phase',
-            id: randomUUID(),
-            ts: Date.now(),
-            label: `Recovered ${newCount} orphan tool_call(s) from history; the agent will re-issue if needed.`
+          // Orphan tool_call recovery is silent in the timeline now — the
+          // stub injection is a transparent self-heal that needs no
+          // user-facing row. Kept as a structured log for triage.
+          log.debug('recovered orphan tool_call(s) from history', {
+            iteration: iter,
+            recovered: newCount
           });
         }
 
@@ -319,6 +328,8 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           messages: candidateMessages,
           signal: opts.signal,
           dialect: providerDialect,
+          omitToolChoice,
+          ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
           ...(opts.input.conversationId !== undefined
             ? { conversationId: opts.input.conversationId }
             : {})
@@ -379,6 +390,25 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             : turn.error instanceof Error
               ? turn.error.message
               : String(turn.error);
+          // Safety net: a provider 400 that rejected `tool_choice`
+          // (e.g. an unclassified thinking model). Flip the run-scoped
+          // omit flag and retry the SAME iteration — no strike, no lost
+          // answer — instead of terminating. Guarded so we only do this
+          // once; a second identical 400 falls through to normal
+          // handling.
+          if (!omitToolChoice && isPermanentToolChoiceRejection(turn.error)) {
+            omitToolChoice = true;
+            log.warn('provider rejected tool_choice — retrying with the field omitted', {
+              iteration: iter,
+              status: turn.error.status
+            });
+            if (turn.hadText || turn.hadReasoning) {
+              emit({ kind: 'agent-text-aborted', id: turn.assistantMsgId, ts: Date.now() });
+            }
+            iter--;
+            runStateAcc.lastAction = 'retry';
+            continue;
+          }
           if (isNonRecoverableProviderError(turn.error)) {
             log.warn('LLM call failed (non-recoverable provider error)', {
               kind: turn.error.kind,
@@ -760,11 +790,10 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         if (didWork) continue;
 
         consecutiveEmptyTurns += 1;
-        const capable = supportsForcedToolChoice(providerDialect);
         const proseText = turn.assistantText.trim();
-        if (!capable && proseText.length >= IMPLICIT_FINISH_MIN_CHARS) {
+        if (proseText.length >= IMPLICIT_FINISH_MIN_CHARS) {
           runStateAcc.lastAction = 'answer';
-          log.info('ollama implicit finish — substantive prose accepted as answer', {
+          log.info('implicit finish — substantive prose accepted as answer', {
             iteration: iter,
             textChars: proseText.length
           });
@@ -773,17 +802,15 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         if (consecutiveEmptyTurns < 2) {
           log.warn('assistant turn produced no tool call — retrying once', {
             iteration: iter,
-            capable,
             proseChars: proseText.length
           });
           runStateAcc.lastAction = 'retry';
           continue;
         }
         {
-          const message = capable
-            ? 'The model returned no tool call under a forced tool choice twice in a row — escalating to user.'
-            : 'The model produced no actionable tool call or substantive answer after a retry — escalating to user.';
-          log.warn('empty-turn halt', { iteration: iter, capable, consecutiveEmptyTurns });
+          const message =
+            'The model produced no tool call and no substantive answer after a retry — escalating to user.';
+          log.warn('empty-turn halt', { iteration: iter, consecutiveEmptyTurns });
           emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message });
           return { terminalError: message };
         }
@@ -803,6 +830,8 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         signal: opts.signal,
         dialect: providerDialect,
         wrapUp: true,
+        omitToolChoice,
+        ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
         ...(opts.input.conversationId !== undefined
           ? { conversationId: opts.input.conversationId }
           : {})
@@ -1086,13 +1115,8 @@ async function resolveProviderName(providerId: string): Promise<string> {
 }
 
 /**
- * Resolve a provider's wire dialect for the forced-action capability
- * decision. Drives `tool_choice` strategy (`buildOrchestratorRequest`)
- * and the empty-turn degradation branch (`supportsForcedToolChoice`).
- * Returns `undefined` on any failure — `supportsForcedToolChoice`
- * treats `undefined` as the OpenAI-compatible (forced-capable) default,
- * the same fallback the chat client applies for providers persisted
- * before the dialect field existed.
+ * Resolve a provider's wire dialect (parallel tool_calls hint, logging).
+ * Returns `undefined` on failure.
  */
 async function resolveProviderDialect(
   providerId: string
@@ -1102,6 +1126,30 @@ async function resolveProviderDialect(
     return provider?.dialect;
   } catch (err) {
     log.debug('failed to resolve provider dialect; treating as forced-capable', {
+      providerId,
+      err: err instanceof Error ? err.message : String(err)
+    });
+    return undefined;
+  }
+}
+
+/**
+ * Resolve the orchestrator model's normalized thinking effort from the
+ * provider record (`modelThinking[modelId]`, falling back to the legacy
+ * `anthropicThinking` flag). Drives both the per-dialect wire mapping
+ * and the `tool_choice` omission gate. Returns `undefined` on failure
+ * (treated as "provider default" everywhere downstream).
+ */
+async function resolveProviderThinking(
+  providerId: string,
+  modelId: string
+): Promise<ThinkingEffort | undefined> {
+  try {
+    const provider = await getProviderWithKey(providerId);
+    if (!provider) return undefined;
+    return resolveThinkingEffort(provider, modelId);
+  } catch (err) {
+    log.debug('failed to resolve provider thinking effort; using provider default', {
       providerId,
       err: err instanceof Error ? err.message : String(err)
     });

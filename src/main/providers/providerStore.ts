@@ -159,6 +159,11 @@ export async function updateProvider(
     models?: ProviderConfig['models'];
     lastDiscoveredAt?: number;
     attribution?: ProviderConfig['attribution'];
+    modelThinking?: ProviderConfig['modelThinking'];
+    anthropicThinking?: ProviderConfig['anthropicThinking'];
+    contextOverrides?: ProviderConfig['contextOverrides'];
+    anthropicBetas?: ProviderConfig['anthropicBetas'];
+    geminiAuthMode?: ProviderConfig['geminiAuthMode'];
   }
 ): Promise<ProviderConfig> {
   const list = await load();
@@ -189,7 +194,20 @@ export async function updateProvider(
     // with `referer: ''` is how the user clears that one header — see
     // `attributionHeaders.buildAttributionHeaders` for the
     // empty-string ⇒ suppress contract.
-    attribution: patch.attribution ?? current.attribution
+    attribution: patch.attribution ?? current.attribution,
+    // `modelThinking` is a shallow per-model merge so updating one
+    // model's effort never wipes the others. `'off'` is a meaningful
+    // stored value (it disables thinking), so we never delete keys.
+    modelThinking: patch.modelThinking
+      ? { ...current.modelThinking, ...patch.modelThinking }
+      : current.modelThinking,
+    // These were previously not threaded through `updateProvider` at
+    // all, so a renderer patch silently dropped them. Full-replace when
+    // present, preserve otherwise.
+    anthropicThinking: patch.anthropicThinking ?? current.anthropicThinking,
+    contextOverrides: patch.contextOverrides ?? current.contextOverrides,
+    anthropicBetas: patch.anthropicBetas ?? current.anthropicBetas,
+    geminiAuthMode: patch.geminiAuthMode ?? current.geminiAuthMode
   };
   // Persist-then-commit: see `persistCandidate`.
   const candidate = list.map((p, i) => (i === idx ? next : p));

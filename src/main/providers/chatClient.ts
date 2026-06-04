@@ -16,6 +16,7 @@
  */
 
 import type { ChatMessage, TokenUsage } from '@shared/types/chat.js';
+import type { ThinkingEffort } from '@shared/types/provider.js';
 import { getProviderWithKey } from './providerStore.js';
 import { streamOpenAi } from './openaiChatStream.js';
 import { streamOllama } from './ollamaChatStream.js';
@@ -38,6 +39,14 @@ export interface ChatStreamRequest {
   toolChoice?: 'auto' | 'none' | 'required';
   temperature?: number;
   maxTokens?: number;
+  /**
+   * Normalized per-model thinking effort, resolved by the orchestrator
+   * from `ProviderConfig.modelThinking`. When omitted, the streamer
+   * falls back to reading the provider record directly. Each dialect
+   * streamer translates this into its wire shape via
+   * `@shared/providers/thinkingEffort.ts`.
+   */
+  reasoningEffort?: ThinkingEffort;
   signal?: AbortSignal;
   /**
    * Phase 7 (2026) — stable conversation id for provider-side

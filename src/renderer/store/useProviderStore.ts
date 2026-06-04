@@ -3,7 +3,8 @@ import type {
   ProviderConfig,
   ModelInfo,
   AddProviderInput,
-  ProviderAttribution
+  ProviderAttribution,
+  ThinkingEffort
 } from '@shared/types/provider.js';
 import { vyotiq } from '../lib/ipc.js';
 
@@ -19,6 +20,8 @@ interface ProviderStore {
       enabled?: boolean;
       /** OpenRouter app-attribution overrides; see ProviderConfig.attribution. */
       attribution?: ProviderAttribution;
+      /** Per-model thinking-effort overrides (shallow-merged store-side). */
+      modelThinking?: Record<string, ThinkingEffort>;
     }
   ) => Promise<void>;
   remove: (id: string) => Promise<void>;

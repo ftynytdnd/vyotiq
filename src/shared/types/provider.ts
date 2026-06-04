@@ -33,6 +33,22 @@ export const PROVIDER_DIALECTS: readonly ProviderDialect[] = [
   'ollama-native'
 ] as const;
 
+/**
+ * Normalized, cross-provider "thinking effort" scale. The renderer
+ * exposes only the subset each dialect/model supports (see
+ * `@shared/providers/thinkingEffort.ts`); the per-dialect streamers
+ * translate the normalized value into the wire shape that provider
+ * understands (`reasoning_effort`, Anthropic `thinking`/`effort`,
+ * Gemini `thinkingConfig`, Ollama `think`).
+ *
+ *   - `off`      → disable thinking where the provider allows it.
+ *   - `minimal`  → smallest reasoning budget (OpenAI/Gemini only).
+ *   - `low` / `medium` / `high` → graduated reasoning depth.
+ *   - `max`      → maximum depth (Anthropic / DeepSeek only; clamps to
+ *                  `high` elsewhere).
+ */
+export type ThinkingEffort = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'max';
+
 /** Short, user-facing labels for the dialect switch in settings. */
 export const PROVIDER_DIALECT_LABELS: Record<ProviderDialect, string> = {
   'openai': 'OpenAI-compatible',
@@ -158,6 +174,21 @@ export interface ProviderConfig {
     enabled: boolean;
     effort?: 'low' | 'medium' | 'high';
   };
+  /**
+   * Per-model thinking-effort overrides, keyed by `modelId`. Supersedes
+   * the provider-wide `anthropicThinking` flag and works across every
+   * dialect (OpenAI-compatible incl. DeepSeek, Anthropic, Gemini,
+   * Ollama). A missing entry means "use the model's provider default"
+   * (no thinking field sent, except for always-thinking models like
+   * DeepSeek V4 which the dialect mapper handles). The normalized
+   * value is translated to the provider's wire shape at send time by
+   * the matching streamer — see `@shared/providers/thinkingEffort.ts`.
+   *
+   * Mirrors the `contextOverrides` precedent (per-model map on the
+   * provider record) so the setting survives renderer reloads and is
+   * scoped to the provider that actually serves the model.
+   */
+  modelThinking?: Record<string, ThinkingEffort>;
 }
 
 /**

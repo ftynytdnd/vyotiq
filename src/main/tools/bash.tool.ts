@@ -1056,15 +1056,10 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
             log.debug('post-bash scan skipped: read-only command heuristic');
             return;
           }
-          ctx.emit({
-            kind: 'phase',
-            id: randomUUID(),
-            ts: Date.now(),
-            label: 'Scanning workspace for mutations…',
-            tooltip:
-              'Post-bash mtime scan — detecting file changes to record checkpoints or audit-only rows.',
-            ...(ctx.subagentId ? { subagentId: ctx.subagentId } : {})
-          });
+          // The post-bash mutation scan no longer emits a "Scanning
+          // workspace for mutations…" timeline row — it fired on every
+          // mutating bash call and added noise. Any actual mutations it
+          // finds still surface as checkpoint / audit rows below.
           // Audit fix H-03: post-bash scan must respect the run-scoped
           // signal. Without these checks the scan walks the entire
           // workspace tree after bash settles, and every

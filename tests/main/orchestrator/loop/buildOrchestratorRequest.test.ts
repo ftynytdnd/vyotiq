@@ -1,16 +1,5 @@
 /**
- * Pins the request shape produced by `buildOrchestratorRequest` for the
- * forced-action loop.
- *
- *   - Default turn → `tool_choice:'required'` (the closed loop: every
- *     decision turn MUST be a tool call on a capable dialect).
- *   - Wrap-up synthesis turn → `tool_choice:'none'` (the provider is
- *     physically forced into prose for the final answer).
- *   - Non-forced dialect (`ollama-native`) → `temperature:0` plus a
- *     trailing prompt-force `user` message requiring at least one tool call
- *     (including multiple parallel `delegate` calls). The caller's history
- *     array is never mutated.
- *   - The orchestrator's tool catalogue is exactly `ORCHESTRATOR_TOOLS`.
+ * Pins the request shape produced by `buildOrchestratorRequest`.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -29,15 +18,18 @@ function baseMessages(): ChatMessage[] {
 }
 
 describe('buildOrchestratorRequest', () => {
-  it('sends tool_choice:"required" by default (closed forced-action loop)', () => {
+  it('sends tool_choice:"auto" on normal turns', () => {
     const req = buildOrchestratorRequest({
       selection,
       messages: baseMessages(),
-      signal: new AbortController().signal
+      signal: new AbortController().signal,
+      dialect: 'openai'
     });
-    expect(req.toolChoice).toBe('required');
+    expect(req.toolChoice).toBe('auto');
     expect(req.providerId).toBe('p');
     expect(req.model).toBe('m');
+    expect(req.temperature).toBeUndefined();
+    expect(req.messages).toHaveLength(2);
   });
 
   it('exposes exactly the ORCHESTRATOR_TOOLS catalogue', () => {
@@ -59,30 +51,77 @@ describe('buildOrchestratorRequest', () => {
       wrapUp: true
     });
     expect(req.toolChoice).toBe('none');
-    // A trailing synthesis instruction is appended as a user message.
     const last = req.messages[req.messages.length - 1]!;
     expect(last.role).toBe('user');
     expect(String(last.content)).toMatch(/final turn and tool calling is disabled/i);
-    // No prompt-force temperature pin on the wrap-up turn.
     expect(req.temperature).toBeUndefined();
-    // Caller's array is untouched.
     expect(messages).toHaveLength(2);
   });
 
-  it('forced-capable dialects get no temperature pin and no extra prompt-force message', () => {
+  it('OMITS tool_choice for always-thinking deepseek-v4-flash (avoids the 400)', () => {
     const messages = baseMessages();
     const req = buildOrchestratorRequest({
-      selection,
+      selection: { providerId: 'p', modelId: 'deepseek-v4-flash' },
       messages,
       signal: new AbortController().signal,
       dialect: 'openai'
     });
-    expect(req.toolChoice).toBe('required');
+    // No `tool_choice` field at all — the wire defaults to `auto`.
+    expect(req.toolChoice).toBeUndefined();
+    // Tools are still offered on a normal turn.
+    expect((req.tools ?? []).length).toBeGreaterThan(0);
     expect(req.temperature).toBeUndefined();
     expect(req.messages).toHaveLength(2);
+    expect(messages).toHaveLength(2);
   });
 
-  it('ollama-native gets temperature:0 and a trailing prompt-force user message', () => {
+  it('drops the tool list (not tool_choice:"none") on wrap-up for tool_choice-rejecting models', () => {
+    const req = buildOrchestratorRequest({
+      selection: { providerId: 'p', modelId: 'deepseek-v4-pro' },
+      messages: baseMessages(),
+      signal: new AbortController().signal,
+      dialect: 'openai',
+      wrapUp: true
+    });
+    expect(req.toolChoice).toBeUndefined();
+    expect(req.tools).toEqual([]);
+  });
+
+  it('re-enables tool_choice for deepseek when effort is explicitly off', () => {
+    const req = buildOrchestratorRequest({
+      selection: { providerId: 'p', modelId: 'deepseek-v4-flash' },
+      messages: baseMessages(),
+      signal: new AbortController().signal,
+      dialect: 'openai',
+      reasoningEffort: 'off'
+    });
+    expect(req.toolChoice).toBe('auto');
+    expect(req.reasoningEffort).toBe('off');
+  });
+
+  it('honours the run-scoped omitToolChoice override even for capable models', () => {
+    const req = buildOrchestratorRequest({
+      selection,
+      messages: baseMessages(),
+      signal: new AbortController().signal,
+      dialect: 'openai',
+      omitToolChoice: true
+    });
+    expect(req.toolChoice).toBeUndefined();
+  });
+
+  it('threads a resolved reasoningEffort onto the request', () => {
+    const req = buildOrchestratorRequest({
+      selection,
+      messages: baseMessages(),
+      signal: new AbortController().signal,
+      dialect: 'openai',
+      reasoningEffort: 'high'
+    });
+    expect(req.reasoningEffort).toBe('high');
+  });
+
+  it('ollama-native uses auto without trailing force instructions', () => {
     const messages = baseMessages();
     const req = buildOrchestratorRequest({
       selection,
@@ -90,32 +129,9 @@ describe('buildOrchestratorRequest', () => {
       signal: new AbortController().signal,
       dialect: 'ollama-native'
     });
-    // Still sends required (harmless / ignored by ollama) ...
-    expect(req.toolChoice).toBe('required');
-    // ... but adds the degradation knobs.
-    expect(req.temperature).toBe(0);
-    expect(req.messages).toHaveLength(3);
-    const last = req.messages[req.messages.length - 1]!;
-    expect(last.role).toBe('user');
-    expect(String(last.content)).toMatch(/MUST call at least one tool/i);
-    expect(String(last.content)).toMatch(/MULTIPLE `delegate`/i);
-    // The caller's history array is not mutated.
-    expect(messages).toHaveLength(2);
-  });
-
-  it('ollama-native wrap-up turn prefers prose (none) over prompt-force', () => {
-    const req = buildOrchestratorRequest({
-      selection,
-      messages: baseMessages(),
-      signal: new AbortController().signal,
-      dialect: 'ollama-native',
-      wrapUp: true
-    });
-    expect(req.toolChoice).toBe('none');
-    // wrapUp suppresses the prompt-force temperature pin.
+    expect(req.toolChoice).toBe('auto');
     expect(req.temperature).toBeUndefined();
-    const last = req.messages[req.messages.length - 1]!;
-    expect(String(last.content)).toMatch(/final turn and tool calling is disabled/i);
+    expect(req.messages).toHaveLength(2);
   });
 
   it('threads conversationId only when supplied', () => {

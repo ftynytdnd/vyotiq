@@ -37,6 +37,37 @@ describe('workerFailureLine', () => {
 });
 
 describe('DelegationWorker status chrome', () => {
+  it('renders nothing for queued workers (summary-only)', () => {
+    useChatStore.setState({
+      subagents: {
+        Q1: {
+          id: 'Q1',
+          task: 'wait in pool',
+          files: [],
+          missingFiles: [],
+          tools: ['read'],
+          status: 'queued',
+          startedAt: 1,
+          steps: [],
+          fileEdits: [],
+          assistantTexts: {},
+          reasoningTexts: {},
+          iterationOrder: [],
+          partialToolCallArgs: {}
+        }
+      }
+    } as never);
+
+    const { container } = render(
+      <DelegationWorker
+        subagentId="Q1"
+        rows={[]}
+        renderRow={() => null}
+      />
+    );
+    expect(container.querySelector('[data-row-kind="delegation-worker"]')).toBeNull();
+  });
+
   it('renders failed suffix on failed workers', () => {
     useChatStore.setState({
       subagents: {
@@ -153,7 +184,7 @@ describe('DelegationWorker status chrome', () => {
     expect(container.textContent ?? '').not.toMatch(/\bW1\b/);
   });
 
-  it('renders scope chips and model badge on worker outline', () => {
+  it('de-clutters the worker outline — no scope chips, file pills, or model badge', () => {
     useChatStore.setState({
       subagents: {
         arch: {
@@ -182,12 +213,17 @@ describe('DelegationWorker status chrome', () => {
       />
     );
 
-    const chips = container.querySelector('[data-testid="delegation-worker-chips"]');
-    expect(chips?.textContent ?? '').toContain('auth.ts');
-    expect(chips?.textContent ?? '').toContain('agent.py');
-    expect(chips?.textContent ?? '').toContain('webfetch');
-    expect(chips?.textContent ?? '').toContain('gpt-4.1-mini');
+    // Chips block is gone entirely.
+    expect(container.querySelector('[data-testid="delegation-worker-chips"]')).toBeNull();
+    // None of the former chip content leaks into the row.
+    expect(container.textContent ?? '').not.toContain('auth.ts');
+    expect(container.textContent ?? '').not.toContain('agent.py');
+    expect(container.textContent ?? '').not.toContain('webfetch');
+    expect(container.textContent ?? '').not.toContain('gpt-4.1-mini');
+    // Tag + status remain.
     expect(container.textContent ?? '').toMatch(/arch.*partial/);
     expect(container.innerHTML).toContain('text-warning');
+    // Task text still renders.
+    expect(container.textContent ?? '').toContain('Review auth');
   });
 });

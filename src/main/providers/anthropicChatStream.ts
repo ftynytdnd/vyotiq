@@ -69,6 +69,7 @@ import { acquire, markRateLimited, markSuccess } from './providerRateGuard.js';
 import { createInactivityWatch, isStreamInactivityError } from './streamInactivity.js';
 import { readSseFrames } from './sseFrameReader.js';
 import { safeText } from './errorBody.js';
+import { mapAnthropicThinking, resolveThinkingEffort } from '@shared/providers/thinkingEffort.js';
 
 const log = logger.child('providers/chat/anthropic');
 
@@ -180,9 +181,24 @@ export async function* streamAnthropic(
   //                                high ≈ 16384) and must be < max_tokens.
   //
   // Non-thinking models (legacy Haiku 3, etc.) silently drop the field
-  // when we omit it; we use `pickThinkingConfig` to decide.
-  const thinking = pickThinkingConfig(req.model, provider.anthropicThinking, body['max_tokens'] as number);
-  if (thinking !== null) body['thinking'] = thinking;
+  // when we omit it. The shared resolver reads the per-model
+  // `modelThinking` override (falling back to the legacy provider-wide
+  // `anthropicThinking`) and maps it to the 2026 wire shape: adaptive
+  // models get `{ type: 'adaptive' }` + an `output_config.effort`
+  // guide; older models get a derived `budget_tokens`.
+  const anthroEffort = req.reasoningEffort ?? resolveThinkingEffort(provider, req.model);
+  const thinking = mapAnthropicThinking(
+    req.model,
+    anthroEffort,
+    body['max_tokens'] as number,
+    DEFAULT_MAX_TOKENS
+  );
+  if (thinking !== null) {
+    body['thinking'] = thinking.config;
+    if (thinking.effortField !== undefined) {
+      body['output_config'] = { effort: thinking.effortField };
+    }
+  }
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',

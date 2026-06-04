@@ -105,7 +105,15 @@ function buildRuntimeLimitsBlock(): string {
       `BASE_BACKOFF_MS=${BASE_BACKOFF_MS}`,
       `MAX_BACKOFF_MS=${MAX_BACKOFF_MS}`,
       `STREAM_INACTIVITY_TIMEOUT_MS=${STREAM_INACTIVITY_TIMEOUT_MS}`,
-      `SUBAGENT_RUN_TIMEOUT_MS=${SUBAGENT_RUN_TIMEOUT_MS}`
+      `SUBAGENT_RUN_TIMEOUT_MS=${SUBAGENT_RUN_TIMEOUT_MS}`,
+      '',
+      '# Delegation guidance (not host-enforced caps)',
+      'Recommended delegates per orchestrator turn: 8-12 for broad analysis/planning;',
+      'prefer 4-8 module-scoped read delegates; never exceed 12 in one turn;',
+      '≤6 delegates per turn for fix/edit phases after synthesis.',
+      'Each delegate reads AND analyzes its files in ONE task — never run a',
+      'separate "read all" round followed by an "analyze all" round over the',
+      'same files. Phase 2 = targeted hotspots only, never a second full sweep.'
     ].join('\n')
   );
 }
@@ -176,17 +184,15 @@ function buildOrchestratorToolCatalogue(): string {
 
   // All orchestrator tools — including `delegate`, `finish`, and
   // `ask_user` — are real, directly-callable function-calling tools.
-  // The loop is CLOSED: every turn the model MUST call at least one
-  // tool, and a run can ONLY end by calling `finish` (deliver the answer
-  // and stop) or `ask_user` (pause for a user reply). There is no longer
-  // any `<delegate>` XML directive — `delegate` is invoked like any other
-  // tool, and N parallel `delegate` calls in one turn fan out concurrent
-  // sub-agents.
+  // A run should end by calling `finish` (deliver the answer and stop) or
+  // `ask_user` (pause for a user reply). For simple greetings or clear
+  // one-shot answers, reply in prose or call `finish` — do not explore
+  // the workspace unless the user asked for work.
   const directSection =
     `# Your Tools (callable directly via \`tool_calls\`)\n\n` +
     `Every tool below is present in your function-calling schema — invoke ` +
-    `it with the standard \`tool_calls\` mechanism. The loop is CLOSED: on ` +
-    `each turn you MUST call at least one tool.\n\n` +
+    `it with \`tool_calls\` when the task needs action. You may answer in ` +
+    `plain prose when that fully satisfies the user.\n\n` +
     `- \`delegate\` — spawn a real ephemeral sub-agent for ONE micro-task. ` +
     `Emit several \`delegate\` calls in the SAME turn to run sub-agents ` +
     `concurrently. This is how all real work (reading, editing, shell) gets ` +

@@ -177,6 +177,11 @@ export function ProviderRow({
         emptyMessage="No models discovered yet."
         onDiscover={() => void onDiscover()}
         discoverDisabled={busy !== 'idle'}
+        dialect={provider.dialect}
+        thinkingByModel={provider.modelThinking}
+        onThinkingChange={(modelId, effort) =>
+          void update(provider.id, { modelThinking: { [modelId]: effort } })
+        }
       />
 
       <AttributionSection provider={provider} onSave={(next) => void update(provider.id, { attribution: next })} />

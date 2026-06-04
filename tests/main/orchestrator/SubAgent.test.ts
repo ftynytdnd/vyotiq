@@ -382,7 +382,7 @@ describe('runSubAgent — missing-envelope recovery (one-shot)', () => {
     expect(streamChat).toHaveBeenCalledTimes(2);
   });
 
-  it('emits phase on final iteration when recovery cannot run', async () => {
+  it('reports malformed on final iteration without emitting a phase row', async () => {
     const phases: string[] = [];
     let call = 0;
     vi.mocked(streamChat).mockImplementation(() => {
@@ -408,8 +408,10 @@ describe('runSubAgent — missing-envelope recovery (one-shot)', () => {
         if (event.kind === 'phase') phases.push(event.label);
       }
     });
+    // The malformed terminus is still reported via status; the
+    // missing-envelope `phase` row was de-cluttered (now log-only).
     expect(run.status).toBe('malformed');
-    expect(phases.some((label) => label.includes('final sub-agent iteration'))).toBe(true);
+    expect(phases.some((label) => label.includes('final sub-agent iteration'))).toBe(false);
     expect(streamChat).toHaveBeenCalledTimes(SUBAGENT_MAX_ITERATIONS);
   });
 

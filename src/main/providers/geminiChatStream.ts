@@ -62,6 +62,7 @@ import { createInactivityWatch, isStreamInactivityError } from './streamInactivi
 import { readSseFrames, pickSseDataLine } from './sseFrameReader.js';
 import { safeText } from './errorBody.js';
 import { redactUrlSecrets } from './redactUrlSecrets.js';
+import { mapGeminiThinkingConfig, resolveThinkingEffort } from '@shared/providers/thinkingEffort.js';
 
 const log = logger.child('providers/chat/gemini');
 
@@ -198,6 +199,11 @@ export async function* streamGemini(
   const generationConfig: Record<string, unknown> = {};
   if (typeof req.temperature === 'number') generationConfig['temperature'] = req.temperature;
   if (typeof req.maxTokens === 'number') generationConfig['maxOutputTokens'] = req.maxTokens;
+  // Thinking-effort (2026). Gemini 3.x uses `thinkingConfig.thinkingLevel`;
+  // legacy 2.5 uses an integer `thinkingBudget` (0 disables).
+  const geminiEffort = req.reasoningEffort ?? resolveThinkingEffort(provider, req.model);
+  const thinkingConfig = mapGeminiThinkingConfig(req.model, geminiEffort);
+  if (thinkingConfig !== null) generationConfig['thinkingConfig'] = thinkingConfig;
   // `responseModalities` defaults to ["TEXT"] when omitted — the
   // canonical text-only path. We never request image / audio output
   // from this transport (vision INPUT is supported automatically;

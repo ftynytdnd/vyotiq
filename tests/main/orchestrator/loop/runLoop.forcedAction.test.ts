@@ -8,9 +8,8 @@
  *   - ls/memory/recall → run via `handleToolCalls`, then continue.
  *
  * Degradation (no actionable tool call):
- *   - capable dialect → one retry, then a visible error.
- *   - ollama (non-forced) + substantive prose → implicit finish.
- *   - ollama + short/empty prose → one retry, then a visible error.
+ *   - substantive prose → implicit finish (any dialect).
+ *   - short/empty prose → one retry, then a visible error.
  *
  * Iteration cap → one `tool_choice:'none'` synthesis turn (wrapUp).
  */
@@ -76,6 +75,7 @@ import { handleToolCalls } from '@main/orchestrator/loop/handleToolCalls';
 import { handleDelegates } from '@main/orchestrator/loop/handleDelegates';
 import { buildOrchestratorRequest } from '@main/orchestrator/loop/buildOrchestratorRequest';
 import { getProviderWithKey } from '@main/providers/providerStore';
+import { classifyProviderError } from '@main/providers/providerError';
 import { runOrchestratorLoop } from '@main/orchestrator/loop/runLoop';
 
 beforeEach(() => {
@@ -378,7 +378,7 @@ describe('runOrchestratorLoop — forced-action dispatch', () => {
 });
 
 describe('runOrchestratorLoop — degradation paths', () => {
-  it('capable dialect + empty turn → one retry, then a visible error', async () => {
+  it('empty turn with no substantive prose → one retry, then a visible error', async () => {
     vi.mocked(getProviderWithKey).mockResolvedValue({
       name: 'OpenAI',
       dialect: 'openai'
@@ -388,13 +388,34 @@ describe('runOrchestratorLoop — degradation paths', () => {
     const events: TimelineEvent[] = [];
     const result = await run(events);
 
-    expect(handleAssistantTurn).toHaveBeenCalledTimes(2); // initial + one retry
+    expect(handleAssistantTurn).toHaveBeenCalledTimes(2);
     const errors = events.filter((e) => e.kind === 'error');
     expect(errors).toHaveLength(1);
     expect((errors[0] as { message: string }).message).toMatch(
-      /no tool call under a forced tool choice twice/i
+      /no tool call and no substantive answer/i
     );
     expect(result.terminalError).toBeDefined();
+  });
+
+  it('openai + substantive prose → accepted as an implicit finish (no error)', async () => {
+    vi.mocked(getProviderWithKey).mockResolvedValue({
+      name: 'OpenAI',
+      dialect: 'openai'
+    } as never);
+    vi.mocked(handleAssistantTurn).mockResolvedValueOnce(
+      emptyTurn({
+        assistantText:
+          'Hello! Let me know what you would like to work on in this project today.',
+        hadText: true
+      })
+    );
+
+    const events: TimelineEvent[] = [];
+    const result = await run(events);
+
+    expect(result).toEqual({});
+    expect(handleAssistantTurn).toHaveBeenCalledTimes(1);
+    expect(events.filter((e) => e.kind === 'error')).toHaveLength(0);
   });
 
   it('ollama + substantive prose → accepted as an implicit finish (no error)', async () => {
@@ -433,8 +454,47 @@ describe('runOrchestratorLoop — degradation paths', () => {
     expect(handleAssistantTurn).toHaveBeenCalledTimes(2); // initial + one retry
     const errors = events.filter((e) => e.kind === 'error');
     expect(errors).toHaveLength(1);
-    expect((errors[0] as { message: string }).message).toMatch(/no actionable tool call or substantive answer/i);
+    expect((errors[0] as { message: string }).message).toMatch(
+      /no tool call and no substantive answer/i
+    );
     expect(result.terminalError).toBeDefined();
+  });
+});
+
+describe('runOrchestratorLoop — tool_choice 400 safety net', () => {
+  it('retries the same iteration with omitToolChoice instead of terminating', async () => {
+    const toolChoice400 = classifyProviderError({
+      url: 'https://api.deepseek.com/v1/chat/completions',
+      status: 400,
+      statusText: 'Bad Request',
+      body: JSON.stringify({
+        error: {
+          message: 'Thinking mode does not support this tool_choice',
+          type: 'invalid_request_error'
+        }
+      }),
+      surface: 'chat',
+      providerId: 'p',
+      providerName: 'DeepSeek'
+    });
+
+    vi.mocked(handleAssistantTurn)
+      .mockResolvedValueOnce(emptyTurn({ error: toolChoice400 }))
+      .mockResolvedValueOnce(toolTurn('tc-finish', 'finish', { summary: 'Recovered.' }));
+
+    const events: TimelineEvent[] = [];
+    const result = await run(events);
+
+    // No terminal error — the run recovered.
+    expect(result).toEqual({});
+    expect(events.filter((e) => e.kind === 'error')).toHaveLength(0);
+    // Two assistant turns: the rejected one + the omit-retry.
+    expect(handleAssistantTurn).toHaveBeenCalledTimes(2);
+    // The retry built its request with the run-scoped omit flag set.
+    const omitCalls = vi
+      .mocked(buildOrchestratorRequest)
+      .mock.calls.filter(([opts]) => (opts as { omitToolChoice?: boolean }).omitToolChoice === true);
+    expect(omitCalls.length).toBeGreaterThanOrEqual(1);
   });
 });
 

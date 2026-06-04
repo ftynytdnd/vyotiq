@@ -16,6 +16,10 @@ import type {
 import type { ModelSelection } from '@shared/types/provider.js';
 import type { ToolCall, ToolResult } from '@shared/types/tool.js';
 import { streamChat } from '../providers/chatClient.js';
+import { getProviderWithKey } from '../providers/providerStore.js';
+import { supportsToolChoice } from '../providers/capabilities.js';
+import { resolveThinkingEffort } from '@shared/providers/thinkingEffort.js';
+import type { ThinkingEffort } from '@shared/types/provider.js';
 import { toolSchemasFor } from '../tools/registry.js';
 import { validateSubagentToolset } from '../tools/policy/index.js';
 import { buildSubagentSystemPrompt } from '../harness/harnessLoader.js';
@@ -344,6 +348,32 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
   // we cannot ping-pong against a model that ignores the nudge.
   let textNoResultNudged = false;
 
+  // Resolve the worker model's wire dialect + thinking effort ONCE so we
+  // can decide whether `tool_choice` is safe to send. Thinking models
+  // that reject the field (DeepSeek V4) get it omitted; on the wrap-up
+  // turn they get an empty tool list (forcing prose) instead of
+  // `tool_choice: 'none'` (which they also reject). Falls back to
+  // "capable" on any lookup failure — the streamer still reads the
+  // provider record for the thinking-effort wire mapping.
+  let subToolChoiceSafe = true;
+  let subEffort: ThinkingEffort | undefined;
+  try {
+    const subProvider = await getProviderWithKey(deps.selection.providerId);
+    if (subProvider) {
+      subEffort = resolveThinkingEffort(subProvider, deps.selection.modelId);
+      subToolChoiceSafe = supportsToolChoice(
+        subProvider.dialect,
+        deps.selection.modelId,
+        subEffort
+      );
+    }
+  } catch (err) {
+    log.debug('sub-agent provider capability lookup failed; assuming tool_choice is safe', {
+      providerId: deps.selection.providerId,
+      err: err instanceof Error ? err.message : String(err)
+    });
+  }
+
   for (let iter = 0; iter < SUBAGENT_MAX_ITERATIONS; iter++) {
     if (deps.signal.aborted) {
       return {
@@ -446,6 +476,19 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
     );
 
     try {
+      // Tool-choice gate (2026). Capable models keep the proven
+      // wrap-up behavior (`tool_choice: 'none'`); tool_choice-rejecting
+      // thinking models omit the field and, on wrap-up, drop the tool
+      // schema so there is nothing to call.
+      const subToolChoice: 'none' | 'auto' | undefined = isWrapUpTurn
+        ? subToolChoiceSafe
+          ? 'none'
+          : undefined
+        : subToolChoiceSafe
+          ? 'auto'
+          : undefined;
+      const subTools =
+        isWrapUpTurn && !subToolChoiceSafe ? [] : toolSchemasFor(allowed);
       const stream = streamChat({
         providerId: deps.selection.providerId,
         model: deps.selection.modelId,
@@ -454,9 +497,10 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
         // partial failure or aborted run is patched with a stub
         // response so strict providers don't 400 this request.
         messages: sanitizeToolCallPairing(messages),
-        tools: toolSchemasFor(allowed),
+        tools: subTools,
         // Wrap-up turn forces prose. See `isWrapUpTurn` block above.
-        toolChoice: isWrapUpTurn ? 'none' : 'auto',
+        ...(subToolChoice !== undefined ? { toolChoice: subToolChoice } : {}),
+        ...(subEffort !== undefined ? { reasoningEffort: subEffort } : {}),
         signal: deps.signal,
         onConnect: () => {
           emitSubagentStatus(
@@ -823,17 +867,13 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
       !textNoResultNudged &&
       iter >= SUBAGENT_MAX_ITERATIONS - 1
     ) {
-      deps.onTimelineEvent?.(
-        {
-          kind: 'phase',
-          id: randomUUID(),
-          ts: Date.now(),
-          label:
-            'Missing `<result>` envelope on the final sub-agent iteration; ' +
-            'one-shot recovery cannot run (iteration cap).'
-        },
-        spec.id
-      );
+      // The "missing envelope at the iteration cap" notice is logged
+      // rather than surfaced as a timeline `phase` row — the worker's
+      // own status (`malformed` / `partial`) already conveys the outcome.
+      log.info('sub-agent missing-envelope at iteration cap (recovery skipped)', {
+        id: spec.id,
+        iter
+      });
     }
     if (status === 'malformed' && !textNoResultNudged && iter < SUBAGENT_MAX_ITERATIONS - 1) {
       textNoResultNudged = true;

@@ -230,7 +230,24 @@ const NON_RECOVERABLE_PROVIDER_ERROR_KINDS: ReadonlySet<ProviderErrorKind> = new
   'endpoint-missing'
 ]);
 
+/**
+ * Permanent request-shape rejections (HTTP 400) where retrying the same
+ * body cannot succeed — e.g. DeepSeek thinking mode vs `tool_choice`.
+ * The orchestrator intercepts this BEFORE the non-recoverable halt to
+ * retry once with `tool_choice` omitted (see `runLoop` safety net), so
+ * a model we failed to classify ahead of time still recovers instead of
+ * killing the run.
+ */
+export function isPermanentToolChoiceRejection(err: unknown): err is ProviderError {
+  if (!isProviderError(err) || err.status !== 400) return false;
+  const hay = `${err.friendlyMessage}\n${err.rawBody}`.toLowerCase();
+  return hay.includes('tool_choice') && (hay.includes('does not support') || hay.includes('not support'));
+}
+
 /** Provider failures that should not consume the self-correction retry budget. */
 export function isNonRecoverableProviderError(err: unknown): err is ProviderError {
-  return isProviderError(err) && NON_RECOVERABLE_PROVIDER_ERROR_KINDS.has(err.kind);
+  return (
+    isProviderError(err) &&
+    NON_RECOVERABLE_PROVIDER_ERROR_KINDS.has(err.kind)
+  );
 }

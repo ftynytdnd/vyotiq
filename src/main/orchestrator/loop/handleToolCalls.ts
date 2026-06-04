@@ -199,22 +199,11 @@ async function dispatchOneToolCall(
     const isDelegateAttempt = tc.name === 'delegate';
     if (isDelegateAttempt) {
       tallies.childRedelegations += 1;
-      const subId = opts.subagentId;
-      const shouldEmitPhase =
-        subId === undefined ||
-        !opts.nestedDelegatePhaseEmitted?.has(subId);
-      if (shouldEmitPhase) {
-        if (subId !== undefined) {
-          opts.nestedDelegatePhaseEmitted?.add(subId);
-        }
-        emit({
-          kind: 'phase',
-          id: randomUUID(),
-          ts: Date.now(),
-          label:
-            'Sub-agents cannot nest further — wrap up with a <result> envelope instead'
-        });
-      }
+      // The nested-delegate refusal is fed back to the model through the
+      // refused tool result itself, so the extra "cannot nest further"
+      // timeline `phase` row was redundant clutter — dropped. The
+      // `nestedDelegatePhaseEmitted` de-dupe set is retained in opts for
+      // back-compat with callers but is no longer written here.
     }
     log.warn('allowlist refusal', {
       tool: tc.name,

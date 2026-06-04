@@ -239,18 +239,11 @@ export async function handleDelegates(
   const validatedById = new Map(validatedSpecs.map((s) => [s.id, s]));
   const spawnSpecs = validatedSpecs.filter((s) => !s.skipSpawnAllInvented);
   const skippedAllInvented = validatedSpecs.filter((s) => s.skipSpawnAllInvented);
+  // Invented-file skips are logged (not surfaced as a timeline `phase`
+  // row): the model already learns the spawn didn't happen via the
+  // round's `<subagent_results>` / `<run_state>`, and the row was pure
+  // clutter. Diagnostic detail stays in the structured log.
   for (const spec of skippedAllInvented) {
-    const invented = spec.missingFiles.filter((p) => !p.startsWith('<'));
-    const inventedList =
-      invented.length > 0 ? invented.join(', ') : 'every listed path';
-    emit({
-      kind: 'phase',
-      id: randomUUID(),
-      ts: Date.now(),
-      label:
-        `Sub-agent ${spec.id}: skipped — invented file(s) (${inventedList}). ` +
-        `Run ls, then re-delegate with paths from workspace_context.`
-    });
     log.warn('delegate file validation: skipped spawn (all paths invented)', {
       id: spec.id,
       missing: spec.missingFiles
@@ -263,33 +256,16 @@ export async function handleDelegates(
         .map((s) => ({ id: s.id, missing: s.missingFiles }))
     });
   }
-  // Surface dropped tool names as a single `phase` event per offending
-  // spec. One event per sub-agent (not per dropped tool) keeps the
-  // timeline tidy when a directive lists 3+ typos. The matching
-  // `subagent-spawn.unknownTools` slot below carries the same data
-  // for the renderer's chip row — the phase event exists so the
-  // orchestrator's NEXT iteration also sees the typo in its prompt
-  // history (`phase` events flow through `priorTranscript`'s replay
-  // into `messages[]` only as renderer-only signals; the model sees
-  // them through `<run_state>` reads of the timeline rather than as
-  // assistant memory, which is the correct boundary).
+  // Dropped unknown tool names are logged only (no timeline `phase`
+  // row). The granted toolset is already visible to the model in the
+  // spawned worker's behavior; the row added noise on every typo.
   for (const spec of validatedSpecs) {
     if (spec.unknownTools.length > 0) {
-      const grantedDescription = spec.toolsetDefaulted
-        ? 'defaulted to read-only'
-        : `granted ${spec.tools.join(', ')}`;
-      emit({
-        kind: 'phase',
-        id: randomUUID(),
-        ts: Date.now(),
-        label:
-          `Sub-agent ${spec.id}: dropped unknown tool(s) ` +
-          `${spec.unknownTools.join(', ')}; ${grantedDescription}.`
-      });
       log.warn('subagent toolset validation: dropped unknown tools', {
         id: spec.id,
         dropped: spec.unknownTools,
-        granted: spec.tools
+        granted: spec.tools,
+        defaulted: spec.toolsetDefaulted
       });
     }
   }
@@ -333,10 +309,9 @@ export async function handleDelegates(
 
   emitDelegationProgress();
 
-  // Surface every worker in the timeline immediately (queued until the
-  // pool calls `onSpawn`). Previously only in-flight workers appeared,
-  // which made N delegate tool calls look like only `poolConcurrency`
-  // workers existed.
+  // Pending for every spec (batch accounting); `queued: true` until
+  // `onSpawn` so the renderer shows counts in DelegationBatchSummary
+  // and per-sub-agent cards only once active (pending/running).
   for (const spec of spawnSpecs) {
     emit({
       kind: 'subagent-pending',
@@ -684,6 +659,10 @@ export async function handleDelegates(
     }
   }
   if (newlyEscalated.length > 0) {
+    // Per-task escalation is logged only. The model already adapts via
+    // `<run_state>` (`failing_tasks` / `consecutive_bad_delegation`) and
+    // the round's `<subagent_results>`; surfacing one timeline `phase`
+    // row per escalating task was a major clutter source on burst rounds.
     log.warn('per-task bad streak escalation', {
       escalations: newlyEscalated.map((e) => ({
         key: e.key.slice(0, 120),
@@ -691,42 +670,6 @@ export async function handleDelegates(
         ids: e.ids
       }))
     });
-    // T1-7: coalesce phase events when more than two tasks escalate
-    // in the same round. A round of 8 sub-agents all hitting the
-    // threshold used to spam 8 near-identical timeline rows; the
-    // batched form below keeps single-task escalation verbose
-    // (most common case) but degrades gracefully on burst rounds.
-    if (newlyEscalated.length <= 2) {
-      // 1- or 2-task escalation — keep the per-task verbose form so
-      // the user gets the streak count + signature head per task.
-      for (const e of newlyEscalated) {
-        const display = e.key.split('|')[0]!.slice(0, 80);
-        emit({
-          kind: 'phase',
-          id: randomUUID(),
-          ts: Date.now(),
-          label:
-            `Task failing ${e.streak} rounds in a row — pivot decomposition: ${display}`
-        });
-      }
-    } else {
-      // 3+ tasks escalating in one round — one summary row with
-      // the count and the highest streak, plus a comma-joined
-      // signature head list. The structured log above has the
-      // full data for triage.
-      const maxStreak = newlyEscalated.reduce((m, e) => Math.max(m, e.streak), 0);
-      const heads = newlyEscalated
-        .map((e) => e.key.split('|')[0]!.slice(0, 40))
-        .join(', ');
-      emit({
-        kind: 'phase',
-        id: randomUUID(),
-        ts: Date.now(),
-        label:
-          `${newlyEscalated.length} tasks failing (max ${maxStreak} rounds) — ` +
-          `pivot decomposition: ${heads}`
-      });
-    }
   }
 
   // Push the verified `<subagent_results>` envelope into the
@@ -769,16 +712,8 @@ export async function handleDelegates(
       consecutiveBadRounds: counters.consecutiveBadRounds,
       verified: verified.map((v) => ({ id: v.id, structural: v.structural }))
     });
-    const verdictSummary = verified
-      .map((v) => `${v.id}=${v.structural}`)
-      .join(', ');
-    emit({
-      kind: 'phase',
-      id: randomUUID(),
-      ts: Date.now(),
-      label:
-        `Three-strike halt — last round verdicts: ${verdictSummary}`
-    });
+    // Keep only the terminal `error` row (the per-verdict `phase`
+    // duplicate was redundant with both this row and the structured log).
     emit({
       kind: 'error',
       id: randomUUID(),

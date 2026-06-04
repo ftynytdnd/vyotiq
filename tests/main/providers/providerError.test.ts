@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyProviderError,
   isNonRecoverableProviderError,
+  isPermanentToolChoiceRejection,
   isProviderError,
   ProviderError
 } from '@main/providers/providerError';
@@ -186,6 +187,50 @@ describe('isNonRecoverableProviderError', () => {
     expect(isNonRecoverableProviderError(rate)).toBe(false);
     const server = classifyProviderError({ ...baseInput, status: 503 });
     expect(isNonRecoverableProviderError(server)).toBe(false);
+  });
+
+  it('does NOT mark a tool_choice 400 as non-recoverable (runLoop retries it)', () => {
+    // The tool_choice rejection is recovered by omitting the field and
+    // retrying the same iteration, so it must NOT short-circuit to a
+    // terminal halt via the non-recoverable path.
+    const err = classifyProviderError({
+      ...baseInput,
+      status: 400,
+      body: JSON.stringify({
+        error: {
+          message: 'Thinking mode does not support this tool_choice',
+          type: 'invalid_request_error'
+        }
+      })
+    });
+    expect(isNonRecoverableProviderError(err)).toBe(false);
+  });
+});
+
+describe('isPermanentToolChoiceRejection', () => {
+  it('matches DeepSeek thinking-mode tool_choice 400s', () => {
+    const err = classifyProviderError({
+      ...baseInput,
+      status: 400,
+      body: JSON.stringify({
+        error: {
+          message: 'Thinking mode does not support this tool_choice',
+          type: 'invalid_request_error'
+        }
+      })
+    });
+    expect(isPermanentToolChoiceRejection(err)).toBe(true);
+  });
+
+  it('ignores unrelated 400s and non-400 statuses', () => {
+    const unrelated400 = classifyProviderError({
+      ...baseInput,
+      status: 400,
+      body: '{"error":{"message":"Invalid value for parameter tools.0.function.name"}}'
+    });
+    expect(isPermanentToolChoiceRejection(unrelated400)).toBe(false);
+    expect(isPermanentToolChoiceRejection(make(429))).toBe(false);
+    expect(isPermanentToolChoiceRejection(new Error('boom'))).toBe(false);
   });
 });
 

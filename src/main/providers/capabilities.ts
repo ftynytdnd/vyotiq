@@ -1,41 +1,9 @@
 /**
- * Provider capability helpers.
- *
- * The forced-action orchestrator loop always sends `tool_choice:'required'`
- * so the model is structurally obliged to act via a tool call. Not every
- * wire dialect honours that field, though, so this helper records which
- * dialects can be trusted to enforce it server-side versus which need the
- * graceful prompt-force degradation path instead.
+ * Provider capability helpers for wire-dialect feature flags.
  */
 
-import type { ProviderDialect } from '@shared/types/provider.js';
-
-/**
- * Whether a dialect reliably enforces `tool_choice` server-side.
- *
- *   - `openai`, `anthropic-native`, `gemini-native` → `true`. All three
- *     honour a forced/required tool choice on the wire.
- *   - `undefined` → `false`. Unknown or legacy providers without an
- *     explicit dialect must use the prompt-force degradation path
- *     rather than assuming OpenAI-compat forced tool choice works.
- *   - `ollama-native` → `false`. Ollama's OpenAI-compatibility surface
- *     lists `tool_choice` as unsupported (docs.ollama.com OpenAI
- *     compatibility), and its native `/api/chat` has no equivalent, so a
- *     `required` choice is silently ignored. Callers must fall back to
- *     prompt-force (system instruction + temperature 0) for these.
- */
-export function supportsForcedToolChoice(dialect: ProviderDialect | undefined): boolean {
-  switch (dialect) {
-    case 'openai':
-    case 'anthropic-native':
-    case 'gemini-native':
-      return true;
-    case undefined:
-      return false;
-    case 'ollama-native':
-      return false;
-  }
-}
+import type { ProviderDialect, ThinkingEffort } from '@shared/types/provider.js';
+import { modelRejectsToolChoice } from '@shared/providers/thinkingEffort.js';
 
 /** Whether the wire dialect accepts `parallel_tool_calls: true`. */
 export function supportsParallelToolCalls(dialect: ProviderDialect | undefined): boolean {
@@ -48,4 +16,20 @@ export function supportsParallelToolCalls(dialect: ProviderDialect | undefined):
     case undefined:
       return false;
   }
+}
+
+/**
+ * Whether it is safe to send a `tool_choice` field on the wire for this
+ * model + thinking state. Returns `false` for always-thinking models
+ * that reject forced/required choice (DeepSeek V4): the caller must
+ * OMIT the field entirely (the server defaults to `auto`) rather than
+ * sending an explicit value, which 400s the request. See
+ * `@shared/providers/thinkingEffort.ts :: modelRejectsToolChoice`.
+ */
+export function supportsToolChoice(
+  dialect: ProviderDialect | undefined,
+  modelId: string,
+  effort: ThinkingEffort | undefined
+): boolean {
+  return !modelRejectsToolChoice(dialect, modelId, effort);
 }
