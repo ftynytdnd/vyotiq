@@ -3,9 +3,7 @@
  * and emits them to the renderer via the timeline event bus while
  * accumulating the final message state for the model history.
  *
- * Delegation is tool-only (`delegate` tool calls handled in `runLoop` /
- * `handleDelegates`). Mid-stream XML `<delegate />` parsing is intentionally
- * not performed here — orphan pending rows cannot execute without a tool call.
+ * Legacy orchestration XML in assistant text is stripped for display only.
  *
  * Returns:
  *   - `assistantText`     accumulated text content
@@ -38,8 +36,7 @@ export type { PartialToolCall };
 export type ArgsDeltaTap = (
   callId: string,
   name: string | undefined,
-  argsBuf: string,
-  subagentId?: string
+  argsBuf: string
 ) => void;
 
 export interface AssistantTurnResult {
@@ -124,8 +121,7 @@ export async function handleAssistantTurn(
       },
       // Emit a `token-usage` timeline event as soon as the final usage
       // frame arrives so the composer's usage pill can update without
-      // waiting for the whole turn to settle. No `subagentId` here —
-      // this is the orchestrator's own turn.
+      // waiting for the whole turn to settle.
       onUsage: (usage) => {
         emit({
           kind: 'token-usage',
@@ -140,7 +136,7 @@ export async function handleAssistantTurn(
       // still streaming the call. Surrogate `pending:orc:<index>`
       // callId when the provider hasn't yet sent the real id; the
       // matching authoritative `tool-call` event later carries the
-      // real id and the renderer reconciles by index+subagentId.
+      // real id and the renderer reconciles by index.
       onToolCallArgsDelta: (snapshot) => {
         const callId = snapshot.id ?? `pending:orc:${snapshot.index}`;
         // Phase 2 — tap the cumulative argsBuf into the run-level

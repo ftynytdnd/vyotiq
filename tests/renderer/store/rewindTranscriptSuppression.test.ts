@@ -42,7 +42,6 @@ function seedStores(): void {
         runId: null,
         assistantTexts: {},
         reasoningTexts: {},
-        subagents: {},
         orchestratorUsage: undefined
       }
     },
@@ -50,7 +49,6 @@ function seedStores(): void {
     events: [keptPrompt, removedPrompt],
     assistantTexts: {},
     reasoningTexts: {},
-    subagents: {},
     orchestratorUsage: undefined,
     conversationId: convId,
     runId: null,

@@ -1,15 +1,13 @@
 /**
  * TurnBlock — one user prompt and all following agent rows until the next
- * user prompt. Agent-side content always renders as a single chronological
- * inline stream (prose, tools, delegates interleaved in wire order).
+ * user prompt. Agent-side content renders as a single chronological stream.
  */
 
 import { type ReactNode } from 'react';
 import { cn } from '../../../lib/cn.js';
-import type { DisplayRow } from './projectSubagentRows.js';
+import type { DisplayRow } from './displayRowTypes.js';
 import type { PartitionedTurn } from './groupTurnSegment.js';
 import { TurnRunningMeta } from '../activity/TurnRunningMeta.js';
-import { DelegationStream } from '../delegation/DelegationStream.js';
 import {
   timelineLiveTurnClassName,
   timelineTurnOuterGapClassName,
@@ -50,9 +48,10 @@ export function TurnBlock({
       {prompt && renderRow(prompt)}
 
       <div className={timelineAgentColumnClassName}>
-        {showAgentStream && (
-          <DelegationStream rows={agentStream} renderRow={renderRow} live={live} />
-        )}
+        {showAgentStream &&
+          agentStream.map((row) => (
+            <div key={row.key}>{renderRow(row)}</div>
+          ))}
 
         {live && footer.length === 0 && <TurnRunningMeta live={live} />}
         {footer.map((row) => (

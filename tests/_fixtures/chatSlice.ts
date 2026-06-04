@@ -35,7 +35,6 @@ import type {
   AssistantTextAcc,
   PartialToolCallArgs,
   ReasoningTextAcc,
-  SubAgentSnapshot,
   TokenUsageAggregate
 } from '@renderer/components/timeline/reducer/types';
 
@@ -55,7 +54,6 @@ export interface ChatSliceFixture {
   events: TimelineEvent[];
   assistantTexts: Record<string, AssistantTextAcc>;
   reasoningTexts: Record<string, ReasoningTextAcc>;
-  subagents: Record<string, SubAgentSnapshot>;
   partialToolCallArgs: Record<string, PartialToolCallArgs>;
   settledCallIds: Record<string, true>;
   orchestratorUsage?: TokenUsageAggregate;
@@ -87,7 +85,6 @@ export function chatSliceFixture(
     events: [],
     assistantTexts: {},
     reasoningTexts: {},
-    subagents: {},
     partialToolCallArgs: {},
     settledCallIds: {},
     runIdToFileEditCount: {},

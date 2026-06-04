@@ -29,7 +29,7 @@ export function tryParseArgumentsRecord(buf: string): Record<string, unknown> {
 }
 
 /**
- * Lenient parse preserving top-level arrays (delegate argument batches).
+ * Lenient parse preserving top-level arrays when present.
  */
 export function tryParseArgumentsUnknown(buf: string): unknown {
   try {

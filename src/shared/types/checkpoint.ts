@@ -50,8 +50,6 @@ export interface CheckpointEntry {
   deletions: number;
   /** Cosmetic precomputed hunks for `modify`. Cap-bounded by the producer. */
   hunks?: DiffHunk[];
-  /** Sub-agent attribution when the change came from a delegated worker. */
-  subagentId?: string;
   /**
    * Which tool produced the entry.
    *
@@ -111,8 +109,6 @@ export interface PendingChange {
   additions: number;
   deletions: number;
   createdAt: number;
-  /** Sub-agent attribution when the change came from a delegated worker. */
-  subagentId?: string;
   /** Tool that produced the pending row — mirrors `CheckpointEntry.source`. */
   source?: 'edit' | 'delete' | 'bash';
 }

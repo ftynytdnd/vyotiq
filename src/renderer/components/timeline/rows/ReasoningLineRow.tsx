@@ -26,13 +26,10 @@ function prefersReducedMotion(): boolean {
 
 interface ReasoningLineRowProps {
   id: string;
-  subagentId?: string;
 }
 
-export function ReasoningLineRow({ id, subagentId }: ReasoningLineRowProps) {
-  const acc = useChatStore((s) =>
-    subagentId ? s.subagents[subagentId]?.reasoningTexts[id] : s.reasoningTexts[id]
-  );
+export function ReasoningLineRow({ id }: ReasoningLineRowProps) {
+  const acc = useChatStore((s) => s.reasoningTexts[id]);
   const rowKey = `reasoning:${id}`;
   const accDone = acc?.done ?? true;
   const hasOrchestratorProse = useChatStore((s) => {
@@ -87,7 +84,7 @@ export function ReasoningLineRow({ id, subagentId }: ReasoningLineRowProps) {
   });
 
   const headline = (
-    <span className={reasoningHeadlineClassName(streaming, 'orchestrator')}>{label}</span>
+    <span className={reasoningHeadlineClassName(streaming)}>{label}</span>
   );
 
   return (

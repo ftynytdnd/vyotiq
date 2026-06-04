@@ -99,7 +99,7 @@ Create a new file:
 
 **Rules.**
 - \`oldString\` MUST match exactly, including whitespace.
-- **Re-read before every edit** after any other tool, delegate, or failed edit — file bytes drift quickly.
+- **Re-read before every edit** after any other tool or failed edit — file bytes drift quickly.
 - Include **5+ lines** of surrounding context so \`oldString\` is unique; never paste \`read\` line-number prefixes (\`     N\\t\`; host may auto-strip when the whole block is prefixed).
 - If \`oldString\` is not unique you MUST set \`replaceAll: true\` or expand the context until it IS unique.
 - After a failed edit, **re-read** and fix the anchor — do not retry the same \`oldString\` blind.
@@ -209,7 +209,6 @@ Create a new file:
           additions: stats.additions,
           deletions: 0,
           source: 'edit',
-          ...(ctx.subagentId ? { subagentId: ctx.subagentId } : {})
         });
         entryId = entry.id;
       } catch {
@@ -363,7 +362,6 @@ Create a new file:
         deletions: stats.deletions,
         hunks,
         source: 'edit',
-        ...(ctx.subagentId ? { subagentId: ctx.subagentId } : {})
       });
       entryId = entry.id;
     } catch {

@@ -3,7 +3,7 @@
  */
 
 import type { DiffStreamSnapshot } from '../reducer/types.js';
-import type { DisplayRow } from './projectSubagentRows.js';
+import type { DisplayRow } from './displayRowTypes.js';
 
 export function computeTailScrollKey(
   rows: DisplayRow[],

@@ -2,10 +2,7 @@
  * Timeline reducer: `token-usage` event handling.
  *
  * Verifies that:
- *   - orchestrator usage (no subagentId) folds into
- *     `TimelineState.orchestratorUsage`.
- *   - sub-agent usage (with subagentId) folds into the matching
- *     `SubAgentSnapshot.usage` aggregate.
+ *   - `token-usage` folds into `TimelineState.orchestratorUsage`.
  *   - `latest / peak / cumulative` are computed correctly across
  *     multiple reports.
  */
@@ -67,48 +64,18 @@ describe('foldTokenUsage', () => {
 });
 
 describe('applyTimelineEvent: token-usage', () => {
-  it('routes orchestrator usage (no subagentId) into orchestratorUsage', () => {
+  it('routes token-usage into orchestratorUsage', () => {
     const s = applyTimelineEvent(INITIAL_TIMELINE_STATE, usageEvent({}));
     expect(s.orchestratorUsage?.latest.promptTokens).toBe(100);
-    expect(s.subagents).toEqual({});
   });
 
-  it('routes sub-agent usage into the matching snapshot', () => {
+  it('folds multiple usage reports into latest/peak/cumulative on orchestratorUsage', () => {
     let s: TimelineState = INITIAL_TIMELINE_STATE;
-    s = applyTimelineEvent(s, {
-      kind: 'subagent-spawn',
-      id: 'spawn',
-      ts: 0,
-      subagentId: 'sa-1',
-      task: 't',
-      files: [],
-      tools: []
-    });
-    s = applyTimelineEvent(
-      s,
-      usageEvent({ id: 'e2', subagentId: 'sa-1', assistantMsgId: 'sa-1' })
-    );
-    expect(s.subagents['sa-1']?.usage?.latest.promptTokens).toBe(100);
-    expect(s.orchestratorUsage).toBeUndefined();
-  });
-
-  it('folds multiple sub-agent reports into latest/peak/cumulative', () => {
-    let s: TimelineState = INITIAL_TIMELINE_STATE;
-    s = applyTimelineEvent(s, {
-      kind: 'subagent-spawn',
-      id: 'spawn',
-      ts: 0,
-      subagentId: 'sa-1',
-      task: 't',
-      files: [],
-      tools: []
-    });
     s = applyTimelineEvent(
       s,
       usageEvent({
         id: 'e1',
-        subagentId: 'sa-1',
-        assistantMsgId: 'sa-1',
+        assistantMsgId: 'm1',
         usage: { promptTokens: 1000, completionTokens: 50, totalTokens: 1050 }
       })
     );
@@ -116,12 +83,11 @@ describe('applyTimelineEvent: token-usage', () => {
       s,
       usageEvent({
         id: 'e2',
-        subagentId: 'sa-1',
-        assistantMsgId: 'sa-1',
+        assistantMsgId: 'm1',
         usage: { promptTokens: 500, completionTokens: 200, totalTokens: 700 }
       })
     );
-    const u = s.subagents['sa-1']?.usage;
+    const u = s.orchestratorUsage;
     expect(u?.latest).toEqual({ promptTokens: 500, completionTokens: 200, totalTokens: 700 });
     expect(u?.peak).toEqual({ promptTokens: 1000, completionTokens: 200, totalTokens: 1050 });
     expect(u?.cumulative).toEqual({
@@ -130,17 +96,6 @@ describe('applyTimelineEvent: token-usage', () => {
       totalTokens: 1750
     });
     expect(u?.samples).toBe(2);
-  });
-
-  it('creates a placeholder snapshot when usage arrives before the spawn event', () => {
-    // Orderly delivery is not guaranteed — the reducer should tolerate
-    // a usage report arriving before `subagent-spawn`.
-    const s = applyTimelineEvent(
-      INITIAL_TIMELINE_STATE,
-      usageEvent({ subagentId: 'sa-2', assistantMsgId: 'sa-2' })
-    );
-    expect(s.subagents['sa-2']).toBeDefined();
-    expect(s.subagents['sa-2']?.usage?.latest.promptTokens).toBe(100);
   });
 
   it('appends token-usage events into the events array so transcripts persist them', () => {
@@ -285,36 +240,26 @@ describe('applyTimelineEvent — tok/s anchor plumbing', () => {
     expect(s.orchestratorUsage?.streamEndedAt).toBe(3_500);
   });
 
-  it('stamps and folds anchors on the matching sub-agent snapshot', () => {
+  it('stamps stream anchors on orchestratorUsage for sub-agent text deltas', () => {
     let s: TimelineState = INITIAL_TIMELINE_STATE;
-    s = applyTimelineEvent(s, {
-      kind: 'subagent-spawn',
-      id: 'spawn',
-      ts: 100,
-      subagentId: 'sa-1',
-      task: 't',
-      files: [],
-      tools: []
-    });
     s = applyTimelineEvent(s, {
       kind: 'agent-text-delta',
       id: 'iter-1',
       ts: 1_000,
-      delta: 'starting',
-      subagentId: 'sa-1'
+      delta: 'starting'
     });
     s = applyTimelineEvent(
       s,
       usageEvent({
         id: 'u-sa',
         ts: 5_000,
-        subagentId: 'sa-1',
-        assistantMsgId: 'sa-1',
+        assistantMsgId: 'iter-1',
         usage: { promptTokens: 200, completionTokens: 100, totalTokens: 300 }
       })
     );
-    const u = s.subagents['sa-1']?.usage;
+    const u = s.orchestratorUsage;
     expect(u?.streamStartedAt).toBe(1_000);
     expect(u?.streamEndedAt).toBe(5_000);
+    expect(s.assistantTexts['iter-1']?.text).toBe('starting');
   });
 });

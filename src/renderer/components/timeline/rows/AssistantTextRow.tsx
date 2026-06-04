@@ -7,7 +7,7 @@
  * renderer (Cursor-style flush inline prose). On settle, hands off to the
  * full `MarkdownBody` for GFM + highlight.js.
  *
- * The model sometimes emits internal `<delegate />` XML scaffolding around
+ * The model sometimes emits legacy orchestration XML scaffolding around
  * its user-facing answer; `stripDelegatesForDisplay` removes it before the
  * text reaches the markdown parser.
  */
@@ -26,14 +26,11 @@ import { timelineActionPillClassName, timelineAssistantRowClassName } from '../s
 
 interface AssistantTextRowProps {
   id: string;
-  subagentId?: string;
   model?: ModelSelection | null;
 }
 
-export function AssistantTextRow({ id, subagentId, model: _model }: AssistantTextRowProps) {
-  const acc = useChatStore((s) =>
-    subagentId ? s.subagents[subagentId]?.assistantTexts[id] : s.assistantTexts[id]
-  );
+export function AssistantTextRow({ id, model: _model }: AssistantTextRowProps) {
+  const acc = useChatStore((s) => s.assistantTexts[id]);
 
   const { copied, copy } = useCopyFeedback();
 

@@ -30,7 +30,6 @@ beforeEach(() => {
     events: [],
     assistantTexts: {},
     reasoningTexts: {},
-    subagents: {},
     runId: null,
     isProcessing: false,
     runStartedAt: null

@@ -8,11 +8,7 @@
  *   - Unknown conversation ids fail gracefully.
  *   - Output is hard-capped at the host ceiling regardless of the
  *      caller's `maxChars`.
- *   - Sub-agent isolation: the tool is NOT in `SUBAGENT_FULL_TOOLS`, so
- *      `validateSubagentToolset(['recall'])` falls back to the read-only
- *      default and silently drops `recall` — sub-agents can never see
- *      it, regardless of what the orchestrator's delegate directive
- *      tries to opt into.
+ *   - `recall` is on the solo-agent `AGENT_TOOLS` allowlist only.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -25,7 +21,6 @@ import {
   appendEvent,
   createConversation
 } from '@main/conversations/conversationStore';
-import { validateSubagentToolset } from '@main/tools/policy/subagentTools';
 import type { ToolContext } from '@main/tools/types';
 import type { TimelineEvent } from '@shared/types/chat';
 import { MAX_TOOL_OUTPUT_CHARS } from '@shared/constants';
@@ -274,24 +269,3 @@ describe('recall tool — workspace fail-closed (M2)', () => {
   });
 });
 
-describe('recall tool — sub-agent isolation', () => {
-  it('validateSubagentToolset filters `recall` out — sub-agents cannot opt in', () => {
-    // Even when the orchestrator's <delegate tools="..."> directive
-    // explicitly lists `recall`, the policy chokepoint must drop it.
-    // The subset returned is whatever survives intersection with
-    // SUBAGENT_FULL_TOOLS — recall is intentionally NOT in that set.
-    const filtered = validateSubagentToolset(['recall', 'read', 'ls']);
-    expect(filtered).not.toContain('recall');
-    expect(filtered).toContain('read');
-    expect(filtered).toContain('ls');
-  });
-
-  it('validateSubagentToolset with ONLY `recall` falls back to the read-only default', () => {
-    // After filtering, no allowed tools remain, so the function returns
-    // the safe default rather than an empty list (which would render
-    // the sub-agent useless).
-    const filtered = validateSubagentToolset(['recall']);
-    expect(filtered).not.toContain('recall');
-    expect(filtered.length).toBeGreaterThan(0);
-  });
-});

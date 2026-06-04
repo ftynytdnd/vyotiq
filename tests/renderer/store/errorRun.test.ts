@@ -65,7 +65,6 @@ function seedSliceWithStreamedError(message: string): TimelineEvent {
         events: [errEvent],
         assistantTexts: {},
         reasoningTexts: {},
-        subagents: {},
         runId: RUN_ID,
         isProcessing: true,
         runStartedAt: 100,

@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { DisplayRow } from '@renderer/components/timeline/shared/projectSubagentRows';
+import type { DisplayRow } from '@renderer/components/timeline/shared/displayRowTypes';
 import {
   partitionTurnSegment,
   reorderTurnSegment

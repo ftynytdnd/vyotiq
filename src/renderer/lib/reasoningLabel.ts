@@ -2,7 +2,7 @@
  * Single source of truth for the reasoning-stream stopwatch label.
  *
  * The orchestrator's `ReasoningLineRow` and the sub-agent's
- * `SubAgentBody.ReasoningPanel` both render the same Cascade-style
+ * timeline reasoning rows both render the same Cascade-style
  * disclosure: `Thinking…` while the reasoning stream is open,
  * `Thought for Ns` once the provider closes it. Previously the
  * elapsed-seconds math + label rules were copy-pasted across the two

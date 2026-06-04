@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { displayAssistantTurnText } from '@shared/text/parseDelegates';
+import { displayAssistantTurnText } from '@shared/text/assistantDisplayText';
 
 describe('displayAssistantTurnText', () => {
   it('returns the full stripped text when no delegates are present', () => {

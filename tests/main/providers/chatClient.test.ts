@@ -159,7 +159,7 @@ describe('streamChat — SSE frame parsing', () => {
   });
 
   it('forwards tool_choice even when the tools array is empty (wrap-up turn)', async () => {
-    // Regression: SubAgent's wrap-up path sends
+    // Regression: iteration-cap synthesis sends
     //   { tools: [], toolChoice: 'none' }
     // to force the model to emit prose instead of calling more tools.
     // The old guard (`tools.length > 0`) stripped the `tool_choice`

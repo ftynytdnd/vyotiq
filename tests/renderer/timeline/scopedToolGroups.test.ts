@@ -3,7 +3,6 @@ import type { Row } from '@renderer/components/timeline/reducer/deriveRows.js';
 import {
   foldOrchestratorFileEdit,
   foldScopedFileEdit,
-  foldSubagentFileEdit,
   foldToolCall,
   foldToolResult,
   type ScopedGroupState
@@ -31,18 +30,7 @@ describe('scopedToolGroups', () => {
     expect(out[0]?.kind).toBe('tool-group');
     if (out[0]?.kind === 'tool-group') {
       expect(out[0].children).toHaveLength(2);
-      expect(out[0].subagentId).toBeUndefined();
     }
-  });
-
-  it('keeps sub-agent tool groups scoped by subagentId', () => {
-    const out: Row[] = [];
-    const state = emptyState();
-    const call: ToolCall = { id: 'c1', name: 'read', args: { path: 'a.ts' } };
-    foldToolCall(out, state, call, 'sub-1');
-    foldToolCall(out, state, { ...call, id: 'c2' }, 'sub-2');
-    expect(out).toHaveLength(2);
-    expect(out.every((r) => r.kind === 'tool-group')).toBe(true);
   });
 
   it('patches tool-result onto an existing call child', () => {
@@ -84,50 +72,23 @@ describe('scopedToolGroups', () => {
     expect(out.some((r) => r.kind === 'file-edit-group')).toBe(false);
   });
 
-  it('merges sub-agent file-edit into prior edit tool-group when path matches', () => {
+  it('appends bare file edits into a file-edit-group', () => {
     const out: Row[] = [];
     const state = emptyState();
-    const call: ToolCall = { id: 'c1', name: 'edit', args: { path: 'a.ts' } };
-    const result: ToolResult = {
-      id: 'c1',
-      name: 'edit',
-      ok: true,
-      data: { tool: 'edit', filePath: 'a.ts', additions: 1, deletions: 0, created: false, hunks: [] }
-    };
-    foldToolCall(out, state, call, 'sub-1');
-    foldToolResult(out, state, result, 'sub-1');
-    const merged = foldSubagentFileEdit(
-      out,
-      state,
-      { id: 'fe1', filePath: 'a.ts', additions: 2, deletions: 1 },
-      'sub-1'
-    );
-    expect(merged).toBe(true);
-    expect(out.some((r) => r.kind === 'file-edit-group')).toBe(false);
-    if (out[0]?.kind === 'tool-group') {
-      expect(out[0].subagentId).toBe('sub-1');
-      expect(out[0].children[0]?.fileEditAdditions).toBe(2);
-    }
-  });
-
-  it('appends bare sub-agent file edits into a scoped file-edit-group', () => {
-    const out: Row[] = [];
-    const state = emptyState();
-    foldScopedFileEdit(
-      out,
-      state,
-      { id: 'fe1', filePath: 'a.ts', additions: 1, deletions: 0 },
-      'sub-1'
-    );
-    foldScopedFileEdit(
-      out,
-      state,
-      { id: 'fe2', filePath: 'b.ts', additions: 0, deletions: 1 },
-      'sub-1'
-    );
+    foldScopedFileEdit(out, state, {
+      id: 'fe1',
+      filePath: 'a.ts',
+      additions: 1,
+      deletions: 0
+    });
+    foldScopedFileEdit(out, state, {
+      id: 'fe2',
+      filePath: 'b.ts',
+      additions: 0,
+      deletions: 1
+    });
     expect(out).toHaveLength(1);
     if (out[0]?.kind === 'file-edit-group') {
-      expect(out[0].subagentId).toBe('sub-1');
       expect(out[0].children).toHaveLength(2);
     }
   });

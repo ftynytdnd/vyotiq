@@ -313,7 +313,7 @@ export async function refreshEnvelopes(
   const now = Date.now();
   // Cache key is (conversationId, workspaceId, workspacePath) — NOT
   // `query`. Audit fix B1: the per-iteration `query` mutates on every
-  // direct-tool / delegate round (see `runLoop.ts` — it folds in the
+  // direct-tool round (see `runLoop.ts` — it folds in the
   // latest tool args), so including it collapsed the hit rate of this
   // cache to effectively zero across a run. The envelopes that care
   // about `query` (memory retrieval) still get a fresh value on every
@@ -370,15 +370,15 @@ export function __resetEnvelopeCacheForTests(): void {
 /**
  * Per-file inlining ceiling. Files larger than this are sliced and
  * suffixed with the `INLINE_TRUNCATION_MARKER` so the worker knows the
- * tail is missing. Sized to keep a 20-file delegate spec under ~640 KB
+ * tail is missing. Sized to keep a 20-file attachment inline batch under ~640 KB
  * total even on small models without aborting the run.
  */
 const INLINE_FILE_CHAR_CAP = 32_000;
 
 /**
  * Visible marker appended INSIDE the `<file>` body when content was
- * sliced. Without this, a sub-agent reads the partial content as if it
- * were the whole file and may summarize / cite content that does NOT
+ * sliced. Without this, the model may treat partial content as if it
+ * were the whole file and summarize / cite content that does NOT
  * exist beyond the cap — a small but real hallucination surface.
  *
  * The marker explicitly tells the worker how to recover: emit a
@@ -395,9 +395,9 @@ function buildInlineTruncationMarker(shownChars: number, totalChars: number): st
 }
 
 /**
- * Per-call shared body cache. Caller-owned; lifecycle is one delegation
- * round (`runSubAgentPool` mints one and passes it to every worker so
- * N parallel workers reading file X cause 1 disk read, not N). When
+ * Per-call shared body cache. Caller-owned; lifecycle is one prompt-assembly
+ * batch (one map passed across parallel `inlineFiles` probes so
+ * N concurrent reads of file X cause 1 disk read, not N). When
  * omitted the inlining runs uncached — preserves the legacy single-
  * worker call-site shape used by direct callers and tests.
  *
@@ -427,12 +427,10 @@ export function createInlineFileCache(): InlineFileCache {
 
 /**
  * Concurrency cap for the bounded probe pool inside `inlineFiles`
- * (review finding H9). Without bounding, an N-file delegate runs
+ * (review finding H9). Without bounding, an N-file attachment batch runs
  * `realpath` + `readFile` strictly serially — N × wall-clock latency
- * even when the OS could have served them concurrently. The cap of
- * 4 keeps the FS pressure modest (well below `DEFAULT_DELEGATE_CONCURRENCY`
- * so a multi-spec delegation round doesn't fan out N×8 reads at once)
- * while still cutting the typical 5-file delegate's latency by ~4×.
+ * even when the OS could have served them concurrently. The cap of 4
+ * keeps FS pressure modest while still cutting typical multi-file latency.
  *
  * Result order is preserved by writing each task's output into a
  * pre-sized slot indexed by input position, then joining at the end.
@@ -454,12 +452,12 @@ export async function inlineFiles(
   /**
    * Audit fix 2026-08-P2-1 / 13-P2-1: optional abort signal threaded
    * from the orchestrator run's `AbortController`. When the signal
-   * fires (user aborts mid-prompt-assembly with a 50-file delegate
+   * fires (user aborts mid-prompt-assembly with a 50-file attachment
    * spec), every still-pending slot collapses to a cheap aborted
    * marker INSIDE the existing concurrent-pool drain — no new
    * fs.readFile is started, in-flight reads still drain (Node's
    * `fs.readFile` doesn't take an `AbortSignal` directly, but the
-   * whole delegate's outer `AbortController` will reject anyway,
+   * run's outer `AbortController` will reject anyway,
    * so the worst case is one extra file finishing on a 32 KB cap).
    *
    * Optional so direct callers / tests retain the legacy two-arg
@@ -566,7 +564,7 @@ export async function inlineFiles(
   // Bounded-concurrency worker pool (review finding H9). Each worker
   // pulls the next index off a shared cursor and runs `inlineOne`
   // until the cursor is past the end. The pool size is
-  // `min(concurrency, files.length)` so a 1-file delegate spins
+  // `min(concurrency, files.length)` so a 1-file batch still parallelizes
   // exactly one worker, not `INLINE_FILES_CONCURRENCY` idle ones.
   let cursor = 0;
   const worker = async (): Promise<void> => {

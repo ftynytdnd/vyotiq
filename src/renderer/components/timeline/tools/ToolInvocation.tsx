@@ -15,14 +15,13 @@ import { DeleteInvocation } from './DeleteInvocation.js';
 import { SearchInvocation } from './SearchInvocation.js';
 import { MemoryInvocation } from './MemoryInvocation.js';
 import { RecallInvocation } from './RecallInvocation.js';
-import { ReportInvocation } from './ReportInvocation.js';
 import { UnknownInvocation } from './UnknownInvocation.js';
 import { AskUserInvocation } from './AskUserInvocation.js';
 
 interface ToolInvocationProps {
   call?: ToolCall;
   result?: ToolResult;
-  /** When true, render the compact nested variant for delegated tool rows. */
+  /** When true, render the compact nested variant inside a tool group. */
   dense?: boolean;
   /** Persistent key for expand/collapse state via useTimelineUiStore. */
   rowKey?: string;
@@ -117,17 +116,6 @@ export function ToolInvocation({
       );
     case 'recall':
       return <RecallInvocation call={call} result={result} dense={dense} rowKey={rowKey} />;
-    case 'report':
-      return (
-        <ReportInvocation
-          call={call}
-          result={result}
-          dense={dense}
-          rowKey={rowKey}
-          partial={partial}
-          {...(diffStream ? { diffStream } : {})}
-        />
-      );
     case 'ask_user':
       // Interactive UI is on `ask-user-prompt` rows; resume emits result-only.
       if (!call) return null;
@@ -139,7 +127,6 @@ export function ToolInvocation({
           rowKey={rowKey ?? call.id}
         />
       );
-    case 'delegate':
     case 'finish':
       // Orchestrator action tools — dispatched specially by the run loop
       // (intercepted by name), so they do not normally surface as standard

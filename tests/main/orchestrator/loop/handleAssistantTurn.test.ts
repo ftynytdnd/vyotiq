@@ -25,7 +25,7 @@ beforeEach(() => {
 });
 
 describe('handleAssistantTurn', () => {
-  it('streams text deltas and does not emit subagent-pending for XML delegate tags', async () => {
+  it('streams text deltas for inline XML-like tags in prose', async () => {
     vi.mocked(streamChat).mockReturnValue(
       asyncGen([
         { contentDelta: 'Plan: I will spawn a sub-agent.\n\n' },

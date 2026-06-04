@@ -506,7 +506,7 @@ interface OllamaWireMessage {
    * line announcement in `content` (a common harness §A Phase 3 +
    * §B "Narrate-and-emit" interaction) loses its plan on the next
    * turn — it sees only the announcement and has no anchor for what
-   * it was about to delegate. The visible symptom: a plan-only turn
+   * it was about to call tools. The visible symptom: a plan-only turn
    * followed by an unproductive narration loop until the host's
    * planning-nudge budget is exhausted.
    *
@@ -584,7 +584,7 @@ function toOllamaMessage(m: ChatMessage): OllamaWireMessage {
   // `reasoning_content` round-trip and the canonical field name per
   // the Ollama capabilities/thinking docs. Without this echo, a model
   // that planned in `thinking` and emitted only a one-line content
-  // hand-off (e.g. "Now I'll delegate:") cannot recover its plan on
+  // hand-off (e.g. "Now I'll run tools:") cannot recover its plan on
   // the next turn — it loses everything in the reasoning channel and
   // gets stuck in a narration loop. Scoped to `role:'assistant'`
   // because the Ollama schema only documents `thinking` on assistant

@@ -1,5 +1,5 @@
 /**
- * Collapsible prompt body — shared typography for user prompts and delegate tasks.
+ * Collapsible prompt body — shared typography for user prompts and task bodies.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -15,7 +15,7 @@ export interface PromptBodyProps {
   className?: string;
   /** Extra classes on the scrollable bubble (e.g. left border for workers). */
   bubbleClassName?: string;
-  /** `single-line` — one visible line with expand to full body (delegate tasks). */
+  /** `single-line` — one visible line with expand to full body. */
   variant?: 'default' | 'single-line';
 }
 

@@ -1,12 +1,6 @@
 /**
- * `replayTranscript.ts` tests. Exercises the Phase-1 fixes:
- *   - Aborted sub-agent rounds (spawn + status, no result) still emit
- *     a placeholder envelope entry with status="aborted".
- *   - Re-spawning a sub-agent id across rounds picks up the LATEST
- *     status, not the first one seen.
- *   - Stale `pendingCallIds` are cleared at sub-agent-round and
- *     user-prompt boundaries.
- *   - tool-result pairing happens by ORDER, not by `result.id`.
+ * `replayTranscript.ts` tests — user/assistant/tool pairing and ephemeral
+ * event filtering.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -43,7 +37,8 @@ function toolResult(id: string, resultId: string, name: string, output: string):
     result: { id: resultId, name: name as never, ok: true, output, durationMs: 1 }
   } as TimelineEvent);
 }
-function spawn(subagentId: string, task = 'do something'): TimelineEvent {
+/** Legacy transcript rows (stripped on load in production). */
+function legacySpawn(subagentId: string, task = 'do something'): TimelineEvent {
   return evt({
     kind: 'subagent-spawn',
     id: `sp-${ts()}`,
@@ -52,25 +47,16 @@ function spawn(subagentId: string, task = 'do something'): TimelineEvent {
     task,
     files: [],
     tools: []
-  });
+  } as TimelineEvent);
 }
-function status(subagentId: string, s: 'done' | 'failed' | 'aborted'): TimelineEvent {
+function legacyStatus(subagentId: string, s: 'done' | 'failed' | 'aborted'): TimelineEvent {
   return evt({
     kind: 'subagent-status',
     id: `st-${ts()}`,
     ts: ts(),
     subagentId,
     status: s
-  });
-}
-function result(subagentId: string, output: string): TimelineEvent {
-  return evt({
-    kind: 'subagent-result',
-    id: `r-${ts()}`,
-    ts: ts(),
-    subagentId,
-    output
-  });
+  } as TimelineEvent);
 }
 
 describe('replayTranscript', () => {
@@ -149,45 +135,17 @@ describe('replayTranscript', () => {
     expect(tools[1]?.content).toBe('second output');
   });
 
-  it('synthesizes a placeholder when a sub-agent round was aborted', () => {
+  it('ignores legacy spawn/status rows (no subagent_results envelope)', () => {
     const events: TimelineEvent[] = [
-      userPrompt('delegate'),
-      spawn('sa-1', 'task one'),
-      status('sa-1', 'aborted')
-      // No subagent-result — abort happened before we got one.
+      userPrompt('task'),
+      legacySpawn('sa-1', 'task one'),
+      legacyStatus('sa-1', 'aborted')
     ];
     const msgs = replayTranscript(events);
-    // Last message should be the synthetic envelope.
-    const last = msgs[msgs.length - 1];
-    expect(last?.role).toBe('user');
-    expect(last?.content).toContain('<subagent_results>');
-    expect(last?.content).toMatch(/status="aborted"/);
-    expect(last?.content).toMatch(/no result emitted/);
-  });
-
-  it('uses the LATEST status for a re-spawned sub-agent id across rounds', () => {
-    const events: TimelineEvent[] = [
-      // Round 1: sa-1 fails.
-      userPrompt('p1'),
-      spawn('sa-1', 'first'),
-      status('sa-1', 'failed'),
-      result('sa-1', '<status>failed</status>'),
-      // Round 2: sa-1 re-runs and succeeds. Latest status is `done`.
-      userPrompt('p2'),
-      spawn('sa-1', 'second'),
-      status('sa-1', 'done'),
-      result('sa-1', '<status>success</status>')
-    ];
-    const msgs = replayTranscript(events);
-    const envelopes = msgs.filter(
-      (m): m is ChatMessage & { role: 'user'; content: string } =>
-        m.role === 'user' &&
-        typeof m.content === 'string' &&
-        m.content.includes('<subagent_results>')
+    expect(msgs.filter((m) => m.role === 'user')).toHaveLength(1);
+    expect(msgs.some((m) => typeof m.content === 'string' && m.content.includes('subagent_results'))).toBe(
+      false
     );
-    expect(envelopes).toHaveLength(2);
-    expect(envelopes[0]?.content).toContain('status="failed"');
-    expect(envelopes[1]?.content).toContain('status="done"');
   });
 
   it('drops unpaired tool-call ids at the user-prompt boundary', () => {
@@ -227,41 +185,16 @@ describe('replayTranscript', () => {
     expect(tools).toHaveLength(1);
   });
 
-  it('skips sub-agent internal tool-call/-result events', () => {
+  it('replays tool-call/-result into model memory', () => {
     const events: TimelineEvent[] = [
       userPrompt('go'),
-      spawn('sa-1', 'task'),
-      // These two should be IGNORED — sub-agent internals never reach orchestrator memory.
-      {
-        kind: 'tool-call',
-        id: 'inner',
-        ts: ts(),
-        call: { id: 'sa-call', name: 'bash' as never, args: {} },
-        subagentId: 'sa-1'
-      },
-      {
-        kind: 'tool-result',
-        id: 'inner',
-        ts: ts(),
-        result: {
-          id: 'sa-call',
-          name: 'bash' as never,
-          ok: true,
-          output: 'inner-output',
-          durationMs: 1
-        },
-        subagentId: 'sa-1'
-      },
-      result('sa-1', '<status>success</status>')
+      toolCall('a-1', 'sa-call', 'bash', {}),
+      toolResult('a-1', 'sa-call', 'bash', 'inner-output')
     ];
     const msgs = replayTranscript(events);
-    // No `role:'tool'` for the sub-agent's internal call.
     const tools = msgs.filter((m) => m.role === 'tool');
-    expect(tools).toHaveLength(0);
-    // The envelope is present.
-    const last = msgs[msgs.length - 1];
-    expect(last?.role).toBe('user');
-    expect(last?.content).toContain('<subagent_results>');
+    expect(tools).toHaveLength(1);
+    expect((tools[0] as { content: string }).content).toBe('inner-output');
   });
 
   it('returns an empty array for an empty transcript', () => {
@@ -351,7 +284,7 @@ describe('replayTranscript', () => {
           task: 't',
           files: [],
           tools: []
-        }),
+        } as TimelineEvent),
         evt({
           kind: 'token-usage',
           id: 'tu',

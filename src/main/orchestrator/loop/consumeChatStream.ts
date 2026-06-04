@@ -1,13 +1,9 @@
 /**
  * Shared streaming-delta consumer for chat completions.
  *
- * The orchestrator (`handleAssistantTurn`) and every sub-agent
- * (`runSubAgent`) both need to drain `streamChat()` deltas in essentially
- * identical ways: accumulate text, accumulate reasoning, splice tool-call
- * fragments into per-index buffers, latch a finish reason. The two had
- * drifted into copy-pasted twins; any future delta shape (e.g. cache-hit
- * metadata, structured citations) had to be added in two places. This
- * module is the single source of truth.
+ * `handleAssistantTurn` drains `streamChat()` deltas here: accumulate text
+ * and reasoning, splice tool-call fragments into per-index buffers, and
+ * latch a finish reason. One module keeps provider delta handling consistent.
  *
  * Responsibilities:
  *   1. Native-channel routing: `delta.contentDelta` → text accumulator,
@@ -29,9 +25,8 @@
  *      for the full turn to finish.
  *   5. Finish-reason + final-usage frame propagation.
  *
- * The optional `hooks` let the orchestrator emit timeline events as text
- * arrives without leaking renderer concerns into the helper. Sub-agents
- * pass no hooks and consume the stream silently.
+ * Optional `hooks` let the orchestrator emit timeline events as text arrives
+ * without leaking renderer concerns into the helper.
  */
 
 import type { TokenUsage } from '@shared/types/chat.js';

@@ -25,7 +25,7 @@ export const finishTool: Tool = makeInterceptOnlyTool(
 
 **WHY it exists.** A run only stops when you explicitly finish. This makes "the task is complete" a deliberate, schema-enforced action instead of a guess based on whether you stopped emitting tool calls.
 
-**WHEN to trigger it.** Once the work is verified done and you have a final answer for the user. Do NOT finish while delegated work is still needed.
+**WHEN to trigger it.** Once the work is verified done and you have a final answer for the user.
 
 **Notes.** \`summary\` is the literal text the user reads — write it for them, not as an internal note.`,
   {

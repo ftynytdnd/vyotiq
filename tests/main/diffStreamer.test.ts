@@ -565,31 +565,6 @@ describe('DiffStreamer', () => {
       streamer.dispose();
     });
 
-    it('attaches subagentId so the reducer routes to the right worker snapshot', async () => {
-      const workspacePath = await mkTempWorkspace();
-      const { emit, events } = captureEmits();
-      const streamer = new DiffStreamer({
-        workspacePath,
-        runId: 'run-1',
-        emit
-      });
-      streamer.onArgsDelta({
-        callId: 'c-sa',
-        name: 'edit',
-        parsed: { path: 'README.md', create: true, content: '# Vyotiq' },
-        subagentId: 'sa-worker-1'
-      });
-      await waitUntil(() => {
-        expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(1);
-      });
-      const streamEvents = events.filter(
-        (e): e is Extract<TimelineEvent, { kind: 'diff-stream' }> => e.kind === 'diff-stream'
-      );
-      expect(streamEvents).toHaveLength(1);
-      expect(streamEvents[0]!.subagentId).toBe('sa-worker-1');
-      streamer.dispose();
-    });
-
     it('skips emit when path is missing or content is empty (still parsing)', async () => {
       const workspacePath = await mkTempWorkspace();
       const { emit, events } = captureEmits();
@@ -748,7 +723,7 @@ describe('DiffStreamer', () => {
     // Pins the audit fix that closes the surrogate→real-id leak.
     //
     // Scenario: the provider's first `tool-call-args-delta` arrives
-    // with `id: undefined`, so the orchestrator/sub-agent emits
+    // with `id: undefined`, so the orchestrator emits
     // events keyed by `pending:${owner}:${index}`. Mid-stream the
     // provider sends the real id; subsequent events use it
     // instead. Pre-fix, the streamer carried two distinct
@@ -776,10 +751,9 @@ describe('DiffStreamer', () => {
       // the provider never sent a real id during streaming. The
       // settle path is what discovers the real id.
       streamer.onArgsDelta({
-        callId: 'pending:sub-7:0',
+        callId: 'pending:orc:0',
         name: 'edit',
         parsed: { path: 'a.ts', oldString: 'line two', newString: 'LINE TWO' },
-        subagentId: 'sub-7'
       });
       await waitUntil(() => {
         expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(1);
@@ -788,11 +762,11 @@ describe('DiffStreamer', () => {
       const liveEvents = events.filter((e) => e.kind === 'diff-stream');
       expect(liveEvents).toHaveLength(1);
       expect(liveEvents[0]!.kind === 'diff-stream' && liveEvents[0]!.callId).toBe(
-        'pending:sub-7:0'
+        'pending:orc:0'
       );
 
       // Now the authoritative `tool-call` lands with the real id.
-      streamer.notifySettled('c-real-123', 'sub-7', 0);
+      streamer.notifySettled('c-real-123', 'orc', 0);
 
       // Settle re-emit MUST land under the REAL id (not the
       // surrogate) and carry settled: true.
@@ -806,8 +780,6 @@ describe('DiffStreamer', () => {
       // flips the `settled` bit on the existing partial entry the
       // surrogate→real `clearPartialFor` reconciles to.
       expect(all[0]!.hunks).toEqual(all[1]!.hunks);
-      // Sub-agent attribution preserved.
-      expect(all[1]!.subagentId).toBe('sub-7');
       streamer.dispose();
     });
 
@@ -823,23 +795,21 @@ describe('DiffStreamer', () => {
       });
       // Two parallel surrogate deltas under the same owner.
       streamer.onArgsDelta({
-        callId: 'pending:sub-7:1',
+        callId: 'pending:orc:1',
         name: 'edit',
         parsed: { path: 'b.ts', oldString: 'line two', newString: 'LINE TWO B' },
-        subagentId: 'sub-7'
       });
       streamer.onArgsDelta({
-        callId: 'pending:sub-7:0',
+        callId: 'pending:orc:0',
         name: 'edit',
         parsed: { path: 'a.ts', oldString: 'line two', newString: 'LINE TWO A' },
-        subagentId: 'sub-7'
       });
       await waitUntil(() => {
         expect(events.filter((e) => e.kind === 'diff-stream').length).toBeGreaterThanOrEqual(2);
       });
       // Settle the first authoritative tool-call with the LOWEST
       // surrogate index (mirrors the runtime ordering rule).
-      streamer.notifySettled('c-real-A', 'sub-7');
+      streamer.notifySettled('c-real-A', 'orc');
       const settleEvents = events.filter(
         (e): e is Extract<TimelineEvent, { kind: 'diff-stream' }> =>
           e.kind === 'diff-stream' && e.settled === true
@@ -850,10 +820,10 @@ describe('DiffStreamer', () => {
       // sub-7:0` → `a.ts`), proving the lowest-index walk found
       // the right surrogate.
       expect(settleEvents[0]!.filePath).toBe('a.ts');
-      // The OTHER surrogate (`pending:sub-7:1` → `b.ts`) is
+      // The OTHER surrogate (`pending:orc:1` → `b.ts`) is
       // untouched by the first settle — a subsequent settle would
       // claim it.
-      streamer.notifySettled('c-real-B', 'sub-7');
+      streamer.notifySettled('c-real-B', 'orc');
       const allSettled = events.filter(
         (e): e is Extract<TimelineEvent, { kind: 'diff-stream' }> =>
           e.kind === 'diff-stream' && e.settled === true
@@ -874,30 +844,27 @@ describe('DiffStreamer', () => {
         emit
       });
       streamer.onArgsDelta({
-        callId: 'pending:sub-7:0',
+        callId: 'pending:orc:0',
         name: 'edit',
         parsed: { path: 'a.ts', oldString: 'line two', newString: 'LINE TWO' },
-        subagentId: 'sub-7'
       });
       await waitUntil(() => {
         expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(1);
       });
-      streamer.notifySettled('c-real', 'sub-7', 0);
+      streamer.notifySettled('c-real', 'orc', 0);
       // A delta racing the settle on the SURROGATE id MUST be
       // dropped — both callIds were added to `settledCallIds`
       // during the fold-in.
       streamer.onArgsDelta({
-        callId: 'pending:sub-7:0',
+        callId: 'pending:orc:0',
         name: 'edit',
         parsed: { path: 'a.ts', oldString: 'line three', newString: 'LINE THREE' },
-        subagentId: 'sub-7'
       });
       // And the same protection for late deltas on the real id.
       streamer.onArgsDelta({
         callId: 'c-real',
         name: 'edit',
         parsed: { path: 'a.ts', oldString: 'line four', newString: 'LINE FOUR' },
-        subagentId: 'sub-7'
       });
       await waitUntil(() => {
         expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(2);
@@ -923,14 +890,13 @@ describe('DiffStreamer', () => {
         runId: 'run-1',
         emit
       });
-      streamer.notifySettled('c-never-seen', 'sub-7', 0);
+      streamer.notifySettled('c-never-seen', 'orc', 0);
       expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(0);
       // A subsequent legitimate call with a fresh id still works.
       streamer.onArgsDelta({
         callId: 'c-fresh',
         name: 'edit',
         parsed: { path: 'a.ts', oldString: 'line two', newString: 'LINE TWO' },
-        subagentId: 'sub-7'
       });
       await waitUntil(() => {
         expect(events.filter((e) => e.kind === 'diff-stream').length).toBeGreaterThanOrEqual(1);

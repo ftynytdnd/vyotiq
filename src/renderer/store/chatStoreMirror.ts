@@ -11,7 +11,6 @@ export function mirrorOf(slice: ChatSlice): ActiveMirror {
     events: slice.events,
     assistantTexts: slice.assistantTexts,
     reasoningTexts: slice.reasoningTexts,
-    subagents: slice.subagents,
     partialToolCallArgs: slice.partialToolCallArgs,
     settledCallIds: slice.settledCallIds,
     liveDiffByCallId: slice.liveDiffByCallId,

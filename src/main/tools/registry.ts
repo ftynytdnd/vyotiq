@@ -12,8 +12,6 @@ import { deleteTool } from './delete.tool.js';
 import { searchTool } from './search.tool.js';
 import { memoryTool } from './memory.tool.js';
 import { recallTool } from './recall.tool.js';
-import { reportTool } from './report.tool.js';
-import { delegateTool } from './delegate.tool.js';
 import { finishTool } from './finish.tool.js';
 import { askUserTool } from './ask_user.tool.js';
 // Internal registry. Kept module-private so the only legitimate access
@@ -28,8 +26,6 @@ const TOOLS: Record<RegisteredToolName, Tool> = {
   search: searchTool,
   memory: memoryTool,
   recall: recallTool,
-  report: reportTool,
-  delegate: delegateTool,
   finish: finishTool,
   ask_user: askUserTool
 };
@@ -53,10 +49,8 @@ export function getTool(name: string): Tool | undefined {
 
 /** Schemas for a specific subset of tools, by name. Names not in the registry
  *  are silently dropped. This function is the PHYSICAL enforcement chokepoint
- *  for the orchestrator-vs-sub-agent tool-policy split: the forbidden tool is
- *  never even exposed to the wire, regardless of what the harness markdown
- *  says. Policies live in `tools/policy/` (orchestrator / sub-agent default
- *  / sub-agent full). */
+ *  for the agent tool-policy split: tools not in `AGENT_TOOLS` are never
+ *  exposed on the wire. Policy lives in `tools/policy/agentTools.ts`. */
 export function toolSchemasFor(names: readonly string[]) {
   const allowed = new Set(names);
   return listTools()

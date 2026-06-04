@@ -17,10 +17,6 @@ export interface LoopCheckpoint {
   consecutiveErrors: number;
   consecutiveBadToolRounds: number;
   runStateAcc: RunStateAccumulator;
-  counters: {
-    consecutiveBadRounds: number;
-    perTaskBadStreak: Array<[string, number]>;
-  };
   spin: SpinSignatureBuffer;
   askUserToolCallId: string;
   askUserPromptEventId: string;
@@ -84,7 +80,6 @@ export function cloneLoopCheckpoint(state: {
   consecutiveErrors: number;
   consecutiveBadToolRounds: number;
   runStateAcc: RunStateAccumulator;
-  counters: { consecutiveBadRounds: number; perTaskBadStreak: Map<string, number> };
   spin: SpinSignatureBuffer;
   askUserToolCallId: string;
   askUserPromptEventId: string;
@@ -102,23 +97,9 @@ export function cloneLoopCheckpoint(state: {
     consecutiveErrors: state.consecutiveErrors,
     consecutiveBadToolRounds: state.consecutiveBadToolRounds,
     runStateAcc: { ...state.runStateAcc },
-    counters: {
-      consecutiveBadRounds: state.counters.consecutiveBadRounds,
-      perTaskBadStreak: [...state.counters.perTaskBadStreak.entries()]
-    },
     spin: { window: [...state.spin.window] },
     askUserToolCallId: state.askUserToolCallId,
     askUserPromptEventId: state.askUserPromptEventId,
     askUserPayload: state.askUserPayload
-  };
-}
-
-export function restoreDelegationCounters(checkpoint: LoopCheckpoint): {
-  consecutiveBadRounds: number;
-  perTaskBadStreak: Map<string, number>;
-} {
-  return {
-    consecutiveBadRounds: checkpoint.counters.consecutiveBadRounds,
-    perTaskBadStreak: new Map(checkpoint.counters.perTaskBadStreak)
   };
 }

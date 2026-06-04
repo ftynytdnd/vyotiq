@@ -3,7 +3,7 @@
  * response / footer zones for the timeline turn block.
  */
 
-import type { DisplayRow } from './projectSubagentRows.js';
+import type { DisplayRow } from './displayRowTypes.js';
 import { reorderTurnSegment } from './turnRowOrdering.js';
 
 export interface PartitionedTurn {

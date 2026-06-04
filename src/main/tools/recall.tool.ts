@@ -1,10 +1,8 @@
 /**
  * `recall` tool — cross-conversation read-only recall.
  *
- * Orchestrator-only by policy (`ORCHESTRATOR_TOOLS`). Sub-agents are
- * denied this tool so the isolation invariant from
- * `02-subagent-prompt.md` stays intact: only the top-level Agent V can
- * reach across sessions.
+ * Solo-agent cross-session recall (`AGENT_TOOLS`). Only Agent V can reach
+ * across conversations; other tools stay workspace-scoped.
  *
  * Two actions:
  *
@@ -15,13 +13,13 @@
  *   - `read`: returns a compact, model-friendly view of one
  *     conversation's transcript. The transcript is filtered to
  *     content-bearing events only (user-prompt / agent-text / tool-call
- *     / tool-result / sub-agent rounds), streaming `*-delta` events are
+ *     / tool-result), streaming `*-delta` events are
  *     coalesced into one block per assistant turn, and the total output
  *     is capped at `MAX_TOOL_OUTPUT_CHARS` so the orchestrator's
  *     context window never balloons regardless of how long the
  *     recalled conversation is. Renderer-only events (`run-status`,
  *     `phase`, `agent-thought`, `token-usage`, `file-edit`,
- *     `subagent-pending`) are skipped.
+ *     legacy sub-agent lifecycle kinds) are skipped.
  *
  * Returning the active conversation's own id is rejected — the
  * orchestrator already has its own transcript in-context via replay,
@@ -53,12 +51,6 @@ import { touchRecallConversationLastReference } from '../memory/lastReferenced.j
  * and the signal is GC'd, the entry vanishes automatically. No
  * explicit teardown is needed — same pattern `toolResultCache` uses.
  *
- * Sub-agents inherit the orchestrator's signal (see
- * `runSubAgentPool` → `signal: opts.signal`), but the policy in
- * `tools/policy/orchestratorTools.ts` only exposes `recall` to the
- * orchestrator. If a future change adds `recall` to a sub-agent
- * allowlist, this map still resolves correctly because the signal
- * is shared.
  */
 const activeConversationByRun = new WeakMap<AbortSignal, string>();
 
@@ -138,7 +130,7 @@ export const recallTool: Tool = {
 - The user asks "did we already discuss this?" / "what did we decide?".
 - You need a decision from a prior session and your current transcript is silent on it.
 
-**Notes.** Sub-agents cannot call \`recall\` (isolation invariant). The output is bounded — long conversations are tail-trimmed and the body is hard-capped at the host's tool-output ceiling.`,
+**Notes.** The output is bounded — long conversations are tail-trimmed and the body is hard-capped at the host's tool-output ceiling.`,
   schema: {
     type: 'function',
     function: {
@@ -388,11 +380,7 @@ function renderTranscript(events: TimelineEvent[]): string {
   // Coalesce streaming deltas keyed by their assistant turn id.
   const textBuf = new Map<string, string>();
   const reasoningBuf = new Map<string, string>();
-  const subagentOutput = new Map<string, string>();
-  const subagentStatus = new Map<string, string>();
 
-  // First pass: aggregate all delta-style accumulators so a single
-  // pass over the events emits coherent blocks.
   for (const e of events) {
     switch (e.kind) {
       case 'agent-text-delta':
@@ -401,12 +389,6 @@ function renderTranscript(events: TimelineEvent[]): string {
       case 'agent-reasoning-delta':
         reasoningBuf.set(e.id, (reasoningBuf.get(e.id) ?? '') + e.delta);
         break;
-      case 'subagent-result':
-        subagentOutput.set(e.subagentId, e.output);
-        break;
-      case 'subagent-status':
-        subagentStatus.set(e.subagentId, e.status);
-        break;
       default:
         break;
     }
@@ -414,7 +396,6 @@ function renderTranscript(events: TimelineEvent[]): string {
 
   const lines: string[] = [];
   const seenAssistantIds = new Set<string>();
-  const seenSubagentIds = new Set<string>();
 
   for (const e of events) {
     switch (e.kind) {
@@ -454,27 +435,16 @@ function renderTranscript(events: TimelineEvent[]): string {
         break;
       }
       case 'tool-call': {
-        if (e.subagentId) break; // sub-agent internals stay isolated
         const args = JSON.stringify(e.call.args ?? {});
         const cap = args.length > PER_TOOL_CAP ? args.slice(0, PER_TOOL_CAP) + '…' : args;
         lines.push(`#### tool-call ${e.call.name}\n${cap}`);
         break;
       }
       case 'tool-result': {
-        if (e.subagentId) break;
         const out = e.result.output;
         const cap = out.length > PER_TOOL_CAP ? out.slice(0, PER_TOOL_CAP) + '…' : out;
         const ok = e.result.ok ? 'ok' : 'failed';
         lines.push(`#### tool-result ${e.result.name} (${ok})\n${cap}`);
-        break;
-      }
-      case 'subagent-spawn': {
-        if (seenSubagentIds.has(e.subagentId)) break;
-        seenSubagentIds.add(e.subagentId);
-        const status = subagentStatus.get(e.subagentId) ?? 'unknown';
-        const out = subagentOutput.get(e.subagentId) ?? '(no output captured)';
-        const cap = out.length > PER_TOOL_CAP ? out.slice(0, PER_TOOL_CAP) + '…' : out;
-        lines.push(`#### subagent ${e.subagentId} (${status})\ntask: ${e.task}\n${cap}`);
         break;
       }
       // Renderer-only / model-irrelevant — intentionally skipped.
@@ -482,9 +452,6 @@ function renderTranscript(events: TimelineEvent[]): string {
       case 'agent-thought':
       case 'file-edit':
       case 'error':
-      case 'subagent-pending':
-      case 'subagent-status':
-      case 'subagent-result':
       case 'token-usage':
       case 'run-status':
         break;

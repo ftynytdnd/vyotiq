@@ -30,7 +30,7 @@
  */
 
 import { create } from 'zustand';
-import { repairNonTerminalSubagents } from '@shared/transcript/repairNonTerminalSubagents.js';
+import { normalizeLegacyTranscript } from '@shared/transcript/normalizeLegacyTranscript.js';
 import type { TimelineEvent } from '@shared/types/chat.js';
 import { vyotiq } from '../lib/ipc.js';
 import { logger } from '../lib/logger.js';
@@ -55,7 +55,7 @@ import {
 } from './chatStoreTypes.js';
 import { mirrorOf } from './chatStoreMirror.js';
 import {
-  salvageSliceSubagents,
+  normalizeChatSlice,
   shouldUnloadIdleSlice,
   unloadIdleSlice
 } from './chatStoreRam.js';
@@ -64,27 +64,8 @@ export { __resetTotalRunUsageCacheForTests } from './chatStoreTotalRunUsage.js';
 
 const log = logger.child('chat-store');
 
-function conversationHasActiveRun(
-  conversationId: string,
-  slices: Record<string, ChatSlice>,
-  runIdToConv: Record<string, string>
-): boolean {
-  const slice = slices[conversationId];
-  if (slice?.isProcessing || slice?.runId) return true;
-  for (const convId of Object.values(runIdToConv)) {
-    if (convId === conversationId) return true;
-  }
-  return false;
-}
-
-function prepareTranscriptEventsForLoad(
-  conversationId: string,
-  events: TimelineEvent[],
-  slices: Record<string, ChatSlice>,
-  runIdToConv: Record<string, string>
-): TimelineEvent[] {
-  const closeWhenIdle = !conversationHasActiveRun(conversationId, slices, runIdToConv);
-  return repairNonTerminalSubagents(events, { closeWhenIdle });
+function prepareTranscriptEventsForLoad(events: TimelineEvent[]): TimelineEvent[] {
+  return normalizeLegacyTranscript(events);
 }
 
 async function dispatchAbortForRun(runId: string): Promise<void> {
@@ -107,8 +88,8 @@ function updateSlice(
   return { ...slices, [id]: updater(prev) };
 }
 
-function withSalvagedSlice(slice: ChatSlice): ChatSlice {
-  return salvageSliceSubagents(slice);
+function withNormalizedSlice(slice: ChatSlice): ChatSlice {
+  return normalizeChatSlice(slice);
 }
 
 function maybeUnloadIdleSlice(prevId: string | null, getSlices: () => Record<string, ChatSlice>, setSlices: (next: Record<string, ChatSlice>) => void): void {
@@ -191,7 +172,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                 latestOrchestratorRunStatus: undefined
               }
             : prev;
-        return withSalvagedSlice(cleared);
+        return withNormalizedSlice(cleared);
       });
       // Prune the mapping so subsequent late events don't keep
       // resurrecting the dispatch path — and `runIdToConv` doesn't
@@ -240,7 +221,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => {
       const nextSlices = updateSlice(s.slices, convId, (prev) => {
         if (prev.runId !== runId) return prev;
-        return withSalvagedSlice({
+        return withNormalizedSlice({
           ...prev,
           isProcessing: false,
           awaitingAskUser: false,
@@ -275,12 +256,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return;
     }
     set((s) => {
-      const prepared = prepareTranscriptEventsForLoad(
-        conversationId,
-        events,
-        s.slices,
-        s.runIdToConv
-      );
+      const prepared = prepareTranscriptEventsForLoad(events);
       const rebuilt = rebuildTimelineState(prepared);
       // Preserve any in-flight `runId / isProcessing / runStartedAt`
       // already on the slice — this is the entire point of the
@@ -292,7 +268,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         events: rebuilt.events,
         assistantTexts: rebuilt.assistantTexts,
         reasoningTexts: rebuilt.reasoningTexts,
-        subagents: rebuilt.subagents,
         ...(rebuilt.orchestratorUsage !== undefined
           ? { orchestratorUsage: rebuilt.orchestratorUsage }
           : {}),
@@ -885,19 +860,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // disk read and this call.
       const existing = s.slices[conversationId];
       if (existing && existing.events.length > 0) return s;
-      const prepared = prepareTranscriptEventsForLoad(
-        conversationId,
-        events,
-        s.slices,
-        s.runIdToConv
-      );
+      const prepared = prepareTranscriptEventsForLoad(events);
       const rebuilt = rebuildTimelineState(prepared);
       const fresh: ChatSlice = {
         ...emptySlice(conversationId),
         events: rebuilt.events,
         assistantTexts: rebuilt.assistantTexts,
         reasoningTexts: rebuilt.reasoningTexts,
-        subagents: rebuilt.subagents,
         ...(rebuilt.orchestratorUsage !== undefined
           ? { orchestratorUsage: rebuilt.orchestratorUsage }
           : {}),

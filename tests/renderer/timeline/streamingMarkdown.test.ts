@@ -239,7 +239,7 @@ describe('phase headline helpers', () => {
   });
 
   it('styles streaming reasoning headlines consistently', () => {
-    expect(reasoningHeadlineClassName(true, 'orchestrator')).toContain('vx-timeline-phase-live');
-    expect(reasoningHeadlineClassName(false, 'subagent')).toContain('text-text-muted');
+    expect(reasoningHeadlineClassName(true)).toContain('vx-timeline-phase-live');
+    expect(reasoningHeadlineClassName(false)).toContain('vx-caption');
   });
 });

@@ -606,7 +606,7 @@ async function buildInitialMessages(
   /**
    * Audit fix 2026-08-P2-1 / 13-P2-1: optional run-scoped abort signal.
    * Threaded into `inlineFiles` below so a user who aborts a long
-   * `chat:send` (50-file delegate spec, 5 MB attached log) stops paying
+   * `chat:send` (50-file attachment batch, 5 MB attached log) stops paying
    * FS cost mid-prompt-assembly. Optional so direct callers / tests
    * keep the legacy four-arg shape.
    */

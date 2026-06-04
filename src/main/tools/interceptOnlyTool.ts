@@ -1,6 +1,6 @@
 /**
- * Registry stub for tools the run loop intercepts by name (`delegate`,
- * `ask_user`, `finish`). Real execution never reaches `run()`.
+ * Registry stub for tools the run loop intercepts by name (`ask_user`,
+ * `finish`). Real execution never reaches `run()`.
  */
 
 import { randomUUID } from 'node:crypto';

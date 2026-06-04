@@ -5,9 +5,7 @@
  * Revert action. It must:
  *   - increment for every orchestrator-level `file-edit` carrying a
  *     non-empty `runId`,
- *   - increment for every sub-agent `file-edit` carrying the parent
- *     run's `runId` (sub-agent edits inherit the parent run's id
- *     upstream so the count captures the FULL turn impact),
+ *   - count every `file-edit` for the same `runId` in one turn,
  *   - leave the slot untouched when `runId` is absent (legacy
  *     transcripts persisted before the field was added),
  *   - survive `rebuildTimelineState` so transcript replays reproduce
@@ -33,7 +31,6 @@ function fileEdit(
     additions: partial.additions ?? 1,
     deletions: partial.deletions ?? 0,
     ...(partial.runId !== undefined ? { runId: partial.runId } : {}),
-    ...(partial.subagentId !== undefined ? { subagentId: partial.subagentId } : {})
   };
 }
 
@@ -45,17 +42,11 @@ describe('runIdToFileEditCount', () => {
     expect(state.runIdToFileEditCount).toEqual({ 'run-A': 2 });
   });
 
-  it('aggregates orchestrator + sub-agent file-edits under the same parent runId', () => {
+  it('aggregates multiple file-edits under the same runId', () => {
     let state = INITIAL_TIMELINE_STATE;
     state = applyTimelineEvent(state, fileEdit({ id: 'fe-1', runId: 'run-X' }));
-    state = applyTimelineEvent(
-      state,
-      fileEdit({ id: 'fe-2', runId: 'run-X', subagentId: 'sa-1' })
-    );
-    state = applyTimelineEvent(
-      state,
-      fileEdit({ id: 'fe-3', runId: 'run-X', subagentId: 'sa-1' })
-    );
+    state = applyTimelineEvent(state, fileEdit({ id: 'fe-2', runId: 'run-X' }));
+    state = applyTimelineEvent(state, fileEdit({ id: 'fe-3', runId: 'run-X' }));
     expect(state.runIdToFileEditCount).toEqual({ 'run-X': 3 });
   });
 
@@ -77,7 +68,7 @@ describe('runIdToFileEditCount', () => {
   it('reproduces the same map under rebuildTimelineState (replay parity)', () => {
     const events: TimelineEvent[] = [
       fileEdit({ id: 'fe-1', runId: 'run-A' }),
-      fileEdit({ id: 'fe-2', runId: 'run-A', subagentId: 'sa-1' }),
+      fileEdit({ id: 'fe-2', runId: 'run-A' }),
       fileEdit({ id: 'fe-3', runId: 'run-B' }),
       fileEdit({ id: 'fe-4' /* no runId */ })
     ];

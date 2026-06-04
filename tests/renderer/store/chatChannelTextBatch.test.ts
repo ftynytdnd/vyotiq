@@ -124,7 +124,6 @@ describe('chatChannel — text/reasoning-delta RAF batcher', () => {
       events: [],
       assistantTexts: {},
       reasoningTexts: {},
-      subagents: {},
       partialToolCallArgs: {},
       runId: null,
       isProcessing: false,

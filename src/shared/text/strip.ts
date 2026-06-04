@@ -1,7 +1,7 @@
 /**
  * Shared helpers for stripping orchestration-only XML directives out of
- * assistant text. Both the orchestrator's `parseDelegates` (main) and the
- * renderer's `stripDelegatesForDisplay` (renderer) need to strip the same
+ * assistant text. `displayAssistantTurnText` and
+ * `stripDelegatesForDisplay` both import from here so main and renderer
  * markup, but they live on opposite sides of the IPC boundary and cannot
  * import each other. This module is the single source of truth — both
  * sides import the regex constants and the pure helpers here.
@@ -48,9 +48,8 @@
  * value at the FIRST embedded `"`, leaving the rest of the tag as
  * un-stripped garbage in the user-facing prose (screenshots §1 / §2
  * — full multi-paragraph `<delegate />` envelopes rendered verbatim
- * in chat). The `parseDelegates` parser had the same bug and would
- * either return zero directives or extract a truncated `task` string,
- * silently dropping the model's actual delegation intent.
+ * in chat). Older parsers had the same bug and would truncate `task`
+ * attribute values at embedded quotes.
  *
  * The fix is a negative lookahead on the closing quote: a `"` (or
  * `'`) inside a value is treated as the real CLOSING quote ONLY IF
@@ -103,10 +102,8 @@ const ATTR_LIST_SRC = `(?:\\s+[\\w-]+\\s*=\\s*${ATTR_VALUE_SRC})*\\s*`;
  * change here, while unrelated tags (`<template>`, `<style>`, language
  * generics) are unaffected.
  *
- * `delegate` stays authoritative on the main side via
- * `parseDelegates` — the parser there matches `delegate` ONLY, so even
- * if this allowlist later grows, no new tag accidentally spawns a
- * sub-agent.
+ * `delegate` is legacy markup only — stripping here never affects tool
+ * dispatch; Agent V is a solo agent with no worker spawn path.
  */
 const ORCHESTRATION_TAG_NAMES = [
   'delegate',
@@ -307,40 +304,13 @@ const TRAILING_OPEN_FENCE_RE = /(^|\n)(```|~~~)[^\n]*(?:\n([\s\S]*))?$/;
  * during streaming) is also removed so a partial fence body cannot
  * leak into a subsequent regex pass.
  *
- * Used by `parseDelegates` so a `<delegate />` directive emitted as a
- * code example inside ``` is NEVER parsed as a real spawn directive.
- * The harness explicitly forbids `<delegate />` *examples* inside a
- * fence (`00-orchestrator-core.md` §A Phase 4 "never inside a code
- * fence and never as a quoted preview"), but soft rules degrade —
- * the host enforces the boundary structurally.
+ * Pure-orchestration fences (legacy: model wrapped `<delegate ... />` in
+ * ```xml … ```) are unwrapped so display stripping can remove the markup.
+ * Detection: run the body through `<delegate ... />` strip; if the result
+ * trims to empty, every character was orchestration scaffolding.
  *
- * Pure-orchestration fences (the model wraps its real
- * `<delegate ... />` directives in ```xml … ``` for syntax-
- * highlighting purposes) are an EXCEPTION: those fences contain only
- * the directives themselves, no prose, no other code. The display-
- * side `dropOrchestrationOnlyFences` already recognises this shape
- * and drops the fence so raw XML never reaches the user; the parser
- * here mirrors that recognition so the directives inside actually
- * spawn workers. Without this exception the chat shows a plan but
- * nothing executes — the failure mode captured in the
- * `679f5c3c-…jsonl` conversation: the model emitted four
- * `<delegate />` directives wrapped in a single ```xml fence,
- * `parseDelegates` saw zero, the loop terminated cleanly, and zero
- * sub-agents ran.
- *
- * Detection heuristic for "pure-orchestration fence": run the body
- * through `<delegate ... />` strip; if the result trims to empty,
- * every character of the body was a directive. Replace the fence
- * with the bare body (plus its leading newline, if any) so
- * `DELEGATE_RE` can match. Any prose, language code, or other
- * markup INSIDE the fence collapses the body to non-empty after the
- * strip, the fence stays an example, and the body is dropped.
- *
- * Streaming safety: the trailing-open-fence pass means a model that
- * narrates *"I'll send: \`\`\`xml\n<delegate ... />"* and pauses
- * mid-stream will NOT trigger a spurious mid-stream `subagent-pending`
- * event for the still-incomplete body. Once the closing delimiter
- * arrives the body is recognised as pure-orchestration and parsed.
+ * Streaming safety: trailing-open-fence pass drops incomplete fence bodies
+ * so partial `<delegate id="A1"` tails do not flash in the timeline.
  *
  * Returns the input unchanged if no fences are present.
  */
@@ -389,14 +359,8 @@ export function stripFencedCode(text: string): string {
         .trim();
       DELEGATE_PAIR_RE.lastIndex = 0;
       DELEGATE_SELFCLOSE_RE.lastIndex = 0;
-      // Pure-orchestration body so far: preserve it so the streaming
-      // mid-stream parser can emit `subagent-pending` events for
-      // each complete directive without waiting for the closing
-      // fence delimiter to arrive. A partial / unfinished directive
-      // at the buffer tail (e.g. `<delegate id="A1" task="...`)
-      // also strips to empty under `DELEGATE_SELFCLOSE_RE`'s
-      // anchor — `DELEGATE_RE` in `parseDelegates` requires the
-      // closing `/?>` so the partial is silently ignored anyway.
+      // Pure-orchestration body so far: preserve for display stripping.
+      // Partial directives at the buffer tail strip to empty and are ignored.
       if (stripped.length === 0 && body.trim().length > 0) {
         return `${leading}${body}`;
       }
@@ -472,7 +436,7 @@ function dropOrchestrationOnlyFences(text: string): string {
  * Drop a trailing OPEN fence (no closing delimiter yet) from display text
  * when it would render as an empty gray `<pre>` pill. Unlike
  * `stripFencedCode` (parse path), we never unwrap pure-orchestration
- * bodies for display — delegates belong in structured timeline rows.
+ * bodies for display — orchestration markup is stripped, not rendered.
  *
  * Illustration fences that still carry real prose/code mid-stream are
  * left intact so a closing delimiter can arrive on the next delta.

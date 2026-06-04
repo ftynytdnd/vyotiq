@@ -8,20 +8,15 @@
  *      meta-rules) and rebuild the system message — this keeps the agent
  *      honest about a moving workspace mid-run.
  *   2. Stream one assistant turn (`handleAssistantTurn`).
- *   3. Dispatch purely on the turn's finished tool calls:
- *        - `finish`    → emit `summary` as the final answer; return.
- *        - `ask_user`  → surface the question, pause cleanly; return.
- *        - `delegate`  → build `ParsedDelegate[]`, run the swarm; continue.
- *        - ls/memory/recall → execute via `handleToolCalls`; continue.
- *      `finish`/`ask_user` are terminal and take precedence. A mixed
- *      continue+delegate turn uses `dispatchMixedTurn` (DAG batches via
- *      `depends_on`; independent tools and delegates run in parallel).
+ *   3. Dispatch on finished tool calls:
+ *        - `finish` / `ask_user` — terminal (clarification wins if both).
+ *        - other tools — `handleToolCalls` with DAG batches via `depends_on`.
  *   4. No tool calls at all → substantive prose ends the run; otherwise
  *      one retry, then a visible error.
  *
  * On the iteration cap (`MAX_TOTAL_ITERATIONS`) without a `finish`, one
  * final synthesis turn is issued with `tool_choice: 'none'` and its
- * prose is delivered as the final answer (mirrors the sub-agent wrap-up).
+ * prose is delivered as the final answer.
  *
  * On streaming error, retry with exponential backoff up to
  * `MAX_SELF_CORRECTION_ATTEMPTS`; on the third strike, emit `error` and
@@ -38,12 +33,6 @@ import type {
 import type { ProviderDialect } from '@shared/types/provider.js';
 import { buildOrchestratorSystemPrompt } from '../../harness/harnessLoader.js';
 import { refreshEnvelopes } from '../contextManager.js';
-import type { ParsedDelegate } from '../envelope/index.js';
-import {
-  dispatchMixedTurn,
-  type DelegateToolCall
-} from './dispatchMixedTurn.js';
-import { dedupeDelegateSpecsById, parseDelegateCallMeta } from './delegateToolArgs.js';
 import {
   parseStringArgFromBuf,
   tryParseArgumentsRecord
@@ -61,17 +50,15 @@ import { getProviderWithKey } from '../../providers/providerStore.js';
 import { resolveThinkingEffort } from '@shared/providers/thinkingEffort.js';
 import type { ThinkingEffort } from '@shared/types/provider.js';
 import {
-  MAX_DELEGATION_BAD_ROUNDS,
   MAX_SELF_CORRECTION_ATTEMPTS,
   MAX_TOTAL_ITERATIONS
 } from '@shared/constants.js';
-import { ORCHESTRATOR_TOOLS } from '../../tools/policy/index.js';
+import { AGENT_TOOLS } from '../../tools/policy/index.js';
+import { handleToolCalls } from './handleToolCalls.js';
 
 import { buildSystemPrompt } from './buildSystemPrompt.js';
 import { buildOrchestratorRequest } from './buildOrchestratorRequest.js';
 import { handleAssistantTurn } from './handleAssistantTurn.js';
-import { emitOrchestratorToolValidationFailure } from './emitToolValidationFailure.js';
-import type { DelegationCounters } from './handleDelegates.js';
 import { DiffStreamer } from '../diffStreamer.js';
 import { DiffWorkerPool } from '../diffWorkerPool.js';
 import { createStreamingArgsTap } from '../streamingArgsTap.js';
@@ -97,11 +84,7 @@ import {
   type RunStateAccumulator
 } from './buildRunState.js';
 import { buildHostEnvironmentXml } from './buildHostEnvironment.js';
-import {
-  cloneLoopCheckpoint,
-  restoreDelegationCounters,
-  type LoopCheckpoint
-} from '../pausedRunRegistry.js';
+import { cloneLoopCheckpoint, type LoopCheckpoint } from '../pausedRunRegistry.js';
 
 
 const log = logger.child('orch/runLoop');
@@ -113,53 +96,6 @@ const log = logger.child('orch/runLoop');
  * while a bare "Okay." / "Working on it…" does not.
  */
 const IMPLICIT_FINISH_MIN_CHARS = 40;
-
-/** Shared shape between the stream's `PartialToolCall` and our local use. */
-type FinishedToolCall = {
-  id?: string;
-  name?: string;
-  argumentsBuf: string;
-  thoughtSignature?: string;
-};
-
-/**
- * Partition finished tool calls into real (non-delegate) tool calls and
- * delegate calls with preserved `tool_call_id` + `depends_on` metadata
- * for the mixed-turn DAG dispatcher.
- */
-export function extractDelegateToolCalls(finished: FinishedToolCall[]): {
-  realToolCalls: FinishedToolCall[];
-  delegateCalls: DelegateToolCall[];
-  /** Flattened specs — convenience for logging and query refresh. */
-  toolSourcedDelegates: ParsedDelegate[];
-  /** Delegate tool calls whose args failed `{ id, task }` validation. */
-  invalidDelegateCalls: FinishedToolCall[];
-} {
-  const real: FinishedToolCall[] = [];
-  const delegateCalls: DelegateToolCall[] = [];
-  const toolSourcedDelegates: ParsedDelegate[] = [];
-  const invalidDelegateCalls: FinishedToolCall[] = [];
-  for (const tc of finished) {
-    if (tc.name !== 'delegate') {
-      real.push(tc);
-      continue;
-    }
-    if (!tc.id) tc.id = randomUUID();
-    const { specs, dependsOn } = parseDelegateCallMeta(tc.argumentsBuf || '{}');
-    if (specs.length === 0) {
-      invalidDelegateCalls.push(tc);
-      continue;
-    }
-    const deduped = dedupeDelegateSpecsById(specs);
-    delegateCalls.push({ toolCallId: tc.id, specs: deduped, dependsOn });
-    for (const s of deduped) {
-      const prev = toolSourcedDelegates.findIndex((d) => d.id === s.id);
-      if (prev === -1) toolSourcedDelegates.push(s);
-      else toolSourcedDelegates[prev] = s;
-    }
-  }
-  return { realToolCalls: real, delegateCalls, toolSourcedDelegates, invalidDelegateCalls };
-}
 
 /**
  * Emit a block of text as the orchestrator's final user-facing answer,
@@ -231,17 +167,8 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
   // Guarantee disposal on every exit path: abort signal + finally.
   opts.signal.addEventListener('abort', disposeStreaming, { once: true });
 
-  const delegationAbort = new AbortController();
-  const delegateSignal = AbortSignal.any([opts.signal, delegationAbort.signal]);
-
   try {
     const resume = opts.resumeCheckpoint;
-    const counters: DelegationCounters = resume
-      ? restoreDelegationCounters(resume)
-      : {
-          consecutiveBadRounds: 0,
-          perTaskBadStreak: new Map()
-        };
     let consecutiveEmptyTurns = resume?.consecutiveEmptyTurns ?? 0;
     const spin: SpinSignatureBuffer = resume?.spin ?? createSpinSignatureBuffer();
     let injectedStubsHighWater = resume?.injectedStubsHighWater ?? 0;
@@ -295,7 +222,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         runStateAcc.iteration = iter;
         runStateAcc.spinSignatureHot = spinHotSignature(spin);
         const runStateXml = buildRunStateXml(
-          snapshotRunState(runStateAcc, counters, spin, consecutiveBadToolRounds)
+          snapshotRunState(runStateAcc, spin, consecutiveBadToolRounds)
         );
         const hostEnvXml = buildHostEnvironmentXml();
         messages[0] = { role: 'system', content: buildSystemPrompt(harness, env, runStateXml, hostEnvXml) };
@@ -493,11 +420,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         const finishedToolCalls = turn.partialToolCalls.filter((tc) => tc?.name);
         lockToolCallIds(finishedToolCalls);
 
-        const { realToolCalls, delegateCalls, toolSourcedDelegates, invalidDelegateCalls } =
-          extractDelegateToolCalls(finishedToolCalls);
-        let finishCall = realToolCalls.find((tc) => tc.name === 'finish');
-        const askUserCall = realToolCalls.find((tc) => tc.name === 'ask_user');
-        const continueTools = realToolCalls.filter(
+        let finishCall = finishedToolCalls.find((tc) => tc.name === 'finish');
+        const askUserCall = finishedToolCalls.find((tc) => tc.name === 'ask_user');
+        const actionTools = finishedToolCalls.filter(
           (tc) => tc.name !== 'finish' && tc.name !== 'ask_user'
         );
 
@@ -517,27 +442,20 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           runId: opts.input.runId,
           conversationId: opts.input.conversationId,
           finishReason: turn.finishReason,
-          continueTools: continueTools.length,
-          delegateCalls: toolSourcedDelegates.length,
+          actionTools: actionTools.length,
           finish: finishCall !== undefined,
           askUser: askUserCall !== undefined,
-          invalidDelegates: invalidDelegateCalls.length,
           textChars: turn.assistantText.length,
           reasoningChars: turn.reasoningText.length,
           ms: Date.now() - iterStartedAt
         });
 
         if (finishCall) {
-          const hasCoEmittedActionable =
-            continueTools.length > 0 ||
-            toolSourcedDelegates.length > 0 ||
-            invalidDelegateCalls.length > 0;
-          if (hasCoEmittedActionable) {
-            log.warn('finish deferred — running co-emitted actionable tools first', {
+          if (actionTools.length > 0) {
+            log.warn('finish deferred — running co-emitted tools first', {
               iteration: iter,
               runId: opts.input.runId,
-              continueTools: continueTools.length,
-              delegateCalls: toolSourcedDelegates.length
+              actionTools: actionTools.length
             });
           } else {
             const summary =
@@ -557,17 +475,11 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         }
 
         if (askUserCall) {
-          const coEmitted =
-            continueTools.length > 0 ||
-            toolSourcedDelegates.length > 0 ||
-            invalidDelegateCalls.length > 0;
-          if (coEmitted) {
-            log.warn('ask_user immediate pause — skipping co-emitted actionable tools', {
+          if (actionTools.length > 0) {
+            log.warn('ask_user immediate pause — skipping co-emitted tools', {
               iteration: iter,
               runId: opts.input.runId,
-              continueTools: continueTools.length,
-              delegateCalls: toolSourcedDelegates.length,
-              invalidDelegates: invalidDelegateCalls.length
+              actionTools: actionTools.length
             });
           }
           const askArgs = parseAskUserArgs(
@@ -608,7 +520,6 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             questionChars: question.length,
             toolCallId: askUserCall.id
           });
-          delegationAbort.abort();
           return {
             pausedForAskUser: cloneLoopCheckpoint({
               messages,
@@ -619,7 +530,6 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               consecutiveErrors,
               consecutiveBadToolRounds,
               runStateAcc,
-              counters,
               spin,
               askUserToolCallId: askUserCall.id,
               askUserPromptEventId: promptEventId,
@@ -628,12 +538,8 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           };
         }
 
-        const historyToolCalls = [...continueTools, ...invalidDelegateCalls];
         const assistantContent: string | null =
-          (historyToolCalls.length > 0 || toolSourcedDelegates.length > 0) &&
-          turn.assistantText.length === 0
-            ? null
-            : turn.assistantText;
+          actionTools.length > 0 && turn.assistantText.length === 0 ? null : turn.assistantText;
         messages.push({
           role: 'assistant',
           content: assistantContent,
@@ -644,9 +550,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           ...(typeof turn.reasoningSignature === 'string' && turn.reasoningSignature.length > 0
             ? { reasoning_signature: turn.reasoningSignature }
             : {}),
-          ...(historyToolCalls.length > 0
+          ...(actionTools.length > 0
             ? {
-              tool_calls: historyToolCalls.map((tc) => ({
+              tool_calls: actionTools.map((tc) => ({
                 id: tc.id!,
                 type: 'function' as const,
                 function: {
@@ -661,128 +567,59 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             : {})
         });
 
-        for (const tc of invalidDelegateCalls) {
-          emitOrchestratorToolValidationFailure(
-            tc,
-            emit,
-            messages,
-            'Invalid `delegate` arguments — require `{ id, task }` per worker.',
-            'invalid delegate arguments',
-            onToolCallSettled
-          );
-        }
-
         let didWork = false;
 
-        if (invalidDelegateCalls.length > 0) {
-          didWork = true;
-          consecutiveEmptyTurns = 0;
-          resetSpinBuffer(spin);
-          runStateAcc.lastAction = 'direct-tool';
-          consecutiveBadToolRounds += 1;
-        }
-
-        if (continueTools.length > 0 || delegateCalls.length > 0) {
-          const dispatch = await dispatchMixedTurn({
-            continueTools,
-            delegateCalls,
-            messages,
-            counters,
-            emit,
-            toolOpts: {
-              workspacePath: opts.workspacePath,
-              workspaceId: opts.workspaceId,
-              runId: opts.input.runId,
-              conversationId: opts.input.conversationId ?? '',
-              permissions: opts.permissions,
-              signal: opts.signal,
-              allowlist: ORCHESTRATOR_TOOLS,
-              onToolCallSettled
-            },
-            delegateOpts: {
-              selection: opts.input.selection,
-              providerName,
-              workspacePath: opts.workspacePath,
-              workspaceId: opts.workspaceId,
-              runId: opts.input.runId,
-              conversationId: opts.input.conversationId ?? '',
-              permissions: opts.permissions,
-              signal: delegateSignal,
-              argsDeltaTap,
-              onToolCallSettled,
-              delegationBatchId: randomUUID()
-            }
+        if (actionTools.length > 0) {
+          const summary = await handleToolCalls(actionTools, messages, emit, {
+            workspacePath: opts.workspacePath,
+            workspaceId: opts.workspaceId,
+            runId: opts.input.runId,
+            conversationId: opts.input.conversationId ?? '',
+            permissions: opts.permissions,
+            signal: opts.signal,
+            allowlist: AGENT_TOOLS,
+            onToolCallSettled
           });
-
-          if (dispatch.halt) {
-            return {
-              terminalError: `${MAX_DELEGATION_BAD_ROUNDS} consecutive sub-agent rounds failed verification — escalating to user.`
-            };
-          }
           if (opts.signal.aborted) return {};
 
-          if (dispatch.didWork) {
+          if (actionTools.length > 0) {
             didWork = true;
             consecutiveEmptyTurns = 0;
             resetSpinBuffer(spin);
-
-            if (dispatch.directToolRounds > 0) {
-              runStateAcc.serialSingleDelegateRounds = 0;
-              runStateAcc.directToolRoundsTotal += dispatch.directToolRounds;
-              runStateAcc.lastAction = 'direct-tool';
-              const summary = dispatch.lastDirectToolSummary;
-              const directQuery = summarizeDirectToolArgs(continueTools);
-              if (directQuery.length > 0) {
-                query = clampQuery(`${opts.input.prompt} ${directQuery}`, opts.input.prompt);
-              }
-              if (summary && summary.attempted > 0 && summary.failed === summary.attempted) {
-                consecutiveBadToolRounds += 1;
-                if (consecutiveBadToolRounds >= MAX_SELF_CORRECTION_ATTEMPTS) {
-                  log.warn('tool-round strike halt — consecutive failed tool rounds', {
-                    consecutiveBadToolRounds,
-                    iteration: iter
-                  });
-                  emit({
-                    kind: 'error',
-                    id: randomUUID(),
-                    ts: Date.now(),
-                    message:
-                      `${MAX_SELF_CORRECTION_ATTEMPTS} consecutive tool rounds failed — escalating to user.`
-                  });
-                  return {
-                    terminalError: `${MAX_SELF_CORRECTION_ATTEMPTS} consecutive tool rounds failed — escalating to user.`
-                  };
-                }
-              } else if (summary && summary.attempted > 0) {
-                consecutiveBadToolRounds = 0;
-                counters.consecutiveBadRounds = 0;
-                if (summary.failed < summary.attempted) {
-                  const sigs = continueTools
-                    .filter((tc) => tc.name)
-                    .map((tc) =>
-                      toolCallSignature(tc.name!, tryParseArgumentsRecord(tc.argumentsBuf))
-                    );
-                  pushToolRound(spin, sigs);
-                }
-              }
+            runStateAcc.toolRoundsTotal += 1;
+            runStateAcc.lastAction = 'tool';
+            const directQuery = summarizeDirectToolArgs(actionTools);
+            if (directQuery.length > 0) {
+              query = clampQuery(`${opts.input.prompt} ${directQuery}`, opts.input.prompt);
             }
-
-            if (dispatch.delegateRounds > 0) {
-              consecutiveBadToolRounds = 0;
-              runStateAcc.delegateRoundsTotal += dispatch.delegateRounds;
-              runStateAcc.lastAction = 'delegate';
-              if (
-                toolSourcedDelegates.length === 1 &&
-                continueTools.length === 0
-              ) {
-                runStateAcc.serialSingleDelegateRounds += 1;
-              } else {
-                runStateAcc.serialSingleDelegateRounds = 0;
+            if (summary.attempted > 0 && summary.failed === summary.attempted) {
+              consecutiveBadToolRounds += 1;
+              if (consecutiveBadToolRounds >= MAX_SELF_CORRECTION_ATTEMPTS) {
+                log.warn('tool-round strike halt — consecutive failed tool rounds', {
+                  consecutiveBadToolRounds,
+                  iteration: iter
+                });
+                emit({
+                  kind: 'error',
+                  id: randomUUID(),
+                  ts: Date.now(),
+                  message:
+                    `${MAX_SELF_CORRECTION_ATTEMPTS} consecutive tool rounds failed — escalating to user.`
+                });
+                return {
+                  terminalError: `${MAX_SELF_CORRECTION_ATTEMPTS} consecutive tool rounds failed — escalating to user.`
+                };
               }
-              query = clampQuery(
-                toolSourcedDelegates.map((d) => d.task).join(' '),
-                opts.input.prompt
-              );
+            } else if (summary.attempted > 0) {
+              consecutiveBadToolRounds = 0;
+              if (summary.failed < summary.attempted) {
+                const sigs = actionTools
+                  .filter((tc) => tc.name)
+                  .map((tc) =>
+                    toolCallSignature(tc.name!, tryParseArgumentsRecord(tc.argumentsBuf))
+                  );
+                pushToolRound(spin, sigs);
+              }
             }
           }
         }
@@ -1043,6 +880,11 @@ export function endsWithQuestionMark(s: string): boolean {
  */
 const TOOL_QUERY_FIELDS: Record<string, ReadonlyArray<string>> = {
   ls: ['path'],
+  read: ['path'],
+  edit: ['path', 'filePath'],
+  bash: ['command'],
+  search: ['query', 'mode'],
+  delete: ['path', 'filePath'],
   memory: ['action', 'key', 'scope'],
   recall: ['action', 'conversationId', 'query']
 };
@@ -1060,10 +902,7 @@ const TOOL_QUERY_FIELDS: Record<string, ReadonlyArray<string>> = {
  *     object args, and any string args NOT on the allowlist, are
  *     skipped.
  *
- * The orchestrator's direct toolset is `ls`/`memory`/`recall`; the
- * allowlist captures `path` (ls), `key`/`action`/`scope` (memory),
- * and `conversationId`/`action`/`query` (recall) — the actual
- * high-signal fields the next iteration's retrieval should key on.
+ * High-signal argument fields per tool for memory retrieval on the next iteration.
  *
  * Pure / side-effect-free so it can be unit-tested in isolation if a
  * future regression demands it. Never throws.

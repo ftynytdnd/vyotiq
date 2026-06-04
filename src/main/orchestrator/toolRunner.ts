@@ -1,6 +1,6 @@
 /**
  * Tool runner. Resolves a tool name + arguments to a ToolResult by dispatching
- * to the registry. Used by both the orchestrator and sub-agents.
+ * to the registry for the solo Agent V run.
  *
  * Two observability passes wrap the raw registry dispatch:
  *   1. Cache lookup via `toolResultCache` — read-shaped tools with
@@ -28,7 +28,6 @@ export interface ToolRunOpts {
   permissions: ChatPermissions;
   emit: (event: TimelineEvent) => void;
   signal: AbortSignal;
-  subagentId?: string;
   onProgress?: (message: string) => void;
 }
 
@@ -42,7 +41,7 @@ export async function runToolByName(
   // the explicit `'unknown'` sentinel — never a misleading cast to a
   // registered ToolName which would mislabel the badge in the renderer.
   if (!isKnownToolName(toolName)) {
-    log.warn('unknown tool requested', { toolName, subagentId: opts.subagentId });
+    log.warn('unknown tool requested', { toolName });
     return {
       id: 'unknown',
       name: 'unknown',
@@ -59,11 +58,8 @@ export async function runToolByName(
   // execution is skipped entirely so the 14×-read loop observed in
   // production can never burn tokens re-running `read` on a file whose
   // contents are already in the model's context.
-  // Cache is scoped per (signal, owner) — the orchestrator and every
-  // sub-agent get their own bucket so parallel workers never cross-
-  // pollute. `opts.subagentId === undefined` resolves to the
-  // orchestrator bucket inside the cache. See `toolResultCache.ts`.
-  const cached = lookupCachedResult(opts.signal, tool.name, args, opts.subagentId);
+  // Cache is scoped per run `AbortSignal`. See `toolResultCache.ts`.
+  const cached = lookupCachedResult(opts.signal, tool.name, args);
   if (cached) return cached;
 
   try {
@@ -75,19 +71,17 @@ export async function runToolByName(
       permissions: opts.permissions,
       emit: opts.emit,
       signal: opts.signal,
-      progress: opts.onProgress,
-      ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
+      progress: opts.onProgress
     });
     // Record-after-run: writes invalidate the cache, reads are memoized.
     // Runs before `return` so even a caller that awaits+discards still
     // participates in the cache for the next call.
-    recordToolResult(opts.signal, tool.name, args, result, opts.subagentId);
+    recordToolResult(opts.signal, tool.name, args, result);
     return result;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     log.error('tool threw', {
       tool: tool.name,
-      subagentId: opts.subagentId,
       error: msg,
       stack: err instanceof Error ? err.stack : undefined
     });

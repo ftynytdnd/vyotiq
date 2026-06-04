@@ -56,7 +56,7 @@ interface ComposerVariantProps extends CommonProps {
   /**
    * When true, portals above the full viewport (legacy elevated confirm).
    * Shell tool approvals default to false so the dialog sits in the
-   * composer column and does not obscure delegation streams.
+   * composer column and does not obscure the timeline stream.
    */
   elevated?: boolean;
   /** Optional muted hint below the message (e.g. timeout guidance). */

@@ -54,7 +54,6 @@ beforeEach(() => {
     events: [],
     assistantTexts: {},
     reasoningTexts: {},
-    subagents: {},
     orchestratorUsage: undefined,
     conversationId: null,
     runId: null,

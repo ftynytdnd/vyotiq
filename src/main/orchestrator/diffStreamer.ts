@@ -95,7 +95,6 @@ const WORKER_THRESHOLD_BYTES = 64 * 1024;
 interface CallState {
   runId: string;
   callId: string;
-  subagentId?: string;
   /** Workspace-relative path the diff is against (display-friendly). */
   filePath: string;
   /** Cached file body. `null` until the lazy load resolves. */
@@ -151,8 +150,8 @@ interface PendingArgs {
 
 /**
  * Public hook the orchestrator wires into `consumeChatStream`'s
- * `onToolCallArgsDelta`. The DiffStreamer instance is owned for the
- * lifetime of one orchestrator turn or one sub-agent iteration.
+ * `onToolCallArgsDelta`. The DiffStreamer instance is owned for one
+ * orchestrator assistant turn within a run.
  */
 export interface DiffStreamerArgsDelta {
   callId: string;
@@ -160,8 +159,6 @@ export interface DiffStreamerArgsDelta {
   name: string | undefined;
   /** Best-effort parsed args snapshot from the partial-JSON parser. */
   parsed: Record<string, unknown> | null;
-  /** Sub-agent id when applicable (orchestrator scope when `undefined`). */
-  subagentId?: string;
 }
 
 /**
@@ -242,7 +239,7 @@ export class DiffStreamer {
     // sub-agent tool group never auto-expanded, and the
     // `EditInvocation`'s renderer-side `create-preview` (with the
     // green-tinted `+` lines + trailing `vyotiq-stream-cursor`) was
-    // hidden behind a collapsed row. The user's report — "subagents
+    // hidden behind a collapsed row. The user's report — nested workers
     // are not rendering and streaming and displaying the live
     // streaming of the diffs automatically (exactly same like the
     // models internal reasoning panel)" — landed on this gap.
@@ -422,7 +419,6 @@ export class DiffStreamer {
         additions: cur.lastAdditions,
         deletions: cur.lastDeletions,
         settled: true,
-        ...(cur.subagentId !== undefined ? { subagentId: cur.subagentId } : {})
       });
     }
     this.states.delete(callId);
@@ -529,7 +525,6 @@ export class DiffStreamer {
       cur = {
         runId: this.deps.runId,
         callId,
-        ...(snapshot.subagentId !== undefined ? { subagentId: snapshot.subagentId } : {}),
         filePath: workspaceRelative(this.deps.workspacePath, abs),
         // Empty before-body: a fresh create has nothing on disk to
         // diff against. Setting it directly skips the lazy
@@ -569,8 +564,7 @@ export class DiffStreamer {
       filePath: cur.filePath,
       hunks,
       additions: stats.additions,
-      deletions: stats.deletions,
-      ...(cur.subagentId !== undefined ? { subagentId: cur.subagentId } : {})
+      deletions: stats.deletions
     };
     this.deps.emit(event);
   }
@@ -610,7 +604,6 @@ export class DiffStreamer {
       cur = {
         runId: this.deps.runId,
         callId,
-        ...(snapshot.subagentId !== undefined ? { subagentId: snapshot.subagentId } : {}),
         filePath: previewPath,
         body: '',
         loading: null,
@@ -648,8 +641,7 @@ export class DiffStreamer {
       filePath: previewPath,
       hunks,
       additions: stats.additions,
-      deletions: stats.deletions,
-      ...(cur.subagentId !== undefined ? { subagentId: cur.subagentId } : {})
+      deletions: stats.deletions
     });
   }
 
@@ -712,7 +704,6 @@ export class DiffStreamer {
       cur = {
         runId: this.deps.runId,
         callId,
-        ...(snapshot.subagentId !== undefined ? { subagentId: snapshot.subagentId } : {}),
         filePath: workspaceRelative(this.deps.workspacePath, abs),
         body: null,
         loading: null,
@@ -834,7 +825,6 @@ export class DiffStreamer {
         hunks,
         additions: stats.additions,
         deletions: stats.deletions,
-        ...(cur.subagentId !== undefined ? { subagentId: cur.subagentId } : {})
       };
       this.deps.emit(event);
     } catch (err) {

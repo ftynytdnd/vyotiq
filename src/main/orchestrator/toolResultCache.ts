@@ -16,52 +16,11 @@
  * recognize the repetition and move on. It never fabricates or masks
  * data: the payload (`data`) is identical to the original run.
  *
- * Scope: keyed by `(AbortSignal, owner)` where `owner` is the
- * orchestrator id sentinel (`'__orch__'`) or a sub-agent id. The
- * orchestrator and every sub-agent get their OWN per-run cache. This
- * matters under parallel delegation: without per-owner scoping, a read
- * issued by sub-agent A would bank into B's "you already issued this"
- * banner the moment B made the same call, even though B's first read
- * was legitimate progress and the banner text would be a lie. Worse,
- * the cached `result.id` belongs to A's tool call — replaying it under
- * B would mismatch B's `assistant.tool_calls[].id` and surface as a
- * 400 from strict providers. Per-owner buckets close both surfaces.
+ * Scope: keyed by `AbortSignal` (one cache bucket per orchestrator run).
  *
  * Invalidation: any call to a **write-shaped** tool (`edit`, `bash`,
- * `memory write/append`) clears the OWNER's cache for that signal —
- * not the whole run-scoped cache. That keeps the orchestrator's cached
- * reads alive when a sub-agent issues a write and vice versa, while
- * still ensuring that an owner who just wrote re-reads from disk on
- * the next call. Cross-agent invalidation is intentionally NOT done:
- * the verifier feeds sub-agent `<result>` envelopes into the
- * orchestrator's history, so any state change a sub-agent makes that
- * the orchestrator should care about is signalled in-band.
- *
- * F-028 — Cross-owner staleness invariant the harness MUST maintain:
- *
- *   When a sub-agent mutates a workspace file via `edit` or `bash`, the
- *   orchestrator's cached `read` of the SAME file is now stale. The
- *   orchestrator wouldn't notice because cross-owner invalidation is
- *   off — its next identical `read` would hit the cache and return
- *   pre-write contents. The system stays consistent only because:
- *
- *     1. Every sub-agent's verified `<result>` envelope summarizes
- *        what it changed (file paths, key diffs). The orchestrator
- *        re-plans against that summary, not against re-reading the
- *        file.
- *     2. The orchestrator's harness (see `00-orchestrator-core.md`
- *        §B "Don't re-survey what you've already seen") explicitly
- *        tells the model to TRUST sub-agent reports and pivot rather
- *        than re-issuing the same `read`.
- *
- *   If the harness's "report what you changed" rule weakens — e.g. a
- *   future change reduces sub-agent `<result>` granularity below
- *   "diff-summary level" — the cross-owner-staleness window opens.
- *   Either revert that change or add a `bypassCache: true` per-call
- *   flag on `read`/`ls` so the orchestrator can force a fresh read
- *   when it has to. There is no current API for that bypass; do not
- *   add one without thinking through the spin-detector implications
- *   (a forced bypass that fires on every iteration looks like spin).
+ * `memory write/append`) clears the run's cache so subsequent reads
+ * see fresh workspace state.
  */
 
 import type { ToolName, ToolResult } from '@shared/types/tool.js';
@@ -118,8 +77,8 @@ interface CacheEntry {
   hits: number;
   firstTs: number;
   /**
-   * Audit fix A4 — entry was pre-seeded by `seedCachedRead` (sub-agent
-   * startup) rather than recorded by an actual tool run. The lookup
+   * Audit fix A4 — entry was pre-seeded by `seedCachedRead` rather than
+   * recorded by an actual tool run. The lookup
    * path skips the "you already issued this N times" banner for
    * seeded entries because the seed's own `output` is the
    * authoritative explanation ("this file is already in your <files>
@@ -129,37 +88,16 @@ interface CacheEntry {
   seeded?: boolean;
 }
 
-/**
- * Sentinel owner key for orchestrator-level tool calls. Sub-agents
- * pass their own ids; the orchestrator passes `undefined` which we
- * resolve to this constant.
- */
-const ORCHESTRATOR_OWNER_KEY = '__orch__';
+/** Run-scoped cache: `WeakMap<AbortSignal, Map<entryKey, CacheEntry>>`. */
+const caches = new WeakMap<AbortSignal, Map<string, CacheEntry>>();
 
-/**
- * Two-level cache: `WeakMap<AbortSignal, Map<owner, Map<entryKey, CacheEntry>>>`.
- * Outer WeakMap ties lifetime to the run; inner Map partitions cache
- * visibility per owner (orchestrator OR a specific sub-agent) so
- * parallel workers don't pollute each other's cache.
- */
-const caches = new WeakMap<AbortSignal, Map<string, Map<string, CacheEntry>>>();
-
-function getCache(
-  signal: AbortSignal,
-  subagentId: string | undefined
-): Map<string, CacheEntry> {
-  let perSignal = caches.get(signal);
-  if (!perSignal) {
-    perSignal = new Map();
-    caches.set(signal, perSignal);
+function getCache(signal: AbortSignal): Map<string, CacheEntry> {
+  let map = caches.get(signal);
+  if (!map) {
+    map = new Map();
+    caches.set(signal, map);
   }
-  const ownerKey = subagentId ?? ORCHESTRATOR_OWNER_KEY;
-  let perOwner = perSignal.get(ownerKey);
-  if (!perOwner) {
-    perOwner = new Map();
-    perSignal.set(ownerKey, perOwner);
-  }
-  return perOwner;
+  return map;
 }
 
 /**
@@ -183,12 +121,11 @@ function getCache(
 export function lookupCachedResult(
   signal: AbortSignal,
   name: ToolName,
-  args: Record<string, unknown>,
-  subagentId?: string
+  args: Record<string, unknown>
 ): ToolResult | null {
   const key = cacheableKey(name, args);
   if (key === null) return null;
-  const entry = getCache(signal, subagentId).get(key);
+  const entry = getCache(signal).get(key);
   if (!entry) return null;
   // Only replay successful results. A failure that reproduced would
   // re-trigger failure handling and we'd rather let the real tool run
@@ -230,42 +167,15 @@ export function lookupCachedResult(
 }
 
 /**
- * Pre-seed a synthetic cache hit for a sub-agent's inlined file.
- * When the worker later calls `read({ path: <inlinedRel> })` with
- * no `startLine`/`endLine`, `lookupCachedResult` short-circuits to
- * this seed and the worker is told (with no banner pollution) that
- * the file is already in its `<files>` block. The model gets one
- * iteration's worth of provider call saved per redundant re-read —
- * the exact failure mode visible in screenshot 1 (`Read core/state.py`
- * even though it was inlined).
- *
- * Scoping: keyed by `(signal, subagentId)` exactly like organic cache
- * hits, so the orchestrator and sibling workers never see the seed.
- * The orchestrator never inlines files into its own context (it has
- * the conversation transcript instead), so seeding it would be a
- * design error and we deliberately reject `subagentId === undefined`
- * at the call site rather than silently routing into the
- * orchestrator's bucket.
- *
- * The seeded result carries `ok: true` with no `data` payload. The
- * renderer's `read` invocation card tolerates a missing payload
- * (falls through to the plain text output) and the model sees a
- * clear cache message instead of a synthesized line-numbered body
- * that would have to be kept in sync with the real `read.tool.ts`
- * format. Tradeoff favoured here: simpler + correct over complete.
- *
- * Idempotent: calling twice for the same `(signal, subagentId, rel)`
- * leaves the existing entry alone, mirroring `recordToolResult`'s
- * existing "don't clobber a live entry" rule. Audit fix A4.
+ * Pre-seed a synthetic cache hit for an inlined file path (host-only;
+ * no live caller today — kept for tests and future inline-file hints).
+ * Bare `read({ path })` short-circuits with no "[cache]" banner.
+ * Idempotent per `(signal, rel)`. Audit fix A4.
  */
-export function seedCachedRead(
-  signal: AbortSignal,
-  subagentId: string,
-  rel: string
-): void {
+export function seedCachedRead(signal: AbortSignal, rel: string): void {
   const key = cacheableKey('read', { path: rel });
   if (key === null) return; // defensive — `read` is in PURE_READ_TOOLS
-  const map = getCache(signal, subagentId);
+  const map = getCache(signal);
   if (map.has(key)) return;
   const seedResult: ToolResult = {
     id: 'seeded',
@@ -286,7 +196,7 @@ export function seedCachedRead(
     firstTs: Date.now(),
     seeded: true
   });
-  log.debug('seeded read-cache hit', { subagentId, rel });
+  log.debug('seeded read-cache hit', { rel });
 }
 
 /**
@@ -298,33 +208,23 @@ export function recordToolResult(
   signal: AbortSignal,
   name: ToolName,
   args: Record<string, unknown>,
-  result: ToolResult,
-  subagentId?: string
+  result: ToolResult
 ): void {
   if (isWriteShaped(name, args)) {
-    // Scoped invalidation: only clear the owner's own bucket, not the
-    // entire run. Sub-agent A's write should not flush orchestrator
-    // reads or sub-agent B's reads. See the file header for the
-    // cross-owner-invalidation rationale.
-    const perSignal = caches.get(signal);
-    if (perSignal) {
-      const ownerKey = subagentId ?? ORCHESTRATOR_OWNER_KEY;
-      const perOwner = perSignal.get(ownerKey);
-      if (perOwner && perOwner.size > 0) {
-        log.debug('tool-result cache invalidated by write', {
-          tool: name,
-          owner: ownerKey,
-          entriesEvicted: perOwner.size
-        });
-        perOwner.clear();
-      }
+    const map = caches.get(signal);
+    if (map && map.size > 0) {
+      log.debug('tool-result cache invalidated by write', {
+        tool: name,
+        entriesEvicted: map.size
+      });
+      map.clear();
     }
     return;
   }
   const key = cacheableKey(name, args);
   if (key === null) return;
   if (!result.ok) return; // never cache failures
-  const map = getCache(signal, subagentId);
+  const map = getCache(signal);
   if (!map.has(key)) {
     map.set(key, { result, hits: 0, firstTs: Date.now() });
   }

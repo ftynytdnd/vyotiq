@@ -22,6 +22,7 @@
 
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { useChatStore } from '@renderer/store/useChatStore';
+import { chatSliceFixture } from '../../_fixtures/chatSlice';
 import { useConversationsStore } from '@renderer/store/useConversationsStore';
 import { useWorkspaceStore } from '@renderer/store/useWorkspaceStore';
 
@@ -32,7 +33,6 @@ beforeEach(() => {
     events: [],
     assistantTexts: {},
     reasoningTexts: {},
-    subagents: {},
     orchestratorUsage: undefined,
     conversationId: null,
     runId: null,
@@ -71,7 +71,6 @@ describe('useConversationsStore.select — multi-session contract', () => {
           events: [],
           assistantTexts: {},
           reasoningTexts: {},
-          subagents: {},
           orchestratorUsage: undefined,
           runId: 'run-live-1',
           isProcessing: true,
@@ -130,7 +129,12 @@ describe('useConversationsStore.select — multi-session contract', () => {
   it('is a no-op when re-selecting the current conversation (already mirrored)', async () => {
     useChatStore.setState({
       conversationId: 'conv-A',
-      slices: { 'conv-A': { ...useChatStore.getState().slices['conv-A'], conversationId: 'conv-A', events: [], assistantTexts: {}, reasoningTexts: {}, subagents: {}, orchestratorUsage: undefined, runId: null, isProcessing: false, runStartedAt: null } }
+      slices: {
+        'conv-A': chatSliceFixture({
+          conversationId: 'conv-A',
+          ...useChatStore.getState().slices['conv-A']
+        })
+      }
     });
     useConversationsStore.setState({
       list: [

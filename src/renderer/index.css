@@ -2835,31 +2835,6 @@ mark.vyotiq-timeline-find-mark-active {
   color: var(--color-text-muted);
 }
 
-.vx-timeline-subagent-dot {
-  display: inline-block;
-  height: 0.375rem;
-  width: 0.375rem;
-  flex-shrink: 0;
-  border-radius: 9999px;
-}
-
-.vx-timeline-subagent-dot-live {
-  background: var(--color-accent-gold-strong);
-}
-
-.vx-timeline-subagent-dot-settled {
-  background: var(--color-text-muted);
-}
-
-.vx-timeline-subagent-subtitle {
-  margin-top: 0.125rem;
-  padding-left: 0.75rem;
-  font-size: var(--text-meta);
-  font-style: italic;
-  line-height: 1.45;
-  color: var(--color-text-muted);
-}
-
 .vx-timeline-stream-md {
   font-size: var(--text-body);
   line-height: 1.6;

@@ -100,11 +100,6 @@ export function isTimelineEvent(value: unknown): value is TimelineEvent {
         hasNonEmptyStringField(o, 'callId') &&
         hasStringField(o, 'argsBuf')
       );
-    case 'subagent-pending':
-    case 'subagent-spawn':
-    case 'subagent-status':
-    case 'subagent-result':
-      return hasNonEmptyStringField(o, 'subagentId');
     case 'file-edit':
       return hasNonEmptyStringField(o, 'filePath');
     case 'token-usage':

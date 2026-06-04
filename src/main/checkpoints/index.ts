@@ -53,7 +53,6 @@ interface RecordChangeOpts {
   additions: number;
   deletions: number;
   hunks?: ToolDiffHunk[];
-  subagentId?: string;
   source: 'edit' | 'delete' | 'bash';
 }
 
@@ -72,7 +71,6 @@ export async function recordChange(opts: RecordChangeOpts): Promise<CheckpointEn
     additions: opts.additions,
     deletions: opts.deletions,
     ...(opts.hunks ? { hunks: opts.hunks } : {}),
-    ...(opts.subagentId ? { subagentId: opts.subagentId } : {}),
     source: opts.source
   };
 }

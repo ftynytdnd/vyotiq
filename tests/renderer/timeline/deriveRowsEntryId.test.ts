@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { deriveRows } from '@renderer/components/timeline/reducer/deriveRows';
+import { normalizeLegacyTranscript } from '@shared/transcript/normalizeLegacyTranscript';
 import type { TimelineEvent } from '@shared/types/chat';
 
 describe('deriveRows — file-edit entryId', () => {
@@ -64,11 +65,11 @@ describe('deriveRows — file-edit entryId', () => {
   });
 });
 
-describe('deriveRows — delegation (no execution plan row)', () => {
-  it('emits sub-agent lines only — no orchestrator stepper row', () => {
+describe('deriveRows — legacy sub-agent events (flattened on load)', () => {
+  it('drops legacy lifecycle rows — no delegation chrome', () => {
     const events: TimelineEvent[] = [
       { kind: 'user-prompt', id: 'p1', ts: 1, content: 'analyze' },
-      { kind: 'agent-text-delta', id: 't1', ts: 2, text: 'Plan\n<delegate id="A1" task="one" />' },
+      { kind: 'agent-text-delta', id: 't1', ts: 2, delta: 'Plan' },
       {
         kind: 'subagent-pending',
         id: 'sp1',
@@ -89,8 +90,8 @@ describe('deriveRows — delegation (no execution plan row)', () => {
       }
     ];
 
-    const rows = deriveRows(events);
+    const rows = deriveRows(normalizeLegacyTranscript(events));
     expect(rows.some((r) => r.kind === 'delegation-plan')).toBe(false);
-    expect(rows.some((r) => r.kind === 'subagent-line')).toBe(true);
+    expect(rows.some((r) => r.kind === 'subagent-line')).toBe(false);
   });
 });

@@ -15,7 +15,7 @@ NOTE: Never assume, guess, or speculate. Always verify, confirm, and validate. I
 
 - **Default:** Git diff — changed files plus direct dependents (imports/callers, IPC pairs, store consumers).
 - **Full-repo audit:** Only when the user asks or for pre-release. Use [docs/audit-inventory.md](docs/audit-inventory.md) as the closed ledger of prior audit findings; do not duplicate a full-tree audit on every run.
-- **Architecture awareness:** Understand orchestration, delegation, harness, and surviving UI paths from the diff and touched modules — not a mandatory full-tree scan every time.
+- **Architecture awareness:** Understand solo-agent orchestration, harness, and timeline UI paths from the diff and touched modules — not a mandatory full-tree scan every time.
 
 ## Deliverable format
 
@@ -26,7 +26,7 @@ Report findings with:
 - **Crash / hang claims:** Mark **Verified** or **Not verified** (reproduce, trace logs, or state what evidence is missing)
 - **Optional verification:** `npm run typecheck`, `npm run test`
 
-**Crash forensics:** Main-process log at `<userData>/vyotiq/logs/vyotiq.log` (see README). For orchestrator crashes or mid-run stalls, check lifecycle disposal in `runLoop`, adaptive backoff in `providerRateGuard`, and delegation pool telemetry (`delegation pool parallelism` entries) documented in [docs/audit-inventory.md](docs/audit-inventory.md).
+**Crash forensics:** Main-process log at `<userData>/vyotiq/logs/vyotiq.log` (see README). For orchestrator crashes or mid-run stalls, check lifecycle disposal in `runLoop` and adaptive backoff in `providerRateGuard`.
 
 Your task is to find potential bugs and improvements in scope. Focus on:
 
@@ -44,7 +44,7 @@ Your task is to find potential bugs and improvements in scope. Focus on:
 12. Violations of existing code patterns or conventions
 13. Code that is difficult to understand or maintain
 14. Integration and wiring gaps between features, IPC, stores, and UI (report in review mode; fix only in remediation mode)
-15. Natural-language harness, orchestration, sub-agents, and surviving timeline/delegation UX
+15. Natural-language harness, solo-agent orchestration, and timeline UX (legacy sub-agent rows flattened on load)
 16. Silent or sudden orchestrator crashes and mid-run failures (verify via logs; see Deliverable format)
 17. Tools: implementations, policy, registry, and integration with the orchestrator loop
 18. Dead code, unused imports, and stale references to removed modules (report in review mode; remove only in remediation mode)

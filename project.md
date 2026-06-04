@@ -57,7 +57,7 @@ Design complete Architecture and build and create me simple(but working and func
 
 ## Create each tool in separate file instead of one
    * Core function-calling tools (each in its own file under `src/main/tools/`): **bash**, **ls**, **read**, **edit**, plus **delete**, **search**, **memory**, **recall**, and **report** where policy allows.
-   * Orchestrator vs sub-agent exposure is enforced in `src/main/tools/policy/` (`toolSchemasFor` never registers forbidden tools on the wire).
+   * Tool exposure is enforced in `src/main/tools/policy/` (`AGENT_TOOLS` allowlist per solo Agent V run).
 
 
 ***NO complex code-based harness at all, only natural language***
@@ -69,17 +69,11 @@ Traditionally, AI orchestration relies on hardcoded scripts for memory, context,
 
 You must design the agent's system prompt to act as its operating system. The harness must explicitly define the following cognitive subsystems using only structured, rule-based plain English:
 
-## Sub-Agent Delegation (The Orchestration Pattern)
+## Single Dynamic Agent (Agent V)
 
-**Timeline UI contract (locked decisions):** see [docs/delegation-ui.md](docs/delegation-ui.md) — parallel `delegate` pool, C+D indent/mini-thread, wire-order inline timeline, and Phase 2 bugfix targets.
+Agent V is **one solo agent** with a full tool surface (`bash`, `read`, `edit`, `search`, `ls`, `memory`, `recall`, …). It plans, executes tools directly in the active workspace, and synthesizes answers in one context — no worker or delegation layer. Legacy transcripts recorded before the solo-agent model are normalized on load (`normalizeLegacyTranscript`).
 
-The main natural language harness is strictly an **orchestration pattern, not a reasoning pattern.** The primary agent (Agent V) does not do the heavy thinking or coding itself. Its sole responsibility is decomposition, delegation, and verification. Orchestrator-authored `delegate` `task` strings are forwarded **verbatim** (English, one micro-task per call); see [docs/delegation-ui.md](docs/delegation-ui.md) and `src/main/harness/00-orchestrator-core.md` § B.
-
-You must design the orchestrator to follow these strict swarming rules:
-1. **Task Decomposition:** Agent V must break down every user request into micro-tasks. 
-2. **Single-Task Sub-Agents:** Agent V must spawn dedicated, ephemeral sub-agents to handle these micro-tasks. A sub-agent must never be assigned more than exactly **one task**.
-3. **Strict Context Isolation:** Every sub-agent must be spawned with a completely separate, blank context window. The orchestrator only injects the exact files and instructions necessary for that specific micro-task to prevent context pollution and hallucination.
-4. **Real-Time Monitoring & Verification:** The orchestrator must operate an asynchronous observation loop. It must monitor sub-agents in real-time, review their outputs, automatically send revisions if the output fails verification, and synthesize the final verified results back to the user.
+The harness (`src/main/harness/00-orchestrator-core.md` and companions) defines how Agent V should decompose work, when to call tools, and how to verify outcomes before responding to the user.
 
 
 
@@ -90,10 +84,10 @@ The harness must define a continuous, self-governing loop that dictates how Agen
 - **Execute & Evaluate:** The agent must evaluate the result of every action it takes. If an action fails, it must trigger its natural language retry logic with exponential backoff.
 
 ## 2. Context Management & Awareness
-The harness defines where context comes from (conversation history, envelopes, memory, research) and how sub-agents stay isolated. The host injects environmental envelopes each turn; the agent pulls more context via tools and delegation when needed. There is no automatic context-window summarization or composer/timeline token metering UI.
+The harness defines where context comes from (conversation history, envelopes, memory, research). The host injects environmental envelopes each turn; the agent pulls more context via tools when needed. There is no automatic context-window summarization beyond what the harness and tools provide.
 
 ### Run lifecycle: abort, stop, and rehydrate (implementation contract)
-Vyotiq supports multiple concurrent chats (one orchestrator run per conversation, possibly across workspaces). The main process and renderer must agree on how **stop** and **reload** behave so events are never dropped mid-wind-down.
+Vyotiq supports multiple concurrent chats (one Agent V run per conversation, possibly across workspaces). The main process and renderer must agree on how **stop** and **reload** behave so events are never dropped mid-wind-down.
 
 **Main process (`AgentV` / `activeRuns`)**
 - Every in-flight `chat:send` registers an `AbortController` in an in-memory `activeRuns` map keyed by `runId`.
@@ -127,7 +121,7 @@ Agent V must evolve. The orchestrator must include a mechanism where Agent V can
 ## 4. Dual-Mode Search & Research
 The harness must instruct the agent on how to conduct research autonomously:
 - **Offline Research:** Rules for exploring the local file system (using terminal/read tools) to understand the local codebase or read local documentation.
-- **Local Research:** Rules for when local context is insufficient — delegate local `search` / `read` sub-agents against the workspace and vendored deps (no outbound web search).
+- **Local Research:** Rules for when local context is insufficient — use `search` / `read` / `bash` against the workspace and vendored deps (no outbound web search by default).
 
 ## 5. Natural Language Tool Definitions
 Instead of strict JSON schemas, the tools must be defined and explained within the harness using a conversational, intent-based structure. For every tool (Bash, Ls, Read, Edit, Search, Memory), the harness must explicitly define:

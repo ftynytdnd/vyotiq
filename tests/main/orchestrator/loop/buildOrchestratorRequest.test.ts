@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { buildOrchestratorRequest } from '@main/orchestrator/loop/buildOrchestratorRequest';
-import { ORCHESTRATOR_TOOLS } from '@main/tools/policy/index';
+import { AGENT_TOOLS } from '@main/tools/policy/agentTools';
 import type { ChatMessage } from '@shared/types/chat';
 import type { ModelSelection } from '@shared/types/provider';
 
@@ -32,14 +32,14 @@ describe('buildOrchestratorRequest', () => {
     expect(req.messages).toHaveLength(2);
   });
 
-  it('exposes exactly the ORCHESTRATOR_TOOLS catalogue', () => {
+  it('exposes exactly the AGENT_TOOLS catalogue', () => {
     const req = buildOrchestratorRequest({
       selection,
       messages: baseMessages(),
       signal: new AbortController().signal
     });
     const names = (req.tools ?? []).map((t) => t.function.name).sort();
-    expect(names).toEqual([...ORCHESTRATOR_TOOLS].sort());
+    expect(names).toEqual([...AGENT_TOOLS].sort());
   });
 
   it('sends tool_choice:"none" on the wrap-up synthesis turn and appends a synthesis instruction', () => {

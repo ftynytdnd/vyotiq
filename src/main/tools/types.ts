@@ -29,8 +29,6 @@ export interface ToolContext {
   emit: (event: TimelineEvent) => void;
   /** Optional: emit a free-form progress line for the timeline. */
   progress?: (message: string) => void;
-  /** Subagent id, when running inside a sub-agent. */
-  subagentId?: string;
 }
 
 export interface Tool {

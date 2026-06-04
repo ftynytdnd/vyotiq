@@ -93,19 +93,7 @@ describe('createStreamingArgsTap', () => {
     });
   });
 
-  it('threads sub-agent id through to the streamer when present', () => {
-    const fake = makeFakeStreamer();
-    const tap = createStreamingArgsTap(fake.ref);
-    tap.argsDeltaTap('c1', 'edit', '{"path":"a.ts"}', 'sub-7');
-    expect(fake.onArgsDelta).toHaveBeenCalledWith({
-      callId: 'c1',
-      name: 'edit',
-      parsed: { path: 'a.ts' },
-      subagentId: 'sub-7'
-    });
-  });
-
-  it('does not include a subagentId key when sub-agent is undefined', () => {
+  it('forwards parsed args to the streamer without legacy subagentId', () => {
     const fake = makeFakeStreamer();
     const tap = createStreamingArgsTap(fake.ref);
     tap.argsDeltaTap('c1', 'edit', '{"path":"a.ts"}');
@@ -214,9 +202,9 @@ describe('createStreamingArgsTap', () => {
     // pass-through shape.
     const fake = makeFakeStreamer();
     const tap = createStreamingArgsTap(fake.ref);
-    tap.argsDeltaTap('c-real', 'edit', '{"path":"a.ts"}', 'sub-7');
-    tap.onToolCallSettled('c-real', 'sub-7', 0);
-    expect(fake.notifySettled).toHaveBeenCalledWith('c-real', 'sub-7', 0);
+    tap.argsDeltaTap('c-real', 'edit', '{"path":"a.ts"}');
+    tap.onToolCallSettled('c-real', 'orc', 0);
+    expect(fake.notifySettled).toHaveBeenCalledWith('c-real', 'orc', 0);
   });
 
   it('drops the matching surrogate parser when owner+index are provided', () => {
@@ -231,17 +219,17 @@ describe('createStreamingArgsTap', () => {
     // Two parsers under the same logical call: one keyed under
     // the surrogate, one under the real id (provider transitioned
     // mid-stream).
-    tap.argsDeltaTap('pending:sub-7:0', 'edit', '{"path":"a.ts"', 'sub-7');
-    tap.argsDeltaTap('c-real', 'edit', '{"path":"a.ts","oldString":"x"}', 'sub-7');
+    tap.argsDeltaTap('pending:orc:0', 'edit', '{"path":"a.ts"');
+    tap.argsDeltaTap('c-real', 'edit', '{"path":"a.ts","oldString":"x"}');
     expect(fake.onArgsDelta).toHaveBeenCalledTimes(2);
-    tap.onToolCallSettled('c-real', 'sub-7', 0);
+    tap.onToolCallSettled('c-real', 'orc', 0);
     // After settle, a delta on the surrogate id should NOT reach a
     // pre-existing parser (the entry was dropped). The streamer's
     // own `settledCallIds` gate blocks emission downstream, but at
     // the tap layer we only need to verify the parser-map cleared:
     // sending a buffer that would only parse against a fresh
     // parser proves it.
-    tap.argsDeltaTap('pending:sub-7:0', 'edit', '{"path":"b.ts"}', 'sub-7');
+    tap.argsDeltaTap('pending:orc:0', 'edit', '{"path":"b.ts"}');
     const last = fake.onArgsDelta.mock.calls.at(-1)![0] as {
       parsed: Record<string, unknown> | null;
     };

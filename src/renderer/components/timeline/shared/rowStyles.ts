@@ -145,19 +145,11 @@ export function toolTitleClassName(running: boolean): string {
   );
 }
 
-/** Reasoning row headline — orchestrator vs sub-agent typography variants. */
-export function reasoningHeadlineClassName(
-  streaming: boolean,
-  variant: 'orchestrator' | 'subagent' = 'orchestrator'
-): string {
-  if (variant === 'orchestrator') {
-    return streaming
-      ? cn(timelinePhaseHeadingClassName(true), 'truncate text-meta')
-      : 'truncate text-meta vx-caption';
-  }
+/** Reasoning row headline typography. */
+export function reasoningHeadlineClassName(streaming: boolean): string {
   return streaming
-    ? cn(timelinePhaseHeadingClassName(true), 'min-w-0 flex-1 truncate text-row italic')
-    : 'min-w-0 flex-1 truncate text-row italic text-text-muted';
+    ? cn(timelinePhaseHeadingClassName(true), 'truncate text-meta')
+    : 'truncate text-meta vx-caption';
 }
 
 /** Timeline stack wrapper (Timeline.tsx root). */

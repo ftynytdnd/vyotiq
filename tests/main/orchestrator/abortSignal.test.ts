@@ -1,6 +1,6 @@
 /**
  * `isAbortError` predicate tests. Single source of truth for detecting
- * user-initiated cancellation across `runLoop`, `SubAgent`, and the
+ * user-initiated cancellation across `runLoop` and the
  * confirm bus; keeping a dedicated test file means a future refactor
  * that changes one call site can't silently drift the predicate.
  *

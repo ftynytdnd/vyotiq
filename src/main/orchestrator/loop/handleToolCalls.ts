@@ -1,22 +1,5 @@
 /**
- * Executes a batch of tool calls produced by ANY agent loop (orchestrator
- * or sub-agent) and emits the matching timeline events. The orchestrator's
- * catalogue is restricted by `tools/policy/orchestratorTools.ts` (only
- * `ls`, `memory`, and `recall` reach here at orchestrator level); sub-agents
- * pass a per-task `allowlist` to refuse anything outside their granted
- * toolset. Both call sites used to maintain near-duplicate copies of this
- * loop — the duplication is now collapsed here so the id-locking,
- * timeline emission, allowlist enforcement, and message-history shape
- * stay in lockstep.
- *
- * Side-effects per call (in order):
- *   1. (sub-agent only) reject early with a tool message if the call's
- *      name is outside `allowlist`.
- *   2. Emit `tool-call` to the timeline (with `subagentId` when set).
- *   3. Invoke the tool via the runner.
- *   4. Emit `tool-result` (with `subagentId` when set).
- *   5. Surface a `file-edit` card if the call was a successful `edit`.
- *   6. Push the result back onto the model's `messages` as `role:'tool'`.
+ * Executes a batch of tool calls for Agent V and emits matching timeline events.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -26,25 +9,10 @@ import { runToolByName } from '../toolRunner.js';
 import type { PartialToolCall } from './handleAssistantTurn.js';
 import { emitRunStatus } from './emitRunStatus.js';
 import { batchIndicesByDependencies, parseDependsOnIds } from './toolDependencyBatches.js';
-import { parseToolArgs, tryParseArgumentsRecord } from './parseToolArgs.js';
+import { parseToolArgs } from './parseToolArgs.js';
 import { logger } from '../../logging/logger.js';
 
 const log = logger.child('orchestrator/handleToolCalls');
-
-function suggestDelegateCall(tc: PartialToolCall, refusedTool: string): string {
-  let id = 'w1';
-  let task = 'One micro-task description';
-  let files: string[] = [];
-  const tools = [refusedTool];
-  const parsed = tryParseArgumentsRecord(tc.argumentsBuf);
-  if (typeof parsed['id'] === 'string' && parsed['id'].trim()) id = parsed['id'].trim();
-  if (typeof parsed['task'] === 'string' && parsed['task'].trim()) task = parsed['task'].trim();
-  if (typeof parsed['path'] === 'string' && parsed['path'].trim()) files = [parsed['path'].trim()];
-  if (typeof parsed['file'] === 'string' && parsed['file'].trim()) files = [parsed['file'].trim()];
-  const args: Record<string, unknown> = { id, task, tools };
-  if (files.length > 0) args['files'] = files;
-  return JSON.stringify({ name: 'delegate', arguments: args });
-}
 
 function settleToolCallSurrogate(
   tc: PartialToolCall,
@@ -53,7 +21,7 @@ function settleToolCallSurrogate(
 ): void {
   const callId = tc.id;
   if (!callId) return;
-  opts.onToolCallSettled?.(callId, opts.subagentId ?? 'orc', batchIndex);
+  opts.onToolCallSettled?.(callId, 'orc', batchIndex);
 }
 
 function emitSyntheticToolFailure(
@@ -82,7 +50,6 @@ function emitSyntheticToolFailure(
     id: randomUUID(),
     ts: Date.now(),
     result: syntheticResult,
-    ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
   });
   messages.push({
     role: 'tool',
@@ -94,52 +61,15 @@ function emitSyntheticToolFailure(
 
 export interface HandleToolCallsOpts {
   workspacePath: string;
-  /** Workspace id (registry id) — required for checkpoint snapshots. */
   workspaceId: string;
-  /** Run id (orchestrator-assigned). */
   runId: string;
-  /** Conversation id that owns the run. */
   conversationId: string;
   permissions: ChatPermissions;
   signal: AbortSignal;
-  /**
-   * When set, every emitted timeline event is tagged with this id so the
-   * renderer can attribute the tool call to its owning sub-agent under
-   * concurrent execution. When omitted the events are top-level
-   * (orchestrator-attributed).
-   */
-  subagentId?: string;
-  /**
-   * When set, calls whose `name` is not in this allowlist are answered
-   * with a synthetic `role:'tool'` failure message and skipped — no
-   * tool execution, no timeline emission. Used by sub-agents to enforce
-   * the per-task `tools=` slot from `<delegate />`.
-   */
+  /** When set, calls outside this list get a synthetic tool failure. */
   allowlist?: readonly string[];
-  /**
-   * When true, caller already batched by `depends_on` (e.g. `dispatchMixedTurn`);
-   * run all calls in one parallel batch without re-toposorting.
-   */
   skipDependencyBatching?: boolean;
-  /**
-   * Phase 2 — notification hook fired the moment an authoritative
-   * `tool-call` event is about to be emitted, so the run-level
-   * diff streamer can drop its in-flight state for that callId.
-   * No-op when omitted (matches the existing call sites that don't
-   * use the streamer).
-   *
-   * `owner` is forwarded so the streamer can fold a still-pending
-   * `pending:${owner}:${index}` surrogate `CallState` into the
-   * real id if the provider transitioned `id` from `undefined`
-   * mid-stream. Sub-agents pass their own `subagentId` here;
-   * orchestrator-level rounds pass `'orc'`.
-   */
   onToolCallSettled?: (callId: string, owner?: string, index?: number) => void;
-  /**
-   * When set, emit at most one "cannot nest further" phase per sub-agent id
-   * per run (sub-agents may retry `delegate` many times in one turn).
-   */
-  nestedDelegatePhaseEmitted?: Set<string>;
 }
 
 /**
@@ -153,16 +83,6 @@ export interface HandleToolCallsResult {
   attempted: number;
   /** Of `attempted`, how many produced a `result.ok === false`. */
   failed: number;
-  /**
-   * Number of refused `delegate` tool calls in this round. `delegate`
-   * is a first-class orchestrator tool, so the orchestrator never
-   * refuses it here (and the run loop intercepts it by name before
-   * this function runs). This counter therefore only ever increments
-   * for a SUB-AGENT attempting to nest a further delegation — its
-   * allowlist excludes `delegate`. Pure observability; does not affect
-   * the allowlist refusal itself.
-   */
-  childRedelegations: number;
 }
 
 type DispatchOutcome =
@@ -175,7 +95,7 @@ async function dispatchOneToolCall(
   messages: ChatMessage[],
   emit: (event: TimelineEvent) => void,
   opts: HandleToolCallsOpts,
-  tallies: { refused: number; childRedelegations: number }
+  tallies: { refused: number }
 ): Promise<DispatchOutcome> {
   if (!tc.name) {
     tallies.refused += 1;
@@ -196,29 +116,12 @@ async function dispatchOneToolCall(
 
   if (opts.allowlist && !opts.allowlist.includes(tc.name)) {
     tallies.refused += 1;
-    const isDelegateAttempt = tc.name === 'delegate';
-    if (isDelegateAttempt) {
-      tallies.childRedelegations += 1;
-      // The nested-delegate refusal is fed back to the model through the
-      // refused tool result itself, so the extra "cannot nest further"
-      // timeline `phase` row was redundant clutter — dropped. The
-      // `nestedDelegatePhaseEmitted` de-dupe set is retained in opts for
-      // back-compat with callers but is no longer written here.
-    }
     log.warn('allowlist refusal', {
       tool: tc.name,
-      subagentId: opts.subagentId,
-      allowlist: opts.allowlist,
-      isDelegateAttempt
+      allowlist: opts.allowlist
     });
     const refusalMessage =
-      opts.subagentId === undefined
-        ? `Tool "${tc.name}" is not callable from the orchestrator. ` +
-          `The orchestrator's direct toolset is restricted to ${opts.allowlist.join(', ')}. ` +
-          `To run "${tc.name}", call the \`delegate\` tool and grant it via the \`tools\` argument, for example:\n\n` +
-          suggestDelegateCall(tc, tc.name) +
-          `\n\nSpawn one sub-agent per micro-task.`
-        : `Tool "${tc.name}" is not available for this sub-agent — use the granted toolset.`;
+      `Tool "${tc.name}" is not in the agent allowlist (${opts.allowlist.join(', ')}).`;
     messages.push({
       role: 'tool',
       tool_call_id: callId,
@@ -230,7 +133,7 @@ async function dispatchOneToolCall(
   }
 
   const { args: parsed, parseError } = parseToolArgs(tc.name, tc.argumentsBuf);
-  opts.onToolCallSettled?.(callId, opts.subagentId ?? 'orc', batchIndex);
+  opts.onToolCallSettled?.(callId, 'orc', batchIndex);
   emit({
     kind: 'tool-call',
     id: randomUUID(),
@@ -242,8 +145,7 @@ async function dispatchOneToolCall(
       ...(typeof tc.thoughtSignature === 'string' && tc.thoughtSignature.length > 0
         ? { thoughtSignature: tc.thoughtSignature }
         : {})
-    },
-    ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
+    }
   });
   if (parseError !== undefined) {
     const syntheticResult = {
@@ -259,7 +161,6 @@ async function dispatchOneToolCall(
       id: randomUUID(),
       ts: Date.now(),
       result: syntheticResult,
-      ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
     });
     messages.push({
       role: 'tool',
@@ -270,10 +171,7 @@ async function dispatchOneToolCall(
     return { kind: 'ran', attempted: 1, failed: 1 };
   }
 
-  emitRunStatus(emit, 'running-tool', 'Exploring', {
-    toolName: tc.name,
-    ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
-  });
+  emitRunStatus(emit, 'running-tool', 'Exploring', { toolName: tc.name });
   const result = await runToolByName(tc.name, parsed, {
     workspacePath: opts.workspacePath,
     workspaceId: opts.workspaceId,
@@ -281,16 +179,14 @@ async function dispatchOneToolCall(
     conversationId: opts.conversationId,
     permissions: opts.permissions,
     emit,
-    signal: opts.signal,
-    ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
+    signal: opts.signal
   });
   result.id = callId;
   emit({
     kind: 'tool-result',
     id: randomUUID(),
     ts: Date.now(),
-    result,
-    ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
+    result
   });
   if (tc.name === 'edit' && result.ok && result.data && result.data.tool === 'edit') {
     emit({
@@ -301,8 +197,7 @@ async function dispatchOneToolCall(
       filePath: result.data.filePath,
       additions: result.data.additions,
       deletions: result.data.deletions,
-      ...(result.data.entryId ? { entryId: result.data.entryId } : {}),
-      ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
+      ...(result.data.entryId ? { entryId: result.data.entryId } : {})
     });
   }
   messages.push({
@@ -323,7 +218,7 @@ export async function handleToolCalls(
   const startedAt = Date.now();
   let attempted = 0;
   let failed = 0;
-  const tallies = { refused: 0, childRedelegations: 0 };
+  const tallies = { refused: 0 };
 
   const batches = opts.skipDependencyBatching
     ? [finishedToolCalls.map((_, i) => i)]
@@ -345,7 +240,6 @@ export async function handleToolCalls(
     if (opts.signal.aborted) {
       log.debug('tool round aborted mid-batch', {
         remaining: batch.length,
-        subagentId: opts.subagentId
       });
       for (let b = batchIdx; b < batches.length; b++) {
         for (const i of batches[b]!) {
@@ -425,9 +319,7 @@ export async function handleToolCalls(
     attempted,
     failed,
     refused: tallies.refused,
-    childRedelegations: tallies.childRedelegations,
-    subagentId: opts.subagentId,
     ms: Date.now() - startedAt
   });
-  return { attempted, failed, childRedelegations: tallies.childRedelegations };
+  return { attempted, failed };
 }

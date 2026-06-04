@@ -14,14 +14,8 @@
  *   - Reasoning becomes a single `reasoning-line` row (`Thought for Ns`).
  *
  * Breakers that close any in-flight group: different tool/kind, assistant
- * text delta, reasoning delta, phase, subagent-spawn, user-prompt,
- * agent-thought, file-edit, error, subagent status/result.
- *
- *   - Each sub-agent spawn becomes a `subagent-line` row; scoped text,
- *     reasoning, tools, and file-edits emit as top-level rows tagged with
- *     `subagentId` in wire order for inline delegation UI.
- *
- * Sub-agent scoped events are emitted inline (not nested in expand-only traces).
+ * text delta, reasoning delta, phase, user-prompt, agent-thought,
+ * file-edit, error.
  */
 
 import type { PromptAttachmentMeta, TimelineEvent } from '@shared/types/chat.js';
@@ -32,7 +26,6 @@ import { appendSynthesizedPartialRows } from './deriveRows/partials.js';
 import { flushRunToRows, type OpenRun, type OpenRunUsage } from './deriveRows/runBoundaries.js';
 import {
   foldOrchestratorFileEdit,
-  foldSubagentFileEdit,
   foldToolCall,
   foldToolResult,
   type ScopedGroupState
@@ -107,8 +100,8 @@ export type Row =
     content: string;
     attachments?: PromptAttachmentMeta[];
   }
-  | { kind: 'assistant-text'; key: string; id: string; subagentId?: string }
-  | { kind: 'reasoning-line'; key: string; id: string; subagentId?: string }
+  | { kind: 'assistant-text'; key: string; id: string }
+  | { kind: 'reasoning-line'; key: string; id: string }
   | { kind: 'agent-thought'; key: string; content: string; severity?: 'info' | 'warn' }
   | {
     kind: 'ask-user-prompt';
@@ -121,19 +114,16 @@ export type Row =
     status?: 'pending' | 'submitted';
   }
   | { kind: 'error'; key: string; message: string }
-  | { kind: 'subagent-line'; key: string; subagentId: string }
   | {
     kind: 'tool-group';
     key: string;
     toolName: ToolName;
     children: ToolGroupChild[];
-    subagentId?: string;
   }
   | {
     kind: 'file-edit-group';
     key: string;
     children: FileEditGroupChild[];
-    subagentId?: string;
   }
   | {
     kind: 'phase-log';
@@ -217,7 +207,6 @@ export function deriveRows(
   const out: Row[] = [];
   const seenText = new Set<string>();
   const seenReasoning = new Set<string>();
-  const seenSubagent = new Set<string>();
   const scopedGroups: ScopedGroupState = {
     openToolGroupIdx: null,
     openFileEditGroupIdx: null,
@@ -242,25 +231,6 @@ export function deriveRows(
   const closeGroups = () => {
     scopedGroups.openToolGroupIdx = null;
     scopedGroups.openFileEditGroupIdx = null;
-  };
-
-  /**
-   * Defensive fail-soft for sub-agent visibility. The `subagent-line`
-   * row is normally emitted by the `subagent-pending` / `subagent-spawn`
-   * branch below — but if either of those events is missing or arrives
-   * out of order, every sub-agent-scoped `tool-call` / `tool-result` /
-   * `file-edit` would be invisible without this synthesis.
-   */
-  const ensureSubagentLine = (subagentId: string | undefined): void => {
-    if (!subagentId) return;
-    if (seenSubagent.has(subagentId)) return;
-    seenSubagent.add(subagentId);
-    closeGroups();
-    out.push({
-      kind: 'subagent-line',
-      key: `sub:${subagentId}`,
-      subagentId
-    });
   };
 
   for (const e of events) {
@@ -327,12 +297,10 @@ export function deriveRows(
         if (!seenText.has(e.id)) {
           seenText.add(e.id);
           closeGroups();
-          if (e.subagentId) ensureSubagentLine(e.subagentId);
           out.push({
             kind: 'assistant-text',
             key: `text:${e.id}`,
-            id: e.id,
-            ...(e.subagentId ? { subagentId: e.subagentId } : {})
+            id: e.id
           });
         }
         break;
@@ -341,12 +309,10 @@ export function deriveRows(
         if (!seenReasoning.has(e.id)) {
           seenReasoning.add(e.id);
           closeGroups();
-          if (e.subagentId) ensureSubagentLine(e.subagentId);
           out.push({
             kind: 'reasoning-line',
             key: `thoughts:${e.id}`,
-            id: e.id,
-            ...(e.subagentId ? { subagentId: e.subagentId } : {})
+            id: e.id
           });
         }
         break;
@@ -384,36 +350,18 @@ export function deriveRows(
         });
         break;
 
-      case 'subagent-pending':
-      case 'subagent-spawn':
-        ensureSubagentLine(e.subagentId);
-        break;
-
-      case 'subagent-status':
-      case 'subagent-result':
-        // Live state flows through the store; nothing to emit here.
-        closeGroups();
-        break;
-
       case 'tool-call': {
-        if (e.subagentId) ensureSubagentLine(e.subagentId);
-        foldToolCall(out, scopedGroups, e.call, e.subagentId);
+        foldToolCall(out, scopedGroups, e.call);
         break;
       }
 
       case 'tool-result': {
-        // `ask_user` is surfaced via `ask-user-prompt` / user-prompt rows;
-        // the resume path emits only a synthetic `tool-result` (no matching
-        // `tool-call`), which would otherwise fold into an "Asked" group
-        // that renders as "Unknown tool: ask_user" with danger-styled output.
         if (e.result.name === 'ask_user') break;
-        if (e.subagentId) ensureSubagentLine(e.subagentId);
-        foldToolResult(out, scopedGroups, e.result, e.subagentId);
+        foldToolResult(out, scopedGroups, e.result);
         break;
       }
 
       case 'file-edit': {
-        if (e.subagentId) ensureSubagentLine(e.subagentId);
         const editPayload = {
           id: e.id,
           filePath: e.filePath,
@@ -421,10 +369,6 @@ export function deriveRows(
           deletions: e.deletions,
           ...(e.entryId ? { entryId: e.entryId } : {})
         };
-        if (e.subagentId) {
-          foldSubagentFileEdit(out, scopedGroups, editPayload, e.subagentId);
-          break;
-        }
 
         if (openRun) {
           openRun.editCount += 1;
@@ -443,21 +387,12 @@ export function deriveRows(
       case 'token-usage':
         if (openRun) {
           openRun.lastTs = e.ts;
-          if (!openRunUsage) openRunUsage = { subagents: {} };
-          const ownerKey = e.subagentId ?? 'orc';
-          if (ownerKey === 'orc') {
-            openRunUsage.orchestrator = foldTokenUsage(
-              openRunUsage.orchestrator,
-              e.usage,
-              e.ts
-            );
-          } else {
-            openRunUsage.subagents[ownerKey] = foldTokenUsage(
-              openRunUsage.subagents[ownerKey],
-              e.usage,
-              e.ts
-            );
-          }
+          if (!openRunUsage) openRunUsage = {};
+          openRunUsage.orchestrator = foldTokenUsage(
+            openRunUsage.orchestrator,
+            e.usage,
+            e.ts
+          );
         }
         break;
 

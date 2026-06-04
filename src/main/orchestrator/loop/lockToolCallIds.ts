@@ -11,9 +11,7 @@
  * Together, OpenRouter, …) reject the next request with
  * "tool_call_ids did not have response messages".
  *
- * Centralized here so both the orchestrator (`runOrchestratorLoop`) and
- * every sub-agent (`runSubAgent`) share one implementation, and a future
- * test can lock the contract in place.
+ * Centralized so the orchestrator loop and tests share one implementation.
  */
 
 import { randomUUID } from 'node:crypto';

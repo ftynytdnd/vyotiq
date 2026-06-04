@@ -5,18 +5,19 @@
 
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { useChatStore } from '@renderer/store/useChatStore';
+import { chatSliceFixture } from '../../_fixtures/chatSlice';
 import { useConversationsStore, __resetSelectSpinnerForTests } from '@renderer/store/useConversationsStore';
 import { useWorkspaceStore } from '@renderer/store/useWorkspaceStore';
 
 beforeEach(() => {
   __resetSelectSpinnerForTests();
+  const slice = chatSliceFixture({ conversationId: 'conv-a' });
   useChatStore.setState({
-    slices: { 'conv-a': { events: [], assistantTexts: {}, reasoningTexts: {}, subagents: {} } },
+    slices: { 'conv-a': slice },
     runIdToConv: {},
-    events: [],
-    assistantTexts: {},
-    reasoningTexts: {},
-    subagents: {},
+    events: slice.events,
+    assistantTexts: slice.assistantTexts,
+    reasoningTexts: slice.reasoningTexts,
     orchestratorUsage: undefined,
     conversationId: 'conv-a',
     runId: null,

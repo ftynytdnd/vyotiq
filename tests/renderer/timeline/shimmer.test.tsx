@@ -57,7 +57,6 @@ function callChild(withResult: boolean): ToolGroupChild {
 beforeEach(() => {
   useChatStore.setState({
     reasoningTexts: {},
-    subagents: {},
     conversationId: 'c-test'
   });
   useTimelineUiStore.setState({

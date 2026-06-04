@@ -1,6 +1,6 @@
 /**
  * Timeline. Pure row renderer over derived Row descriptors. All streaming
- * state (accumulators, sub-agent telemetry) is maintained by the shared
+ * state (accumulators, tool previews) is maintained by the shared
  * timeline reducer in `useChatStore`. This file only renders — it does
  * NOT mirror state into any other store.
  *
@@ -417,8 +417,6 @@ function renderRow(
   liveTurn = false
 ) {
   switch (r.kind) {
-    case 'subagent-line':
-      return null;
     case 'user-prompt':
       return (
         <UserPromptRow
@@ -434,20 +432,11 @@ function renderRow(
       );
     case 'assistant-text':
       return (
-        <AssistantTextRow
-          key={r.key}
-          id={r.id}
-          {...(r.subagentId ? { subagentId: r.subagentId } : {})}
-          model={model}
-        />
+        <AssistantTextRow key={r.key} id={r.id} model={model} />
       );
     case 'reasoning-line':
       return (
-        <ReasoningLineRow
-          key={r.key}
-          id={r.id}
-          {...(r.subagentId ? { subagentId: r.subagentId } : {})}
-        />
+        <ReasoningLineRow key={r.key} id={r.id} />
       );
     case 'agent-thought':
       return (

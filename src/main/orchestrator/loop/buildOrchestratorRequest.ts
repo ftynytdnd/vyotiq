@@ -1,9 +1,9 @@
 /**
  * Builds the request body the orchestrator sends to `streamChat`. The
  * orchestrator's tool catalogue is intentionally restricted to the
- * `ORCHESTRATOR_TOOLS` policy — no `bash`, no `edit`, no `search`.
+ * `AGENT_TOOLS` policy.
  * Tools are offered with `tool_choice: 'auto'` so the model may answer
- * in prose or call `delegate` / `finish` / `ask_user` / `ls` / etc.
+ * in prose or call `finish` / `ask_user` / `ls` / etc.
  * when appropriate. The host accepts a substantive prose-only turn as
  * an implicit finish (see `runLoop` empty-turn handling).
  *
@@ -28,7 +28,7 @@ import type { ChatStreamRequest } from '../../providers/chatClient.js';
 import type { ChatMessage } from '@shared/types/chat.js';
 import type { ModelSelection, ProviderDialect, ThinkingEffort } from '@shared/types/provider.js';
 import { toolSchemasFor } from '../../tools/registry.js';
-import { ORCHESTRATOR_TOOLS } from '../../tools/policy/index.js';
+import { AGENT_TOOLS } from '../../tools/policy/index.js';
 import { supportsParallelToolCalls, supportsToolChoice } from '../../providers/capabilities.js';
 
 /**
@@ -78,7 +78,7 @@ export function buildOrchestratorRequest(opts: {
   // and rely on `tool_choice: 'none'`; tool_choice-rejecting models get
   // an empty tool list so there is nothing to call.
   const tools =
-    opts.wrapUp && !toolChoiceSafe ? [] : toolSchemasFor(ORCHESTRATOR_TOOLS);
+    opts.wrapUp && !toolChoiceSafe ? [] : toolSchemasFor(AGENT_TOOLS);
 
   const messages = opts.wrapUp
     ? [...opts.messages, { role: 'user' as const, content: SYNTHESIS_INSTRUCTION }]

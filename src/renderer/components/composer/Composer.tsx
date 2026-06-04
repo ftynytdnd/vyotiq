@@ -73,8 +73,7 @@ export function Composer({
     storeDraft,
     setDraft,
     totalRunUsage,
-    orchestratorUsage,
-    subagents
+    orchestratorUsage
   } = useChatStore(
     useShallow((s) => ({
       isProcessing: s.isProcessing,
@@ -88,8 +87,7 @@ export function Composer({
       storeDraft: s.draft,
       setDraft: s.setDraft,
       totalRunUsage: s.totalRunUsage,
-      orchestratorUsage: s.orchestratorUsage,
-      subagents: s.subagents
+      orchestratorUsage: s.orchestratorUsage
     }))
   );
   const activeWorkspaceIdForAttach = useWorkspaceStore((s) => s.activeId);
@@ -378,13 +376,7 @@ export function Composer({
         onOpenProviders={onOpenProviders}
       />
       <ComposerStatusStrip />
-      <TokenUsagePill
-        total={totalRunUsage}
-        orchestrator={orchestratorUsage}
-        subagents={Object.fromEntries(
-          Object.entries(subagents).map(([id, sa]) => [id, sa.usage])
-        )}
-      />
+      <TokenUsagePill total={totalRunUsage} orchestrator={orchestratorUsage} />
       {footerMode && attachments.length > 0 && (
         <span className="shrink-0 font-mono text-meta text-text-faint tabular-nums">
           {attachments.length}/{MAX_CHAT_ATTACHMENTS}

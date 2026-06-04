@@ -3,10 +3,8 @@
  * its pre-state into the checkpoint store. The snapshot means the user
  * can always revert a delete back into existence.
  *
- * Sub-agent-only by policy (see `tools/policy/subagentTools.ts`). The
- * orchestrator is forbidden from direct file mutation; the sub-agent
- * default toolset is read-only, so `delete` only fires when the
- * orchestrator explicitly opts a delegate in via `tools="edit,delete"`.
+ * Workspace file delete with checkpoint snapshot for revert. Exposed on
+ * the solo Agent V tool surface per `tools/policy/agentTools.ts`.
  */
 
 import { promises as fs } from 'node:fs';
@@ -139,7 +137,6 @@ export const deleteTool: Tool = {
         additions: 0,
         deletions: deletedLines,
         source: 'delete',
-        ...(ctx.subagentId ? { subagentId: ctx.subagentId } : {})
       });
     } catch {
       /* logged inside the store */

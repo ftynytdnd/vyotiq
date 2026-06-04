@@ -136,10 +136,8 @@ const textDeltaAccumulators = new Map<string, TextDeltaAccumulator>();
  *   - Run termination (`chat:done`, `chat:error`).
  *   - HMR teardown.
  *
- * `owner` is the synthetic discriminator `'orc'` for orchestrator
- * deltas and the literal `subagentId` for sub-agent deltas, mirroring
- * the same convention used by the parser pool's surrogate callId
- * keys (`pending:${owner}:${index}`).
+ * `owner` is the synthetic discriminator `'orc'` for all streamed
+ * completion text folded into the orchestrator usage aggregate.
  *
  * Each entry tracks `charsTotal` (cumulative chars since the last
  * reset). On each drain we call `tokenizeForModel(modelId, '...')`
@@ -149,7 +147,7 @@ const textDeltaAccumulators = new Map<string, TextDeltaAccumulator>();
  */
 interface SyntheticUsageEntry {
   runId: string;
-  /** `'orc'` for orchestrator turns, or the sub-agent's id. */
+  /** Synthetic usage owner; always `'orc'` for the solo agent. */
   owner: string;
   /** Cumulative completion-stream chars since the last reset. */
   charsTotal: number;
@@ -334,8 +332,8 @@ export async function bootstrapChatChannel(): Promise<void> {
 
   /**
    * Dispatch the accumulated delta for one accumulator entry. The
-   * synthesized event preserves the FIRST delta's `ts` + `subagentId`
-   * — matches what the reducer would have seen had the deltas
+   * synthesized event preserves the FIRST delta's `ts` — matches what
+   * the reducer would have seen had the deltas
    * landed individually (the first delta is what opens the
    * renderer accumulator and stamps `startedAt`).
    *
@@ -392,8 +390,7 @@ export async function bootstrapChatChannel(): Promise<void> {
    * the resulting token count into the reducer). Boundary / terminal
    * flushers reset the per-owner counter.
    */
-  const ownerOfDelta = (event: { subagentId?: string }): string =>
-    event.subagentId ?? 'orc';
+  const ownerOfDelta = (_event: unknown): string => 'orc';
 
   /** Add `chars` to the running counter for `(runId, owner)`. */
   const bumpSyntheticUsage = (
@@ -472,7 +469,6 @@ export async function bootstrapChatChannel(): Promise<void> {
         id: entry.syntheticId,
         ts: entry.firstSeenTs,
         completionTokens,
-        ...(entry.owner === 'orc' ? {} : { subagentId: entry.owner })
       };
       try {
         store.applyEvent(entry.runId, event);
@@ -654,7 +650,7 @@ export async function bootstrapChatChannel(): Promise<void> {
           flushTextForId(runId, event.id);
           // Phase 3 (2026): the synthetic counter for this owner
           // closes alongside the text stream so the next turn (or
-          // sub-agent iteration) starts from zero. `agent-text-end`
+          // next turn) starts from zero. `agent-text-end`
           // marks the canonical close; `-aborted` is an early stop;
           // `agent-reasoning-end` typically precedes a still-open
           // text stream, so we DON'T reset on it (the text stream
@@ -662,7 +658,7 @@ export async function bootstrapChatChannel(): Promise<void> {
           // simplicity + correctness we still reset on `-end` and
           // `-aborted` only.
           if (event.kind !== 'agent-reasoning-end') {
-            resetSyntheticForOwner(runId, event.subagentId ?? 'orc');
+            resetSyntheticForOwner(runId, 'orc');
           }
         } else {
           // Any other event kind is an implicit boundary for ALL
@@ -676,7 +672,7 @@ export async function bootstrapChatChannel(): Promise<void> {
         // per-owner char counter in lockstep so the next delta
         // (for the next turn) starts from zero.
         if (event.kind === 'token-usage') {
-          resetSyntheticForOwner(runId, event.subagentId ?? 'orc');
+          resetSyntheticForOwner(runId, 'orc');
         }
         // Phase 1.1: prune the parser pool on lifecycle events so
         // it never grows without bound across long sessions.
@@ -685,34 +681,12 @@ export async function bootstrapChatChannel(): Promise<void> {
           // we kept for this callId (or the matching surrogate) is
           // done. The owner prefix mirrors the reducer's
           // `clearPartialFor` rule.
-          const owner = event.subagentId ?? 'orc';
-          reconcileToolCallParser(runId, event.call.id, owner);
+          reconcileToolCallParser(runId, event.call.id, 'orc');
         } else if (event.kind === 'agent-text-aborted') {
           // The reducer also wipes ALL orchestrator partials on
           // abort (see `applyTimelineEvent.ts`). Mirror it here so
           // the parser pool stays in sync.
           dropAllParsersForRun(runId);
-        } else if (
-          event.kind === 'subagent-status' &&
-          (event.status === 'done' ||
-            event.status === 'partial' ||
-            event.status === 'failed' ||
-            event.status === 'malformed' ||
-            event.status === 'aborted')
-        ) {
-          // A worker reached a terminal state; any partial-args
-          // parsers we kept for its callIds are dead. We don't know
-          // exactly which callIds belong to this worker without an
-          // index, so we walk the pool and drop any whose key
-          // matches `pending:<subagentId>:` or whose owner is
-          // implicitly the worker. Conservative: only drop
-          // surrogates explicitly keyed under the worker. Real-id
-          // entries are dropped via their own `tool-call`
-          // reconciliation.
-          const surrogatePrefix = `${runId}${PARSER_KEY_SEP}pending:${event.subagentId}:`;
-          for (const key of parserPool.keys()) {
-            if (key.startsWith(surrogatePrefix)) parserPool.delete(key);
-          }
         }
         if (runId.startsWith('manual:')) {
           const conversationId = runId.slice('manual:'.length);
@@ -816,7 +790,7 @@ export const __vyotiqChatChannelInternal = {
   textDeltaAccumulatorKeys: () => Array.from(textDeltaAccumulators.keys()),
   // Phase 3 (2026) — synthetic-usage accumulator introspection. Lets
   // tests assert that the counter wiped on terminal events, that
-  // sub-agent owners are keyed separately from the orchestrator, etc.
+  // synthetic usage counters reset on terminal events, etc.
   syntheticUsageSize: () => syntheticUsageAccumulators.size,
   syntheticUsageKeys: () => Array.from(syntheticUsageAccumulators.keys()),
   syntheticUsageChars: (runId: string, owner: string): number =>

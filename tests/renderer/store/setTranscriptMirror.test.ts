@@ -14,7 +14,6 @@ beforeEach(() => {
     events: [{ kind: 'user-prompt', id: 'p1', ts: 0, content: 'active' }],
     assistantTexts: {},
     reasoningTexts: {},
-    subagents: {},
     runId: null,
     isProcessing: false,
     runStartedAt: null,

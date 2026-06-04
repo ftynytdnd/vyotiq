@@ -21,8 +21,6 @@ export type RegisteredToolName =
   | 'search'
   | 'memory'
   | 'recall'
-  | 'report'
-  | 'delegate'
   | 'finish'
   | 'ask_user';
 
@@ -144,12 +142,7 @@ export type ToolData =
     entryId?: string;
   }
   | {
-    /**
-     * `delete` — unlinks a file after snapshotting its pre-state into
-     * the checkpoint store. Sub-agent-only by policy (the orchestrator
-     * never mutates files directly). The renderer surfaces the card
-     * identically to an edit with `kind: 'delete'`.
-     */
+    /** `delete` — unlinks a file after snapshotting its pre-state into the checkpoint store. */
     tool: 'delete';
     filePath: string;
     /** Number of lines the deleted file had. */
@@ -178,13 +171,7 @@ export type ToolData =
   }
   | {
     /**
-     * Cross-conversation recall — orchestrator-only tool that lets the
-     * agent see other conversations the user has had with it. Two
-     * actions:
-     *   - `list`: enumerate the recent conversation index (no body).
-     *   - `read`: fetch a compact transcript view of one conversation.
-     * Sub-agents are denied this tool by policy so the isolation
-     * invariant (`02-subagent-prompt.md`) stays intact.
+     * Cross-conversation recall — list or read other conversations in this workspace.
      */
     tool: 'recall';
     action: 'list' | 'read';
@@ -195,26 +182,6 @@ export type ToolData =
     /** Markdown body the renderer can show on expand. */
     preview?: string;
   }
-  | {
-    /**
-     * `report` — sub-agent-only tool that writes a self-contained HTML
-     * deliverable to `<workspace>/.vyotiq/reports/`. The renderer card
-     * surfaces an "Open in browser" button that hands the file to the
-     * OS default browser via `shell.openPath`.
-     *
-     * Self-contained means: zero remote fetches at view time. A strict
-     * CSP meta tag in the saved file enforces `default-src 'none'`
-     * with inline-style/script allowances.
-     */
-    tool: 'report';
-    /** Title from the model — also used in the doc `<title>` and the card header. */
-    title: string;
-    /** Workspace-relative path where the file landed (e.g. `.vyotiq/reports/foo-20260510-142500.html`). */
-    filePath: string;
-    /** On-disk size in bytes (after the full HTML shell). */
-    sizeBytes: number;
-  };
-
 export interface ToolResult {
   id: string;
   name: ToolName;

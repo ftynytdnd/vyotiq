@@ -82,20 +82,6 @@ interface DeltaBuf {
   ts: number;
   /** Accumulated delta text. */
   text: string;
-  /**
-   * Sub-agent attribution slot. Set on the first delta when the
-   * orchestrator emits sub-agent-scoped streaming text/reasoning
-   * (Audit fix §1.1) so the synthesized persisted event carries the
-   * same `subagentId` as the individual deltas — without it, replay
-   * would attribute the entire coalesced body to the orchestrator
-   * surface and the matching delegation worker would render
-   * empty on transcript reload.
-   *
-   * `undefined` for orchestrator-scoped deltas (the default), kept
-   * out of the persisted shape via the spread on flush so legacy
-   * JSONL records are byte-identical to the pre-§1.1 encoding.
-   */
-  subagentId?: string;
 }
 
 interface CoalescerEntry {
@@ -347,15 +333,11 @@ export function registerChatIpc(): void {
       // Emit a synthesized event with the same `kind` + `id` shape as
       // individual deltas — the reducer sums them on replay so one
       // 256-char row is indistinguishable from 256 one-char rows.
-      // The `subagentId` slot rides through verbatim when present so
-      // sub-agent-scoped streaming bodies replay into the matching
-      // worker's subagent snapshot accumulator. Audit fix §1.1.
       persistEvent({
         kind: buf.kind,
         id: buf.id,
         ts: buf.ts,
-        delta: buf.text,
-        ...(buf.subagentId ? { subagentId: buf.subagentId } : {})
+        delta: buf.text
       } as TimelineEvent);
       buf.text = '';
     };
@@ -442,53 +424,12 @@ export function registerChatIpc(): void {
           }
           const slot = event.kind === 'agent-text-delta' ? 'text' : 'reasoning';
           let buf = entry[slot];
-          // Defensive subagentId-mismatch flush (review finding H6).
-          // Each coalescer entry captures `subagentId` from its FIRST
-          // delta; subsequent deltas for the same id are assumed to
-          // share that attribution. Today's code path holds the
-          // invariant (every iteration mints a fresh assistantMsgId
-          // via `randomUUID()`, so an orchestrator turn and a
-          // sub-agent iteration never share an id), but a future
-          // emit-order change — e.g. a mid-stream tool-call detection
-          // that paralleled delegate detection across iterations —
-          // could violate it. If the incoming delta's `subagentId`
-          // disagrees with the buf's captured one, FLUSH the current
-          // buf first and start a fresh entry. The persisted JSONL
-          // then has two coalesced rows under the right attribution
-          // instead of one row whose `subagentId` claims to cover
-          // both. Logged at warn so the violation is auditable.
-          if (buf) {
-            const bufAttribution = buf.subagentId;
-            const evtAttribution = event.subagentId;
-            if (bufAttribution !== evtAttribution) {
-              log.warn(
-                'coalescer subagentId mismatch — flushing prior buf and starting fresh entry',
-                {
-                  id: event.id,
-                  kind: event.kind,
-                  bufAttribution: bufAttribution ?? null,
-                  evtAttribution: evtAttribution ?? null
-                }
-              );
-              flushBuf(buf);
-              buf = undefined;
-              entry[slot] = undefined;
-            }
-          }
           if (!buf) {
             buf = {
               kind: event.kind,
               id: event.id,
               ts: event.ts,
-              text: '',
-              // Capture the sub-agent attribution on the first delta so
-              // the synthesized flushed event carries it (Audit fix
-              // §1.1). Sub-agent assistantMsgIds are minted via
-              // `randomUUID()` per iteration, so a coalescer entry
-              // never aliases between an orchestrator turn and a
-              // sub-agent iteration. The H6 mismatch flush above
-              // covers the future case where this invariant breaks.
-              ...(event.subagentId ? { subagentId: event.subagentId } : {})
+              text: ''
             };
             entry[slot] = buf;
           }
@@ -533,7 +474,7 @@ export function registerChatIpc(): void {
           addTombstone(tombstonedIds, event.id);
         } else {
           // Implicit boundary: any other persistent event kind
-          // (`tool-call`, `tool-result`, `phase`, `subagent-*`,
+          // (`tool-call`, `tool-result`, `phase`, legacy worker lifecycle,
           // `file-edit`, `error`, `token-usage`, `user-prompt`, …)
           // closes the streaming buffer for any in-flight assistant
           // turn so the persisted order stays
@@ -544,7 +485,7 @@ export function registerChatIpc(): void {
           // before the first `tool-call` (see `runLoop.ts`'s
           // turn-end block). A future emit-order change — e.g.
           // mid-stream tool-call detection paralleling the existing
-          // mid-stream delegate detection — would otherwise
+          // mid-stream legacy orchestration markup — would otherwise
           // silently reorder events on disk and break replay
           // ordering for any consumer that walks the JSONL in file
           // order. Flushing every entry here makes the invariant

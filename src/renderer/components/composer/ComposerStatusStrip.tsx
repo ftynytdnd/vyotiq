@@ -14,8 +14,6 @@ import {
 } from '../timeline/shared/rowStyles.js';
 import { shimmerText } from '../../lib/shimmer.js';
 import { cn } from '../../lib/cn.js';
-import { formatDelegateSpawnStatusLabel } from '@shared/text/delegationStatus.js';
-
 const TICK_MS = 1000;
 
 export const ComposerStatusStrip = memo(function ComposerStatusStrip() {
@@ -41,18 +39,7 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip() {
     if (!isProcessing) return null;
     if (latest) {
       if (shouldHideLivePhaseHeadline(latest.phase)) return null;
-      const base = resolveLivePhaseHeadline(latest.phase, latest.label ?? 'Working…');
-      if (
-        latest.phase === 'delegating' &&
-        typeof latest.detail?.delegates === 'number' &&
-        latest.detail.delegates > 0
-      ) {
-        return formatDelegateSpawnStatusLabel(
-          latest.detail.delegates,
-          latest.detail.inFlightMax ?? latest.detail.delegates
-        );
-      }
-      return base;
+      return resolveLivePhaseHeadline(latest.phase, latest.label ?? 'Working…');
     }
     return 'Starting…';
   }, [isProcessing, latest]);

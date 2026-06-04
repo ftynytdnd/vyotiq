@@ -1,19 +1,3 @@
-/**
- * Pins the `<run_state>` envelope shape. This is the model-facing
- * surface that replaces several reactive heuristics — if any field
- * name or order changes silently, the harness prose that references it
- * (e.g. "Use `<run_state>` to see what you've already done") would
- * silently lose meaning.
- *
- * Forced-action-loop note: the `planning_nudges:` and
- * `child_redelegations:` lines were removed alongside legacy host-side
- * planning nudges. `delegate` is now a real callable
- * tool, so there is no "tried to call delegate as a tool" mistake to
- * surface. The `spin_signature_hot:` line remains as pure observability
- * — the model uses it to pivot before the per-run tool-result cache
- * starts banner-prepending identical calls.
- */
-
 import { describe, expect, it } from 'vitest';
 import {
   buildRunStateXml,
@@ -21,162 +5,24 @@ import {
   snapshotRunState
 } from '@main/orchestrator/loop/buildRunState';
 import { MAX_TOTAL_ITERATIONS } from '@shared/constants';
-import {
-  createSpinSignatureBuffer,
-  pushToolRound,
-  toolCallSignature
-} from '@main/orchestrator/loop/toolSpinSignature';
+import { createSpinSignatureBuffer } from '@main/orchestrator/loop/toolSpinSignature';
 
 describe('buildRunStateXml', () => {
-  it('renders the five required fields plus failing_tasks in a stable order', () => {
-    const acc = createRunStateAccumulator();
-    acc.iteration = 4;
-    acc.directToolRoundsTotal = 3;
-    acc.delegateRoundsTotal = 1;
-    acc.lastAction = 'delegate';
-    acc.spinSignatureHot = null;
-
-    const counters = { consecutiveBadRounds: 0, perTaskBadStreak: new Map<string, number>() };
-    const spin = createSpinSignatureBuffer();
-
-    const xml = buildRunStateXml(
-      snapshotRunState(acc, counters, spin, /*consecutiveBadToolRounds=*/ 0)
-    );
-
-    // Outer envelope.
-    expect(xml.startsWith('<run_state>')).toBe(true);
-    expect(xml.endsWith('</run_state>')).toBe(true);
-
-    // Field order must match the harness prose so the model can
-    // pattern-match it reliably.
-    const lines = xml
-      .replace(/^<run_state>\n/, '')
-      .replace(/\n<\/run_state>$/, '')
-      .split('\n');
-    expect(lines[0]).toBe(`iteration: 4 of ${MAX_TOTAL_ITERATIONS}`);
-    expect(lines[1]).toBe('direct_tool_rounds: 3 (consecutive_failed_tools: 0)');
-    expect(lines[2]).toBe('delegate_rounds: 1 (consecutive_bad_delegation: 0)');
-    expect(lines[3]).toBe('last_action: delegate');
-    expect(lines[4]).toBe('spin_signature_hot: (none)');
-    expect(lines[5]).toBe('failing_tasks: (none)');
-  });
-
-  it('does NOT include the removed nudge / re-delegation counter lines', () => {
-    // Regression: the forced-action loop deleted the nudge machinery
-    // and the `<delegate>` XML directive, so neither counter line may
-    // appear. A future re-introduction would also need to re-introduce
-    // the underlying enforcement — this test pins their absence.
-    const acc = createRunStateAccumulator();
-    const xml = buildRunStateXml(
-      snapshotRunState(
-        acc,
-        { consecutiveBadRounds: 0, perTaskBadStreak: new Map() },
-        createSpinSignatureBuffer(),
-        0
-      )
-    );
-    expect(xml).not.toContain('planning_nudges:');
-    expect(xml).not.toContain('child_redelegations:');
-    expect(xml).not.toContain('spin_nudges:');
-    expect(xml).not.toContain('MAX_ORCHESTRATOR_SPIN_NUDGES');
-  });
-
-  it('reflects live counters', () => {
+  it('renders iteration, tool rounds, last action, and spin', () => {
     const acc = createRunStateAccumulator();
     acc.iteration = 2;
-    acc.lastAction = 'direct-tool';
-    const counters = { consecutiveBadRounds: 1, perTaskBadStreak: new Map<string, number>() };
-    const spin = createSpinSignatureBuffer();
-
-    const xml = buildRunStateXml(
-      snapshotRunState(acc, counters, spin, /*consecutiveBadToolRounds=*/ 2)
-    );
-
-    expect(xml).toContain('direct_tool_rounds: 0 (consecutive_failed_tools: 2)');
-    expect(xml).toContain('delegate_rounds: 0 (consecutive_bad_delegation: 1)');
-    expect(xml).toContain('last_action: direct-tool');
+    acc.toolRoundsTotal = 1;
+    acc.lastAction = 'tool';
+    const xml = buildRunStateXml(snapshotRunState(acc, createSpinSignatureBuffer(), 0));
+    expect(xml).toContain(`iteration: 2 of ${MAX_TOTAL_ITERATIONS}`);
+    expect(xml).toContain('tool_rounds: 1');
+    expect(xml).toContain('last_action: tool');
+    expect(xml).toContain('spin_signature_hot:');
   });
 
-  it('surfaces the hot tool-call signature when one is filling the buffer', () => {
+  it('starts clean', () => {
     const acc = createRunStateAccumulator();
-    acc.iteration = 5;
-    const counters = { consecutiveBadRounds: 0, perTaskBadStreak: new Map<string, number>() };
-    const spin = createSpinSignatureBuffer();
-    const sig = toolCallSignature('ls', { path: 'src' });
-    pushToolRound(spin, [sig]);
-    pushToolRound(spin, [sig]);
-    acc.spinSignatureHot = sig; // mirrors what runLoop sets each iter
-
-    const xml = buildRunStateXml(
-      snapshotRunState(acc, counters, spin, /*consecutiveBadToolRounds=*/ 0)
-    );
-    expect(xml).toContain(`spin_signature_hot: ${sig}`);
-  });
-
-  it('renders "(none)" when no signature is hot', () => {
-    const acc = createRunStateAccumulator();
-    acc.spinSignatureHot = null;
-    const xml = buildRunStateXml(
-      snapshotRunState(
-        acc,
-        { consecutiveBadRounds: 0, perTaskBadStreak: new Map() },
-        createSpinSignatureBuffer(),
-        0
-      )
-    );
-    expect(xml).toContain('spin_signature_hot: (none)');
-  });
-
-  /**
-   * T1-1: the harness illustrative `<run_state>` block lists
-   * `failing_tasks` as a stable field. The renderer ALWAYS includes
-   * the line — `(none)` when the per-task strike map is empty, and a
-   * structured multi-line list otherwise. Pins both branches.
-   */
-  it('always emits a failing_tasks: line (T1-1) — `(none)` when nothing is hot', () => {
-    const acc = createRunStateAccumulator();
-    const xml = buildRunStateXml(
-      snapshotRunState(
-        acc,
-        { consecutiveBadRounds: 0, perTaskBadStreak: new Map() },
-        createSpinSignatureBuffer(),
-        0
-      )
-    );
-    expect(xml).toContain('failing_tasks: (none)');
-  });
-
-  it('lists each failing task with its streak when one crosses the soft threshold (T1-1)', () => {
-    const acc = createRunStateAccumulator();
-    const counters = {
-      consecutiveBadRounds: 0,
-      perTaskBadStreak: new Map<string, number>([
-        ['edit src/foo.ts|src/foo.ts', 2],
-        ['edit src/bar.ts|src/bar.ts', 3]
-      ])
-    };
-    const xml = buildRunStateXml(
-      snapshotRunState(acc, counters, createSpinSignatureBuffer(), 0)
-    );
-    // Header line on its own.
-    expect(xml).toContain('failing_tasks:');
-    // Highest streak first (sort order in the renderer).
-    const failingIdx = xml.indexOf('failing_tasks:');
-    const tail = xml.slice(failingIdx);
-    expect(tail).toMatch(/streak 3:.*edit src\/bar\.ts/);
-    expect(tail).toMatch(/streak 2:.*edit src\/foo\.ts/);
-    // The "(none)" sentinel must NOT appear when a list is rendered.
-    expect(tail).not.toContain('(none)');
-  });
-});
-
-describe('createRunStateAccumulator', () => {
-  it('starts in a clean "none" state', () => {
-    const acc = createRunStateAccumulator();
-    expect(acc.iteration).toBe(0);
-    expect(acc.directToolRoundsTotal).toBe(0);
-    expect(acc.delegateRoundsTotal).toBe(0);
     expect(acc.lastAction).toBe('none');
-    expect(acc.spinSignatureHot).toBeNull();
+    expect(acc.toolRoundsTotal).toBe(0);
   });
 });

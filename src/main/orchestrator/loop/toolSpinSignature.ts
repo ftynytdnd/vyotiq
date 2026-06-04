@@ -85,7 +85,7 @@ export function pushToolRound(
 
 /**
  * Reset the ring buffer. Called when the loop has demonstrably made
- * progress (delegate round, substantive text, or failed tool round —
+ * progress (tool round, substantive text, or failed tool round —
  * the last because failures are owned by the three-strike path and
  * shouldn't also surface as "hot" in the next iteration's prompt).
  */

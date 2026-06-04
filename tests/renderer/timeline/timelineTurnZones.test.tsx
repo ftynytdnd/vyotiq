@@ -88,110 +88,42 @@ describe('Timeline turn zones', () => {
     expect(container.textContent ?? '').not.toContain('Delegates');
   });
 
-  it('renders assistant prose before delegate batch when wire order has text first', () => {
+  it('renders assistant prose before tool groups when wire order has text first', () => {
     useChatStore.setState({
       conversationId: 'c-inline-order',
       isProcessing: true,
       runStartedAt: 1000,
       events: [
         { kind: 'user-prompt', id: 'p1', ts: 1, content: 'Summarize repo' },
-        { kind: 'agent-text-delta', id: 'a1', ts: 2, delta: 'I will delegate parallel sub-agents.' },
+        { kind: 'agent-text-delta', id: 'a1', ts: 2, delta: 'I will read key files next.' },
         {
-          kind: 'subagent-pending',
-          id: 'sp1',
+          kind: 'tool-call',
+          id: 'tc1',
           ts: 3,
-          subagentId: 'A1',
-          task: 'Summarize core',
-          files: [],
-          tools: ['read']
-        },
-        {
-          kind: 'subagent-spawn',
-          id: 'ss1',
-          ts: 4,
-          subagentId: 'A1',
-          task: 'Summarize core',
-          files: [],
-          tools: ['read']
-        },
-        {
-          kind: 'subagent-pending',
-          id: 'sp2',
-          ts: 5,
-          subagentId: 'A2',
-          task: 'Audit tools',
-          files: [],
-          tools: ['read']
-        },
-        {
-          kind: 'subagent-spawn',
-          id: 'ss2',
-          ts: 6,
-          subagentId: 'A2',
-          task: 'Audit tools',
-          files: [],
-          tools: ['read']
+          call: { id: 'c1', name: 'read', args: { path: 'README.md' } }
         }
       ] satisfies TimelineEvent[],
       assistantTexts: {
         a1: {
           id: 'a1',
-          text: 'I will delegate parallel sub-agents.',
+          text: 'I will read key files next.',
           done: false,
           startedAt: Date.now()
-        }
-      },
-      subagents: {
-        A1: {
-          id: 'A1',
-          task: 'Summarize core',
-          files: [],
-          missingFiles: [],
-          tools: ['read'],
-          status: 'running',
-          startedAt: 1,
-          steps: [],
-          fileEdits: [],
-          assistantTexts: {},
-          reasoningTexts: {},
-          iterationOrder: [],
-          partialToolCallArgs: {}
-        },
-        A2: {
-          id: 'A2',
-          task: 'Audit tools',
-          files: [],
-          missingFiles: [],
-          tools: ['read'],
-          status: 'running',
-          startedAt: 1,
-          steps: [],
-          fileEdits: [],
-          assistantTexts: {},
-          reasoningTexts: {},
-          iterationOrder: [],
-          partialToolCallArgs: {}
         }
       },
       latestOrchestratorRunStatus: {
         kind: 'run-status',
         id: 'rs1',
         ts: 100,
-        phase: 'delegating',
-        label: 'Spawning 2 workers…'
+        phase: 'running-tool',
+        label: 'Running read…'
       }
     });
 
     const { container } = render(<Timeline />);
 
     const assistant = container.querySelector('[data-row-kind="assistant-text"]');
-    const delegationWorkers = container.querySelectorAll('[data-row-kind="delegation-worker"]');
-
     expect(assistant).not.toBeNull();
-    expect(delegationWorkers.length).toBeGreaterThanOrEqual(1);
-    expect(
-      assistant!.compareDocumentPosition(delegationWorkers[0]!) & Node.DOCUMENT_POSITION_FOLLOWING
-    ).toBeTruthy();
     expect(container.textContent ?? '').not.toContain('Delegates');
   });
 
@@ -280,7 +212,7 @@ describe('Timeline turn zones', () => {
     ).toBeTruthy();
   });
 
-  it('renders completed turn rows in delegation stream wrapper', () => {
+  it('renders completed turn rows in the inline agent column', () => {
     useChatStore.setState({
       conversationId: 'c-zones',
       isProcessing: false,
@@ -301,9 +233,10 @@ describe('Timeline turn zones', () => {
 
     const { container } = render(<Timeline />);
 
-    expect(container.querySelector('.vx-timeline-deleg-stream')).not.toBeNull();
+    expect(container.querySelector('.vx-timeline-deleg-stream')).toBeNull();
     const assistant = container.querySelector('[data-row-kind="assistant-text"]');
     expect(assistant).not.toBeNull();
+    expect(assistant?.closest('.timeline-agent-column')).not.toBeNull();
   });
 
   it('shows run-complete when isProcessing flips false on the trailing turn', () => {

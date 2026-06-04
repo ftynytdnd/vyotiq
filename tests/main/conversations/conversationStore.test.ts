@@ -126,19 +126,18 @@ describe('conversationStore', () => {
     expect(after?.peakPromptTokens).toBe(48_000);
   });
 
-  it('appendEvent ignores sub-agent token usage for peak meta', async () => {
+  it('appendEvent records peak from token-usage events', async () => {
     const meta = await createConversation('ws-test');
     await appendEvent(meta.id, {
-      id: 'usage-sub',
+      id: 'usage-2',
       kind: 'token-usage',
       ts: Date.now(),
-      assistantMsgId: 'asst-1',
-      subagentId: 'worker-1',
-      usage: { promptTokens: 99_000, completionTokens: 1, totalTokens: 99_001 }
+      assistantMsgId: 'asst-2',
+      usage: { promptTokens: 12_000, completionTokens: 1, totalTokens: 12_001 }
     });
     await flushAll();
     const after = (await listConversations()).find((c) => c.id === meta.id);
-    expect(after?.peakPromptTokens).toBeUndefined();
+    expect(after?.peakPromptTokens).toBe(12_000);
   });
 
   it('readConversation backfills peakPromptTokens from transcript when meta lacks it', async () => {

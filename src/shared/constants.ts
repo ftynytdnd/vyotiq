@@ -71,24 +71,7 @@ export const MODEL_DISCOVERY_TTL_MS = 5 * 60 * 1000;
  */
 export const MODEL_DISCOVERY_TIMEOUT_MS = 12_000;
 
-/** Orchestrator limits. */
-/**
- * Concurrency cap for `runSubAgentPool`. Raised from 4 to 8 so a single
- * delegation round of 6-8 specs runs in true parallel instead of
- * queueing the tail behind 4 active workers. The original cap was a
- * defensive guess from the streaming-rate-limit era; modern providers
- * comfortably serve 8 parallel streams per key, and the in-process
- * LCS / file-read cost is bounded by `DiffWorkerPool` (multi-worker pool)
- * + `createInlineFileCache` (round-shared). Specs over the cap still
- * queue behind a worker slot — see `Pending` vs `queued` distinction
- * surfaced in the renderer (`SubAgentSnapshot.queued`).
- */
-/** Legacy fallback when the model omits `concurrency` on delegate calls. */
-export const DEFAULT_DELEGATE_CONCURRENCY = 32;
-
-/** Hard host ceiling — prevents accidental DoS from runaway delegate fan-out. */
-export const HOST_DELEGATE_CONCURRENCY_CEILING = 64;
-
+/** Agent loop limits. */
 /**
  * Upper bound for awaiting a prior run's settlement latch on supersede.
  * Prevents `chat:send` from blocking forever when `settleRun` is never called.
@@ -96,102 +79,6 @@ export const HOST_DELEGATE_CONCURRENCY_CEILING = 64;
 export const RUN_SETTLEMENT_TIMEOUT_MS = 120_000;
 export const MAX_SELF_CORRECTION_ATTEMPTS = 3;
 export const MAX_TOTAL_ITERATIONS = 24;
-
-/**
- * Delegation 3-strike threshold. Promoted from the magic literal `3`
- * that previously lived inside `handleDelegates.ts` so the value is
- * citable from a single named export and surfaceable to the model via
- * `<runtime_limits>`. Tracks the count of consecutive delegation rounds
- * whose verdicts are ALL `failed` or `malformed`; reset to 0 by any
- * round with at least one `ok` / `partial` verdict, and (per the
- * runLoop's cross-counter reset symmetry) by a successful direct-tool
- * round.
- *
- * Numerically aligned with `MAX_SELF_CORRECTION_ATTEMPTS` because both
- * encode the same "three strikes and escalate" rule the harness §C
- * states explicitly. They are kept as separate exports because they
- * govern semantically different counters: one is direct-tool /
- * transport / orchestrator-iteration self-correction, the other is
- * sub-agent verification — a future tuning pass may want to diverge.
- */
-export const MAX_DELEGATION_BAD_ROUNDS = 3;
-
-/**
- * Hard cap on the number of files a single `<delegate files="..." />`
- * directive can list. The model controls this attribute, so without a
- * cap a buggy or pathological turn could emit a directive with
- * thousands of paths and trigger that many parallel `realpath` +
- * `access` probes through `classifyFiles` — a soft DoS on the main
- * process FS surface (review finding H4).
- *
- * 32 is comfortably above the harness §B "Keep this list minimal"
- * guidance and the largest legitimate delegations observed in
- * production transcripts (typically ≤ 8). Excess paths are surfaced
- * to the renderer via `subagent-spawn.missingFiles` with a synthetic
- * "list-cap exceeded" placeholder so the user sees the truncation.
- *
- * Tunable: increase this only after observing a real workflow that
- * legitimately needs > 32 files per directive AND auditing the
- * inline-files token cost. The combined `INLINE_FILE_CHAR_CAP` budget
- * in `contextManager.inlineFiles` will already truncate the body —
- * raising the file count just trades file diversity for per-file
- * tokens.
- */
-export const MAX_FILES_PER_DELEGATE = 32;
-
-/**
- * Per-task delegation strike threshold. Independent of
- * `MAX_DELEGATION_BAD_ROUNDS`, which only counts rounds where EVERY
- * verdict is bad: a sub-task that fails repeatedly while paired with
- * an unrelated sibling that succeeds was previously invisible to the
- * round-level counter (the `allBad` reset cleared the streak after
- * every mixed round). The conversation captured at
- * `e6859f7b-fd35-4a43-ae1d-6cd06f17831c.jsonl` (May 16, 2026) shows
- * `App.tsx` edits failing across four sub-agents (D1 → D1_retry →
- * ...) while siblings reported success, never tripping the round
- * halt.
- *
- * This counter is keyed by a stable signature of the sub-agent's
- * task (first 80 chars of the task string + sorted files list). When
- * any key crosses the threshold the orchestrator surfaces a
- * `failing_tasks` hint in `<run_state>` and emits a `phase` divider —
- * the model is expected to pivot decomposition. The round-level halt
- * still fires when every verdict is bad, so this counter is a softer
- * "you are wasting your budget on this task" signal, not a hard halt.
- */
-export const MAX_PER_TASK_BAD_STREAK = 3;
-
-/**
- * Sub-agent loop limits.
- *
- * Hard cap on a single sub-agent's iteration count. The audit-pass
- * subtraction dropped the previous "main cap = 16, wrap-up = +1"
- * surface in favor of a flat 14 and a stronger sub-agent prompt that
- * says "your last action MUST be a `<result>` envelope, not another
- * tool call". The model is expected to self-budget using the
- * `<run_state>` envelope; if it spends 13 iterations on exploration and
- * skips the result, that is a `failed` verdict — not an extra round of
- * host-side coaxing.
- *
- * Lifted to the shared constants module so the harness `<runtime_limits>`
- * block, the `SubAgent` runtime, and any future telemetry surface read
- * from one place. Same single-source-of-truth contract as the other
- * `MAX_*` knobs.
- */
-export const SUBAGENT_MAX_ITERATIONS = 14;
-
-/**
- * Iteration index (0-based) at which a sub-agent flips its tool-choice
- * directive from `'auto'` → `'none'` for the *next* provider request.
- * The flip forces the provider to emit prose instead of more tool
- * calls, making the harness rule "your last action MUST be a `<result>`
- * envelope" enforceable at the wire level instead of advisory in the
- * prompt. Set so the wrap-up turn is the LAST iteration before the
- * cap (`SUBAGENT_MAX_ITERATIONS - 1`); the previous penultimate
- * iteration is the natural place for the model to stop calling tools
- * and stage its final answer.
- */
-export const SUBAGENT_WRAPUP_ITER = SUBAGENT_MAX_ITERATIONS - 1;
 
 /** Backoff. */
 export const BASE_BACKOFF_MS = 250;
@@ -211,21 +98,6 @@ export const MAX_BACKOFF_MS = 8000;
  * token…" in the UI — only resolvable by the user hitting Stop.
  */
 export const STREAM_INACTIVITY_TIMEOUT_MS = 60_000;
-
-/**
- * Wall-clock cap on a single sub-agent run inside `runSubAgentPool`.
- *
- * Independent of {@link STREAM_INACTIVITY_TIMEOUT_MS}, which only
- * guards idle SSE transport between provider chunks. Slow models can
- * stream steadily yet take many minutes to finish a multi-tool worker;
- * applying the 60 s transport knob here produced false "timed out"
- * failures while tokens were still arriving.
- *
- * Five minutes is long enough for typical delegate tasks on cold /
- * low-throughput endpoints without letting a hung worker pin a pool
- * slot indefinitely (user Stop still wins via `AbortSignal`).
- */
-export const SUBAGENT_RUN_TIMEOUT_MS = 300_000;
 
 /**
  * Delta-coalescing threshold for persisted streaming events.

@@ -10,8 +10,7 @@
  *     completion-token estimate.
  *   - Does NOT touch `latest`, `peak`, `cumulative` (those stay
  *     authoritative; the synthetic counter is purely additive UI).
- *   - Routes to the orchestrator or the matching sub-agent based on
- *     `subagentId`, mirroring `token-usage`'s routing.
+ *   - Routes all synthetic usage into `orchestratorUsage.inFlight`.
  *
  * The authoritative `token-usage` event clears `inFlight` via
  * `foldTokenUsage`'s contract — verified in the second-to-last test.
@@ -91,7 +90,6 @@ describe('applyTimelineEvent: synthetic-usage-update', () => {
       completionTokens: 0,
       totalTokens: 0
     });
-    expect(s.subagents).toEqual({});
   });
 
   it('does not append the event to state.events (pure live telemetry)', () => {
@@ -99,33 +97,9 @@ describe('applyTimelineEvent: synthetic-usage-update', () => {
     expect(s.events.some((e) => e.kind === 'synthetic-usage-update')).toBe(false);
   });
 
-  it('routes sub-agent synthetic usage to the matching snapshot', () => {
-    let s: TimelineState = INITIAL_TIMELINE_STATE;
-    s = applyTimelineEvent(s, {
-      kind: 'subagent-spawn',
-      id: 'spawn',
-      ts: 0,
-      subagentId: 'sa-1',
-      task: 't',
-      files: [],
-      tools: []
-    });
-    s = applyTimelineEvent(s, synthEvent({ subagentId: 'sa-1', completionTokens: 75 }));
-    expect(s.subagents['sa-1']?.usage?.inFlight?.completionTokens).toBe(75);
-    expect(s.orchestratorUsage).toBeUndefined();
-  });
-
-  it('drops sub-agent synthetic usage silently when no snapshot exists yet', () => {
-    // Synthetic usage can race the sub-agent's spawn event on a fast
-    // provider. The reducer must not synthesize a placeholder snapshot
-    // for a sub-agent that the orchestrator never spawned — only the
-    // authoritative `token-usage` path may do that.
-    const s = applyTimelineEvent(
-      INITIAL_TIMELINE_STATE,
-      synthEvent({ subagentId: 'sa-orphan', completionTokens: 42 })
-    );
-    expect(s.subagents).toEqual({});
-    expect(s.orchestratorUsage).toBeUndefined();
+  it('routes synthetic usage into orchestratorUsage.inFlight', () => {
+    const s = applyTimelineEvent(INITIAL_TIMELINE_STATE, synthEvent({ completionTokens: 75 }));
+    expect(s.orchestratorUsage?.inFlight?.completionTokens).toBe(75);
   });
 
   it('a later synthetic update REPLACES the prior inFlight (not adds)', () => {

@@ -81,24 +81,15 @@ The host re-issues the harness and all the dynamic envelopes every
 turn — you do NOT need to ask for them. Pull more context yourself
 when the user's question requires information you don't yet have:
 
-- **File contents you lack** — call the `delegate` tool with the path
-  in `files` and `tools=['read']`. The orchestrator's toolset has no
-  `read`; reading file bodies always goes through delegation.
-- **Project structure you haven't surveyed** — call `ls`. This is
-  the one shape question you answer directly without delegation.
-- **A symbol or name you haven't seen** — delegate `search` with
-  `mode:"local"`. Bundle related queries into one sub-agent rather
-  than spawning a separate sub-agent per query.
-- **A recent error the user mentioned** — either ask them to paste
-  it verbatim, or delegate a `bash` sub-agent to reproduce it. Do
-  not guess at the error text.
-- **A past conversation referenced by topic, name, or relative
-  time** — call `recall` with `action:"list"` to locate the right
-  conversation id, then `recall` with `action:"read"` to load its
-  transcript. Only the orchestrator can call `recall`; if a
-  delegated sub-agent needs prior-session context, fold the
-  relevant excerpts into its `delegate` task body or attached
-  files yourself before spawning it.
+- **File contents you lack** — call `read` (with path and optional line range).
+- **Project structure you haven't surveyed** — call `ls`.
+- **A symbol or name you haven't seen** — call `search` with `mode:"local"`.
+  Bundle related queries into one search when possible.
+- **A recent error the user mentioned** — ask them to paste it verbatim, or
+  use `bash` to reproduce it. Do not guess at the error text.
+- **A past conversation referenced by topic, name, or relative time** — call
+  `recall` with `action:"list"`, then `recall` with `action:"read"` for the
+  matching `conversationId`.
 
 ---
 
@@ -202,17 +193,14 @@ Use these capabilities, in order of preference:
 
 1. **`ls`** — to map the local project structure when you don't yet
    know where things live.
-2. **Delegate a sub-agent with `tools="read"`** — to inspect specific
-   files once you've located them. Bundle related files into a
-   single sub-agent (e.g. all `tools/*.py`); spawn parallel sub-agents
-   when the file groups are independent.
-3. **Delegate a `search` sub-agent (mode `local`)** — to find a symbol,
-   string, or pattern anywhere in the workspace.
+2. **`read`** — to inspect specific files once you've located them.
+   Batch related paths in one turn when they are independent.
+3. **`search` (mode `local`)** — to find a symbol, string, or pattern
+   anywhere in the workspace.
 4. **`memory`** — to recall durable facts persisted from prior
    sessions.
-5. **Delegate a `bash` sub-agent** — to run a non-destructive
-   inspection command (e.g. `git log -n 5`, `npm ls`,
-   `cat package.json | head`).
+5. **`bash`** — to run a non-destructive inspection command (e.g.
+   `git log -n 5`, `npm ls`, `cat package.json | head`).
 
 These produce grounded, current, private answers. Use them whenever
 the question can plausibly be answered from the workspace or local
@@ -224,11 +212,10 @@ workspace and vendored dependencies.
 A typical research flow is offline → offline → verify:
 
 1. `ls` to find the relevant area.
-2. Delegate a `read` sub-agent to learn the exact local API.
-3. Delegate `search` (`mode:"local"`) if you need to locate a symbol
-   or string across many files.
-4. Delegate a follow-up `read` sub-agent to confirm your applied change
-   is consistent.
+2. `read` to learn the exact local API.
+3. `search` (`mode:"local"`) if you need to locate a symbol or string
+   across many files.
+4. A follow-up `read` to confirm your applied change is consistent.
 
 ---
 

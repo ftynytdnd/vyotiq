@@ -4,8 +4,8 @@
  * Pins:
  *   1. Orchestrator-scope `diff-stream` folds into
  *      `state.partialToolCallArgs[callId].diffStream`.
- *   2. Sub-agent-scope `diff-stream` folds into the matching
- *      snapshot's `partialToolCallArgs[callId].diffStream`.
+ *   2. Legacy `subagentId` on `diff-stream` still folds into
+ *      `partialToolCallArgs[callId].diffStream` (stripped on transcript load).
  *   3. A `diff-stream` arriving BEFORE the first `tool-call-args-delta`
  *      seeds a minimal partial entry so the diff still renders.
  *   4. The matching authoritative `tool-call` event clears the
@@ -122,38 +122,22 @@ describe('applyTimelineEvent — diff-stream', () => {
     expect(entry.diffStream!.hunks).toEqual(hunks);
   });
 
-  it('folds a sub-agent-scope diff-stream into the matching snapshot', () => {
-    let s = applyTimelineEvent(INITIAL_TIMELINE_STATE, {
-      kind: 'subagent-spawn',
-      id: 'sp-1',
-      ts: 1,
-      subagentId: 'sub-1',
-      task: 't',
-      files: [],
-      tools: []
-    });
-    s = applyTimelineEvent(s, diffStream('c1', { subagentId: 'sub-1', ts: 2 }));
-    const sub = s.subagents['sub-1'];
-    expect(sub).toBeDefined();
-    const entry = sub!.partialToolCallArgs['c1'];
+  it('folds a legacy subagentId diff-stream into partialToolCallArgs', () => {
+    const s = applyTimelineEvent(
+      INITIAL_TIMELINE_STATE,
+      diffStream('c1', { subagentId: 'sub-1', ts: 2 })
+    );
+    const entry = s.partialToolCallArgs['c1'];
     expect(entry).toBeDefined();
     expect(entry!.diffStream).toBeDefined();
     expect(entry!.diffStream!.hunks).toEqual(hunks);
-    // Orchestrator-scope slot stays empty.
-    expect(s.partialToolCallArgs['c1']).toBeUndefined();
   });
 
-  it('preserves sub-agent diffStream when args-delta arrives after it', () => {
-    let s = applyTimelineEvent(INITIAL_TIMELINE_STATE, {
-      kind: 'subagent-spawn',
-      id: 'sp-1',
-      ts: 1,
-      subagentId: 'sub-1',
-      task: 't',
-      files: [],
-      tools: []
-    });
-    s = applyTimelineEvent(s, diffStream('c1', { subagentId: 'sub-1', ts: 2 }));
+  it('preserves diffStream when args-delta arrives after diff-stream', () => {
+    let s = applyTimelineEvent(
+      INITIAL_TIMELINE_STATE,
+      diffStream('c1', { subagentId: 'sub-1', ts: 2 })
+    );
     s = applyTimelineEvent(s, {
       kind: 'tool-call-args-delta',
       id: 'd1',
@@ -164,7 +148,7 @@ describe('applyTimelineEvent — diff-stream', () => {
       argsBuf: '{"path":"a.ts","oldString":"line two","newString":"LINE TWO"}',
       subagentId: 'sub-1'
     });
-    const entry = s.subagents['sub-1']!.partialToolCallArgs['c1']!;
+    const entry = s.partialToolCallArgs['c1']!;
     expect(entry.parsed).toEqual({
       path: 'a.ts',
       oldString: 'line two',
@@ -172,17 +156,6 @@ describe('applyTimelineEvent — diff-stream', () => {
     });
     expect(entry.diffStream).toBeDefined();
     expect(entry.diffStream!.hunks).toEqual(hunks);
-  });
-
-  it('seeds a sub-agent snapshot when diff-stream arrives before subagent-spawn', () => {
-    const s = applyTimelineEvent(
-      INITIAL_TIMELINE_STATE,
-      diffStream('c1', { subagentId: 'sub-early', ts: 2 })
-    );
-    const sub = s.subagents['sub-early'];
-    expect(sub).toBeDefined();
-    expect(sub!.partialToolCallArgs['c1']!.diffStream).toBeDefined();
-    expect(s.partialToolCallArgs['c1']).toBeUndefined();
   });
 
   it('drops the partial entry (including diffStream) on the matching tool-call', () => {

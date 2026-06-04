@@ -1,5 +1,5 @@
 /**
- * Shared tool-group / file-edit-group folding for orchestrator and sub-agent scopes.
+ * Shared tool-group / file-edit-group folding for the timeline deriver.
  */
 
 import type { ToolCall, ToolName, ToolResult } from '@shared/types/tool.js';
@@ -13,31 +13,18 @@ export interface ScopedGroupState {
   callIdToChildIdx: Map<string, number>;
 }
 
-function toolGroupMatchesScope(
+function toolGroupMatches(
   row: Row | undefined,
-  toolName: ToolName,
-  subagentId: string | undefined
+  toolName: ToolName
 ): row is Extract<Row, { kind: 'tool-group' }> {
-  if (!row || row.kind !== 'tool-group') return false;
-  if (row.toolName !== toolName) return false;
-  return row.subagentId === subagentId;
+  return !!row && row.kind === 'tool-group' && row.toolName === toolName;
 }
 
-function fileEditGroupMatchesScope(
-  row: Row | undefined,
-  subagentId: string | undefined
-): row is Extract<Row, { kind: 'file-edit-group' }> {
-  if (!row || row.kind !== 'file-edit-group') return false;
-  return row.subagentId === subagentId;
+function fileEditGroupMatches(row: Row | undefined): row is Extract<Row, { kind: 'file-edit-group' }> {
+  return !!row && row.kind === 'file-edit-group';
 }
 
-export function foldToolCall(
-  out: Row[],
-  state: ScopedGroupState,
-  call: ToolCall,
-  subagentId?: string
-): void {
-  const scopeId = subagentId;
+export function foldToolCall(out: Row[], state: ScopedGroupState, call: ToolCall): void {
   const existingGroupIdx = state.callIdToGroupIdx.get(call.id);
   const existingChildIdx = state.callIdToChildIdx.get(call.id);
   if (
@@ -62,13 +49,12 @@ export function foldToolCall(
   let groupIdx: number;
   const curIdx = state.openToolGroupIdx;
   const curRow = curIdx !== null ? out[curIdx] : undefined;
-  if (!toolGroupMatchesScope(curRow, toolName, scopeId)) {
+  if (!toolGroupMatches(curRow, toolName)) {
     out.push({
       kind: 'tool-group',
       key: `tg:${call.id}`,
       toolName,
-      children: [],
-      ...(scopeId ? { subagentId: scopeId } : {})
+      children: []
     });
     groupIdx = out.length - 1;
     state.openToolGroupIdx = groupIdx;
@@ -83,13 +69,7 @@ export function foldToolCall(
   state.callIdToChildIdx.set(call.id, children.length - 1);
 }
 
-export function foldToolResult(
-  out: Row[],
-  state: ScopedGroupState,
-  result: ToolResult,
-  subagentId?: string
-): void {
-  const scopeId = subagentId;
+export function foldToolResult(out: Row[], state: ScopedGroupState, result: ToolResult): void {
   const groupIdx = state.callIdToGroupIdx.get(result.id);
   const childIdx = state.callIdToChildIdx.get(result.id);
   if (
@@ -109,13 +89,12 @@ export function foldToolResult(
   let gIdx: number;
   const curIdx = state.openToolGroupIdx;
   const curRow = curIdx !== null ? out[curIdx] : undefined;
-  if (!toolGroupMatchesScope(curRow, toolName, scopeId)) {
+  if (!toolGroupMatches(curRow, toolName)) {
     out.push({
       kind: 'tool-group',
       key: `tg:${result.id}`,
       toolName,
-      children: [],
-      ...(scopeId ? { subagentId: scopeId } : {})
+      children: []
     });
     gIdx = out.length - 1;
     state.openToolGroupIdx = gIdx;
@@ -141,20 +120,17 @@ export interface FileEditFoldInput {
 export function foldScopedFileEdit(
   out: Row[],
   state: ScopedGroupState,
-  edit: FileEditFoldInput,
-  subagentId?: string
+  edit: FileEditFoldInput
 ): void {
-  const scopeId = subagentId;
   state.openToolGroupIdx = null;
   let groupIdx: number;
   const curIdx = state.openFileEditGroupIdx;
   const curRow = curIdx !== null ? out[curIdx] : undefined;
-  if (!fileEditGroupMatchesScope(curRow, scopeId)) {
+  if (!fileEditGroupMatches(curRow)) {
     out.push({
       kind: 'file-edit-group',
       key: `fe:${edit.id}`,
-      children: [],
-      ...(scopeId ? { subagentId: scopeId } : {})
+      children: []
     });
     groupIdx = out.length - 1;
     state.openFileEditGroupIdx = groupIdx;
@@ -197,26 +173,14 @@ function mergeFileEditIntoEditToolGroupAt(
   return true;
 }
 
-/**
- * Fold a `file-edit` event into the matching `edit` tool-group when the last
- * settled child targets the same path (orchestrator and sub-agent). Avoids
- * the duplicate "Edited path" tool-group + file-edit-group pair emitted for
- * every successful `edit` tool (three wire events, one UI row).
- *
- * Tries `openToolGroupIdx` first, then scans backward — group breakers such
- * as assistant-text between `tool-result` and `file-edit` clear the open
- * index but the edit group row is still in `out`.
- */
 function tryMergeFileEditIntoEditToolGroup(
   out: Row[],
   state: ScopedGroupState,
-  edit: FileEditFoldInput,
-  subagentId?: string
+  edit: FileEditFoldInput
 ): boolean {
-  const scopeId = subagentId;
   if (state.openToolGroupIdx !== null) {
     const open = out[state.openToolGroupIdx];
-    if (open?.kind === 'tool-group' && open.subagentId === scopeId) {
+    if (open?.kind === 'tool-group') {
       if (mergeFileEditIntoEditToolGroupAt(out, state.openToolGroupIdx, edit)) {
         return true;
       }
@@ -224,7 +188,7 @@ function tryMergeFileEditIntoEditToolGroup(
   }
   for (let i = out.length - 1; i >= 0; i--) {
     const row = out[i];
-    if (row.kind !== 'tool-group' || row.toolName !== 'edit' || row.subagentId !== scopeId) {
+    if (row.kind !== 'tool-group' || row.toolName !== 'edit') {
       continue;
     }
     if (mergeFileEditIntoEditToolGroupAt(out, i, edit)) {
@@ -234,10 +198,6 @@ function tryMergeFileEditIntoEditToolGroup(
   return false;
 }
 
-/**
- * Orchestrator file-edit: merge into prior `edit` tool-group when possible;
- * otherwise fold into file-edit-group (bash mutations, path mismatch, etc.).
- */
 export function foldOrchestratorFileEdit(
   out: Row[],
   state: ScopedGroupState,
@@ -247,19 +207,5 @@ export function foldOrchestratorFileEdit(
     return true;
   }
   foldScopedFileEdit(out, state, edit);
-  return false;
-}
-
-/** Sub-agent scoped file-edit — same merge rules as orchestrator. */
-export function foldSubagentFileEdit(
-  out: Row[],
-  state: ScopedGroupState,
-  edit: FileEditFoldInput,
-  subagentId: string
-): boolean {
-  if (tryMergeFileEditIntoEditToolGroup(out, state, edit, subagentId)) {
-    return true;
-  }
-  foldScopedFileEdit(out, state, edit, subagentId);
   return false;
 }

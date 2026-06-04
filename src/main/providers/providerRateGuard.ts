@@ -54,8 +54,7 @@ const cooldowns = new Map<string, CooldownState>();
 
 /**
  * Block until `providerId`'s cooldown (if any) has expired. Proactive
- * burst stagger was removed — concurrency is governed by the delegate
- * pool cap the model declares per round; reactive 429 backoff remains.
+ * burst stagger was removed; reactive 429 backoff remains.
  */
 export async function acquire(providerId: string, signal?: AbortSignal): Promise<void> {
   const state = cooldowns.get(providerId);

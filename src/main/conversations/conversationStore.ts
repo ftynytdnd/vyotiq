@@ -29,8 +29,7 @@ import { sanitizeTitle } from './titleSanitizer.js';
 import { getActiveWorkspace, listWorkspaces } from '../workspace/workspaceState.js';
 import { atomicWriteString } from '../checkpoints/atomicWrite.js';
 import { deleteAttachmentsForConversation } from '../attachments/gc.js';
-import { listActiveRuns } from '../orchestrator/AgentV.js';
-import { repairNonTerminalSubagents } from '@shared/transcript/repairNonTerminalSubagents.js';
+import { normalizeLegacyTranscript } from '@shared/transcript/normalizeLegacyTranscript.js';
 import { migrateConversationPending } from '../checkpoints/pendingChanges.js';
 
 const log = logger.child('conversations');
@@ -76,7 +75,7 @@ const appendChains: Map<string, Promise<void>> = new Map();
  *
  * Audit fix 2026-07-P2-1: bumped from 60 s to 5 minutes to cover the
  * worst-case in-flight chain (bash 30 s × 3 retries × `MAX_BACKOFF_MS`
- * headroom across the orchestrator + sub-agent fan-out). At 60 s a
+ * headroom across long runs). At 60 s a
  * very long-running tool call could outlive the tombstone, race
  * `removeConversation`, and resurrect the deleted conversation via
  * the `appendEvent` auto-recovery branch. `removeConversation` also
@@ -418,7 +417,7 @@ export async function removeConversation(id: string): Promise<void> {
   // BEFORE the tombstone. The orchestrator's emit path falls into the
   // tombstoned branch of `appendEvent` once the abort propagates, but
   // without the explicit abort the loop would keep iterating against
-  // sub-agents and burning provider tokens for a transcript that's
+  // burning provider tokens for a transcript that's
   // about to be unlinked. Returns the count for diagnostics; we don't
   // need to await any settling since `abortRun` only flips the signal.
   if (abortRunsForConversationHook) {
@@ -561,7 +560,7 @@ export async function appendEvent(id: string, event: TimelineEvent): Promise<voi
         await fs.writeFile(file, '', 'utf8');
       }
       await fs.appendFile(file, JSON.stringify(event) + '\n', 'utf8');
-      if (event.kind === 'token-usage' && !event.subagentId) {
+      if (event.kind === 'token-usage') {
         const prompt = event.usage.promptTokens;
         if (typeof prompt === 'number' && prompt > 0) {
           meta.peakPromptTokens = Math.max(meta.peakPromptTokens ?? 0, prompt);
@@ -826,12 +825,12 @@ async function rewriteTranscriptEvents(
 
 /**
  * Highest orchestrator prompt-token count in a transcript slice.
- * Ignores sub-agent `token-usage` rows (same rule as `appendEvent`).
+ * Ignores duplicate `token-usage` rows when persisting (same rule as `appendEvent`).
  */
 export function peakOrchestratorPromptTokens(events: TimelineEvent[]): number {
   let peak = 0;
   for (const e of events) {
-    if (e.kind !== 'token-usage' || e.subagentId) continue;
+    if (e.kind !== 'token-usage') continue;
     const prompt = e.usage.promptTokens;
     if (typeof prompt === 'number' && prompt > peak) peak = prompt;
   }
@@ -842,68 +841,16 @@ export async function readConversation(id: string): Promise<Conversation | null>
   await loadIndex();
   const meta = findMeta(id);
   if (!meta) return null;
-  // `readTranscript` returns the raw on-disk event stream. Apply the
-  // orphan filter for downstream consumers (renderer load, recall
-  // tool, rewind preview) so a `subagent-pending` event whose
-  // matching `subagent-spawn` never landed — typically because the
-  // run was aborted between mid-stream directive parse and
-  // verification — doesn't materialize as a phantom sub-agent row
-  // in the renderer's timeline. Review finding H3. When the
-  // conversation has no active orchestrator run, also synthesize
-  // terminal `subagent-status` / `aborted` rows for spawns that
-  // never settled (hard kill / aborted delegation).
+  // Normalize legacy transcript shapes on load (drops obsolete lifecycle rows,
+  // strips legacy worker ids from surviving events).
   const rawEvents = await readTranscript(id);
-  let events = dropOrphanPendingSubagents(rawEvents);
-  const hasActiveRun = listActiveRuns().some((r) => r.conversationId === id);
-  events = repairNonTerminalSubagents(events, { closeWhenIdle: !hasActiveRun });
+  const events = normalizeLegacyTranscript(rawEvents);
   const peak = peakOrchestratorPromptTokens(events);
   if (peak > (meta.peakPromptTokens ?? 0)) {
     meta.peakPromptTokens = peak;
     scheduleIndexFlush();
   }
   return { ...meta, events };
-}
-
-/**
- * Drop every `subagent-pending` event whose `subagentId` has no
- * matching `subagent-spawn` in the same transcript (review finding
- * H3). Mid-stream directive parsing in `handleAssistantTurn` emits
- * `subagent-pending` to the renderer the instant a `<delegate />`
- * is detected; the matching `subagent-spawn` only fires once
- * `handleDelegates` validates the directive and reaches verification
- * phase. A run aborted between those two events leaves an orphan
- * pending row that, on conversation reload, materializes a sub-agent
- * snapshot the renderer never resolves.
- *
- * Single-pass: one walk to collect spawn ids, one filter pass to
- * drop orphans. The retained event order is preserved verbatim
- * (we only drop, never reorder). On the steady-state path (no
- * orphans) the function returns the input array untouched so the
- * caller's reference equality is preserved.
- *
- * Exported for the dedicated unit test that pins the orphan-drop
- * contract across replay and renderer load paths.
- */
-export function dropOrphanPendingSubagents(events: TimelineEvent[]): TimelineEvent[] {
-  const spawnedIds = new Set<string>();
-  let hasPending = false;
-  for (const e of events) {
-    if (e.kind === 'subagent-spawn') spawnedIds.add(e.subagentId);
-    else if (e.kind === 'subagent-pending') hasPending = true;
-  }
-  if (!hasPending) return events;
-  // Steady-state fast path: every pending has a spawn → no drop.
-  let allMatched = true;
-  for (const e of events) {
-    if (e.kind === 'subagent-pending' && !spawnedIds.has(e.subagentId)) {
-      allMatched = false;
-      break;
-    }
-  }
-  if (allMatched) return events;
-  return events.filter((e) =>
-    e.kind !== 'subagent-pending' || spawnedIds.has(e.subagentId)
-  );
 }
 
 /**

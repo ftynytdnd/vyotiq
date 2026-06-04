@@ -181,27 +181,12 @@ export type TimelineEvent =
      */
     severity?: 'info' | 'warn';
   }
-  /**
-   * Streaming assistant text. The optional `subagentId` slot lets the
-   * orchestrator-owned event stream carry sub-agent worker text and
-   * reasoning DURING delegation, so the matching delegation worker
-   * card can surface live worker output instead of going dark until
-   * the worker emits its `<result>` envelope. Audit fix §1.1.
-   *
-   * - When `subagentId` is omitted, the event belongs to the
-   *   orchestrator's own assistant turn (legacy shape — every
-   *   pre-§1.1 event lacked the slot, so back-compat is automatic).
-   * - When set, `id` is a per-iteration `assistantMsgId` minted by
-   *   the sub-agent's stream consumer; consumers must NOT assume
-   *   uniqueness across sub-agents — pair `id` with `subagentId`
-   *   when keying state.
-   */
-  | { kind: 'agent-text-delta'; id: string; ts: number; delta: string; subagentId?: string }
-  | { kind: 'agent-text-end'; id: string; ts: number; subagentId?: string }
+  | { kind: 'agent-text-delta'; id: string; ts: number; delta: string }
+  | { kind: 'agent-text-end'; id: string; ts: number }
   /** Drop the partial in-flight assistant text (mid-stream error → retry). */
-  | { kind: 'agent-text-aborted'; id: string; ts: number; subagentId?: string }
+  | { kind: 'agent-text-aborted'; id: string; ts: number }
   /** Streaming chain-of-thought (DeepSeek-style). UI shows a collapsible card. */
-  | { kind: 'agent-reasoning-delta'; id: string; ts: number; delta: string; subagentId?: string }
+  | { kind: 'agent-reasoning-delta'; id: string; ts: number; delta: string }
   /**
    * Closes a streaming reasoning panel. The optional `signature` field
    * carries the Anthropic `signature_delta` payload concatenated across
@@ -213,10 +198,10 @@ export type TimelineEvent =
    * cleanly. The replay layer fans the signature back onto the matching
    * assistant `ChatMessage.reasoning_signature` slot.
    */
-  | { kind: 'agent-reasoning-end'; id: string; ts: number; subagentId?: string; signature?: string }
+  | { kind: 'agent-reasoning-end'; id: string; ts: number; signature?: string }
   /**
    * Phase divider row. `label` is user-facing and MUST be free of literal
-   * harness XML (`<delegate>`, `<result>`, …). `tooltip`, when present,
+   * harness XML. `tooltip`, when present,
    * carries the developer-facing detail (technical contract, raw ids,
    * full reason) and is surfaced via the divider's `title` attribute.
    * Both fields persist in the JSONL transcript so historical replays
@@ -247,136 +232,8 @@ export type TimelineEvent =
     toolCallId: string;
     runId: string;
   }
-  /**
-   * Mid-stream notice that the orchestrator has just emitted a fully-formed
-   * `<delegate ... />` directive in the current assistant turn. Allows the
-   * UI to surface the pending sub-agent as a row before the orchestrator
-   * turn even ends and the pool actually spawns. Carries the directive's
-   * own `id` attribute so the matching `subagent-spawn` can dedup and
-   * transition the row from `pending` → `running` cleanly.
-   */
-  | {
-    kind: 'subagent-pending';
-    id: string;
-    ts: number;
-    subagentId: string;
-    task: string;
-    files: string[];
-    tools: string[];
-    /**
-     * Orchestrator's selected provider + model at the moment the
-     * directive was parsed. Surfaced on the renderer so the
-     * sub-agent row can display a tiny model badge alongside the
-     * task title (Cursor-style "Composer 2.5 Fast" chip). Optional
-     * because (a) old transcripts predate this field and (b) future
-     * `<delegate model="..." />` overrides may carry a worker-
-     * specific model that would land on `subagent-spawn` instead.
-     * Defined here so the reducer's pending-→-spawn merge has the
-     * earliest available model the renderer can paint with.
-     */
-    model?: ModelSelection;
-    /** True when the worker is waiting for a pool slot. */
-    queued?: boolean;
-    /** Groups workers spawned in the same delegation round. */
-    delegationBatchId?: string;
-    /** Parent worker when nested one level deep. */
-    parentSubagentId?: string;
-  }
-  | {
-    kind: 'subagent-spawn';
-    id: string;
-    ts: number;
-    subagentId: string;
-    task: string;
-    files: string[];
-    /**
-     * Tools granted to this worker by the `<delegate tools="…" />` directive,
-     * resolved through `validateSubagentToolset` (`read,ls,search` default
-     * when the directive omits the attribute).
-     *
-     * Emitted on spawn so the renderer can populate the sub-agent's tools
-     * chip row from a single authoritative source. A preceding
-     * `subagent-pending` event may carry its own `tools` list parsed from
-     * the directive mid-stream; the reducer prefers the spawn's value when
-     * non-empty but falls back to the pending list otherwise so the UI is
-     * robust whether or not pending ran first.
-     */
-    tools: string[];
-    /**
-     * Paths the orchestrator's pre-spawn validator could not resolve
-     * against the workspace FS — typically model-invented paths like
-     * `core/agent.py` in a TypeScript repo (see screenshot §1). These
-     * are NOT fed to the worker's `inlineFiles` (the `files` array
-     * above already excludes them); they're carried separately so the
-     * renderer can mark them as "not found" chips alongside the
-     * resolvable ones. Omitted on the wire when every path resolved.
-     */
-    missingFiles?: string[];
-    /**
-     * Tool names the orchestrator's `<delegate tools="..." />`
-     * directive listed that were NOT in the sub-agent allowlist —
-     * typically typos (`reed` for `read`) or out-of-set names. The
-     * legacy filter in `validateSubagentToolset` dropped these
-     * silently and the orchestrator never learned about it (review
-     * finding H10). Surfaced here so the renderer can mark them as
-     * dimmed "rejected — unknown tool" chips alongside the granted
-     * ones, and the orchestrator's harness sees the typo on its next
-     * iteration via the matching `phase` event.
-     *
-     * Omitted on the wire when every requested tool was granted.
-     */
-    unknownTools?: string[];
-    /**
-     * Provider + model the orchestrator handed to this worker.
-     * Mirrors `subagent-pending.model` and — because spawn always
-     * fires with a verified model selection — is the source of truth
-     * for the renderer's sub-agent model badge after pending↔spawn
-     * reconciliation. Optional for backward compat with older
-     * transcripts; the renderer hides the badge when absent.
-     */
-    model?: ModelSelection;
-    delegationBatchId?: string;
-    parentSubagentId?: string;
-  }
-  | {
-    kind: 'subagent-status';
-    id: string;
-    ts: number;
-    subagentId: string;
-    /**
-     * Sub-agent lifecycle status (T1-6).
-     *
-     * - `done`     — worker reported `<status>success</status>`.
-     * - `partial`  — worker reported `<status>partial</status>`. Real
-     *                progress landed but the orchestrator should not
-     *                treat the task as complete. Distinct from `done`
-     *                so the UI can surface it with a softer-tone badge
-     *                (amber) and the orchestrator's harness can
-     *                reason about it semantically. Older transcripts
-     *                persisted before this status was added still
-     *                deserialise — the reducer's terminal-transition
-     *                logic treats every value here as a settled state.
-     * - `failed`   — worker reported `<status>failed</status>`,
-     *                emitted a malformed envelope, or the host gave up.
-     * - `aborted`  — user Stop or run-scoped supersede.
-     */
-    status: 'done' | 'partial' | 'failed' | 'malformed' | 'aborted';
-    message?: string;
-    /**
-     * Host structural envelope check (`verifier.ts`). Distinct from your
-     * orchestrator-level semantic acceptance of the worker output.
-     */
-    structuralVerdict?: 'ok' | 'malformed' | 'self-failed';
-  }
-  | {
-    kind: 'subagent-result';
-    id: string;
-    ts: number;
-    subagentId: string;
-    output: string;
-  }
-  | { kind: 'tool-call'; id: string; ts: number; call: ToolCall; subagentId?: string }
-  | { kind: 'tool-result'; id: string; ts: number; result: ToolResult; subagentId?: string }
+  | { kind: 'tool-call'; id: string; ts: number; call: ToolCall }
+  | { kind: 'tool-result'; id: string; ts: number; result: ToolResult }
   /**
    * Live partial-args snapshot for a streaming tool call. Emitted by
    * `consumeChatStream` every time the provider delivers a new
@@ -393,7 +250,7 @@ export type TimelineEvent =
    *
    * Surrogate callIds: when the provider has not yet sent a real id
    * for the call (first delta of a stream), the orchestrator uses
-   * `pending:${subagentId ?? 'orc'}:${index}` so the renderer can
+   * `pending:orc:${index}` so the renderer can
    * coalesce by index until the real id arrives in the eventual
    * `tool-call` event.
    *
@@ -406,7 +263,7 @@ export type TimelineEvent =
     kind: 'tool-call-args-delta';
     id: string;
     ts: number;
-    /** Stable per-call key (real id, or `pending:${subagentId ?? 'orc'}:${index}` surrogate). */
+    /** Stable per-call key (real id, or `pending:orc:${index}` surrogate). */
     callId: string;
     /** Tool name as soon as the provider names it (may arrive on the first frame). */
     name?: string;
@@ -414,7 +271,6 @@ export type TimelineEvent =
     index: number;
     /** Cumulative argumentsBuf snapshot — latest wins per `callId`. */
     argsBuf: string;
-    subagentId?: string;
   }
   /**
    * FS-aware live diff for an in-flight tool call. Phase 2 of the
@@ -464,16 +320,13 @@ export type TimelineEvent =
      * Optional because the event is also useful pre-settle.
      */
     settled?: boolean;
-    subagentId?: string;
   }
   | {
     kind: 'file-edit';
     id: string;
     ts: number;
     /**
-     * Originating orchestrator run id. Carries the parent run for both
-     * orchestrator-level and sub-agent-level edits (sub-agents inherit
-     * the parent run's id) so the renderer can aggregate per-turn FS
+     * Originating run id so the renderer can aggregate per-turn FS
      * impact in O(1) for the inline Revert badge on `UserPromptRow`.
      *
      * Optional on the wire so older transcripts persisted before this
@@ -485,23 +338,12 @@ export type TimelineEvent =
     filePath: string;
     additions: number;
     deletions: number;
-    subagentId?: string;
     /** Links this row to a checkpoint pending entry for inline Accept/Reject. */
     entryId?: string;
   }
   /**
-   * Token-usage report for a single streamed assistant turn. Emitted by the
-   * orchestrator turn (`subagentId` omitted) and by each sub-agent iteration
-   * (`subagentId` set).
-   *
-   * `assistantMsgId` is the id of the matching orchestrator turn; consumers
-   * join the event to the turn's text/reasoning deltas via this slot. For
-   * sub-agent emissions the field is intentionally an EMPTY STRING (sub-
-   * agent iterations don't produce orchestrator-level assistant turns) — the
-   * stable handle used for grouping is the `subagentId` field, NOT
-   * `assistantMsgId`. The optional `subagentTurnId` carries an id for the
-   * specific sub-agent iteration when one is available, but the renderer
-   * aggregates only on `subagentId`.
+   * Token-usage report for a single streamed assistant turn.
+   * `assistantMsgId` joins the event to the turn's text/reasoning deltas.
    */
   | {
     kind: 'token-usage';
@@ -509,14 +351,12 @@ export type TimelineEvent =
     ts: number;
     assistantMsgId: string;
     usage: TokenUsage;
-    subagentId?: string;
-    subagentTurnId?: string;
   }
   /**
    * Live orchestrator telemetry for the "waiting" window between streaming
    * deltas. Emitted at every meaningful transition (connecting, awaiting
-   * first token, running a tool, preparing the next turn, delegating,
-   * verifying sub-agent output, nudging, retrying after a provider
+   * first token, running a tool, preparing the next turn, nudging,
+   * retrying after a provider
    * failure). The renderer surfaces the most recent one in a single
    * live status row plus a stopwatch since it was emitted.
    *
@@ -534,8 +374,6 @@ export type TimelineEvent =
     | 'awaiting-response'
     | 'running-tool'
     | 'preparing-turn'
-    | 'delegating'
-    | 'verifying'
     | 'nudging'
     | 'retrying';
     /** Short human-readable label the row shows by default. */
@@ -545,12 +383,6 @@ export type TimelineEvent =
       toolName?: string;
       attempt?: number;
       maxAttempts?: number;
-      delegates?: number;
-      /** Max in-flight workers for the current delegation round. */
-      inFlightMax?: number;
-      /** Workers waiting for a pool slot (spawned but not yet running). */
-      queued?: number;
-      subagentId?: string;
       providerId?: string;
       modelId?: string;
       iteration?: number;
@@ -593,7 +425,6 @@ export type TimelineEvent =
      * each variant.
      */
     source: 'edit' | 'delete' | 'bash';
-    subagentId?: string;
   }
   /**
    * A previously-recorded checkpoint entry has been reverted (the
@@ -637,7 +468,6 @@ export type TimelineEvent =
     command: string;
     /** Workspace-relative paths that were created/modified/deleted. */
     paths: string[];
-    subagentId?: string;
   }
   /**
    * Synthetic mid-stream usage update (Phase 3 — 2026). Emitted
@@ -656,22 +486,18 @@ export type TimelineEvent =
    * same final state, so the synthetic stream is pure live
    * telemetry — meaningless after the fact.
    *
-   * `subagentId` scopes the event to a specific sub-agent's
-   * aggregate; absent → orchestrator-level.
    */
   | {
     kind: 'synthetic-usage-update';
     id: string;
     ts: number;
     /**
-     * Total completion tokens estimated since the last
-     * authoritative `token-usage` event for this owner (orchestrator
-     * or sub-agent). The reducer replaces `inFlight.completionTokens`
+     * Total completion tokens estimated since the last authoritative
+     * `token-usage` event. The reducer replaces `inFlight.completionTokens`
      * with this value (not adds — the renderer already accumulates
      * per delta and emits the running total each frame).
      */
     completionTokens: number;
-    subagentId?: string;
   };
 
 /** Phases for ephemeral `run-status` timeline events. */

@@ -1,11 +1,8 @@
 /**
  * Edit tool → checkpoint pending integration.
  *
- * Sub-agents execute the same `edit` tool as the orchestrator; a
- * successful edit must land in the per-conversation pending list with
- * the originating `runId` and optional `subagentId`. This closes the
- * delegate/tool/checkpoint gap without spinning up the full sub-agent
- * pool or provider stack.
+ * A successful `edit` records checkpoint metadata with the originating
+ * `runId` for the solo Agent V run.
  */
 
 import { describe, expect, it, beforeEach, vi } from 'vitest';
@@ -55,7 +52,7 @@ describe('edit tool — checkpoint pending integration', () => {
     vi.mocked(requireWorkspaceById).mockReset();
   });
 
-  it('records a pending change with runId and subagentId after a sub-agent edit', async () => {
+  it('records a pending change with runId after an edit', async () => {
     const ctxBase = newCtx();
     const filePath = 'src/feature.ts';
     const abs = join(ctxBase.workspaceRoot, filePath);
@@ -70,7 +67,7 @@ describe('edit tool — checkpoint pending integration', () => {
       startedAt: Date.now()
     });
 
-    const events: Array<{ kind: string; subagentId?: string; source?: string }> = [];
+    const events: Array<{ kind: string; source?: string }> = [];
     const result = await editTool.run(
       {
         path: filePath,
@@ -78,7 +75,6 @@ describe('edit tool — checkpoint pending integration', () => {
         newString: 'const v = 2;'
       },
       makeToolCtx(ctxBase, {
-        subagentId: 'A1',
         emit: (e) => {
           events.push(e);
         }

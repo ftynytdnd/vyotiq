@@ -1109,7 +1109,6 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
                   deletions: stats.deletions,
                   ...(hunks ? { hunks } : {}),
                   source: 'bash',
-                  ...(ctx.subagentId ? { subagentId: ctx.subagentId } : {})
                 });
               } catch (err) {
                 log.debug('bash recordChange failed; continuing', {
@@ -1125,7 +1124,6 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
                 ts: Date.now(),
                 command,
                 paths: auditOnlyPaths,
-                ...(ctx.subagentId ? { subagentId: ctx.subagentId } : {})
               });
             }
           } catch (err) {

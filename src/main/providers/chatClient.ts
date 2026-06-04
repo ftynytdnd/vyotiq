@@ -5,7 +5,7 @@
  * to either `streamOpenAi` (SSE, `/v1/chat/completions`) or
  * `streamOllama` (NDJSON, `/api/chat`) based on the persisted
  * `provider.dialect` field. Both implementations yield the same
- * `ChatStreamDelta` shape so callers (`runLoop`, `SubAgent`,
+ * `ChatStreamDelta` shape so callers (`runLoop`,
  * `consumeChatStream`, etc.) never branch on dialect themselves.
  *
  * Compatible providers via the OpenAI dialect: OpenAI, DeepSeek, Groq,

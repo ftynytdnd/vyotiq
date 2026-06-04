@@ -1,8 +1,7 @@
 /**
- * Default per-dialect ceilings for parallel sub-agent `streamChat` calls.
- * Persisted on provider records as `maxConcurrentStreams` so
- * `resolveDelegateRoundConcurrency` can clamp model-declared concurrency
- * without a Settings UI.
+ * Default per-dialect ceilings for concurrent provider `streamChat` calls.
+ * Persisted on provider records as `maxConcurrentStreams` for rate-guard
+ * clamping without a Settings UI.
  */
 
 import type { ProviderDialect } from '../types/provider.js';

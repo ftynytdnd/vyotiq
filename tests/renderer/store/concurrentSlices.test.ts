@@ -30,7 +30,6 @@ beforeEach(() => {
     events: [],
     assistantTexts: {},
     reasoningTexts: {},
-    subagents: {},
     orchestratorUsage: undefined,
     conversationId: null,
     runId: null,
@@ -66,7 +65,6 @@ describe('useChatStore — concurrent slices stay isolated', () => {
       events: [],
       assistantTexts: {},
       reasoningTexts: {},
-      subagents: {},
       orchestratorUsage: undefined
     });
 

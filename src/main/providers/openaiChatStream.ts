@@ -156,13 +156,11 @@ export async function* streamOpenAi(
       body['parallel_tool_calls'] = true;
     }
   } else if (req.toolChoice !== undefined) {
-    // Caller set `tool_choice` WITHOUT attaching tools. The SubAgent
-    // wrap-up turn does this: it re-issues the final iteration with
-    // `toolChoice: 'none'` to force the model to emit prose instead of
-    // more tool calls. The old guard (`tools.length > 0`) silently
-    // dropped the field, so the wrap-up hint had no effect and the
-    // sub-agent often kept calling tools right up until the 16-turn
-    // cap. `'none'` / `'auto'` / `'required'` are all meaningful
+    // Caller set `tool_choice` WITHOUT attaching tools (iteration-cap
+    // synthesis uses `toolChoice: 'none'`). The old guard (`tools.length > 0`)
+    // silently dropped the field, so synthesis turns had no effect and the
+    // model often kept calling tools right up until the iteration cap.
+    // `'none'` / `'auto'` / `'required'` are all meaningful
     // without a `tools` array — OpenAI and the major compat providers
     // accept the bare directive. Forward it through verbatim.
     body['tool_choice'] = req.toolChoice;

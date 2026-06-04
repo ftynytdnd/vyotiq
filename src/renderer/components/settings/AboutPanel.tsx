@@ -110,7 +110,7 @@ export function AboutPanel() {
         <div className={cn('surface-shell vx-prose', 'px-3 py-2.5')}>
           <p className="vx-row-label">Vyotiq · Agent V</p>
           <p className="vx-row-desc">
-            Local-first AI orchestrator with a markdown harness, parallel sub-agents, and direct
+            Local-first AI orchestrator with a markdown harness, a single dynamic Agent V, and direct
             OpenAI-compatible HTTP — no SDKs. Keys use your OS keychain; files stay in the active
             workspace.
           </p>

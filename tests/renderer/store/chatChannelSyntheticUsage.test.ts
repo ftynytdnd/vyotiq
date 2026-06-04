@@ -17,9 +17,7 @@
  *   5. Terminal events (`agent-text-end`, `agent-text-aborted`,
  *      `chat:done`, `chat:error`) wipe the counter for the owner /
  *      run so it can never carry over a stale value.
- *   6. Sub-agent owners are keyed separately from the orchestrator,
- *      so a synthetic update for `subagentId: 'sa-1'` lands on the
- *      sub-agent snapshot's `usage.inFlight`, not the orchestrator's.
+ *   6. Legacy events with extra fields do not break the `'orc'` owner path.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -133,7 +131,6 @@ describe('chatChannel — synthetic-usage-update dispatch (Phase 3)', () => {
       events: [],
       assistantTexts: {},
       reasoningTexts: {},
-      subagents: {},
       partialToolCallArgs: {},
       runId: null,
       isProcessing: false,
@@ -181,28 +178,12 @@ describe('chatChannel — synthetic-usage-update dispatch (Phase 3)', () => {
     });
   });
 
-  it('routes sub-agent deltas onto the matching SubAgentSnapshot.usage.inFlight', async () => {
-    // Need to spawn the sub-agent first so the reducer has a snapshot
-    // to land the synthetic usage on.
-    cb.onEvent('run-1', {
-      kind: 'subagent-spawn',
-      id: 'spawn',
-      ts: 0,
-      subagentId: 'sa-1',
-      task: 't',
-      files: [],
-      tools: []
-    });
-    cb.onEvent('run-1', textDelta('turn-sa', 'a'.repeat(300), { subagentId: 'sa-1' }));
+  it('folds streamed text deltas into orchestratorUsage.inFlight', async () => {
+    cb.onEvent('run-1', textDelta('turn-sa', 'a'.repeat(300)));
     await flushRaf();
     const state = useChatStore.getState();
-    expect(state.subagents['sa-1']?.usage?.inFlight?.completionTokens).toBeGreaterThan(0);
-    // The orchestrator aggregate must NOT have received the sub-agent's
-    // synthetic usage — owners are keyed separately.
-    expect(state.orchestratorUsage?.inFlight).toBeUndefined();
-    // The channel-side counter is keyed under the sub-agent's id.
-    expect(internal.syntheticUsageChars('run-1', 'sa-1')).toBe(300);
-    expect(internal.syntheticUsageChars('run-1', 'orc')).toBe(0);
+    expect(state.orchestratorUsage?.inFlight?.completionTokens).toBeGreaterThan(0);
+    expect(internal.syntheticUsageChars('run-1', 'orc')).toBe(300);
   });
 
   it('falls back to the chars/3.8 heuristic for non-BPE models', async () => {

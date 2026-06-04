@@ -13,11 +13,10 @@ import { useTimelineRowExpand } from '../shared/useTimelineRowExpand.js';
 interface FileEditGroupRowProps {
   rowKey: string;
   items: FileEditGroupChild[];
-  subagentId?: string;
   runId?: string;
 }
 
-export function FileEditGroupRow({ rowKey, items, subagentId, runId }: FileEditGroupRowProps) {
+export function FileEditGroupRow({ rowKey, items, runId }: FileEditGroupRowProps) {
   const { expanded, onToggle } = useTimelineRowExpand({ rowKey });
 
   const { primary, rest, additions, deletions } = useMemo(() => {
@@ -69,7 +68,6 @@ export function FileEditGroupRow({ rowKey, items, subagentId, runId }: FileEditG
               additions={c.additions}
               deletions={c.deletions}
               {...(c.entryId ? { entryId: c.entryId } : {})}
-              {...(subagentId ? { subagentId } : {})}
               {...(runId ? { runId } : {})}
             />
           ))}

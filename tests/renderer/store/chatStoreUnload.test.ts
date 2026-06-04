@@ -1,31 +1,11 @@
 /**
- * Inactive idle slice unload + terminal sub-agent salvage on finishRun.
+ * Inactive idle slice unload on conversation switch.
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useChatStore } from '@renderer/store/useChatStore';
 import { useConversationsStore } from '@renderer/store/useConversationsStore';
 import { chatSliceFixture } from '../../_fixtures/chatSlice';
-import type { SubAgentSnapshot } from '@renderer/components/timeline/reducer/types';
-
-function terminalSubagent(): SubAgentSnapshot {
-  return {
-    id: 'sub-1',
-    task: 'scan repo',
-    files: [],
-    missingFiles: [],
-    tools: [],
-    unknownTools: [],
-    status: 'done',
-    startedAt: 1,
-    endedAt: 2,
-    steps: [{ callId: 'c1', startedAt: 1 }],
-    fileEdits: [],
-    assistantTexts: { a1: { id: 'a1', text: 'done', startedAt: 1 } },
-    reasoningTexts: {},
-    iterationOrder: ['a1']
-  };
-}
 
 beforeEach(() => {
   useChatStore.setState({
@@ -34,7 +14,6 @@ beforeEach(() => {
     events: [],
     assistantTexts: {},
     reasoningTexts: {},
-    subagents: {},
     orchestratorUsage: undefined,
     conversationId: null,
     runId: null,
@@ -51,28 +30,6 @@ describe('useChatStore RAM', () => {
     // Covered in checkpointsDropConversation.test.ts; smoke that chat routes through it.
     useChatStore.getState().dropConversation('missing');
     expect(useChatStore.getState().slices['missing']).toBeUndefined();
-  });
-
-  it('finishRun salvages terminal sub-agent trace payloads', () => {
-    useChatStore.setState({
-      slices: {
-        'conv-a': chatSliceFixture({
-          conversationId: 'conv-a',
-          runId: 'run-a',
-          isProcessing: true,
-          subagents: { 'sub-1': terminalSubagent() }
-        })
-      },
-      runIdToConv: { 'run-a': 'conv-a' },
-      conversationId: 'conv-a',
-      runId: 'run-a',
-      isProcessing: true
-    });
-    useChatStore.getState().finishRun('run-a');
-    const snap = useChatStore.getState().slices['conv-a']!.subagents['sub-1']!;
-    expect(snap.status).toBe('done');
-    expect(snap.steps).toEqual([]);
-    expect(snap.assistantTexts).toEqual({});
   });
 
   it('setActiveConversation unloads the previous idle slice and marks it unhydrated', () => {

@@ -6,25 +6,6 @@ export function toolGroupSummary(
   children: ToolGroupChild[]
 ): { verb: string; primary: string; suffix: string } {
   const total = children.length;
-  if (toolName === 'delegate') {
-    if (total === 1) {
-      const first = children[0];
-      const id =
-        typeof first?.call?.args?.['id'] === 'string'
-          ? String(first.call.args['id']).trim()
-          : '';
-      return {
-        verb: 'Spawning',
-        primary: id || (first ? extractPrimary('delegate', first) : 'worker'),
-        suffix: ''
-      };
-    }
-    return {
-      verb: 'Spawning',
-      primary: `${total} workers`,
-      suffix: ''
-    };
-  }
   if (total >= 10) {
     return {
       verb: String(total),
@@ -78,11 +59,7 @@ function countDistinctEditPaths(children: ToolGroupChild[]): number {
  * neither is populated (e.g. a still-streaming partial with no path
  * key yet).
  *
- * Exported so delegation worker inline rows can reuse the same preference
- * order at the sub-agent level — both call sites need to identify
- * "edits to the same file" for diff-stats merging and the
- * `n other edits` summary unit, and divergent helpers risk silently
- * drifting across surfaces.
+ * Shared path resolution for edit tool-group children.
  */
 export function editChildPath(child: ToolGroupChild | undefined): string {
   if (!child) return '';
@@ -154,14 +131,6 @@ export function toolGroupDiffStats(children: ToolGroupChild[]): {
     // path can't compute (e.g. `create: true` against a not-yet-
     // existing path).
     if (c.partial && c.call) {
-      const toolName = c.call.name;
-      if (toolName === 'report') {
-        const body = c.call.args?.['body'];
-        if (typeof body === 'string' && body.length > 0) {
-          additions += body.split('\n').length;
-        }
-        continue;
-      }
       const counts = countPartialDiffLines(c.call.args ?? {});
       additions += counts.additions;
       deletions += counts.deletions;
@@ -251,8 +220,6 @@ function verbFor(name: ToolName, first?: ToolGroupChild): string {
     case 'search': return isLocalSearch(first) ? 'Grepped' : 'Searched';
     case 'memory': return 'Memory';
     case 'recall': return 'Recalled';
-    case 'report': return 'Wrote';
-    case 'delegate': return 'Spawning';
     case 'finish': return 'Finished';
     case 'ask_user': return 'Asked';
     case 'unknown': return 'Unknown tool';
@@ -277,8 +244,6 @@ function unitFor(name: ToolName, singular: boolean): string {
     case 'search': return singular ? 'query' : 'queries';
     case 'memory': return singular ? 'note' : 'notes';
     case 'recall': return singular ? 'conversation' : 'conversations';
-    case 'report': return singular ? 'report' : 'reports';
-    case 'delegate': return singular ? 'task' : 'tasks';
     case 'finish': return singular ? 'answer' : 'answers';
     case 'ask_user': return singular ? 'question' : 'questions';
     case 'unknown': return singular ? 'invocation' : 'invocations';
@@ -365,26 +330,6 @@ function extractPrimary(name: ToolName, child: ToolGroupChild): string {
         return `read ${targetId.slice(0, 8)}…`;
       }
       return action;
-    }
-    case 'report': {
-      // Surface the title once it lands (typed on `data`), or fall back
-      // to the in-flight `args.title` so the rolled-up row stays
-      // informative while the sub-agent is still authoring the body.
-      const title =
-        typeof args['title'] === 'string'
-          ? (args['title'] as string)
-          : data?.tool === 'report'
-            ? data.title
-            : '';
-      return title;
-    }
-    case 'delegate': {
-      // Orchestrator action tools are intercepted by the run loop and do
-      // not normally surface as standard tool cards; surface the most
-      // informative arg when one does appear.
-      const task = typeof args['task'] === 'string' ? (args['task'] as string) : '';
-      const id = typeof args['id'] === 'string' ? (args['id'] as string) : '';
-      return task || id;
     }
     case 'finish':
       return typeof args['summary'] === 'string' ? (args['summary'] as string) : '';

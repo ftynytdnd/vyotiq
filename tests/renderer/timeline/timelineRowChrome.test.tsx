@@ -2,7 +2,7 @@
  * timelineRowChrome — May 2026 timeline restyle integration regression.
  *
  * Renders one full Timeline turn block carrying a representative mix of
- * row kinds (user prompt → reasoning → sub-agent → tool group →
+ * row kinds (user prompt → reasoning → tool group →
  * assistant prose → run complete) and pins the chromeless reading
  * column contract. The intent is a single failure surface that catches
  * any future drift back into card / lane / hairline-rule chrome on a
@@ -15,7 +15,7 @@
  *   - Assistant prose row carries no rounded/tinted lane fill and
  *     surfaces an `aria-label` on the row root.
  *   - Phase rows are absent; run-complete dividers have no hairline rules.
- *   - Delegation workers render in delegation blocks with worker tags.
+ *   - Legacy sub-agent lifecycle events do not mount delegation chrome.
  *   - Hover-revealed Copy/Edit/Revert + Copy/Regenerate strips are
  *     still present beneath the user and assistant rows.
  */
@@ -27,6 +27,7 @@ import { useChatStore } from '@renderer/store/useChatStore';
 import { useTimelineUiStore } from '@renderer/store/useTimelineUiStore';
 import { INITIAL_TIMELINE_STATE } from '@renderer/components/timeline/reducer/types';
 import type { TimelineEvent } from '@shared/types/chat';
+import { normalizeLegacyTranscript } from '@shared/transcript/normalizeLegacyTranscript';
 
 let originalScrollIntoView: typeof window.HTMLElement.prototype.scrollIntoView;
 let originalRaf: typeof window.requestAnimationFrame;
@@ -60,7 +61,7 @@ afterEach(() => {
 
 const CONV_ID = 'c-row-chrome';
 
-function seedSettledTurn(opts: { withSubAgentModel: boolean }) {
+function seedSettledTurn(opts: { withLegacyWorkerModel: boolean }) {
   const events: TimelineEvent[] = [
     { kind: 'user-prompt', id: 'p1', ts: 100, content: 'Audit the providers/' },
     { kind: 'agent-reasoning-delta', id: 'r1', ts: 110, delta: 'Planning…' },
@@ -73,7 +74,7 @@ function seedSettledTurn(opts: { withSubAgentModel: boolean }) {
       task: 'Read providers',
       files: ['src/main/providers/openaiChatStream.ts'],
       tools: ['read'],
-      ...(opts.withSubAgentModel
+      ...(opts.withLegacyWorkerModel
         ? { model: { providerId: 'openai', modelId: 'gpt-test' } }
         : {})
     },
@@ -99,7 +100,7 @@ function seedSettledTurn(opts: { withSubAgentModel: boolean }) {
     conversationId: CONV_ID,
     isProcessing: false,
     runStartedAt: 100,
-    events,
+    events: normalizeLegacyTranscript(events),
     assistantTexts: {
       a1: { id: 'a1', text: 'Done. Here is what I found.', done: true, startedAt: 150 }
     },
@@ -112,34 +113,12 @@ function seedSettledTurn(opts: { withSubAgentModel: boolean }) {
         endedAt: 120
       }
     },
-    subagents: {
-      A1: {
-        id: 'A1',
-        task: 'Read providers',
-        files: ['src/main/providers/openaiChatStream.ts'],
-        missingFiles: [],
-        tools: ['read'],
-        unknownTools: [],
-        status: 'done',
-        startedAt: 130,
-        endedAt: 140,
-        steps: [],
-        fileEdits: [],
-        assistantTexts: {},
-        reasoningTexts: {},
-        iterationOrder: [],
-        partialToolCallArgs: {},
-        ...(opts.withSubAgentModel
-          ? { model: { providerId: 'openai', modelId: 'gpt-test' } }
-          : {})
-      }
-    }
   });
 }
 
 describe('Timeline row chrome — May 2026 restyle', () => {
   it('renders the canonical turn flush in a single chromeless agent column', () => {
-    seedSettledTurn({ withSubAgentModel: true });
+    seedSettledTurn({ withLegacyWorkerModel: true });
     useTimelineUiStore.setState({
       expandedByConvo: { [CONV_ID]: new Set(['turn-activity:p1']) },
       manualOverrideByConvo: {},
@@ -177,16 +156,13 @@ describe('Timeline row chrome — May 2026 restyle', () => {
     expect((runComplete as HTMLElement).className).not.toMatch(/border-t/);
     expect(runComplete!.innerHTML).not.toMatch(/h-px[^"]*flex-1[^"]*bg-border-divider/);
 
-    // 5. Delegation workers use delegation chrome.
-    const delegationWorker = container.querySelector('[data-row-kind="delegation-worker"]');
-    expect(delegationWorker).not.toBeNull();
-    expect(delegationWorker!.className).toContain('vx-timeline-deleg-worker');
-    expect(delegationWorker!.textContent ?? '').toContain('Read providers');
-    expect(delegationWorker!.textContent ?? '').toMatch(/A1/);
+    // 5. Sub-agent lifecycle events do not mount delegation chrome.
+    expect(container.querySelector('[data-row-kind="delegation-worker"]')).toBeNull();
+    expect(container.querySelector('.vx-timeline-deleg-stream')).toBeNull();
   });
 
-  it('renders delegation worker blocks even when model metadata is absent', () => {
-    seedSettledTurn({ withSubAgentModel: false });
+  it('renders settled turns when sub-agent model metadata is absent', () => {
+    seedSettledTurn({ withLegacyWorkerModel: false });
     useTimelineUiStore.setState({
       expandedByConvo: { [CONV_ID]: new Set(['turn-activity:p1']) },
       manualOverrideByConvo: {},
@@ -196,8 +172,7 @@ describe('Timeline row chrome — May 2026 restyle', () => {
 
     const { container } = render(<Timeline />);
 
-    const delegationWorker = container.querySelector('[data-row-kind="delegation-worker"]');
-    expect(delegationWorker).not.toBeNull();
-    expect(delegationWorker!.textContent ?? '').toContain('Read providers');
+    expect(container.querySelector('[data-row-kind="assistant-text"]')).not.toBeNull();
+    expect(container.querySelector('[data-row-kind="delegation-worker"]')).toBeNull();
   });
 });

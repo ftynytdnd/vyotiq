@@ -1,11 +1,10 @@
 /**
  * Compact run token usage — prompt / completion split; hover shows
- * orchestrator vs sub-agent breakdown.
+ * orchestrator breakdown.
  */
 
 import { memo } from 'react';
 import { BarChart2 } from 'lucide-react';
-import type { TokenUsage } from '@shared/types/chat.js';
 import type { TokenUsageAggregate } from '../timeline/reducer/types.js';
 import { cn } from '../../lib/cn.js';
 import {
@@ -17,10 +16,9 @@ import { formatTokenCount, formatTokenCountWithUnit } from '../../lib/formatToke
 interface TokenUsagePillProps {
   total?: TokenUsageAggregate;
   orchestrator?: TokenUsageAggregate;
-  subagents: Record<string, TokenUsageAggregate | undefined>;
 }
 
-function usageLine(label: string, u: TokenUsage | undefined): string[] {
+function usageLine(label: string, u: import('@shared/types/chat.js').TokenUsage | undefined): string[] {
   if (!u || (u.promptTokens <= 0 && u.completionTokens <= 0)) return [];
   const lines: string[] = [`${label}:`];
   if (u.promptTokens > 0) lines.push(`  Prompt: ${formatTokenCountWithUnit(u.promptTokens)}`);
@@ -31,9 +29,8 @@ function usageLine(label: string, u: TokenUsage | undefined): string[] {
 }
 
 function buildTitle(
-  latest: TokenUsage,
-  orchestrator: TokenUsageAggregate | undefined,
-  subagents: Record<string, TokenUsageAggregate | undefined>
+  latest: import('@shared/types/chat.js').TokenUsage,
+  orchestrator: TokenUsageAggregate | undefined
 ): string {
   const lines: string[] = [
     `Prompt: ${formatTokenCountWithUnit(latest.promptTokens)}`,
@@ -42,36 +39,12 @@ function buildTitle(
     'By role:'
   ];
   lines.push(...usageLine('Orchestrator', orchestrator?.latest));
-  const ids = Object.keys(subagents).sort();
-  let subTotal: TokenUsage | undefined;
-  for (const id of ids) {
-    const u = subagents[id]?.latest;
-    if (!u) continue;
-    if (!subTotal) {
-      subTotal = { ...u };
-    } else {
-      subTotal = {
-        promptTokens: subTotal.promptTokens + u.promptTokens,
-        completionTokens: subTotal.completionTokens + u.completionTokens,
-        totalTokens: subTotal.totalTokens + u.totalTokens
-      };
-    }
-  }
-  if (subTotal) {
-    lines.push(...usageLine('Sub-agents', subTotal));
-  }
-  if (ids.length > 1) {
-    for (const id of ids) {
-      lines.push(...usageLine(`  ${id.slice(0, 8)}`, subagents[id]?.latest));
-    }
-  }
   return lines.join('\n');
 }
 
 export const TokenUsagePill = memo(function TokenUsagePill({
   total,
-  orchestrator,
-  subagents
+  orchestrator
 }: TokenUsagePillProps) {
   if (!total) return null;
 
@@ -79,7 +52,7 @@ export const TokenUsagePill = memo(function TokenUsagePill({
   const hasUsage = latest.promptTokens > 0 || latest.completionTokens > 0;
   if (!hasUsage) return null;
 
-  const title = buildTitle(latest, orchestrator, subagents);
+  const title = buildTitle(latest, orchestrator);
 
   return (
     <span

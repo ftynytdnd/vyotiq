@@ -55,26 +55,15 @@ afterEach(() => {
   useTimelineUiStore.setState({ timelineAtTail: true });
 });
 
-function seedDelegationTurn(withResponse = false) {
+function seedLiveTurn(withResponse = false) {
   const events: TimelineEvent[] = [
     { kind: 'user-prompt', id: 'p1', ts: 1, content: 'Analyze the codebase' },
     {
-      kind: 'subagent-pending',
-      id: 'sp1',
+      kind: 'run-status',
+      id: 'rs1',
       ts: 2,
-      subagentId: 'A1',
-      task: 'Analyze entry point',
-      files: [],
-      tools: ['read']
-    },
-    {
-      kind: 'subagent-spawn',
-      id: 'ss1',
-      ts: 3,
-      subagentId: 'A1',
-      task: 'Analyze entry point',
-      files: [],
-      tools: ['read']
+      phase: 'running-tool',
+      label: 'Exploring'
     }
   ];
 
@@ -87,31 +76,7 @@ function seedDelegationTurn(withResponse = false) {
     isProcessing: true,
     runStartedAt: Date.now(),
     events,
-    subagents: {
-      A1: {
-        id: 'A1',
-        task: 'Analyze entry point',
-        files: [],
-        missingFiles: [],
-        tools: ['read'],
-        unknownTools: [],
-        status: 'running',
-        startedAt: 1,
-        steps: [],
-        fileEdits: [],
-        assistantTexts: {},
-        reasoningTexts: {},
-        iterationOrder: [],
-        partialToolCallArgs: {}
-      }
-    },
-    latestOrchestratorRunStatus: {
-      kind: 'run-status',
-      id: 'rs1',
-      ts: 100,
-      phase: 'delegating',
-      label: 'Spawning 5 workers…'
-    },
+    latestOrchestratorRunStatus: events[1] as Extract<TimelineEvent, { kind: 'run-status' }>,
     ...(withResponse
       ? {
         assistantTexts: {
@@ -123,8 +88,8 @@ function seedDelegationTurn(withResponse = false) {
 }
 
 describe('Timeline inline column alignment', () => {
-  it('uses a flat agent column during delegation', () => {
-    seedDelegationTurn(true);
+  it('uses a flat agent column during live turns', () => {
+    seedLiveTurn(true);
 
     const { container } = render(<Timeline />);
 
@@ -132,29 +97,27 @@ describe('Timeline inline column alignment', () => {
 
     expect(agentColumn).not.toBeNull();
     expect(agentColumn?.className ?? '').toContain('vx-timeline-agent-column');
-    expect(container.querySelector('.vx-timeline-deleg-stream')).not.toBeNull();
+    expect(container.querySelector('.vx-timeline-deleg-stream')).toBeNull();
   });
 
-  it('uses delegation stream during live delegation (no category eyebrows)', () => {
-    seedDelegationTurn(true);
+  it('renders assistant prose inline without delegation wrappers', () => {
+    seedLiveTurn(true);
 
     const { container } = render(<Timeline />);
 
-    const weaveStream = container.querySelector('.vx-timeline-deleg-stream');
     const assistantRow = container.querySelector('[data-row-kind="assistant-text"]');
 
-    expect(weaveStream).not.toBeNull();
     expect(assistantRow).not.toBeNull();
+    expect(assistantRow?.closest('.timeline-agent-column')).not.toBeNull();
     expect(container.textContent ?? '').not.toContain('Delegates');
   });
 
-  it('does not render live-status rows in the inline stream during delegation', () => {
-    seedDelegationTurn(false);
+  it('does not render live-status rows in the inline stream during tool work', () => {
+    seedLiveTurn(false);
 
     const { container } = render(<Timeline />);
 
     expect(container.querySelector('[data-row-kind="live-status"]')).toBeNull();
-    expect(container.textContent ?? '').not.toContain('Exploring');
   });
 
   // Jump chip is portaled to the scroll parent's parent; happy-dom scroll metrics
@@ -179,15 +142,14 @@ describe('Timeline inline column alignment', () => {
     expect(chip.querySelector('.vx-jump-to-latest-label')).toHaveTextContent('Latest');
   });
 
-  it('does not add a response separator during live delegation stream', () => {
-    seedDelegationTurn(true);
+  it('does not add a response separator during live inline stream', () => {
+    seedLiveTurn(true);
 
     const { container } = render(<Timeline />);
 
-    const weaveStream = container.querySelector('.vx-timeline-deleg-stream');
     const assistant = container.querySelector('[data-row-kind="assistant-text"]');
 
-    expect(weaveStream?.contains(assistant)).toBe(true);
+    expect(assistant).not.toBeNull();
     expect(container.querySelector('.border-t.border-border-subtle\\/15')).toBeNull();
   });
 });

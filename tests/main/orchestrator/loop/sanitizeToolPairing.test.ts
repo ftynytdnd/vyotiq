@@ -238,7 +238,7 @@ describe('sanitizeToolCallPairing', () => {
     });
 
     it('keeps the simple variant backward-compatible', () => {
-      // The existing call sites that pass through SubAgent etc. must
+      // All orchestrator call sites must
       // keep returning a bare `ChatMessage[]`.
       const msgs: ChatMessage[] = [asst(['c1'])];
       const out = sanitizeToolCallPairing(msgs);

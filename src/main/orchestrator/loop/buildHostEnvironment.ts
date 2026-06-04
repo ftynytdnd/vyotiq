@@ -38,13 +38,9 @@
  *     actionable by the model and bulks the envelope.
  *   - Any network / interface info — out of scope.
  *
- * Sub-agents ALSO receive this envelope (see `SubAgent.ts` — rebuilt
- * fresh per iteration alongside their `<run_state>` block, bypassing
- * the static-body cache). Threading the same envelope through both
- * surfaces means a delegated `bash` worker on Windows can pick
- * Get-ChildItem / `\` paths / `.ps1` scripts without an extra
- * `bash uname` probe round-trip, and a `report` worker for "today's
- * status" reads the date directly instead of guessing.
+ * Rebuilt fresh each orchestrator iteration alongside `<run_state>` so
+ * `bash` on Windows can use Get-ChildItem / `\` paths / `.ps1` without
+ * an extra `uname` probe round-trip.
  */
 
 import os from 'node:os';

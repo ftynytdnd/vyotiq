@@ -10,7 +10,7 @@
  * loop is responsible for:
  *
  *   1. Calling `argsDeltaTap` from `handleAssistantTurn` /
- *      `handleDelegates` whenever a fresh `tool-call-args-delta`
+ *      the diff streamer whenever a fresh `tool-call-args-delta`
  *      lands.
  *   2. Calling `onToolCallSettled` once the authoritative
  *      `tool-call` event has been emitted (so the streamer flips to
@@ -67,22 +67,19 @@ function inferToolFromParsedArgs(
 
 export interface StreamingArgsTap {
   /**
-   * Forward a fresh args-buffer snapshot for one in-flight tool
-   * call. Names + sub-agent ids are passed through unchanged so the
-   * streamer can scope its emit correctly.
+   * Forward a fresh args-buffer snapshot for one in-flight tool call.
    */
   argsDeltaTap: (
     callId: string,
     name: string | undefined,
-    argsBuf: string,
-    subagentId?: string
+    argsBuf: string
   ) => void;
   /**
    * Mark the call as settled. The streamer stops accepting late
    * deltas for this call; the parser entry is dropped so a slow
    * straggler doesn't pin memory.
    *
-   * `owner` (`'orc'` or a `subagentId`) and `index` (the wire
+   * `owner` (`'orc'`) and `index` (the wire
    * position of the call inside the assistant turn) are forwarded
    * to `DiffStreamer.notifySettled` for surrogate-callId
    * reconciliation. When the provider transitioned `id` from
@@ -112,12 +109,7 @@ export interface StreamingArgsTap {
 export function createStreamingArgsTap(diffStreamer: DiffStreamer): StreamingArgsTap {
   const argsParsers = new Map<string, PartialJsonParser>();
 
-  const argsDeltaTap: StreamingArgsTap['argsDeltaTap'] = (
-    callId,
-    name,
-    argsBuf,
-    subagentId
-  ) => {
+  const argsDeltaTap: StreamingArgsTap['argsDeltaTap'] = (callId, name, argsBuf) => {
     let parser = argsParsers.get(callId);
     if (!parser) {
       parser = new PartialJsonParser();
@@ -135,8 +127,7 @@ export function createStreamingArgsTap(diffStreamer: DiffStreamer): StreamingArg
     diffStreamer.onArgsDelta({
       callId,
       name: resolvedName,
-      parsed,
-      ...(subagentId !== undefined ? { subagentId } : {})
+      parsed
     });
   };
 

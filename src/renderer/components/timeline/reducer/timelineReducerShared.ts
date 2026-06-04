@@ -1,18 +1,9 @@
 /**
- * Shared pure helpers for the timeline reducer modules. Extracted
- * from `applyTimelineEvent.ts` so sub-agent branches can live in
- * focused files without duplicating the append
- * and partial-args reconciliation logic.
+ * Shared pure helpers for the timeline reducer modules.
  */
 
 import type { TimelineEvent } from '@shared/types/chat.js';
-import type { ToolCall, ToolResult } from '@shared/types/tool.js';
-import type {
-  PartialToolCallArgs,
-  ReasoningTextAcc,
-  SubAgentSnapshot,
-  SubAgentStep
-} from './types.js';
+import type { PartialToolCallArgs, ReasoningTextAcc } from './types.js';
 
 /** Append `event` immutably or mutably — see `ApplyEventOptions.mutateEvents`. */
 export function appendTimelineEvent(
@@ -65,52 +56,4 @@ export function clearPartialFor(
   const { [lowestKey]: _drop, ...rest } = prior;
   void _drop;
   return rest;
-}
-
-export function ensureSnapshot(
-  byId: Record<string, SubAgentSnapshot>,
-  id: string,
-  ts: number
-): SubAgentSnapshot {
-  const existing = byId[id];
-  if (existing) return existing;
-  return {
-    id,
-    task: '',
-    files: [],
-    missingFiles: [],
-    tools: [],
-    unknownTools: [],
-    status: 'running',
-    startedAt: ts,
-    steps: [],
-    fileEdits: [],
-    assistantTexts: {},
-    reasoningTexts: {},
-    iterationOrder: [],
-    partialToolCallArgs: {}
-  };
-}
-
-export function upsertStep(
-  steps: SubAgentStep[],
-  patch: { callId: string; call?: ToolCall; result?: ToolResult; ts: number }
-): SubAgentStep[] {
-  const idx = steps.findIndex((s) => s.callId === patch.callId);
-  if (idx === -1) {
-    const next: SubAgentStep = {
-      callId: patch.callId,
-      startedAt: patch.ts,
-      ...(patch.call ? { call: patch.call } : {}),
-      ...(patch.result ? { result: patch.result, endedAt: patch.ts } : {})
-    };
-    return [...steps, next];
-  }
-  const cur = steps[idx]!;
-  const merged: SubAgentStep = {
-    ...cur,
-    ...(patch.call ? { call: patch.call } : {}),
-    ...(patch.result ? { result: patch.result, endedAt: cur.endedAt ?? patch.ts } : {})
-  };
-  return steps.map((s, i) => (i === idx ? merged : s));
 }
