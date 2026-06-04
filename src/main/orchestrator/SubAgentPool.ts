@@ -23,7 +23,8 @@ const log = logger.child('orchestrator/pool');
 function withRunTimeout<T>(
   promise: Promise<T>,
   signal: AbortSignal,
-  specId: string
+  specId: string,
+  onTimeout?: () => void
 ): Promise<T> {
   if (signal.aborted) {
     return Promise.reject(new DOMException('Aborted', 'AbortError'));
@@ -31,6 +32,12 @@ function withRunTimeout<T>(
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
       cleanup();
+      // Stop the underlying `runSubAgent` (in-flight provider stream +
+      // next tool iteration) instead of just abandoning its promise.
+      // Without this the worker keeps burning provider tokens and
+      // running tools long after the pool reported `failed` to the
+      // verifier. `onTimeout` aborts a per-spec child controller.
+      onTimeout?.();
       reject(
         new Error(
           `Sub-agent ${specId} run timed out after ${Math.round(SUBAGENT_RUN_TIMEOUT_MS / 1000)}s`
@@ -102,6 +109,15 @@ export async function runSubAgentPool(specs: SubAgentSpec[], deps: PoolDeps): Pr
       } catch (err) {
         log.warn('onSpawn listener threw', { id: spec.id, err });
       }
+      // Per-spec child controller linked to the pool signal. The
+      // run-timeout aborts THIS child (stopping only the timed-out
+      // worker's stream + tools) while a parent abort cascades to every
+      // child via the listener below. `runSubAgent` honours the signal
+      // at iteration boundaries and threads it into `streamChat`.
+      const childAbort = new AbortController();
+      const onParentAbort = (): void => childAbort.abort();
+      if (deps.signal.aborted) childAbort.abort();
+      else deps.signal.addEventListener('abort', onParentAbort, { once: true });
       const perAgentDeps: SubAgentDeps = {
         selection: deps.selection,
         ...(deps.providerName ? { providerName: deps.providerName } : {}),
@@ -110,7 +126,7 @@ export async function runSubAgentPool(specs: SubAgentSpec[], deps: PoolDeps): Pr
         runId: deps.runId,
         conversationId: deps.conversationId,
         permissions: deps.permissions,
-        signal: deps.signal,
+        signal: childAbort.signal,
         ...(deps.onToolCall
           ? { onToolCall: (call, subagentId) => deps.onToolCall?.(call, subagentId) }
           : {}),
@@ -171,7 +187,8 @@ export async function runSubAgentPool(specs: SubAgentSpec[], deps: PoolDeps): Pr
         run = await withRunTimeout(
           runSubAgent(spec, perAgentDeps),
           deps.signal,
-          spec.id
+          spec.id,
+          () => childAbort.abort()
         );
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -196,6 +213,11 @@ export async function runSubAgentPool(specs: SubAgentSpec[], deps: PoolDeps): Pr
           status,
           error: msg
         };
+      } finally {
+        // A worker processes many specs in sequence; drop this spec's
+        // parent-abort listener so they don't pile up on `deps.signal`
+        // for the lifetime of the pool run.
+        deps.signal.removeEventListener('abort', onParentAbort);
       }
       results[next] = run;
       try {

@@ -91,7 +91,10 @@ export function cloneLoopCheckpoint(state: {
   askUserPayload: AskUserStructuredPayload;
 }): LoopCheckpoint {
   return {
-    messages: state.messages,
+    // Defensive shallow copy: the checkpoint must not alias the live
+    // loop's `messages` array, so a resume that appends can never
+    // retroactively mutate state observed elsewhere.
+    messages: [...state.messages],
     query: state.query,
     nextIteration: state.nextIteration,
     consecutiveEmptyTurns: state.consecutiveEmptyTurns,

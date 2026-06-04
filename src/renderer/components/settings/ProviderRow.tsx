@@ -10,7 +10,7 @@
  * the project's stealth-dark aesthetic where surfaces lean on
  * background contrast rather than visible boxes.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Trash2,
   RefreshCcw,
@@ -237,6 +237,15 @@ function AttributionSection({
   const [referer, setReferer] = useState(provider.attribution?.referer ?? '');
   const [title, setTitle] = useState(provider.attribution?.title ?? '');
   const [savedTick, setSavedTick] = useState(false);
+  // Hold the "Saved ✓" reset timer so we can cancel it on unmount and
+  // never call `setState` on an unmounted component (the section can be
+  // collapsed/removed within the 1.5s window).
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (savedTimerRef.current !== null) clearTimeout(savedTimerRef.current);
+    };
+  }, []);
 
   // Re-seed local state when the underlying record changes (e.g. user
   // saved, then collapsed and reopened a sibling row that updated the
@@ -288,7 +297,11 @@ function AttributionSection({
     if (title.trim().length > 0) next.title = title.trim();
     onSave(next);
     setSavedTick(true);
-    window.setTimeout(() => setSavedTick(false), 1500);
+    if (savedTimerRef.current !== null) clearTimeout(savedTimerRef.current);
+    savedTimerRef.current = setTimeout(() => {
+      savedTimerRef.current = null;
+      setSavedTick(false);
+    }, 1500);
   };
 
   return (

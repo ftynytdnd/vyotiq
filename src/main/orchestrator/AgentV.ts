@@ -171,9 +171,15 @@ export function listActiveRuns(): ActiveRunInfo[] {
  */
 export function abortRunsForConversation(conversationId: string): number {
   let aborted = 0;
-  for (const run of activeRuns.values()) {
+  // Route through `abortRun` (not a bare `run.abort.abort()`) so a run
+  // paused on `ask_user` also has its `pausedRuns` checkpoint cleared.
+  // A paused run's loop is NOT executing, so aborting the signal alone
+  // does nothing — the heavy `LoopCheckpoint` (messages, spin buffer,
+  // IPC callbacks) would otherwise leak for the rest of the session
+  // when the conversation/workspace/provider it belongs to is removed.
+  for (const [runId, run] of activeRuns) {
     if (run.conversationId === conversationId) {
-      run.abort.abort();
+      abortRun(runId);
       aborted += 1;
     }
   }
@@ -188,9 +194,9 @@ export function abortRunsForConversation(conversationId: string): number {
  */
 export function abortRunsForWorkspace(workspaceId: string): number {
   let aborted = 0;
-  for (const run of activeRuns.values()) {
+  for (const [runId, run] of activeRuns) {
     if (run.workspaceId === workspaceId) {
-      run.abort.abort();
+      abortRun(runId);
       aborted += 1;
     }
   }
@@ -206,9 +212,9 @@ export function abortRunsForWorkspace(workspaceId: string): number {
  */
 export function abortRunsForProvider(providerId: string): number {
   let aborted = 0;
-  for (const run of activeRuns.values()) {
+  for (const [runId, run] of activeRuns) {
     if (run.providerId === providerId) {
-      run.abort.abort();
+      abortRun(runId);
       aborted += 1;
     }
   }

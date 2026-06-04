@@ -155,4 +155,37 @@ describe('runSubAgentPool', () => {
       vi.useRealTimers();
     }
   });
+
+  it('aborts the underlying sub-agent signal on timeout (stops orphaned work)', async () => {
+    vi.useFakeTimers();
+    try {
+      const parent = new AbortController();
+      let childSignal: AbortSignal | undefined;
+      vi.mocked(runSubAgent).mockImplementation(
+        (_s, deps) =>
+          new Promise(() => {
+            childSignal = (deps as { signal: AbortSignal }).signal;
+            /* never settles on its own */
+          })
+      );
+
+      const poolPromise = runSubAgentPool([spec('slow')], {
+        ...baseDeps,
+        signal: parent.signal
+      });
+      await vi.advanceTimersByTimeAsync(SUBAGENT_RUN_TIMEOUT_MS);
+      const runs = await poolPromise;
+
+      expect(runs[0]?.status).toBe('failed');
+      // The per-spec child signal handed to runSubAgent was aborted so
+      // its in-flight stream + next tool iteration stop.
+      expect(childSignal).toBeDefined();
+      expect(childSignal).not.toBe(parent.signal);
+      expect(childSignal!.aborted).toBe(true);
+      // The pool's parent signal is untouched — sibling workers survive.
+      expect(parent.signal.aborted).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -91,11 +91,17 @@ vi.mock('@main/settings/settingsStore.js', () => ({
 import {
   abortRun,
   abortRunsForConversation,
+  abortRunsForProvider,
   abortRunsForWorkspace,
   findAllActiveRunsForConversation,
   listActiveRuns,
   startRun
 } from '@main/orchestrator/AgentV';
+import {
+  isRunAwaitingUser,
+  storePausedRun,
+  type PausedRunEntry
+} from '@main/orchestrator/pausedRunRegistry';
 import type { ChatSendInput } from '@shared/types/chat';
 
 function makeInput(over: Partial<ChatSendInput> = {}): ChatSendInput {
@@ -257,6 +263,61 @@ describe('listActiveRuns / abort surfaces', () => {
     expect(listActiveRuns()).toEqual([]);
     expect(abortRunsForConversation('nope')).toBe(0);
     expect(abortRunsForWorkspace('nope')).toBe(0);
+  });
+
+  it('bulk-abort clears the pausedRuns checkpoint (no ask_user leak)', async () => {
+    // Regression: `abortRunsForConversation/Workspace/Provider` used to
+    // only flip the AbortController. A run paused on `ask_user` is NOT
+    // executing, so its heavy `LoopCheckpoint` survived in `pausedRuns`
+    // for the rest of the session when the conversation/workspace/
+    // provider was removed. They now route through `abortRun`, which
+    // clears the paused entry.
+    const deps = { emit: vi.fn(), onDone: vi.fn(), onError: vi.fn() };
+
+    void startRun(
+      makeInput({
+        runId: 'rp-conv',
+        conversationId: 'cPause',
+        workspaceId: 'wPause',
+        selection: { providerId: 'pPause', modelId: 'm1' }
+      }),
+      deps
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Simulate the run latching on ask_user (the loop stores a paused
+    // checkpoint and stays registered in activeRuns).
+    storePausedRun('rp-conv', {} as unknown as PausedRunEntry);
+    expect(isRunAwaitingUser('rp-conv')).toBe(true);
+
+    expect(abortRunsForConversation('cPause')).toBe(1);
+    expect(isRunAwaitingUser('rp-conv')).toBe(false);
+
+    await settleActiveRuns();
+  });
+
+  it('abortRunsForProvider clears paused checkpoints for the deleted provider', async () => {
+    const deps = { emit: vi.fn(), onDone: vi.fn(), onError: vi.fn() };
+    void startRun(
+      makeInput({
+        runId: 'rp-prov',
+        conversationId: 'cProv',
+        workspaceId: 'wProv',
+        selection: { providerId: 'pDoomed', modelId: 'm1' }
+      }),
+      deps
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    storePausedRun('rp-prov', {} as unknown as PausedRunEntry);
+    expect(isRunAwaitingUser('rp-prov')).toBe(true);
+
+    expect(abortRunsForProvider('pDoomed')).toBe(1);
+    expect(isRunAwaitingUser('rp-prov')).toBe(false);
+
+    await settleActiveRuns();
   });
 
   it('generation-safe teardown: reused runId keeps the superseding run registered', async () => {
