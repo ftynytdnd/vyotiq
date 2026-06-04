@@ -5,13 +5,13 @@
  * Hover-reveal actions: Copy, Revert, and Edit (rewind + resend).
  */
 
-import { useRef, useState, useEffect } from 'react';
 import { Copy, Check, Pencil, Undo2 } from 'lucide-react';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import { PromptAttachmentCards } from '../../composer/PromptAttachmentCards.js';
 import { cn } from '../../../lib/cn.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/shellIcons.js';
 import { safeCopy } from '../../../lib/clipboard.js';
+import { useCopyFeedback } from '../../../hooks/useCopyFeedback.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import { useRevertPrompt } from '../revert/RevertPromptContext.js';
 import { InlinePromptSession } from '../revert/InlinePromptSession.js';
@@ -159,37 +159,17 @@ function PromptAction({
   title?: string;
   badge?: number;
 }) {
-  const [copied, setCopied] = useState(false);
-  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const mountedRef = useRef(true);
-  useEffect(() => {
-    return () => {
-      mountedRef.current = false;
-      if (copyTimerRef.current) {
-        clearTimeout(copyTimerRef.current);
-        copyTimerRef.current = null;
-      }
-    };
-  }, []);
-  const flipCopied = () => {
-    if (!mountedRef.current) return;
-    setCopied(true);
-    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-    copyTimerRef.current = setTimeout(() => {
-      if (!mountedRef.current) return;
-      setCopied(false);
-    }, 1200);
-  };
+  const { copied, flag } = useCopyFeedback();
   const handleClick = () => {
     if (disabled) return;
     const result = onClick();
     if (!copiedIcon) return;
     if (result && typeof (result as Promise<boolean>).then === 'function') {
       void (result as Promise<boolean>).then((ok) => {
-        if (ok) flipCopied();
+        if (ok) flag();
       });
     } else {
-      flipCopied();
+      flag();
     }
   };
   return (

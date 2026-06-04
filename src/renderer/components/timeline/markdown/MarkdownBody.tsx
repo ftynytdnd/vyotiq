@@ -12,10 +12,8 @@
 
 import {
   isValidElement,
-  useEffect,
   useMemo,
   useRef,
-  useState,
   type ComponentProps,
   type InputHTMLAttributes,
   type ReactNode
@@ -30,7 +28,7 @@ import { chromeCodeSurfaceClassName } from '../../ui/SurfaceShell.js';
 import { CodeLanguageEyebrow } from '../shared/CodeLanguageEyebrow.js';
 import { cn } from '../../../lib/cn.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/shellIcons.js';
-import { safeCopy } from '../../../lib/clipboard.js';
+import { useCopyFeedback } from '../../../hooks/useCopyFeedback.js';
 import { TaskCheckbox } from './TaskCheckbox.js';
 
 interface MarkdownBodyProps {
@@ -158,40 +156,16 @@ function extractCodeLanguage(children?: ReactNode): string | undefined {
 
 function PreWithCopy({ children }: { children?: ReactNode }) {
   const preRef = useRef<HTMLPreElement>(null);
-  const [copied, setCopied] = useState(false);
-  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const mountedRef = useRef(true);
+  const { copied, copy } = useCopyFeedback();
   const isEmpty = preChildrenText(children).trim().length === 0;
   const language = useMemo(() => extractCodeLanguage(children), [children]);
 
-  // Clear the "Copied" reset timer on unmount so a copy click immediately
-  // before a re-render (e.g. timeline rebuild) doesn't trigger a setState
-  // on a destroyed node.
-  useEffect(() => {
-    return () => {
-      mountedRef.current = false;
-      if (resetTimerRef.current !== null) {
-        clearTimeout(resetTimerRef.current);
-        resetTimerRef.current = null;
-      }
-    };
-  }, []);
-
   if (isEmpty) return null;
 
-  const onCopy = () => {
+  const onCopy = (): void => {
     const txt = preRef.current?.innerText ?? '';
     if (!txt) return;
-    void safeCopy(txt, { context: 'markdown-code' }).then((ok) => {
-      if (!ok || !mountedRef.current) return;
-      setCopied(true);
-      if (resetTimerRef.current !== null) clearTimeout(resetTimerRef.current);
-      resetTimerRef.current = setTimeout(() => {
-        if (!mountedRef.current) return;
-        resetTimerRef.current = null;
-        setCopied(false);
-      }, 1200);
-    });
+    void copy(txt, { context: 'markdown-code' });
   };
 
   return (

@@ -7,10 +7,7 @@
 import {
   createElement,
   Fragment,
-  useEffect,
   useMemo,
-  useRef,
-  useState,
   type ReactNode
 } from 'react';
 import { Check, Copy } from 'lucide-react';
@@ -19,7 +16,7 @@ import { normalizeMathShortcuts } from '@shared/text/mathShortcuts.js';
 import { displayAssistantTurnText } from '../../../lib/text.js';
 import { cn } from '../../../lib/cn.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/shellIcons.js';
-import { safeCopy } from '../../../lib/clipboard.js';
+import { useCopyFeedback } from '../../../hooks/useCopyFeedback.js';
 import { chromeRevealIconActionClassName } from '../../ui/SurfaceShell.js';
 import { highlightStreamingCode } from '../../../lib/streamHighlight.js';
 import { CodeLanguageEyebrow } from '../shared/CodeLanguageEyebrow.js';
@@ -202,8 +199,6 @@ function StreamListItem({ item }: { item: StreamingListItem }) {
   );
 }
 
-const COPY_FEEDBACK_MS = 1200;
-
 function StreamPreWithCopy({
   content,
   language,
@@ -213,9 +208,7 @@ function StreamPreWithCopy({
   language?: string;
   partial: boolean;
 }) {
-  const [copied, setCopied] = useState(false);
-  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const mountedRef = useRef(true);
+  const { copied, copy } = useCopyFeedback();
   const isEmpty = content.trim().length === 0;
   const throttledContent = useThrottledValue(content, partial ? 120 : 0);
   const highlighted = useMemo(
@@ -223,29 +216,10 @@ function StreamPreWithCopy({
     [language, throttledContent]
   );
 
-  useEffect(() => {
-    return () => {
-      mountedRef.current = false;
-      if (resetTimerRef.current !== null) {
-        clearTimeout(resetTimerRef.current);
-        resetTimerRef.current = null;
-      }
-    };
-  }, []);
-
   if (isEmpty) return null;
 
-  const onCopy = () => {
-    void safeCopy(content, { context: 'stream-markdown-code' }).then((ok) => {
-      if (!ok || !mountedRef.current) return;
-      setCopied(true);
-      if (resetTimerRef.current !== null) clearTimeout(resetTimerRef.current);
-      resetTimerRef.current = setTimeout(() => {
-        if (!mountedRef.current) return;
-        resetTimerRef.current = null;
-        setCopied(false);
-      }, COPY_FEEDBACK_MS);
-    });
+  const onCopy = (): void => {
+    void copy(content, { context: 'stream-markdown-code' });
   };
 
   return (

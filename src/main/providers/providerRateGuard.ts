@@ -38,6 +38,7 @@
  */
 
 import { BASE_BACKOFF_MS, MAX_BACKOFF_MS } from '@shared/constants.js';
+import { abortableSleep } from '@shared/async/abortableSleep.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child('providers/rate-guard');
@@ -66,7 +67,7 @@ export async function acquire(providerId: string, signal?: AbortSignal): Promise
     return;
   }
   log.debug('cooldown wait', { providerId, waitMs: wait });
-  await sleep(wait, signal);
+  await abortableSleep(wait, signal);
 }
 
 /**
@@ -145,26 +146,4 @@ function computeBackoff(attempt: number): number {
   // the deterministic exponential — so siblings naturally stagger.
   const jitter = Math.random() * 0.25 * raw;
   return Math.max(0, raw + jitter);
-}
-
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new DOMException('Aborted', 'AbortError'));
-      return;
-    }
-    const t = setTimeout(() => {
-      cleanup();
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      cleanup();
-      reject(new DOMException('Aborted', 'AbortError'));
-    };
-    const cleanup = () => {
-      clearTimeout(t);
-      signal?.removeEventListener('abort', onAbort);
-    };
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
 }

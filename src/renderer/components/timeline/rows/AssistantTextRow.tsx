@@ -12,7 +12,6 @@
  * text reaches the markdown parser.
  */
 
-import { useEffect, useRef, useState } from 'react';
 import { Copy, Check } from 'lucide-react';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { AGENT_NAME } from '@shared/constants.js';
@@ -22,7 +21,7 @@ import { displayAssistantTurnText } from '../../../lib/text.js';
 import { StreamingMarkdownBody } from '../markdown/StreamingMarkdownBody.js';
 import { cn } from '../../../lib/cn.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/shellIcons.js';
-import { safeCopy } from '../../../lib/clipboard.js';
+import { useCopyFeedback } from '../../../hooks/useCopyFeedback.js';
 import { timelineActionPillClassName, timelineAssistantRowClassName } from '../shared/rowStyles.js';
 
 interface AssistantTextRowProps {
@@ -36,19 +35,7 @@ export function AssistantTextRow({ id, subagentId, model: _model }: AssistantTex
     subagentId ? s.subagents[subagentId]?.assistantTexts[id] : s.assistantTexts[id]
   );
 
-  const [copied, setCopied] = useState(false);
-  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const mountedRef = useRef(true);
-
-  useEffect(() => {
-    return () => {
-      mountedRef.current = false;
-      if (copyTimerRef.current !== null) {
-        clearTimeout(copyTimerRef.current);
-        copyTimerRef.current = null;
-      }
-    };
-  }, []);
+  const { copied, copy } = useCopyFeedback();
 
   if (!acc) return null;
   const cleaned = displayAssistantTurnText(acc.text);
@@ -56,17 +43,8 @@ export function AssistantTextRow({ id, subagentId, model: _model }: AssistantTex
 
   if (cleaned.length === 0 && acc.done) return null;
 
-  const handleCopy = () => {
-    void safeCopy(stripEmoji(cleaned), { context: 'assistant-row' }).then((ok) => {
-      if (!ok || !mountedRef.current) return;
-      setCopied(true);
-      if (copyTimerRef.current !== null) clearTimeout(copyTimerRef.current);
-      copyTimerRef.current = setTimeout(() => {
-        if (!mountedRef.current) return;
-        copyTimerRef.current = null;
-        setCopied(false);
-      }, 1200);
-    });
+  const handleCopy = (): void => {
+    void copy(stripEmoji(cleaned), { context: 'assistant-row' });
   };
 
   return (

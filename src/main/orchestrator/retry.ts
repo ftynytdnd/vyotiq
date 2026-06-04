@@ -8,6 +8,7 @@
  */
 
 import { BASE_BACKOFF_MS, MAX_BACKOFF_MS } from '@shared/constants.js';
+import { abortableSleep } from '@shared/async/abortableSleep.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child('orchestrator/retry');
@@ -26,27 +27,5 @@ export async function backoff(attempt: number, opts: BackoffOpts = {}): Promise<
   const jitter = opts.jitter !== false ? Math.random() * 0.25 * raw : 0;
   const wait = Math.max(0, raw + jitter);
   log.debug('backoff', { attempt, waitMs: Math.round(wait) });
-  await sleep(wait, opts.signal);
-}
-
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new DOMException('Aborted', 'AbortError'));
-      return;
-    }
-    const t = setTimeout(() => {
-      cleanup();
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      cleanup();
-      reject(new DOMException('Aborted', 'AbortError'));
-    };
-    const cleanup = () => {
-      clearTimeout(t);
-      signal?.removeEventListener('abort', onAbort);
-    };
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
+  await abortableSleep(wait, opts.signal);
 }

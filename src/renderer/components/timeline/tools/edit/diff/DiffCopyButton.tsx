@@ -12,12 +12,11 @@
  * call `setState` on a torn-down component.
  */
 
-import { useEffect, useRef, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { chromeRevealIconActionClassName } from '../../../../ui/SurfaceShell.js';
 import { cn } from '../../../../../lib/cn.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../../../lib/shellIcons.js';
-import { safeCopy } from '../../../../../lib/clipboard.js';
+import { useCopyFeedback } from '../../../../../hooks/useCopyFeedback.js';
 
 interface DiffCopyButtonProps {
   text: string;
@@ -27,33 +26,11 @@ interface DiffCopyButtonProps {
   className?: string;
 }
 
-const COPY_FEEDBACK_MS = 1200;
-
 export function DiffCopyButton({ text, className }: DiffCopyButtonProps) {
-  const [done, setDone] = useState(false);
-  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const mountedRef = useRef(true);
+  const { copied: done, copy } = useCopyFeedback();
 
-  useEffect(() => {
-    return () => {
-      mountedRef.current = false;
-      if (resetTimerRef.current !== null) {
-        clearTimeout(resetTimerRef.current);
-        resetTimerRef.current = null;
-      }
-    };
-  }, []);
-
-  const onCopy = async () => {
-    const ok = await safeCopy(text, { context: 'diff-patch' });
-    if (!ok || !mountedRef.current) return;
-    setDone(true);
-    if (resetTimerRef.current !== null) clearTimeout(resetTimerRef.current);
-    resetTimerRef.current = setTimeout(() => {
-      if (!mountedRef.current) return;
-      resetTimerRef.current = null;
-      setDone(false);
-    }, COPY_FEEDBACK_MS);
+  const onCopy = (): void => {
+    void copy(text, { context: 'diff-patch' });
   };
 
   return (

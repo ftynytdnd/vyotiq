@@ -4,16 +4,14 @@
  * stretch the timeline.
  */
 
-import { useEffect, useRef, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { chromeCodeSurfaceClassName, chromeRevealIconActionClassName } from '../../../ui/SurfaceShell.js';
 import { cn } from '../../../../lib/cn.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../../lib/shellIcons.js';
-import { safeCopy } from '../../../../lib/clipboard.js';
+import { useCopyFeedback } from '../../../../hooks/useCopyFeedback.js';
 import { MAX_TOOL_OUTPUT_CHARS } from '@shared/constants.js';
 
 const MAX_CHARS = MAX_TOOL_OUTPUT_CHARS;
-const COPY_FEEDBACK_MS = 1200;
 
 interface CodeBlockProps {
   body: string;
@@ -34,32 +32,11 @@ export function CodeBlock({
 }: CodeBlockProps) {
   const truncated = body.length > MAX_CHARS;
   const shown = truncated ? body.slice(0, MAX_CHARS) + '\n…[truncated]' : body;
-  const [copied, setCopied] = useState(false);
-  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const mountedRef = useRef(true);
+  const { copied, copy } = useCopyFeedback();
 
-  useEffect(() => {
-    return () => {
-      mountedRef.current = false;
-      if (resetTimerRef.current !== null) {
-        clearTimeout(resetTimerRef.current);
-        resetTimerRef.current = null;
-      }
-    };
-  }, []);
-
-  const onCopy = () => {
+  const onCopy = (): void => {
     if (!shown) return;
-    void safeCopy(shown, { context: 'tool-output' }).then((ok) => {
-      if (!ok || !mountedRef.current) return;
-      setCopied(true);
-      if (resetTimerRef.current !== null) clearTimeout(resetTimerRef.current);
-      resetTimerRef.current = setTimeout(() => {
-        if (!mountedRef.current) return;
-        resetTimerRef.current = null;
-        setCopied(false);
-      }, COPY_FEEDBACK_MS);
-    });
+    void copy(shown, { context: 'tool-output' });
   };
 
   return (
