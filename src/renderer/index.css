@@ -208,7 +208,7 @@
   --font-sans: "Geist Variable", "Geist Sans", system-ui, sans-serif;
   --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
 
-  /* Spacing — Cursor-like compact rhythm */
+  /* Spacing — compact rhythm */
   --spacing-chrome-y: 0.25rem;
   --spacing-row-y: 0.5rem;
   --spacing-section-gap: 0.75rem;
@@ -494,7 +494,7 @@ textarea {
   }
 }
 
-/* Flush inline streaming prose — no card shell; Cursor-style reading flow. */
+/* Flush inline streaming prose — no card shell. */
 .vyotiq-stream-md {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -2967,7 +2967,7 @@ mark.vyotiq-timeline-find-mark-active {
 
 .vx-composer-chip-row .vx-composer-model-trigger {
   flex: 0 1 auto;
-  max-width: 10.5rem;
+  max-width: 14rem;
 }
 
 .vx-composer-input-row {

@@ -44,10 +44,10 @@ export const PROVIDER_DIALECTS: readonly ProviderDialect[] = [
  *   - `off`      → disable thinking where the provider allows it.
  *   - `minimal`  → smallest reasoning budget (OpenAI/Gemini only).
  *   - `low` / `medium` / `high` → graduated reasoning depth.
- *   - `max`      → maximum depth (Anthropic / DeepSeek only; clamps to
- *                  `high` elsewhere).
+ *   - `xhigh`    → maximum depth (OpenAI / Anthropic / DeepSeek wire);
+ *                  maps to provider-specific top tier.
  */
-export type ThinkingEffort = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'max';
+export type ThinkingEffort = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 /** Short, user-facing labels for the dialect switch in settings. */
 export const PROVIDER_DIALECT_LABELS: Record<ProviderDialect, string> = {
@@ -243,4 +243,10 @@ export interface AddProviderInput {
 export interface ModelSelection {
   providerId: string;
   modelId: string;
+  /**
+   * Session/composer override for thinking effort. When set, wins over
+   * `ProviderConfig.modelThinking` for that run. Omitted = use persisted
+   * per-model setting or provider default (omit wire fields).
+   */
+  thinkingEffort?: ThinkingEffort;
 }

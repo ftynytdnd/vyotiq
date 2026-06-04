@@ -3,7 +3,7 @@
  */
 
 import type { ToolCall, ToolResult, DiffHunk } from './tool.js';
-import type { ModelSelection } from './provider.js';
+import type { ModelSelection, ThinkingEffort } from './provider.js';
 import type { CheckpointChangeKind } from './checkpoint.js';
 import type { AskUserStructuredPayload } from './askUser.js';
 
@@ -186,7 +186,14 @@ export type TimelineEvent =
   /** Drop the partial in-flight assistant text (mid-stream error → retry). */
   | { kind: 'agent-text-aborted'; id: string; ts: number }
   /** Streaming chain-of-thought (DeepSeek-style). UI shows a collapsible card. */
-  | { kind: 'agent-reasoning-delta'; id: string; ts: number; delta: string }
+  | {
+      kind: 'agent-reasoning-delta';
+      id: string;
+      ts: number;
+      delta: string;
+      /** Set on the first reasoning delta of a turn for the effort badge. */
+      effort?: ThinkingEffort;
+    }
   /**
    * Closes a streaming reasoning panel. The optional `signature` field
    * carries the Anthropic `signature_delta` payload concatenated across

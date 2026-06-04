@@ -6,7 +6,11 @@
 
 import { forwardRef } from 'react';
 import { ChevronDown } from 'lucide-react';
-import type { ModelSelection } from '@shared/types/provider.js';
+import type { ModelSelection, ThinkingEffort } from '@shared/types/provider.js';
+import {
+  isThinkingCapableModel,
+  THINKING_EFFORT_LABELS
+} from '@shared/providers/thinkingEffort.js';
 import { useProviderStore } from '../../../store/useProviderStore.js';
 import { cn } from '../../../lib/cn.js';
 import { chromeToolbarButtonClassName } from '../../ui/SurfaceShell.js';
@@ -26,8 +30,21 @@ export const ModelPickerTrigger = forwardRef<HTMLButtonElement, ModelPickerTrigg
 
     const placeholder = hasEnabledProvider ? 'Select model…' : 'Add provider';
     const modelId = value?.modelId ?? '';
+    const effortLabel = ((): string | null => {
+      if (!value || !provider) return null;
+      const effort: ThinkingEffort | undefined =
+        value.thinkingEffort ?? provider.modelThinking?.[value.modelId];
+      if (
+        effort === undefined ||
+        effort === 'off' ||
+        !isThinkingCapableModel(provider.dialect, value.modelId)
+      ) {
+        return null;
+      }
+      return THINKING_EFFORT_LABELS[effort];
+    })();
     const tooltip = provider
-      ? `${provider.name} \u00b7 ${modelId || placeholder}`
+      ? `${provider.name} \u00b7 ${modelId || placeholder}${effortLabel ? ` \u00b7 ${effortLabel}` : ''}`
       : placeholder;
 
     return (
@@ -41,11 +58,14 @@ export const ModelPickerTrigger = forwardRef<HTMLButtonElement, ModelPickerTrigg
         title={tooltip}
         className={cn(
           chromeToolbarButtonClassName(open),
-          'vx-composer-model-trigger h-6 shrink-0 max-w-[12rem] items-center gap-1 px-1.5 text-chat-meta text-text-secondary'
+          'vx-composer-model-trigger h-6 shrink-0 max-w-[14rem] items-center gap-1 px-1.5 text-chat-meta text-text-secondary'
         )}
       >
         <span className="min-w-0 truncate font-mono" title={modelId || undefined}>
           {modelId || placeholder}
+          {effortLabel ? (
+            <span className="text-text-faint"> · {effortLabel}</span>
+          ) : null}
         </span>
         <ChevronDown
           className={cn(

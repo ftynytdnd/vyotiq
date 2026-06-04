@@ -26,6 +26,8 @@ export interface ReasoningTextAcc {
   id: string;
   text: string;
   done: boolean;
+  /** Resolved thinking effort for this turn (timeline badge). */
+  effort?: import('@shared/types/provider.js').ThinkingEffort;
   /**
    * Wall-clock timestamps for the reasoning stream.
    *

@@ -11,8 +11,8 @@ import { useProviderStore } from '@renderer/store/useProviderStore';
 const rowRenderCounts = new Map<string, number>();
 
 vi.mock('@renderer/components/composer/modelPicker/ModelRow.js', () => ({
-  ModelRow: (props: { providerId: string; model: { id: string } }) => {
-    const key = `${props.providerId}::${props.model.id}`;
+  ModelRow: (props: { provider: { id: string }; model: { id: string } }) => {
+    const key = `${props.provider.id}::${props.model.id}`;
     rowRenderCounts.set(key, (rowRenderCounts.get(key) ?? 0) + 1);
     return <div data-testid={`row-${key}`} />;
   }

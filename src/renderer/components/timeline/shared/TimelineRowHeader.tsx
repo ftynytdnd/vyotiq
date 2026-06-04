@@ -32,9 +32,8 @@ export interface TimelineRowHeaderProps {
   /**
    * Place the expand/collapse chevron on the trailing edge instead of
    * the leading edge. Used by the timeline row restyle so
-   * the row reads `[● title] [trailing] [chevron]` matching the
-   * screenshot's dot-prefixed Cursor-style header. Defaults to the
-   * legacy leading position for every other caller.
+   * the row reads `[● title] [trailing] [chevron]` with a dot-prefixed
+   * header. Defaults to the legacy leading position for every other caller.
    */
   chevronOnRight?: boolean;
 }

@@ -9,11 +9,13 @@ import type {
   ProviderConfig,
   ProviderDialect,
   ProviderWithKey,
-  AddProviderInput
+  AddProviderInput,
+  ThinkingEffort
 } from '@shared/types/provider.js';
 import { PROVIDERS_FILE } from '@shared/constants.js';
 import { normalizeBaseUrl as normalizeBaseUrlShared } from '@shared/providers/normalizeBaseUrl.js';
 import { defaultMaxConcurrentStreamsForDialect } from '@shared/providers/providerConcurrencyDefaults.js';
+import { normalizeModelThinkingMap } from '@shared/providers/thinkingEffort.js';
 import { readEncryptedJson, writeEncryptedJson } from '../secrets/safeStore.js';
 
 interface PersistedProvider extends ProviderConfig {
@@ -64,14 +66,19 @@ async function load(): Promise<PersistedProvider[]> {
     // Legacy stores persisted `4` before ollama-native default moved to 8.
     const legacyOllamaCap =
       dialect === 'ollama-native' && p.maxConcurrentStreams === 4;
-    if (!needsUrl && !needsConcurrency && !legacyOllamaCap) return p;
+    const { map: normalizedThinking, mutated: thinkingMutated } = normalizeModelThinkingMap(
+      p.modelThinking
+    );
+    const needsThinking = thinkingMutated;
+    if (!needsUrl && !needsConcurrency && !legacyOllamaCap && !needsThinking) return p;
     mutated = true;
     return {
       ...p,
       ...(needsUrl ? { baseUrl: fixed } : {}),
       ...(needsConcurrency || legacyOllamaCap
         ? { maxConcurrentStreams: defaultMaxConcurrentStreamsForDialect(dialect) }
-        : {})
+        : {}),
+      ...(needsThinking ? { modelThinking: normalizedThinking } : {})
     };
   });
   cache = list;
@@ -159,7 +166,7 @@ export async function updateProvider(
     models?: ProviderConfig['models'];
     lastDiscoveredAt?: number;
     attribution?: ProviderConfig['attribution'];
-    modelThinking?: ProviderConfig['modelThinking'];
+    modelThinking?: Record<string, ThinkingEffort | null>;
     anthropicThinking?: ProviderConfig['anthropicThinking'];
     contextOverrides?: ProviderConfig['contextOverrides'];
     anthropicBetas?: ProviderConfig['anthropicBetas'];
@@ -195,11 +202,17 @@ export async function updateProvider(
     // `attributionHeaders.buildAttributionHeaders` for the
     // empty-string ⇒ suppress contract.
     attribution: patch.attribution ?? current.attribution,
-    // `modelThinking` is a shallow per-model merge so updating one
-    // model's effort never wipes the others. `'off'` is a meaningful
-    // stored value (it disables thinking), so we never delete keys.
+    // `modelThinking` is a shallow per-model merge. Pass `null` for a
+    // model id to clear that override (Default in Settings).
     modelThinking: patch.modelThinking
-      ? { ...current.modelThinking, ...patch.modelThinking }
+      ? (() => {
+          const merged = { ...(current.modelThinking ?? {}) };
+          for (const [key, val] of Object.entries(patch.modelThinking)) {
+            if (val === null) delete merged[key];
+            else merged[key] = val;
+          }
+          return Object.keys(merged).length > 0 ? merged : undefined;
+        })()
       : current.modelThinking,
     // These were previously not threaded through `updateProvider` at
     // all, so a renderer patch silently dropped them. Full-replace when

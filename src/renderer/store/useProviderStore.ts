@@ -21,7 +21,7 @@ interface ProviderStore {
       /** OpenRouter app-attribution overrides; see ProviderConfig.attribution. */
       attribution?: ProviderAttribution;
       /** Per-model thinking-effort overrides (shallow-merged store-side). */
-      modelThinking?: Record<string, ThinkingEffort>;
+      modelThinking?: Record<string, ThinkingEffort | null>;
     }
   ) => Promise<void>;
   remove: (id: string) => Promise<void>;

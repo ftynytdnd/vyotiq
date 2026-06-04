@@ -155,7 +155,8 @@ export function applyTimelineEvent(
         id: event.id,
         text: '',
         done: false,
-        startedAt: event.ts
+        startedAt: event.ts,
+        ...(event.effort !== undefined ? { effort: event.effort } : {})
       };
       // Phase 12 (2026): reasoning deltas count as "stream activity"
       // for the tok/s anchor (a thinking model's first wall-clock

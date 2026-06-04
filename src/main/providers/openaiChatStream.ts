@@ -27,7 +27,7 @@ import {
   isDeepSeekThinkingModel,
   mapDeepSeekThinking,
   mapOpenAiReasoningEffort,
-  resolveThinkingEffort
+  resolveStreamerThinkingEffort
 } from '@shared/providers/thinkingEffort.js';
 
 const log = logger.child('providers/chat/openai');
@@ -173,8 +173,8 @@ export async function* streamOpenAi(
   // `off` disables it via the `thinking` body block (which also
   // re-enables `tool_choice`); other OpenAI-compat reasoning models
   // simply omit the field when effort is off/unset.
-  const effort = req.reasoningEffort ?? resolveThinkingEffort(provider, req.model);
-  const reasoningEffort = mapOpenAiReasoningEffort(effort);
+  const effort = resolveStreamerThinkingEffort(provider, req.model, req.reasoningEffort);
+  const reasoningEffort = mapOpenAiReasoningEffort(effort, req.model);
   if (reasoningEffort !== null) body['reasoning_effort'] = reasoningEffort;
   if (isDeepSeekThinkingModel(req.model) && effort !== undefined) {
     body['thinking'] = mapDeepSeekThinking(effort);

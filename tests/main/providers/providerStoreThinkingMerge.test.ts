@@ -46,6 +46,22 @@ describe('updateProvider — thinking config merge', () => {
     });
   });
 
+  it('clears a model override when patch value is null', async () => {
+    const created = await addProvider({
+      name: 'DeepSeek',
+      baseUrl: 'https://api.deepseek.com',
+      apiKey: 'sk-test',
+      dialect: 'openai'
+    });
+    await updateProvider(created.id, {
+      modelThinking: { 'deepseek-v4-flash': 'high', 'deepseek-v4-pro': 'off' }
+    });
+    const cleared = await updateProvider(created.id, {
+      modelThinking: { 'deepseek-v4-flash': null }
+    });
+    expect(cleared.modelThinking).toEqual({ 'deepseek-v4-pro': 'off' });
+  });
+
   it('preserves modelThinking when a patch does not touch it', async () => {
     const created = await addProvider({
       name: 'DeepSeek',

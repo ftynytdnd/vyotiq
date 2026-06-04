@@ -80,6 +80,7 @@ export async function handleAssistantTurn(
   // `agent-text-aborted` and clean the renderer's open accumulator.
   let hadText = false;
   let hadReasoning = false;
+  let reasoningEffortStamped = false;
 
   try {
     const stream = streamChat(req);
@@ -95,11 +96,14 @@ export async function handleAssistantTurn(
       },
       onReasoningDelta: (delta, accumulated) => {
         hadReasoning = accumulated.length > 0;
+        const stampEffort = !reasoningEffortStamped && req.reasoningEffort !== undefined;
+        if (stampEffort) reasoningEffortStamped = true;
         emit({
           kind: 'agent-reasoning-delta',
           id: assistantMsgId,
           ts: Date.now(),
-          delta
+          delta,
+          ...(stampEffort ? { effort: req.reasoningEffort } : {})
         });
       },
       // Fires the instant the stream transitions from reasoning_content

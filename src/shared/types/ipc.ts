@@ -582,7 +582,7 @@ export interface VyotiqApi {
 
         /** Per-model thinking-effort overrides (shallow-merged store-side). */
 
-        modelThinking?: Record<string, ThinkingEffort>;
+        modelThinking?: Record<string, ThinkingEffort | null>;
 
       }
 

@@ -80,7 +80,8 @@ export function ReasoningLineRow({ id }: ReasoningLineRowProps) {
   const { text: label, streaming } = formatReasoningLabel({
     startedAt: acc.startedAt,
     ...(acc.endedAt !== undefined ? { endedAt: acc.endedAt } : {}),
-    done: acc.done
+    done: acc.done,
+    ...(acc.effort !== undefined ? { effort: acc.effort } : {})
   });
 
   const headline = (

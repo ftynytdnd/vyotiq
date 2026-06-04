@@ -30,7 +30,10 @@ import { classifyProviderError, ProviderError, looksRateLimited } from './provid
 import { acquire, markRateLimited, markSuccess } from './providerRateGuard.js';
 import { createInactivityWatch, isStreamInactivityError } from './streamInactivity.js';
 import { safeText } from './errorBody.js';
-import { mapOllamaThink, resolveThinkingEffort } from '@shared/providers/thinkingEffort.js';
+import {
+  mapOllamaThink,
+  resolveStreamerThinkingEffort
+} from '@shared/providers/thinkingEffort.js';
 
 const log = logger.child('providers/chat/ollama');
 
@@ -118,8 +121,9 @@ export async function* streamOllama(
   // `/api/chat` (see docs.ollama.com/capabilities/thinking); any
   // non-`off` effort enables it. Only sent when the user expressed a
   // preference so non-thinking models aren't forced.
-  const ollamaEffort = req.reasoningEffort ?? resolveThinkingEffort(provider, req.model);
-  if (ollamaEffort !== undefined) body['think'] = mapOllamaThink(ollamaEffort);
+  const ollamaEffort = resolveStreamerThinkingEffort(provider, req.model, req.reasoningEffort);
+  const thinkWire = mapOllamaThink(ollamaEffort, req.model);
+  if (thinkWire !== undefined) body['think'] = thinkWire;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',

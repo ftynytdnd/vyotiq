@@ -4,7 +4,7 @@
  * don't lose the buffered text.
  *
  * While streaming, uses `StreamingMarkdownBody` for a token-aware partial
- * renderer (Cursor-style flush inline prose). On settle, hands off to the
+ * renderer (flush inline prose). On settle, hands off to the
  * full `MarkdownBody` for GFM + highlight.js.
  *
  * The model sometimes emits legacy orchestration XML scaffolding around

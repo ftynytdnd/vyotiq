@@ -71,6 +71,16 @@ describe('formatReasoningLabel', () => {
     expect(out.text).toBe('Thought for 3s');
   });
 
+  it('appends effort badge when effort is set', () => {
+    const out = formatReasoningLabel({
+      startedAt: 0,
+      endedAt: 2_000,
+      done: true,
+      effort: 'high'
+    });
+    expect(out.text).toBe('Thought for 2s · High');
+  });
+
   it('honors `done` independently of `endedAt`', () => {
     // `done` true even though `endedAt` is missing: the past-tense label
     // is what flips, not the timestamp source.

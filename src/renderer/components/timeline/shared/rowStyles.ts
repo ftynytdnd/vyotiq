@@ -32,8 +32,7 @@ export const timelineTurnOuterGapClassName = 'vx-timeline-turn-outer last:mb-0 l
  * Vyotiq's earlier raised-card treatment paired a `bg-surface-raised/45`
  * fill with an inset hairline ring and right-aligned alignment. The May
  * 2026 timeline restyle drops the chrome entirely so user prompts read
- * as plain markdown flush in the agent column rail (matching the
- * Cursor-style chromeless reading column). The export is preserved as
+ * as plain markdown flush in the agent column rail. The export is preserved as
  * an empty string so any out-of-tree caller still composes safely; the
  * row identity is now carried by `data-row-kind="user-prompt"` and
  * positional cues alone.
@@ -67,7 +66,7 @@ export const timelineRowChevronStroke = SHELL_ACTION_ICON_STROKE;
  * Quiet log-line surface (agent thoughts, status lines, run closer).
  *
  * Inside the activity lane the row is intentionally chromeless to
- * match the Cursor-style flush stream. At the top level (e.g. the
+ * match the flush activity stream. At the top level (e.g. the
  * trailing `RunCompleteRow` rendered outside any lane) the same
  * tokens still produce the legacy quiet-wash treatment.
  */

@@ -182,6 +182,9 @@ export function ProviderRow({
         onThinkingChange={(modelId, effort) =>
           void update(provider.id, { modelThinking: { [modelId]: effort } })
         }
+        onThinkingClear={(modelId) =>
+          void update(provider.id, { modelThinking: { [modelId]: null } })
+        }
       />
 
       <AttributionSection provider={provider} onSave={(next) => void update(provider.id, { attribution: next })} />

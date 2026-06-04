@@ -47,8 +47,8 @@ import {
   isProviderError
 } from '../../providers/providerError.js';
 import { getProviderWithKey } from '../../providers/providerStore.js';
-import { resolveThinkingEffort } from '@shared/providers/thinkingEffort.js';
-import type { ThinkingEffort } from '@shared/types/provider.js';
+import { resolveEffectiveThinkingEffort } from '@shared/providers/thinkingEffort.js';
+import type { ModelSelection, ThinkingEffort } from '@shared/types/provider.js';
 import {
   MAX_SELF_CORRECTION_ATTEMPTS,
   MAX_TOTAL_ITERATIONS
@@ -182,10 +182,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
 
     let providerName = await resolveProviderName(opts.input.selection.providerId);
     let providerDialect = await resolveProviderDialect(opts.input.selection.providerId);
-    let reasoningEffort = await resolveProviderThinking(
-      opts.input.selection.providerId,
-      opts.input.selection.modelId
-    );
+    let reasoningEffort = await resolveProviderThinking(opts.input.selection);
     // Run-scoped: flipped on once after a provider 400 that rejected the
     // `tool_choice` field, so the next request omits it instead of
     // terminating the run. See the error branch below.
@@ -199,10 +196,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           try {
             providerName = await resolveProviderName(opts.input.selection.providerId);
             providerDialect = await resolveProviderDialect(opts.input.selection.providerId);
-            reasoningEffort = await resolveProviderThinking(
-              opts.input.selection.providerId,
-              opts.input.selection.modelId
-            );
+            reasoningEffort = await resolveProviderThinking(opts.input.selection);
           } catch (err) {
             log.debug('per-iter provider name refresh failed; keeping prior', {
               providerId: opts.input.selection.providerId,
@@ -979,16 +973,19 @@ async function resolveProviderDialect(
  * (treated as "provider default" everywhere downstream).
  */
 async function resolveProviderThinking(
-  providerId: string,
-  modelId: string
+  selection: ModelSelection
 ): Promise<ThinkingEffort | undefined> {
   try {
-    const provider = await getProviderWithKey(providerId);
+    const provider = await getProviderWithKey(selection.providerId);
     if (!provider) return undefined;
-    return resolveThinkingEffort(provider, modelId);
+    return resolveEffectiveThinkingEffort(
+      provider,
+      selection.modelId,
+      selection.thinkingEffort
+    );
   } catch (err) {
     log.debug('failed to resolve provider thinking effort; using provider default', {
-      providerId,
+      providerId: selection.providerId,
       err: err instanceof Error ? err.message : String(err)
     });
     return undefined;

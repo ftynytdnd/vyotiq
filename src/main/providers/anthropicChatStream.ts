@@ -69,7 +69,10 @@ import { acquire, markRateLimited, markSuccess } from './providerRateGuard.js';
 import { createInactivityWatch, isStreamInactivityError } from './streamInactivity.js';
 import { readSseFrames } from './sseFrameReader.js';
 import { safeText } from './errorBody.js';
-import { mapAnthropicThinking, resolveThinkingEffort } from '@shared/providers/thinkingEffort.js';
+import {
+  mapAnthropicThinking,
+  resolveStreamerThinkingEffort
+} from '@shared/providers/thinkingEffort.js';
 
 const log = logger.child('providers/chat/anthropic');
 
@@ -186,7 +189,7 @@ export async function* streamAnthropic(
   // `anthropicThinking`) and maps it to the 2026 wire shape: adaptive
   // models get `{ type: 'adaptive' }` + an `output_config.effort`
   // guide; older models get a derived `budget_tokens`.
-  const anthroEffort = req.reasoningEffort ?? resolveThinkingEffort(provider, req.model);
+  const anthroEffort = resolveStreamerThinkingEffort(provider, req.model, req.reasoningEffort);
   const thinking = mapAnthropicThinking(
     req.model,
     anthroEffort,

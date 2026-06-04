@@ -5,8 +5,8 @@
  *
  * Strategy: split on the longest common prefix and longest common
  * suffix of two adjacent lines. The middle becomes the "changed"
- * span — the dominant idiom in 2026 diff viewers (Cursor, Linear,
- * GitHub side-by-side).
+ * span — the dominant idiom in modern diff viewers (Linear,
+ * GitHub side-by-side, and similar).
  *
  * Cost: `O(min(|a|, |b|))` per pair; cheap enough to run inline
  * for every hunk on every render. The map is keyed by visible

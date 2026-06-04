@@ -14,6 +14,9 @@
  * sites.
  */
 
+import type { ThinkingEffort } from '@shared/types/provider.js';
+import { THINKING_EFFORT_LABELS } from '@shared/providers/thinkingEffort.js';
+
 export interface ReasoningLabelInput {
   /** Wall-clock ms when the first reasoning delta landed. */
   startedAt: number;
@@ -24,6 +27,8 @@ export interface ReasoningLabelInput {
    *  separately from `endedAt` so a turn that closes WITHOUT recording
    *  an end timestamp (defensive path) still flips to the past tense. */
   done: boolean;
+  /** When set, appended as ` · {label}` for the effort badge. */
+  effort?: ThinkingEffort;
 }
 
 export interface ReasoningLabel {
@@ -38,10 +43,18 @@ export interface ReasoningLabel {
   streaming: boolean;
 }
 
+function effortSuffix(effort: ThinkingEffort | undefined): string {
+  if (effort === undefined || effort === 'off') return '';
+  return ` · ${THINKING_EFFORT_LABELS[effort]}`;
+}
+
 export function formatReasoningLabel(input: ReasoningLabelInput): ReasoningLabel {
-  const { startedAt, endedAt, done } = input;
+  const { startedAt, endedAt, done, effort } = input;
   const endTs = endedAt ?? Date.now();
   const elapsedSeconds = Math.max(1, Math.round((endTs - startedAt) / 1000));
-  const text = done ? `Thought for ${elapsedSeconds}s` : 'Thinking…';
+  const suffix = effortSuffix(effort);
+  const text = done
+    ? `Thought for ${elapsedSeconds}s${suffix}`
+    : `Thinking…${suffix}`;
   return { text, elapsedSeconds, streaming: !done };
 }

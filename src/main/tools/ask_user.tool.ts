@@ -19,7 +19,7 @@ export const askUserTool: Tool = makeInterceptOnlyTool(
 
 **WHAT it is.** A pause tool. Surfaces clarifying question(s) to the user and ends the current run; the user's reply resumes the work.
 
-**HOW to use it.** Prefer structured \`questions\` (Cursor-like multi-choice). Legacy single \`question\` string is still accepted.
+**HOW to use it.** Prefer structured \`questions\` (multi-choice). Legacy single \`question\` string is still accepted.
 
 \`\`\`json
 {

@@ -1,5 +1,5 @@
 /**
- * Structured `ask_user` tool payload (Cursor-like multi-choice).
+ * Structured `ask_user` tool payload (multi-choice questions).
  */
 
 interface AskUserOption {
