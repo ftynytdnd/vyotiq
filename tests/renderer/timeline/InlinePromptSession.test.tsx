@@ -3,6 +3,26 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// InlinePromptSession pulls the full composer shell (model picker, attachments).
+// Stub those modules so this suite stays fast and does not contend with
+// popover / IPC wiring unrelated to rewind preview + confirm.
+vi.mock('@renderer/components/composer/modelPicker/index.js', () => ({
+  ModelPicker: () => null
+}));
+vi.mock('@renderer/components/composer/useComposerAttachments.js', () => ({
+  useComposerAttachments: () => ({
+    attachments: [],
+    setAttachments: vi.fn(),
+    addPaths: vi.fn(async () => undefined),
+    pickFromComputer: vi.fn(async () => undefined),
+    remove: vi.fn(),
+    peekPendingMessageId: () => 'msg-stub',
+    onDrop: vi.fn(),
+    onDragOver: vi.fn()
+  })
+}));
+
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { InlinePromptSession } from '@renderer/components/timeline/revert/InlinePromptSession';
 import { useCheckpointsStore } from '@renderer/store/useCheckpointsStore';

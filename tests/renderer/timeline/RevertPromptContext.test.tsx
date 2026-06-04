@@ -10,6 +10,23 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('@renderer/components/composer/modelPicker/index.js', () => ({
+  ModelPicker: () => null
+}));
+vi.mock('@renderer/components/composer/useComposerAttachments.js', () => ({
+  useComposerAttachments: () => ({
+    attachments: [],
+    setAttachments: vi.fn(),
+    addPaths: vi.fn(async () => undefined),
+    pickFromComputer: vi.fn(async () => undefined),
+    remove: vi.fn(),
+    peekPendingMessageId: () => 'msg-stub',
+    onDrop: vi.fn(),
+    onDragOver: vi.fn()
+  })
+}));
+
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import {
   RevertPromptProvider,
