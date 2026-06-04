@@ -12,11 +12,9 @@
 import { promises as fs } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type { Tool } from './types.js';
-import { describeConfirmFailure } from './types.js';
 import type { ToolResult } from '@shared/types/tool.js';
 import { realpathInsideWorkspace, workspaceRelative } from './sandbox.js';
 import { recordChange } from '../checkpoints/index.js';
-import type { EditApprovalPayload } from '@shared/types/ipc.js';
 
 interface DeleteArgs {
   path: string;
@@ -41,7 +39,7 @@ export const deleteTool: Tool = {
 - Fails if the target is a directory (use a focused \`edit\` flow for folder cleanups).
 - Fails if the target does not exist.
 - Refuses binary-looking files (same UTF-8 gate as \`read\`).
-- When \`allowAuto\` is off (default) or under strict-approvals, the user is asked to confirm.`,
+- Deleting a directory requires \`recursive: true\`.`,
   schema: {
     type: 'function',
     function: {
@@ -120,39 +118,6 @@ export const deleteTool: Tool = {
       );
     }
 
-    // Approval gate. Two-layer policy mirrors `edit`:
-    //   1. `strictApprovals` → full-diff preview via `confirmEdit`.
-    //      `EditApprovalDialog` paints the pre-body in danger tone.
-    //   2. `allowAuto === false` → text-only confirm for the non-strict
-    //      path. The strict path always wins when both are on.
-    if (ctx.strictApprovals) {
-      const deletions = original.length === 0 ? 0 : original.split('\n').length;
-      const payload: EditApprovalPayload = {
-        kind: 'edit-approval',
-        filePath: workspaceRelative(ctx.workspacePath, abs),
-        operation: 'delete',
-        preBody: original,
-        additions: 0,
-        deletions,
-        runId: ctx.runId,
-        ...(ctx.subagentId ? { subagentId: ctx.subagentId } : {})
-      };
-      const decision = await ctx.confirmEdit(payload);
-      if (!decision.approved) {
-        return failure(id, started, `User denied delete of ${a.path}.`, 'permission denied');
-      }
-    } else if (!ctx.permissions.allowAuto) {
-      const outcome = await ctx.confirm(
-        `Agent V wants to DELETE ${a.path}. Allow?`
-      );
-      if (!outcome.approved) {
-        // Audit fix H-04: surface precise failure (denied / timeout /
-        // aborted / no-ui) instead of always reporting a denial.
-        const desc = describeConfirmFailure(outcome.reason, `delete ${a.path}`);
-        return failure(id, started, desc.output, desc.error);
-      }
-    }
-
     // Unlink.
     try {
       await fs.unlink(abs);
@@ -174,8 +139,7 @@ export const deleteTool: Tool = {
         additions: 0,
         deletions: deletedLines,
         source: 'delete',
-        ...(ctx.subagentId ? { subagentId: ctx.subagentId } : {}),
-        emit: ctx.emit
+        ...(ctx.subagentId ? { subagentId: ctx.subagentId } : {})
       });
     } catch {
       /* logged inside the store */

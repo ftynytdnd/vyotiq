@@ -88,9 +88,11 @@ describe('deriveRows — sub-agent visibility fail-soft', () => {
     const toolGroups = rows.filter((r) => r.kind === 'tool-group');
     expect(toolGroups).toHaveLength(1);
     expect(toolGroups[0]).toMatchObject({ subagentId: 'A1' });
-    const fileEdits = rows.filter((r) => r.kind === 'file-edit-group');
-    expect(fileEdits).toHaveLength(1);
-    expect(fileEdits[0]).toMatchObject({ subagentId: 'A1' });
+    expect(rows.filter((r) => r.kind === 'file-edit-group')).toHaveLength(0);
+    const tg = toolGroups[0];
+    if (tg?.kind === 'tool-group') {
+      expect(tg.children[0]?.fileEditAdditions).toBeDefined();
+    }
   });
 
   it('emits one subagent-line when spawn IS present', () => {
@@ -135,7 +137,7 @@ describe('deriveRows — sub-agent visibility fail-soft', () => {
     expect(rows.filter((r) => r.kind === 'subagent-line')).toHaveLength(1);
   });
 
-  it('rebuilt-from-transcript snapshot has the worker for SubAgentTrace render', () => {
+  it('rebuilt-from-transcript snapshot has the worker for DelegationWorker render', () => {
     const rebuilt = rebuildTimelineState([
       USER_PROMPT,
       TOOL_CALL_EDIT_A1,

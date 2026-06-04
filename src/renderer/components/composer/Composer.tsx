@@ -3,15 +3,14 @@ import { useShallow } from 'zustand/react/shallow';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { AGENT_NAME, MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
 import { ComposerFooter } from './ComposerFooter.js';
+import { ComposerRunRecovery } from './ComposerRunRecovery.js';
 import { ComposerStatusStrip } from './ComposerStatusStrip.js';
 import { AttachmentButton } from './AttachmentButton.js';
 import { SendButton } from './SendButton.js';
 import { ModelPicker } from './modelPicker/index.js';
-import { PermissionModePill } from './PermissionModePill.js';
 import { TokenUsagePill } from './TokenUsagePill.js';
 import { PromptAttachmentCards } from './PromptAttachmentCards.js';
 import { useComposerAttachments } from './useComposerAttachments.js';
-import { useComposerTokenEstimate } from './useComposerTokenEstimate.js';
 import { detectAtToken } from './atToken.js';
 import { useComposerHistory } from './useComposerHistory.js';
 import {
@@ -25,12 +24,11 @@ import {
   selectEffectivePermissions
 } from '../../store/useSettingsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
-import {
-  useProviderStore,
-  selectEffectiveContextWindow
-} from '../../store/useProviderStore.js';
 import { cn } from '../../lib/cn.js';
 import { useToastStore } from '../../store/useToastStore.js';
+import { findPendingAskUserEvent } from '../../lib/pendingAskUser.js';
+import { useAskUserDraftStore } from '../../store/askUserDraft.js';
+import { useRevertPrompt } from '../timeline/revert/RevertPromptContext.js';
 
 const TEXTAREA_MAX_HEIGHT = 168;
 
@@ -58,11 +56,6 @@ export function Composer({
    */
   const [atMention, setAtMention] = useState<{ start: number; query: string } | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  /**
-   * Drives the composer's accent-halo elevation. Reserved for future
-   * focus affordances; the Vyotiq UI shell uses `:focus-within`.
-   */
-  const [, setTextareaFocused] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
   /** Tracks whether the current `text` came from history recall so
    *  ArrowDown can walk back toward the tail. Reset on any user
@@ -70,25 +63,33 @@ export function Composer({
   const fromHistoryRef = useRef(false);
   const {
     isProcessing,
+    awaitingAskUser,
+    runId,
     send,
     abort,
-    orchestratorUsage,
+    submitPendingAskUser,
     events,
     conversationId,
-    runId,
     storeDraft,
-    setDraft
+    setDraft,
+    totalRunUsage,
+    orchestratorUsage,
+    subagents
   } = useChatStore(
     useShallow((s) => ({
       isProcessing: s.isProcessing,
+      awaitingAskUser: s.awaitingAskUser,
+      runId: s.runId,
       send: s.send,
       abort: s.abort,
-      orchestratorUsage: s.orchestratorUsage,
+      submitPendingAskUser: s.submitPendingAskUser,
       events: s.events,
       conversationId: s.conversationId,
-      runId: s.runId,
       storeDraft: s.draft,
-      setDraft: s.setDraft
+      setDraft: s.setDraft,
+      totalRunUsage: s.totalRunUsage,
+      orchestratorUsage: s.orchestratorUsage,
+      subagents: s.subagents
     }))
   );
   const activeWorkspaceIdForAttach = useWorkspaceStore((s) => s.activeId);
@@ -108,8 +109,6 @@ export function Composer({
   const selectedPaths = attachments.map(
     (a) => a.workspacePath ?? a.storedPath ?? a.name
   );
-  const providers = useProviderStore((s) => s.providers);
-  const setContextOverride = useProviderStore((s) => s.setContextOverride);
   // Effective permissions resolve through three layers:
   // DEFAULT_PERMISSIONS → settings.permissions (global) → per-workspace
   // override (if any). Driven by the active workspace id; switching
@@ -117,41 +116,6 @@ export function Composer({
   // user can see the chosen folder's policy without a reload.
   const settings = useSettingsStore((s) => s.settings);
   const permissions = selectEffectivePermissions(activeWorkspaceIdForAttach, settings);
-
-  // Pre-flight BPE estimate (main process). Runs while the user types.
-  // Swapped out for the provider's actual `usage.promptTokens +
-  // completionTokens` once the first streamed turn reports usage.
-  //
-  // Phase 2 (2026): passing `conversationId` opts into the full-baseline
-  // path — the estimate now includes the system prompt + harness +
-  // envelopes + replayed history + tool schemas, not just the draft.
-  // The main process caches the baseline per-conversation so a burst
-  // of keystrokes stays cheap.
-  const estimate = useComposerTokenEstimate({
-    modelId: model?.modelId ?? '',
-    prompt: text,
-    attachments: selectedPaths,
-    attachmentMeta: attachments,
-    ...(conversationId ? { conversationId } : {})
-  });
-  const ceiling = model
-    ? selectEffectiveContextWindow(providers, model.providerId, model.modelId)
-    : undefined;
-  const hasActualUsage = orchestratorUsage !== undefined;
-  // Phase 4 (2026): once the orchestrator's first usage frame lands,
-  // grow the headline number with the synthetic mid-stream
-  // `inFlight.completionTokens` so the pill animates upward during
-  // long generations instead of sitting frozen at the last `usage`
-  // frame. `inFlight` is cleared the instant the next authoritative
-  // `token-usage` event lands. Scoped to the orchestrator alone —
-  // sub-agent in-flight tokens grow their OWN context windows, not
-  // this one.
-  const inFlightCompletion = orchestratorUsage?.inFlight?.completionTokens ?? 0;
-  const usedTokens = hasActualUsage
-    ? orchestratorUsage!.latest.promptTokens +
-    orchestratorUsage!.latest.completionTokens +
-    inFlightCompletion
-    : estimate.tokens;
 
   const history = useComposerHistory(events);
 
@@ -235,16 +199,41 @@ export function Composer({
   const showToast = useToastStore((s) => s.show);
 
   const handleSend = async () => {
-    if (isProcessing) {
+    if (isProcessing && !awaitingAskUser) {
       await abort();
       return;
     }
     const trimmed = text.trim();
+    if (awaitingAskUser && pendingAskUser && conversationId && runId) {
+      const draftReady = useAskUserDraftStore
+        .getState()
+        .hasAnyAnswer(pendingAskUser.id, pendingAskUser.payload, trimmed);
+      if (!draftReady && !trimmed && attachments.length === 0) {
+        showToast('Select answers in the panel above or type a reply before sending.', 'danger');
+        return;
+      }
+      setText('');
+      clearAttachments();
+      setAtMention(null);
+      fromHistoryRef.current = false;
+      history.reset();
+      if (conversationId) {
+        if (draftRafRef.current !== null) {
+          cancelAnimationFrame(draftRafRef.current);
+          draftRafRef.current = null;
+        }
+        selfDraftRef.current = '';
+        setDraft(conversationId, '');
+      }
+      await submitPendingAskUser({ supplementText: trimmed || undefined });
+      return;
+    }
     if (!trimmed && attachments.length === 0) return;
     if (!model) {
       showToast('Select a model before sending.', 'danger');
       return;
     }
+    revertPrompt?.closeSession();
     const toSendMeta = attachments;
     const promptEventId =
       toSendMeta.length > 0 ? peekPendingMessageId() : undefined;
@@ -341,64 +330,27 @@ export function Composer({
     });
   };
 
-  const canSendContent = text.trim().length > 0 || attachments.length > 0;
+  const pendingAskUser = useMemo(
+    () => findPendingAskUserEvent(events, awaitingAskUser),
+    [events, awaitingAskUser]
+  );
+  const draftHasAnswer = useAskUserDraftStore((s) =>
+    pendingAskUser
+      ? s.hasAnyAnswer(pendingAskUser.id, pendingAskUser.payload, text.trim())
+      : false
+  );
+  const canSendContent =
+    text.trim().length > 0 ||
+    attachments.length > 0 ||
+    (awaitingAskUser && draftHasAnswer);
   const sendState: 'idle' | 'ready' | 'processing' = isProcessing
     ? 'processing'
-    : canSendContent && model
+    : (canSendContent || awaitingAskUser) && model
       ? 'ready'
       : 'idle';
-  // Inspector entry point: the pill's primary click opens the
-  // Context Inspector panel for either the in-flight run
-  // (when one is bound) or the persisted-initial-messages view
-  // of the conversation (when idle). Bound id is preferred in
-  // priority order: live runId → conversationId. The Inspector
-  // store handles the live-vs-idle mode switch internally.
-  const openInspector = (() => {
-    const id = runId ?? conversationId;
-    if (!id) return undefined;
-    const mode: 'live' | 'idle' = runId ? 'live' : 'idle';
-    return () => {
-      useSecondaryZoneStore.getState().openInspector(id, mode);
-    };
-  })();
-  // Phase 4 (2026): the `estimated` slash style fires whenever the
-  // pill's headline value is NOT pinned to provider-reported `usage`.
-  // While a run is streaming we treat the value as authoritative-ish
-  // even when the synthetic `inFlight` is adding to it — the slash
-  // stays upright so the user doesn't see a per-frame italic flicker
-  // as inFlight grows. The pre-flight estimate (no `orchestratorUsage`
-  // yet, and the tokenizer fell back to the heuristic) still
-  // italicizes the slash via `!estimate.exact`.
-  const tokenUsageSlot = useMemo(() => {
-    if (!model) return null;
-    return (
-      <TokenUsagePill
-        used={usedTokens}
-        {...(typeof ceiling === 'number' ? { ceiling } : {})}
-        estimated={!hasActualUsage && !estimate.exact}
-        onCeilingChange={(value) =>
-          setContextOverride(model.providerId, model.modelId, value)
-        }
-        {...(openInspector ? { onOpenInspector: openInspector } : {})}
-        {...(hasActualUsage ? { usage: orchestratorUsage!.latest } : {})}
-        {...(estimate.baseline ? { baseline: estimate.baseline } : {})}
-        draftTokens={estimate.draftTokens}
-      />
-    );
-  }, [
-    model,
-    usedTokens,
-    ceiling,
-    hasActualUsage,
-    estimate.exact,
-    estimate.baseline,
-    estimate.draftTokens,
-    setContextOverride,
-    openInspector,
-    orchestratorUsage
-  ]);
   const footerMode = variant === 'footer';
   const zoneOpen = useSecondaryZoneStore((s) => s.panel !== null);
+  const revertPrompt = useRevertPrompt();
 
   const attachmentButton = (
     <AttachmentButton
@@ -425,14 +377,19 @@ export function Composer({
         onChange={onModelChange}
         onOpenProviders={onOpenProviders}
       />
-      <PermissionModePill />
+      <ComposerStatusStrip />
+      <TokenUsagePill
+        total={totalRunUsage}
+        orchestrator={orchestratorUsage}
+        subagents={Object.fromEntries(
+          Object.entries(subagents).map(([id, sa]) => [id, sa.usage])
+        )}
+      />
       {footerMode && attachments.length > 0 && (
         <span className="shrink-0 font-mono text-meta text-text-faint tabular-nums">
           {attachments.length}/{MAX_CHAT_ATTACHMENTS}
         </span>
       )}
-      <ComposerStatusStrip />
-      {tokenUsageSlot}
     </div>
   );
 
@@ -443,8 +400,6 @@ export function Composer({
       aria-label={`Message ${AGENT_NAME}`}
       aria-keyshortcuts="Enter Shift+Enter ArrowUp ArrowDown Escape"
       onChange={(e) => onTextChange(e.target.value)}
-      onFocus={() => setTextareaFocused(true)}
-      onBlur={() => setTextareaFocused(false)}
       onKeyUp={onSelectionUpdate}
       onClick={onSelectionUpdate}
       onKeyDown={(e) => {
@@ -461,7 +416,7 @@ export function Composer({
             showToast('Select a model before sending.', 'danger');
             return;
           }
-          if (!canSendContent && !isProcessing) return;
+          if (!canSendContent && !isProcessing && !awaitingAskUser) return;
           void handleSend();
           return;
         }
@@ -522,7 +477,7 @@ export function Composer({
   };
 
   return (
-    <div className="w-full">
+    <div className="relative w-full">
       <div
         className={cn(
           'flex flex-col overflow-hidden transition-shadow duration-150',
@@ -538,6 +493,19 @@ export function Composer({
       >
         <div className="flex min-w-0 flex-col">
           <div className="flex min-w-0 flex-1 flex-col">
+            {pendingAskUser ? (
+              <div
+                className="mb-2 rounded-md border border-accent/25 bg-accent/5 px-3 py-2 text-meta text-text-secondary"
+                role="status"
+                aria-live="polite"
+              >
+                <span className="font-medium text-text-primary">Reply needed</span>
+                {' — '}
+                {pendingAskUser.payload.title?.trim() ||
+                  'Answer in the panel above the composer, or type here and press Send.'}
+              </div>
+            ) : null}
+            <ComposerRunRecovery model={model} onOpenProviders={onOpenProviders} />
             {attachments.length > 0 && (
               <PromptAttachmentCards
                 items={attachments}
@@ -559,7 +527,7 @@ export function Composer({
                   <SendButton
                     onClick={() => void handleSend()}
                     state={sendState}
-                    disabled={!canSendContent && sendState !== 'processing'}
+                    disabled={!canSendContent && sendState !== 'processing' && !awaitingAskUser}
                   />
                 </div>
               ) : (
@@ -569,7 +537,7 @@ export function Composer({
                     attachmentCount={attachments.length}
                     sendState={sendState}
                     onSend={() => void handleSend()}
-                    canSend={canSendContent && !!model}
+                    canSend={(canSendContent || awaitingAskUser) && !!model}
                     compact={zoneOpen}
                   />
                 </>

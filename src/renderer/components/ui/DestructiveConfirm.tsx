@@ -53,6 +53,14 @@ interface ComposerVariantProps extends CommonProps {
   title: ReactNode;
   /** Body copy describing the destructive action. */
   message: ReactNode;
+  /**
+   * When true, portals above the full viewport (legacy elevated confirm).
+   * Shell tool approvals default to false so the dialog sits in the
+   * composer column and does not obscure delegation streams.
+   */
+  elevated?: boolean;
+  /** Optional muted hint below the message (e.g. timeout guidance). */
+  hint?: ReactNode;
 }
 
 export type DestructiveConfirmProps = InlineVariantProps | ComposerVariantProps;
@@ -101,6 +109,8 @@ function DestructiveComposerDialog({
   twoStep = false,
   tone = 'danger',
   busy = false,
+  elevated = false,
+  hint,
   onConfirm,
   onCancel
 }: ComposerVariantProps) {
@@ -130,7 +140,7 @@ function DestructiveComposerDialog({
   const primaryLabel = twoStep && !armed ? continueLabel : confirmLabel;
 
   return (
-    <ComposerDialogPortal elevated>
+    <ComposerDialogPortal elevated={elevated}>
       <ComposerDialog
         open
         onClose={() => {
@@ -146,6 +156,9 @@ function DestructiveComposerDialog({
           <ShellCaption className="whitespace-pre-wrap text-body leading-relaxed text-text-secondary">
             {message}
           </ShellCaption>
+          {hint ? (
+            <ShellCaption className="text-meta text-text-faint">{hint}</ShellCaption>
+          ) : null}
           <ShellFieldActions className="!mt-0">
             <Button
               variant="ghost"

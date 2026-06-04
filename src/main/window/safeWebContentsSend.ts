@@ -11,8 +11,8 @@
  *     if (!wc || wc.isDestroyed()) return;
  *     try { wc.send(channel, ...args); } catch { ...renderer gone... }
  *
- * Six call sites carried inline copies (chat.ipc, contextSummary.ipc,
- * checkpoints.ipc x3, confirmBus, idleSummaryRuntime, createMainWindow).
+ * Six call sites carried inline copies (chat.ipc, checkpoints.ipc x3,
+ * createMainWindow).
  * Each was correct in isolation but the duplication was a maintenance
  * hazard — a security-critical pattern (renderer death must NEVER
  * crash the orchestrator) belongs in one place. Audit P3-3 (2026-05).

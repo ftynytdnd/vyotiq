@@ -39,7 +39,6 @@ vi.mock('@main/providers/providerStore', () => ({
   addProvider: (input: AddProviderInput) => addProviderMock(input),
   listProviders: vi.fn(async () => []),
   removeProvider: vi.fn(async () => undefined),
-  setContextOverride: vi.fn(async () => undefined),
   updateProvider: vi.fn(async () => undefined)
 }));
 

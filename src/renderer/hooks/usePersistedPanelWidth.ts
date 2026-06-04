@@ -2,7 +2,7 @@ import { useCallback, useEffect } from 'react';
 import { vyotiq } from '../lib/ipc.js';
 import { useSettingsStore } from '../store/useSettingsStore.js';
 
-const DEFAULT_WIDTH = 480;
+const DEFAULT_WIDTH = 560;
 const PERSIST_DEBOUNCE_MS = 200;
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;

@@ -215,8 +215,8 @@ export function workspaceRelative(workspaceRoot: string, abs: string): string {
 }
 
 /**
- * Patterns that look catastrophically destructive and require explicit
- * confirmation before executing — even with `allowAuto: true`.
+ * Patterns that look catastrophically destructive. Matched `bash` commands
+ * are blocked in-tool (see `isDestructiveCommand`) — no approval modal.
  */
 const DESTRUCTIVE_PATTERNS: RegExp[] = [
   // Absolute-rooted recursive remove (`rm -rf /...`). The previous
@@ -234,7 +234,7 @@ const DESTRUCTIVE_PATTERNS: RegExp[] = [
   // Workspace-root wipe variants. The bash tool spawns with `cwd` set to
   // the workspace root, so these resolve INSIDE the sandbox — the
   // absolute-path regex above never fires. Without this line a sub-agent
-  // running with `allowAuto: true` can destroy the user's entire working
+  // running unchecked can destroy the user's entire working
   // tree in one call.
   //
   // Pattern breakdown (alternatives):

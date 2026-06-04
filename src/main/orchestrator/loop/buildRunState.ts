@@ -2,8 +2,8 @@
  * Builds the `<run_state>` envelope — a small, machine-readable summary
  * of what the host knows about THIS run that the model would otherwise
  * have to guess at. Surfacing it lets the model self-regulate (e.g.,
- * "I've burned 1 of 2 nudges — I should stop drafting plans without
- * action") instead of relying entirely on reactive heuristics.
+ * "I'm on iteration 20 of 24 — I should wrap up and call `finish`")
+ * instead of relying on reactive host-side heuristics.
  *
  * The envelope is rebuilt once per orchestrator iteration and inserted
  * between `<session_context>` and `<prior_conversations>` — see
@@ -28,9 +28,8 @@
 import { wrapXml } from '../envelope/index.js';
 import { escapeXmlBody } from '../envelope/escapeXmlBody.js';
 import type { DelegationCounters } from './handleDelegates.js';
-import type { NudgeState } from './handleNoToolNoDelegate.js';
 import type { SpinSignatureBuffer } from './toolSpinSignature.js';
-import { MAX_NUDGES_PER_RUN, MAX_TOTAL_ITERATIONS } from '@shared/constants.js';
+import { MAX_TOTAL_ITERATIONS } from '@shared/constants.js';
 
 /**
  * Last meaningful action the loop performed. Mirrors the iteration
@@ -39,19 +38,17 @@ import { MAX_NUDGES_PER_RUN, MAX_TOTAL_ITERATIONS } from '@shared/constants.js';
  *   - `none`            — first iteration, nothing has happened yet.
  *   - `direct-tool`     — orchestrator-level tool round (ls/memory/recall).
  *   - `delegate`        — one or more sub-agents finished a round.
- *   - `nudge`           — host injected a planning-without-action user
- *                          message (the spin nudge variant was removed
- *                          in the subtraction-pass).
- *   - `retry`           — provider transport error triggered backoff.
- *   - `clarify`         — assistant emitted a clarifying question
- *                          (substantive text ending in `?`).
- *   - `answer`          — assistant delivered a substantive final-text turn.
+ *   - `retry`           — provider transport error (or an empty forced
+ *                          turn) triggered a re-issue.
+ *   - `clarify`         — assistant called `ask_user` to pause the run.
+ *   - `answer`          — assistant called `finish` (or an implicit
+ *                          finish via substantive prose on a non-forced
+ *                          dialect) and delivered the final answer.
  */
 type LastAction =
   | 'none'
   | 'direct-tool'
   | 'delegate'
-  | 'nudge'
   | 'retry'
   | 'clarify'
   | 'answer';
@@ -63,14 +60,6 @@ export interface RunStateView {
   directToolRounds: { total: number; consecutiveFailed: number };
   /** Delegate rounds completed, with consecutive-bad count. */
   delegateRounds: { total: number; consecutiveBad: number };
-  /**
-   * Planning-without-action nudges already burned and the budget. The
-   * spin-nudge counter that used to live here was removed in the
-   * subtraction-pass — see file header.
-   */
-  nudges: {
-    planning: { used: number; max: number };
-  };
   /** Most recent transition. Empty on iteration 0. */
   lastAction: LastAction;
   /**
@@ -81,11 +70,6 @@ export interface RunStateView {
    */
   spinSignatureHot: string | null;
   /**
-   * Cumulative count of refused `delegate` tool calls. Surfaced only
-   * when non-zero — the steady-state path is silent.
-   */
-  childRedelegations: number;
-  /**
    * Sub-agent tasks whose bad-verdict streak has reached `2` or more.
    * The model sees them as "this exact decomposition is not working —
    * pick a different angle of attack". Empty when nothing is hot.
@@ -94,6 +78,11 @@ export interface RunStateView {
    * truncated for display.
    */
   failingTasks: Array<{ signature: string; streak: number }>;
+  /**
+   * Consecutive orchestrator iterations that delegated exactly one worker
+   * with no co-emitted direct tools — soft signal to fan out in one turn.
+   */
+  serialSingleDelegateRounds: number;
 }
 
 /**
@@ -107,16 +96,9 @@ export function buildRunStateXml(view: RunStateView): string {
     `(consecutive_failed_tools: ${view.directToolRounds.consecutiveFailed})`,
     `delegate_rounds: ${view.delegateRounds.total} ` +
     `(consecutive_bad_delegation: ${view.delegateRounds.consecutiveBad})`,
-    `planning_nudges: ${view.nudges.planning.used} of ${view.nudges.planning.max} used`,
     `last_action: ${view.lastAction}`,
     `spin_signature_hot: ${view.spinSignatureHot ?? '(none)'}`
   ];
-  if (view.childRedelegations > 0) {
-    lines.push(
-      `child_redelegations: ${view.childRedelegations} ` +
-      `(model tried calling \`delegate\` as a tool — use the \`<delegate ... />\` XML directive instead)`
-    );
-  }
   if (view.failingTasks.length > 0) {
     // Render the failing-task list as one line per task so a single
     // grep over `<run_state>` lines surfaces both the counter and the
@@ -131,8 +113,7 @@ export function buildRunStateXml(view: RunStateView): string {
         // task body would otherwise let a malicious tool output
         // (or a confused model) break out of the run-state envelope
         // and inject pseudo-instructions into both the orchestrator
-        // prompt and the summarizer's user envelope (which threads
-        // this block verbatim — see `summarizerPrompt.ts`). Prime
+        // prompt (which threads this block verbatim). Prime
         // Directives §6 boundary defense. The numeric framework
         // around `head` (`streak`, `slice(0, 80)`) is host-built
         // and trusted; only the user-derived head needs escaping.
@@ -144,6 +125,13 @@ export function buildRunStateXml(view: RunStateView): string {
     lines.push('failing_tasks:\n' + body);
   } else {
     lines.push('failing_tasks: (none)');
+  }
+  if (view.serialSingleDelegateRounds >= 3) {
+    lines.push(
+      'delegate_parallel_hint: You have emitted one delegate per turn for ' +
+        `${view.serialSingleDelegateRounds} consecutive rounds — when sub-tasks ` +
+        'are independent, emit multiple `delegate` tool calls in the same assistant turn.'
+    );
   }
   return wrapXml('run_state', lines.join('\n'));
 }
@@ -162,19 +150,9 @@ export interface RunStateAccumulator {
   iteration: number;
   directToolRoundsTotal: number;
   delegateRoundsTotal: number;
-  /**
-   * Running total of refused `delegate` tool calls. Surfaced into
-   * `<run_state>.child_redelegations` so the model sees the
-   * cumulative pivot signal without the orchestrator having to
-   * thread the per-round count separately. Maintained by the run
-   * loop after each direct-tool round and after each delegate round
-   * (sub-agent re-delegation attempts come back through the
-   * `<subagent_results>` envelope's structural verdict and are not
-   * counted here — only orchestrator-level mistakes are).
-   */
-  childRedelegationsTotal: number;
   lastAction: LastAction;
   spinSignatureHot: string | null;
+  serialSingleDelegateRounds: number;
 }
 
 export function createRunStateAccumulator(): RunStateAccumulator {
@@ -182,9 +160,9 @@ export function createRunStateAccumulator(): RunStateAccumulator {
     iteration: 0,
     directToolRoundsTotal: 0,
     delegateRoundsTotal: 0,
-    childRedelegationsTotal: 0,
     lastAction: 'none',
-    spinSignatureHot: null
+    spinSignatureHot: null,
+    serialSingleDelegateRounds: 0
   };
 }
 
@@ -204,7 +182,6 @@ export function createRunStateAccumulator(): RunStateAccumulator {
 export function snapshotRunState(
   acc: RunStateAccumulator,
   counters: DelegationCounters,
-  nudges: NudgeState,
   _spin: SpinSignatureBuffer,
   consecutiveBadToolRounds: number
 ): RunStateView {
@@ -227,12 +204,9 @@ export function snapshotRunState(
       total: acc.delegateRoundsTotal,
       consecutiveBad: counters.consecutiveBadRounds
     },
-    nudges: {
-      planning: { used: nudges.used, max: MAX_NUDGES_PER_RUN }
-    },
     lastAction: acc.lastAction,
     spinSignatureHot: acc.spinSignatureHot,
-    childRedelegations: acc.childRedelegationsTotal,
-    failingTasks
+    failingTasks,
+    serialSingleDelegateRounds: acc.serialSingleDelegateRounds
   };
 }

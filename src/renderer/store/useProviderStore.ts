@@ -27,17 +27,6 @@ interface ProviderStore {
   /** Cache-respecting discovery (used at app boot). */
   discoverCached: (id: string) => Promise<ModelInfo[]>;
   test: (id: string) => Promise<{ ok: boolean; message: string }>;
-  /**
-   * Pin a custom context-window size for a specific model on a provider,
-   * or clear the override by passing `value: null`. The pinned value
-   * wins over whatever `/v1/models` reported. Used when the upstream
-   * provider doesn't surface `context_length`.
-   */
-  setContextOverride: (
-    providerId: string,
-    modelId: string,
-    value: number | null
-  ) => Promise<void>;
 }
 
 /** Enabled provider ids — stable input for boot-time discover effect deps. */
@@ -102,22 +91,5 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
     return models;
   },
 
-  test: (id) => vyotiq.providers.test(id),
-
-  setContextOverride: async (providerId, modelId, value) => {
-    const updated = await vyotiq.providers.setContextOverride(providerId, modelId, value);
-    set({
-      providers: get().providers.map((p) => (p.id === providerId ? updated : p))
-    });
-  }
+  test: (id) => vyotiq.providers.test(id)
 }));
-
-/**
- * Effective context-window ceiling for a given (providerId, modelId).
- *
- * Re-exported here for backward-compatibility with renderer call sites
- * (composer + model picker) that imported this from `useProviderStore`.
- * The actual implementation lives in `@shared/providers/contextWindow`
- * so both renderer and main process share the same precedence rules.
- */
-export { selectEffectiveContextWindow } from '@shared/providers/contextWindow.js';

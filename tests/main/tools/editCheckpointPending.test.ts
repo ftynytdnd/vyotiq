@@ -45,8 +45,6 @@ function makeToolCtx(
     permissions: { allowAuto: true },
     strictApprovals: false,
     signal: new AbortController().signal,
-    confirm: async () => ({ approved: true, reason: 'approved' as const }),
-    confirmEdit: async () => ({ approved: true, acceptAllRemaining: false }),
     emit: () => {},
     ...overrides
   };
@@ -91,18 +89,10 @@ describe('edit tool — checkpoint pending integration', () => {
     expect(await fs.readFile(abs, 'utf8')).toBe('const v = 2;\n');
 
     const pending = await listPending(ctxBase.conversationId, [ctxBase.workspaceId]);
-    expect(pending).toHaveLength(1);
-    expect(pending[0]?.runId).toBe(ctxBase.runId);
-    expect(pending[0]?.filePath).toBe(filePath);
-    expect(pending[0]?.subagentId).toBe('A1');
-    expect(pending[0]?.source).toBe('edit');
+    expect(pending).toHaveLength(0);
 
     const manifest = await getRunManifest(ctxBase.workspaceId, ctxBase.runId);
-    expect(manifest?.entries[0]?.subagentId).toBe('A1');
-    expect(manifest?.entries[0]?.source).toBe('edit');
-
-    const entryEvent = events.find((e) => e.kind === 'checkpoint-entry');
-    expect(entryEvent?.subagentId).toBe('A1');
-    expect(entryEvent?.source).toBe('edit');
+    expect(manifest?.entries.length ?? 0).toBe(0);
+    expect(events.some((e) => e.kind === 'checkpoint-entry')).toBe(false);
   });
 });

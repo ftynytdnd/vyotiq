@@ -4,11 +4,9 @@
  * delivered to the LLM. The per-tool briefs are pulled from the `Tool`
  * objects directly so they stay in sync with the schemas the model sees.
  *
- * The harness was consolidated from 9 files to 5 (audit pass): the loop,
- * delegation, and self-correction docs collapse into one orchestration
- * file; context management, memory, and research modes collapse into a
- * single context-and-memory file; security bounds fold into prime
- * directives. Runtime numerical limits (`MAX_*` constants) are injected
+ * The harness is three markdown files: `00-orchestrator-core.md`,
+ * `01-context-learning.md`, and `02-subagent-prompt.md`. Runtime numerical
+ * limits (`MAX_*` constants) are injected
  * into the harness body so the prose can never drift from the actual
  * code in `@shared/constants.ts`.
  *
@@ -17,59 +15,39 @@
  * paths in production.
  */
 
-import { promises as fs } from 'node:fs';
-import { join } from 'node:path';
 import { listTools } from '../tools/registry.js';
 import { wrapXml } from '../orchestrator/envelope/index.js';
-import { escapeXmlBody } from '../orchestrator/envelope/escapeXmlBody.js';
 import { ORCHESTRATOR_TOOLS } from '../tools/policy/index.js';
 import {
   BASE_BACKOFF_MS,
-  CONTEXT_SUMMARY_DEFAULT_KEEP_RECENT_TURNS,
-  CONTEXT_SUMMARY_DEFAULT_MAX_RETRIES,
-  CONTEXT_SUMMARY_DEFAULT_TRIGGER_RATIO,
-  CONTEXT_SUMMARY_MAX_FINAL_CHARS,
-  CONTEXT_SUMMARY_MIN_MESSAGES_TO_SUMMARIZE,
-  CONTEXT_SUMMARY_OVERRIDE_FILENAME,
   MAX_BACKOFF_MS,
   MAX_DELEGATION_BAD_ROUNDS,
-  MAX_NUDGES_PER_RUN,
-  MAX_PARALLEL_SUBAGENTS,
+  DEFAULT_DELEGATE_CONCURRENCY,
+  HOST_DELEGATE_CONCURRENCY_CEILING,
   MAX_PER_TASK_BAD_STREAK,
   MAX_SELF_CORRECTION_ATTEMPTS,
   MAX_TOOL_OUTPUT_CHARS,
   MAX_TOTAL_ITERATIONS,
   STREAM_INACTIVITY_TIMEOUT_MS,
   SUBAGENT_MAX_ITERATIONS,
-  SUBAGENT_WRAPUP_ITER,
-  WORKSPACE_DOTDIR
+  SUBAGENT_RUN_TIMEOUT_MS,
+  SUBAGENT_WRAPUP_ITER
 } from '@shared/constants.js';
-import { logger } from '../logging/logger.js';
 
-import primeDirectives from './00-prime-directives.md?raw';
-import orchestrationLoop from './01-orchestration-loop.md?raw';
-import contextAndMemory from './02-context-and-memory.md?raw';
-import continuousLearning from './03-continuous-learning.md?raw';
-import subagentPrompt from './04-subagent-prompt.md?raw';
-import contextSummarizer from './05-context-summarizer.md?raw';
-
-const log = logger.child('harness/loader');
+import orchestratorCore from './00-orchestrator-core.md?raw';
+import contextLearning from './01-context-learning.md?raw';
+import subagentPrompt from './02-subagent-prompt.md?raw';
 
 const ORCHESTRATOR_SECTIONS: ReadonlyArray<{ title: string; body: string }> = [
-  { title: 'Prime Directives', body: primeDirectives },
-  { title: 'Orchestration Loop, Delegation & Self-Correction', body: orchestrationLoop },
-  { title: 'Context, Memory & Research', body: contextAndMemory },
-  { title: 'Continuous Learning', body: continuousLearning }
+  { title: 'Orchestrator Core', body: orchestratorCore },
+  { title: 'Context, Memory & Continuous Learning', body: contextLearning }
 ];
 
 /** Bundled harness bodies validated at boot — missing/empty fails loud. */
 const BOOTSTRAP_HARNESS_MARKDOWN: ReadonlyArray<{ file: string; body: string }> = [
-  { file: '00-prime-directives.md', body: primeDirectives },
-  { file: '01-orchestration-loop.md', body: orchestrationLoop },
-  { file: '02-context-and-memory.md', body: contextAndMemory },
-  { file: '03-continuous-learning.md', body: continuousLearning },
-  { file: '04-subagent-prompt.md', body: subagentPrompt },
-  { file: '05-context-summarizer.md', body: contextSummarizer }
+  { file: '00-orchestrator-core.md', body: orchestratorCore },
+  { file: '01-context-learning.md', body: contextLearning },
+  { file: '02-subagent-prompt.md', body: subagentPrompt }
 ];
 
 function assertHarnessMarkdownPresent(): void {
@@ -82,6 +60,31 @@ function assertHarnessMarkdownPresent(): void {
   }
 }
 
+/** Heading that starts the orchestrator-only worked example in prime directives. */
+const PRIME_DIRECTIVES_WORKED_EXAMPLE_HEADING =
+  '### Worked example — codebase analysis';
+
+/**
+ * Prime directives with the orchestrator-only worked example removed.
+ * Sub-agents must not receive concrete example paths that weak models
+ * copy into `files=` or `read` targets.
+ */
+export function primeDirectivesWithoutOrchestratorExample(body: string): string {
+  const start = body.indexOf(PRIME_DIRECTIVES_WORKED_EXAMPLE_HEADING);
+  if (start === -1) return body;
+  const rest = body.slice(start + PRIME_DIRECTIVES_WORKED_EXAMPLE_HEADING.length);
+  const nextHeading = rest.search(/\n### /);
+  const end =
+    nextHeading === -1 ? body.length : start + PRIME_DIRECTIVES_WORKED_EXAMPLE_HEADING.length + nextHeading;
+  const before = body.slice(0, start).trimEnd();
+  const after = body.slice(end).replace(/^\n+/, '');
+  if (after.length === 0) return before;
+  if (before.length === 0) return after;
+  return `${before}\n\n${after}`;
+}
+
+const primeDirectivesForSubagent = primeDirectivesWithoutOrchestratorExample(orchestratorCore);
+
 /**
  * Render the runtime-limits envelope. Single source of truth for the
  * numbers the harness references — pulling them from `constants.ts`
@@ -90,131 +93,113 @@ function assertHarnessMarkdownPresent(): void {
  * cite specific numbers without us having to template the markdown.
  */
 function buildRuntimeLimitsBlock(): string {
-  // Every counter the host enforces is surfaced here so the model has a
-  // numeric handle for it inside `<run_state>`. Two counters were
-  // historically opaque to the model:
-  //
-  //   - `MAX_DELEGATION_BAD_ROUNDS` was a magic literal in
-  //     `handleDelegates.ts`; promoting it to `@shared/constants.ts`
-  //     makes the harness §C statement "the host enforces three
-  //     parallel strike counters" honest at the prompt layer too.
-  //
-  //   - `MAX_NUDGES_PER_RUN` was promoted from
-  //     `handleNoToolNoDelegate.ts` into `@shared/constants.ts` (T1-5)
-  //     so every `MAX_*` knob has a single home. The matching consumer
-  //     re-exports the shared symbol for backward compatibility.
   return wrapXml(
     'runtime_limits',
     [
       `MAX_TOTAL_ITERATIONS=${MAX_TOTAL_ITERATIONS}`,
       `MAX_SELF_CORRECTION_ATTEMPTS=${MAX_SELF_CORRECTION_ATTEMPTS}`,
       `MAX_DELEGATION_BAD_ROUNDS=${MAX_DELEGATION_BAD_ROUNDS}`,
-      // Per-task soft pivot signal (T1-2). Surfaced in
-      // `<run_state>.failing_tasks` when any decomposition's bad-verdict
-      // streak crosses `MAX_PER_TASK_BAD_STREAK - 1`. A pure observability
-      // signal — does NOT halt the run; the round-level
-      // `MAX_DELEGATION_BAD_ROUNDS` halt remains the only delegation halt.
       `MAX_PER_TASK_BAD_STREAK=${MAX_PER_TASK_BAD_STREAK}`,
-      `MAX_PARALLEL_SUBAGENTS=${MAX_PARALLEL_SUBAGENTS}`,
-      // `MAX_ORCHESTRATOR_SPIN_NUDGES` was removed in the
-      // subtraction-pass: the host no longer enforces a spin nudge or
-      // halt path. The model still sees `<run_state>.spin_signature_hot`
-      // and is told (harness §C "Don't re-survey what you've already
-      // seen") to pivot when it surfaces. The cache banner already
-      // tells the model the call is a no-op from the SECOND identical
-      // invocation onward — strictly earlier than the dropped detector
-      // ever fired.
-      `MAX_NUDGES_PER_RUN=${MAX_NUDGES_PER_RUN}`,
-      // Backoff constants — referenced by name in the §C "Backoff"
-      // prose of `01-orchestration-loop.md`. Kept in `<runtime_limits>`
-      // alongside the other caps so a future tuning bump propagates
-      // into the harness without manual prose edits.
+      `DEFAULT_DELEGATE_CONCURRENCY=${DEFAULT_DELEGATE_CONCURRENCY}`,
+      `HOST_DELEGATE_CONCURRENCY_CEILING=${HOST_DELEGATE_CONCURRENCY_CEILING}`,
       `BASE_BACKOFF_MS=${BASE_BACKOFF_MS}`,
       `MAX_BACKOFF_MS=${MAX_BACKOFF_MS}`,
-      // Stream-inactivity timeout — surfaced so the model has a concrete
-      // number for "how long can a quiet provider stall before the host
-      // retries". The §C "Backoff" prose says transport flakes are
-      // retried with exponential backoff; this is the dwell time before
-      // the backoff ladder even starts.
       `STREAM_INACTIVITY_TIMEOUT_MS=${STREAM_INACTIVITY_TIMEOUT_MS}`,
-      // Context-summarization defaults — surfaced so the orchestrator
-      // can self-reason about when the host will compress its
-      // `messages[]`. The actual values in effect at run time may be
-      // OVERRIDDEN by `AppSettings.contextSummary` (global) or
-      // `AppSettings.ui.contextSummaryByWorkspace[wsId]` (workspace);
-      // these are the build-time defaults that apply in absence of any
-      // user override. The §E "Compressed History" prose in
-      // `02-context-and-memory.md` references these by name.
-      `CONTEXT_SUMMARY_DEFAULT_TRIGGER_RATIO=${CONTEXT_SUMMARY_DEFAULT_TRIGGER_RATIO}`,
-      `CONTEXT_SUMMARY_DEFAULT_KEEP_RECENT_TURNS=${CONTEXT_SUMMARY_DEFAULT_KEEP_RECENT_TURNS}`,
-      `CONTEXT_SUMMARY_MIN_MESSAGES_TO_SUMMARIZE=${CONTEXT_SUMMARY_MIN_MESSAGES_TO_SUMMARIZE}`
+      `SUBAGENT_RUN_TIMEOUT_MS=${SUBAGENT_RUN_TIMEOUT_MS}`
     ].join('\n')
   );
 }
 
-/**
- * Strip the JSON-schema fenced sample from a tool's brief markdown.
- * Delegated-tool briefs are never callable from the orchestrator, so the
- * raw `{ "name": "...", "arguments": ... }` example is just noise that
- * tempts a model to try a direct call. We keep the WHAT/HOW/WHY/WHEN
- * prose and drop only the schema fence.
- *
- * The brief format is `### Tool: \`name\`\n\n**WHAT…**\n…\n\n```json\n…\n````,
- * with the schema fenced as `json`. Removing one fenced JSON block is a
- * surgical edit; unrelated `bash` / `tsx` fences in the prose stay.
- *
- * Audit A-13 — KNOWN LIMITATION: this strip is dialect-agnostic and
- * removes **every** ` ```json ` fence in a brief. If a future tool
- * brief adds a non-final illustrative JSON example (e.g. an expected
- * RESULT shape block) it WILL be stripped too. Mitigations if you
- * need a JSON example to survive into the delegated catalogue:
- *   1. Fence it as ` ```json5 ` / ` ```jsonc ` / ` ```javascript ` —
- *      the regex below matches ` ```json ` followed by a newline only.
- *   2. Or use a non-JSON illustrative form (TS interface inside a
- *      ` ```ts ` fence is the convention used elsewhere in the
- *      catalogue).
- *   3. Or refactor this helper to strip ONLY the trailing schema
- *      fence (anchor on end-of-string or match the position relative
- *      to the WHAT/HOW/WHY/WHEN structure).
- */
-function stripSchemaFence(brief: string): string {
-  // Strip EVERY ```json fence (some briefs — `edit`, `search` — carry
-  // multiple examples). Global regex; leaves non-json fences (`bash`,
-  // `tsx`, etc.) untouched.
-  return brief
-    .replace(/```json\n[\s\S]*?\n```/g, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+/** Compact grant matrix for delegate-only tools (full briefs go to sub-agents). */
+const DELEGATED_TOOL_MATRIX: ReadonlyArray<{
+  name: string;
+  hint: string;
+  typicalGrants: readonly (readonly string[])[];
+}> = [
+  {
+    name: 'read',
+    hint: 'Read file contents; supports line ranges.',
+    typicalGrants: [['read'], ['read', 'ls'], ['read', 'search']]
+  },
+  {
+    name: 'edit',
+    hint: 'Apply a unique `oldString` patch; pair with `read`.',
+    typicalGrants: [['read', 'edit'], ['read', 'edit', 'bash']]
+  },
+  {
+    name: 'bash',
+    hint: 'Run shell in the workspace sandbox (non-destructive inspection or builds).',
+    typicalGrants: [['bash'], ['read', 'bash']]
+  },
+  {
+    name: 'search',
+    hint: 'Ripgrep local workspace (`mode: local`).',
+    typicalGrants: [['search'], ['read', 'search']]
+  },
+  {
+    name: 'delete',
+    hint: 'Delete a file with checkpoint snapshot.',
+    typicalGrants: [['delete'], ['read', 'delete']]
+  },
+  {
+    name: 'report',
+    hint: 'Write a static HTML artifact under `.vyotiq/reports/`.',
+    typicalGrants: [['report'], ['read', 'report']]
+  }
+];
+
+function buildDelegatedToolMatrix(): string {
+  const rows = DELEGATED_TOOL_MATRIX.map((row) => {
+    const grants = row.typicalGrants.map((g) => `\`${JSON.stringify(g)}\``).join(', ');
+    return `- **\`${row.name}\`** — ${row.hint} Typical \`tools\`: ${grants}.`;
+  }).join('\n');
+
+  return (
+    `# Sub-agent Tools (grant these via \`delegate\`)\n\n` +
+    `The tools below are NOT in your own schema — calling them directly is ` +
+    `rejected by the host. Grant them to a sub-agent through the \`tools\` ` +
+    `argument of a \`delegate\` call (for example \`"tools": ["read", "edit"]\`). ` +
+    `The sub-agent executes them in a fresh, isolated context and returns a ` +
+    `verified result. Omit \`tools\` to grant the read-only default allowlist ` +
+    `(\`read\`, \`ls\`, \`search\`). Full tool briefs are included in the ` +
+    `sub-agent prompt only.\n\n` +
+    rows
+  );
 }
 
 function buildOrchestratorToolCatalogue(): string {
   const all = listTools();
   const directNames = new Set<string>(ORCHESTRATOR_TOOLS);
   const direct = all.filter((t) => directNames.has(t.name));
-  const delegated = all.filter((t) => !directNames.has(t.name));
 
   const directBriefs = direct.map((t) => t.briefMarkdown).join('\n\n');
-  const delegatedBriefs = delegated
-    .map((t) => stripSchemaFence(t.briefMarkdown))
-    .join('\n\n');
 
+  // All orchestrator tools — including `delegate`, `finish`, and
+  // `ask_user` — are real, directly-callable function-calling tools.
+  // The loop is CLOSED: every turn the model MUST call at least one
+  // tool, and a run can ONLY end by calling `finish` (deliver the answer
+  // and stop) or `ask_user` (pause for a user reply). There is no longer
+  // any `<delegate>` XML directive — `delegate` is invoked like any other
+  // tool, and N parallel `delegate` calls in one turn fan out concurrent
+  // sub-agents.
   const directSection =
-    `# Direct Tools (callable by you)\n\n` +
-    `These tools are present in your function-calling schema. Invoke them ` +
-    `via the standard \`tool_calls\` mechanism.\n\n${directBriefs}`;
+    `# Your Tools (callable directly via \`tool_calls\`)\n\n` +
+    `Every tool below is present in your function-calling schema — invoke ` +
+    `it with the standard \`tool_calls\` mechanism. The loop is CLOSED: on ` +
+    `each turn you MUST call at least one tool.\n\n` +
+    `- \`delegate\` — spawn a real ephemeral sub-agent for ONE micro-task. ` +
+    `Emit several \`delegate\` calls in the SAME turn to run sub-agents ` +
+    `concurrently. This is how all real work (reading, editing, shell) gets ` +
+    `done.\n` +
+    `- \`ls\` / \`memory\` / \`recall\` — gather workspace structure, notes, ` +
+    `and prior-conversation context.\n` +
+    `- \`finish\` and \`ask_user\` are the ONLY ways to end a run. \`finish\` ` +
+    `delivers your final, user-facing answer and stops the run; \`ask_user\` ` +
+    `pauses for a clarifying reply. A run never ends by simply not calling a ` +
+    `tool — you must declare the end explicitly.\n\n` +
+    `${directBriefs}`;
 
-  const delegatedSection =
-    `# Delegated Tools (NOT in your schema — use \`<delegate>\`)\n\n` +
-    `The following tools are NOT exposed to you directly. Any attempt to ` +
-    `call them via \`tool_calls\` will be rejected by the host. To use them, ` +
-    `emit a \`<delegate id="..." task="..." files="..." tools="edit,bash" />\` ` +
-    `directive in your assistant text. The host parses every \`<delegate>\` ` +
-    `directive, spawns a real ephemeral sub-agent with a fresh context, and ` +
-    `feeds the verified \`<result>\` back into your conversation. ` +
-    `**\`<delegate>\` IS wired up — emitting it WILL spawn a real sub-agent.**\n\n` +
-    `${delegatedBriefs}`;
-
-  return `${directSection}\n\n---\n\n${delegatedSection}`;
+  return `${directSection}\n\n---\n\n${buildDelegatedToolMatrix()}`;
 }
 
 /**
@@ -223,12 +208,8 @@ function buildOrchestratorToolCatalogue(): string {
  * The whole prompt is purely a function of `import`-time inputs: the
  * markdown bodies are bundled via Vite `?raw`, the runtime-limits
  * numbers are `@shared/constants.ts` constants, and the tool
- * catalogue is derived from the static tool registry. Pre-fix, every
- * iteration of every run rebuilt the same ~80kb string from scratch
- * — the per-call cost is small but the same string is the input to
- * the LLM transport on every assistant turn, so it adds up under
- * multi-iteration runs. Audit fix B6: build it once on first call,
- * cache the result, and serve subsequent calls from the cache.
+ * catalogue is derived from the static tool registry. Built once on
+ * first call and cached for subsequent orchestrator turns.
  *
  * Tests that mutate the tool registry between cases call
  * `__resetOrchestratorPromptCacheForTests` to invalidate the cache.
@@ -288,7 +269,7 @@ export function __resetOrchestratorPromptCacheForTests(): void {
  * Render the sub-agent runtime-limits envelope. Sub-agents see only the
  * caps that govern THEIR own loop (iteration ceiling + tool-output cap)
  * — the orchestrator-only knobs (`MAX_TOTAL_ITERATIONS`,
- * `MAX_PARALLEL_SUBAGENTS`, planning-nudge budget) are intentionally
+ * `DEFAULT_DELEGATE_CONCURRENCY`, delegation strike budget) are intentionally
  * absent so the worker doesn't model surface it cannot influence.
  * Source-of-truth is `@shared/constants.ts`; the prose can never drift
  * from the enforced values.
@@ -302,8 +283,11 @@ function buildSubagentRuntimeLimitsBlock(): string {
       // "none"` for the NEXT request. Surfaced so the worker can stage a
       // `<result>` envelope on/before this iteration instead of being
       // surprised when its tool-call attempt is silently dropped. See
-      // `04-subagent-prompt.md` "Iteration discipline".
+      // `02-subagent-prompt.md` "Iteration discipline".
       `SUBAGENT_WRAPUP_ITER=${SUBAGENT_WRAPUP_ITER}`,
+      // Pool wall-clock cap — distinct from orchestrator
+      // `STREAM_INACTIVITY_TIMEOUT_MS` (SSE idle between chunks).
+      `SUBAGENT_RUN_TIMEOUT_MS=${SUBAGENT_RUN_TIMEOUT_MS}`,
       `MAX_SELF_CORRECTION_ATTEMPTS=${MAX_SELF_CORRECTION_ATTEMPTS}`,
       `MAX_TOOL_OUTPUT_CHARS=${MAX_TOOL_OUTPUT_CHARS}`
     ].join('\n')
@@ -322,7 +306,7 @@ function buildSubagentRuntimeLimitsBlock(): string {
  *      sub-agent to read it as instructions while it lived in the data
  *      plane — an ambiguity easy to exploit.
  *   2. The task body was forwarded verbatim from the orchestrator's
- *      `<delegate task="..." />` directive. A task string carrying
+ *      `delegate` tool `task` argument. A task string carrying
  *      `</system_instructions>` (or any unescaped `<` / `>`) could break
  *      out of the wrapping envelope and inject prompt content. Escaping
  *      the body via `wrapXml(..., { escape: true })` closes that
@@ -339,16 +323,9 @@ function buildSubagentRuntimeLimitsBlock(): string {
  * catalogue, limits, task) is identical across iterations — the swap is
  * scoped to the trailing run-state block.
  *
- * Caching (audit fix A1): the static-body assembly walks the tool
- * registry, filters by `allowedTools`, joins ~5 markdown bodies, and
- * runs `wrapXml` over the task block. Pre-fix, this fired on EVERY
- * sub-agent iteration. A typical delegation round has 4 parallel
- * workers × 8–14 iterations each → ~30–60 redundant rebuilds of a
- * string whose inputs are pinned for the worker's whole lifetime
- * (`task` + `allowedTools`). We memoize the static body keyed on
- * those two inputs and assemble the final prompt as
- * `wrapXml('system_instructions', staticBody + runStateAppendix)`
- * per iteration, which is the only piece that actually changes.
+ * The static-body assembly (directives, harness, tool catalogue, limits,
+ * task) is memoized per `(task, allowedTools)`; only the optional
+ * `runState` appendix changes per iteration.
  *
  * Cache bound: `SUBAGENT_BODY_CACHE_MAX` entries (insertion-order
  * LRU, same pattern as `envelopeCache`). Tasks vary per delegation
@@ -384,7 +361,7 @@ function buildSubagentStaticBody(task: string, allowedTools: string[]): string {
     '</result>\n' +
     '```';
   return (
-    `${primeDirectives}\n\n---\n\n${subagentPrompt}\n\n---\n\n` +
+    `${primeDirectivesForSubagent}\n\n---\n\n${subagentPrompt}\n\n---\n\n` +
     `# Tool Catalogue (restricted)\n\n${briefs}\n\n---\n\n${limits}\n\n---\n\n${taskBlock}\n\n---\n\n${envelopeReminder}`
   );
 }
@@ -472,231 +449,4 @@ export function buildSubagentSystemPrompt(opts: {
  */
 export function __resetSubagentPromptCacheForTests(): void {
   subagentBodyCache.clear();
-}
-
-// ────────────────────────────────────────────────────────────────────
-// Context-summarizer system prompt
-// ────────────────────────────────────────────────────────────────────
-
-/**
- * Cached map of `<workspacePath>` → resolved bundled-vs-override body.
- *
- * The bundled `05-context-summarizer.md` is embedded via `?raw` and
- * never changes at runtime. Per-workspace overrides at
- * `<workspacePath>/.vyotiq/context-summarizer.md` ARE filesystem-
- * resident and the user can edit them between summarizations, so
- * the cache entry is keyed on `(workspacePath, mtimeMs)` to bust
- * automatically when the override file is touched.
- *
- * Bound (`SUMMARIZER_OVERRIDE_CACHE_MAX = 16`) so even a session that
- * cycles through dozens of workspaces keeps memory predictable; same
- * insertion-order LRU eviction pattern as `subagentBodyCache`.
- */
-interface SummarizerOverrideCacheEntry {
-  body: string;
-  /** True ⇒ workspace override was found and used. False ⇒ bundled
-   *  body returned. The renderer surfaces this in the Inspector. */
-  fromOverride: boolean;
-  /** mtime of the override file at cache time. `undefined` when no
-   *  override file existed. Used to invalidate when the user edits
-   *  the file between summarizations. */
-  mtimeMs?: number;
-}
-
-const SUMMARIZER_OVERRIDE_CACHE_MAX = 16;
-const summarizerOverrideCache = new Map<string, SummarizerOverrideCacheEntry>();
-
-/**
- * Resolve the summarizer body for a given workspace.
- *
- *   1. Look for `<workspacePath>/.vyotiq/context-summarizer.md`. If it
- *      exists and is non-empty after trim, return it as the body.
- *   2. Otherwise return the bundled `05-context-summarizer.md`.
- *
- * Returns `{ body, fromOverride }` so the Inspector can surface a
- * badge when the workspace is using a custom prompt. The result is
- * cached per workspace path; the cache invalidates when the override
- * file's mtime advances (or it's deleted between calls).
- *
- * Workspace-less callers (no workspace pinned to the run) skip the
- * override probe entirely and always get the bundled body.
- *
- * Errors are swallowed — an unreadable override file (permission
- * flap, ENOENT mid-read) falls back to the bundled body and logs a
- * `debug` line so production stays quiet.
- */
-async function resolveSummarizerBody(
-  workspacePath: string | undefined
-): Promise<{ body: string; fromOverride: boolean }> {
-  const bundled = { body: contextSummarizer, fromOverride: false as const };
-  if (!workspacePath || workspacePath.length === 0) return bundled;
-  const overridePath = join(
-    workspacePath,
-    WORKSPACE_DOTDIR,
-    CONTEXT_SUMMARY_OVERRIDE_FILENAME
-  );
-  // mtime probe: cheap stat. If the file isn't there, the cache may
-  // still hold an entry from a previous session (where the file
-  // existed) — invalidate by deleting the cache entry so we don't
-  // serve stale override bodies after the user removed the file.
-  let mtimeMs: number | undefined;
-  try {
-    const st = await fs.stat(overridePath);
-    mtimeMs = st.mtimeMs;
-  } catch {
-    mtimeMs = undefined;
-  }
-  const cached = summarizerOverrideCache.get(workspacePath);
-  if (cached && cached.mtimeMs === mtimeMs) {
-    // Re-insert so the freshest hit floats to the tail (LRU).
-    summarizerOverrideCache.delete(workspacePath);
-    summarizerOverrideCache.set(workspacePath, cached);
-    return { body: cached.body, fromOverride: cached.fromOverride };
-  }
-  // Either no cache entry, or mtime advanced — re-read.
-  let resolved: SummarizerOverrideCacheEntry;
-  if (mtimeMs === undefined) {
-    resolved = { body: bundled.body, fromOverride: false };
-  } else {
-    try {
-      const raw = await fs.readFile(overridePath, 'utf8');
-      const trimmed = raw.trim();
-      if (trimmed.length === 0) {
-        // Empty file → fall back to bundled but DO cache the mtime so
-        // we don't re-read on every iteration. The user explicitly
-        // chose to "blank" the override; honoring it would mean
-        // sending an empty system prompt to the summarizer (worse
-        // than the bundled body), so we surface it as bundled with
-        // a soft warning.
-        log.warn('summarizer override file is empty; using bundled', {
-          path: overridePath
-        });
-        resolved = { body: bundled.body, fromOverride: false, mtimeMs };
-      } else {
-        // Defense in depth (review finding H8). The bundled summarizer
-        // body is trusted (built-time `?raw` import), but a workspace-
-        // local override file is a Prime-Directives §6 boundary
-        // crossing: an external process — a malicious npm postinstall,
-        // a project scaffolder writing dotfiles, a dev-tool artifact
-        // dump — could plant content there that includes literal
-        // `</system_instructions>` (or any other tag the host wraps
-        // around `body`) and inject arbitrary instructions into the
-        // summarizer LLM call. We XML-escape the override body before
-        // caching so:
-        //
-        //   1. `<` / `>` / `&` inside the override are neutralized —
-        //      a literal `</system_instructions>` becomes
-        //      `&lt;/system_instructions&gt;` in the prompt and
-        //      cannot close the wrapper.
-        //   2. Markdown prose flows through unchanged in normal use
-        //      (markdown almost never contains raw XML metacharacters);
-        //      only crafted XML payloads are reshaped.
-        //   3. The escape is applied ONCE at cache time so the
-        //      steady-state per-summarization cost is unchanged.
-        //
-        // Bundled `body` is NOT escaped — the harness markdown
-        // intentionally contains `<delegate>`, `<result>`, etc. in
-        // prose that the model is trained to read.
-        resolved = { body: escapeXmlBody(raw), fromOverride: true, mtimeMs };
-      }
-    } catch (err) {
-      log.debug('summarizer override read failed; using bundled', {
-        path: overridePath,
-        err
-      });
-      resolved = { body: bundled.body, fromOverride: false, mtimeMs };
-    }
-  }
-  summarizerOverrideCache.set(workspacePath, resolved);
-  if (summarizerOverrideCache.size > SUMMARIZER_OVERRIDE_CACHE_MAX) {
-    for (const oldest of summarizerOverrideCache.keys()) {
-      summarizerOverrideCache.delete(oldest);
-      break;
-    }
-  }
-  return { body: resolved.body, fromOverride: resolved.fromOverride };
-}
-
-/**
- * Render the `<runtime_limits>` envelope the summarizer LLM receives.
- *
- * The summarizer's only hard limit is `MAX_FINAL_CHARS` — the harness
- * (§D point 3) instructs it to truncate sections in priority order
- * when the projected output would exceed this value. We also surface
- * the global retry budget so the summarizer is aware its output may
- * be re-issued under transport flakes (matters for any future
- * "deterministic output" clause it could lean on).
- */
-function buildSummarizerRuntimeLimitsBlock(): string {
-  return wrapXml(
-    'runtime_limits',
-    [
-      `MAX_FINAL_CHARS=${CONTEXT_SUMMARY_MAX_FINAL_CHARS}`,
-      `MAX_RETRIES=${CONTEXT_SUMMARY_DEFAULT_MAX_RETRIES}`
-    ].join('\n')
-  );
-}
-
-/**
- * System prompt for the dedicated context-summarizer LLM call.
- *
- * Composition (in order):
- *   1. Prime Directives (`00-prime-directives.md`) — the summarizer is
- *      still bound by the privacy / containment / "never invent paths"
- *      rules.
- *   2. The summarizer-specific harness body — bundled
- *      `05-context-summarizer.md` OR a workspace override at
- *      `<workspace>/.vyotiq/context-summarizer.md` when present and
- *      non-empty.
- *   3. `<runtime_limits>` block (final-chars cap + retry budget).
- *
- * The whole block is wrapped in `<system_instructions>` per the
- * Prime Directives §6 boundary rule. The summarizer's USER message
- * (the actual messages-to-compress payload) is constructed by
- * `streamSummary.ts` and is XML-body-escaped there — same defense
- * the orchestrator's user-envelope path uses.
- *
- * Returns `{ prompt, fromOverride }`. The renderer surfaces the
- * `fromOverride` flag in the Inspector via a small "Using workspace
- * override" badge so the user can tell whether their `.vyotiq/
- * context-summarizer.md` is in effect for this workspace.
- *
- * Async because the workspace-override probe touches the filesystem.
- * Cache hits are microsecond-cheap; the first call per workspace
- * pays one `stat` + one `readFile` only when an override exists.
- */
-export async function buildSummarizerSystemPrompt(opts: {
-  workspacePath?: string;
-}): Promise<{ prompt: string; fromOverride: boolean }> {
-  const { body, fromOverride } = await resolveSummarizerBody(opts.workspacePath);
-  const sections = [
-    primeDirectives,
-    body,
-    buildSummarizerRuntimeLimitsBlock()
-  ].join('\n\n---\n\n');
-  return {
-    prompt: wrapXml('system_instructions', sections),
-    fromOverride
-  };
-}
-
-/**
- * Test-only cache reset. Production never calls this; the override
- * cache invalidates itself on mtime advance, so a production
- * invalidation would only mask a bug in that pathway.
- */
-export function __resetSummarizerOverrideCacheForTests(): void {
-  summarizerOverrideCache.clear();
-}
-
-/**
- * Test-only readout of the bundled summarizer body. Lets the
- * harness-level summarizer-prompt tests assert that
- * `buildSummarizerSystemPrompt` falls back to this exact string when
- * no workspace override exists, without re-importing the `?raw`
- * module from the test side (Vite's `?raw` only resolves under the
- * main-bundle config).
- */
-export function __getBundledSummarizerBodyForTests(): string {
-  return contextSummarizer;
 }

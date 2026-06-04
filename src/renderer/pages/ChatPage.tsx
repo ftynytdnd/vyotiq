@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Timeline } from '../components/timeline/Timeline.js';
 import { RevertPromptProvider } from '../components/timeline/revert/RevertPromptContext.js';
+import { AskUserOverlayHost } from '../components/timeline/askUser/AskUserOverlayHost.js';
 import { ChatFooter } from './ChatFooter.js';
 import { useChatStore } from '../store/useChatStore.js';
 import { useProviderStore } from '../store/useProviderStore.js';
@@ -21,14 +22,9 @@ import { ComposerDialogAnchor } from '../components/ui/ComposerDialogAnchor.js';
 
 interface ChatPageProps {
   onOpenProviders: () => void;
-  /** Opens checkpoint settings (Settings → Checkpoints tab). */
-  onOpenCheckpointSettings: () => void;
 }
 
-export function ChatPage({
-  onOpenProviders,
-  onOpenCheckpointSettings
-}: ChatPageProps) {
+export function ChatPage({ onOpenProviders }: ChatPageProps) {
   const events = useChatStore((s) => s.events);
   const providers = useProviderStore((s) => s.providers);
   const workspaceInfo = useWorkspaceStore((s) => s.info);
@@ -199,8 +195,13 @@ export function ChatPage({
   const contentWidth = zoneOpen ? 'max-w-2xl' : 'max-w-3xl';
 
   return (
+    <RevertPromptProvider
+      model={model}
+      onModelChange={handleModelChange}
+      onOpenProviders={onOpenProviders}
+    >
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         {selecting && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-surface-base/80">
             <LoadingHint message="Loading conversation…" />
@@ -229,11 +230,13 @@ export function ChatPage({
 
               {!workspaceInfo.path && (
                 <div className="mt-6 flex flex-wrap items-center gap-3">
-                  <span className="text-row text-text-muted">
-                    Pick a workspace to begin.
-                  </span>
+                  <span className="text-row text-text-muted">Pick a workspace to begin.</span>
                   <Button variant="link" size="sm" onClick={() => void pickWorkspace()}>
-                    <FolderOpen className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} aria-hidden />
+                    <FolderOpen
+                      className={SHELL_ROW_ICON_CLASS}
+                      strokeWidth={SHELL_ROW_ICON_STROKE}
+                      aria-hidden
+                    />
                     Open workspace…
                   </Button>
                 </div>
@@ -241,9 +244,7 @@ export function ChatPage({
 
               {workspaceInfo.path && !hasProviders && (
                 <div className="mt-6 flex flex-wrap items-center gap-3">
-                  <span className="text-row text-text-muted">
-                    No AI provider configured yet.
-                  </span>
+                  <span className="text-row text-text-muted">No AI provider configured yet.</span>
                   <Button variant="link" size="sm" onClick={onOpenProviders}>
                     Configure provider
                   </Button>
@@ -252,12 +253,7 @@ export function ChatPage({
             </div>
           )}
 
-          <RevertPromptProvider model={model}>
-            <Timeline
-              model={model}
-              onOpenCheckpointSettings={onOpenCheckpointSettings}
-            />
-          </RevertPromptProvider>
+          <Timeline model={model} />
         </div>
       </div>
       </div>
@@ -270,6 +266,7 @@ export function ChatPage({
           )}
         >
           <ComposerDialogAnchor className="vx-composer-dialog-slot empty:hidden" />
+          <AskUserOverlayHost />
         </div>
       </div>
 
@@ -280,5 +277,6 @@ export function ChatPage({
         onOpenProviders={onOpenProviders}
       />
     </div>
+    </RevertPromptProvider>
   );
 }

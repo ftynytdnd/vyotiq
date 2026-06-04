@@ -28,15 +28,21 @@ export function formatPlatformShortcut(shortcut: string): string {
 interface ShortcutsPanelProps {
   mod?: string;
   alt?: string;
+  /** `dialog` in title-bar popover; `region` elsewhere. */
+  presentation?: 'dialog' | 'region';
 }
 
 /**
- * Keyboard shortcut reference card. Shared between the title bar help
- * popover and any future surfaces that need the same listing.
+ * Keyboard shortcut reference card. Title bar help popover only.
  */
-export function ShortcutsPanel({ mod = platformModKey(), alt = platformAltKey() }: ShortcutsPanelProps) {
+export function ShortcutsPanel({
+  mod = platformModKey(),
+  alt = platformAltKey(),
+  presentation = 'region'
+}: ShortcutsPanelProps) {
+  const role = presentation === 'dialog' ? 'dialog' : 'region';
   return (
-    <div role="dialog" aria-label="Keyboard shortcuts" className="vx-stack gap-3">
+    <div role={role} aria-label="Keyboard shortcuts" className="vx-stack gap-3">
       <ShortcutGroup title="Navigation">
         <ShortcutRow combo={`${mod}+B`} label="Toggle navigation dock" />
         <ShortcutRow combo={`${mod}+K`} label="Search chats" />
@@ -47,8 +53,6 @@ export function ShortcutsPanel({ mod = platformModKey(), alt = platformAltKey() 
         <ShortcutRow combo={`${mod}+N`} label="New conversation" />
         <ShortcutRow combo={`${mod}+O`} label="Open workspace" />
         <ShortcutRow combo={`${mod}+,`} label="Settings" />
-        <ShortcutRow combo={`${mod}+Shift+H`} label="Checkpoints" />
-        <ShortcutRow combo={`${mod}+Shift+C`} label="Context Inspector" />
       </ShortcutGroup>
       <ShortcutGroup title="Timeline">
         <ShortcutRow combo="g j" label="Next user prompt" />

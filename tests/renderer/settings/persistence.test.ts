@@ -17,11 +17,6 @@
  * fails here loudly instead of silently re-emerging months later.
  *
  * Notes on coverage scope:
- *   - `permissionsByWorkspace`, `strictApprovalsByWorkspace`,
- *     `gatePromptOnPendingByWorkspace`, and `purgeWorkspaceFromUi` are
- *     covered in detail by `workspacePermissions.test.ts`. We re-cover
- *     them here at the "single IPC + cache merge + identity-skip"
- *     level so this file alone is enough to detect a regression.
  *   - The debounced `ui.dockExpanded` / `ui.collapsedWorkspaces` /
  *     `ui.expandedRows` writers are flushed explicitly via the
  *     `flushUiPersistence` / `flushTimelineUiPersistence` exports so we
@@ -93,17 +88,6 @@ describe('AppSettings — top-level fields persist via useSettingsStore', () => 
     expect(useSettingsStore.getState().settings.permissions?.allowAuto).toBe(true);
   });
 
-  it('webSearchEndpoint: single IPC, cache merge, value reflected', async () => {
-    await useSettingsStore.getState().setWebSearchEndpoint('https://example.com/search');
-
-    expect(setSpy()).toHaveBeenCalledTimes(1);
-    expect(setSpy()).toHaveBeenCalledWith({
-      webSearchEndpoint: 'https://example.com/search'
-    });
-    expect(useSettingsStore.getState().settings.webSearchEndpoint).toBe(
-      'https://example.com/search'
-    );
-  });
 });
 
 describe('AppSettings.ui — per-workspace maps persist via useSettingsStore', () => {
@@ -135,36 +119,6 @@ describe('AppSettings.ui — per-workspace maps persist via useSettingsStore', (
     expect(setSpy()).not.toHaveBeenCalled();
   });
 
-  it('permissionsByWorkspace: single IPC, identity-skip on same patch', async () => {
-    await useSettingsStore
-      .getState()
-      .setPermissionsForWorkspace('ws-A', { allowAuto: true });
-    expect(setSpy()).toHaveBeenCalledTimes(1);
-
-    setSpy().mockClear();
-    await useSettingsStore
-      .getState()
-      .setPermissionsForWorkspace('ws-A', { allowAuto: true });
-    expect(setSpy()).not.toHaveBeenCalled();
-  });
-
-  it('strictApprovalsByWorkspace: single IPC, identity-skip on same value', async () => {
-    await useSettingsStore.getState().setStrictApprovalsForWorkspace('ws-A', true);
-    expect(setSpy()).toHaveBeenCalledTimes(1);
-
-    setSpy().mockClear();
-    await useSettingsStore.getState().setStrictApprovalsForWorkspace('ws-A', true);
-    expect(setSpy()).not.toHaveBeenCalled();
-  });
-
-  it('gatePromptOnPendingByWorkspace: single IPC, identity-skip on same value', async () => {
-    await useSettingsStore.getState().setGatePromptOnPendingForWorkspace('ws-A', true);
-    expect(setSpy()).toHaveBeenCalledTimes(1);
-
-    setSpy().mockClear();
-    await useSettingsStore.getState().setGatePromptOnPendingForWorkspace('ws-A', true);
-    expect(setSpy()).not.toHaveBeenCalled();
-  });
 });
 
 describe('AppSettings.ui — debounced fields persist via useUiStore + flush', () => {
@@ -225,9 +179,6 @@ describe('purgeWorkspaceFromUi: single IPC sweeps every per-workspace map', () =
         ui: {
           activeConversationByWorkspace: { 'ws-A': 'c1' },
           lastModelByWorkspace: { 'ws-A': { providerId: 'p', modelId: 'm' } },
-          permissionsByWorkspace: { 'ws-A': { allowAuto: true } },
-          strictApprovalsByWorkspace: { 'ws-A': true },
-          gatePromptOnPendingByWorkspace: { 'ws-A': true },
           collapsedWorkspaces: ['ws-A']
         }
       },
@@ -241,9 +192,6 @@ describe('purgeWorkspaceFromUi: single IPC sweeps every per-workspace map', () =
     const ui = useSettingsStore.getState().settings.ui ?? {};
     expect('ws-A' in (ui.activeConversationByWorkspace ?? {})).toBe(false);
     expect('ws-A' in (ui.lastModelByWorkspace ?? {})).toBe(false);
-    expect('ws-A' in (ui.permissionsByWorkspace ?? {})).toBe(false);
-    expect('ws-A' in (ui.strictApprovalsByWorkspace ?? {})).toBe(false);
-    expect('ws-A' in (ui.gatePromptOnPendingByWorkspace ?? {})).toBe(false);
     expect(ui.collapsedWorkspaces ?? []).not.toContain('ws-A');
   });
 });

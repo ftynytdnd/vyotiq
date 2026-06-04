@@ -15,6 +15,12 @@ interface RunCompleteRowProps {
   fileCount?: number;
 }
 
+/** Turns at or above this duration get a warning tone on the elapsed label. */
+const LONG_TURN_WARN_MS = 120_000;
+
+/** Turns at or above this duration get a stronger warning + tooltip. */
+const VERY_LONG_TURN_WARN_MS = 480_000;
+
 export function RunCompleteRow({
   durationMs,
   completedAt,
@@ -37,8 +43,19 @@ export function RunCompleteRow({
 
   const durationLabel = formatDuration(durationMs);
   const timeLabel = formatWallClock(completedAt);
-  const ariaParts = [...stats, `completed in ${durationLabel}`, timeLabel];
-  if (tokenLabel) ariaParts.push(tokenLabel);
+  const tokenTitle = tokenLabel ? `${tokenLabel} used this turn` : null;
+  const veryLongTurn = durationMs >= VERY_LONG_TURN_WARN_MS;
+  const longTurn = durationMs >= LONG_TURN_WARN_MS;
+  const durationTitle = veryLongTurn
+    ? 'This turn took unusually long — often approval waits or connection delays.'
+    : longTurn
+      ? 'This turn took longer than usual.'
+      : undefined;
+  const metaParts: string[] = [`done in ${durationLabel}`];
+  if (tokenLabel) metaParts.push(tokenLabel);
+  metaParts.push(timeLabel);
+  if (stats.length > 0) metaParts.unshift(stats.join(' · '));
+  const ariaLabel = metaParts.join(' · ');
 
   return (
     <div
@@ -47,27 +64,40 @@ export function RunCompleteRow({
         timelineRunCompleteRowClassName
       )}
       data-row-kind="run-complete"
-      aria-label={ariaParts.join(', ')}
+      aria-label={ariaLabel}
     >
-      {stats.length > 0 && (
+      {stats.length > 0 ? (
         <>
-          {stats.join(' · ')}
-          <span aria-hidden className="mx-1.5 text-text-faint/70">
-            ·
+          <span>{stats.join(' · ')}</span>
+          <span aria-hidden className="text-text-faint/70">
+            {' · '}
           </span>
         </>
-      )}
-      done in {durationLabel}
-      {tokenLabel !== null && (
+      ) : null}
+      <span>
+        done in{' '}
+        <span
+          className={cn(
+            veryLongTurn && 'text-warning',
+            !veryLongTurn && longTurn && 'text-text-faint'
+          )}
+          title={durationTitle}
+        >
+          {durationLabel}
+        </span>
+      </span>
+      {tokenLabel !== null ? (
         <>
-          <span aria-hidden className="mx-1.5 text-text-faint/70">
-            ·
+          <span aria-hidden className="text-text-faint/70">
+            {' · '}
           </span>
-          <span className="font-mono tabular-nums">{tokenLabel}</span>
+          <span className="font-mono tabular-nums" title={tokenTitle ?? undefined}>
+            {tokenLabel}
+          </span>
         </>
-      )}
-      <span aria-hidden className="mx-1.5 text-text-faint/70">
-        ·
+      ) : null}
+      <span aria-hidden className="text-text-faint/70">
+        {' · '}
       </span>
       <time dateTime={new Date(completedAt).toISOString()} className="tabular-nums text-text-faint">
         {timeLabel}

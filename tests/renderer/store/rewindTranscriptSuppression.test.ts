@@ -10,7 +10,11 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import type { TimelineEvent } from '@shared/types/chat.js';
 import { useChatStore } from '@renderer/store/useChatStore';
-import { useCheckpointsStore } from '@renderer/store/useCheckpointsStore';
+import {
+  ensureTranscriptRewoundSubscription,
+  teardownTranscriptRewoundSubscriptionForTests,
+  useCheckpointsStore
+} from '@renderer/store/useCheckpointsStore';
 
 const convId = 'conv-rewind';
 
@@ -28,7 +32,6 @@ const removedPrompt: TimelineEvent = {
 };
 
 let rewoundHandler: ((conversationId: string) => void) | null = null;
-let teardownInit: (() => void) | undefined;
 
 function seedStores(): void {
   useChatStore.setState({
@@ -55,16 +58,13 @@ function seedStores(): void {
     runStartedAt: null
   });
   useCheckpointsStore.setState({
-    pendingByConversation: {},
-    summaryByWorkspace: {},
-    summaryLoading: {},
     suppressNextTranscriptRewound: new Set<string>()
   });
 }
 
 beforeEach(() => {
   rewoundHandler = null;
-  teardownInit?.();
+  teardownTranscriptRewoundSubscriptionForTests();
   seedStores();
 
   Object.assign(window.vyotiq.checkpoints, {
@@ -88,12 +88,11 @@ beforeEach(() => {
     }))
   });
 
-  teardownInit = useCheckpointsStore.getState().initOnce();
+  ensureTranscriptRewoundSubscription();
 });
 
 afterEach(() => {
-  teardownInit?.();
-  teardownInit = undefined;
+  teardownTranscriptRewoundSubscriptionForTests();
 });
 
 describe('useCheckpointsStore.rewindToPrompt — transcript rewound suppression', () => {

@@ -79,8 +79,6 @@ describe('handleDelegates — delegate edit lands in checkpoint pending', () => 
           permissions: { allowAuto: true },
           strictApprovals: false,
           signal: new AbortController().signal,
-          confirm: async () => ({ approved: true, reason: 'approved' as const }),
-          confirmEdit: async () => ({ approved: true, acceptAllRemaining: false }),
           subagentId: s.id,
           emit: (e) => {
             toolEvents.push(e);
@@ -135,10 +133,7 @@ describe('handleDelegates — delegate edit lands in checkpoint pending', () => 
     expect(await fs.readFile(abs, 'utf8')).toBe('new line\n');
 
     const pending = await listPending(ctx.conversationId, [ctx.workspaceId]);
-    expect(pending).toHaveLength(1);
-    expect(pending[0]?.runId).toBe(ctx.runId);
-    expect(pending[0]?.subagentId).toBe('A1');
-    expect(pending[0]?.source).toBe('edit');
+    expect(pending).toHaveLength(0);
 
     const fileEdit = events.find((e) => e.kind === 'file-edit');
     expect(fileEdit).toMatchObject({
@@ -148,7 +143,7 @@ describe('handleDelegates — delegate edit lands in checkpoint pending', () => 
       runId: ctx.runId
     });
 
-    expect(toolEvents.some((e) => e.kind === 'checkpoint-entry')).toBe(true);
+    expect(toolEvents.some((e) => e.kind === 'checkpoint-entry')).toBe(false);
     expect(
       messages.some(
         (m) =>

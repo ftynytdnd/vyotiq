@@ -17,6 +17,7 @@ import { app } from 'electron';
 import { join } from 'node:path';
 import { promises as fs, existsSync, statSync } from 'node:fs';
 import type { LogLevel, Logger } from '@shared/types/logger.js';
+import { abortAllActiveRunsWithError } from '../orchestrator/runCrashDrain.js';
 
 interface LogEntry {
   ts: string;
@@ -185,17 +186,7 @@ function drainProcessCrash(label: string, detail: unknown): void {
       ? { reason: serializeError(detail) }
       : { error: serializeError(detail) })
   });
-  void import('../orchestrator/AgentV.js')
-    .then(({ abortAllActiveRunsWithError }) =>
-      abortAllActiveRunsWithError(CRASH_USER_MESSAGE)
-    )
-    .catch(() => undefined);
-  void import('../orchestrator/contextSummarizer/idleSummaryRuntime.js')
-    .then(({ abortAllIdleSummaries }) => abortAllIdleSummaries())
-    .catch(() => undefined);
-  void import('../orchestrator/confirmBus.js')
-    .then(({ clearAllPending }) => clearAllPending())
-    .catch(() => undefined);
+  abortAllActiveRunsWithError(CRASH_USER_MESSAGE);
 }
 
 export function installCrashHandlers(): void {

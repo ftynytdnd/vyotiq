@@ -4,9 +4,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { Timeline } from '@renderer/components/timeline/Timeline';
 import { useChatStore } from '@renderer/store/useChatStore';
+import { useTimelineUiStore } from '@renderer/store/useTimelineUiStore';
 import { INITIAL_TIMELINE_STATE } from '@renderer/components/timeline/reducer/types';
 import type { TimelineEvent } from '@shared/types/chat';
 
@@ -38,6 +39,7 @@ afterEach(() => {
     conversationId: null,
     isProcessing: false
   });
+  useTimelineUiStore.setState({ timelineAtTail: true });
 });
 
 function seedDelegationTurn(withResponse = false) {
@@ -95,7 +97,7 @@ function seedDelegationTurn(withResponse = false) {
       id: 'rs1',
       ts: 100,
       phase: 'delegating',
-      label: 'Delegating 5 sub-tasks…'
+      label: 'Spawning 5 workers…'
     },
     ...(withResponse
       ? {
@@ -117,15 +119,15 @@ describe('Timeline inline column alignment', () => {
 
     expect(agentColumn).not.toBeNull();
     expect(agentColumn?.className ?? '').toContain('vx-timeline-agent-column');
-    expect(container.querySelector('.vx-timeline-deleg-weave')).not.toBeNull();
+    expect(container.querySelector('.vx-timeline-deleg-stream')).not.toBeNull();
   });
 
-  it('uses stream weave during live delegation (no category eyebrows)', () => {
+  it('uses delegation stream during live delegation (no category eyebrows)', () => {
     seedDelegationTurn(true);
 
     const { container } = render(<Timeline />);
 
-    const weaveStream = container.querySelector('.vx-timeline-deleg-weave');
+    const weaveStream = container.querySelector('.vx-timeline-deleg-stream');
     const assistantRow = container.querySelector('[data-row-kind="assistant-text"]');
 
     expect(weaveStream).not.toBeNull();
@@ -142,12 +144,29 @@ describe('Timeline inline column alignment', () => {
     expect(container.textContent ?? '').not.toContain('Exploring');
   });
 
-  it('does not add a response separator during live stream weave', () => {
+  it('renders jump-to-latest label without backdrop blur on the chip', () => {
+    useChatStore.setState({
+      conversationId: 'c-jump',
+      events: [{ kind: 'user-prompt', id: 'p1', ts: 1, content: 'Hi' }],
+      isProcessing: false
+    });
+    useTimelineUiStore.setState({ timelineAtTail: false });
+
+    render(<Timeline />);
+
+    const chip = screen.getByRole('button', { name: 'Jump to latest' });
+    expect(chip).toHaveTextContent('Latest');
+    expect(chip.className).toContain('vx-jump-to-latest-chip');
+    expect(chip.className).not.toMatch(/backdrop-blur/);
+    expect(chip.querySelector('.vx-jump-to-latest-label')).toHaveTextContent('Latest');
+  });
+
+  it('does not add a response separator during live delegation stream', () => {
     seedDelegationTurn(true);
 
     const { container } = render(<Timeline />);
 
-    const weaveStream = container.querySelector('.vx-timeline-deleg-weave');
+    const weaveStream = container.querySelector('.vx-timeline-deleg-stream');
     const assistant = container.querySelector('[data-row-kind="assistant-text"]');
 
     expect(weaveStream?.contains(assistant)).toBe(true);

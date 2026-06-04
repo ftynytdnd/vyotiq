@@ -10,7 +10,7 @@
  * without a manual override the row auto-collapses again so a long
  * multi-edit run doesn't leave the transcript permanently expanded.
  *
- * These behaviours mirror `SubAgentTrace`'s long-standing
+ * These behaviours mirror delegation worker expand/collapse
  * auto-expand-while-running pattern; the test exists to keep them
  * from regressing back to the pre-fix "two clicks to see a streaming
  * diff" UX.

@@ -59,6 +59,8 @@ function patchChatBridge(): IpcCallbacks {
         captured.onError = undefined;
       };
     },
+    submitAskUser: vi.fn(async () => ({ ok: true as const })),
+    onAwaitingUser: () => () => {},
     listActiveRuns: vi.fn(async () => [])
   };
   (window.vyotiq as unknown as { chat: typeof stub }).chat = stub;

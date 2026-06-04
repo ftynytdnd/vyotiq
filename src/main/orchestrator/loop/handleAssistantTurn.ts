@@ -3,16 +3,9 @@
  * and emits them to the renderer via the timeline event bus while
  * accumulating the final message state for the model history.
  *
- * Mid-stream delegate detection:
- *   The orchestrator's `<delegate />` directives drive the parallel sub-
- *   agent pool. Until this fix, the host parsed the directives only AFTER
- *   the entire orchestrator turn had streamed — so for a reasoning-heavy
- *   model the user saw seconds of "thinking" with no visible signal that
- *   delegation was about to fire. We now scan the running assistant text
- *   after each text delta, parse any newly-completed `<delegate ...>`
- *   directive (paired or self-closing), and emit a `subagent-pending`
- *   event for each. The reducer materialises a sub-agent row immediately;
- *   the matching `subagent-spawn` later transitions it to `running`.
+ * Delegation is tool-only (`delegate` tool calls handled in `runLoop` /
+ * `handleDelegates`). Mid-stream XML `<delegate />` parsing is intentionally
+ * not performed here — orphan pending rows cannot execute without a tool call.
  *
  * Returns:
  *   - `assistantText`     accumulated text content
@@ -30,7 +23,6 @@ import type { TimelineEvent, TokenUsage } from '@shared/types/chat.js';
 import type { ChatStreamRequest } from '../../providers/chatClient.js';
 import { streamChat } from '../../providers/chatClient.js';
 import { consumeChatStream, type PartialToolCall } from './consumeChatStream.js';
-import { parseDelegates } from '../envelope/index.js';
 
 export type { PartialToolCall };
 
@@ -82,17 +74,7 @@ export interface AssistantTurnResult {
 export async function handleAssistantTurn(
   req: ChatStreamRequest,
   emit: (event: TimelineEvent) => void,
-  argsDeltaTap?: ArgsDeltaTap,
-  /**
-   * T0-7: Set of delegate ids the orchestrator has ALREADY emitted
-   * `subagent-pending` events for during the current run. When supplied,
-   * this turn's mid-stream parser dedupes against it so two assistant
-   * turns inside the same iteration (rare — provider returns then
-   * continues) cannot emit duplicate `subagent-pending` rows for the
-   * same id. Optional for backward compatibility with the per-turn
-   * scope every existing caller (sub-agent path, tests) still uses.
-   */
-  seenDelegateIds: Set<string> = new Set()
+  argsDeltaTap?: ArgsDeltaTap
 ): Promise<AssistantTurnResult> {
   const assistantMsgId = randomUUID();
   // Mirror state so the caller can still see whether text/reasoning had
@@ -113,44 +95,6 @@ export async function handleAssistantTurn(
           ts: Date.now(),
           delta
         });
-        // Mid-stream delegate detection. `parseDelegates` is regex-based
-        // so it only resolves when a directive is fully closed (`/>` or
-        // `</delegate>`); a partial directive at the buffer tail will be
-        // ignored until subsequent deltas complete it. New directives
-        // produce a `subagent-pending` event with the directive's own
-        // attributes; the reducer dedups against later `subagent-spawn`.
-        //
-        // Trigger gate (perf): `parseDelegates` scans the WHOLE
-        // accumulated buffer on every call — for reasoning-heavy turns
-        // with thousands of single-token deltas the cost is
-        // O(text-size × #deltas). A directive can only have NEWLY
-        // closed in this delta if the delta itself contains `>`
-        // (closes `<delegate ... />` or `</delegate>`); no `>`, no
-        // parse. Audit fix A5: the previous gate also admitted `<`
-        // but a `<` without a `>` cannot close a directive in the
-        // same delta, so admitting it was pure cost on deltas
-        // carrying less-than literals in prose / code.
-        if (delta.indexOf('>') === -1) return;
-        const directives = parseDelegates(accumulated);
-        for (const d of directives) {
-          if (seenDelegateIds.has(d.id)) continue;
-          seenDelegateIds.add(d.id);
-          emit({
-            kind: 'subagent-pending',
-            id: randomUUID(),
-            ts: Date.now(),
-            subagentId: d.id,
-            task: d.task,
-            files: d.files,
-            tools: d.tools,
-            // Carry the orchestrator's selected provider + model so the
-            // renderer's sub-agent row can paint a tiny model badge from
-            // the moment the directive is parsed mid-stream. `req` is the
-            // outer-scope `ChatStreamRequest` already passed into this
-            // handler; both fields are non-optional on the request shape.
-            model: { providerId: req.providerId, modelId: req.model }
-          });
-        }
       },
       onReasoningDelta: (delta, accumulated) => {
         hadReasoning = accumulated.length > 0;

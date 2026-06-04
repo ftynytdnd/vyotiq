@@ -25,7 +25,7 @@ import type { ModelInfo, ProviderDialect, ProviderWithKey } from '@shared/types/
 import { MODEL_DISCOVERY_TIMEOUT_MS, MODEL_DISCOVERY_TTL_MS } from '@shared/constants.js';
 import { normalizeBaseUrl } from '@shared/providers/normalizeBaseUrl.js';
 import { getProviderWithKey, updateProvider } from './providerStore.js';
-import { classifyProviderError, isProviderError } from './providerError.js';
+import { classifyProviderError, isProviderError, ProviderError } from './providerError.js';
 import { buildAttributionHeaders } from './attributionHeaders.js';
 import { safeText as safeTextShared } from './errorBody.js';
 
@@ -64,6 +64,22 @@ function describeNetworkError(err: unknown, url: string): string {
     return `Request to ${url} timed out after ${Math.round(MODEL_DISCOVERY_TIMEOUT_MS / 1000)}s. Check the Base URL is reachable.`;
   }
   return `Network error contacting ${url}: ${msg}`;
+}
+
+function throwDiscoveryNetworkError(
+  err: unknown,
+  url: string,
+  provider: { id: string; name: string }
+): never {
+  throw new ProviderError({
+    kind: 'unknown',
+    status: 0,
+    providerId: provider.id,
+    providerName: provider.name,
+    friendlyMessage: `${provider.name}: ${describeNetworkError(err, url)}`,
+    surface: 'discovery',
+    rawBody: ''
+  });
 }
 
 interface RawOpenAiModelsResponse {
@@ -341,7 +357,7 @@ async function fetchOpenAiModels(provider: ProviderWithKey): Promise<ModelInfo[]
   try {
     res = await fetchWithTimeout(url, headers);
   } catch (err: unknown) {
-    throw new Error(describeNetworkError(err, url));
+    throwDiscoveryNetworkError(err, url, provider);
   }
 
   if (!res.ok) {
@@ -414,7 +430,7 @@ async function fetchOllamaTags(provider: ProviderWithKey): Promise<ModelInfo[]> 
   try {
     res = await fetchWithTimeout(url, headers);
   } catch (err: unknown) {
-    throw new Error(describeNetworkError(err, url));
+    throwDiscoveryNetworkError(err, url, provider);
   }
 
   if (!res.ok) {
@@ -445,7 +461,7 @@ async function fetchOllamaTags(provider: ProviderWithKey): Promise<ModelInfo[]> 
       if (!id) return null;
       const info: ModelInfo = { id };
       // Ollama's /api/tags does not include context_window at all;
-      // users who need a ceiling set it via `setContextOverride`.
+      // discovered `contextWindow` is informational only in the model picker.
       // `parameter_size` is informational only and shown as the label.
       const size = m.details?.parameter_size;
       if (size) info.label = `${id} · ${size}`;
@@ -513,7 +529,7 @@ async function fetchAnthropicModels(provider: ProviderWithKey): Promise<ModelInf
   try {
     res = await fetchWithTimeout(url, headers);
   } catch (err: unknown) {
-    throw new Error(describeNetworkError(err, url));
+    throwDiscoveryNetworkError(err, url, provider);
   }
 
   if (!res.ok) {
@@ -608,7 +624,7 @@ async function fetchGeminiModels(provider: ProviderWithKey): Promise<ModelInfo[]
   try {
     res = await fetchWithTimeout(url, headers);
   } catch (err: unknown) {
-    throw new Error(describeNetworkError(err, url));
+    throwDiscoveryNetworkError(err, url, provider);
   }
 
   if (!res.ok) {

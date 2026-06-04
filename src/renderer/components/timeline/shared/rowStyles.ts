@@ -20,9 +20,6 @@ export const timelineAgentColumnClassName = cn(
   'flex w-full flex-col'
 );
 
-/** Vertical rhythm inside a single turn block (legacy flat segment map). */
-export const timelineTurnInnerGapClassName = 'gap-1.5';
-
 /** Vertical rhythm between prompt / activity / response zones inside a turn. */
 export const timelineTurnZoneGapClassName = 'vx-timeline-turn-gap';
 
@@ -41,12 +38,6 @@ export const timelineTurnOuterGapClassName = 'vx-timeline-turn-outer last:mb-0 l
  * row identity is now carried by `data-row-kind="user-prompt"` and
  * positional cues alone.
  */
-/** Live/completed activity lane — flat stack inside the agent column rail. */
-export const timelineActivityLaneClassName = cn(
-  'timeline-activity-lane vx-timeline-activity-lane',
-  'flex flex-col'
-);
-
 /**
  * Agent response wrapper — flush prose with no surface chrome.
  *
@@ -60,19 +51,8 @@ export const timelineActivityLaneClassName = cn(
  */
 const timelineResponseLaneClassName = cn('vx-timeline-response-lane', 'flex flex-col');
 
-/** Tiny dot prefix used by the sub-agent header — running vs settled tones. */
-export function timelineSubAgentDotClassName(running: boolean): string {
-  return cn(
-    'vx-timeline-subagent-dot',
-    running ? 'vx-timeline-subagent-dot-live' : 'vx-timeline-subagent-dot-settled'
-  );
-}
-
 /** Compact clickable row header (tool groups, reasoning, sub-agent collapsed). */
-export const timelineRowHeaderClassName = cn(
-  'app-no-drag vx-timeline-row-header',
-  '[.timeline-activity-lane_&]:max-w-none'
-);
+export const timelineRowHeaderClassName = 'app-no-drag vx-timeline-row-header';
 
 /** Vyotiq UI quiet action pill for timeline row affordances. */
 export const timelineActionPillClassName = cn('app-no-drag vx-timeline-action');

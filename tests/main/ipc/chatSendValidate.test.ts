@@ -15,7 +15,7 @@ const VALID: ChatSendInput = {
   runId: 'run-1',
   prompt: 'hello',
   selection: { providerId: 'openai', modelId: 'gpt-4o' },
-  permissions: { allowAuto: false },
+  permissions: {},
   conversationId: 'conv-1',
   workspaceId: 'ws-1',
   attachments: ['src/index.ts']
@@ -59,13 +59,13 @@ describe('assertChatSendInput', () => {
     );
   });
 
-  it('rejects non-boolean permissions.allowAuto', () => {
+  it('accepts an empty permissions object', () => {
     expect(() =>
       assertChatSendInput({
         ...VALID,
-        permissions: { allowAuto: 'yes' as unknown as boolean }
+        permissions: {}
       })
-    ).toThrow(/permissions.allowAuto must be a boolean/);
+    ).not.toThrow();
   });
 
   it('rejects null optional ids', () => {

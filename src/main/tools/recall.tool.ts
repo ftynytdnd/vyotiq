@@ -3,7 +3,7 @@
  *
  * Orchestrator-only by policy (`ORCHESTRATOR_TOOLS`). Sub-agents are
  * denied this tool so the isolation invariant from
- * `04-subagent-prompt.md` stays intact: only the top-level Agent V can
+ * `02-subagent-prompt.md` stays intact: only the top-level Agent V can
  * reach across sessions.
  *
  * Two actions:

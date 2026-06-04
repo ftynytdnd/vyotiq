@@ -49,7 +49,7 @@
  *        what it changed (file paths, key diffs). The orchestrator
  *        re-plans against that summary, not against re-reading the
  *        file.
- *     2. The orchestrator's harness (see `01-orchestration-loop.md`
+ *     2. The orchestrator's harness (see `00-orchestrator-core.md`
  *        §B "Don't re-survey what you've already seen") explicitly
  *        tells the model to TRUST sub-agent reports and pivot rather
  *        than re-issuing the same `read`.

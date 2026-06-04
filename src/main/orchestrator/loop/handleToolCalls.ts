@@ -25,26 +25,25 @@ import type { ToolName } from '@shared/types/tool.js';
 import { runToolByName } from '../toolRunner.js';
 import type { PartialToolCall } from './handleAssistantTurn.js';
 import { emitRunStatus } from './emitRunStatus.js';
+import { batchIndicesByDependencies, parseDependsOnIds } from './toolDependencyBatches.js';
+import { parseToolArgs, tryParseArgumentsRecord } from './parseToolArgs.js';
 import { logger } from '../../logging/logger.js';
 
 const log = logger.child('orchestrator/handleToolCalls');
 
-function suggestDelegateDirective(tc: PartialToolCall, refusedTool: string): string {
-  let id = 'TASK_ID';
+function suggestDelegateCall(tc: PartialToolCall, refusedTool: string): string {
+  let id = 'w1';
   let task = 'One micro-task description';
-  let files = '';
-  let tools = refusedTool;
-  try {
-    const parsed = JSON.parse(tc.argumentsBuf || '{}') as Record<string, unknown>;
-    if (typeof parsed['id'] === 'string' && parsed['id'].trim()) id = parsed['id'].trim();
-    if (typeof parsed['task'] === 'string' && parsed['task'].trim()) task = parsed['task'].trim();
-    if (typeof parsed['files'] === 'string') files = parsed['files'].trim();
-    if (typeof parsed['tools'] === 'string' && parsed['tools'].trim()) tools = parsed['tools'].trim();
-  } catch {
-    /* use defaults */
-  }
-  const filesAttr = files.length > 0 ? ` files="${files}"` : '';
-  return `<delegate id="${id}" task="${task}"${filesAttr} tools="${tools}" />`;
+  let files: string[] = [];
+  const tools = [refusedTool];
+  const parsed = tryParseArgumentsRecord(tc.argumentsBuf);
+  if (typeof parsed['id'] === 'string' && parsed['id'].trim()) id = parsed['id'].trim();
+  if (typeof parsed['task'] === 'string' && parsed['task'].trim()) task = parsed['task'].trim();
+  if (typeof parsed['path'] === 'string' && parsed['path'].trim()) files = [parsed['path'].trim()];
+  if (typeof parsed['file'] === 'string' && parsed['file'].trim()) files = [parsed['file'].trim()];
+  const args: Record<string, unknown> = { id, task, tools };
+  if (files.length > 0) args['files'] = files;
+  return JSON.stringify({ name: 'delegate', arguments: args });
 }
 
 function settleToolCallSurrogate(
@@ -93,78 +92,6 @@ function emitSyntheticToolFailure(
   });
 }
 
-/**
- * Coerce a streaming-tool-call's `argumentsBuf` into the
- * `Record<string, unknown>` shape the tool executor expects, OR
- * surface a structured parse error so the caller can short-circuit
- * dispatch (review finding M6).
- *
- * Three failure modes were silently collapsing to `{}` before this
- * helper existed, and the symptom (e.g. `read` failing with
- * "missing path") looked like a model error:
- *
- *   1. Empty buffer — the model emitted a tool call with no
- *      arguments at all. `JSON.parse('')` throws. We treat this
- *      as a VALID empty-args call (some tools accept zero args)
- *      and return `{}` with no error.
- *   2. Malformed JSON — a provider truncated mid-stream or a
- *      non-conformant compat backend forwarded an object as a
- *      string ("[object Object]"). `JSON.parse` throws. Surfaced
- *      as `parseError` so the caller short-circuits with a
- *      synthetic failure result instead of dispatching the tool
- *      with `{}` (which usually fails downstream with a generic
- *      "missing path" / "missing command" — wasting a model
- *      round-trip).
- *   3. Valid JSON but wrong shape — the buffer parses to `null`,
- *      a string, a number, or an array. Same short-circuit
- *      treatment as malformed JSON.
- *
- * The legacy fallback-to-`{}` behaviour for cases 2 and 3 dispatched
- * the tool, which then surfaced a confusing downstream error
- * ("missing path") and burned a turn. The short-circuit replaces
- * that with a precise "argument parse failed" message the model
- * can directly correct.
- */
-interface ToolArgsParseResult {
-  args: Record<string, unknown>;
-  parseError?: string;
-}
-function parseToolArgs(name: string, buf: string): ToolArgsParseResult {
-  if (!buf) return { args: {} };
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(buf);
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    log.warn('tool arguments failed to JSON.parse', {
-      tool: name,
-      buf: buf.slice(0, 200),
-      err: detail
-    });
-    return {
-      args: {},
-      parseError:
-        `Tool argument JSON failed to parse: ${detail}. ` +
-        'Re-issue the call with a well-formed JSON object for `arguments`.'
-    };
-  }
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    const shape = parsed === null ? 'null' : Array.isArray(parsed) ? 'array' : typeof parsed;
-    log.warn('tool arguments parsed to non-record', {
-      tool: name,
-      buf: buf.slice(0, 200),
-      shape
-    });
-    return {
-      args: {},
-      parseError:
-        `Tool argument must be a JSON object, got ${shape}. ` +
-        'Re-issue the call with a `{ "key": "value", … }` shape.'
-    };
-  }
-  return { args: parsed as Record<string, unknown> };
-}
-
 export interface HandleToolCallsOpts {
   workspacePath: string;
   /** Workspace id (registry id) — required for checkpoint snapshots. */
@@ -174,8 +101,6 @@ export interface HandleToolCallsOpts {
   /** Conversation id that owns the run. */
   conversationId: string;
   permissions: ChatPermissions;
-  /** Strict-approvals flag for this run's workspace. */
-  strictApprovals: boolean;
   signal: AbortSignal;
   /**
    * When set, every emitted timeline event is tagged with this id so the
@@ -192,6 +117,11 @@ export interface HandleToolCallsOpts {
    */
   allowlist?: readonly string[];
   /**
+   * When true, caller already batched by `depends_on` (e.g. `dispatchMixedTurn`);
+   * run all calls in one parallel batch without re-toposorting.
+   */
+  skipDependencyBatching?: boolean;
+  /**
    * Phase 2 — notification hook fired the moment an authoritative
    * `tool-call` event is about to be emitted, so the run-level
    * diff streamer can drop its in-flight state for that callId.
@@ -205,6 +135,11 @@ export interface HandleToolCallsOpts {
    * orchestrator-level rounds pass `'orc'`.
    */
   onToolCallSettled?: (callId: string, owner?: string, index?: number) => void;
+  /**
+   * When set, emit at most one "cannot nest further" phase per sub-agent id
+   * per run (sub-agents may retry `delegate` many times in one turn).
+   */
+  nestedDelegatePhaseEmitted?: Set<string>;
 }
 
 /**
@@ -219,17 +154,175 @@ export interface HandleToolCallsResult {
   /** Of `attempted`, how many produced a `result.ok === false`. */
   failed: number;
   /**
-   * Number of refused `delegate` tool calls in this round. The
-   * `<delegate />` directive is an XML construct in the assistant's
-   * output channel — it is NEVER a callable tool. When the model
-   * (orchestrator or sub-agent) tries to invoke it through the
-   * function-calling channel, the allowlist refuses it. Counting
-   * those attempts lets the orchestrator surface a `<run_state>`
-   * hint so the model pivots back to the directive syntax instead
-   * of repeatedly retrying the same refused call. Pure observability
-   * — does not affect the allowlist refusal itself.
+   * Number of refused `delegate` tool calls in this round. `delegate`
+   * is a first-class orchestrator tool, so the orchestrator never
+   * refuses it here (and the run loop intercepts it by name before
+   * this function runs). This counter therefore only ever increments
+   * for a SUB-AGENT attempting to nest a further delegation — its
+   * allowlist excludes `delegate`. Pure observability; does not affect
+   * the allowlist refusal itself.
    */
   childRedelegations: number;
+}
+
+type DispatchOutcome =
+  | { kind: 'skipped' }
+  | { kind: 'ran'; attempted: number; failed: number };
+
+async function dispatchOneToolCall(
+  tc: PartialToolCall,
+  batchIndex: number,
+  messages: ChatMessage[],
+  emit: (event: TimelineEvent) => void,
+  opts: HandleToolCallsOpts,
+  tallies: { refused: number; childRedelegations: number }
+): Promise<DispatchOutcome> {
+  if (!tc.name) {
+    tallies.refused += 1;
+    if (!tc.id) tc.id = randomUUID();
+    emitSyntheticToolFailure(
+      tc,
+      emit,
+      messages,
+      opts,
+      'Tool call missing a name — cannot execute.',
+      'missing tool name',
+      batchIndex
+    );
+    return { kind: 'skipped' };
+  }
+  if (!tc.id) tc.id = randomUUID();
+  const callId = tc.id;
+
+  if (opts.allowlist && !opts.allowlist.includes(tc.name)) {
+    tallies.refused += 1;
+    const isDelegateAttempt = tc.name === 'delegate';
+    if (isDelegateAttempt) {
+      tallies.childRedelegations += 1;
+      const subId = opts.subagentId;
+      const shouldEmitPhase =
+        subId === undefined ||
+        !opts.nestedDelegatePhaseEmitted?.has(subId);
+      if (shouldEmitPhase) {
+        if (subId !== undefined) {
+          opts.nestedDelegatePhaseEmitted?.add(subId);
+        }
+        emit({
+          kind: 'phase',
+          id: randomUUID(),
+          ts: Date.now(),
+          label:
+            'Sub-agents cannot nest further — wrap up with a <result> envelope instead'
+        });
+      }
+    }
+    log.warn('allowlist refusal', {
+      tool: tc.name,
+      subagentId: opts.subagentId,
+      allowlist: opts.allowlist,
+      isDelegateAttempt
+    });
+    const refusalMessage =
+      opts.subagentId === undefined
+        ? `Tool "${tc.name}" is not callable from the orchestrator. ` +
+          `The orchestrator's direct toolset is restricted to ${opts.allowlist.join(', ')}. ` +
+          `To run "${tc.name}", call the \`delegate\` tool and grant it via the \`tools\` argument, for example:\n\n` +
+          suggestDelegateCall(tc, tc.name) +
+          `\n\nSpawn one sub-agent per micro-task.`
+        : `Tool "${tc.name}" is not available for this sub-agent — use the granted toolset.`;
+    messages.push({
+      role: 'tool',
+      tool_call_id: callId,
+      name: tc.name,
+      content: refusalMessage
+    });
+    settleToolCallSurrogate(tc, opts, batchIndex);
+    return { kind: 'skipped' };
+  }
+
+  const { args: parsed, parseError } = parseToolArgs(tc.name, tc.argumentsBuf);
+  opts.onToolCallSettled?.(callId, opts.subagentId ?? 'orc', batchIndex);
+  emit({
+    kind: 'tool-call',
+    id: randomUUID(),
+    ts: Date.now(),
+    call: {
+      id: callId,
+      name: tc.name as ToolName,
+      args: parsed,
+      ...(typeof tc.thoughtSignature === 'string' && tc.thoughtSignature.length > 0
+        ? { thoughtSignature: tc.thoughtSignature }
+        : {})
+    },
+    ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
+  });
+  if (parseError !== undefined) {
+    const syntheticResult = {
+      id: callId,
+      name: tc.name as ToolName,
+      ok: false as const,
+      output: parseError,
+      error: 'argument parse failed',
+      durationMs: 0
+    };
+    emit({
+      kind: 'tool-result',
+      id: randomUUID(),
+      ts: Date.now(),
+      result: syntheticResult,
+      ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
+    });
+    messages.push({
+      role: 'tool',
+      tool_call_id: callId,
+      name: tc.name,
+      content: parseError
+    });
+    return { kind: 'ran', attempted: 1, failed: 1 };
+  }
+
+  emitRunStatus(emit, 'running-tool', 'Exploring', {
+    toolName: tc.name,
+    ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
+  });
+  const result = await runToolByName(tc.name, parsed, {
+    workspacePath: opts.workspacePath,
+    workspaceId: opts.workspaceId,
+    runId: opts.runId,
+    conversationId: opts.conversationId,
+    permissions: opts.permissions,
+    emit,
+    signal: opts.signal,
+    ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
+  });
+  result.id = callId;
+  emit({
+    kind: 'tool-result',
+    id: randomUUID(),
+    ts: Date.now(),
+    result,
+    ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
+  });
+  if (tc.name === 'edit' && result.ok && result.data && result.data.tool === 'edit') {
+    emit({
+      kind: 'file-edit',
+      id: randomUUID(),
+      ts: Date.now(),
+      runId: opts.runId,
+      filePath: result.data.filePath,
+      additions: result.data.additions,
+      deletions: result.data.deletions,
+      ...(result.data.entryId ? { entryId: result.data.entryId } : {}),
+      ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
+    });
+  }
+  messages.push({
+    role: 'tool',
+    tool_call_id: callId,
+    name: tc.name,
+    content: result.output
+  });
+  return { kind: 'ran', attempted: 1, failed: result.ok ? 0 : 1 };
 }
 
 export async function handleToolCalls(
@@ -241,266 +334,111 @@ export async function handleToolCalls(
   const startedAt = Date.now();
   let attempted = 0;
   let failed = 0;
-  let refused = 0;
-  let childRedelegations = 0;
-  let orchestratorDelegateRefusals = 0;
-  for (let i = 0; i < finishedToolCalls.length; i++) {
-    const tc = finishedToolCalls[i]!;
-    // Honor `opts.signal.aborted` between tool calls so a supersede
-    // (new `chat:send` on the same conversation) or explicit Stop
-    // cannot leak a half-round's tool-result events into the
-    // transcript AFTER the next run has already started reading it.
-    // Without this guard, `chat.ipc.ts` would `drainAppendChain`
-    // before launching the new run, but late `tool-result` emits
-    // from this loop (still iterating) would land in the JSONL out
-    // of order. Review finding H3.
+  const tallies = { refused: 0, childRedelegations: 0 };
+
+  const batches = opts.skipDependencyBatching
+    ? [finishedToolCalls.map((_, i) => i)]
+    : batchIndicesByDependencies(
+        finishedToolCalls.map((tc, i) => {
+          if (!tc.id) tc.id = randomUUID();
+          let dependsOn: string[] = [];
+          if (tc.name) {
+            const { args } = parseToolArgs(tc.name, tc.argumentsBuf);
+            dependsOn = parseDependsOnIds(args);
+          }
+          return { id: tc.id!, dependsOn, index: i };
+        }).map((d) => ({ id: d.id, dependsOn: d.dependsOn }))
+      );
+  const processed = new Set<number>();
+
+  for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+    const batch = batches[batchIdx]!;
     if (opts.signal.aborted) {
-      log.debug('tool round aborted mid-iteration', {
-        remaining: finishedToolCalls.length - i,
+      log.debug('tool round aborted mid-batch', {
+        remaining: batch.length,
         subagentId: opts.subagentId
       });
-      for (let j = i; j < finishedToolCalls.length; j++) {
-        const rem = finishedToolCalls[j]!;
-        refused += 1;
-        emitSyntheticToolFailure(
-          rem,
-          emit,
-          messages,
-          opts,
-          'Tool call aborted because the run was stopped or superseded.',
-          'aborted',
-          j
-        );
+      for (let b = batchIdx; b < batches.length; b++) {
+        for (const i of batches[b]!) {
+          if (processed.has(i)) continue;
+          processed.add(i);
+          tallies.refused += 1;
+          emitSyntheticToolFailure(
+            finishedToolCalls[i]!,
+            emit,
+            messages,
+            opts,
+            'Tool call aborted because the run was stopped or superseded.',
+            'aborted',
+            i
+          );
+        }
       }
       break;
     }
-    if (!tc.name) {
-      refused += 1;
-      if (!tc.id) tc.id = randomUUID();
-      emitSyntheticToolFailure(
-        tc,
-        emit,
-        messages,
-        opts,
-        'Tool call missing a name — cannot execute.',
-        'missing tool name',
-        i
-      );
-      continue;
-    }
-    // Defensive — runLoop guarantees `tc.id` is populated before this
-    // function runs, but if a caller forgets, fall back to a fresh UUID
-    // and IMMEDIATELY persist it on the partial so every downstream use
-    // (assistant message, timeline events, tool message) reads the same
-    // value.
-    if (!tc.id) tc.id = randomUUID();
-    const callId = tc.id;
 
-    // Allowlist enforcement happens BEFORE the timeline tool-call
-    // event so a refused call never produces a misleading
-    // tool-call/tool-result pair in the UI. Applies to BOTH the
-    // sub-agent path (per-task tools=) and the orchestrator path
-    // (`ORCHESTRATOR_TOOLS` from `tools/policy/orchestratorTools.ts`),
-    // which the orchestrator's `runLoop` now passes in explicitly so a
-    // model that emits `edit` / `bash` / `delete` via function-calling
-    // (despite those tools being absent from its schema) can't smuggle
-    // a direct mutation through and bypass the delegate pattern.
-    if (opts.allowlist && !opts.allowlist.includes(tc.name)) {
-      refused += 1;
-      const isDelegateAttempt = tc.name === 'delegate';
-      if (isDelegateAttempt) {
-        childRedelegations += 1;
-        if (opts.subagentId === undefined) {
-          orchestratorDelegateRefusals += 1;
-        } else {
-          // Sub-agent re-delegation attempts are rare — surface each
-          // one individually so the trace stays legible.
-          emit({
-            kind: 'phase',
-            id: randomUUID(),
-            ts: Date.now(),
-            label:
-              'Sub-agents cannot nest further — wrap up with a <result> envelope instead'
-          });
-        }
+    const syncIndices: number[] = [];
+    const runnable: number[] = [];
+    for (const i of batch) {
+      const tc = finishedToolCalls[i]!;
+      if (
+        !tc.name ||
+        (opts.allowlist && !opts.allowlist.includes(tc.name)) ||
+        parseToolArgs(tc.name, tc.argumentsBuf).parseError !== undefined
+      ) {
+        syncIndices.push(i);
+        continue;
       }
-      log.warn('allowlist refusal', {
-        tool: tc.name,
-        subagentId: opts.subagentId,
-        allowlist: opts.allowlist,
-        isDelegateAttempt
-      });
-      // Context-specific refusal copy. The orchestrator gets an
-      // actionable nudge to switch to `<delegate />` so the next
-      // iteration produces visible work instead of repeating the
-      // same bad tool call. Sub-agents get the original concise
-      // message — they cannot re-delegate, they have to make do
-      // with their assigned toolset.
-      const refusalMessage =
-        opts.subagentId === undefined
-          ? `Tool "${tc.name}" is not callable from the orchestrator. ` +
-          `The orchestrator's direct toolset is restricted to ${opts.allowlist.join(', ')}. ` +
-          `Emit a <delegate> directive in your assistant message (not a tool call), for example:\n\n` +
-          suggestDelegateDirective(tc, tc.name) +
-          `\n\nSpawn one sub-agent per micro-task; put the directive in assistant text, not function-calling.`
-          : `Tool "${tc.name}" is not available for this sub-agent — use the granted toolset.`;
-      messages.push({
-        role: 'tool',
-        tool_call_id: callId,
-        name: tc.name,
-        content: refusalMessage
-      });
-      settleToolCallSurrogate(tc, opts, i);
-      continue;
+      runnable.push(i);
     }
 
-    const { args: parsed, parseError } = parseToolArgs(tc.name, tc.argumentsBuf);
-    // Phase 2 — settle the in-flight diff stream for this callId
-    // before emitting the authoritative `tool-call`. The streamer
-    // drops its per-call state synchronously so subsequent deltas
-    // (if any race in) are silently ignored. Renderer-side
-    // reconciliation also drops the partial entry on this event.
-    //
-    // `owner` is forwarded so the streamer can also reconcile any
-    // stale `pending:${owner}:${index}` surrogate state that was
-    // created when the provider's first delta lacked a real id.
-    // The streamer's lowest-index walk does the index resolution.
-    opts.onToolCallSettled?.(callId, opts.subagentId ?? 'orc');
-    emit({
-      kind: 'tool-call',
-      id: randomUUID(),
-      ts: Date.now(),
-      call: {
-        id: callId,
-        name: tc.name as ToolName,
-        args: parsed,
-        // Phase 9 (2026): forward Gemini's per-call thoughtSignature
-        // onto the persisted tool-call event so transcript replay
-        // can re-attach it to the matching `tool_calls[i]` slot on
-        // the assistant message. Other dialects emit no signature;
-        // the field stays absent (the spread is conditional).
-        ...(typeof tc.thoughtSignature === 'string' && tc.thoughtSignature.length > 0
-          ? { thoughtSignature: tc.thoughtSignature }
-          : {})
-      },
-      ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
-    });
-    // Short-circuit on structural argument parse failure (review
-    // finding M6). Dispatching the tool with `{}` would either
-    // throw a tool-specific "missing path" / "missing command"
-    // (wasting a model round-trip on a confusing downstream
-    // error) or silently succeed with empty args (worse — model
-    // never learns it sent broken JSON). The synthetic
-    // `tool-result` carries the precise parse diagnostic so the
-    // model's next iteration can correct the call directly.
-    if (parseError !== undefined) {
-      attempted += 1;
-      failed += 1;
-      const syntheticResult = {
-        id: callId,
-        name: tc.name as ToolName,
-        ok: false as const,
-        output: parseError,
-        error: 'argument parse failed',
-        durationMs: 0
-      };
-      emit({
-        kind: 'tool-result',
-        id: randomUUID(),
-        ts: Date.now(),
-        result: syntheticResult,
-        ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
-      });
-      messages.push({
-        role: 'tool',
-        tool_call_id: callId,
-        name: tc.name,
-        content: parseError
-      });
-      continue;
+    for (const i of syncIndices) {
+      processed.add(i);
+      const o = await dispatchOneToolCall(
+        finishedToolCalls[i]!,
+        i,
+        messages,
+        emit,
+        opts,
+        tallies
+      );
+      if (o.kind === 'ran') {
+        attempted += o.attempted;
+        failed += o.failed;
+      }
     }
-    // Live status for every dispatched tool — orchestrator tail row and
-    // sub-agent trace cards surface "Exploring" via ephemeral
-    // `run-status` (no persisted phase divider — that duplicated the
-    // tail row every tool round).
-    emitRunStatus(emit, 'running-tool', 'Exploring', {
-      toolName: tc.name,
-      ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
-    });
-    attempted += 1;
-    const result = await runToolByName(tc.name, parsed, {
-      workspacePath: opts.workspacePath,
-      workspaceId: opts.workspaceId,
-      runId: opts.runId,
-      conversationId: opts.conversationId,
-      permissions: opts.permissions,
-      strictApprovals: opts.strictApprovals,
-      emit,
-      signal: opts.signal,
-      ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
-    });
-    if (!result.ok) failed += 1;
-    // Override the tool's internally-generated id with the LLM's tool-call
-    // id so the tool-result timeline event correlates with the tool-call.
-    // Replay reads `result.id` as the `tool_call_id` for the model — this
-    // is what unblocks OpenAI-compat providers (e.g. DeepSeek) on the
-    // next turn.
-    result.id = callId;
-    emit({
-      kind: 'tool-result',
-      id: randomUUID(),
-      ts: Date.now(),
-      result,
-      ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
-    });
 
-    // Surface a file-edit card whenever `edit` produced a successful
-    // result with structured metadata. With the orchestrator policy in
-    // place this typically only fires from sub-agents — but if a future
-    // change re-allows `edit` at orchestrator level, the UI stays honest.
-    if (tc.name === 'edit' && result.ok && result.data && result.data.tool === 'edit') {
-      emit({
-        kind: 'file-edit',
-        id: randomUUID(),
-        ts: Date.now(),
-        runId: opts.runId,
-        filePath: result.data.filePath,
-        additions: result.data.additions,
-        deletions: result.data.deletions,
-        ...(result.data.entryId ? { entryId: result.data.entryId } : {}),
-        ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
-      });
+    // Independent calls in a batch overlap; timeline JSONL order stays
+    // stable because conversationStore serializes per-conversation appends.
+    const outcomes = await Promise.all(
+      runnable.map(async (i) => {
+        const o = await dispatchOneToolCall(
+          finishedToolCalls[i]!,
+          i,
+          messages,
+          emit,
+          opts,
+          tallies
+        );
+        processed.add(i);
+        return o;
+      })
+    );
+    for (const o of outcomes) {
+      if (o.kind === 'ran') {
+        attempted += o.attempted;
+        failed += o.failed;
+      }
     }
-    messages.push({
-      role: 'tool',
-      tool_call_id: callId,
-      name: tc.name,
-      content: result.output
-    });
   }
-  if (orchestratorDelegateRefusals > 0) {
-    // One phase row per round — parallel `delegate` tool calls in a
-    // single batch previously emitted N identical dividers (observed
-    // live when the model tried to spawn eight sub-agents via
-    // function-calling instead of XML directives).
-    const n = orchestratorDelegateRefusals;
-    emit({
-      kind: 'phase',
-      id: randomUUID(),
-      ts: Date.now(),
-      label:
-        n === 1
-          ? 'Use <delegate … /> in your message to spawn sub-agents (not the delegate tool)'
-          : `Use <delegate … /> in your message to spawn sub-agents (${n} delegate tool calls were ignored)`
-    });
-  }
+
   log.debug('tool round summary', {
     attempted,
     failed,
-    refused,
-    childRedelegations,
+    refused: tallies.refused,
+    childRedelegations: tallies.childRedelegations,
     subagentId: opts.subagentId,
     ms: Date.now() - startedAt
   });
-  return { attempted, failed, childRedelegations };
+  return { attempted, failed, childRedelegations: tallies.childRedelegations };
 }

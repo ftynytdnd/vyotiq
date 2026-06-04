@@ -21,7 +21,10 @@ export type RegisteredToolName =
   | 'search'
   | 'memory'
   | 'recall'
-  | 'report';
+  | 'report'
+  | 'delegate'
+  | 'finish'
+  | 'ask_user';
 
 /**
  * The set of tool names that may appear on a `ToolCall` / `ToolResult`.
@@ -181,7 +184,7 @@ export type ToolData =
      *   - `list`: enumerate the recent conversation index (no body).
      *   - `read`: fetch a compact transcript view of one conversation.
      * Sub-agents are denied this tool by policy so the isolation
-     * invariant (`04-subagent-prompt.md`) stays intact.
+     * invariant (`02-subagent-prompt.md`) stays intact.
      */
     tool: 'recall';
     action: 'list' | 'read';

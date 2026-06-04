@@ -188,7 +188,7 @@
 
        text-meta   11px  uppercase eyebrows, timestamps, hint rows
        text-row    13px  timeline row labels, dock tabs, compact UI
-       text-log    14px  section heads, log lines (checkpoints / diffs)
+       text-log    14px  section heads, log lines (diffs / meta panels)
        text-body   14px  assistant text, prompts, primary copy
        text-chat-body  15px  timeline prose, user prompts, composer input
        text-chat-meta  12px  composer footer, timeline meta in chat column
@@ -386,6 +386,37 @@ textarea {
     inset 0 0 0 1px var(--color-border-subtle),
     0 2px 4px -1px var(--color-shadow-ambient),
     0 8px 24px -6px var(--color-shadow-ambient-deep);
+}
+
+/* Jump-to-latest chip — avoid backdrop-filter on sticky overlays; Chromium
+   can mirror/bleed edge-sampled backdrop pixels onto foreground label text.
+   Keep the chip opaque (elev-1 + bg-surface-sidebar/95) and pin LTR. */
+.vx-timeline-error-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  border-radius: 6px;
+  border: 1px solid oklch(from var(--color-danger) l c h / 0.22);
+  background: var(--color-danger-soft);
+  padding: 0.5rem 0.625rem;
+}
+
+.vx-jump-to-latest-chip {
+  direction: ltr;
+  isolation: isolate;
+  transform: none;
+  border-color: var(--color-border-shell);
+  background: var(--color-surface-shell);
+  color: var(--color-text-secondary);
+  font-size: var(--text-meta);
+  box-shadow: inset 0 0 0 1px var(--color-highlight-inset);
+}
+
+.vx-jump-to-latest-label {
+  display: inline-block;
+  direction: ltr;
+  unicode-bidi: isolate;
+  transform: none;
 }
 
 /* Focused composer variant — elev-2 plus a quiet inset edge. Swap in
@@ -1424,6 +1455,313 @@ textarea {
   background: var(--color-chrome-hover-strong);
 }
 
+/* Settings floating panel — group tab strip + scroll body */
+.vx-settings-tab-strip {
+  border-bottom: 1px solid color-mix(in oklab, var(--color-panel-edge) 48%, transparent);
+  padding-bottom: 0.625rem;
+}
+
+.vx-settings-group-tabs {
+  gap: 0.125rem;
+  padding: 0.125rem;
+  border-radius: 6px;
+  background: var(--color-surface-field-strong);
+}
+
+.vx-settings-group-tabs > button {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  padding-inline: 0.5rem;
+}
+
+.vx-settings-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.375rem;
+  padding-top: 0.75rem;
+  min-width: 0;
+}
+
+.vx-settings-section-anchor {
+  scroll-margin-top: 0.75rem;
+  min-width: 0;
+}
+
+.vx-settings-section-anchor--divider {
+  padding-top: 0.25rem;
+  border-top: 1px solid color-mix(in oklab, var(--color-panel-edge) 42%, transparent);
+}
+
+.vx-settings-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border-radius: 6px;
+  background: var(--color-surface-field-strong);
+  border: 1px solid color-mix(in oklab, var(--color-panel-edge) 58%, transparent);
+}
+
+.vx-settings-provider-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.vx-settings-provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  max-height: 9.5rem;
+  overflow-y: auto;
+  padding: 0.25rem;
+  border-radius: 6px;
+  background: var(--color-surface-field-strong);
+  border: 1px solid color-mix(in oklab, var(--color-panel-edge) 50%, transparent);
+}
+
+.vx-settings-provider-list .vx-left-subnav-item {
+  border-radius: 4px;
+}
+
+.vx-settings-provider-detail {
+  min-height: 3.5rem;
+  max-height: min(26rem, 52vh);
+  overflow-y: auto;
+  padding: 0.75rem;
+}
+
+.vx-settings-add-provider {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.875rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.vx-settings-toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  align-items: center;
+}
+
+/* Floating settings panel — container queries + type hierarchy */
+.vx-floating-panel-body {
+  min-width: 0;
+  container-type: inline-size;
+  container-name: vx-panel;
+}
+
+.vx-floating-panel-body .vx-section-head {
+  font-size: var(--text-row);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 0.625rem;
+}
+
+.vx-floating-panel-body .vx-row-label {
+  font-size: var(--text-row);
+  font-weight: 500;
+}
+
+.vx-floating-panel-body .vx-row-desc,
+.vx-floating-panel-body .vx-caption {
+  font-size: var(--text-log);
+  line-height: 1.5;
+}
+
+.vx-floating-panel-body .vx-stat-value {
+  font-size: var(--text-row);
+  font-weight: 600;
+}
+
+.vx-settings-subhead {
+  margin: 0.875rem 0 0.5rem;
+  font-size: var(--text-meta);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.vx-settings-status-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0.5rem;
+  margin-bottom: 0.25rem;
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+  font-size: var(--text-log);
+  line-height: 1.35;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-field-strong);
+  border: 1px solid color-mix(in oklab, var(--color-panel-edge) 45%, transparent);
+}
+
+.vx-settings-section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.vx-settings-append-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.vx-settings-append-row > :first-child {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.vx-settings-memory-collapsed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0;
+}
+
+@container vx-panel (min-width: 300px) {
+  .vx-floating-panel-body .vx-row-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(5rem, 1fr);
+    align-items: start;
+    column-gap: 1rem;
+    row-gap: 0.5rem;
+  }
+
+  .vx-floating-panel-body .vx-row-split-main {
+    flex: unset;
+    width: auto;
+    min-width: 0;
+  }
+
+  .vx-floating-panel-body .vx-row-split-control {
+    justify-self: end;
+    align-self: start;
+  }
+
+  .vx-floating-panel-body .vx-override {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    column-gap: 0.75rem;
+    row-gap: 0.375rem;
+  }
+}
+
+/* Settings — memory editor (always stacked in floating panel) */
+.vx-settings-memory .vx-memory-split {
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.vx-settings-memory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  max-height: 8.5rem;
+  margin: 0;
+  padding: 0.25rem;
+  overflow-y: auto;
+  list-style: none;
+  border-radius: 6px;
+  background: var(--color-surface-field-strong);
+  border: 1px solid color-mix(in oklab, var(--color-panel-edge) 50%, transparent);
+}
+
+.vx-settings-memory-list .vx-memory-list-item {
+  border-radius: 4px;
+  font-family: var(--font-sans);
+  font-size: var(--text-row);
+}
+
+.vx-settings-memory-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  min-height: 8rem;
+  padding: 0.75rem;
+}
+
+.vx-settings-memory-editor .vx-textarea {
+  min-height: 11rem;
+  max-height: min(22rem, 46vh);
+}
+
+.vx-settings-memory-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+}
+
+.vx-settings-memory-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.vx-settings-build-card {
+  padding: 0.75rem;
+}
+
+.vx-settings-path-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.vx-settings-path-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 6px;
+  background: var(--color-surface-field-strong);
+  border: 1px solid color-mix(in oklab, var(--color-panel-edge) 50%, transparent);
+}
+
+@container vx-panel (min-width: 400px) {
+  .vx-settings-path-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    column-gap: 0.75rem;
+    row-gap: 0.375rem;
+  }
+
+  .vx-settings-path-row .vx-field-label {
+    grid-column: 1;
+  }
+
+  .vx-settings-path-row .vx-meta-value-mono {
+    grid-column: 1;
+  }
+
+  .vx-settings-path-row > button,
+  .vx-settings-path-row > .vx-btn {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+    justify-self: end;
+  }
+}
+
 .vx-filter-chip {
   border-radius: 4px;
   padding: 0.125rem 0.375rem;
@@ -1779,7 +2117,7 @@ textarea {
   container-name: vx-panel;
 }
 
-/* Panel-scoped readability � settings, checkpoints, inspector bodies */
+/* Panel-scoped readability � settings and secondary-zone bodies */
 .vx-panel-body .vx-field-label {
   font-size: var(--text-meta);
   letter-spacing: normal;
@@ -2220,7 +2558,7 @@ textarea {
   }
 }
 
-/* Left subnav — settings / checkpoints / providers master-detail */
+/* Left subnav — settings providers / appearance master-detail */
 .vx-left-subnav-layout {
   display: flex;
   min-width: 0;
@@ -2326,18 +2664,12 @@ textarea {
   line-height: 1.55;
 }
 
-.vx-timeline-activity-lane {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-}
-
 .vx-timeline-turn-gap {
   gap: 0.75rem;
 }
 
 .vx-timeline-turn-outer {
-  margin-bottom: 2.5rem;
+  margin-bottom: 1.5rem;
   padding-top: 0.25rem;
 }
 
@@ -2416,17 +2748,8 @@ textarea {
   color: var(--color-text-muted);
 }
 
-.timeline-activity-lane .vx-timeline-log-row,
-.vx-timeline-activity-lane .vx-timeline-log-row {
-  max-width: none;
-  border-radius: 0;
-  background: transparent;
-  padding: 0.125rem 0;
-}
-
 /* Turn footer meta (run closer, token budget) � flush in the reading column. */
-.vx-timeline-log-row[data-row-kind='run-complete'],
-.vx-timeline-log-row[data-row-kind='token-budget-warning'] {
+.vx-timeline-log-row[data-row-kind='run-complete'] {
   max-width: none;
   border-radius: 0;
   background: transparent;
@@ -2679,14 +3002,17 @@ mark.vyotiq-timeline-find-mark-active {
   padding: 0 0.375rem 0.375rem;
 }
 
+.vx-composer-chip-row .vx-composer-status-strip {
+  flex: 1 1 0%;
+  min-width: 0;
+}
+
 .vx-composer-chip-row .vx-composer-token-pill {
   flex: 0 1 auto;
-  margin-inline-start: auto;
 }
 
 @container vx-composer-input (max-width: 22rem) {
   .vx-composer-chip-row .vx-composer-token-pill {
-    margin-inline-start: 0;
     width: 100%;
   }
 }
@@ -2915,6 +3241,12 @@ mark.vyotiq-timeline-find-mark-active {
   display: none;
 }
 
+/* Ask user overlay — same shell tokens as composer dialog; scrollable body. */
+.vx-ask-user-overlay {
+  pointer-events: auto;
+  max-width: 100%;
+}
+
 /* Slide-up + fade entrance for ComposerDialog. Subdued so a queue
    advance (one dismiss → next dialog) doesn't feel busy. Honors
    reduced motion via the global override above. */
@@ -2952,6 +3284,8 @@ mark.vyotiq-timeline-find-mark-active {
 
 
 .vx-timeline-user-bubble {
+  width: fit-content;
+  max-width: 100%;
   border-radius: var(--radius-inner);
   background: var(--color-surface-bubble-user);
   border: 1px solid color-mix(in oklch, var(--color-accent) 25%, transparent);
@@ -3007,6 +3341,7 @@ mark.vyotiq-timeline-find-mark-active {
 
 .vx-titlebar {
   height: var(--titlebar-h);
+  --text-titlebar: 13px;
 }
 
 .vx-titlebar-breadcrumb {

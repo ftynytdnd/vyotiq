@@ -61,7 +61,7 @@ trailing`;
 
   it('returns status=null when the <result> block has no <status>', () => {
     // Was previously coerced to `'success'` — that silently mismatched
-    // the harness contract in `04-subagent-prompt.md`. Now the
+    // the harness contract in `02-subagent-prompt.md`. Now the
     // verifier routes the missing tag through the malformed path so
     // the orchestrator's 3-strike rule handles it identically to a
     // missing `<result>` block.

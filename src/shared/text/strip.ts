@@ -310,7 +310,7 @@ const TRAILING_OPEN_FENCE_RE = /(^|\n)(```|~~~)[^\n]*(?:\n([\s\S]*))?$/;
  * Used by `parseDelegates` so a `<delegate />` directive emitted as a
  * code example inside ``` is NEVER parsed as a real spawn directive.
  * The harness explicitly forbids `<delegate />` *examples* inside a
- * fence (`01-orchestration-loop.md` §A Phase 4 "never inside a code
+ * fence (`00-orchestrator-core.md` §A Phase 4 "never inside a code
  * fence and never as a quoted preview"), but soft rules degrade —
  * the host enforces the boundary structurally.
  *
@@ -403,27 +403,6 @@ export function stripFencedCode(text: string): string {
       return leading;
     }
   );
-}
-
-/**
- * Narrow strip that removes ONLY `<delegate>` tags (paired + self-
- * closing), leaving every other `ORCHESTRATION_TAG_NAMES` entry
- * (`<status>`, `<task>`, `<result>`, `<run_state>`, `<tool_calls>`,
- * the `<think>`-family) and DSML envelopes intact.
- *
- * Companion to `parseDelegates`: callers that already extracted the
- * delegate directives can reach for this to compute the
- * "non-delegate" remainder of an assistant turn without losing other
- * orchestration scaffolding the agent may have emitted. Also serves as a
- * parity-check surface for tests — the count of `<delegate` substrings
- * in the result must always be zero, and the run of `parseDelegates`
- * over the same input must agree on the delegate count.
- */
-export function stripDelegateOnlyMarkup(text: string): string {
-  return text
-    .replace(DELEGATE_PAIR_RE, '')
-    .replace(DELEGATE_SELFCLOSE_RE, '')
-    .trim();
 }
 
 /**

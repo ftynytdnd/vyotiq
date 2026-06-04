@@ -1,46 +1,22 @@
 /**
- * Lazy single-worker pool for off-main-thread diff computation.
+ * Multi-worker pool for off-main-thread diff computation.
  *
- * Design trade-offs:
- *
- *   - ONE worker, not N. The streamer serialises compute via its
- *     `computing` single-flight flag (per callId) and the content-
- *     hash dedup means only distinct args trigger a job — so
- *     worker contention is bounded. Adding more workers would
- *     complicate the shutdown path for no measurable benefit.
- *
- *   - Lazy spawn. Tests that never compute a large diff don't pay
- *     the worker startup cost (~20ms on Windows). Production
- *     sessions only spin one up the first time a file exceeds the
- *     inline cutoff.
- *
- *   - Crash resilience. If the worker errors or exits unexpectedly
- *     every pending job rejects and the next job respawns. The
- *     streamer's outer `try/catch` turns the rejection into a
- *     silent skip, falling back to the renderer's synthesised
- *     preview.
- *
- *   - Clean dispose. `dispose()` terminates the worker and rejects
- *     every pending job. Idempotent so it's safe to call from
- *     both the abort-signal listener and the run-loop finally.
- *
- * The pool exposes a single promise-returning `computeHunks`
- * method that the streamer can call interchangeably with the
- * synchronous `computeDiffHunks` import — same inputs, same shape
- * back.
+ * N workers (default `min(4, os.cpus)`) round-robin incoming jobs.
+ * Crash resilience and dispose semantics match the original single-
+ * worker pool — a fatal worker error rejects its pending jobs and
+ * respawns on the next assignment.
  */
 
 import { randomUUID } from 'node:crypto';
+import { cpus } from 'node:os';
 import type { Worker } from 'node:worker_threads';
 import type { DiffHunk } from '@shared/types/tool.js';
 import { logger } from '../logging/logger.js';
-// electron-vite `?nodeWorker` loader — this import is resolved at
-// build time to a factory that instantiates the worker module.
-// The unit-test layer substitutes an in-process fallback so the
-// test process doesn't need the real worker entry on disk.
 import createDiffWorker from './diffWorker?nodeWorker';
 
 const log = logger.child('diffWorkerPool');
+
+const DIFF_WORKER_POOL_SIZE = Math.max(1, Math.min(4, cpus().length));
 
 interface PendingJob {
   resolve: (hunks: DiffHunk[]) => void;
@@ -53,75 +29,98 @@ interface WorkerMessage {
   error?: string;
 }
 
-export class DiffWorkerPool {
-  private worker: Worker | null = null;
-  private pending = new Map<string, PendingJob>();
-  private disposed = false;
+interface PoolWorker {
+  worker: Worker;
+  busy: boolean;
+  pending: Map<string, PendingJob>;
+}
 
-  /**
-   * Compute LCS hunks off the main thread. Resolves with the same
-   * shape `computeDiffHunks` would return synchronously on the
-   * main thread. Rejects on worker crash / termination.
-   *
-   * The pool lazily spawns the worker on first use. Subsequent
-   * calls reuse the same worker.
-   */
+export class DiffWorkerPool {
+  private workers: PoolWorker[] = [];
+  private jobQueue: Array<{
+    jobId: string;
+    before: string;
+    after: string;
+    resolve: (hunks: DiffHunk[]) => void;
+    reject: (err: Error) => void;
+  }> = [];
+  private disposed = false;
+  private readonly poolSize: number;
+
+  constructor(poolSize = DIFF_WORKER_POOL_SIZE) {
+    this.poolSize = Math.max(1, poolSize);
+  }
+
   async computeHunks(before: string, after: string): Promise<DiffHunk[]> {
     if (this.disposed) {
       throw new Error('DiffWorkerPool: computeHunks on disposed pool');
     }
-    const worker = this.ensureWorker();
     const jobId = randomUUID();
     return new Promise<DiffHunk[]>((resolve, reject) => {
-      this.pending.set(jobId, { resolve, reject });
-      worker.postMessage({ jobId, before, after });
+      this.jobQueue.push({ jobId, before, after, resolve, reject });
+      this.drainQueue();
     });
   }
 
-  /**
-   * Terminate the worker (if spawned) and reject every in-flight
-   * job. Safe to call multiple times. Once disposed the pool
-   * cannot be used again — the streamer owns the lifecycle and
-   * builds a fresh pool per run.
-   */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     const rejectErr = new Error('DiffWorkerPool disposed');
-    for (const job of this.pending.values()) {
-      job.reject(rejectErr);
-    }
-    this.pending.clear();
-    if (this.worker) {
-      void this.worker.terminate().catch((err) => {
+    for (const job of this.jobQueue) job.reject(rejectErr);
+    this.jobQueue = [];
+    for (const pw of this.workers) {
+      for (const job of pw.pending.values()) job.reject(rejectErr);
+      pw.pending.clear();
+      void pw.worker.terminate().catch((err) => {
         log.debug('worker terminate error (ignored)', { err });
       });
-      this.worker = null;
+    }
+    this.workers = [];
+  }
+
+  private drainQueue(): void {
+    while (this.jobQueue.length > 0) {
+      const slot = this.pickIdleWorker();
+      if (!slot) return;
+      const job = this.jobQueue.shift()!;
+      slot.busy = true;
+      slot.pending.set(job.jobId, { resolve: job.resolve, reject: job.reject });
+      slot.worker.postMessage({ jobId: job.jobId, before: job.before, after: job.after });
     }
   }
 
-  private ensureWorker(): Worker {
-    if (this.worker) return this.worker;
-    const w = createDiffWorker();
-    w.on('message', (msg: WorkerMessage) => this.handleMessage(msg));
-    w.on('error', (err) => this.handleFatal(err));
-    w.on('exit', (code) => {
+  private pickIdleWorker(): PoolWorker | null {
+    const idle = this.workers.find((w) => !w.busy);
+    if (idle) return idle;
+    if (this.workers.length < this.poolSize) {
+      const pw = this.spawnWorker();
+      this.workers.push(pw);
+      return pw;
+    }
+    return null;
+  }
+
+  private spawnWorker(): PoolWorker {
+    const pw: PoolWorker = {
+      worker: createDiffWorker(),
+      busy: false,
+      pending: new Map()
+    };
+    pw.worker.on('message', (msg: WorkerMessage) => this.handleMessage(pw, msg));
+    pw.worker.on('error', (err) => this.handleFatal(pw, err));
+    pw.worker.on('exit', (code) => {
       if (code !== 0 && !this.disposed) {
-        this.handleFatal(new Error(`diffWorker exited with code ${code}`));
+        this.handleFatal(pw, new Error(`diffWorker exited with code ${code}`));
       }
     });
-    this.worker = w;
-    return w;
+    return pw;
   }
 
-  private handleMessage(msg: WorkerMessage): void {
-    const job = this.pending.get(msg.jobId);
-    if (!job) {
-      // Response for a jobId we don't track — most likely a late
-      // message after dispose(). Drop silently.
-      return;
-    }
-    this.pending.delete(msg.jobId);
+  private handleMessage(pw: PoolWorker, msg: WorkerMessage): void {
+    const job = pw.pending.get(msg.jobId);
+    if (!job) return;
+    pw.pending.delete(msg.jobId);
+    pw.busy = pw.pending.size > 0;
     if (msg.error) {
       job.reject(new Error(msg.error));
     } else if (msg.hunks) {
@@ -129,14 +128,17 @@ export class DiffWorkerPool {
     } else {
       job.reject(new Error('diffWorker returned neither hunks nor error'));
     }
+    this.drainQueue();
   }
 
-  private handleFatal(err: Error): void {
+  private handleFatal(pw: PoolWorker, err: Error): void {
     log.warn('diffWorker fatal — rejecting pending jobs', { err: err.message });
-    const pending = Array.from(this.pending.values());
-    this.pending.clear();
+    const pending = Array.from(pw.pending.values());
+    pw.pending.clear();
+    pw.busy = false;
     for (const job of pending) job.reject(err);
-    // Drop the reference so the next computeHunks call respawns.
-    this.worker = null;
+    const idx = this.workers.indexOf(pw);
+    if (idx >= 0) this.workers.splice(idx, 1);
+    this.drainQueue();
   }
 }

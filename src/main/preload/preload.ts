@@ -14,6 +14,7 @@ import type {
   ProviderConfig,
   ModelInfo
 } from '../../shared/types/provider.js';
+import type { AskUserSubmitInput } from '../../shared/types/askUser.js';
 
 function on<TArgs extends unknown[]>(channel: string, cb: (...args: TArgs) => void): () => void {
   const listener = (_e: Electron.IpcRendererEvent, ...args: TArgs) => cb(...args);
@@ -58,13 +59,7 @@ const api: VyotiqApi = {
     remove: (id) => ipcRenderer.invoke(IPC.PROVIDERS_REMOVE, id),
     discoverModels: (id, force): Promise<ModelInfo[]> =>
       ipcRenderer.invoke(IPC.PROVIDERS_DISCOVER_MODELS, id, force),
-    test: (id) => ipcRenderer.invoke(IPC.PROVIDERS_TEST, id),
-    setContextOverride: (providerId, modelId, value) =>
-      ipcRenderer.invoke(IPC.PROVIDERS_SET_CONTEXT_OVERRIDE, providerId, modelId, value)
-  },
-
-  tokens: {
-    estimate: (input) => ipcRenderer.invoke(IPC.TOKENS_ESTIMATE, input)
+    test: (id) => ipcRenderer.invoke(IPC.PROVIDERS_TEST, id)
   },
 
   chat: {
@@ -74,7 +69,9 @@ const api: VyotiqApi = {
       on<[string, TimelineEvent]>(IPC.CHAT_EVENT, (runId, event) => cb(runId, event)),
     onDone: (cb) => on<[string]>(IPC.CHAT_DONE, (runId) => cb(runId)),
     onError: (cb) => on<[string, string]>(IPC.CHAT_ERROR, (runId, msg) => cb(runId, msg)),
-    listActiveRuns: () => ipcRenderer.invoke(IPC.CHAT_LIST_ACTIVE_RUNS)
+    listActiveRuns: () => ipcRenderer.invoke(IPC.CHAT_LIST_ACTIVE_RUNS),
+    submitAskUser: (input: AskUserSubmitInput) => ipcRenderer.invoke(IPC.CHAT_SUBMIT_ASK_USER, input),
+    onAwaitingUser: (cb: (runId: string) => void) => on<[string]>(IPC.CHAT_AWAITING_USER, (runId) => cb(runId))
   },
 
   conversations: {
@@ -92,11 +89,6 @@ const api: VyotiqApi = {
   tools: {
     openPath: (path, workspaceId) =>
       ipcRenderer.invoke(IPC.TOOLS_OPEN_PATH, path, workspaceId),
-    onConfirmRequest: (cb) =>
-      on<[Parameters<typeof cb>[0]]>(IPC.TOOLS_REQUEST_CONFIRM, cb),
-    onConfirmCancel: (cb) => on<[string]>(IPC.TOOLS_CANCEL_CONFIRM, (id) => cb(id)),
-    respondConfirm: (id, reply) =>
-      ipcRenderer.invoke(IPC.TOOLS_CONFIRM_RESPONSE, id, reply),
     rerun: (input) => ipcRenderer.invoke(IPC.TOOLS_RERUN, input)
   },
 
@@ -114,83 +106,14 @@ const api: VyotiqApi = {
   },
 
   checkpoints: {
-    summary: (workspaceId: string) => ipcRenderer.invoke(IPC.CHECKPOINTS_SUMMARY, workspaceId),
-    readRun: (workspaceId: string, runId: string) =>
-      ipcRenderer.invoke(IPC.CHECKPOINTS_READ_RUN, workspaceId, runId),
-    readFileHistory: (workspaceId: string, filePath: string) =>
-      ipcRenderer.invoke(IPC.CHECKPOINTS_READ_FILE_HISTORY, workspaceId, filePath),
-    listPending: (conversationId: string) =>
-      ipcRenderer.invoke(IPC.CHECKPOINTS_LIST_PENDING, conversationId),
-    accept: (entryId: string) => ipcRenderer.invoke(IPC.CHECKPOINTS_ACCEPT, entryId),
-    acceptAll: (conversationId: string) =>
-      ipcRenderer.invoke(IPC.CHECKPOINTS_ACCEPT_ALL, conversationId),
-    reject: (entryId: string) => ipcRenderer.invoke(IPC.CHECKPOINTS_REJECT, entryId),
-    revertEntry: (entryId: string) =>
-      ipcRenderer.invoke(IPC.CHECKPOINTS_REVERT_ENTRY, entryId),
-    revertRun: (runId: string) => ipcRenderer.invoke(IPC.CHECKPOINTS_REVERT_RUN, runId),
-    revertFileToHash: (workspaceId: string, filePath: string, hash: string) =>
-      ipcRenderer.invoke(IPC.CHECKPOINTS_REVERT_FILE_TO_HASH, workspaceId, filePath, hash),
     readBlob: (workspaceId: string, hash: string) =>
       ipcRenderer.invoke(IPC.CHECKPOINTS_READ_BLOB, workspaceId, hash),
-    readCurrentFile: (workspaceId: string, filePath: string) =>
-      ipcRenderer.invoke(IPC.CHECKPOINTS_READ_CURRENT_FILE, workspaceId, filePath),
-    exportArchive: (workspaceId: string) =>
-      ipcRenderer.invoke(IPC.CHECKPOINTS_EXPORT_ARCHIVE, workspaceId),
-    prune: (workspaceId: string, days: number) =>
-      ipcRenderer.invoke(IPC.CHECKPOINTS_PRUNE, workspaceId, days),
-    deleteRun: (workspaceId: string, runId: string) =>
-      ipcRenderer.invoke(IPC.CHECKPOINTS_DELETE_RUN, workspaceId, runId),
     previewRewind: (input) =>
       ipcRenderer.invoke(IPC.CHECKPOINTS_PREVIEW_REWIND, input),
     rewindToPrompt: (input) =>
       ipcRenderer.invoke(IPC.CHECKPOINTS_REWIND_TO_PROMPT, input),
-    gitBaseDiff: (workspaceId: string, filePath: string, ref?: string) =>
-      ipcRenderer.invoke(IPC.CHECKPOINTS_GIT_BASE_DIFF, workspaceId, filePath, ref),
-    listGitRefs: (workspaceId: string) =>
-      ipcRenderer.invoke(IPC.CHECKPOINTS_LIST_GIT_REFS, workspaceId),
-    onChanged: (cb) => on<[string]>(IPC.CHECKPOINTS_CHANGED, (workspaceId) => cb(workspaceId)),
     onTranscriptRewound: (cb) =>
       on<[string]>(IPC.CONVERSATION_TRANSCRIPT_REWOUND, (conversationId) => cb(conversationId))
-  },
-
-  contextSummary: {
-    inspect: (runId: string) =>
-      ipcRenderer.invoke(IPC.CONTEXT_SUMMARY_INSPECT, runId),
-    triggerManual: (runId: string, idleRunId?: string) =>
-      ipcRenderer.invoke(
-        IPC.CONTEXT_SUMMARY_TRIGGER_MANUAL,
-        runId,
-        idleRunId
-      ),
-    undo: (runId: string, summaryId: string) =>
-      ipcRenderer.invoke(IPC.CONTEXT_SUMMARY_UNDO, runId, summaryId),
-    abortIdle: (conversationId: string) =>
-      ipcRenderer.invoke(IPC.CONTEXT_SUMMARY_ABORT_IDLE, conversationId),
-    abortLive: (runId: string) =>
-      ipcRenderer.invoke(IPC.CONTEXT_SUMMARY_ABORT_LIVE, runId),
-    setMessageOverride: (conversationId, messageId, override) =>
-      ipcRenderer.invoke(
-        IPC.CONTEXT_SUMMARY_SET_MESSAGE_OVERRIDE,
-        conversationId,
-        messageId,
-        override
-      ),
-    resetMessageOverrides: (conversationId: string) =>
-      ipcRenderer.invoke(
-        IPC.CONTEXT_SUMMARY_RESET_MESSAGE_OVERRIDES,
-        conversationId
-      ),
-    getRules: (workspaceId: string | null) =>
-      ipcRenderer.invoke(IPC.CONTEXT_SUMMARY_GET_RULES, workspaceId),
-    updateRules: (scope, patch, workspaceId) =>
-      ipcRenderer.invoke(
-        IPC.CONTEXT_SUMMARY_UPDATE_RULES,
-        scope,
-        patch,
-        workspaceId
-      ),
-    onSnapshotChanged: (cb) =>
-      on<[string]>(IPC.CONTEXT_SUMMARY_SNAPSHOT_CHANGED, (runId) => cb(runId))
   },
 
   app: {

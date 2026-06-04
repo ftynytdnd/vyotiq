@@ -24,14 +24,6 @@ vi.mock('@renderer/components/composer/useComposerAttachments.js', () => ({
   })
 }));
 
-vi.mock('@renderer/components/composer/useComposerTokenEstimate.js', () => ({
-  useComposerTokenEstimate: () => ({
-    exact: true,
-    draftTokens: 0,
-    baseline: undefined
-  })
-}));
-
 vi.mock('@renderer/components/composer/useComposerHistory.js', () => ({
   useComposerHistory: () => ({
     recall: () => null,
@@ -65,8 +57,7 @@ beforeEach(() => {
         enabled: true,
         models: [{ id: 'm1', name: 'Model', contextWindow: 8192 }]
       }
-    ],
-    setContextOverride: vi.fn()
+    ]
   } as never);
 });
 

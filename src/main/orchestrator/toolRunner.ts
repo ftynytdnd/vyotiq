@@ -14,13 +14,7 @@
 
 import type { ChatPermissions, TimelineEvent } from '@shared/types/chat.js';
 import type { ToolResult } from '@shared/types/tool.js';
-import type { EditApprovalPayload } from '@shared/types/ipc.js';
 import { getTool, isKnownToolName } from '../tools/registry.js';
-import {
-  requestConfirm,
-  isEditApprovalLatched,
-  setEditApprovalLatch
-} from './confirmBus.js';
 import { lookupCachedResult, recordToolResult } from './toolResultCache.js';
 import { logger } from '../logging/logger.js';
 
@@ -28,20 +22,10 @@ const log = logger.child('orchestrator/toolRunner');
 
 export interface ToolRunOpts {
   workspacePath: string;
-  /** Workspace id (registry id) — required for checkpoint snapshots. */
   workspaceId: string;
-  /** Run id — used to thread mutations into the run manifest. */
   runId: string;
-  /** Conversation id — used by the pending-change registry. */
   conversationId: string;
   permissions: ChatPermissions;
-  /**
-   * Strict-approvals flag for this run's workspace. Forwarded to the
-   * `edit` / `delete` tools so they ask for a full-diff approval
-   * before applying when set. Default false (post-hoc review).
-   */
-  strictApprovals: boolean;
-  /** Forward TimelineEvents emitted by tools (e.g. checkpoint-entry). */
   emit: (event: TimelineEvent) => void;
   signal: AbortSignal;
   subagentId?: string;
@@ -89,40 +73,8 @@ export async function runToolByName(
       runId: opts.runId,
       conversationId: opts.conversationId,
       permissions: opts.permissions,
-      strictApprovals: opts.strictApprovals,
       emit: opts.emit,
       signal: opts.signal,
-      // Thread the run-scoped signal into the confirm bridge so a
-      // pending dialog is dismissed the instant the user hits Stop,
-      // instead of hanging for up to 5 min on the bus's timeout. See
-      // `confirmBus.requestConfirm` for the full abort contract.
-      //
-      // The text-only `confirm(message)` path discards the structured
-      // `ConfirmResult`'s `acceptAllRemaining` flag — destructive-
-      // command / permission prompts have no "Accept all remaining"
-      // affordance and the bus normalizes their bare boolean replies
-      // anyway. Only `confirmEdit` reads the flag.
-      //
-      // Audit fix H-04: forward `reason` so the tool can distinguish
-      // "user denied" from "host couldn't show the prompt" / "timed
-      // out" / "aborted" and render a precise failure message
-      // instead of always claiming a denial.
-      confirm: async (message: string) => {
-        const r = await requestConfirm(message, opts.signal);
-        return { approved: r.approved, reason: r.reason };
-      },
-      confirmEdit: async (payload: EditApprovalPayload) => {
-        // Fast path: the user already pressed "Accept all remaining"
-        // earlier in this run. Skip the modal entirely.
-        if (isEditApprovalLatched(opts.runId)) {
-          return { approved: true, acceptAllRemaining: true };
-        }
-        const r = await requestConfirm('', opts.signal, payload);
-        if (r.approved && r.acceptAllRemaining) {
-          setEditApprovalLatch(opts.runId);
-        }
-        return { approved: r.approved, acceptAllRemaining: r.acceptAllRemaining };
-      },
       progress: opts.onProgress,
       ...(opts.subagentId !== undefined ? { subagentId: opts.subagentId } : {})
     });

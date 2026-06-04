@@ -77,9 +77,9 @@ export default defineConfig({
     },
     build: {
       sourcemap: SOURCEMAP,
-      // Keep prior hashed chunks on disk so a running preview instance can still
-      // lazy-load panels if another build runs concurrently (e.g. CI/typecheck build).
-      emptyOutDir: false,
+      // Drop stale hashed chunks so preview/production never load an old bundle
+      // (e.g. pre–dock-rename `sidebarVisible` persist paths).
+      emptyOutDir: true,
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/renderer/index.html') }
       }

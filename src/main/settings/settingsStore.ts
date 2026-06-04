@@ -3,17 +3,18 @@
  * through `settings/blob.ts` so the workspace state never silently overwrites
  * settings (and vice versa).
  *
- * Permissions migration (May 2026): the legacy three-flag shape
- * (`allowFileWrites` / `allowBash` / `allowWebSearch`) collapses to a single
- * `allowAuto` boolean on read via `derivePermissions` / `derivePartial`.
- * The first subsequent `setSettings` write naturally strips the deprecated
- * keys so settings.json converges to the new shape over the user's normal
- * usage — no special migration step required.
+ * Permissions migration (May 2026): legacy permission flags on disk are
+ * stripped on read — mutating tools no longer gate on user approval.
  */
 
 import type { AppSettings } from '@shared/types/ipc.js';
+import type { ChatPermissions } from '@shared/types/chat.js';
 import { DEFAULT_PERMISSIONS } from '@shared/constants.js';
+import { migrateLastSettingsTab } from '@shared/settings/settingsGroups.js';
 import { readBlob, updateBlob, type SettingsBlob } from './blob.js';
+import { migrateLegacyDockUi, normalizeSettingsPatch } from './migrateUiFields.js';
+
+export { normalizeSettingsPatch };
 
 const DEFAULTS: AppSettings = { permissions: DEFAULT_PERMISSIONS };
 
@@ -28,72 +29,102 @@ interface LegacyPermissions {
   allowWebSearch?: boolean;
 }
 
-/**
- * Collapse the global permissions block (legacy three-flag or new
- * single-flag) into the new `{ allowAuto }` shape. The legacy path
- * sets `allowAuto: true` only when BOTH writes and bash were on —
- * matching the pre-migration "fully enabled" default state. A user
- * who had one of those toggled OFF lands on the safer
- * `allowAuto: false` (every gated action prompts), consistent with
- * the new install default.
- */
 function derivePermissions(
-  raw: (LegacyPermissions & Partial<{ allowAuto: boolean }>) | undefined
-): { allowAuto: boolean } {
-  if (raw === undefined) return { ...DEFAULT_PERMISSIONS };
-  if (typeof raw.allowAuto === 'boolean') return { allowAuto: raw.allowAuto };
-  // Legacy three-flag → single-flag derivation. We deliberately exclude
-  // `allowWebSearch` from the AND because it defaulted off in the
-  // legacy shape; gating `allowAuto: true` on it would flip every
-  // existing user back to "always prompt" on first upgrade.
-  const fileWrites = raw.allowFileWrites === true;
-  const bash = raw.allowBash === true;
-  return { allowAuto: fileWrites && bash };
+  _raw: (LegacyPermissions & Partial<{ allowAuto: boolean }>) | undefined
+): ChatPermissions {
+  return { ...DEFAULT_PERMISSIONS };
 }
 
 /**
- * Same migration applied to per-workspace override entries. Returns
- * `undefined` for an empty input so absent / `{}` entries stay absent —
- * the per-workspace surface treats absence as "inherit from global"
- * and we don't want to manufacture a synthetic `{ allowAuto: false }`
- * for entries that had no opinion.
+ * One-time on-disk cleanup for deprecated top-level / ui fields.
+ * Called from `getSettings` so legacy values are rewritten before the
+ * next explicit user save.
  */
-/**
- * Effective `allowAuto` for a workspace — global settings merged with
- * per-workspace override. Used by orchestrator-adjacent IPC that must
- * not trust renderer-supplied permission flags.
- */
-export function resolvePermissionsForWorkspace(
-  settings: AppSettings,
-  workspaceId: string | undefined
-): { allowAuto: boolean } {
-  const global = settings.permissions ?? DEFAULT_PERMISSIONS;
-  if (!workspaceId) return global;
-  const override = settings.ui?.permissionsByWorkspace?.[workspaceId];
-  if (typeof override?.allowAuto === 'boolean') {
-    return { allowAuto: override.allowAuto };
-  }
-  return global;
+function stripDeprecatedUiFields<T extends Record<string, unknown>>(ui: T): T {
+  const {
+    permissionsByWorkspace: _p,
+    strictApprovalsByWorkspace: _s,
+    gatePromptOnPendingByWorkspace: _g,
+    approveAutoAcceptPendingByWorkspace: _a,
+    gatePromptOnReviewRequestChangesByWorkspace: _r,
+    lastCheckpointsTab: _c,
+    contextSummaryByWorkspace: _cs,
+    tokenBudgetWarningTokens: _tb,
+    tokenBudgetWarningByWorkspace: _tbw,
+    sidebarVisible: _sidebarVisible,
+    sidebarWidth: _sidebarWidth,
+    ...rest
+  } = ui;
+  void _p;
+  void _s;
+  void _g;
+  void _a;
+  void _r;
+  void _c;
+  void _cs;
+  void _tb;
+  void _tbw;
+  void _sidebarVisible;
+  void _sidebarWidth;
+  return rest as T;
 }
 
-function derivePartial(
-  raw: (LegacyPermissions & Partial<{ allowAuto: boolean }>) | undefined
-): Partial<{ allowAuto: boolean }> | undefined {
-  if (raw === undefined) return undefined;
-  if (typeof raw.allowAuto === 'boolean') return { allowAuto: raw.allowAuto };
-  // Legacy entry: same AND-rule as the global path. If neither
-  // `allowFileWrites` nor `allowBash` was set in the entry, the
-  // override was vacuous — drop it.
-  if (raw.allowFileWrites === undefined && raw.allowBash === undefined) {
-    return undefined;
+function normalizeBlobForPersistence(blob: SettingsBlob): { blob: SettingsBlob; changed: boolean } {
+  let changed = false;
+  let next: SettingsBlob = { ...blob };
+
+  if ('webSearchEndpoint' in next) {
+    const { webSearchEndpoint: _legacy, ...rest } = next as SettingsBlob & {
+      webSearchEndpoint?: string;
+    };
+    void _legacy;
+    next = rest;
+    changed = true;
   }
-  const fileWrites = raw.allowFileWrites === true;
-  const bash = raw.allowBash === true;
-  return { allowAuto: fileWrites && bash };
+
+  if ('contextSummary' in next) {
+    const { contextSummary: _legacyCs, ...rest } = next as SettingsBlob & {
+      contextSummary?: unknown;
+    };
+    void _legacyCs;
+    next = rest;
+    changed = true;
+  }
+
+  const tab = next.ui?.lastSettingsTab;
+  if (tab !== undefined) {
+    const migrated = migrateLastSettingsTab(tab, 'setup');
+    if (migrated !== tab) {
+      next = { ...next, ui: { ...(next.ui ?? {}), lastSettingsTab: migrated } };
+      changed = true;
+    }
+  }
+
+  if (next.ui) {
+    const { ui: migrated, changed: dockMigrated } = migrateLegacyDockUi({
+      ...next.ui
+    } as Record<string, unknown>);
+    const stripped = stripDeprecatedUiFields(migrated);
+    let ui = stripped;
+    let uiChanged = dockMigrated || stripped !== next.ui;
+    if (ui.density === undefined) {
+      ui = { ...ui, density: 'compact' };
+      uiChanged = true;
+    }
+    if (uiChanged) {
+      next = { ...next, ui };
+      changed = true;
+    }
+  } else {
+    next = { ...next, ui: { density: 'compact' } };
+    changed = true;
+  }
+
+  return { blob: next, changed };
 }
 
 function publicShape(blob: SettingsBlob): AppSettings {
-  // Strip internal-only fields. The workspaces registry and active id
+  // Strip internal-only fields.
   // are surfaced to the renderer via `vyotiq.workspace.list()`, not
   // through the generic settings IPC, so they have no business
   // appearing in `AppSettings`.
@@ -101,11 +132,13 @@ function publicShape(blob: SettingsBlob): AppSettings {
     workspacePath: _ws,
     workspaces: _wsList,
     activeWorkspaceId: _activeWs,
+    webSearchEndpoint: _legacyWebSearch,
     ...rest
-  } = blob;
+  } = blob as SettingsBlob & { webSearchEndpoint?: string };
   void _ws;
   void _wsList;
   void _activeWs;
+  void _legacyWebSearch;
 
   // Derive the new-shape `permissions` block from whichever shape the
   // on-disk blob carries. The raw read may still have the legacy
@@ -116,31 +149,39 @@ function publicShape(blob: SettingsBlob): AppSettings {
     | undefined
   );
 
-  // Walk the per-workspace override map through the same migration.
-  // Dropped entries (vacuous legacy `{}` / `undefined`) disappear from
-  // the public shape entirely.
-  let permissionsByWorkspace: Record<string, { allowAuto?: boolean }> | undefined;
-  const rawMap = rest.ui?.permissionsByWorkspace as
-    | Record<string, LegacyPermissions & Partial<{ allowAuto: boolean }>>
-    | undefined;
-  if (rawMap !== undefined) {
-    permissionsByWorkspace = {};
-    for (const [wsId, entry] of Object.entries(rawMap)) {
-      const derived = derivePartial(entry);
-      if (derived !== undefined && Object.keys(derived).length > 0) {
-        permissionsByWorkspace[wsId] = derived;
-      }
-    }
+  let ui = rest.ui ? { ...rest.ui } : rest.ui;
+  if (ui) {
+    ui = migrateLegacyDockUi({ ...ui } as Record<string, unknown>).ui as typeof ui;
+    const {
+      permissionsByWorkspace: _p,
+      strictApprovalsByWorkspace: _s,
+      gatePromptOnPendingByWorkspace: _g,
+      approveAutoAcceptPendingByWorkspace: _a,
+      gatePromptOnReviewRequestChangesByWorkspace: _r,
+      lastCheckpointsTab: _c,
+      contextSummaryByWorkspace: _cs,
+      tokenBudgetWarningTokens: _tb,
+      tokenBudgetWarningByWorkspace: _tbw,
+      ...cleanUi
+    } = ui as typeof ui & Record<string, unknown>;
+    void _p;
+    void _s;
+    void _g;
+    void _a;
+    void _r;
+    void _c;
+    void _cs;
+    void _tb;
+    void _tbw;
+    ui = cleanUi;
   }
 
-  const ui = rest.ui
-    ? {
-      ...rest.ui,
-      ...(permissionsByWorkspace !== undefined
-        ? { permissionsByWorkspace }
-        : {})
-    }
-    : rest.ui;
+  if (ui?.lastSettingsTab !== undefined) {
+    ui = {
+      ...ui,
+      lastSettingsTab: migrateLastSettingsTab(ui.lastSettingsTab, 'setup')
+    };
+  }
 
   return {
     ...DEFAULTS,
@@ -151,59 +192,66 @@ function publicShape(blob: SettingsBlob): AppSettings {
 }
 
 export async function getSettings(): Promise<AppSettings> {
-  return publicShape(await readBlob());
+  const raw = await readBlob();
+  const { blob: normalized, changed } = normalizeBlobForPersistence(raw);
+  const persisted = changed ? await updateBlob(() => normalized) : raw;
+  return publicShape(persisted);
 }
 
 export async function setSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
+  let normalized = normalizeSettingsPatch(patch);
+  if (normalized.ui?.lastSettingsTab !== undefined) {
+    normalized = {
+      ...patch,
+      ui: {
+        ...patch.ui,
+        lastSettingsTab: migrateLastSettingsTab(patch.ui.lastSettingsTab, 'setup')
+      }
+    };
+  }
   const next = await updateBlob((current) => {
-    // Migrate the cached blob's permissions BEFORE merging the patch
+    const {
+      webSearchEndpoint: _dropWeb,
+      contextSummary: _dropCs,
+      ...cleaned
+    } = current as SettingsBlob & {
+      webSearchEndpoint?: string;
+      contextSummary?: unknown;
+    };
+    void _dropWeb;
+    void _dropCs;
     // so legacy keys (`allowFileWrites` etc.) don't leak into the
     // post-write shape. The patch is already new-shape per the
     // updated `AppSettings.permissions` type.
     const migratedPermissions = derivePermissions(
-      current.permissions as
+      cleaned.permissions as
       | (LegacyPermissions & Partial<{ allowAuto: boolean }>)
       | undefined
     );
 
-    // Same per-workspace override migration as `publicShape`, but
-    // applied to the BLOB so the writeback drops legacy keys. Vacuous
-    // entries are removed; sibling maps under `ui` are preserved
-    // verbatim.
-    let migratedPermsByWs: Record<string, { allowAuto?: boolean }> | undefined;
-    const rawMap = current.ui?.permissionsByWorkspace as
-      | Record<string, LegacyPermissions & Partial<{ allowAuto: boolean }>>
-      | undefined;
-    if (rawMap !== undefined) {
-      migratedPermsByWs = {};
-      for (const [wsId, entry] of Object.entries(rawMap)) {
-        const derived = derivePartial(entry);
-        if (derived !== undefined && Object.keys(derived).length > 0) {
-          migratedPermsByWs[wsId] = derived;
-        }
-      }
-    }
+    const currentUi = stripDeprecatedUiFields(
+      migrateLegacyDockUi({ ...(cleaned.ui ?? {}) } as Record<string, unknown>).ui
+    );
 
-    const currentUi = {
-      ...(current.ui ?? {}),
-      ...(migratedPermsByWs !== undefined
-        ? { permissionsByWorkspace: migratedPermsByWs }
-        : {})
-    };
+    const patchUi = normalized.ui
+      ? stripDeprecatedUiFields(
+          migrateLegacyDockUi({ ...normalized.ui } as Record<string, unknown>).ui
+        )
+      : undefined;
 
     return {
-      ...current,
-      ...patch,
+      ...cleaned,
+      ...normalized,
       permissions: {
         ...DEFAULT_PERMISSIONS,
         ...migratedPermissions,
-        ...(patch.permissions ?? {})
+        ...(normalized.permissions ?? {})
       },
       // Deep-merge `ui` so a partial patch (e.g. just `dockExpanded` or legacy `sidebarOpen`)
       // doesn't clobber sibling fields written by other features.
       ui: {
         ...currentUi,
-        ...(patch.ui ?? {})
+        ...(patchUi ?? {})
       }
     };
   });

@@ -118,87 +118,8 @@ export interface PendingChange {
 }
 
 /**
- * Compact per-file index row. The full body lives inside the run
- * manifest; this row keeps the renderer's `FileHistoryList` fast by
- * avoiding a manifest-per-entry read.
- */
-export interface FileHistoryRow {
-  entryId: string;
-  runId: string;
-  ts: number;
-  kind: CheckpointChangeKind;
-  preHash?: string;
-  postHash?: string;
-  additions: number;
-  deletions: number;
-  /** Stable label of the run that produced this row (cached). */
-  runLabel: string;
-  reverted?: boolean;
-}
-
-/**
- * Per-workspace disk-usage summary. Cheap O(N) directory walk under
- * `<userData>/vyotiq/checkpoints/<workspaceId>/`. Surfaced in the
- * Settings → Checkpoints panel.
- */
-// Internal: composed into `CheckpointsSummary.usage` below. Not
-// exported — no consumer outside this module references it by name
-// (verified via `knip --reporter compact`).
-interface CheckpointsUsage {
-  workspaceId: string;
-  totalBytes: number;
-  blobCount: number;
-  runCount: number;
-  fileCount: number;
-}
-
-/**
- * Snapshot of the checkpoint surface for the Checkpoints view.
- *
- * - `runs`: most-recent-first list of run manifests (heads-only; the
- *   entries are pulled on demand).
- * - `files`: alphabetised list of files that have any history.
- * - `usage`: disk-usage summary.
- */
-export interface CheckpointsSummary {
-  workspaceId: string;
-  runs: Array<{
-    runId: string;
-    conversationId: string;
-    label: string;
-    startedAt: number;
-    endedAt: number | null;
-    entryCount: number;
-  }>;
-  files: Array<{
-    filePath: string;
-    changeCount: number;
-    lastChangeAt: number;
-  }>;
-  usage: CheckpointsUsage;
-}
-
-/**
- * Reasons a revert can fail. Surfaced verbatim in the renderer toast.
- */
-// Internal: composed into `CheckpointRevertResult` below. Not
-// exported — surface area kept minimal so a future rename never
-// breaks an external consumer that doesn't exist today.
-type CheckpointRevertError =
-  | { kind: 'blob-missing'; hash: string }
-  | { kind: 'fs'; message: string }
-  | { kind: 'sandbox'; message: string }
-  | { kind: 'unknown-entry'; entryId: string }
-  | { kind: 'unknown-run'; runId: string };
-
-/** Result of a revert operation. */
-export type CheckpointRevertResult =
-  | { ok: true; reverted: number }
-  | { ok: false; error: CheckpointRevertError };
-
-/**
  * One file change a rewind operation would (or did) revert. Renders
- * directly inside the inline `RevertPreviewModal`'s file list — uses
+ * directly inside the inline rewind impact summary — uses
  * the same shape as `PendingChange` minus the `createdAt` slot
  * (rewinds revert the full set of entries the run produced, including
  * already-accepted ones, so per-entry "createdAt" loses meaning).
@@ -265,61 +186,6 @@ export type RewindPreviewResult = RewindPreview | { ok: false; error: RewindErro
  * counts so the renderer can paint a "reverted N files, removed M
  * transcript events" toast.
  */
-/**
- * PR-style review metadata (slice 1). Stored in `reviews.json` per
- * workspace. Does **not** imply git merge or auto-accept of pending
- * edits unless the user explicitly Accepts in the pending panel.
- */
-type ReviewDecision = 'comment' | 'approve' | 'request_changes';
-
-/** One user comment anchored to a file path in a review session. */
-interface FileReviewComment {
-  id: string;
-  filePath: string;
-  body: string;
-  ts: number;
-  /** Optional 1-based line anchor (slice 2). */
-  line?: number;
-}
-
-/**
- * Review session for a conversation's pending changeset. Keyed by
- * `conversationId` in `reviews.json`.
- */
-export interface ReviewSession {
-  conversationId: string;
-  workspaceId: string;
-  /** Primary run when the session was opened (informational). */
-  runId?: string;
-  startedAt: number;
-  updatedAt: number;
-  /** Latest overall decision (metadata only in default post-hoc mode). */
-  decision?: ReviewDecision;
-  comments: FileReviewComment[];
-  /** Optional per-file decision metadata. */
-  fileDecisions?: Record<string, ReviewDecision>;
-  /** Git ref for "compare to base" in review UI (default HEAD). */
-  gitBaseRef?: string;
-  /** Display name for who performed this review (local metadata). */
-  reviewerLabel?: string;
-}
-
-/** One selectable git ref in the review compare UI. */
-export interface GitRefOption {
-  ref: string;
-  group: 'builtin' | 'local' | 'remote';
-}
-
-/** Result of `checkpoints:git-base-diff`. */
-export type GitBaseDiffResult =
-  | { ok: true; patch: string; ref: string }
-  | { ok: false; reason: 'not-a-repo' | 'path-escaped' | 'git-error' | 'empty'; message?: string };
-
-/** Result of `checkpoints:list-git-refs`. */
-export type ListGitRefsResult =
-  | { ok: true; options: GitRefOption[]; head: string }
-  | { ok: false; reason: 'not-a-repo' | 'git-error'; message?: string };
-
 export type RewindResult =
   | {
     ok: true;

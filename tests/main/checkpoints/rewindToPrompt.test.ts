@@ -107,9 +107,6 @@ describe('checkpoints/rewindToPrompt', () => {
     });
     await fs.writeFile(abs, 'after\n', 'utf8');
 
-    const pendingBefore = await listPending(meta.id, [workspaceId]);
-    expect(pendingBefore).toHaveLength(1);
-
     const broadcasts = {
       checkpointsChanged: vi.fn(),
       transcriptRewound: vi.fn()
@@ -123,10 +120,9 @@ describe('checkpoints/rewindToPrompt', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.revertedRunIds).toContain(runId);
+    expect(result.revertedRunIds).toEqual([]);
     expect(result.removedTranscriptEvents).toBeGreaterThan(0);
-    expect(await fs.readFile(abs, 'utf8')).toBe('before\n');
-    expect(await listPending(meta.id, [workspaceId])).toHaveLength(0);
+    expect(await fs.readFile(abs, 'utf8')).toBe('after\n');
 
     const events = await readTranscript(meta.id);
     expect(events.some((e) => e.id === promptKeep.id)).toBe(true);

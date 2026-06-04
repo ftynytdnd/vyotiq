@@ -127,6 +127,9 @@ export async function* streamOpenAi(
   if (req.tools && req.tools.length > 0) {
     body['tools'] = req.tools;
     body['tool_choice'] = req.toolChoice ?? 'auto';
+    if (req.parallelToolCalls === true) {
+      body['parallel_tool_calls'] = true;
+    }
   } else if (req.toolChoice !== undefined) {
     // Caller set `tool_choice` WITHOUT attaching tools. The SubAgent
     // wrap-up turn does this: it re-issues the final iteration with

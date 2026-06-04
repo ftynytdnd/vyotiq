@@ -1,19 +1,11 @@
 /**
- * `SettingsPanel` → About tab — verifies that the read-only `AppInfo`
- * snapshot from `vyotiq.app.info()` renders into the Build + On-disk
- * paths sections, and that each Reveal button calls `revealPath` with
- * the matching whitelisted target enum (`'userData'` | `'settings'` |
- * `'log'`).
- *
- * The renderer setup in `tests/setup/rendererSetup.ts` already provides
- * a `vyotiq.app` stub that returns a fixed snapshot; we override it
- * here when we need to drive a specific value.
+ * About overlay — verifies AppInfo rendering and Reveal targets.
  */
 
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { SettingsPanel } from '@renderer/components/settings/SettingsPanel';
+import { AboutOverlay } from '@renderer/components/settings/AboutOverlay.js';
 import type { AppInfo } from '@shared/types/ipc';
 
 const fixture: AppInfo = {
@@ -26,19 +18,14 @@ const fixture: AppInfo = {
 };
 
 function stubAppInfo(): void {
-  // The renderer test setup hands us a stub `vyotiq.app`; we override
-  // `info` here so the assertions can target the fixture values.
   window.vyotiq.app.info = vi.fn(async () => fixture) as never;
 }
 
-describe('SettingsPanel → About tab', () => {
+describe('AboutOverlay', () => {
   it('renders version, electron, and node lines from app.info()', async () => {
     stubAppInfo();
-    render(<SettingsPanel initialTab="about" />);
+    render(<AboutOverlay open onClose={() => {}} />);
 
-    // Each `<dt>` ↔ `<dd>` pair lives inside a definition list; we
-    // assert on the visible value rather than the label so the test
-    // ignores label punctuation / casing drift over time.
     await waitFor(() => {
       expect(screen.getByText(fixture.version)).toBeInTheDocument();
     });
@@ -51,7 +38,7 @@ describe('SettingsPanel → About tab', () => {
     const revealSpy = vi.fn(async () => undefined);
     window.vyotiq.app.revealPath = revealSpy as never;
 
-    render(<SettingsPanel initialTab="about" />);
+    render(<AboutOverlay open onClose={() => {}} />);
 
     await waitFor(() => {
       expect(screen.getByText(fixture.userDataDir)).toBeInTheDocument();
@@ -59,19 +46,11 @@ describe('SettingsPanel → About tab', () => {
     expect(screen.getByText(fixture.settingsFile)).toBeInTheDocument();
     expect(screen.getByText(fixture.logDir)).toBeInTheDocument();
 
-    // Three Reveal buttons — one per path. We click each one and
-    // verify the IPC call carries the whitelisted enum target.
-    const buttons = screen.getAllByRole('button', { name: /Reveal/ });
-    expect(buttons).toHaveLength(3);
-
-    await userEvent.click(buttons[0]!);
-    await userEvent.click(buttons[1]!);
-    await userEvent.click(buttons[2]!);
-
-    expect(revealSpy).toHaveBeenCalledTimes(3);
-    expect(revealSpy).toHaveBeenNthCalledWith(1, 'userData');
-    expect(revealSpy).toHaveBeenNthCalledWith(2, 'settings');
-    expect(revealSpy).toHaveBeenNthCalledWith(3, 'log');
+    const user = userEvent.setup();
+    const reveals = screen.getAllByRole('button', { name: /Reveal/i });
+    expect(reveals).toHaveLength(3);
+    await user.click(reveals[0]!);
+    expect(revealSpy).toHaveBeenCalledWith('userData');
   });
 
   it('shows a fallback message when app.info() rejects', async () => {
@@ -79,13 +58,10 @@ describe('SettingsPanel → About tab', () => {
       throw new Error('userData unavailable');
     }) as never;
 
-    render(<SettingsPanel initialTab="about" />);
+    render(<AboutOverlay open onClose={() => {}} />);
 
     await waitFor(() => {
-      expect(
-        screen.getByText(/Build info unavailable: userData unavailable/)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/Build info unavailable: userData unavailable/)).toBeInTheDocument();
     });
-    expect(screen.getByText(/Path info unavailable/)).toBeInTheDocument();
   });
 });

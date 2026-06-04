@@ -42,13 +42,7 @@ describe('EditInvocation error pane (defect 2)', () => {
       durationMs: 1
     };
     render(<EditInvocation call={call} result={result} />);
-    // Collapsed: errorHint surfaces the first actionable line.
-    expect(screen.getByText(AMBIGUOUS_OUTPUT)).toBeInTheDocument();
-
-    // Expand. The button label is the row's title — "edit".
-    await userEvent.click(screen.getByRole('button', { name: /edit/i }));
-
-    // Danger pane now contains the full actionable message.
+    await userEvent.click(screen.getByRole('button', { name: /Show details/i }));
     expect(screen.getByText(AMBIGUOUS_OUTPUT)).toBeInTheDocument();
   });
 
@@ -67,7 +61,7 @@ describe('EditInvocation error pane (defect 2)', () => {
       args: { path: 'src/foo.ts' }
     };
     render(<EditInvocation call={call} result={result} />);
-    await userEvent.click(screen.getByRole('button', { name: /edit/i }));
+    await userEvent.click(screen.getByRole('button', { name: /Show details/i }));
     // Two nodes hold the text: the collapsed errorHint (still rendered
     // even when expanded — it lives in the row, not the pane) and the
     // pane itself. Either way, the assertion is that "permission
@@ -95,7 +89,7 @@ describe('ReadInvocation error pane (defect 2)', () => {
       durationMs: 1
     };
     render(<ReadInvocation call={call} result={result} />);
-    await userEvent.click(screen.getByRole('button', { name: /read/i }));
+    await userEvent.click(screen.getByRole('button', { name: /Show details/i }));
     expect(screen.getByText(longOutput)).toBeInTheDocument();
   });
 });
@@ -119,7 +113,7 @@ describe('LsInvocation error pane (defect 2)', () => {
       durationMs: 1
     };
     render(<LsInvocation call={call} result={result} />);
-    await userEvent.click(screen.getByRole('button', { name: /ls/i }));
+    await userEvent.click(screen.getByRole('button', { name: /Show details/i }));
     expect(screen.getByText(longOutput)).toBeInTheDocument();
   });
 });

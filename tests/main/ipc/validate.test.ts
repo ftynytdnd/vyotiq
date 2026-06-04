@@ -29,8 +29,7 @@ import {
   assertBoolean,
   assertNumber,
   assertEnum,
-  assertStringArray,
-  assertConfirmResponse
+  assertStringArray
 } from '@main/ipc/validate';
 
 describe('assertString', () => {
@@ -191,21 +190,5 @@ describe('assertStringArray', () => {
   it('rejects non-arrays and non-string elements', () => {
     expect(() => assertStringArray('chan', 'paths', 'a.ts')).toThrow(/must be an array/);
     expect(() => assertStringArray('chan', 'paths', [1])).toThrow(/paths\[0\] must be a string/);
-  });
-});
-
-describe('assertConfirmResponse', () => {
-  it('accepts legacy booleans and structured replies', () => {
-    expect(() => assertConfirmResponse('chan', 'reply', true)).not.toThrow();
-    expect(() =>
-      assertConfirmResponse('chan', 'reply', { approved: false, acceptAllRemaining: true })
-    ).not.toThrow();
-  });
-
-  it('rejects malformed structured replies', () => {
-    expect(() => assertConfirmResponse('chan', 'reply', { approved: 'yes' })).toThrow(
-      /reply.approved must be a boolean/
-    );
-    expect(() => assertConfirmResponse('chan', 'reply', null)).toThrow(/must be a non-null object/);
   });
 });

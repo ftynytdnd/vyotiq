@@ -2,26 +2,20 @@
  * Regression tests for `handleToolCalls`'s allowlist enforcement.
  *
  * The orchestrator's tool surface is restricted by
- * `tools/policy/orchestratorTools.ts` (`ls`, `memory`, `recall`) and
- * the harness explicitly tells the model the host will reject any
- * direct call to a delegated tool. Pre-fix, `runLoop.ts` did NOT
- * pass an allowlist to `handleToolCalls`, so a misbehaving model
- * (or a provider compat layer that promotes a native non-OpenAI
- * tool-call into a `tool_calls` block regardless of schema) could
- * still smuggle an `edit` / `bash` / `delete` call through and
- * bypass the entire delegate pattern. The harness promise was a lie
- * in production code.
- *
- * Post-fix, `runLoop.ts` passes `ORCHESTRATOR_TOOLS` as the
- * allowlist and the existing refusal path now ALSO fires for the
- * orchestrator. We assert:
+ * `tools/policy/orchestratorTools.ts` (`ls`, `memory`, `recall`,
+ * `delegate`, `finish`, `ask_user`). `runLoop.ts` passes
+ * `ORCHESTRATOR_TOOLS` as the allowlist so a misbehaving model (or a
+ * provider compat layer that promotes a native non-OpenAI tool-call
+ * into a `tool_calls` block regardless of schema) cannot smuggle an
+ * `edit` / `bash` / `delete` call through and bypass the delegate
+ * pattern. We assert:
  *   1. A disallowed tool call NEVER reaches `runToolByName` —
  *      no `tool-call` / `tool-result` timeline events emit.
  *   2. The synthetic `role:"tool"` refusal message is appended to
  *      `messages` so the next iteration's prompt carries the
  *      refusal and the model can self-correct.
  *   3. The orchestrator-context refusal includes an actionable
- *      `<delegate>` hint so the model knows the recovery path;
+ *      `delegate`-tool hint so the model knows the recovery path;
  *      sub-agent-context refusal keeps the concise legacy text.
  *   4. Allowed tools (`ls`) still flow through normally.
  *   5. The return summary (`attempted` / `failed`) treats a refusal
@@ -61,8 +55,7 @@ const baseOpts = {
   workspaceId: 'ws-1',
   runId: 'run-1',
   conversationId: 'conv-1',
-  permissions: { allowAuto: true },
-  strictApprovals: false,
+  permissions: {},
   signal: new AbortController().signal
 };
 
@@ -105,15 +98,15 @@ describe('handleToolCalls — orchestrator allowlist enforcement', () => {
     //    synthetic tool message).
     expect(emit).not.toHaveBeenCalled();
     // 3. Synthetic refusal message landed on `messages`, addressed to
-    //    the orchestrator with an actionable `<delegate>` hint.
+    //    the orchestrator with an actionable `delegate`-tool hint.
     expect(messages).toHaveLength(1);
     const refusal = messages[0]!;
     expect(refusal.role).toBe('tool');
     expect(refusal.content).toContain(
       'not callable from the orchestrator'
     );
-    expect(refusal.content).toContain('<delegate');
-    expect(refusal.content).toContain('tools="edit"');
+    expect(refusal.content).toContain('`delegate` tool');
+    expect(refusal.content).toContain('"tools":["edit"]');
     // 4. Refusal counts as 0 attempted, 0 failed — does not burn the
     //    three-strike consecutive-failed-tool-round budget.
     expect(summary).toEqual({ attempted: 0, failed: 0, childRedelegations: 0 });
@@ -135,9 +128,9 @@ describe('handleToolCalls — orchestrator allowlist enforcement', () => {
     expect(emit).not.toHaveBeenCalled();
     expect(messages).toHaveLength(2);
     expect(messages[0]!.content).toContain('not callable from the orchestrator');
-    expect(messages[0]!.content).toContain('tools="bash"');
+    expect(messages[0]!.content).toContain('"tools":["bash"]');
     expect(messages[1]!.content).toContain('not callable from the orchestrator');
-    expect(messages[1]!.content).toContain('tools="delete"');
+    expect(messages[1]!.content).toContain('"tools":["delete"]');
   });
 
   it('allows `ls`, `memory`, `recall` — every orchestrator-policy tool flows through', async () => {
@@ -209,25 +202,44 @@ describe('handleToolCalls — orchestrator allowlist enforcement', () => {
     expect(phases).toHaveLength(0);
   });
 
-  it('emits one consolidated phase row when delegate is refused in parallel', async () => {
+  it('does NOT refuse `delegate` at the orchestrator — it is a first-class tool now', () => {
+    // The forced-action loop promoted `delegate` into ORCHESTRATOR_TOOLS,
+    // so the orchestrator's allowlist contains it. (In production the run
+    // loop also intercepts delegate by name BEFORE handleToolCalls — see
+    // `extractDelegateToolCalls` — so it never reaches here at all.)
+    expect(ORCHESTRATOR_TOOLS).toContain('delegate');
+  });
+
+  it('counts a SUB-AGENT delegate attempt as a re-delegation and refuses it per call', async () => {
+    // A sub-agent's allowlist never includes `delegate` (it cannot nest).
+    // Each refused delegate increments `childRedelegations` and emits a
+    // "cannot nest further" phase so the trace stays legible.
     const messages: ChatMessage[] = [];
     const emit = vi.fn<(e: TimelineEvent) => void>();
-    const calls = Array.from({ length: 8 }, (_, i) =>
-      makePartialCall('delegate', JSON.stringify({ id: `A${i + 1}` }), `c${i}`)
-    );
+    const nestedDelegatePhaseEmitted = new Set<string>();
+    const calls = [
+      makePartialCall('delegate', JSON.stringify({ id: 'A1', task: 't1' }), 'c1'),
+      makePartialCall('delegate', JSON.stringify({ id: 'A2', task: 't2' }), 'c2')
+    ];
     const summary = await handleToolCalls(
       calls,
       messages,
       emit,
-      { ...baseOpts, allowlist: ORCHESTRATOR_TOOLS }
+      { ...baseOpts, subagentId: 'W1', allowlist: ['read'], nestedDelegatePhaseEmitted }
     );
-    expect(summary.childRedelegations).toBe(8);
+    expect(runToolByName).not.toHaveBeenCalled();
+    expect(summary).toEqual({ attempted: 0, failed: 0, childRedelegations: 2 });
     const phases = emit.mock.calls
       .map(([e]) => e)
       .filter((e) => e.kind === 'phase');
     expect(phases).toHaveLength(1);
-    expect(phases[0]!.label).toContain('8 delegate tool calls were ignored');
-    expect(phases[0]!.label).toContain('<delegate');
+    expect(phases[0]!.label).toContain('cannot nest further');
+    // The refusal message uses the concise sub-agent copy — no
+    // orchestrator-only delegate-tool hint.
+    expect(messages).toHaveLength(2);
+    for (const m of messages) {
+      expect(m.content).toContain('not available for this sub-agent');
+    }
   });
 
   it('keeps the concise sub-agent refusal copy when subagentId is set', async () => {

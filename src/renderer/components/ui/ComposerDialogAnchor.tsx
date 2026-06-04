@@ -3,14 +3,14 @@
  * width matches the composer column rather than the full viewport.
  *
  * The slot lives in `ChatPage` directly above `ChatFooter`. Any
- * component anywhere in the tree (ConfirmHost mounted at the App root,
+ * component anywhere in the tree (ComposerDialogAnchor mounted at the App root,
  * inline timeline rows, etc.) renders a {@link ComposerDialogPortal}
  * whose children are forwarded into the anchor — without React
  * context — via a module-level singleton registry.
  *
- * If the anchor is not yet mounted (boot, lazy-loaded ConfirmHost
+ * If the anchor is not yet mounted (boot, lazy-loaded dialog host
  * arriving before ChatPage), the portal renders nothing until the
- * anchor registers. ConfirmHost continues to queue burst confirms in
+ * anchor registers. The dialog host continues to queue burst prompts in
  * its own state so they surface as soon as the anchor is ready.
  */
 

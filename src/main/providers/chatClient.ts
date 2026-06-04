@@ -50,6 +50,8 @@ export interface ChatStreamRequest {
    * still works without it, just with lower hit rates.
    */
   conversationId?: string;
+  /** OpenAI-compat: allow multiple tool calls per assistant turn. */
+  parallelToolCalls?: boolean;
   /**
    * Optional callback fired exactly once per request, the moment the
    * HTTP response headers have been received but before any SSE chunk

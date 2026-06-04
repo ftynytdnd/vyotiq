@@ -1,9 +1,9 @@
 /**
- * Title bar breadcrumb — workspace › chat context in the drag region.
+ * Title bar — drag region and dock integration (context lives in the dock).
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { TitleBar } from '@renderer/components/titlebar/TitleBar';
 import { LeftDock } from '@renderer/components/dock/LeftDock';
 import { useUiStore } from '@renderer/store/useUiStore';
@@ -17,12 +17,7 @@ const fileActions = {
   setWorkspacePath: () => {},
   openSettings: () => {},
   openCheckpoints: () => {},
-  openContextInspector: () => {},
   quit: () => {}
-};
-
-const viewActions = {
-  openContextInspector: () => {}
 };
 
 const dockProps = { onOpenSettings: () => {} };
@@ -49,47 +44,33 @@ beforeEach(() => {
   } as never);
 });
 
-describe('TitleBar breadcrumb', () => {
-  it('shows workspace › chat breadcrumb in the title bar drag region', () => {
-    render(
-      <TitleBar fileActions={fileActions} viewActions={viewActions} onOpenSettings={() => {}} />
-    );
-    expect(screen.getByText('Codex')).toBeInTheDocument();
-    expect(screen.getByText('Chat')).toBeInTheDocument();
-    expect(screen.getByText('Codex').closest('.vx-titlebar-breadcrumb')).toHaveTextContent(
-      'Codex › Chat'
-    );
+describe('TitleBar', () => {
+  it('does not duplicate workspace labels in the title bar drag region', () => {
+    render(<TitleBar fileActions={fileActions} />);
+    expect(screen.queryByText('Codex')).not.toBeInTheDocument();
+    expect(screen.queryByText('Chat')).not.toBeInTheDocument();
   });
 
-  it('shows workspace context in the title bar when dock is collapsed', () => {
+  it('shows the collapsed navigation rail without duplicating labels in the title bar', () => {
     render(
       <>
-        <TitleBar fileActions={fileActions} viewActions={viewActions} onOpenSettings={() => {}} />
+        <TitleBar fileActions={fileActions} />
         <LeftDock {...dockProps} />
       </>
     );
-    expect(screen.getByText('Codex')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Expand navigation' })).toBeInTheDocument();
+    expect(screen.queryByText('Codex')).not.toBeInTheDocument();
   });
 
   it('shows workspace tabs in the dock when expanded', () => {
     useUiStore.setState({ dockExpanded: true });
     render(
       <>
-        <TitleBar fileActions={fileActions} viewActions={viewActions} onOpenSettings={() => {}} />
+        <TitleBar fileActions={fileActions} />
         <LeftDock {...dockProps} />
       </>
     );
     expect(screen.getAllByText('Codex').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('tablist', { name: 'Workspaces' })).toBeInTheDocument();
-  });
-
-  it('opens keyboard shortcuts help from the title bar', () => {
-    render(
-      <TitleBar fileActions={fileActions} viewActions={viewActions} onOpenSettings={() => {}} />
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Keyboard shortcuts' }));
-    expect(screen.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
-    expect(screen.getByText('Toggle navigation dock')).toBeInTheDocument();
   });
 });

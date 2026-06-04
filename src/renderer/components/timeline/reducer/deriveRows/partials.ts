@@ -102,7 +102,6 @@ function findActivityInsertIndex(out: Row[]): number {
     if (
       kind === 'assistant-text' ||
       kind === 'run-complete' ||
-      kind === 'token-budget-warning' ||
       kind === 'error'
     ) {
       return i;
@@ -111,7 +110,7 @@ function findActivityInsertIndex(out: Row[]): number {
   return out.length;
 }
 
-export function pickToolName(raw: string | undefined): ToolName {
+function pickToolName(raw: string | undefined): ToolName {
   if (raw && (KNOWN_TOOL_NAMES as readonly string[]).includes(raw)) {
     return raw as ToolName;
   }

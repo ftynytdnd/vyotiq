@@ -39,8 +39,6 @@ const baseCtx: ToolContext = {
   strictApprovals: false,
   signal: new AbortController().signal,
   // Audit fix H-04: ConfirmOutcome shape.
-  confirm: async () => ({ approved: false, reason: 'denied' as const }),
-  confirmEdit: async () => ({ approved: false, acceptAllRemaining: false }),
   emit: () => { }
 };
 

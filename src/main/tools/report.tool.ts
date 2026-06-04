@@ -3,7 +3,7 @@
  * `<workspace>/.vyotiq/reports/<slug>-<ts>.html`.
  *
  * Available only to sub-agents that the orchestrator opts into via
- * `<delegate tools="report" />` (see `policy/subagentTools.ts`). The
+ * `delegate` with `tools: ["report"]` (see `policy/subagentTools.ts`). The
  * orchestrator never sees this tool in its schema — heavy artifact
  * authoring is delegation work, not reconnaissance work.
  *
@@ -16,7 +16,6 @@ import { promises as fs } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { Tool } from './types.js';
-import { describeConfirmFailure } from './types.js';
 import type { ToolResult } from '@shared/types/tool.js';
 import {
   resolveCreateInsideWorkspace,
@@ -59,13 +58,12 @@ The \`body\` is an HTML FRAGMENT, not a full document. Do NOT include \`<html>\`
 
 **WHY it exists.** \`edit\` produces source files; \`report\` produces deliverables. A report is a stable artifact the user can share or open later. Using \`edit\` for HTML reports is wrong: it pollutes the user's workspace tree, gives no Open-in-browser affordance, and skips the report shell (CSP, base styles, footer).
 
-**WHEN to trigger it.** When the orchestrator's \`<delegate>\` task asks for a report, summary, dashboard, survey, or any other "produce a deliverable" outcome. Call this tool exactly once per delegation. Do NOT use it for code edits, scratch HTML, or in-progress drafts.
+**WHEN to trigger it.** When the orchestrator's \`delegate\` task asks for a report, summary, dashboard, survey, or any other "produce a deliverable" outcome. Call this tool exactly once per delegation. Do NOT use it for code edits, scratch HTML, or in-progress drafts.
 
 **Rules.**
 - \`title\` required, \u2264 200 chars.
 - \`body\` required, \u2264 ${(MAX_REPORT_HTML_BYTES / (1024 * 1024)).toFixed(0)} MB.
-- When \`allowAuto\` is off (default) the user is asked to confirm.
-- Path is auto-generated; you cannot pick the filename.`,
+- The file is written under \`.vyotiq/reports/\` in the workspace; path is auto-generated.`,
   schema: {
     type: 'function',
     function: {
@@ -134,17 +132,6 @@ The \`body\` is an HTML FRAGMENT, not a full document. Do NOT include \`<html>\`
       return failure(id, started, `Sandbox error: ${msg}`, msg);
     }
     const relForDisplay = workspaceRelative(ctx.workspacePath, abs);
-
-    if (!ctx.permissions.allowAuto) {
-      const outcome = await ctx.confirm(
-        `Agent V wants to write a report at ${relForDisplay}. Allow?`
-      );
-      if (!outcome.approved) {
-        // Audit fix H-04: surface precise failure reason.
-        const desc = describeConfirmFailure(outcome.reason, `write report ${relForDisplay}`);
-        return failure(id, started, desc.output, desc.error);
-      }
-    }
 
     const html = buildReportHtml({
       title: a.title,

@@ -1,7 +1,7 @@
 /**
  * Atomic write helper for JSON-shaped state files under the checkpoint
- * store. Centralizes the `.tmp` rename pattern used by `fileIndex`,
- * `runManifest`, and `pendingChanges`, adding two pieces of robustness
+ * store. Centralizes the `.tmp` rename pattern used by `runManifest`
+ * and `pendingChanges`, adding two pieces of robustness
  * the per-site copies lacked:
  *
  *   1. **Bounded retry on Windows rename races.** `fs.rename(tmp, dest)`

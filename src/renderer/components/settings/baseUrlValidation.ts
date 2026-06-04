@@ -2,7 +2,7 @@
  * Pure, unit-testable validators + normalizers for the Add/Edit Provider
  * form's Base URL field. Kept out of `AddProviderForm.tsx` so the rules
  * can be covered directly in vitest without mounting React, mirroring
- * the pattern used in `endpointWarning.ts`.
+ * the pattern used in `endpointWarning.ts` for provider URL hints.
  *
  * Rules (in order):
  *   1. Empty / whitespace-only       → error (block submit).

@@ -91,7 +91,7 @@ export function buildSubagentRunStateXml(view: SubagentRunStateView): string {
   if (view.wrapUpPending) {
     // One-line guidance the model can act on immediately. Kept short
     // so the envelope cost stays bounded; the harness's
-    // `04-subagent-prompt.md` has the long-form rationale.
+    // `02-subagent-prompt.md` has the long-form rationale.
     lines.push(
       `# Wrap-up: tool calls are disabled for this turn — emit your <result>…</result> envelope now.`
     );

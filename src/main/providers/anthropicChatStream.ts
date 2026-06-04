@@ -159,6 +159,9 @@ export async function* streamAnthropic(
     else if (req.toolChoice === 'required') body['tool_choice'] = { type: 'any' };
     // `'none'` ⇒ leave the field unset; Anthropic defaults to no
     // forced tool use, same as `auto` without `tools` present.
+    if (req.parallelToolCalls === true) {
+      body['disable_parallel_tool_use'] = false;
+    }
   }
   // Phase 8 (2026): inject `thinking` config when the user opted into
   // extended thinking AND the model supports it. The two modes follow

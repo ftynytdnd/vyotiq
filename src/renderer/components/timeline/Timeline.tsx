@@ -17,19 +17,15 @@
  *     `RESTICK_PX` of the bottom or submit a new prompt.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowDown } from 'lucide-react';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { useChatStore } from '../../store/useChatStore.js';
 import { useSecondaryZoneStore } from '../../store/useSecondaryZoneStore.js';
-import { useProviderStore, selectEffectiveContextWindow } from '../../store/useProviderStore.js';
-import {
-  selectEffectiveTokenBudgetWarning,
-  useSettingsStore
-} from '../../store/useSettingsStore.js';
-import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { applyDeriveRowsLiveLayer, deriveRows } from './reducer/deriveRows.js';
 import { UserPromptRow } from './rows/UserPromptRow.js';
+import { AskUserRow } from './rows/AskUserRow.js';
 import { AssistantTextRow } from './rows/AssistantTextRow.js';
 import { ReasoningLineRow } from './rows/ReasoningLineRow.js';
 import { AgentThoughtRow } from './rows/AgentThoughtRow.js';
@@ -37,10 +33,8 @@ import { ErrorRow } from './rows/ErrorRow.js';
 import { ToolGroupRow } from './rows/ToolGroupRow.js';
 import { FileEditGroupRow } from './rows/FileEditGroupRow.js';
 import { RunCompleteRow } from './rows/RunCompleteRow.js';
-import { TokenBudgetWarningRow } from './rows/TokenBudgetWarningRow.js';
-import { ContextSummaryRow } from './rows/ContextSummaryRow.js';
+import { PhaseLogRow } from './rows/PhaseLogRow.js';
 import type { DisplayRow } from './shared/displayRowTypes.js';
-import { PendingChangesTimelineRow } from '../checkpoints/timeline/index.js';
 import { RowAnchor } from './shared/RowAnchor.js';
 import { TimelineFindBar } from './shared/TimelineFindBar.js';
 import { parseRowAnchorHash, scrollToRowAnchor } from './shared/timelineRowAnchor.js';
@@ -50,30 +44,19 @@ import { timelineStackClassName } from './shared/rowStyles.js';
 import { cn } from '../../lib/cn.js';
 import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../lib/shellIcons.js';
 import { useFloatingLiveDiffAutoOpen } from './hooks/useFloatingLiveDiffAutoOpen.js';
+import { useTimelineUiStore } from '../../store/useTimelineUiStore.js';
 import { computeTailScrollKey } from './shared/computeTailScrollKey.js';
-
-/**
- * Slack (px) allowed between scroll position and the tail before the
- * sticky bit is dropped. Must comfortably exceed a single streamed
- * frame's growth so the natural "content grows under a pinned view"
- * case never looks like a user scroll.
- */
-const UNSTICK_PX = 80;
-
-/**
- * Distance (px) within which the view re-sticks after the user
- * manually scrolls back near the bottom. Kept tight so re-sticking
- * requires genuine intent (not just a wheel overshoot).
- */
-const RESTICK_PX = 24;
+import {
+  TIMELINE_SCROLL_RESTICK_PX,
+  TIMELINE_SCROLL_UNSTICK_PX,
+  measureTimelineScrollTail
+} from './shared/scrollTailState.js';
 
 interface TimelineProps {
   model?: ModelSelection | null;
-  /** Opens Settings → Checkpoints (pending row usage pill). */
-  onOpenCheckpointSettings?: () => void;
 }
 
-export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
+export function Timeline({ model }: TimelineProps) {
   const secondaryZoneOpen = useSecondaryZoneStore((s) => s.panel !== null);
   const events = useChatStore((s) => s.events);
   const isProcessing = useChatStore((s) => s.isProcessing);
@@ -91,7 +74,6 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
   // `user-prompt` event lands. Used as the snap-on-send effect's
   // sole dependency so the effect no longer fires on every streaming
   // delta and reverse-walks `events`. Audit fix §3.2.2.
-  const lastUserPromptId = useChatStore((s) => s.lastUserPromptId);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -103,7 +85,8 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
    * ref is the source of truth; `setSticky` mirrors it for the view.
    */
   const stickyRef = useRef(true);
-  const [sticky, setSticky] = useState(true);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const [jumpOverlayHost, setJumpOverlayHost] = useState<HTMLElement | null>(null);
 
   /**
    * Mirrors `parent.scrollTop <= AT_TOP_PX` so the `Top` pill can hide
@@ -122,32 +105,13 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
    * force-scroll to the tail regardless of current scroll position —
    * that is the "focus the agent" moment.
    */
-  const lastUserPromptIdRef = useRef<string | null>(null);
-
-  const summaries = useChatStore((s) => s.summaries);
-  const providers = useProviderStore((s) => s.providers);
-  const settings = useSettingsStore((s) => s.settings);
-  const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
-
-  const contextWindow = useMemo(() => {
-    if (!model) return undefined;
-    return selectEffectiveContextWindow(providers, model.providerId, model.modelId);
-  }, [model, providers]);
-
-  const tokenBudgetWarnThreshold = useMemo(
-    () => selectEffectiveTokenBudgetWarning(settings, activeWorkspaceId),
-    [settings, activeWorkspaceId]
-  );
-
   const baseRows = useMemo(
     () =>
       deriveRows(events, {
         runActive: isProcessing,
-        settledCallIds,
-        ...(contextWindow !== undefined ? { contextWindow } : {}),
-        tokenBudgetWarnThreshold
+        settledCallIds
       }),
-    [events, isProcessing, settledCallIds, contextWindow, tokenBudgetWarnThreshold]
+    [events, isProcessing, settledCallIds]
   );
 
   const rows = useMemo(
@@ -169,14 +133,8 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
 
   const tailScrollKey = useMemo(
     () =>
-      computeTailScrollKey(
-        rows,
-        assistantTexts,
-        reasoningTexts,
-        summaries,
-        liveDiffByCallId
-      ),
-    [rows, assistantTexts, reasoningTexts, summaries, liveDiffByCallId]
+      computeTailScrollKey(rows, assistantTexts, reasoningTexts, liveDiffByCallId),
+    [rows, assistantTexts, reasoningTexts, liveDiffByCallId]
   );
 
   // Note: a `userPromptIndices` memo lived here previously. The `g j` /
@@ -184,29 +142,41 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
   // `containerRef.current?.querySelectorAll('[data-row-kind="user-prompt"]')`
   // directly, so the memo's result was never read. Removed in F-004.
 
-  const updateSticky = (next: boolean) => {
-    if (stickyRef.current === next) return;
-    stickyRef.current = next;
-    setSticky(next);
-  };
+  const setTimelineAtTail = useTimelineUiStore((s) => s.setTimelineAtTail);
+
+  const applyTailState = useCallback(
+    (nextSticky: boolean, scrollable: boolean, distanceFromBottom: number) => {
+      if (stickyRef.current !== nextSticky) {
+        stickyRef.current = nextSticky;
+        setTimelineAtTail(nextSticky);
+      }
+      const nextShowJump =
+        scrollable && distanceFromBottom > TIMELINE_SCROLL_RESTICK_PX;
+      setShowJumpToLatest((prev) => (prev === nextShowJump ? prev : nextShowJump));
+    },
+    [setTimelineAtTail]
+  );
+
+  const syncScrollTail = useCallback(() => {
+    const parent = findScrollParent(containerRef.current);
+    if (!parent) return;
+    const { scrollable, distanceFromBottom } = measureTimelineScrollTail(parent);
+    let nextSticky = stickyRef.current;
+    if (!scrollable) {
+      nextSticky = true;
+    } else if (stickyRef.current && distanceFromBottom > TIMELINE_SCROLL_UNSTICK_PX) {
+      nextSticky = false;
+    } else if (!stickyRef.current && distanceFromBottom <= TIMELINE_SCROLL_RESTICK_PX) {
+      nextSticky = true;
+    }
+    applyTailState(nextSticky, scrollable, distanceFromBottom);
+  }, [applyTailState]);
 
   const scheduleScroll = (fn: () => void) => {
     if (scrollFrameRef.current !== null) return;
     scrollFrameRef.current = requestAnimationFrame(() => {
       scrollFrameRef.current = null;
       fn();
-    });
-  };
-
-  const scrollNewTurnToCenter = () => {
-    scheduleScroll(() => {
-      const prompts = containerRef.current?.querySelectorAll('[data-row-kind="user-prompt"]');
-      const last = prompts?.[prompts.length - 1];
-      if (last) {
-        last.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        return;
-      }
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     });
   };
 
@@ -220,27 +190,30 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
     });
   };
 
-  // Resolve the scroll parent once and attach a passive scroll listener
-  // that flips the sticky bit based on distance-from-bottom. Unmount
-  // cleanup releases both.
+  // Resolve the scroll parent, sync tail state on mount / layout changes,
+  // and attach a passive scroll listener.
   useEffect(() => {
     const parent = findScrollParent(containerRef.current);
     if (!parent) return;
 
-    const onScroll = () => {
-      const distance = parent.scrollHeight - (parent.scrollTop + parent.clientHeight);
-      if (stickyRef.current && distance > UNSTICK_PX) {
-        updateSticky(false);
-      } else if (!stickyRef.current && distance <= RESTICK_PX) {
-        updateSticky(true);
-      }
-    };
+    const host = parent.parentElement;
+    setJumpOverlayHost(host);
+
+    const onScroll = () => syncScrollTail();
 
     parent.addEventListener('scroll', onScroll, { passive: true });
+    const ro = new ResizeObserver(() => syncScrollTail());
+    ro.observe(parent);
+    if (containerRef.current) ro.observe(containerRef.current);
+
+    syncScrollTail();
+
     return () => {
       parent.removeEventListener('scroll', onScroll);
+      ro.disconnect();
+      setJumpOverlayHost(null);
     };
-  }, [secondaryZoneOpen]);
+  }, [secondaryZoneOpen, syncScrollTail, tailScrollKey]);
 
   // Keyboard navigation between user prompts (`g j` / `g k`) and Esc to
   // drop sticky scroll. The `g`-prefix uses a short timeout so accidental
@@ -308,7 +281,11 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
         e.preventDefault();
         disarm();
         if (stickyRef.current) {
-          updateSticky(false);
+          const parent = findScrollParent(containerRef.current);
+          const distance = parent
+            ? measureTimelineScrollTail(parent).distanceFromBottom
+            : TIMELINE_SCROLL_UNSTICK_PX + 1;
+          applyTailState(false, true, distance);
         }
         return;
       }
@@ -324,23 +301,7 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
     };
   }, [secondaryZoneOpen]);
 
-  // Center-on-send: whenever a brand new `user-prompt` event appears,
-  // scroll that turn into the viewport center and re-enable sticky.
-  // Fires exactly once per new prompt id.
-  //
-  // Depends on `lastUserPromptId` (a reducer-maintained primitive)
-  // rather than the full `events` array, so streaming deltas no
-  // longer re-enter this effect and reverse-walk the transcript
-  // every paint. Audit fix §3.2.2.
-  useEffect(() => {
-    if (!lastUserPromptId) return;
-    if (lastUserPromptId === lastUserPromptIdRef.current) return;
-    lastUserPromptIdRef.current = lastUserPromptId;
-    updateSticky(true);
-    scrollNewTurnToCenter();
-  }, [lastUserPromptId]);
-
-  // Sticky follow during streaming: every time the derived row list
+  // Sticky follow during streaming (manual_only — only when user is at tail): every time the derived row list
   // grows we attempt to pin — but only when the sticky bit is still
   // set. The rAF throttle dedupes bursts of deltas into one paint.
   useEffect(() => {
@@ -414,29 +375,28 @@ export function Timeline({ model, onOpenCheckpointSettings }: TimelineProps) {
             />
           );
         })}
-        <div className="relative z-0 flex flex-col gap-1">
-          <PendingChangesTimelineRow
-            {...(onOpenCheckpointSettings ? { onOpenCheckpointSettings } : {})}
-          />
-        </div>
         <div ref={bottomRef} className="h-px w-full shrink-0" aria-hidden />
-        {!sticky && events.length > 0 && (
-          <div className="pointer-events-none sticky bottom-4 z-30 -mt-10 flex justify-center">
+      </div>
+      {jumpOverlayHost &&
+        showJumpToLatest &&
+        events.length > 0 &&
+        createPortal(
+          <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-4">
             <button
               type="button"
               onClick={() => {
-                updateSticky(true);
+                applyTailState(true, true, 0);
                 scrollToTail(true);
               }}
-              className="elev-1 pointer-events-auto flex items-center gap-1.5 rounded-full border border-border-subtle/30 bg-surface-sidebar/95 px-3 py-1.5 text-row text-text-primary backdrop-blur-sm transition-colors hover:bg-chrome-hover"
-              aria-label="Jump to latest"
+              className="vx-jump-to-latest-chip elev-1 pointer-events-auto flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors hover:bg-chrome-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong"
+              aria-label="Jump to latest messages"
             >
               <ArrowDown className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} aria-hidden />
-              Latest
+              <span className="vx-jump-to-latest-label">Latest</span>
             </button>
-          </div>
+          </div>,
+          jumpOverlayHost
         )}
-      </div>
     </>
   );
 }
@@ -498,6 +458,18 @@ function renderRow(
           live={liveTurn}
         />
       );
+    case 'ask-user-prompt':
+      return (
+        <AskUserRow
+          key={r.key}
+          payload={r.payload}
+          displayText={r.displayText}
+          promptEventId={r.id}
+          toolCallId={r.toolCallId}
+          runId={r.runId}
+          {...(r.status ? { status: r.status } : {})}
+        />
+      );
     case 'error':
       return <ErrorRow key={r.key} message={r.message} />;
     case 'tool-group':
@@ -513,15 +485,6 @@ function renderRow(
       return (
         <FileEditGroupRow key={r.key} rowKey={r.key} items={r.children} />
       );
-    case 'token-budget-warning':
-      return (
-        <TokenBudgetWarningRow
-          key={r.key}
-          percent={r.percent}
-          {...(r.tokens !== undefined ? { tokens: r.tokens } : {})}
-          {...(r.ceiling !== undefined ? { ceiling: r.ceiling } : {})}
-        />
-      );
     case 'run-complete':
       return (
         <RunCompleteRow
@@ -533,12 +496,12 @@ function renderRow(
           {...(r.fileCount !== undefined ? { fileCount: r.fileCount } : {})}
         />
       );
-    case 'context-summary':
+    case 'phase-log':
       return (
-        <ContextSummaryRow
+        <PhaseLogRow
           key={r.key}
-          summaryId={r.summaryId}
-          live={liveTurn}
+          label={r.label}
+          {...(r.tooltip ? { tooltip: r.tooltip } : {})}
         />
       );
     default: {

@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
 import { ComposerFooter } from '@renderer/components/composer/ComposerFooter';
 import { useChatStore } from '@renderer/store/useChatStore';
+import { useTimelineUiStore } from '@renderer/store/useTimelineUiStore';
 import { INITIAL_TIMELINE_STATE } from '@renderer/components/timeline/reducer/types';
 
 beforeEach(() => {
@@ -12,6 +13,7 @@ beforeEach(() => {
     latestOrchestratorRunStatus: undefined,
     runStartedAt: null
   });
+  useTimelineUiStore.setState({ timelineAtTail: true });
 });
 
 describe('ComposerFooter attachment counter', () => {
@@ -51,6 +53,26 @@ describe('ComposerFooter attachment counter', () => {
     const footer = container.querySelector('.vx-composer-footer');
     expect(footer?.className ?? '').toMatch(/\bflex\b/);
     expect(screen.getByRole('button', { name: 'Send' })).toBeInTheDocument();
+  });
+
+  it('shows off-tail hint with readable Latest label', () => {
+    useChatStore.setState({
+      events: [{ kind: 'user-prompt', id: 'p1', ts: 1, content: 'Hi' }]
+    });
+    useTimelineUiStore.setState({ timelineAtTail: false });
+
+    render(
+      <ComposerFooter
+        attachmentCount={0}
+        sendState="idle"
+        onSend={() => {}}
+        canSend={false}
+      />
+    );
+
+    expect(screen.getByText(/Scroll down or use/i)).toBeInTheDocument();
+    const latestLabel = screen.getByText('Latest');
+    expect(latestLabel.className).toContain('vx-jump-to-latest-label');
   });
 
   it('shows live phase label while processing', () => {

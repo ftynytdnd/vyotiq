@@ -51,7 +51,7 @@ export function DeleteInvocation({
           {data.filePath}
         </span>
         <DiffStatsBadge additions={0} deletions={data.deletedLines} />
-        <span className="text-text-faint">Snapshot saved · revert in Checkpoints</span>
+        <span className="text-text-faint">Snapshot saved · revert from timeline</span>
       </div>
     );
   } else if (showDiffStream && diffStream) {

@@ -13,6 +13,7 @@ import type {
 } from '@shared/types/provider.js';
 import { PROVIDERS_FILE } from '@shared/constants.js';
 import { normalizeBaseUrl as normalizeBaseUrlShared } from '@shared/providers/normalizeBaseUrl.js';
+import { defaultMaxConcurrentStreamsForDialect } from '@shared/providers/providerConcurrencyDefaults.js';
 import { readEncryptedJson, writeEncryptedJson } from '../secrets/safeStore.js';
 
 interface PersistedProvider extends ProviderConfig {
@@ -56,12 +57,22 @@ async function load(): Promise<PersistedProvider[]> {
   // hot path uses.
   let mutated = false;
   const list = raw.map((p) => {
-    const fixed = normalizeBaseUrlShared(p.baseUrl, p.dialect ?? 'openai');
-    if (fixed !== p.baseUrl) {
-      mutated = true;
-      return { ...p, baseUrl: fixed };
-    }
-    return p;
+    const dialect = p.dialect ?? 'openai';
+    const fixed = normalizeBaseUrlShared(p.baseUrl, dialect);
+    const needsUrl = fixed !== p.baseUrl;
+    const needsConcurrency = p.maxConcurrentStreams === undefined;
+    // Legacy stores persisted `4` before ollama-native default moved to 8.
+    const legacyOllamaCap =
+      dialect === 'ollama-native' && p.maxConcurrentStreams === 4;
+    if (!needsUrl && !needsConcurrency && !legacyOllamaCap) return p;
+    mutated = true;
+    return {
+      ...p,
+      ...(needsUrl ? { baseUrl: fixed } : {}),
+      ...(needsConcurrency || legacyOllamaCap
+        ? { maxConcurrentStreams: defaultMaxConcurrentStreamsForDialect(dialect) }
+        : {})
+    };
   });
   cache = list;
   if (mutated) {
@@ -125,6 +136,7 @@ export async function addProvider(input: AddProviderInput): Promise<ProviderConf
     dialect,
     apiKey: input.apiKey,
     enabled: true,
+    maxConcurrentStreams: defaultMaxConcurrentStreamsForDialect(dialect),
     notes: input.notes,
     models: [],
     lastDiscoveredAt: undefined,
@@ -146,7 +158,6 @@ export async function updateProvider(
     dialect?: ProviderDialect;
     models?: ProviderConfig['models'];
     lastDiscoveredAt?: number;
-    contextOverrides?: ProviderConfig['contextOverrides'];
     attribution?: ProviderConfig['attribution'];
   }
 ): Promise<ProviderConfig> {
@@ -172,7 +183,6 @@ export async function updateProvider(
     enabled: patch.enabled ?? current.enabled,
     models: patch.models ?? current.models,
     lastDiscoveredAt: patch.lastDiscoveredAt ?? current.lastDiscoveredAt,
-    contextOverrides: patch.contextOverrides ?? current.contextOverrides,
     // `attribution` is intentionally a full-replace patch (not a deep
     // merge): callers either send the new shape verbatim or omit the
     // field to preserve the existing one. Passing an explicit object
@@ -181,42 +191,6 @@ export async function updateProvider(
     // empty-string ⇒ suppress contract.
     attribution: patch.attribution ?? current.attribution
   };
-  // Persist-then-commit: see `persistCandidate`.
-  const candidate = list.map((p, i) => (i === idx ? next : p));
-  await persistCandidate(candidate);
-  cache = candidate;
-  return redact(next);
-}
-
-/**
- * Pin (or clear) a user-supplied context-window override for a single
- * model on a provider. `value: null` removes the entry; any non-finite
- * or <= 0 number is treated as a clear. The override wins over whatever
- * `/v1/models` reported and is what the renderer uses to render the
- * usage gauge's ceiling.
- */
-export async function setContextOverride(
-  providerId: string,
-  modelId: string,
-  value: number | null
-): Promise<ProviderConfig> {
-  const list = await load();
-  const idx = list.findIndex((p) => p.id === providerId);
-  if (idx === -1) throw new Error(`Provider not found: ${providerId}`);
-  const current = list[idx]!;
-  const existing = current.contextOverrides ?? {};
-  const next: PersistedProvider = { ...current };
-  if (value === null || !Number.isFinite(value) || value <= 0) {
-    const { [modelId]: _removed, ...rest } = existing;
-    void _removed;
-    if (Object.keys(rest).length === 0) {
-      delete next.contextOverrides;
-    } else {
-      next.contextOverrides = rest;
-    }
-  } else {
-    next.contextOverrides = { ...existing, [modelId]: Math.floor(value) };
-  }
   // Persist-then-commit: see `persistCandidate`.
   const candidate = list.map((p, i) => (i === idx ? next : p));
   await persistCandidate(candidate);

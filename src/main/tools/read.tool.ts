@@ -33,7 +33,7 @@ export const readTool: Tool = {
 
 **Notes.**
 - Files larger than 512 KB are truncated. Binary files are refused.
-- **Output format:** each content line is prefixed with \`     N\\t\` where N is the 1-indexed line number. **The \`     N\\t\` prefix is NOT part of the file.** When you pass content to \`edit\`'s \`oldString\`, you MUST strip every \`     N\\t\` prefix first, otherwise the match will fail.`,
+- **Output format (navigation only):** each content line is \`     N\\t<file bytes>\` where N is 1-indexed (five-digit column, then tab). Regex per line: \`^\\s*\\d+\\t\`. **Prefixes are NOT on disk.** Copy only the bytes after the tab into \`edit\`; the host may auto-strip when every line in \`oldString\`/\`newString\` matches that pattern.`,
   schema: {
     type: 'function',
     function: {
@@ -186,8 +186,41 @@ export const readTool: Tool = {
     const text = buf.toString('utf8');
     const garbled = detectGarbledText(text);
     const lines = text.split('\n');
-    const start = Math.max(1, a.startLine ?? 1);
-    const end = Math.min(lines.length, a.endLine ?? lines.length);
+    const totalLines = lines.length;
+    const requestedStart = a.startLine;
+    const requestedEnd = a.endLine;
+    if (requestedStart !== undefined && requestedStart > totalLines) {
+      return {
+        id,
+        name: 'read',
+        ok: false,
+        output: `Error: startLine ${requestedStart} is past end of file (${totalLines} lines).`,
+        error: 'invalid line range',
+        durationMs: Date.now() - started
+      };
+    }
+    if (requestedEnd !== undefined && requestedEnd < 1) {
+      return {
+        id,
+        name: 'read',
+        ok: false,
+        output: 'Error: endLine must be at least 1.',
+        error: 'invalid line range',
+        durationMs: Date.now() - started
+      };
+    }
+    const start = Math.max(1, requestedStart ?? 1);
+    const end = Math.min(totalLines, requestedEnd ?? totalLines);
+    if (start > end) {
+      return {
+        id,
+        name: 'read',
+        ok: false,
+        output: `Error: invalid line range (${start}-${end}); file has ${totalLines} lines.`,
+        error: 'invalid line range',
+        durationMs: Date.now() - started
+      };
+    }
     const slice = lines.slice(start - 1, end);
     const numbered = slice
       .map((l, i) => `${String(start + i).padStart(5, ' ')}\t${l}`)
@@ -196,7 +229,7 @@ export const readTool: Tool = {
 
     const header =
       `# ${relPath} (lines ${start}-${end} of ${lines.length}${truncated ? ', TRUNCATED' : ''}${garbled ? ', GARBLED ENCODING' : ''})\n` +
-      `# Each line is prefixed with "     N\\t" — strip this prefix before passing content to \`edit\`'s oldString.` +
+      `# Each line: "^\\s*\\d+\\t" then file bytes — navigation only; strip before edit (host may auto-strip uniform blocks).` +
       (garbled
         ? '\n# Warning: decoded text may be garbled — verify encoding before editing.'
         : '');

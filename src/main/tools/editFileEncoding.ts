@@ -5,7 +5,6 @@
 
 export {
   type DecodedFileText,
-  type FileTextEncoding,
   composeOnDiskText,
   decodeUtf8FileForEdit as decodeFileForEdit,
   encodeUtf8FileForWrite as encodeFileForWrite

@@ -1,10 +1,9 @@
 /**
  * `settingsStore.ts` permissions migration tests.
  *
- * Locks the legacy three-flag → single-`allowAuto` migration:
- *   - `publicShape` reads pre-2026 settings.json blobs and derives
- *     `allowAuto` for both the global `permissions` and every
- *     `permissionsByWorkspace[wsId]` entry.
+ * Locks legacy permission migration:
+ *   - `publicShape` reads pre-2026 settings.json blobs and collapses
+ *     legacy flags to `{}`.
  *   - The first subsequent `setSettings` write strips the deprecated
  *     keys so the on-disk shape converges to the new model over normal
  *     usage — no special migration step required.
@@ -51,8 +50,8 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('publicShape — legacy three-flag → allowAuto migration', () => {
-  it('derives allowAuto: true when both allowFileWrites and allowBash were on', async () => {
+describe('publicShape — legacy permission migration', () => {
+  it('collapses legacy allowFileWrites + allowBash to empty permissions', async () => {
     vi.doMock('@main/secrets/safeStore', () => safeStore);
     (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed(
       SETTINGS_FILE,
@@ -66,10 +65,10 @@ describe('publicShape — legacy three-flag → allowAuto migration', () => {
     );
     const { getSettings } = await import('@main/settings/settingsStore');
     const got = await getSettings();
-    expect(got.permissions).toEqual({ allowAuto: true });
+    expect(got.permissions).toEqual({});
   });
 
-  it('derives allowAuto: false when either writes or bash was off', async () => {
+  it('collapses mixed legacy flags to empty permissions', async () => {
     vi.doMock('@main/secrets/safeStore', () => safeStore);
     (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed(
       SETTINGS_FILE,
@@ -83,13 +82,10 @@ describe('publicShape — legacy three-flag → allowAuto migration', () => {
     );
     const { getSettings } = await import('@main/settings/settingsStore');
     const got = await getSettings();
-    // `allowWebSearch: true` does NOT lift `allowAuto` — the migration
-    // intentionally requires both writes AND bash. A user with only
-    // web search on lands on the safer always-prompt default.
-    expect(got.permissions).toEqual({ allowAuto: false });
+    expect(got.permissions).toEqual({});
   });
 
-  it('passes through new-shape allowAuto verbatim', async () => {
+  it('strips legacy allowAuto on disk to empty permissions', async () => {
     vi.doMock('@main/secrets/safeStore', () => safeStore);
     (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed(
       SETTINGS_FILE,
@@ -97,10 +93,10 @@ describe('publicShape — legacy three-flag → allowAuto migration', () => {
     );
     const { getSettings } = await import('@main/settings/settingsStore');
     const got = await getSettings();
-    expect(got.permissions).toEqual({ allowAuto: true });
+    expect(got.permissions).toEqual({});
   });
 
-  it('falls back to DEFAULT_PERMISSIONS (allowAuto: false) when permissions is missing', async () => {
+  it('falls back to DEFAULT_PERMISSIONS when permissions is missing', async () => {
     vi.doMock('@main/secrets/safeStore', () => safeStore);
     (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed(
       SETTINGS_FILE,
@@ -108,37 +104,83 @@ describe('publicShape — legacy three-flag → allowAuto migration', () => {
     );
     const { getSettings } = await import('@main/settings/settingsStore');
     const got = await getSettings();
-    expect(got.permissions).toEqual({ allowAuto: false });
+    expect(got.permissions).toEqual({});
   });
 
-  it('migrates per-workspace override entries the same way', async () => {
+  it('strips permissionsByWorkspace and gate maps on read', async () => {
     vi.doMock('@main/secrets/safeStore', () => safeStore);
     (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed(
       SETTINGS_FILE,
       {
         ui: {
-          permissionsByWorkspace: {
-            'ws-trusted': { allowFileWrites: true, allowBash: true },
-            'ws-cautious': { allowBash: false },
-            'ws-vacuous': {},
-            'ws-already-migrated': { allowAuto: true }
-          }
+          permissionsByWorkspace: { 'ws-A': { allowAuto: true } },
+          gatePromptOnPendingByWorkspace: { 'ws-A': true }
         }
       }
     );
     const { getSettings } = await import('@main/settings/settingsStore');
     const got = await getSettings();
-    const map = got.ui?.permissionsByWorkspace ?? {};
-    // Trusted workspace: writes + bash on → allowAuto: true.
-    expect(map['ws-trusted']).toEqual({ allowAuto: true });
-    // Cautious workspace: bash off (no writes either) → allowAuto: false.
-    expect(map['ws-cautious']).toEqual({ allowAuto: false });
-    // Vacuous workspace: empty entry is dropped entirely so absence
-    // means "inherit from global" rather than synthesizing a fake
-    // `{ allowAuto: false }` override.
-    expect('ws-vacuous' in map).toBe(false);
-    // Already-migrated workspace: passes through.
-    expect(map['ws-already-migrated']).toEqual({ allowAuto: true });
+    expect(got.ui?.permissionsByWorkspace).toBeUndefined();
+    expect(got.ui?.gatePromptOnPendingByWorkspace).toBeUndefined();
+  });
+});
+
+describe('getSettings — eager on-disk migration', () => {
+  it('rewrites legacy lastSettingsTab to a group id on first read', async () => {
+    vi.doMock('@main/secrets/safeStore', () => safeStore);
+    const seed = (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed;
+    const peek = (safeStore as unknown as { __peek: (f: string) => unknown }).__peek;
+    seed(SETTINGS_FILE, { ui: { lastSettingsTab: 'memory' } });
+
+    const { getSettings } = await import('@main/settings/settingsStore');
+    const got = await getSettings();
+    expect(got.ui?.lastSettingsTab).toBe('agent');
+
+    const onDisk = peek(SETTINGS_FILE) as { ui?: { lastSettingsTab?: string } } | null;
+    expect(onDisk?.ui?.lastSettingsTab).toBe('agent');
+  });
+
+  it('strips webSearchEndpoint from disk on first read', async () => {
+    vi.doMock('@main/secrets/safeStore', () => safeStore);
+    const seed = (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed;
+    const peek = (safeStore as unknown as { __peek: (f: string) => unknown }).__peek;
+    seed(SETTINGS_FILE, { webSearchEndpoint: 'https://example.com/search' });
+
+    const { getSettings } = await import('@main/settings/settingsStore');
+    await getSettings();
+
+    const onDisk = peek(SETTINGS_FILE) as Record<string, unknown> | null;
+    expect(onDisk).not.toHaveProperty('webSearchEndpoint');
+  });
+
+  it('strips contextSummary and legacy ui fields from disk on first read', async () => {
+    vi.doMock('@main/secrets/safeStore', () => safeStore);
+    const seed = (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed;
+    const peek = (safeStore as unknown as { __peek: (f: string) => unknown }).__peek;
+    seed(SETTINGS_FILE, {
+      contextSummary: { enabled: true },
+      ui: {
+        contextSummaryByWorkspace: { 'ws-1': { enabled: false } },
+        tokenBudgetWarningTokens: 128_000,
+        gatePromptOnPendingByWorkspace: { 'ws-1': true }
+      }
+    });
+
+    const { getSettings } = await import('@main/settings/settingsStore');
+    const got = await getSettings();
+    expect(got).not.toHaveProperty('contextSummary');
+    expect(got.ui).not.toHaveProperty('contextSummaryByWorkspace');
+    expect(got.ui).not.toHaveProperty('tokenBudgetWarningTokens');
+    expect(got.ui).not.toHaveProperty('gatePromptOnPendingByWorkspace');
+
+    const onDisk = peek(SETTINGS_FILE) as {
+      contextSummary?: unknown;
+      ui?: Record<string, unknown>;
+    } | null;
+    expect(onDisk).not.toHaveProperty('contextSummary');
+    expect(onDisk?.ui).not.toHaveProperty('contextSummaryByWorkspace');
+    expect(onDisk?.ui).not.toHaveProperty('tokenBudgetWarningTokens');
+    expect(onDisk?.ui).not.toHaveProperty('gatePromptOnPendingByWorkspace');
   });
 });
 
@@ -167,40 +209,25 @@ describe('setSettings — legacy keys are stripped on first write', () => {
     expect(onDisk?.permissions).not.toHaveProperty('allowFileWrites');
     expect(onDisk?.permissions).not.toHaveProperty('allowBash');
     expect(onDisk?.permissions).not.toHaveProperty('allowWebSearch');
-    // … new key present and correctly derived.
-    expect(onDisk?.permissions?.allowAuto).toBe(true);
+    expect(onDisk?.permissions).toEqual({});
   });
 
-  it('drops legacy keys from per-workspace entries on first write', async () => {
+  it('drops permissionsByWorkspace from disk on first write', async () => {
     vi.doMock('@main/secrets/safeStore', () => safeStore);
     const seed = (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed;
     const peek = (safeStore as unknown as { __peek: (f: string) => unknown }).__peek;
     seed(SETTINGS_FILE, {
       ui: {
         permissionsByWorkspace: {
-          'ws-A': { allowFileWrites: true, allowBash: true },
-          'ws-B': { allowBash: false }
+          'ws-A': { allowAuto: true }
         }
       }
     });
     const { setSettings } = await import('@main/settings/settingsStore');
     await setSettings({ defaultModel: { providerId: 'p', modelId: 'm' } });
 
-    const onDisk = peek(SETTINGS_FILE) as {
-      ui?: {
-        permissionsByWorkspace?: Record<string, Record<string, unknown>>;
-      };
-    } | null;
-    const map = onDisk?.ui?.permissionsByWorkspace ?? {};
-    expect(map['ws-A']).toEqual({ allowAuto: true });
-    expect(map['ws-B']).toEqual({ allowAuto: false });
-    // Defense-in-depth: the legacy keys must be GONE on disk, not
-    // merely shadowed by the new key.
-    for (const entry of Object.values(map)) {
-      expect(entry).not.toHaveProperty('allowFileWrites');
-      expect(entry).not.toHaveProperty('allowBash');
-      expect(entry).not.toHaveProperty('allowWebSearch');
-    }
+    const onDisk = peek(SETTINGS_FILE) as { ui?: Record<string, unknown> } | null;
+    expect(onDisk?.ui).not.toHaveProperty('permissionsByWorkspace');
   });
 
   it('preserves sibling ui fields when the patch only touches permissions', async () => {
@@ -214,16 +241,36 @@ describe('setSettings — legacy keys are stripped on first write', () => {
       }
     });
     const { setSettings } = await import('@main/settings/settingsStore');
-    await setSettings({ permissions: { allowAuto: true } });
+    await setSettings({ permissions: {} });
 
     const onDisk = peek(SETTINGS_FILE) as {
       ui?: { sidebarOpen?: boolean; collapsedWorkspaces?: string[] };
-      permissions?: { allowAuto?: boolean };
+      permissions?: Record<string, unknown>;
     } | null;
-    expect(onDisk?.permissions).toEqual({ allowAuto: true });
-    // Unrelated ui fields are preserved verbatim — the migration's
-    // ui-merge path doesn't clobber siblings.
-    expect(onDisk?.ui?.sidebarOpen).toBe(true);
+    expect(onDisk?.permissions).toEqual({});
+    // Unrelated ui fields are preserved; legacy `sidebarOpen` migrates to `dockExpanded`.
+    expect(onDisk?.ui?.dockExpanded).toBe(true);
+    expect(onDisk?.ui).not.toHaveProperty('sidebarOpen');
     expect(onDisk?.ui?.collapsedWorkspaces).toEqual(['ws-X']);
+  });
+
+  it('migrates sidebarVisible on disk to dockExpanded on getSettings', async () => {
+    vi.doMock('@main/secrets/safeStore', () => safeStore);
+    const seed = (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed;
+    const peek = (safeStore as unknown as { __peek: (f: string) => unknown }).__peek;
+    seed(SETTINGS_FILE, {
+      ui: { sidebarVisible: true, sidebarWidth: 220 }
+    });
+    const { getSettings } = await import('@main/settings/settingsStore');
+    const got = await getSettings();
+    expect(got.ui?.dockExpanded).toBe(true);
+    expect(got.ui?.dockWidth).toBe(220);
+    expect(got.ui).not.toHaveProperty('sidebarVisible');
+    expect(got.ui).not.toHaveProperty('sidebarWidth');
+
+    const onDisk = peek(SETTINGS_FILE) as { ui?: Record<string, unknown> } | null;
+    expect(onDisk?.ui?.dockExpanded).toBe(true);
+    expect(onDisk?.ui?.dockWidth).toBe(220);
+    expect(onDisk?.ui).not.toHaveProperty('sidebarVisible');
   });
 });

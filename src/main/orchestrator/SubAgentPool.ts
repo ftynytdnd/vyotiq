@@ -14,14 +14,56 @@
 import type { SubAgentDeps, SubAgentRun, SubAgentSpec } from './SubAgent.js';
 import { runSubAgent } from './SubAgent.js';
 import { createInlineFileCache } from './contextManager.js';
-import { MAX_PARALLEL_SUBAGENTS } from '@shared/constants.js';
+import { DEFAULT_DELEGATE_CONCURRENCY, SUBAGENT_RUN_TIMEOUT_MS } from '@shared/constants.js';
 import { logger } from '../logging/logger.js';
 import { isAbortError } from './abortSignal.js';
 
 const log = logger.child('orchestrator/pool');
 
+function withRunTimeout<T>(
+  promise: Promise<T>,
+  signal: AbortSignal,
+  specId: string
+): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(new DOMException('Aborted', 'AbortError'));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(
+        new Error(
+          `Sub-agent ${specId} run timed out after ${Math.round(SUBAGENT_RUN_TIMEOUT_MS / 1000)}s`
+        )
+      );
+    }, SUBAGENT_RUN_TIMEOUT_MS);
+
+    const onAbort = (): void => {
+      cleanup();
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+    };
+
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (value) => {
+        cleanup();
+        resolve(value);
+      },
+      (err) => {
+        cleanup();
+        reject(err);
+      }
+    );
+  });
+}
+
 export interface PoolDeps extends SubAgentDeps {
-  /** Optional concurrency cap. Defaults to MAX_PARALLEL_SUBAGENTS. */
+  /** Optional concurrency cap. Defaults to {@link DEFAULT_DELEGATE_CONCURRENCY}. */
   concurrency?: number;
   /** Per-sub-agent spawn callback (for UI updates). */
   onSpawn?: (spec: SubAgentSpec) => void;
@@ -33,7 +75,7 @@ export interface PoolDeps extends SubAgentDeps {
  * concurrency cap; preserves order in the result array.
  */
 export async function runSubAgentPool(specs: SubAgentSpec[], deps: PoolDeps): Promise<SubAgentRun[]> {
-  const limit = Math.max(1, deps.concurrency ?? MAX_PARALLEL_SUBAGENTS);
+  const limit = Math.max(1, deps.concurrency ?? DEFAULT_DELEGATE_CONCURRENCY);
   const results: SubAgentRun[] = new Array(specs.length);
   let idx = 0;
   // Audit fix A2: one round-scoped inlining cache shared across every
@@ -68,7 +110,6 @@ export async function runSubAgentPool(specs: SubAgentSpec[], deps: PoolDeps): Pr
         runId: deps.runId,
         conversationId: deps.conversationId,
         permissions: deps.permissions,
-        strictApprovals: deps.strictApprovals,
         signal: deps.signal,
         ...(deps.onToolCall
           ? { onToolCall: (call, subagentId) => deps.onToolCall?.(call, subagentId) }
@@ -127,7 +168,11 @@ export async function runSubAgentPool(specs: SubAgentSpec[], deps: PoolDeps): Pr
       // shape so the verifier + three-strike counter run unchanged.
       let run: SubAgentRun;
       try {
-        run = await runSubAgent(spec, perAgentDeps);
+        run = await withRunTimeout(
+          runSubAgent(spec, perAgentDeps),
+          deps.signal,
+          spec.id
+        );
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         // An abort-mid-pool surfaces as an `AbortError`. Report as

@@ -23,7 +23,7 @@
  *     `create-preview` panes and settled `data.createdContent` panes.
  *
  *   - `src/renderer/components/checkpoints/PendingChangeDiff.tsx`
- *     (pending-changes panel + Checkpoints view) — for the
+ *     (timeline pending-change rows) — for the
  *     `kind: 'create'` branch so a created file's snapshot blob
  *     reads as a green-tinted diff rather than a muted plain-text
  *     wall.

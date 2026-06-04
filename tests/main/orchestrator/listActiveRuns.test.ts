@@ -49,8 +49,7 @@ vi.mock('@main/workspace/workspaceState.js', () => ({
 
 // `recall` tool wires per-run state via a WeakMap; not relevant here.
 // Provide every export `tools/registry.ts` reaches for so the
-// transitive load through `AgentV.ts` →
-// `contextSummarizer/index.ts` → `streamSummary.ts` →
+// transitive load through `AgentV.ts` → `loop/index.ts` →
 // `harnessLoader.ts` → `tools/registry.ts` doesn't blow up on a
 // missing partial-mock surface. The two `setActive*ForRun`
 // helpers are the ones `AgentV.ts` actually calls; `recallTool`
@@ -230,7 +229,10 @@ describe('listActiveRuns / abort surfaces', () => {
 
     const aborted = abortRunsForWorkspace('wA');
     expect(aborted).toBe(2);
-    await Promise.resolve();
+    // Abort only flips the signal — wA runs drop from the registry once
+    // their stubbed loops settle; wB's run stays registered.
+    expect(listActiveRuns().map((r) => r.runId).sort()).toEqual(['r1', 'r2', 'r3']);
+    for (let i = 0; i < 10; i += 1) await Promise.resolve();
     expect(listActiveRuns().map((r) => r.runId)).toEqual(['r3']);
 
     abortRun('r3');

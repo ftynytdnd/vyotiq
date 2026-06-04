@@ -3,6 +3,7 @@
  */
 
 import { access, readFile, stat } from 'node:fs/promises';
+import { escapeXmlAttr, escapeXmlBody } from './envelope/escapeXmlBody.js';
 import { realpathInsideWorkspace } from '../tools/sandbox.js';
 
 export interface HostVerificationLine {
@@ -66,24 +67,12 @@ export async function verifyDelegateArtifacts(
   return lines;
 }
 
-function escapeXmlAttr(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function escapeXmlText(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
 export function formatHostVerificationXml(lines: HostVerificationLine[]): string {
   if (lines.length === 0) return '';
   const inner = lines
     .map(
       (l) =>
-        `<file path="${escapeXmlAttr(l.path)}" ok="${l.ok ? 'true' : 'false'}">${escapeXmlText(l.detail)}</file>`
+        `<file path="${escapeXmlAttr(l.path)}" ok="${l.ok ? 'true' : 'false'}">${escapeXmlBody(l.detail)}</file>`
     )
     .join('\n');
   return `<host_verification>\n${inner}\n</host_verification>`;

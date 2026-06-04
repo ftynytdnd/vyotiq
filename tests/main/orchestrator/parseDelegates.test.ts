@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 import {
   parseDelegates,
   parseDelegatesWithDuplicates
-} from '@main/orchestrator/envelope/parseDelegates';
+} from '@shared/text/parseDelegates.js';
 
 describe('parseDelegates', () => {
   it('parses a minimal self-closing directive', () => {
@@ -471,7 +471,7 @@ describe('parseDelegatesWithDuplicates', () => {
       expect(out.malformedOpeners[0]).toContain('B2');
     });
 
-    it('rejects compound task= directives via compoundTaskIds', () => {
+    it('parses compound-looking task= verbatim (host does not reject)', () => {
       const compound = [
         '- Read src/a.ts',
         '- Edit src/b.ts',
@@ -481,8 +481,9 @@ describe('parseDelegatesWithDuplicates', () => {
       const out = parseDelegatesWithDuplicates(
         `<delegate id="A1" task="${compound}" />`
       );
-      expect(out.directives).toEqual([]);
-      expect(out.compoundTaskIds).toEqual(['A1']);
+      expect(out.directives).toHaveLength(1);
+      expect(out.directives[0]?.id).toBe('A1');
+      expect(out.directives[0]?.task).toBe(compound);
     });
   });
 });

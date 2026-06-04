@@ -20,7 +20,7 @@ export interface PartitionTurnOptions {
   chronological?: boolean;
 }
 
-const FOOTER_KINDS = new Set(['run-complete', 'token-budget-warning', 'error']);
+const FOOTER_KINDS = new Set(['run-complete', 'error']);
 
 export { reorderTurnSegment } from './turnRowOrdering.js';
 

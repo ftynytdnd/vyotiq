@@ -218,7 +218,7 @@ describe('phase headline helpers', () => {
 
   it('detects persisted Exploring dividers', () => {
     expect(isPhaseHeadlineLabel('Exploring')).toBe(true);
-    expect(isPhaseHeadlineLabel('Delegating 2 sub-tasks')).toBe(false);
+    expect(isPhaseHeadlineLabel('Spawning 2 workers')).toBe(false);
   });
 
   it('identifies gold live phases', () => {

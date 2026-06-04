@@ -1,12 +1,10 @@
 /**
- * Tools IPC. Mostly small renderer helpers (open file in OS, confirm bus
- * responses).
+ * Tools IPC. Small renderer helpers (open file in OS, tool rerun).
  */
 
 import { shell } from 'electron';
 import { IPC } from '@shared/constants.js';
-import { settleConfirm } from '../orchestrator/confirmBus.js';
-import type { ConfirmResponse, ToolRerunInput } from '@shared/types/ipc.js';
+import type { ToolRerunInput } from '@shared/types/ipc.js';
 import { executeToolRerun } from './toolRerun.js';
 import { realpathInsideWorkspace } from '../tools/sandbox.js';
 import {
@@ -16,7 +14,6 @@ import {
 import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 import {
-  assertConfirmResponse,
   assertObject,
   assertOptionalString,
   assertString
@@ -80,18 +77,6 @@ export function registerToolsIpc(): void {
       throw new Error(result);
     }
   });
-
-  wrapIpcHandler(
-    IPC.TOOLS_CONFIRM_RESPONSE,
-    async (_event, id: string, reply: ConfirmResponse) => {
-      assertString('tools:confirmResponse', 'id', id);
-      assertConfirmResponse('tools:confirmResponse', 'reply', reply);
-      // Legacy callers send a bare boolean; `EditApprovalDialog` sends
-      // `{ approved, acceptAllRemaining }`. `settleConfirm` normalizes
-      // both shapes.
-      settleConfirm(id, reply);
-    }
-  );
 
   wrapIpcHandler(IPC.TOOLS_RERUN, async (_event, input: ToolRerunInput) => {
     assertObject('tools:rerun', 'input', input);

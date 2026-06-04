@@ -84,4 +84,18 @@ describe('AssistantTextRow', () => {
     expect(getByRole('button', { name: /copy/i })).not.toBeNull();
     expect(queryByRole('button', { name: /regenerate/i })).toBeNull();
   });
+
+  it('renders very long settled replies in full (no show-more fold)', () => {
+    const longBody = Array.from({ length: 120 }, (_, i) => `Paragraph ${i} with enough text to wrap.`).join('\n\n');
+    useChatStore.setState({
+      assistantTexts: {
+        'msg-long': { id: 'msg-long', text: longBody, done: true }
+      }
+    });
+
+    const { queryByRole, container } = render(<AssistantTextRow id="msg-long" model={null} />);
+    expect(queryByRole('button', { name: /show more/i })).toBeNull();
+    expect(container.querySelector('.vyotiq-md')).not.toBeNull();
+    expect(container.textContent).toContain('Paragraph 119');
+  });
 });

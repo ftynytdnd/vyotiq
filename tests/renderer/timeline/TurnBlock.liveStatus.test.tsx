@@ -31,7 +31,7 @@ beforeEach(() => {
 });
 
 describe('TurnBlock live status', () => {
-  it('renders connecting label in running meta footer', () => {
+  it('does not duplicate connecting in timeline meta (composer strip owns it)', () => {
     render(
       <TurnBlock
         partitioned={livePartition}
@@ -40,8 +40,29 @@ describe('TurnBlock live status', () => {
       />
     );
 
-    expect(screen.getByText(CONNECTING_LABEL)).toBeTruthy();
+    expect(screen.queryByText(CONNECTING_LABEL)).toBeNull();
+    expect(document.querySelector('[data-turn-running-meta]')).toBeNull();
+  });
+
+  it('renders starting label in running meta when past connecting', () => {
+    useChatStore.setState({
+      latestOrchestratorRunStatus: {
+        kind: 'run-status',
+        phase: 'awaiting-response',
+        label: 'Starting…',
+        ts: Date.now()
+      } as never
+    });
+
+    render(
+      <TurnBlock
+        partitioned={livePartition}
+        live
+        renderRow={(row) => <div data-row-key={row.key}>{row.kind}</div>}
+      />
+    );
+
+    expect(screen.getByText('Starting…')).toBeTruthy();
     expect(document.querySelector('[data-turn-running-meta]')).toBeTruthy();
-    expect(document.querySelector('[data-turn-activity-summary]')).toBeNull();
   });
 });

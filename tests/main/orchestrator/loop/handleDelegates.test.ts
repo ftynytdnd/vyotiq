@@ -41,7 +41,20 @@ vi.mock('@main/orchestrator/verifyDelegateArtifacts.js', () => ({
   formatHostVerificationXml: vi.fn(() => '')
 }));
 
+vi.mock('@main/providers/providerStore.js', () => ({
+  getProviderWithKey: vi.fn(async () => null)
+}));
+
+vi.mock('@main/checkpoints/index.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@main/checkpoints/index.js')>();
+  return {
+    ...actual,
+    getRunManifest: vi.fn(async () => null)
+  };
+});
+
 import { runSubAgentPool } from '@main/orchestrator/SubAgentPool';
+import { getRunManifest } from '@main/checkpoints/index.js';
 import {
   verifyDelegateArtifacts,
   formatHostVerificationXml
@@ -258,7 +271,7 @@ describe('handleDelegates — envelope-before-halt fidelity', () => {
   it('emits a verdict-summary phase event RIGHT BEFORE the halt error (review finding B2)', async () => {
     // Without this row, the user sees only `error: "${N} consecutive
     // sub-agent rounds failed verification — escalating to user."`
-    // and has to expand every SubAgentTrace card to triage which
+    // and has to expand every delegation worker to triage which
     // workers failed with what structural verdict. The verdict-summary
     // phase event carries the per-id structural outcome directly in
     // the timeline so the cause is visible at a glance.
@@ -886,6 +899,122 @@ describe('handleDelegates — malformed, read-shard warn, host verification', ()
   });
 });
 
+describe('handleDelegates — all-invented files= skip spawn', () => {
+  it('skips pool spawn and pushes invented-files verdict when every path is bogus', async () => {
+    const workspacePath = await mkdtemp(join(tmpdir(), 'vyotiq-invented-'));
+    await writeFile(join(workspacePath, 'real.ts'), 'export const x = 1;\n', 'utf8');
+
+    const messages: ChatMessage[] = [];
+    const events: TimelineEvent[] = [];
+    const counters: DelegationCounters = {
+      consecutiveBadRounds: 0,
+      perTaskBadStreak: new Map()
+    };
+
+    const outcome = await handleDelegates(
+      [
+        {
+          id: 'A1',
+          task: 'Read invented paths.',
+          files: ['core/index.py', 'transport/index.py'],
+          tools: ['read']
+        }
+      ],
+      messages,
+      counters,
+      (e) => {
+        events.push(e);
+      },
+      { ...baseOpts, workspacePath }
+    );
+
+    expect(outcome).toBe('continue');
+    expect(runSubAgentPool).not.toHaveBeenCalled();
+    const body = messages[0]?.content ?? '';
+    expect(body).toContain('invented-files');
+    expect(body).toContain('A1');
+    expect(body).toContain('Run `ls`');
+    const phases = events
+      .filter((e): e is Extract<TimelineEvent, { kind: 'phase' }> => e.kind === 'phase')
+      .map((e) => e.label);
+    expect(phases.some((l) => l.includes('skipped') && l.includes('A1'))).toBe(true);
+  });
+
+  it('still spawns when at least one files= path resolves', async () => {
+    const workspacePath = await mkdtemp(join(tmpdir(), 'vyotiq-partial-'));
+    await writeFile(join(workspacePath, 'real.ts'), 'export const x = 1;\n', 'utf8');
+
+    vi.mocked(runSubAgentPool).mockResolvedValueOnce([
+      {
+        id: 'A1',
+        task: 'Read real.ts',
+        output:
+          '<result><status>success</status><summary>ok</summary><details></details><artifacts></artifacts></result>',
+        toolResults: [{ name: 'read' }],
+        inlinedFileCount: 1,
+        status: 'success'
+      }
+    ]);
+
+    const messages: ChatMessage[] = [];
+    const counters: DelegationCounters = {
+      consecutiveBadRounds: 0,
+      perTaskBadStreak: new Map()
+    };
+
+    const outcome = await handleDelegates(
+      [
+        {
+          id: 'A1',
+          task: 'Read mixed paths.',
+          files: ['real.ts', 'missing.ts'],
+          tools: ['read']
+        }
+      ],
+      messages,
+      counters,
+      () => undefined,
+      { ...baseOpts, workspacePath }
+    );
+
+    expect(outcome).toBe('continue');
+    expect(runSubAgentPool).toHaveBeenCalledTimes(1);
+    const spawned = vi.mocked(runSubAgentPool).mock.calls[0]?.[0];
+    expect(spawned?.[0]?.files).toEqual(['real.ts']);
+  });
+
+  it('still spawns fileless search delegates', async () => {
+    vi.mocked(runSubAgentPool).mockResolvedValueOnce([
+      {
+        id: 'S1',
+        task: 'Search the web for docs.',
+        output:
+          '<result><status>success</status><summary>ok</summary><details></details><artifacts></artifacts></result>',
+        toolResults: [],
+        inlinedFileCount: 0,
+        status: 'success'
+      }
+    ]);
+
+    const messages: ChatMessage[] = [];
+    const counters: DelegationCounters = {
+      consecutiveBadRounds: 0,
+      perTaskBadStreak: new Map()
+    };
+
+    const outcome = await handleDelegates(
+      [{ id: 'S1', task: 'Search docs.', files: [], tools: ['search'] }],
+      messages,
+      counters,
+      () => undefined,
+      baseOpts
+    );
+
+    expect(outcome).toBe('continue');
+    expect(runSubAgentPool).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('handleDelegates — P2b no-tool-use-with-files', () => {
   it('marks structural malformed when files assigned but no tools and no inlines', async () => {
     const workspacePath = await mkdtemp(join(tmpdir(), 'vyotiq-p2b-'));
@@ -984,5 +1113,97 @@ describe('handleDelegates — sub-agent model badge emission', () => {
     for (const event of spawns) {
       expect(event.model).toEqual({ providerId: 'anthropic', modelId: 'claude-test' });
     }
+  });
+});
+
+describe('handleDelegates — spawn telemetry', () => {
+  it('emits pending for every spec and run-status shows total workers when pool is capped', async () => {
+    vi.mocked(runSubAgentPool).mockResolvedValueOnce(
+      Array.from({ length: 6 }, (_, i) => ({
+        id: `w${i}`,
+        task: `task ${i}`,
+        output:
+          '<result><status>success</status><summary>ok</summary></result>',
+        toolResults: [],
+        status: 'success' as const
+      }))
+    );
+
+    const events: TimelineEvent[] = [];
+    const counters: DelegationCounters = {
+      consecutiveBadRounds: 0,
+      perTaskBadStreak: new Map()
+    };
+    const specs = Array.from({ length: 6 }, (_, i) => ({
+      id: `w${i}`,
+      task: `task ${i}`,
+      files: [] as string[],
+      tools: [] as string[],
+      concurrency: 2
+    }));
+
+    await handleDelegates(specs, [], counters, (e) => events.push(e), baseOpts);
+
+    const pending = events.filter((e) => e.kind === 'subagent-pending');
+    expect(pending).toHaveLength(6);
+    for (const p of pending) {
+      expect((p as { queued?: boolean }).queued).toBe(true);
+    }
+
+    const status = events.find(
+      (e) => e.kind === 'run-status' && (e as { phase: string }).phase === 'delegating'
+    ) as Extract<TimelineEvent, { kind: 'run-status' }> | undefined;
+    expect(status?.label).toBe('Spawning 6 workers (2 in flight)…');
+    expect(status?.detail?.delegates).toBe(6);
+    expect(status?.detail?.inFlightMax).toBe(2);
+    expect(status?.detail?.queued).toBe(6);
+  });
+});
+
+describe('handleDelegates — recentMutations from run manifest', () => {
+  it('passes capped manifest entries into pool specs', async () => {
+    vi.mocked(getRunManifest).mockResolvedValueOnce({
+      runId: 'run-test',
+      workspaceId: 'ws-test',
+      conversationId: 'conv-test',
+      startedAt: 0,
+      entries: [
+        {
+          id: 'e1',
+          runId: 'run-test',
+          workspaceId: 'ws-test',
+          conversationId: 'conv-test',
+          ts: 100,
+          filePath: 'src/a.ts',
+          kind: 'modify',
+          additions: 3,
+          deletions: 1
+        }
+      ]
+    });
+
+    vi.mocked(runSubAgentPool).mockResolvedValueOnce([
+      {
+        id: 'A1',
+        task: 'ok',
+        output: '<result><status>success</status><summary>ok</summary></result>',
+        toolResults: [],
+        status: 'success',
+        inlinedFileCount: 0
+      }
+    ]);
+
+    await handleDelegates(
+      [{ id: 'A1', task: 'ok', files: [], tools: ['read'] }],
+      [],
+      { consecutiveBadRounds: 0, perTaskBadStreak: new Map() },
+      () => {},
+      baseOpts
+    );
+
+    const poolArgs = vi.mocked(runSubAgentPool).mock.calls[0]?.[0];
+    expect(poolArgs?.[0]?.recentMutations).toEqual([
+      { kind: 'modify', filePath: 'src/a.ts', additions: 3, deletions: 1 }
+    ]);
   });
 });

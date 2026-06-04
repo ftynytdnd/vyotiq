@@ -12,7 +12,7 @@ export function reorderTurnSegment<T extends { kind: string }>(segment: T[]): T[
   const footerRows: T[] = [];
   let pastPrompt = false;
 
-  const footerKinds = new Set(['run-complete', 'token-budget-warning', 'error']);
+  const footerKinds = new Set(['run-complete', 'error']);
 
   for (const row of segment) {
     if (row.kind === 'user-prompt') {

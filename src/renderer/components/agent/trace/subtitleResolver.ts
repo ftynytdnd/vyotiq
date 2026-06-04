@@ -66,6 +66,9 @@ const TOOL_VERB: Record<ToolName, string> = {
   memory: 'Saving memory',
   bash: 'Running bash',
   report: 'Reporting',
+  delegate: 'Spawning',
+  finish: 'Finishing',
+  ask_user: 'Asking',
   unknown: 'Calling tool'
 };
 
@@ -79,7 +82,7 @@ function basenameOf(p: string): string {
 function clip(s: string, max: number): string {
   if (s.length <= max) return s;
   // U+2026 horizontal ellipsis — matches the existing `quote()` helper
-  // in SubAgentTrace.tsx so the truncation glyph stays consistent.
+  // in DelegationWorkerOutline so the truncation glyph stays consistent.
   return `${s.slice(0, max - 1)}\u2026`;
 }
 
@@ -100,6 +103,8 @@ function stringArg(args: ToolArgs, ...keys: string[]): string | null {
  */
 function formatToolAction(name: string, args: ToolArgs): string | null {
   if (!name) return null;
+  // Workers cannot call `delegate`; never surface spawn copy on worker subtitles.
+  if (name === 'delegate') return null;
   const verb = (TOOL_VERB as Record<string, string>)[name] ?? `Calling ${name}`;
 
   switch (name) {

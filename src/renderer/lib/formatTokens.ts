@@ -48,3 +48,21 @@ export function parseTokenCount(raw: string): number | null {
   const value = Math.floor(base * multiplier);
   return value > 0 ? value : null;
 }
+
+/** Completion-token throughput for live status readouts (`83.5 tok/s`). */
+export function formatTokensPerSecond(
+  completionTokens: number | undefined,
+  startedAt: number | undefined,
+  endedAt: number | undefined
+): string | null {
+  if (typeof completionTokens !== 'number' || completionTokens <= 0) return null;
+  if (typeof startedAt !== 'number' || typeof endedAt !== 'number') return null;
+  const elapsedMs = endedAt - startedAt;
+  if (elapsedMs < 250) return null;
+  const rate = completionTokens / (elapsedMs / 1000);
+  if (!Number.isFinite(rate) || rate <= 0) return null;
+  if (rate < 100) {
+    return `${rate.toFixed(1)} tok/s`;
+  }
+  return `${Math.round(rate)} tok/s`;
+}

@@ -5,37 +5,31 @@
  * Two operations live here:
  *
  *   1. `previewRewind(conversationId, workspaceId, promptEventId)` —
- *      compute the impact (run ids, file changes, transcript trim
- *      count) WITHOUT touching disk. Drives the renderer's
- *      confirmation modal.
+ *      compute impact for the confirmation modal: checkpoint-recorded
+ *      file edits (informational — on-disk files are **not** reverted),
+ *      affected run ids, and how many transcript events would be removed.
+ *      Does not mutate disk.
  *
- *   2. `rewindToPrompt(...)` — actually perform the rewind:
+ *   2. `rewindToPrompt(...)` — perform a **transcript-only** rewind:
  *        a. Abort every in-flight run pinned to this conversation
  *           (mirrors `removeConversation` / `moveConversationToWorkspace`
- *           — re-using the orchestrator's abort hook so we never
- *           rewrite a transcript a live run is still streaming into).
- *        b. Walk the affected runs newest-first and call `revertRun`
- *           on each. Each `revertRun` already restores entries in
- *           reverse chronological order inside the run, so overlapping
- *           edits across runs collapse cleanly back to the pre-rewind
- *           state.
- *        c. Drop every pending entry whose `runId` is in the affected
- *           set.
- *        d. Delete the now-empty run manifests (their audit trail is
- *           gone with the transcript anyway — keeping them would just
- *           accumulate dead history pointing at events that no longer
- *           exist).
- *        e. Truncate the JSONL transcript from the prompt event
- *           inclusive.
- *        f. Broadcast `CHECKPOINTS_CHANGED` AND
- *           `CONVERSATION_TRANSCRIPT_REWOUND` so every renderer cache
- *           refreshes in one shot.
+ *           — re-using the orchestrator's abort hook so we never trim
+ *           JSONL while a live run is still streaming).
+ *        b. Drain the append chain so late tail events cannot resurrect
+ *           after truncate.
+ *        c. Truncate the JSONL transcript from the prompt event onward.
+ *        d. Broadcast `checkpointsChanged` (pending cache refresh) and
+ *           `CONVERSATION_TRANSCRIPT_REWOUND` so renderer stores reload.
  *
- * The `runId` link comes from the `user-prompt` event's new optional
- * `runId` field (added when the schema was migrated — see
- * `src/shared/types/chat.ts`). Older transcripts that lack the field
+ *      Checkpoint file restore (`revertRun`, pending drops, manifest
+ *      deletion) is intentionally disabled — workspace files stay as-is.
+ *      `RewindResult.revertedFiles` / `revertedRunIds` remain empty arrays
+ *      for API compatibility.
+ *
+ * The `runId` link comes from the `user-prompt` event's optional
+ * `runId` field (see `src/shared/types/chat.ts`). Older transcripts
  * fall back to a `(conversationId, startedAt ≈ promptEvent.ts)`
- * heuristic match against the workspace's run heads.
+ * heuristic against the workspace's run heads.
  */
 
 import type {
@@ -48,12 +42,7 @@ import type {
 import type { TimelineEvent } from '@shared/types/chat.js';
 import { readTranscript, truncateTranscriptFrom, drainAppendChain } from '../conversations/conversationStore.js';
 import { abortRunsForConversation } from '../orchestrator/AgentV.js';
-import {
-  deleteRun as deleteRunPublic,
-  dropPendingForRuns,
-  getRunManifest,
-  revertRun
-} from './index.js';
+import { getRunManifest } from './index.js';
 import { listRunHeads } from './runManifest.js';
 import { logger } from '../logging/logger.js';
 
@@ -298,83 +287,13 @@ export async function rewindToPrompt(opts: {
     return preview;
   }
 
+  // Checkpoint file restore is disabled — rewind trims the transcript
+  // only. On-disk files are left unchanged.
   const revertedRunIds: string[] = [];
   const revertedFiles: RewindFileChange[] = [];
   const failedFiles: Array<RewindFileChange & { reason: string }> = [];
-
-  // Walk affected runs newest-first.
-  // `revertRun` already iterates each manifest's entries reverse so
-  // the cumulative effect is "every file restored to its pre-rewind
-  // state".
-  // Capture entry shapes BEFORE the revert so we can attribute
-  // failures back to specific files.
-  const entryShapeByRun = new Map<string, RewindFileChange[]>();
-  for (const runId of preview.runIds) {
-    const manifest = await getRunManifest(workspaceId, runId);
-    if (!manifest) continue;
-    entryShapeByRun.set(
-      runId,
-      // newest-first inside the run
-      manifest.entries.slice().reverse().map(entryToFileChange)
-    );
-  }
-
-  for (const runId of preview.runIds) {
-    const beforeShape = entryShapeByRun.get(runId) ?? [];
-    const result = await revertRun(workspaceId, runId, () => {
-      // Audit-log emit: rewind events live in the conversation's
-      // transcript via the trim, NOT as inline `checkpoint-revert`
-      // rows. We pass a no-op so `revertRun` doesn't append per-file
-      // audit rows that are about to disappear with the transcript
-      // trim a few steps below.
-    });
-    if (!result.ok) {
-      const reason =
-        result.error.kind === 'blob-missing'
-          ? `Snapshot missing for ${result.error.hash.slice(0, 8)}…`
-          : result.error.kind === 'fs'
-            ? result.error.message
-            : result.error.kind === 'sandbox'
-              ? result.error.message
-              : `unknown-run ${runId}`;
-      // Mark every file from this run as failed since we don't know
-      // which entry in the chain blew up. The renderer surfaces this
-      // as "N files could not be reverted" with the per-row reason.
-      for (const f of beforeShape) {
-        failedFiles.push({ ...f, reason });
-      }
-      log.warn('rewindToPrompt: revertRun failed', {
-        conversationId,
-        workspaceId,
-        runId,
-        error: result.error
-      });
-      // Continue with remaining runs — each run is independent on
-      // disk; failing one shouldn't strand the rest of the rewind.
-      continue;
-    }
-    revertedRunIds.push(runId);
-    for (const f of beforeShape) {
-      revertedFiles.push(f);
-    }
-  }
-
-  // Drop pending rows for every reverted run. Pass the affected
-  // workspace so the bucket is warm even on cold-cache renderer
-  // boots.
-  let droppedPending = 0;
-  if (revertedRunIds.length > 0) {
-    droppedPending = await dropPendingForRuns(revertedRunIds, [workspaceId]);
-  }
-
-  // Delete the run manifests we just reverted. The audit trail is
-  // gone alongside the transcript trim below — keeping these would
-  // pile up dead heads in `Checkpoints.summary.runs`. Idempotent.
-  let deletedRunManifests = 0;
-  for (const runId of revertedRunIds) {
-    const r = await deleteRunPublic(workspaceId, runId);
-    if (r.removed) deletedRunManifests += 1;
-  }
+  const droppedPending = 0;
+  const deletedRunManifests = 0;
 
   // Truncate the transcript JSONL from the prompt event onward.
   let removedTranscriptEvents = 0;

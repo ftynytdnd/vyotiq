@@ -123,7 +123,7 @@ export async function writeWorkspaceNote(
 /**
  * Per-key serialization for `appendWorkspaceNote`. Append is a
  * read-modify-write sequence (read existing note → concat line → rewrite)
- * and the pool runs up to `MAX_PARALLEL_SUBAGENTS` workers in parallel,
+ * and the pool runs up to `DEFAULT_DELEGATE_CONCURRENCY` workers in parallel,
  * each of which may call `memory.action: 'append'` against the same key
  * in the same round. Without a per-key mutex, the second write clobbers
  * the first and its line is silently lost.

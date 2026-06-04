@@ -57,6 +57,11 @@ export interface ProviderConfig {
   dialect?: ProviderDialect;
   /** Whether the provider is enabled in model selectors. */
   enabled: boolean;
+  /**
+   * Optional ceiling on parallel `streamChat` calls (sub-agent pool).
+   * When set, the host clamps model-declared `concurrency` to this value.
+   */
+  maxConcurrentStreams?: number;
   /** Optional notes shown in settings. */
   notes?: string;
   /** Cached discovered models. */

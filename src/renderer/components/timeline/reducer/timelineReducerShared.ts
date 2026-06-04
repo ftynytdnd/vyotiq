@@ -1,7 +1,7 @@
 /**
  * Shared pure helpers for the timeline reducer modules. Extracted
- * from `applyTimelineEvent.ts` so context-summary and sub-agent
- * branches can live in focused files without duplicating the append
+ * from `applyTimelineEvent.ts` so sub-agent branches can live in
+ * focused files without duplicating the append
  * and partial-args reconciliation logic.
  */
 

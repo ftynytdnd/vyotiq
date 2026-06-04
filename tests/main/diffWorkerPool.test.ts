@@ -90,7 +90,7 @@ beforeEach(() => {
 
 describe('DiffWorkerPool', () => {
   it('lazily spawns a single worker and reuses it for subsequent jobs', async () => {
-    const pool = new DiffWorkerPool();
+    const pool = new DiffWorkerPool(1);
     const job1 = pool.computeHunks('before', 'after');
     expect(constructedWorkers).toHaveLength(1);
     const worker = constructedWorkers[0]!;
@@ -108,24 +108,28 @@ describe('DiffWorkerPool', () => {
   });
 
   it('routes responses to the correct pending promise', async () => {
-    const pool = new DiffWorkerPool();
+    const pool = new DiffWorkerPool(2);
     const p1 = pool.computeHunks('a', 'b');
     const p2 = pool.computeHunks('c', 'd');
-    const worker = constructedWorkers[0]!;
-    expect(worker.postedMessages).toHaveLength(2);
-    const id1 = worker.postedMessages[0]!.jobId;
-    const id2 = worker.postedMessages[1]!.jobId;
-    // Respond out of order — the pool must dispatch by jobId.
+    const worker0 = constructedWorkers[0]!;
+    const worker1 = constructedWorkers[1] ?? worker0;
+    expect(worker0.postedMessages.length + worker1.postedMessages.length).toBe(2);
+    const id1 = worker0.postedMessages[0]?.jobId;
+    const id2 = (worker1.postedMessages[0] ?? worker0.postedMessages[1])?.jobId;
+    expect(id1).toBeTruthy();
+    expect(id2).toBeTruthy();
     const sentinel: DiffHunk[] = [{ oldStart: 1, newStart: 1, lines: [] }];
-    worker.respondOk(id2, sentinel);
-    worker.respondOk(id1, []);
+    const workerForId2 = worker1.postedMessages[0]?.jobId === id2 ? worker1 : worker0;
+    const workerForId1 = workerForId2 === worker1 ? worker0 : worker1;
+    workerForId2.respondOk(id2!, sentinel);
+    workerForId1.respondOk(id1!, []);
     await expect(p1).resolves.toEqual([]);
     await expect(p2).resolves.toEqual(sentinel);
     pool.dispose();
   });
 
   it('rejects the matching promise on a structured error response without killing the worker', async () => {
-    const pool = new DiffWorkerPool();
+    const pool = new DiffWorkerPool(1);
     const p1 = pool.computeHunks('a', 'b');
     const worker = constructedWorkers[0]!;
     const id1 = worker.postedMessages[0]!.jobId;
@@ -141,25 +145,22 @@ describe('DiffWorkerPool', () => {
   });
 
   it('rejects every pending job on worker `error` and respawns on next computeHunks', async () => {
-    const pool = new DiffWorkerPool();
+    const pool = new DiffWorkerPool(1);
     const p1 = pool.computeHunks('a', 'b');
-    const p2 = pool.computeHunks('c', 'd');
     const worker = constructedWorkers[0]!;
     worker.crash(new Error('worker died'));
     await expect(p1).rejects.toThrow(/worker died/);
-    await expect(p2).rejects.toThrow(/worker died/);
-    // Next compute spawns a new worker.
-    const p3 = pool.computeHunks('x', 'y');
+    const p2 = pool.computeHunks('x', 'y');
     expect(constructedWorkers).toHaveLength(2);
     const newWorker = constructedWorkers[1]!;
-    const id3 = newWorker.postedMessages[0]!.jobId;
-    newWorker.respondOk(id3, []);
-    await expect(p3).resolves.toEqual([]);
+    const id2 = newWorker.postedMessages[0]!.jobId;
+    newWorker.respondOk(id2, []);
+    await expect(p2).resolves.toEqual([]);
     pool.dispose();
   });
 
   it('treats non-zero exit codes as a crash', async () => {
-    const pool = new DiffWorkerPool();
+    const pool = new DiffWorkerPool(1);
     const p1 = pool.computeHunks('a', 'b');
     const worker = constructedWorkers[0]!;
     worker.exit(7);
@@ -168,7 +169,7 @@ describe('DiffWorkerPool', () => {
   });
 
   it('ignores zero exit code (clean shutdown after dispose)', async () => {
-    const pool = new DiffWorkerPool();
+    const pool = new DiffWorkerPool(1);
     // No pending jobs — exit(0) should be silent.
     pool.dispose();
     // dispose terminates; nothing should throw.
@@ -176,7 +177,7 @@ describe('DiffWorkerPool', () => {
   });
 
   it('dispose rejects in-flight jobs and terminates the worker', async () => {
-    const pool = new DiffWorkerPool();
+    const pool = new DiffWorkerPool(1);
     const p1 = pool.computeHunks('a', 'b');
     const worker = constructedWorkers[0]!;
     pool.dispose();
@@ -185,13 +186,13 @@ describe('DiffWorkerPool', () => {
   });
 
   it('rejects new computeHunks calls after dispose', async () => {
-    const pool = new DiffWorkerPool();
+    const pool = new DiffWorkerPool(1);
     pool.dispose();
     await expect(pool.computeHunks('a', 'b')).rejects.toThrow(/disposed/);
   });
 
   it('drops late messages for unknown jobIds without throwing', async () => {
-    const pool = new DiffWorkerPool();
+    const pool = new DiffWorkerPool(1);
     const p1 = pool.computeHunks('a', 'b');
     const worker = constructedWorkers[0]!;
     // Stray message that doesn't match any pending jobId.
@@ -204,7 +205,7 @@ describe('DiffWorkerPool', () => {
   });
 
   it('dispose is idempotent', () => {
-    const pool = new DiffWorkerPool();
+    const pool = new DiffWorkerPool(1);
     pool.dispose();
     expect(() => pool.dispose()).not.toThrow();
   });

@@ -28,7 +28,7 @@ describe('deriveRows subagent inline', () => {
     );
   });
 
-  it('tags tool-group and file-edit-group with subagentId', () => {
+  it('tags tool-group with subagentId and folds edit file-edit into it', () => {
     const rows = deriveRows([
       USER,
       {
@@ -36,22 +36,60 @@ describe('deriveRows subagent inline', () => {
         id: 'tc1',
         ts: 1,
         subagentId: 'W1',
-        call: { id: 'c1', name: 'read', args: { path: 'a.ts' } }
+        call: { id: 'c1', name: 'edit', args: { path: 'a.ts', oldString: 'a', newString: 'b' } }
+      },
+      {
+        kind: 'tool-result',
+        id: 'tr1',
+        ts: 2,
+        subagentId: 'W1',
+        result: {
+          id: 'c1',
+          name: 'edit',
+          ok: true,
+          output: 'ok',
+          durationMs: 1,
+          data: {
+            tool: 'edit',
+            filePath: 'a.ts',
+            additions: 1,
+            deletions: 0,
+            created: false,
+            hunks: []
+          }
+        }
       },
       {
         kind: 'file-edit',
         id: 'fe1',
-        ts: 2,
+        ts: 3,
         subagentId: 'W1',
         filePath: 'a.ts',
         additions: 1,
         deletions: 0
       }
     ]);
-    const toolGroup = rows.find((r) => r.kind === 'tool-group');
-    const fileEdit = rows.find((r) => r.kind === 'file-edit-group');
-    expect(toolGroup).toMatchObject({ subagentId: 'W1' });
-    expect(fileEdit).toMatchObject({ subagentId: 'W1' });
+    const toolGroups = rows.filter((r) => r.kind === 'tool-group');
+    const fileEditGroups = rows.filter((r) => r.kind === 'file-edit-group');
+    expect(toolGroups).toHaveLength(1);
+    expect(toolGroups[0]).toMatchObject({ subagentId: 'W1' });
+    expect(fileEditGroups).toHaveLength(0);
+  });
+
+  it('keeps bare sub-agent file-edit as file-edit-group', () => {
+    const rows = deriveRows([
+      USER,
+      {
+        kind: 'file-edit',
+        id: 'fe1',
+        ts: 1,
+        subagentId: 'W1',
+        filePath: 'a.ts',
+        additions: 1,
+        deletions: 0
+      }
+    ]);
+    expect(rows.some((r) => r.kind === 'file-edit-group' && r.subagentId === 'W1')).toBe(true);
   });
 
   it('does not emit phase rows', () => {

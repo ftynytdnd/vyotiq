@@ -8,7 +8,7 @@
  *   - the filter input (or a breadcrumb in `@`-mention controlled mode)
  *   - the result list rendering and pick dispatch
  *
- * Surface palette stays aligned with `PermissionModePill` and `Dropdown`.
+ * Surface palette stays aligned with composer footer controls and `Dropdown`.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';

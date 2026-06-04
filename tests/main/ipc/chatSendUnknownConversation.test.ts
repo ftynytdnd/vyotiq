@@ -14,12 +14,6 @@ interface MockIpcMain {
 
 const mockIpc = ipcMain as unknown as MockIpcMain;
 
-vi.mock('@main/orchestrator/contextSummarizer/idleSummaryRuntime.js', () => ({
-  abortIdleSummary: vi.fn(() => false),
-  awaitIdleSummary: vi.fn(async () => undefined),
-  hasIdleSummary: vi.fn(() => false)
-}));
-
 vi.mock('@main/orchestrator/AgentV', () => ({
   startRun: vi.fn(async () => undefined),
   abortRun: vi.fn(),
@@ -76,11 +70,6 @@ vi.mock('@main/workspace/workspaceState.js', () => ({
 
 vi.mock('@main/settings/settingsStore.js', () => ({
   getSettings: vi.fn(async () => ({ ui: {} }))
-}));
-
-vi.mock('@main/checkpoints/index.js', () => ({
-  listPending: vi.fn(async () => []),
-  acceptAll: vi.fn(async () => undefined)
 }));
 
 const { registerChatIpc } = await import('@main/ipc/chat.ipc');

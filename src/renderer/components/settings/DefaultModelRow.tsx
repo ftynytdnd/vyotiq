@@ -57,9 +57,7 @@ export function DefaultModelRow({ embedded: _embedded = false }: { embedded?: bo
           <>
             <ShellFieldLabel>Default model</ShellFieldLabel>
             <ShellCaption>
-              The model used by Agent V. Picking a new default applies it to the active composer
-              immediately and persists across restarts. Populated from every enabled provider&apos;s
-              discovered models.
+              Used by Agent V and the composer. Applies immediately and persists across restarts.
             </ShellCaption>
           </>
         }
@@ -69,7 +67,7 @@ export function DefaultModelRow({ embedded: _embedded = false }: { embedded?: bo
             value={resolvedValue}
             placeholder={items.length === 0 ? 'No models available' : 'Select model…'}
             disabled={items.length === 0}
-            className="min-w-[12rem] w-full max-w-md"
+            className="min-w-0 w-full max-w-none"
             onChange={(composed) => {
               const idx = composed.indexOf('::');
               if (idx === -1) return;

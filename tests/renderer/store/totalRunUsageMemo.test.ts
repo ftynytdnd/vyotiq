@@ -346,29 +346,12 @@ describe('useChatStore — totalRunUsage sum correctness (post-fix)', () => {
   });
 
   it('returns undefined when no owner has reported usage yet', () => {
-    // Empty slice — no orchestrator usage and no sub-agent usage.
-    // The aggregate must be `undefined` so the composer pill's
-    // `hasActualUsage` gate stays false and the pre-flight
-    // `estimate.tokens` continues to drive the displayed value.
     const aggregate = useChatStore.getState().totalRunUsage;
     expect(aggregate).toBeUndefined();
   });
 });
 
 describe('useChatStore — orchestratorUsage stays orchestrator-only', () => {
-  /**
-   * The composer pill reads `s.orchestratorUsage` directly so that
-   * `usedTokens = latest.promptTokens + latest.completionTokens +
-   * inFlight.completionTokens` reflects the orchestrator's OWN
-   * context window (the model the user is composing TO). Sub-agents
-   * have completely separate context windows (project.md §"Sub-
-   * Agent Delegation" #3, also Anthropic 2026 Claude Code subagents
-   * docs). These tests pin that invariant so a future refactor
-   * can't silently re-route the pill through `totalRunUsage` and
-   * resurrect the May 2026 regression where a tiny sub-agent
-   * frame collapsed the pill to ~34 tokens.
-   */
-
   it('keeps orchestratorUsage independent from sub-agent usage frames', () => {
     const store = useChatStore.getState();
     store.applyEvent(RUN_ID, {
@@ -386,12 +369,8 @@ describe('useChatStore — orchestratorUsage stays orchestrator-only', () => {
         usage: { promptTokens: 60000, completionTokens: 1000, totalTokens: 61000 }
       })
     );
-    // Sub-agent reports a tiny first frame. Pre-fix this would have
-    // collapsed the composer pill's reading to {p:50, c:5} via the
-    // broken fold-replace inside `computeTotalRunUsage`. The pill
-    // no longer routes through that aggregate — it reads
-    // `orchestratorUsage` directly, which the reducer keeps
-    // independent.
+    // Sub-agent reports a tiny first frame; orchestrator usage must
+    // stay independent (not folded into orchestratorUsage).
     store.applyEvent(
       RUN_ID,
       tokenUsageEvent({
@@ -402,57 +381,11 @@ describe('useChatStore — orchestratorUsage stays orchestrator-only', () => {
       })
     );
     const state = useChatStore.getState();
-    // Orchestrator's window — what the composer pill displays.
     expect(state.orchestratorUsage?.latest.promptTokens).toBe(60000);
     expect(state.orchestratorUsage?.latest.completionTokens).toBe(1000);
     // Sub-agent's separate window — surfaced under the sub-agent
     // trace card, never folded into the orchestrator's.
     expect(state.subagents['sa-iso']?.usage?.latest.promptTokens).toBe(50);
     expect(state.subagents['sa-iso']?.usage?.latest.completionTokens).toBe(5);
-  });
-
-  it('pill formula (latest.promptTokens + completionTokens + inFlight.completionTokens) computes from orchestratorUsage', () => {
-    // This case mirrors what `Composer.tsx` does at runtime:
-    //   const usedTokens =
-    //     orchestratorUsage.latest.promptTokens +
-    //     orchestratorUsage.latest.completionTokens +
-    //     (orchestratorUsage.inFlight?.completionTokens ?? 0);
-    // Pinning the formula here means any future refactor that
-    // swaps the slot back to `totalRunUsage` (now a true sum
-    // across all agents) would fail this test loudly.
-    const store = useChatStore.getState();
-    store.applyEvent(RUN_ID, {
-      kind: 'subagent-spawn',
-      id: 'spawn-pill',
-      ts: 0,
-      subagentId: 'sa-pill',
-      task: 'pill',
-      files: [],
-      tools: []
-    });
-    store.applyEvent(
-      RUN_ID,
-      tokenUsageEvent({
-        usage: { promptTokens: 60000, completionTokens: 1000, totalTokens: 61000 }
-      })
-    );
-    store.applyEvent(
-      RUN_ID,
-      tokenUsageEvent({
-        id: 'tu-sa-pill',
-        subagentId: 'sa-pill',
-        assistantMsgId: 'sa-pill',
-        usage: { promptTokens: 50, completionTokens: 5, totalTokens: 55 }
-      })
-    );
-    const orc = useChatStore.getState().orchestratorUsage;
-    expect(orc).toBeDefined();
-    const inFlight = orc!.inFlight?.completionTokens ?? 0;
-    const pillReading =
-      orc!.latest.promptTokens + orc!.latest.completionTokens + inFlight;
-    // Orchestrator-only window: 60000 + 1000 + 0 = 61000. Pre-fix
-    // the composer would have read totalRunUsage.latest, ending up
-    // at 50 + 5 + 0 = 55 — the 1110× error the screenshots showed.
-    expect(pillReading).toBe(61000);
   });
 });

@@ -1,6 +1,6 @@
 /**
  * Tests for the `subagent-pending` reducer branch and inline
- * `subagent-line` timeline rows rendered by `SubAgentTrace`.
+ * `subagent-line` timeline rows segmented by `DelegationStream`.
  */
 
 import { describe, expect, it } from 'vitest';

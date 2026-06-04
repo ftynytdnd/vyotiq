@@ -184,23 +184,6 @@ export function assertStringArray(
   }
 }
 
-/**
- * Assert a `ConfirmResponse` — legacy bare boolean or the structured
- * `{ approved, acceptAllRemaining? }` object from `EditApprovalDialog`.
- */
-export function assertConfirmResponse(
-  channel: string,
-  field: string,
-  value: unknown
-): asserts value is boolean | { approved: boolean; acceptAllRemaining?: boolean } {
-  if (typeof value === 'boolean') return;
-  assertObject(channel, field, value);
-  assertBoolean(channel, `${field}.approved`, value.approved);
-  if ('acceptAllRemaining' in value && value.acceptAllRemaining !== undefined) {
-    assertBoolean(channel, `${field}.acceptAllRemaining`, value.acceptAllRemaining);
-  }
-}
-
 /** SHA-256 content hash used by the checkpoint blob store (64 lowercase hex). */
 const BLOB_HASH_RE = /^[0-9a-f]{64}$/;
 

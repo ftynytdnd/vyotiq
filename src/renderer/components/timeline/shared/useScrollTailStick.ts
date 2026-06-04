@@ -1,7 +1,7 @@
 /**
  * Tail-stick scroll tracking for streaming bodies (reasoning panels,
- * worker text, context summaries). Shared by orchestrator and sub-agent
- * surfaces so the stick threshold stays in one place.
+ * worker text). manual_only: never auto-scroll unless the user is
+ * already at the tail.
  */
 
 import { useEffect, useRef, type RefObject, type UIEvent } from 'react';
@@ -18,7 +18,7 @@ export function useScrollTailStick(
 } {
   const { active, expanded = true } = options;
   const bodyRef = useRef<HTMLDivElement | null>(null);
-  const stickRef = useRef(true);
+  const stickRef = useRef(false);
 
   useEffect(() => {
     if (!expanded || !active) return;

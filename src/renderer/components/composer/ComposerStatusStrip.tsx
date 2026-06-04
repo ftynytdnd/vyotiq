@@ -5,7 +5,8 @@
 import { memo, useEffect, useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '../../store/useChatStore.js';
-import { formatTokensPerSecond } from '../contextInspector/inspectorFormat.js';
+import { useTimelineUiStore } from '../../store/useTimelineUiStore.js';
+import { formatTokensPerSecond } from '../../lib/formatTokens.js';
 import {
   resolveLivePhaseHeadline,
   shouldHideLivePhaseHeadline,
@@ -13,16 +14,19 @@ import {
 } from '../timeline/shared/rowStyles.js';
 import { shimmerText } from '../../lib/shimmer.js';
 import { cn } from '../../lib/cn.js';
+import { formatDelegateSpawnStatusLabel } from '@shared/text/delegationStatus.js';
 
 const TICK_MS = 1000;
 
 export const ComposerStatusStrip = memo(function ComposerStatusStrip() {
-  const { isProcessing, latest, runStartedAt, orchestratorUsage } = useChatStore(
+  const timelineAtTail = useTimelineUiStore((s) => s.timelineAtTail);
+  const { isProcessing, latest, runStartedAt, orchestratorUsage, hasEvents } = useChatStore(
     useShallow((s) => ({
       isProcessing: s.isProcessing,
       latest: s.latestOrchestratorRunStatus,
       runStartedAt: s.runStartedAt,
-      orchestratorUsage: s.orchestratorUsage
+      orchestratorUsage: s.orchestratorUsage,
+      hasEvents: s.events.length > 0
     }))
   );
   const [tick, setTick] = useState(0);
@@ -37,7 +41,18 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip() {
     if (!isProcessing) return null;
     if (latest) {
       if (shouldHideLivePhaseHeadline(latest.phase)) return null;
-      return resolveLivePhaseHeadline(latest.phase, latest.label ?? 'Working…');
+      const base = resolveLivePhaseHeadline(latest.phase, latest.label ?? 'Working…');
+      if (
+        latest.phase === 'delegating' &&
+        typeof latest.detail?.delegates === 'number' &&
+        latest.detail.delegates > 0
+      ) {
+        return formatDelegateSpawnStatusLabel(
+          latest.detail.delegates,
+          latest.detail.inFlightMax ?? latest.detail.delegates
+        );
+      }
+      return base;
     }
     return 'Starting…';
   }, [isProcessing, latest]);
@@ -54,17 +69,35 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip() {
     );
   }, [isProcessing, orchestratorUsage, tick]);
 
+  if (!timelineAtTail && hasEvents) {
+    return (
+      <span className="vx-composer-status-strip min-w-0 flex-1 truncate px-0.5 text-meta text-text-faint">
+        Scroll down or use{' '}
+        <span className="vx-jump-to-latest-label">Latest</span> for new messages
+      </span>
+    );
+  }
+
   if (!isProcessing || !label) return null;
 
   const anchor = latest?.ts ?? runStartedAt ?? Date.now();
   const elapsed = Math.max(0, Math.floor((Date.now() - anchor) / 1000));
+  const shimmer = latest?.phase !== 'connecting';
 
   return (
     <div
-      className="vx-composer-status-strip min-w-0 flex-1 truncate px-0.5 text-meta"
+      className="vx-composer-status-strip flex min-w-0 flex-1 items-baseline px-0.5 text-meta"
       aria-live="polite"
     >
-      <span className={cn(timelinePhaseHeadingClassName(true), shimmerText(true))}>{label}</span>
+      <span
+        className={cn(
+          timelinePhaseHeadingClassName(true),
+          shimmerText(shimmer),
+          'min-w-0 shrink'
+        )}
+      >
+        {label}
+      </span>
       {elapsed > 0 && (
         <span className="ml-1.5 text-text-faint tabular-nums">{elapsed}s</span>
       )}

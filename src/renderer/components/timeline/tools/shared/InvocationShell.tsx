@@ -59,9 +59,11 @@ export function InvocationShell({
   const { rerun, busyCallId, canRerun } = useToolRerun();
   const canExpand = detail !== undefined && detail !== null;
 
+  const failed = ok === false;
   const { expanded: open, onToggle } = useTimelineRowExpand({
     ...(rowKey ? { rowKey } : {}),
-    liveAutoExpand: canExpand ? liveAutoExpand || groupExpanded : false
+    defaultExpanded: failed ? false : undefined,
+    liveAutoExpand: canExpand && !failed ? liveAutoExpand || groupExpanded : false
   });
 
   const onHeaderToggle = () => {
@@ -71,7 +73,7 @@ export function InvocationShell({
 
   const summaryText = 'text-row';
   const running = ok === null;
-  const inlineErrorHint = errorHint && !open;
+  const showDetailsToggle = failed && canExpand;
   const settled = Boolean(result && partial !== true);
   const rerunnable = canRerun && settled && call && canRerunToolCall(call);
   const rerunBusy = Boolean(call && busyCallId === call.id);
@@ -102,7 +104,7 @@ export function InvocationShell({
   const label = (
     <span
       className={cn('inline-flex min-w-0 max-w-full items-center gap-1.5', summaryText)}
-      title={summary}
+      title={failed && errorHint ? errorHint : summary}
     >
       <span className={cn(toolTitleClassName(running), 'shrink-0')}>{title}</span>
       <span
@@ -139,19 +141,19 @@ export function InvocationShell({
           chevronSpacer={!canExpand}
           className="min-w-0 flex-1"
           {...(rowKey ? { rowAnchorKey: rowKey } : {})}
-          trailing={
-            inlineErrorHint ? (
-              <span
-                className="max-w-[14rem] shrink-0 truncate rounded-inner bg-danger-soft px-1.5 py-0.5 text-meta text-danger"
-                title={errorHint}
-              >
-                {errorHint}
-              </span>
-            ) : undefined
-          }
+          trailing={undefined}
         >
           {label}
         </TimelineRowHeader>
+        {showDetailsToggle ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="shrink-0 text-meta text-text-faint underline-offset-2 hover:text-text-secondary hover:underline"
+          >
+            {open ? 'Hide details' : 'Show details'}
+          </button>
+        ) : null}
         {rerunAction}
         {actions}
       </div>

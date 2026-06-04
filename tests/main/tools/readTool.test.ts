@@ -25,8 +25,6 @@ function ctxFor(workspacePath: string): ToolContext {
     strictApprovals: false,
     emit: () => undefined,
     signal: new AbortController().signal,
-    confirm: async () => ({ approved: true, reason: 'approved' }),
-    confirmEdit: async () => ({ approved: true, acceptAllRemaining: false })
   };
 }
 
@@ -68,6 +66,16 @@ describe('read.tool BOM detection', () => {
     const result = await readTool.run({ path: 'legacy-no-bom.ps1' }, ctxFor(ws));
     expect(result.ok).toBe(true);
     expect(result.output).toContain('const legacy = true;');
+  });
+
+  it('returns ok:false when startLine is past end of file', async () => {
+    const body = 'line one\nline two\n';
+    await fs.writeFile(join(ws, 'small.txt'), body, 'utf8');
+
+    const result = await readTool.run({ path: 'small.txt', startLine: 32001 }, ctxFor(ws));
+    expect(result.ok).toBe(false);
+    expect(result.output).toMatch(/past end of file/i);
+    expect(result.error).toBe('invalid line range');
   });
 
   it('reads a UTF-8 BOM file (EF BB BF) without choking on the BOM', async () => {

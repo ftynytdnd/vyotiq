@@ -5,7 +5,7 @@
  * Hover-reveal actions: Copy, Revert, and Edit (rewind + resend).
  */
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { Copy, Check, Pencil, Undo2 } from 'lucide-react';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import { PromptAttachmentCards } from '../../composer/PromptAttachmentCards.js';
@@ -14,11 +14,12 @@ import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/she
 import { safeCopy } from '../../../lib/clipboard.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import { useRevertPrompt } from '../revert/RevertPromptContext.js';
+import { InlinePromptSession } from '../revert/InlinePromptSession.js';
 import {
   timelineActionPillClassName,
-  timelineAgentColumnClassName,
-  timelineUserPromptBodyClassName
+  timelineAgentColumnClassName
 } from '../shared/rowStyles.js';
+import { PromptBody } from './PromptBody.js';
 
 interface UserPromptRowProps {
   id?: string;
@@ -29,10 +30,6 @@ interface UserPromptRowProps {
   live?: boolean;
 }
 
-const COLLAPSED_MAX_PX = 144;
-
-const EXPANDED_MAX_PX = 320;
-
 export function UserPromptRow({
   id,
   runId,
@@ -40,17 +37,19 @@ export function UserPromptRow({
   attachments = [],
   live = false
 }: UserPromptRowProps) {
-  const bubbleRef = useRef<HTMLDivElement>(null);
-  const [overflows, setOverflows] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-
   const revertCtx = useRevertPrompt();
   const isProcessing = useChatStore((s) => s.isProcessing);
+  const inlineSession =
+    revertCtx?.activeSession && id && revertCtx.activeSession.promptEventId === id
+      ? revertCtx.activeSession
+      : null;
   const fileEditCount = useChatStore((s) =>
     runId ? (s.runIdToFileEditCount[runId] ?? 0) : 0
   );
 
-  const actionAvailable = Boolean(id) && revertCtx !== null && !isProcessing;
+  const sessionBlocksActions = Boolean(revertCtx?.isSessionOpen && !inlineSession);
+  const actionAvailable =
+    Boolean(id) && revertCtx !== null && !isProcessing && !sessionBlocksActions;
   const baseUnavailableTitle = !id
     ? ' is unavailable here'
     : revertCtx === null
@@ -73,34 +72,6 @@ export function UserPromptRow({
   const editTitle = `${editTitleBase}${fileSuffix}`;
   const revertTitle = `${revertTitleBase}${fileSuffix}`;
 
-  useLayoutEffect(() => {
-    const el = bubbleRef.current;
-    if (!el) return;
-
-    const measure = () => {
-      const natural = el.scrollHeight;
-      setOverflows(natural > COLLAPSED_MAX_PX + 4);
-    };
-
-    measure();
-
-    if (typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(() => measure());
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [content]);
-
-  useEffect(() => {
-    if (!overflows && expanded) setExpanded(false);
-  }, [overflows, expanded]);
-
-  const showToggle = overflows;
-  const maxHeightPx = showToggle
-    ? expanded
-      ? EXPANDED_MAX_PX
-      : COLLAPSED_MAX_PX
-    : undefined;
-
   return (
     <div
       className={cn(
@@ -110,33 +81,31 @@ export function UserPromptRow({
       )}
       data-row-kind="user-prompt"
     >
-      <div className="relative">
-        <div
-          ref={bubbleRef}
-          className={cn(
-            'vx-timeline-user-bubble pl-3',
-            timelineUserPromptBodyClassName,
-            showToggle && !expanded && 'overflow-hidden',
-            showToggle && expanded && 'overflow-y-auto scrollbar-stealth max-h-80'
+      {inlineSession && revertCtx ? (
+        <InlinePromptSession
+          conversationId={inlineSession.conversationId}
+          workspaceId={inlineSession.workspaceId}
+          promptEventId={inlineSession.promptEventId}
+          intent={inlineSession.intent}
+          model={revertCtx.model}
+          onModelChange={revertCtx.onModelChange}
+          onOpenProviders={revertCtx.onOpenProviders}
+          initialAttachments={attachments}
+          onCancel={revertCtx.closeSession}
+        />
+      ) : (
+        <>
+          <PromptBody content={content} />
+          {attachments.length > 0 && (
+            <PromptAttachmentCards items={attachments} className="mt-2" />
           )}
-          style={maxHeightPx !== undefined ? { maxHeight: maxHeightPx } : undefined}
-        >
-          {content}
-        </div>
-        {attachments.length > 0 && (
-          <PromptAttachmentCards items={attachments} className="mt-2" />
-        )}
-        {showToggle && !expanded && (
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-surface-base via-surface-base/60 to-transparent"
-          />
-        )}
-      </div>
+        </>
+      )}
+      {!inlineSession && (
       <div
         {...(live ? { 'data-live-prompt-actions': 'true' } : {})}
         className={cn(
-          'flex flex-wrap items-center justify-start gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100'
+          'flex flex-wrap items-center justify-start gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100'
         )}
       >
         <PromptAction
@@ -168,15 +137,6 @@ export function UserPromptRow({
           }}
         />
       </div>
-      {showToggle && (
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="self-start vx-btn vx-btn-quiet px-1.5 py-0.5 text-chat-meta"
-          aria-expanded={expanded}
-        >
-          {expanded ? 'Show less' : 'Show more'}
-        </button>
       )}
     </div>
   );
@@ -241,7 +201,8 @@ function PromptAction({
       disabled={disabled}
       className={cn(
         timelineActionPillClassName,
-        disabled && 'cursor-not-allowed opacity-40'
+        disabled && 'cursor-not-allowed opacity-40',
+        'focus-visible:opacity-100'
       )}
       title={title ?? label}
     >

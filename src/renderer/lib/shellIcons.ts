@@ -26,7 +26,7 @@
 
 
 
-/** Underline tab strip (settings, checkpoints, context inspector). */
+/** Underline tab strip (settings). */
 
 export const SHELL_TAB_ICON_CLASS = 'h-4 w-4 shrink-0 opacity-80';
 

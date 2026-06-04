@@ -5,7 +5,7 @@
  * -------------------
  * The orchestrator's parallel sub-agent pool can fire several `streamChat`
  * calls against the same provider in the same millisecond (the default
- * cap is `MAX_PARALLEL_SUBAGENTS = 4`). Cloud-hosted providers like
+ * cap from `resolveDelegateRoundConcurrency`). Cloud-hosted providers like
  * Ollama Cloud reject the second-and-onwards request with HTTP 429
  * (`{"error":"too many concurrent requests"}`). Each worker then enters
  * its own three-strike retry budget, but because the workers back off
@@ -52,102 +52,21 @@ interface CooldownState {
 const cooldowns = new Map<string, CooldownState>();
 
 /**
- * Per-provider burst stagger state.
- *
- * When multiple sub-agents call `acquire()` within `BURST_WINDOW_MS` of
- * each other (a concurrent burst from `runSubAgentPool`), each successive
- * caller claims the next time slot and sleeps `BURST_SLOT_MS` longer than
- * its predecessor before making its HTTP request. This staggers the initial
- * salvo naturally in Node's single-threaded turn so workers never all fire
- * simultaneously on the first round — the root cause of the Mistral
- * thundering-herd 429 pattern visible in vyotiq.log.
- *
- * Semantics:
- *   - `nextGrantAt`: wall-clock ms of the next available stagger slot.
- *     Incremented atomically (no await between read and write) for each
- *     caller that finds an active burst window.
- *   - A burst window is "active" while the last grant was within
- *     `BURST_WINDOW_MS` ms. After that gap the state is stale; the next
- *     caller resets it and proceeds without stagger.
- *
- * The burst stagger is ONLY applied after any existing cooldown sleep so a
- * recovery from 429 does not layer a stagger on top of an already-long wait.
- */
-interface BurstState {
-  nextGrantAt: number;
-  lastActivityAt: number;
-}
-
-const bursts = new Map<string, BurstState>();
-
-/**
- * How closely-spaced (ms) `acquire()` calls must be to be considered
- * part of the same burst. Generous enough that 8 sub-agents launched in
- * one pool invocation all register as a burst even on a loaded main thread.
- */
-const BURST_WINDOW_MS = 800;
-
-/**
- * Per-slot stagger gap (ms). A pool of 8 workers spreads over 700 ms
- * (0, 100, 200, … 700) — comfortably below the typical Mistral 1 s
- * rate-limit window so the tail workers still complete well within the
- * sub-agent timeout budget. Kept short enough to not measurably inflate
- * overall run time on healthy providers.
- */
-const BURST_SLOT_MS = 100;
-
-/**
- * Block until `providerId`'s cooldown (if any) has expired, then apply
- * a burst stagger when concurrent sub-agent calls arrive within
- * `BURST_WINDOW_MS` of each other. Resolves immediately for isolated,
- * non-bursty requests against a healthy provider.
+ * Block until `providerId`'s cooldown (if any) has expired. Proactive
+ * burst stagger was removed — concurrency is governed by the delegate
+ * pool cap the model declares per round; reactive 429 backoff remains.
  */
 export async function acquire(providerId: string, signal?: AbortSignal): Promise<void> {
   const state = cooldowns.get(providerId);
-  if (state) {
-    const now = Date.now();
-    const wait = state.deadline - now;
-    if (wait <= 0) {
-      // Stale entry — clear so the map doesn't leak hot providers across
-      // a long-running session. We do NOT touch `lastAttempt`: a fresh
-      // 429 within the next iteration block should still feed the
-      // exponential ladder rather than reset to 0.
-      cooldowns.delete(providerId);
-    } else {
-      log.debug('cooldown wait', { providerId, waitMs: wait });
-      await sleep(wait, signal);
-    }
+  if (!state) return;
+  const now = Date.now();
+  const wait = state.deadline - now;
+  if (wait <= 0) {
+    cooldowns.delete(providerId);
+    return;
   }
-
-  // Burst stagger — applied AFTER any cooldown sleep so the stagger is
-  // relative to when each worker is actually ready to fire, not when
-  // they all woke from the same cooldown deadline.
-  //
-  // All map operations below execute without any `await` between them,
-  // which in Node.js's single-threaded event loop means they are
-  // effectively atomic — no other `acquire` call can interleave
-  // between the `get` and the `set`.
-  const now2 = Date.now();
-  const burst = bursts.get(providerId);
-  if (!burst || now2 - burst.lastActivityAt > BURST_WINDOW_MS) {
-    // No active burst or the burst window has long expired. This is the
-    // first arrival (or a lone non-bursty request) — claim slot 0 with
-    // no stagger and open a fresh burst window for any siblings that
-    // follow within BURST_WINDOW_MS.
-    bursts.set(providerId, { nextGrantAt: now2 + BURST_SLOT_MS, lastActivityAt: now2 });
-  } else {
-    // A burst is in progress. Claim the next slot and sleep until it.
-    // `nextGrantAt` is updated synchronously so the next caller gets
-    // the subsequent slot without reading a stale value.
-    const mySlotAt = burst.nextGrantAt;
-    burst.nextGrantAt += BURST_SLOT_MS;
-    burst.lastActivityAt = now2;
-    const stagger = mySlotAt - now2;
-    if (stagger > 0) {
-      log.debug('burst stagger', { providerId, staggerMs: stagger });
-      await sleep(stagger, signal);
-    }
-  }
+  log.debug('cooldown wait', { providerId, waitMs: wait });
+  await sleep(wait, signal);
 }
 
 /**
@@ -216,7 +135,6 @@ export function markSuccess(providerId: string): void {
  */
 export function _resetForTests(): void {
   cooldowns.clear();
-  bursts.clear();
 }
 
 function computeBackoff(attempt: number): number {

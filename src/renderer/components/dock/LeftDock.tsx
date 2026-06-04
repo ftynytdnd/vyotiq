@@ -19,6 +19,7 @@ import {
   DOCK_RAIL_PILL_CLASS,
   DOCK_RESIZE_HANDLE_CLASS,
   dockFlyoutShellClassName,
+  dockWorkspaceActionClassName,
   workspacePanelClassName
 } from './dockShared.js';
 import { useDockFlyoutFocus } from './useDockFlyoutFocus.js';
@@ -31,9 +32,15 @@ import { cn } from '../../lib/cn.js';
 
 export interface LeftDockProps {
   onOpenSettings: () => void;
+  onOpenWorkspace: () => void;
+  onSetWorkspacePath: () => void;
 }
 
-export function LeftDock({ onOpenSettings }: LeftDockProps) {
+export function LeftDock({
+  onOpenSettings,
+  onOpenWorkspace,
+  onSetWorkspacePath
+}: LeftDockProps) {
   useDockShortcuts();
 
   const dockExpanded = useUiStore((s) => s.dockExpanded);
@@ -145,6 +152,24 @@ export function LeftDock({ onOpenSettings }: LeftDockProps) {
       <div className={cn(DOCK_INSET_CLASS, 'h-full gap-0 py-1')}>
         <div className={workspacePanelClassName(workspaces.length)}>
           <DockSectionHeader label="Workspaces" />
+          <div className="flex shrink-0 gap-1 px-2 pb-1">
+            <button
+              type="button"
+              className={dockWorkspaceActionClassName()}
+              title="Open workspace folder (Ctrl+O)"
+              onClick={onOpenWorkspace}
+            >
+              Open…
+            </button>
+            <button
+              type="button"
+              className={dockWorkspaceActionClassName()}
+              title="Set workspace folder by path"
+              onClick={onSetWorkspacePath}
+            >
+              Set path…
+            </button>
+          </div>
           <DockWorkspaceTabs />
         </div>
         <div className={DOCK_DIVIDER_H_CLASS} aria-hidden />

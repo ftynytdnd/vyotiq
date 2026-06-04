@@ -14,7 +14,11 @@ import { useWorkspaceStore } from '@renderer/store/useWorkspaceStore';
 import { useConversationsStore } from '@renderer/store/useConversationsStore';
 import { useDockSearchStore } from '@renderer/store/useDockSearchStore';
 
-const dockProps = { onOpenSettings: () => {} };
+const dockProps = {
+  onOpenSettings: () => {},
+  onOpenWorkspace: () => {},
+  onSetWorkspacePath: () => {}
+};
 
 beforeEach(() => {
   useUiStore.setState({

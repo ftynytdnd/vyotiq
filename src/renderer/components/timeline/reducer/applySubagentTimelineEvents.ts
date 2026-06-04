@@ -176,7 +176,7 @@ export function applySubagentLifecycleTimelineEvent(
             : carryExisting
               ? existing.tools
               : [],
-        status: 'pending',
+        status: event.queued ? 'queued' : 'pending',
         startedAt: event.ts,
         steps: carryExisting ? existing.steps : [],
         fileEdits: carryExisting ? existing.fileEdits : [],
@@ -185,6 +185,8 @@ export function applySubagentLifecycleTimelineEvent(
         iterationOrder: carryExisting ? existing.iterationOrder : [],
         partialToolCallArgs: carryExisting ? existing.partialToolCallArgs : {},
         unknownTools: carryExisting ? existing.unknownTools : [],
+        ...(event.delegationBatchId ? { delegationBatchId: event.delegationBatchId } : {}),
+        ...(event.parentSubagentId ? { parentSubagentId: event.parentSubagentId } : {}),
         // Pending carries the orchestrator's selected model when the
         // mid-stream parser had it. Older transcripts leave the field
         // undefined; the spawn merge below will overwrite it once the
@@ -222,7 +224,17 @@ export function applySubagentLifecycleTimelineEvent(
         // directive and the selection is authoritative. Older
         // transcripts that ran before the field existed leave the
         // slot undefined; renderer hides the badge.
-        ...(event.model ? { model: event.model } : existing?.model ? { model: existing.model } : {})
+        ...(event.model ? { model: event.model } : existing?.model ? { model: existing.model } : {}),
+        ...(event.delegationBatchId
+          ? { delegationBatchId: event.delegationBatchId }
+          : existing?.delegationBatchId
+            ? { delegationBatchId: existing.delegationBatchId }
+            : {}),
+        ...(event.parentSubagentId
+          ? { parentSubagentId: event.parentSubagentId }
+          : existing?.parentSubagentId
+            ? { parentSubagentId: existing.parentSubagentId }
+            : {})
       };
       return {
         ...state,

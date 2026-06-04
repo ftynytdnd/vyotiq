@@ -256,15 +256,25 @@ describe('runOrchestratorLoop — abort vs retriable error', () => {
    * count and fail the assertion.
    */
   it('emits exactly one `connecting` run-status on iteration 0', async () => {
+    // Forced-action loop: a clean single-iteration run ends by calling
+    // `finish` (plain prose no longer auto-finishes on a capable
+    // provider). The loop intercepts `finish`, delivers the answer, and
+    // returns after iter 0 — so exactly one `connecting` is emitted.
     vi.mocked(handleAssistantTurn).mockResolvedValueOnce({
       assistantMsgId: 'msg-iter0',
-      assistantText: 'Final answer.',
+      assistantText: '',
       reasoningText: '',
-      partialToolCalls: [],
-      hadText: true,
+      partialToolCalls: [
+        {
+          id: 'tc-finish',
+          name: 'finish',
+          argumentsBuf: JSON.stringify({ summary: 'Final answer.' })
+        }
+      ],
+      hadText: false,
       hadReasoning: false,
       reasoningEndEmitted: false,
-      finishReason: 'stop'
+      finishReason: 'tool_calls'
     });
 
     const events: TimelineEvent[] = [];

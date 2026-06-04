@@ -81,7 +81,6 @@ export function assertChatSendInput(value: unknown): asserts value is ChatSendIn
   assertString(CHANNEL, 'selection.modelId', value.selection.modelId);
 
   assertObject(CHANNEL, 'permissions', value.permissions);
-  assertBoolean(CHANNEL, 'permissions.allowAuto', value.permissions.allowAuto);
 
   assertOptionalString(CHANNEL, 'conversationId', value.conversationId);
   assertOptionalString(CHANNEL, 'workspaceId', value.workspaceId);

@@ -8,7 +8,6 @@
  *   - Derive a short title from the first user prompt.
  */
 
-import { randomUUID } from 'node:crypto';
 import { IPC, PERSIST_DELTA_COALESCE_CHARS } from '@shared/constants.js';
 import type {
   ChatSendInput,
@@ -18,16 +17,11 @@ import type {
 import {
   abortRun,
   findAllActiveRunsForConversation,
+  findPausedRunForConversation,
   listActiveRuns,
-  startRun
+  startRun,
+  submitAskUserAnswers
 } from '../orchestrator/AgentV.js';
-import {
-  abortIdleSummary as abortIdleSummaryFor,
-  abortIdleSummaryByRunId,
-  awaitIdleSummary as awaitIdleSummaryFor,
-  hasIdleSummary as hasIdleSummaryFor
-} from '../orchestrator/contextSummarizer/idleSummaryRuntime.js';
-import { isIdleSummaryRunId } from '@shared/contextSummary/idleSummaryRunId.js';
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import {
   appendEvent,
@@ -39,17 +33,11 @@ import {
   setLastModel
 } from '../conversations/conversationStore.js';
 import { getActiveWorkspace } from '../workspace/workspaceState.js';
-import {
-  acceptAll as checkpointsAcceptAll,
-  listPending as checkpointsListPending
-} from '../checkpoints/index.js';
-import { reviewSessionBlocksSend } from '../checkpoints/reviewSessions.js';
-import { listWorkspaces } from '../workspace/workspaceState.js';
-import { getSettings } from '../settings/settingsStore.js';
 import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 import { assertString } from './validate.js';
 import { assertChatSendInput } from './chatValidate.js';
+import { assertAskUserSubmitInput } from './askUserValidate.js';
 import {
   armRunSettlement,
   awaitRunSettlement,
@@ -84,30 +72,11 @@ const log = logger.child('ipc/chat');
  * deltas. The renderer always receives every individual delta for
  * smooth token-by-token streaming — only the persisted shape changes.
  *
- * The same coalescer machinery handles the four delta kinds the
- * orchestrator emits — assistant text/reasoning AND
- * context-summary text/reasoning. The summarizer streams via the
- * same `streamChat` transport that produces `agent-text-delta` for
- * normal turns, so the same per-token-frame pressure applies. The
- * summary variants are keyed by `summaryId` (instead of
- * `assistantMsgId`) and live in a sibling Map; flush + tombstone
- * semantics mirror the assistant flow.
+ * The same coalescer machinery handles assistant text/reasoning deltas.
  */
 interface DeltaBuf {
-  kind:
-  | 'agent-text-delta'
-  | 'agent-reasoning-delta'
-  | 'context-summary-delta'
-  | 'context-summary-reasoning-delta';
-  /**
-   * For assistant kinds, the assistantMsgId carried on every delta
-   * (the persisted event's `id` slot).
-   *
-   * For summary kinds, this slot holds a synthetic id used for the
-   * persisted event's `id` (minted on first delta for the summary
-   * id; replay treats it the same as any other event id). The
-   * authoritative handle for summary deltas is `summaryId` below.
-   */
+  kind: 'agent-text-delta' | 'agent-reasoning-delta';
+  /** Assistant message id carried on every delta (persisted event `id`). */
   id: string;
   /** Timestamp of the FIRST unflushed delta in this buffer. */
   ts: number;
@@ -119,25 +88,14 @@ interface DeltaBuf {
    * (Audit fix §1.1) so the synthesized persisted event carries the
    * same `subagentId` as the individual deltas — without it, replay
    * would attribute the entire coalesced body to the orchestrator
-   * surface and the matching `SubAgentTrace` card would render
+   * surface and the matching delegation worker would render
    * empty on transcript reload.
    *
    * `undefined` for orchestrator-scoped deltas (the default), kept
    * out of the persisted shape via the spread on flush so legacy
    * JSONL records are byte-identical to the pre-§1.1 encoding.
-   *
-   * Summary deltas never carry a `subagentId` — the summarizer is a
-   * dedicated orchestrator-side LLM call, not a sub-agent — but we
-   * keep the slot on the buf shape so a single flush helper handles
-   * both families.
    */
   subagentId?: string;
-  /**
-   * Summary-stream id for `context-summary-*` kinds. Required for
-   * the persisted event's `summaryId` slot. `undefined` for
-   * assistant kinds.
-   */
-  summaryId?: string;
 }
 
 interface CoalescerEntry {
@@ -187,14 +145,6 @@ function isPersistentEvent(event: TimelineEvent): boolean {
   );
 }
 
-/**
- * Local alias for the shared `safeWebContentsSend` helper. Kept so the
- * call-site shape inside this file (`safeSend(channel, ...args)`) stays
- * stable across the consolidation; the helper resolves `getMainWindow()`
- * per-emit and swallows destroyed-window throws — same contract this
- * function used to implement inline. See `window/safeWebContentsSend.ts`
- * for the canonical implementation. Audit P3-3 (2026-05).
- */
 const safeSend = safeWebContentsSend;
 
 export function registerChatIpc(): void {
@@ -304,24 +254,6 @@ export function registerChatIpc(): void {
       await drainAppendChain(cid);
     }
 
-    // Idle-summary supersede (review finding for idle parity). An
-    // in-flight idle-mode manual summarization writes
-    // `context-summary-*` events into the SAME JSONL the next
-    // `chat:send` is about to read, so a fresh prompt would
-    // otherwise race the streaming compression and pull a
-    // half-applied splice into its replay-time `messages[]`. Abort
-    // any in-flight idle summary, then await its `done` promise
-    // before continuing — the abort routes through `streamSummary`'s
-    // `signal.aborted` branch and emits a clean
-    // `context-summary-aborted` event, so the renderer's reducer
-    // and the persisted JSONL both settle deterministically.
-    if (hasIdleSummaryFor(cid)) {
-      log.warn('chat:send superseding in-flight idle summary', { conversationId: cid });
-      abortIdleSummaryFor(cid);
-      await awaitIdleSummaryFor(cid);
-      await drainAppendChain(cid);
-    }
-
     // Best-effort: stamp the last-used model. Failures must NEVER swallow
     // the run — log instead so a metadata bug can't take down chat.
     //
@@ -368,160 +300,11 @@ export function registerChatIpc(): void {
       log.warn('failed to load prior transcript; starting fresh', { conversationId: cid, err });
     }
 
-    // Two-mode pending-checkpoint handling on a new prompt:
-    //
-    //   - DEFAULT  (`gatePromptOnPendingByWorkspace` off): auto-accept
-    //     every pending entry. The entries stay reachable via per-file
-    //     history + per-run manifest, so revert is still available
-    //     from Checkpoints; only the pending registry's
-    //     Accept/Reject affordance goes away. This is the legacy
-    //     behavior the renderer header still calls
-    //     "auto-accepted on next message".
-    //
-    //   - GATED (`gatePromptOnPendingByWorkspace[workspaceId] === true`):
-    //     reject the send with a structured reply the renderer
-    //     surfaces as a toast + auto-opens the pending panel. The
-    //     user has to explicitly Accept or Reject each pending row
-    //     before they can send another message. This is the
-    //     opt-in "no implicit acceptance" workflow.
-    let gatePromptOnPending = false;
-    let approveAutoAcceptPending = true;
-    let gateReviewRequestChanges = false;
-    try {
-      const settings = await getSettings();
-      gatePromptOnPending =
-        settings.ui?.gatePromptOnPendingByWorkspace?.[workspaceIdForRun] === true;
-      const autoFlag = settings.ui?.approveAutoAcceptPendingByWorkspace?.[workspaceIdForRun];
-      approveAutoAcceptPending = autoFlag !== false;
-      gateReviewRequestChanges =
-        settings.ui?.gatePromptOnReviewRequestChangesByWorkspace?.[workspaceIdForRun] === true;
-    } catch (err) {
-      log.warn('failed to read pending/review gate settings; defaulting to off', { err });
-    }
-    if (gateReviewRequestChanges) {
-      try {
-        const blocks = await reviewSessionBlocksSend(workspaceIdForRun, cid);
-        if (blocks) {
-          log.info('chat:send blocked by review request_changes', { conversationId: cid });
-          return {
-            ok: false,
-            kind: 'review-request-changes',
-            conversationId: cid
-          };
-        }
-      } catch (err) {
-        log.warn('gatePromptOnReviewRequestChanges check failed; blocking send', {
-          conversationId: cid,
-          err
-        });
-        return {
-          ok: false,
-          kind: 'review-gate-error',
-          conversationId: cid
-        };
-      }
-    }
-    if (gatePromptOnPending) {
-      try {
-        const wsState = await listWorkspaces();
-        const wsIds = wsState.workspaces.map((w) => w.id);
-        const pending = await checkpointsListPending(cid, wsIds);
-        if (pending.length > 0) {
-          log.info('chat:send blocked by pending checkpoints', {
-            conversationId: cid,
-            pending: pending.length
-          });
-          return {
-            ok: false,
-            kind: 'pending-checkpoints',
-            count: pending.length,
-            conversationId: cid
-          };
-        }
-      } catch (err) {
-        // Fail closed when the gate is enabled — mirror review gate (F-IPC-002).
-        log.warn('gatePromptOnPending check failed; blocking send', {
-          conversationId: cid,
-          err
-        });
-        return {
-          ok: false,
-          kind: 'pending-gate-error',
-          conversationId: cid
-        };
-      }
-    }
-
-    if (!gatePromptOnPending && approveAutoAcceptPending) {
-      try {
-        // Pass the live workspace id list so `acceptAll` can warm
-        // every workspace's pending bucket from disk before the
-        // scan. Without this, a cold-start auto-accept walked an
-        // empty in-memory cache and silently left stale on-disk
-        // pending entries from the prior session in place — the
-        // user then saw rows in the pending panel that the harness
-        // promised would have been auto-accepted. See review
-        // finding M3.
-        const wsState = await listWorkspaces();
-        const wsIds = wsState.workspaces.map((w) => w.id);
-        const pendingBefore = await checkpointsListPending(cid, wsIds);
-        const accepted = await checkpointsAcceptAll(cid, wsIds);
-        if (accepted > 0) {
-          const pathPreview = pendingBefore
-            .map((p) => p.filePath)
-            .slice(0, 5)
-            .join(', ');
-          const more =
-            pendingBefore.length > 5 ? ` (+${pendingBefore.length - 5} more)` : '';
-          log.info('auto-accepted pending checkpoints on new prompt', {
-            conversationId: cid,
-            accepted,
-            pathsHead: pathPreview
-          });
-          const autoAcceptPhase: TimelineEvent = {
-            kind: 'phase',
-            id: randomUUID(),
-            ts: Date.now(),
-            label:
-              `Auto-accepted ${accepted} pending change${accepted === 1 ? '' : 's'} before send` +
-              (pathPreview.length > 0 ? `: ${pathPreview}${more}` : ''),
-            tooltip:
-              'approveAutoAcceptPending is enabled for this workspace. Pending rows were accepted ' +
-              'implicitly so the new prompt could proceed.'
-          };
-          void appendEvent(cid, autoAcceptPhase).catch((err) => {
-            log.warn('auto-accept phase persist failed', { conversationId: cid, err });
-          });
-          safeWebContentsSend(IPC.CHAT_EVENT, input.runId, autoAcceptPhase);
-        }
-      } catch (err) {
-        log.warn('checkpoints auto-accept failed', { conversationId: cid, err });
-      }
-    }
-
     // Per-run delta coalescer. Scoped to this closure so it is
     // automatically garbage-collected when the run ends and a fresh
     // buffer is used for the next run. The map is keyed by
     // `assistantMsgId`.
     const coalescer = new Map<string, CoalescerEntry>();
-    /**
-     * Sibling coalescer for context-summarizer deltas, keyed by
-     * `summaryId`. Same shape, same flush triggers, same residual-
-     * drain on `onDone` / `onError` — kept as a separate map so
-     * collisions between an assistant message id and a summary id
-     * (UUID v4 each, so vanishingly unlikely but not ruled out) can
-     * never alias buckets.
-     *
-     * Flush triggers for this map:
-     *   - buffered length ≥ `PERSIST_DELTA_COALESCE_CHARS`
-     *   - matching `context-summary-end` / `context-summary-aborted`
-     *     arrives (parallel to `agent-text-end` / `-aborted`)
-     *   - `context-summary-undone` arrives — drops both buffers; the
-     *     undone marker lands on a clean transcript so replay sees
-     *     `(pending, end, undone)` without orphan delta tail rows.
-     *   - `onDone` / `onError` — catch-all
-     */
-    const summaryCoalescer = new Map<string, CoalescerEntry>();
     /**
      * Tombstones for assistant-message ids whose streaming was
      * explicitly terminated via `agent-text-aborted`. Any `delta`
@@ -548,16 +331,6 @@ export function registerChatIpc(): void {
       if (oldest !== undefined) set.delete(oldest);
     };
     const tombstonedIds = new Set<string>();
-    /**
-     * Tombstones for `summaryId`s whose summarization was terminated
-     * via `context-summary-aborted` or `context-summary-undone`. Same
-     * role as `tombstonedIds` for the assistant flow — drops any
-     * stray late `context-summary-delta` /
-     * `context-summary-reasoning-delta` from persistence so replay
-     * sees a clean `(pending, aborted)` or `(pending, end, undone)`
-     * sequence.
-     */
-    const tombstonedSummaryIds = new Set<string>();
 
     let persistFailureMessage: string | null = null;
     const persistEvent = (event: TimelineEvent): void => {
@@ -576,17 +349,13 @@ export function registerChatIpc(): void {
       // 256-char row is indistinguishable from 256 one-char rows.
       // The `subagentId` slot rides through verbatim when present so
       // sub-agent-scoped streaming bodies replay into the matching
-      // worker's `SubAgentTrace` accumulator. Audit fix §1.1.
-      // The `summaryId` slot rides through for `context-summary-*`
-      // kinds so the renderer reducer routes the coalesced row into
-      // the right `summaries[id]` accumulator.
+      // worker's subagent snapshot accumulator. Audit fix §1.1.
       persistEvent({
         kind: buf.kind,
         id: buf.id,
         ts: buf.ts,
         delta: buf.text,
-        ...(buf.subagentId ? { subagentId: buf.subagentId } : {}),
-        ...(buf.summaryId ? { summaryId: buf.summaryId } : {})
+        ...(buf.subagentId ? { subagentId: buf.subagentId } : {})
       } as TimelineEvent);
       buf.text = '';
     };
@@ -606,16 +375,6 @@ export function registerChatIpc(): void {
           flushBuf(entry.reasoning);
         }
         coalescer.clear();
-      }
-      // Drain the summarizer coalescer with the same triggers. Mirrors
-      // the assistant-side `flushAll` exactly so a closing run leaves
-      // both transcript paths consistent.
-      if (summaryCoalescer.size > 0) {
-        for (const entry of summaryCoalescer.values()) {
-          flushBuf(entry.text);
-          flushBuf(entry.reasoning);
-        }
-        summaryCoalescer.clear();
       }
     };
 
@@ -772,83 +531,6 @@ export function registerChatIpc(): void {
           // of producing an out-of-order `aborted → delta` row on
           // replay. Review finding H6.
           addTombstone(tombstonedIds, event.id);
-        } else if (
-          event.kind === 'context-summary-delta' ||
-          event.kind === 'context-summary-reasoning-delta'
-        ) {
-          // Sibling coalescer for summarizer streams. Same flush
-          // triggers as the assistant flow but keyed by `summaryId`
-          // (carried on every event in the family) instead of
-          // `assistantMsgId`. Late deltas after `-aborted` /
-          // `-undone` are dropped via `tombstonedSummaryIds` so the
-          // persisted JSONL stays in canonical order.
-          if (tombstonedSummaryIds.has(event.summaryId)) {
-            log.debug('dropping late summary delta after terminal', {
-              summaryId: event.summaryId,
-              kind: event.kind
-            });
-            return;
-          }
-          let entry = summaryCoalescer.get(event.summaryId);
-          if (!entry) {
-            entry = {};
-            summaryCoalescer.set(event.summaryId, entry);
-          }
-          const slot =
-            event.kind === 'context-summary-delta' ? 'text' : 'reasoning';
-          let buf = entry[slot];
-          if (!buf) {
-            buf = {
-              kind: event.kind,
-              // Reuse the FIRST delta's event id for the synthesized
-              // flushed row. Replay treats it as any other event id
-              // (used for dedupe within `events[]`); the
-              // authoritative grouping handle is `summaryId`.
-              id: event.id,
-              ts: event.ts,
-              text: '',
-              summaryId: event.summaryId
-            };
-            entry[slot] = buf;
-          }
-          buf.text += event.delta;
-          if (buf.text.length >= PERSIST_DELTA_COALESCE_CHARS) {
-            flushBuf(buf);
-          }
-          return;
-        } else if (event.kind === 'context-summary-end') {
-          // Flush the matching summary buffers BEFORE persisting the
-          // end marker so replay sees `...summary-deltas → end`.
-          const entry = summaryCoalescer.get(event.summaryId);
-          if (entry) {
-            flushBuf(entry.text);
-            flushBuf(entry.reasoning);
-            summaryCoalescer.delete(event.summaryId);
-          }
-        } else if (event.kind === 'context-summary-aborted') {
-          // Abort kills both summary buffers; tombstone the id so
-          // any straggling delta after the abort is dropped (same
-          // role as the assistant `tombstonedIds` set).
-          const entry = summaryCoalescer.get(event.summaryId);
-          if (entry) {
-            flushBuf(entry.text);
-            flushBuf(entry.reasoning);
-            summaryCoalescer.delete(event.summaryId);
-          }
-          addTombstone(tombstonedSummaryIds, event.summaryId);
-        } else if (event.kind === 'context-summary-undone') {
-          // Undo lands AFTER `context-summary-end` for the same id —
-          // both buffers should already be drained, but be defensive
-          // (a future emit-order change could let an undo race a
-          // streaming-end). Tombstone the id so stray deltas after
-          // the undo are dropped.
-          const entry = summaryCoalescer.get(event.summaryId);
-          if (entry) {
-            flushBuf(entry.text);
-            flushBuf(entry.reasoning);
-            summaryCoalescer.delete(event.summaryId);
-          }
-          addTombstone(tombstonedSummaryIds, event.summaryId);
         } else {
           // Implicit boundary: any other persistent event kind
           // (`tool-call`, `tool-result`, `phase`, `subagent-*`,
@@ -873,23 +555,17 @@ export function registerChatIpc(): void {
             flushBuf(entry.text);
             flushBuf(entry.reasoning);
           }
-          // Same boundary invariant for the summarizer coalescer:
-          // any non-summary persistent event lands AFTER any
-          // pending summary deltas. Today the summarizer's emit
-          // path always interleaves `pending → delta+ → end` with
-          // no foreign events between, so this is defensive against
-          // a future emit-order change.
-          for (const entry of summaryCoalescer.values()) {
-            flushBuf(entry.text);
-            flushBuf(entry.reasoning);
-          }
         }
 
         // Non-delta events persist verbatim.
         persistEvent(event);
       },
       onDone: () => finalizeRunDurability('done'),
-      onError: (message: string) => finalizeRunDurability('error', message)
+      onError: (message: string) => finalizeRunDurability('error', message),
+      onAwaitingUser: () => {
+        flushAll();
+        safeSend(IPC.CHAT_AWAITING_USER, input.runId);
+      }
     }, priorTranscript).catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
       log.error('startRun failed', { runId: input.runId, conversationId: cid, err });
@@ -928,11 +604,28 @@ export function registerChatIpc(): void {
 
   wrapIpcHandler(IPC.CHAT_ABORT, async (_event, runId: string) => {
     assertString('chat:abort', 'runId', runId);
-    if (isIdleSummaryRunId(runId)) {
-      abortIdleSummaryByRunId(runId);
-      return;
-    }
     abortRun(runId);
+  });
+
+  wrapIpcHandler(IPC.CHAT_SUBMIT_ASK_USER, async (_event, input) => {
+    assertAskUserSubmitInput(input);
+    const pausedRunId = findPausedRunForConversation(input.conversationId);
+    if (!pausedRunId || pausedRunId !== input.runId) {
+      return {
+        ok: false as const,
+        kind: 'not-awaiting-user' as const,
+        message: 'No paused ask_user run for this conversation.'
+      };
+    }
+    const ok = await submitAskUserAnswers(input);
+    if (!ok) {
+      return {
+        ok: false as const,
+        kind: 'unknown-run' as const,
+        message: 'Failed to resume the paused run.'
+      };
+    }
+    return { ok: true as const };
   });
 
   // Snapshot of every orchestrator run currently in flight in main.

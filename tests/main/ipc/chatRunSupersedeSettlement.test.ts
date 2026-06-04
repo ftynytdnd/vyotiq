@@ -29,13 +29,6 @@ vi.mock('@main/ipc/runSettlement.js', () => ({
   settleRun: (...args: unknown[]) => settleRun(...args)
 }));
 
-vi.mock('@main/orchestrator/contextSummarizer/idleSummaryRuntime.js', () => ({
-  abortIdleSummary: vi.fn(() => false),
-  awaitIdleSummary: vi.fn(async () => undefined),
-  hasIdleSummary: vi.fn(() => false),
-  abortIdleSummaryByRunId: vi.fn()
-}));
-
 vi.mock('@main/orchestrator/AgentV', () => ({
   startRun: (...args: unknown[]) => startRun(...args),
   abortRun: (...args: unknown[]) => abortRun(...args),
@@ -88,15 +81,6 @@ vi.mock('@main/workspace/workspaceState.js', () => ({
     activeId: 'ws-1',
     workspaces: [{ id: 'ws-1', path: '/tmp/ws', label: 'WS', addedAt: 0 }]
   }))
-}));
-
-vi.mock('@main/checkpoints/index.js', () => ({
-  acceptAll: vi.fn(),
-  listPending: vi.fn(async () => [])
-}));
-
-vi.mock('@main/checkpoints/reviewSessions.js', () => ({
-  reviewSessionBlocksSend: vi.fn(() => false)
 }));
 
 vi.mock('@main/settings/settingsStore.js', () => ({

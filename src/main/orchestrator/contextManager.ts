@@ -225,22 +225,10 @@ export async function buildContextEnvelope(
    */
   workspaceId?: string
 ): Promise<ContextEnvelopes> {
-  // Audit fix B4: fetch the cross-workspace conversation list ONCE and
-  // share it between `sessionContextBody` (no filter) and
-  // `priorConversationsBody` (workspace filter happens in-process from
-  // the same list). Pre-fix, both helpers awaited their own
-  // `listConversations()` round-trip and each cloned the full index.
-  //
-  // The shared call is wrapped so a transient index-read failure
-  // resolves to `undefined` rather than a rejection. Each helper
-  // then sees `undefined` and falls back to its own
-  // `await listConversations(...)` — which will hit the SAME
-  // failure and trigger the per-helper catch path (so the
-  // "(session lookup failed — …)" body is preserved unchanged).
-  const sharedListPromise = listConversations().then(
-    (list) => list as readonly ConversationMeta[] | undefined,
-    () => undefined as readonly ConversationMeta[] | undefined
-  );
+  // Fetch the cross-workspace conversation list once and share it between
+  // `sessionContextBody` and `priorConversationsBody`. A transient failure
+  // resolves to `undefined` so each helper falls back to its own catch path.
+  const sharedListPromise = listConversations().catch(() => undefined);
   const [topLevel, mem, conversationsList] = await Promise.all([
     workspaceTopLevel(workspacePath),
     retrieveRelevantMemory(userPrompt, undefined, workspacePath),
@@ -442,7 +430,7 @@ export function createInlineFileCache(): InlineFileCache {
  * (review finding H9). Without bounding, an N-file delegate runs
  * `realpath` + `readFile` strictly serially — N × wall-clock latency
  * even when the OS could have served them concurrently. The cap of
- * 4 keeps the FS pressure modest (well below `MAX_PARALLEL_SUBAGENTS`
+ * 4 keeps the FS pressure modest (well below `DEFAULT_DELEGATE_CONCURRENCY`
  * so a multi-spec delegation round doesn't fan out N×8 reads at once)
  * while still cutting the typical 5-file delegate's latency by ~4×.
  *

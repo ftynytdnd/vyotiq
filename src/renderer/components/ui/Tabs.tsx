@@ -1,7 +1,7 @@
 /**
  * Tabs — single-select segmented control / tab strip used across modal
- * surfaces (CheckpointsView, ContextInspectorPanel, MemoryPanel,
- * RawDiffView, AddProviderForm.DialectSwitch, MemoryPanel.ViewModeToggle).
+ * surfaces (MemoryPanel, AddProviderForm.DialectSwitch,
+ * MemoryPanel.ViewModeToggle).
  *
  * Consolidates six near-duplicate tab patterns that had drifted across
  * the renderer into one shared primitive while preserving every
@@ -9,8 +9,7 @@
  *
  *   - **strip** (default): horizontal row of pill buttons. Matches the
  *     `app-no-drag rounded-inner px-2.5 py-1 text-row` shape the
- *     CheckpointsView and ContextInspectorPanel tab strips already
- *     use. Active = {@link chromeTabActiveClassName}, idle =
+ *     settings tab strip. Active = {@link chromeTabActiveClassName}, idle =
  *     {@link chromeTabIdleClassName}. The
  *     buttons sit FLUSH (no chrome wrapper) so the caller's own
  *     layout (`flex items-center gap-1` etc.) drives positioning.
@@ -86,7 +85,7 @@ interface TabsProps<T extends string = string> {
   ariaLabel?: string;
   /**
    * Settings-style nav strip: softer base tint (`vx-tab-strip-nav`),
-   * active tab uses `vx-tab-pill-active`. Defaults to Checkpoints overlay pills.
+   * active tab uses `vx-tab-pill-active`. Defaults to settings nav strip.
    */
   stripNav?: boolean;
   /**
@@ -245,7 +244,7 @@ export function Tabs<T extends string = string>({
 
   // Strip variant — flush row of pill buttons. Caller controls the
   // outer flex layout (`gap-1` is the standard rhythm in
-  // CheckpointsView / ContextInspectorPanel).
+  // settings panels).
   return (
     <div
       role="tablist"

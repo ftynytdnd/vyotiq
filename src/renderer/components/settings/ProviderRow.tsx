@@ -11,7 +11,15 @@
  * background contrast rather than visible boxes.
  */
 import { useMemo, useState } from 'react';
-import { Trash2, RefreshCcw, CheckCircle2, XCircle, ChevronDown, ChevronRight } from 'lucide-react';
+import {
+  Trash2,
+  RefreshCcw,
+  CheckCircle2,
+  XCircle,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp
+} from 'lucide-react';
 import {
   PROVIDER_DIALECT_LABELS,
   type ProviderAttribution,
@@ -42,7 +50,10 @@ interface ProviderRowProps {
   provider: ProviderConfig;
 }
 
-export function ProviderRow({ provider }: ProviderRowProps & { embedded?: boolean }) {
+export function ProviderRow({
+  provider,
+  onCollapse
+}: ProviderRowProps & { embedded?: boolean; onCollapse?: () => void }) {
   const remove = useProviderStore((s) => s.remove);
   const discover = useProviderStore((s) => s.discover);
   const test = useProviderStore((s) => s.test);
@@ -106,7 +117,20 @@ export function ProviderRow({ provider }: ProviderRowProps & { embedded?: boolea
             </>
           }
           control={
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {onCollapse ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onCollapse}
+                  title="Collapse provider details"
+                >
+                  <ChevronUp
+                    className={SHELL_ROW_ICON_CLASS}
+                    strokeWidth={SHELL_ROW_ICON_STROKE}
+                  />
+                </Button>
+              ) : null}
               <Switch
                 size="md"
                 value={provider.enabled}

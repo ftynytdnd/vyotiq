@@ -5,10 +5,7 @@
 import type { ToolCall, ToolResult, DiffHunk } from './tool.js';
 import type { ModelSelection } from './provider.js';
 import type { CheckpointChangeKind } from './checkpoint.js';
-import type {
-  ContextMessageOverride,
-  PersistedSummaryConfig
-} from './contextSummary.js';
+import type { AskUserStructuredPayload } from './askUser.js';
 
 /**
  * Internal role union for `ChatMessage`. Not exported because the only
@@ -187,7 +184,7 @@ export type TimelineEvent =
   /**
    * Streaming assistant text. The optional `subagentId` slot lets the
    * orchestrator-owned event stream carry sub-agent worker text and
-   * reasoning DURING delegation, so the matching `SubAgentTrace`
+   * reasoning DURING delegation, so the matching delegation worker
    * card can surface live worker output instead of going dark until
    * the worker emits its `<result>` envelope. Audit fix §1.1.
    *
@@ -227,6 +224,30 @@ export type TimelineEvent =
    */
   | { kind: 'phase'; id: string; ts: number; label: string; tooltip?: string }
   /**
+   * Structured clarifying question from `ask_user` (multi-choice). Persisted
+   * for timeline replay; plain-text fallback uses `agent-text-delta` when
+   * only legacy `question` is present.
+   */
+  | {
+    kind: 'ask-user-prompt';
+    id: string;
+    ts: number;
+    displayText: string;
+    payload: AskUserStructuredPayload;
+    toolCallId: string;
+    runId: string;
+    status?: 'pending' | 'submitted';
+  }
+  /** Marks an interactive ask_user prompt as answered (UI latch). */
+  | {
+    kind: 'ask-user-submitted';
+    id: string;
+    ts: number;
+    promptEventId: string;
+    toolCallId: string;
+    runId: string;
+  }
+  /**
    * Mid-stream notice that the orchestrator has just emitted a fully-formed
    * `<delegate ... />` directive in the current assistant turn. Allows the
    * UI to surface the pending sub-agent as a row before the orchestrator
@@ -254,6 +275,12 @@ export type TimelineEvent =
      * earliest available model the renderer can paint with.
      */
     model?: ModelSelection;
+    /** True when the worker is waiting for a pool slot. */
+    queued?: boolean;
+    /** Groups workers spawned in the same delegation round. */
+    delegationBatchId?: string;
+    /** Parent worker when nested one level deep. */
+    parentSubagentId?: string;
   }
   | {
     kind: 'subagent-spawn';
@@ -308,6 +335,8 @@ export type TimelineEvent =
      * transcripts; the renderer hides the badge when absent.
      */
     model?: ModelSelection;
+    delegationBatchId?: string;
+    parentSubagentId?: string;
   }
   | {
     kind: 'subagent-status';
@@ -517,6 +546,10 @@ export type TimelineEvent =
       attempt?: number;
       maxAttempts?: number;
       delegates?: number;
+      /** Max in-flight workers for the current delegation round. */
+      inFlightMax?: number;
+      /** Workers waiting for a pool slot (spawned but not yet running). */
+      queued?: number;
       subagentId?: string;
       providerId?: string;
       modelId?: string;
@@ -564,8 +597,8 @@ export type TimelineEvent =
   }
   /**
    * A previously-recorded checkpoint entry has been reverted (the
-   * user clicked Reject in the pending panel, or chose Revert in
-   * the Checkpoints view). Persistent — surfaces in the timeline
+   * user clicked Reject in the timeline pending row, or reverted via
+   * checkpoints IPC). Persistent — surfaces in the timeline
    * as an audit row and lets transcript replay flip the entry's
    * `reverted` flag on the in-memory registry without re-reading
    * the run manifest.
@@ -578,7 +611,7 @@ export type TimelineEvent =
     /**
      * Run id the original `checkpoint-entry` was recorded under, when
      * known. Optional because user-initiated reverts from the
-     * Checkpoints view (`revertFileToHash`) don't carry a conversation
+     * file-hash revert (`revertFileToHash`) don't carry a conversation
      * context and therefore have no run to attribute the revert to.
      * The previous shape required this field and call sites emitted
      * an empty string — a typing lie the renderer accidentally
@@ -607,149 +640,10 @@ export type TimelineEvent =
     subagentId?: string;
   }
   /**
-   * Context summarization — open marker. Emitted the moment the
-   * orchestrator decides (auto or manual) to compress a slice of
-   * its `messages[]`. Carries the index range being summarized
-   * (computed against `messages.length` at decision time), the
-   * stable `messageId` set being replaced, the trigger reason,
-   * and a `PersistedSummaryConfig` snapshot so transcript replay
-   * can reproduce the same state.
-   *
-   * PERSISTENT — written to JSONL. `replayCompression` walks
-   * `(pending, end)` pairs on transcript load and applies the
-   * matching splice so the orchestrator's replayed `messages[]`
-   * matches what the live run produced.
-   */
-  | {
-    kind: 'context-summary-pending';
-    id: string;
-    ts: number;
-    /** Stable id for this summarization. Matches the `summaryId`
-     *  field on every `context-summary-*` event in the same
-     *  sequence so the renderer can group them. */
-    summaryId: string;
-    /** Half-open index range `[startIdx, endIdx)` in the live
-     *  `messages[]` at decision time. After replay-by-splice, the
-     *  indices are no longer authoritative — `replacedMessageIds`
-     *  is the canonical handle. */
-    range: { startIdx: number; endIdx: number };
-    /** Stable message ids being replaced (mint via
-     *  `messageWindow.identify(messages)`). Persists the splice
-     *  identity across iterations even after the live indices
-     *  shift. */
-    replacedMessageIds: string[];
-    /** Stable message ids that the user marked `'drop'` and that
-     *  this summary is "consuming" — they leave the array but
-     *  are NOT folded into the summary text (the marker style
-     *  governs whether a placeholder hint appears). */
-    droppedMessageIds: string[];
-    /** Estimated token count of the summarizable range BEFORE
-     *  compression. Cached so the renderer can render the
-     *  before/after diff without recomputing. */
-    beforeTokens: number;
-    /** Configuration snapshot taken at trigger time. */
-    config: PersistedSummaryConfig;
-  }
-  /**
-   * Streaming text from the summarizer LLM. Same shape and
-   * coalescer semantics as `agent-text-delta` — the chat IPC's
-   * persistence coalescer is extended to recognise this kind, and
-   * the renderer reducer aggregates `delta` into the matching
-   * `summaries[summaryId].text` accumulator. PERSISTENT (via the
-   * coalesced row).
-   */
-  | {
-    kind: 'context-summary-delta';
-    id: string;
-    ts: number;
-    summaryId: string;
-    delta: string;
-  }
-  /**
-   * Optional streaming reasoning from the summarizer LLM. Routed
-   * into `summaries[summaryId].reasoningText` so the Inspector
-   * can show a "Thinking…" panel during compression for providers
-   * that emit `reasoning_content`. PERSISTENT (coalesced).
-   */
-  | {
-    kind: 'context-summary-reasoning-delta';
-    id: string;
-    ts: number;
-    summaryId: string;
-    delta: string;
-  }
-  /**
-   * Summarization complete. Marks the splice as authoritative,
-   * carries the final compressed `finalText` (truncated to
-   * `CONTEXT_SUMMARY_MAX_FINAL_CHARS`), the post-compression
-   * token estimate, and the savings percentage for the renderer
-   * card. PERSISTENT.
-   */
-  | {
-    kind: 'context-summary-end';
-    id: string;
-    ts: number;
-    summaryId: string;
-    afterTokens: number;
-    /** Final compressed body. The orchestrator splices this into
-     *  `messages[]` as a `role:'system'` envelope. */
-    finalText: string;
-    /** `beforeTokens - afterTokens` divided by `beforeTokens`,
-     *  rounded to one decimal. Cached so the renderer card has a
-     *  single source of truth for the savings label. */
-    savedPercent: number;
-  }
-  /**
-   * Summarization aborted (user pressed Stop, the run terminated
-   * mid-compression, the provider call exceeded `maxRetries`).
-   * The reducer drops the accumulators; the splice is NOT applied
-   * (since `context-summary-end` never lands). PERSISTENT so the
-   * audit trail survives reload.
-   */
-  | {
-    kind: 'context-summary-aborted';
-    id: string;
-    ts: number;
-    summaryId: string;
-    reason: string;
-  }
-  /**
-   * User clicked Undo on the inline `ContextSummaryRow` while it
-   * was still the current turn. Restores the pre-splice
-   * `messages[]` snapshot from `undoRegistry`. PERSISTENT — replay
-   * walks the matching `(end, undone)` pair and skips the splice
-   * so transcript reloads observe the same un-applied state.
-   */
-  | {
-    kind: 'context-summary-undone';
-    id: string;
-    ts: number;
-    summaryId: string;
-  }
-  /**
-   * Per-message override applied via the Context Inspector. The
-   * sentinel `messageId: '*'` means "clear ALL overrides on this
-   * conversation". A `null` override means "remove the entry for
-   * this messageId" (a no-op when none existed). PERSISTENT —
-   * replay walks these so overrides survive renderer reloads,
-   * conversation switches, and app restarts.
-   */
-  | {
-    kind: 'context-override-set';
-    id: string;
-    ts: number;
-    /** Stable messageId from `messageWindow.identify(messages)`,
-     *  OR the sentinel `'*'` to reset all overrides on this
-     *  conversation in one event. */
-    messageId: string;
-    /** Effective override. `null` clears the entry. */
-    override: ContextMessageOverride | null;
-  }
-  /**
    * Synthetic mid-stream usage update (Phase 3 — 2026). Emitted
    * locally by `chatChannel` as `agent-text-delta` /
    * `agent-reasoning-delta` events stream in, so the composer pill
-   * and Inspector can show a growing token count BEFORE the
+   * and composer token pill can show a growing token count BEFORE the
    * provider's authoritative `usage` frame lands at end-of-turn.
    *
    * The reducer sets these onto `TokenUsageAggregate.inFlight` and
@@ -836,47 +730,10 @@ export interface ChatSendInput {
  * Reply shape from `chat:send`.
  *
  *   - Happy path: `{ ok: true, conversationId }`.
- *   - `pending-checkpoints`: the run's workspace has
- *     `gatePromptOnPendingByWorkspace` set AND the conversation has
- *     unresolved pending checkpoint entries. The renderer surfaces a
- *     toast and opens Checkpoints; no run is started.
- *   - `pending-gate-error`: pending gate is on but `listPending` failed;
- *     send is blocked (fail closed).
- *   - `review-request-changes`: review gate is on and the conversation's
- *     stored review session has `decision === 'request_changes'`.
- *   - `review-gate-error`: review gate is on but reading `reviews.json`
- *     failed; send is blocked (fail closed).
- *
- * Extending the union keeps the happy-path shape unchanged (legacy
- * renderers still assert `reply.ok === true`), but a future `ok: false`
- * variant is already wired.
+ *   - `unknown-conversation`: bound id is not in the conversations index.
  */
 export type ChatSendReply =
   | { ok: true; conversationId: string }
-  | {
-    ok: false;
-    /** Discriminant for the refused-to-start path. */
-    kind: 'pending-checkpoints';
-    /** How many pending entries are blocking the send. */
-    count: number;
-    /** Conversation the block applies to (echo of the input). */
-    conversationId: string;
-  }
-  | {
-    ok: false;
-    kind: 'pending-gate-error';
-    conversationId: string;
-  }
-  | {
-    ok: false;
-    kind: 'review-request-changes';
-    conversationId: string;
-  }
-  | {
-    ok: false;
-    kind: 'review-gate-error';
-    conversationId: string;
-  }
   | {
     ok: false;
     kind: 'unknown-conversation';
@@ -885,19 +742,7 @@ export type ChatSendReply =
   };
 
 export interface ChatPermissions {
-  /**
-   * Fully Auto Mode. When `true`, gated tool calls (`edit`, `delete`,
-   * `bash`, `report`, and `search mode:"web"`) proceed without
-   * confirmation. When `false` (the default), every such call routes
-   * through the existing confirm-prompt pathway so the user can
-   * approve or deny on the spot.
-   *
-   * Strict-approval mode (`AppSettings.ui.strictApprovalsByWorkspace`)
-   * and the destructive-command gate inside the `bash` tool are
-   * orthogonal safety nets — they still trigger their own prompts
-   * regardless of `allowAuto`.
-   */
-  allowAuto: boolean;
+  /** Reserved — no approval gating; mutating tools apply immediately. */
 }
 
 /** Compact metadata for the dock chat list (loaded eagerly). */

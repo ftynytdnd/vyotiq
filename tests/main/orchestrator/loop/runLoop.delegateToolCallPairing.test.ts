@@ -19,9 +19,6 @@ vi.mock('@main/orchestrator/loop/handleToolCalls', () => ({
 vi.mock('@main/orchestrator/loop/handleDelegates', () => ({
   handleDelegates: vi.fn()
 }));
-vi.mock('@main/orchestrator/loop/handleNoToolNoDelegate', () => ({
-  handleNoToolNoDelegate: vi.fn(() => 'terminate' as const)
-}));
 vi.mock('@main/orchestrator/contextManager', async () => {
   const real = await vi.importActual<typeof import('@main/orchestrator/contextManager')>(
     '@main/orchestrator/contextManager'
@@ -105,10 +102,16 @@ describe('runOrchestratorLoop — delegate tool-call pairing', () => {
       })
       .mockResolvedValueOnce({
         assistantMsgId: 'msg-2',
-        assistantText: 'All done.',
+        assistantText: '',
         reasoningText: '',
-        partialToolCalls: [],
-        hadText: true,
+        partialToolCalls: [
+          {
+            id: 'tc-finish',
+            name: 'finish',
+            argumentsBuf: JSON.stringify({ summary: 'All done.' })
+          }
+        ],
+        hadText: false,
         hadReasoning: false,
         reasoningEndEmitted: false
       });
@@ -174,10 +177,16 @@ describe('runOrchestratorLoop — delegate tool-call pairing', () => {
       })
       .mockResolvedValueOnce({
         assistantMsgId: 'msg-2',
-        assistantText: 'Done.',
+        assistantText: '',
         reasoningText: '',
-        partialToolCalls: [],
-        hadText: true,
+        partialToolCalls: [
+          {
+            id: 'tc-finish',
+            name: 'finish',
+            argumentsBuf: JSON.stringify({ summary: 'Done.' })
+          }
+        ],
+        hadText: false,
         hadReasoning: false,
         reasoningEndEmitted: false
       });

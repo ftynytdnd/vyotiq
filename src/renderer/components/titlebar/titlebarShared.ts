@@ -23,9 +23,7 @@ export const TITLEBAR_MENUBAR_ZONE_CLASS = cn(
   'pl-3 pr-1.5 sm:pl-3.5'
 );
 
-export const TITLEBAR_ACTIONS_ZONE_CLASS = cn(TITLEBAR_ZONE_CLASS, 'gap-0.5 pr-1');
-
-/** Center drag region — workspace › chat breadcrumb. */
+/** Center drag region (empty — workspace/chat labels live in the dock). */
 export const TITLEBAR_BREADCRUMB_ZONE_CLASS = cn(
   'app-drag flex min-w-0 flex-1 items-center justify-center px-2'
 );
@@ -43,11 +41,6 @@ export const TITLEBAR_MENU_SEPARATOR_CLASS = 'vx-titlebar-menu-separator';
 export const TITLEBAR_MENU_PANEL_CLASS = cn(
   chromePopoverPanelClassName,
   'vx-titlebar-menu-panel absolute left-0 top-full z-10 mt-1.5 w-[min(100vw-1rem,14rem)] min-w-[12rem] max-w-[min(100vw-1rem,20rem)] border border-border-subtle/18 p-1'
-);
-
-export const TITLEBAR_SHORTCUTS_PANEL_CLASS = cn(
-  chromePopoverPanelClassName,
-  'vx-titlebar-shortcuts-panel w-[min(100vw-1rem,22rem)] max-w-[min(100vw-1rem,24rem)] border border-border-subtle/18 p-3'
 );
 
 export const TITLEBAR_WINDOW_ZONE_CLASS = cn(TITLEBAR_ZONE_CLASS, 'gap-0 pr-1.5');

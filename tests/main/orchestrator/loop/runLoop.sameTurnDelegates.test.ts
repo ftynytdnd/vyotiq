@@ -1,8 +1,10 @@
 /**
- * runLoop — same-turn tool calls + delegate directives.
+ * runLoop — same-turn continue-tool + delegate tool calls.
  *
- * Before the plan fix, a turn that emitted orchestrator tool calls AND
- * `<delegate />` tags only ran handleToolCalls and skipped delegates.
+ * In the forced-action loop `delegate` is a first-class tool call (no
+ * more `<delegate />` XML). A turn that emits BOTH a continue-tool
+ * (`ls`) and a `delegate` call must run `handleToolCalls` for the
+ * continue-tool first, then `handleDelegates` for the delegate spec.
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -16,9 +18,6 @@ vi.mock('@main/orchestrator/loop/handleToolCalls', () => ({
 }));
 vi.mock('@main/orchestrator/loop/handleDelegates', () => ({
   handleDelegates: vi.fn()
-}));
-vi.mock('@main/orchestrator/loop/handleNoToolNoDelegate', () => ({
-  handleNoToolNoDelegate: vi.fn(() => 'terminate' as const)
 }));
 vi.mock('@main/orchestrator/contextManager', async () => {
   const real = await vi.importActual<typeof import('@main/orchestrator/contextManager')>(
@@ -70,26 +69,40 @@ beforeEach(() => {
 
 describe('runOrchestratorLoop — same-turn delegates', () => {
   it('runs handleDelegates after handleToolCalls when both appear in one turn', async () => {
-    const delegateText = '<delegate id="A1" task="Inspect foo" files="src/foo.ts" tools="read" />';
-
     vi.mocked(handleAssistantTurn)
       .mockResolvedValueOnce({
         assistantMsgId: 'msg-1',
-        assistantText: `Survey complete.\n${delegateText}`,
+        assistantText: '',
         reasoningText: '',
         partialToolCalls: [
-          { id: 'tc-1', name: 'ls', argumentsBuf: '{"path":"src"}' }
+          { id: 'tc-1', name: 'ls', argumentsBuf: '{"path":"src"}' },
+          {
+            id: 'tc-2',
+            name: 'delegate',
+            argumentsBuf: JSON.stringify({
+              id: 'A1',
+              task: 'Inspect foo',
+              files: 'src/foo.ts',
+              tools: 'read'
+            })
+          }
         ],
-        hadText: true,
+        hadText: false,
         hadReasoning: false,
         reasoningEndEmitted: false
       })
       .mockResolvedValueOnce({
         assistantMsgId: 'msg-2',
-        assistantText: 'Done.',
+        assistantText: '',
         reasoningText: '',
-        partialToolCalls: [],
-        hadText: true,
+        partialToolCalls: [
+          {
+            id: 'tc-finish',
+            name: 'finish',
+            argumentsBuf: JSON.stringify({ summary: 'Done.' })
+          }
+        ],
+        hadText: false,
         hadReasoning: false,
         reasoningEndEmitted: false
       });

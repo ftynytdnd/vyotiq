@@ -1,12 +1,12 @@
 ﻿/**
- * Pure transformer from `TimelineEvent[]` â†’ a stable row-descriptor list
+ * Pure transformer from `TimelineEvent[]` → a stable row-descriptor list
  * rendered in the Cascade-style compact log.
  *
  * Behaviours:
  *   - Streaming deltas (text / reasoning) coalesce into a single row per id.
  *   - Consecutive tool-call/-result pairs of the *same* tool name fold into
- *     a single `tool-group` row: `Read foo.tsx` â†’ `Read foo.tsx and 1 other
- *     file` â†’ `Read foo.tsx and 2 other files`. Expanded, it shows each
+ *     a single `tool-group` row: `Read foo.tsx` → `Read foo.tsx and 1 other
+ *     file` → `Read foo.tsx and 2 other files`. Expanded, it shows each
  *     individual call as a nested row (each further expandable to the
  *     existing bespoke detail).
  *   - Consecutive `file-edit` events (non-sub-agent) fold into a single
@@ -26,14 +26,13 @@
 
 import type { PromptAttachmentMeta, TimelineEvent } from '@shared/types/chat.js';
 import type { ToolCall, ToolName, ToolResult } from '@shared/types/tool.js';
-import { TOKEN_BUDGET_WARNING_DEFAULT_RATIO } from '@shared/constants.js';
 import type { DiffStreamSnapshot, PartialToolCallArgs, TokenUsageAggregate } from './types.js';
 import { foldTokenUsage } from './types.js';
 import { appendSynthesizedPartialRows } from './deriveRows/partials.js';
 import { flushRunToRows, type OpenRun, type OpenRunUsage } from './deriveRows/runBoundaries.js';
 import {
   foldOrchestratorFileEdit,
-  foldScopedFileEdit,
+  foldSubagentFileEdit,
   foldToolCall,
   foldToolResult,
   type ScopedGroupState
@@ -41,12 +40,10 @@ import {
 
 export {
   toolGroupSummary,
-  editChildPath,
   toolGroupDiffStats,
   toolGroupStatus,
   tailInFlightEditChildIndex
 } from './deriveRows/groupTools.js';
-export { pickToolName } from './deriveRows/partials.js';
 
 export interface ToolGroupChild {
   callId: string;
@@ -96,14 +93,14 @@ export type Row =
   | {
     kind: 'user-prompt';
     key: string;
-    /** Original `user-prompt` event id â€” used by the inline Revert button to bind the rewind to this turn. */
+    /** Original `user-prompt` event id — used by the inline Revert button to bind the rewind to this turn. */
     id: string;
     /**
      * Originating run id for this prompt's turn. Threaded through to
      * `UserPromptRow` so the inline Revert button can read its
      * per-turn file-edit count from `runIdToFileEditCount[runId]` and
      * render a numeric badge. Optional because legacy transcripts
-     * persisted before the field was added still deserialise â€” the
+     * persisted before the field was added still deserialise — the
      * badge simply renders no count for those turns.
      */
     runId?: string;
@@ -113,6 +110,16 @@ export type Row =
   | { kind: 'assistant-text'; key: string; id: string; subagentId?: string }
   | { kind: 'reasoning-line'; key: string; id: string; subagentId?: string }
   | { kind: 'agent-thought'; key: string; content: string; severity?: 'info' | 'warn' }
+  | {
+    kind: 'ask-user-prompt';
+    key: string;
+    id: string;
+    displayText: string;
+    payload: import('@shared/types/askUser.js').AskUserStructuredPayload;
+    toolCallId: string;
+    runId: string;
+    status?: 'pending' | 'submitted';
+  }
   | { kind: 'error'; key: string; message: string }
   | { kind: 'subagent-line'; key: string; subagentId: string }
   | {
@@ -129,6 +136,13 @@ export type Row =
     subagentId?: string;
   }
   | {
+    kind: 'phase-log';
+    key: string;
+    id: string;
+    label: string;
+    tooltip?: string;
+  }
+  | {
     kind: 'run-complete';
     key: string;
     durationMs: number;
@@ -136,22 +150,7 @@ export type Row =
     usage?: TokenUsageAggregate;
     editCount?: number;
     fileCount?: number;
-  }
-  | {
-    kind: 'token-budget-warning';
-    key: string;
-    percent: number;
-    tokens?: number;
-    ceiling?: number;
-  }
-  /**
-   * exists at this position in the timeline. The row component
-   * (`ContextSummaryRow`) reads the live state by `summaryId` from
-   * `useChatStore.summaries[summaryId]` so streaming deltas paint
-   * without re-deriving the entire row list. ONE row per
-   * `summaryId`; the `pending` event is the anchor.
-   */
-  | { kind: 'context-summary'; key: string; summaryId: string };
+  };
 
 export interface DeriveRowsOptions {
   /**
@@ -162,21 +161,13 @@ export interface DeriveRowsOptions {
    * gets its trailing closer exactly once.
    */
   runActive?: boolean;
-  /** Model context window â€” used for warning-row percent / detail display. */
-  contextWindow?: number;
-  /**
-   * Absolute token threshold for budget-warning rows (from Settings â†’
-   * Context). When omitted, falls back to `contextWindow *
-   * TOKEN_BUDGET_WARNING_DEFAULT_RATIO` when a window is known.
-   */
-  tokenBudgetWarnThreshold?: number;
   /**
    * Live partial-args snapshots for orchestrator-level tool calls that
    * haven't yet emitted their authoritative `tool-call` event. When
    * present, the deriver synthesises in-flight `tool-group` rows so
    * users see a streaming preview (path label, live diff, query) as
    * the arguments stream in. Sub-agent partials live on the matching
-   * snapshot and are wired in by `SubAgentRunFlow`, not here. Pass `{}`
+   * snapshot and are wired in by `DelegationWorker`, not here. Pass `{}`
    * (or omit) for transcript rebuilds; the live timeline forwards the
    * mirror's `partialToolCallArgs` from `useChatStore`.
    */
@@ -184,19 +175,19 @@ export interface DeriveRowsOptions {
   /**
    * Audit fix L-11. Pre-computed map of callIds the reducer has
    * already observed in an authoritative `tool-call` event. When
-   * provided, `appendSynthesizedPartialRows` skips its O(RÃ—C) walk
+   * provided, `appendSynthesizedPartialRows` skips its O(R×C) walk
    * over every `tool-group` row's children to recover the same set
-   * â€” Timeline forwards this from `state.settledCallIds`, which the
+   * — Timeline forwards this from `state.settledCallIds`, which the
    * reducer already maintains for the late-frame race guard.
    * Optional for back-compat with callers that don't have access
    * to the slot (the deriver falls back to the walk).
    */
   settledCallIds?: Record<string, true>;
-  /** Live FS diff keyed by callId â€” merged into settled tool-group children. */
+  /** Live FS diff keyed by callId — merged into settled tool-group children. */
   liveDiffByCallId?: Record<string, import('./types.js').DiffStreamSnapshot>;
 }
 
-export function enrichToolGroupsWithLiveDiff(
+function enrichToolGroupsWithLiveDiff(
   rows: Row[],
   liveDiffByCallId: DeriveRowsOptions['liveDiffByCallId']
 ): Row[] {
@@ -243,7 +234,7 @@ export function deriveRows(
   let openRunUsage: OpenRunUsage | null = null;
 
   const flushRun = () => {
-    const next = flushRunToRows(out, openRun, openRunUsage, opts.contextWindow);
+    const next = flushRunToRows(out, openRun, openRunUsage);
     openRun = next.openRun;
     openRunUsage = next.openRunUsage;
   };
@@ -256,7 +247,7 @@ export function deriveRows(
   /**
    * Defensive fail-soft for sub-agent visibility. The `subagent-line`
    * row is normally emitted by the `subagent-pending` / `subagent-spawn`
-   * branch below â€” but if either of those events is missing or arrives
+   * branch below — but if either of those events is missing or arrives
    * out of order, every sub-agent-scoped `tool-call` / `tool-result` /
    * `file-edit` would be invisible without this synthesis.
    */
@@ -274,7 +265,7 @@ export function deriveRows(
 
   for (const e of events) {
     // Extend the open run's tail timestamp with every event EXCEPT a
-    // following `user-prompt` â€” that prompt belongs to the next turn and
+    // following `user-prompt` — that prompt belongs to the next turn and
     // its `ts` would otherwise smuggle the user's idle/typing window
     // into the prior run's reported duration.
     if (
@@ -312,6 +303,24 @@ export function deriveRows(
           content: e.content,
           ...(e.severity ? { severity: e.severity } : {})
         });
+        break;
+
+      case 'ask-user-prompt':
+        closeGroups();
+        out.push({
+          kind: 'ask-user-prompt',
+          key: e.id,
+          id: e.id,
+          displayText: e.displayText,
+          payload: e.payload,
+          toolCallId: e.toolCallId,
+          runId: e.runId,
+          ...(e.status ? { status: e.status } : {})
+        });
+        break;
+
+      case 'ask-user-submitted':
+        closeGroups();
         break;
 
       case 'agent-text-delta':
@@ -366,6 +375,13 @@ export function deriveRows(
 
       case 'phase':
         closeGroups();
+        out.push({
+          kind: 'phase-log',
+          key: e.id,
+          id: e.id,
+          label: e.label,
+          ...(e.tooltip ? { tooltip: e.tooltip } : {})
+        });
         break;
 
       case 'subagent-pending':
@@ -386,6 +402,11 @@ export function deriveRows(
       }
 
       case 'tool-result': {
+        // `ask_user` is surfaced via `ask-user-prompt` / user-prompt rows;
+        // the resume path emits only a synthetic `tool-result` (no matching
+        // `tool-call`), which would otherwise fold into an "Asked" group
+        // that renders as "Unknown tool: ask_user" with danger-styled output.
+        if (e.result.name === 'ask_user') break;
         if (e.subagentId) ensureSubagentLine(e.subagentId);
         foldToolResult(out, scopedGroups, e.result, e.subagentId);
         break;
@@ -401,7 +422,7 @@ export function deriveRows(
           ...(e.entryId ? { entryId: e.entryId } : {})
         };
         if (e.subagentId) {
-          foldScopedFileEdit(out, scopedGroups, editPayload, e.subagentId);
+          foldSubagentFileEdit(out, scopedGroups, editPayload, e.subagentId);
           break;
         }
 
@@ -430,23 +451,6 @@ export function deriveRows(
               e.usage,
               e.ts
             );
-            const ceiling = opts.contextWindow;
-            const latest = openRunUsage.orchestrator?.latest.totalTokens;
-            const absoluteThreshold = opts.tokenBudgetWarnThreshold;
-            const ratioThreshold =
-              typeof ceiling === 'number' && ceiling > 0
-                ? ceiling * TOKEN_BUDGET_WARNING_DEFAULT_RATIO
-                : undefined;
-            const threshold =
-              typeof absoluteThreshold === 'number' && absoluteThreshold > 0
-                ? absoluteThreshold
-                : ratioThreshold;
-            if (typeof threshold === 'number' && typeof latest === 'number' && latest >= threshold) {
-              const pctBase =
-                typeof ceiling === 'number' && ceiling > 0 ? ceiling : threshold;
-              openRun.tokenBudgetWarnPct = Math.min(100, Math.round((latest / pctBase) * 100));
-              openRun.tokenBudgetWarnTokens = latest;
-            }
           } else {
             openRunUsage.subagents[ownerKey] = foldTokenUsage(
               openRunUsage.subagents[ownerKey],
@@ -458,7 +462,7 @@ export function deriveRows(
         break;
 
       case 'run-status':
-        // Pure live-telemetry signal â€” surfaced in TurnRunningMeta /
+        // Pure live-telemetry signal — surfaced in TurnRunningMeta /
         // the tail of the timeline, never as an inline row. Deliberately
         // does not close tool groups: a `run-status` landing between
         // two consecutive `tool-call`s of the same name must NOT split
@@ -467,7 +471,7 @@ export function deriveRows(
 
       case 'tool-call-args-delta':
       case 'diff-stream':
-        // Ephemeral partial-args / FS-aware live diff â€” neither
+        // Ephemeral partial-args / FS-aware live diff — neither
         // emits its own row. Both fold into the matching
         // `partialToolCallArgs[callId]` entry; the in-flight
         // tool-group child is synthesised from that snapshot in a
@@ -483,57 +487,16 @@ export function deriveRows(
       case 'checkpoint-entry':
       case 'checkpoint-revert':
       case 'checkpoint-bash-mutation':
-        // Checkpoint events are surfaced via the dedicated
-        // PendingChangesTimelineRow and Checkpoints view (driven by
-        // `useCheckpointsStore`), not as timeline rows. The
-        // existing `tool-result` and `file-edit` events already
-        // paint the diff in-line; layering a fourth row per edit
-        // would just clutter the transcript. Like `token-usage`
-        // and `run-status` above, they must NOT close the open
-        // tool group.
-        break;
-
-      case 'context-summary-pending':
-        // Anchor row for a summarization. `ContextSummaryRow`
-        // pulls every subsequent state change off
-        // `useChatStore.summaries[summaryId]` so streaming
-        // deltas paint without re-deriving rows. Closes any
-        // open tool/file-edit group â€” a summary is a structural
-        // boundary in the transcript.
-        closeGroups();
-        out.push({
-          kind: 'context-summary',
-          key: `summary:${e.summaryId}`,
-          summaryId: e.summaryId
-        });
-        break;
-
-      case 'context-summary-delta':
-      case 'context-summary-reasoning-delta':
-      case 'context-summary-end':
-      case 'context-summary-aborted':
-      case 'context-summary-undone':
-        // Pure state mutations on the matching `summaries[id]`
-        // accumulator. The single `context-summary` row already
-        // emitted by `-pending` re-renders against the live
-        // store snapshot; no extra row is synthesized here.
-        // Like the streaming agent-text deltas, these must NOT
-        // close the open tool group.
-        break;
-
-      case 'context-override-set':
-        // Pure state mutation on `messageOverrides`. Inspector
-        // surfaces it; timeline does not render a row for the
-        // toggle itself (the only visible side-effect is that
-        // the next summarization splices a different range).
+        // Checkpoint events are not timeline rows — file edits and
+        // tool results already show diffs inline. Like `token-usage`
+        // and `run-status` above, they must NOT close the open tool group.
         break;
 
       case 'synthetic-usage-update':
         // Phase 3 (2026): renderer-local mid-stream completion-token
-        // estimate. Surfaces ONLY on the composer pill / Inspector
-        // chip via the aggregate's `inFlight` slot; no inline
-        // timeline row. Same treatment as `run-status` /
-        // `token-usage` â€” pure telemetry, never a row.
+        // estimate. Surfaces ONLY on the composer token pill via the
+        // aggregate's `inFlight` slot; no inline timeline row. Same
+        // treatment as `run-status` / `token-usage` — pure telemetry.
         break;
 
       default: {
@@ -545,7 +508,7 @@ export function deriveRows(
   }
   // Append synthesized in-flight rows for partial tool calls that
   // haven't yet emitted their authoritative `tool-call` event. We
-  // append AFTER the event walk so they sit at the timeline tail â€”
+  // append AFTER the event walk so they sit at the timeline tail —
   // the live position the user is watching.
   if (!opts.runActive) {
     flushRun();

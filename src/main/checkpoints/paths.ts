@@ -25,7 +25,7 @@ function checkpointsRoot(): string {
   return join(app.getPath('userData'), 'vyotiq', 'checkpoints');
 }
 
-export function workspaceDir(workspaceId: string): string {
+function workspaceDir(workspaceId: string): string {
   return join(checkpointsRoot(), workspaceId);
 }
 
@@ -37,17 +37,8 @@ export function runsDir(workspaceId: string): string {
   return join(workspaceDir(workspaceId), 'runs');
 }
 
-export function filesDir(workspaceId: string): string {
-  return join(workspaceDir(workspaceId), 'files');
-}
-
 export function pendingFile(workspaceId: string): string {
   return join(workspaceDir(workspaceId), 'pending.json');
-}
-
-/** PR-style review sessions (`conversationId` → session). */
-export function reviewsFile(workspaceId: string): string {
-  return join(workspaceDir(workspaceId), 'reviews.json');
 }
 
 export function blobPath(workspaceId: string, hash: string): string {
@@ -63,21 +54,3 @@ export function runManifestPath(workspaceId: string, runId: string): string {
   return join(runsDir(workspaceId), `${runId}.json`);
 }
 
-/**
- * Encode a workspace-relative file path into a filename-safe form.
- * Base64url avoids every illegal Windows/macOS char (`\`, `/`, `:`,
- * `*`, `?`, `<`, `>`, `|`, `"`) and is reversible by callers that
- * need to render the original path back. Internal — external
- * callers reach the encoded path via `fileIndexPath` below.
- */
-function encodeFileKey(relPath: string): string {
-  return Buffer.from(relPath, 'utf8').toString('base64url');
-}
-
-export function decodeFileKey(key: string): string {
-  return Buffer.from(key, 'base64url').toString('utf8');
-}
-
-export function fileIndexPath(workspaceId: string, relPath: string): string {
-  return join(filesDir(workspaceId), `${encodeFileKey(relPath)}.json`);
-}

@@ -101,15 +101,15 @@ afterEach(() => {
 });
 
 describe('timelineSubagentGroup', () => {
-  it('renders two stream weave worker blocks without legacy group meta', () => {
+  it('renders two delegation worker blocks without legacy group meta', () => {
     const { container } = render(<Timeline />);
 
     const workers = container.querySelectorAll('[data-row-kind="delegation-worker"]');
     expect(workers).toHaveLength(2);
     expect(container.querySelector('[data-row-kind="subagent-group"]')).toBeNull();
     expect(container.textContent ?? '').not.toContain('Delegated');
-    expect(container.textContent ?? '').toContain('W1');
-    expect(container.textContent ?? '').toContain('W2');
+    expect(container.textContent ?? '').toContain('A1');
+    expect(container.textContent ?? '').toContain('A2');
   });
 
   it('renders a single worker weave block for one delegate', async () => {
@@ -158,6 +158,6 @@ describe('timelineSubagentGroup', () => {
 
     const { container } = render(<Timeline />);
     expect(container.querySelectorAll('[data-row-kind="delegation-worker"]')).toHaveLength(1);
-    expect(container.textContent ?? '').toContain('W1');
+    expect(container.textContent ?? '').toContain('S1');
   });
 });

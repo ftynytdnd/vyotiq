@@ -5,10 +5,6 @@
  */
 
 import type { RunStatusPhase, TimelineEvent, TokenUsage } from '@shared/types/chat.js';
-import type {
-  ContextMessageOverride,
-  PersistedSummaryConfig
-} from '@shared/types/contextSummary.js';
 import type { ModelSelection } from '@shared/types/provider.js';
 import type { DiffHunk, ToolCall, ToolResult } from '@shared/types/tool.js';
 
@@ -64,6 +60,7 @@ export interface ReasoningTextAcc {
  * - `aborted`: user Stop or supersede.
  */
 type SubAgentStatus =
+  | 'queued'
   | 'pending'
   | 'running'
   | 'done'
@@ -305,6 +302,10 @@ export interface SubAgentSnapshot {
    * sub-agent model badge silently.
    */
   model?: ModelSelection;
+  /** Same-round batch id for concurrent UI grouping. */
+  delegationBatchId?: string;
+  /** Parent worker when nested one level deep. */
+  parentSubagentId?: string;
 }
 
 /**
@@ -335,8 +336,6 @@ export interface TimelineState {
    * `run-status` branch). Audit fix §3.2.1.
    */
   latestOrchestratorRunStatus?: Extract<TimelineEvent, { kind: 'run-status' }>;
-  /** Workers with `startedAt >=` this timestamp count toward batch-scoped stats. */
-  lastDelegationPhaseTs?: number;
   /**
    * Id of the most-recent `user-prompt` event. Maintained by the
    * reducer so `Timeline`'s "snap on send" effect can depend on a
@@ -402,83 +401,6 @@ export interface TimelineState {
    * via `(conversationId, startedAt ≈ promptTs)`).
    */
   runIdToFileEditCount: Record<string, number>;
-  /**
-   * Per-summary streaming + lifecycle accumulator keyed by
-   * `summaryId`. Populated by `context-summary-pending`, advanced
-   * by every `context-summary-delta` /
-   * `context-summary-reasoning-delta` until either an `-end` (terminal
-   * with `finalText`) or `-aborted` (terminal with `reason`) arrives.
-   * `context-summary-undone` flips `undone: true` on the matching
-   * entry without removing it — the inline timeline card still
-   * renders so the user can see "you undid this" history. The
-   * Inspector panel reads this map to drive its live-stream card
-   * + progress gauge.
-   *
-   * Always `{}` after a fresh load before any events replay.
-   */
-  summaries: Record<string, ContextSummaryAcc>;
-  /**
-   * Per-conversation per-message override map. Keyed by stable
-   * `messageId` (from `messageWindow.identify`). Maintained by
-   * `context-override-set` events; reset by the `'*'` sentinel.
-   * Mirrors the main-side `overrideStore` so the renderer can
-   * render the Inspector's per-row toggle state without a round-
-   * trip on every paint. The reducer applies the events; the
-   * resulting map is passed up to `useChatStore` and from there
-   * to the Inspector.
-   */
-  messageOverrides: Record<string, ContextMessageOverride>;
-}
-
-/**
- * Streaming accumulator for ONE in-flight or completed
- * context-summary. Built by the reducer from the
- * `context-summary-*` family of TimelineEvents. Discriminator-style
- * `status` field so renderers can switch on the four terminal
- * states without juggling `undefined`s.
- */
-export interface ContextSummaryAcc {
-  summaryId: string;
-  /** Wall-clock when the `-pending` event landed. */
-  startedAt: number;
-  /** Half-open index range from `-pending`. Surface-only — the
-   *  authoritative handle is `replacedMessageIds`. */
-  range: { startIdx: number; endIdx: number };
-  /** Stable ids being replaced. */
-  replacedMessageIds: ReadonlyArray<string>;
-  /** Stable ids the user marked `'drop'` that are consumed by
-   *  this summary. */
-  droppedMessageIds: ReadonlyArray<string>;
-  /** Estimated tokens of the summarizable range BEFORE compression. */
-  beforeTokens: number;
-  /** Configuration snapshot from `-pending`. */
-  config: PersistedSummaryConfig;
-  /** Live accumulating summary body. Filled by
-   *  `context-summary-delta`. */
-  text: string;
-  /** Live accumulating reasoning body (if the summarizer model
-   *  emits `reasoning_content`). */
-  reasoningText: string;
-  /** Wall-clock of the FIRST `context-summary-delta` for this id;
-   *  drives the streaming-tok/s readout in the live card. */
-  textStartedAt?: number;
-  /** Wall-clock of the FIRST `context-summary-reasoning-delta`. */
-  reasoningStartedAt?: number;
-  /** Lifecycle status. The renderer's live card switches on this. */
-  status: 'pending' | 'streaming' | 'ended' | 'aborted';
-  /** True when a `context-summary-undone` landed for this id.
-   *  Independent of `status` — an `ended` summary that was undone
-   *  still renders, with the "Undone" badge instead of the
-   *  "Apply" affordance. */
-  undone: boolean;
-  /** Set on `-end`. Final compressed body (truncated to the cap). */
-  finalText?: string;
-  /** Set on `-end`. Post-compression token estimate. */
-  afterTokens?: number;
-  /** Set on `-end`. `(before - after) / before` rounded to 1 dec. */
-  savedPercent?: number;
-  /** Set on `-aborted`. User-facing failure reason. */
-  reason?: string;
 }
 
 export const INITIAL_TIMELINE_STATE: TimelineState = {
@@ -490,9 +412,7 @@ export const INITIAL_TIMELINE_STATE: TimelineState = {
   settledCallIds: {},
   liveDiffByCallId: {},
   toolResultSettledIds: {},
-  runIdToFileEditCount: {},
-  summaries: {},
-  messageOverrides: {}
+  runIdToFileEditCount: {}
 };
 
 /**

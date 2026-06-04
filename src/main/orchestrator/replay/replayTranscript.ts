@@ -368,6 +368,19 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
         // has been parsed mid-stream — the matching `subagent-spawn` /
         // `subagent-result` events carry the model-visible state.
         break;
+      case 'ask-user-prompt': {
+        // Structured `ask_user` pauses emit this instead of plain
+        // `agent-text-delta`. Replay as assistant prose so the next
+        // `chat:send` includes the clarifying question in model history
+        // (matches legacy `question` resume behavior).
+        flushAssistant({ dropUnpairedToolCalls: true });
+        flushSubagentRound();
+        pendingCallIds = [];
+        if (e.displayText.length > 0) {
+          messages.push({ role: 'assistant', content: e.displayText });
+        }
+        break;
+      }
       default:
         // Defensive: ignore unknown shapes gracefully.
         break;

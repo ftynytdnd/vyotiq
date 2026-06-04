@@ -5,7 +5,7 @@
  * without having to probe.
  *
  * Field-order and line-shape stability matter — the harness prose in
- * `02-context-and-memory.md` §A names the keys (`now_utc`,
+ * `01-context-learning.md` §A names the keys (`now_utc`,
  * `local_time`, `day_of_week`, `platform`, `os_release`, `arch`,
  * `node_version`, `electron_version`, `locale`) and the model is
  * trained to pattern-match them. A silent rename here would break

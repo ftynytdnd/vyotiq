@@ -15,8 +15,6 @@ beforeEach(() => {
     assistantTexts: {},
     reasoningTexts: {},
     subagents: {},
-    summaries: {},
-    messageOverrides: {},
     runId: null,
     isProcessing: false,
     runStartedAt: null,

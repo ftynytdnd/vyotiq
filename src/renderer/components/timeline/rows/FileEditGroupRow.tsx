@@ -5,7 +5,6 @@
 import { useMemo } from 'react';
 import type { FileEditGroupChild } from '../reducer/deriveRows.js';
 import { FileEditRow } from './FileEditRow.js';
-import { FileEditDiffPanel } from './FileEditDiffPanel.js';
 import { DiffStatsBadge } from '../tools/shared/DiffStatsBadge.js';
 import { DetailShell } from '../shared/DetailShell.js';
 import { TimelineRowHeader } from '../shared/TimelineRowHeader.js';
@@ -63,14 +62,6 @@ export function FileEditGroupRow({ rowKey, items, subagentId, runId }: FileEditG
 
       {expanded && (
         <DetailShell variant="flat" gap="gap-2">
-          {items.length === 1 && (
-            <FileEditDiffPanel
-              {...(items[0]!.entryId ? { entryId: items[0]!.entryId } : {})}
-              filePath={items[0]!.filePath}
-              {...(runId ? { runId } : {})}
-              {...(subagentId ? { subagentId } : {})}
-            />
-          )}
           {items.map((c) => (
             <FileEditRow
               key={c.key}

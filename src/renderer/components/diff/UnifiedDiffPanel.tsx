@@ -1,6 +1,6 @@
 /**
- * Unified diff surface — blob loading and hunk resolution for checkpoints,
- * timeline file edits, and edit approval. Rendering delegates to the shared
+ * Unified diff surface — blob loading and hunk resolution for rewind
+ * previews, timeline file edits, and edit approval. Rendering delegates to the shared
  * `DiffViewer` (unified / split toggle).
  */
 

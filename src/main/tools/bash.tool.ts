@@ -18,7 +18,6 @@ import { promises as fs } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import type { Tool } from './types.js';
-import { describeConfirmFailure } from './types.js';
 import type { ToolResult } from '@shared/types/tool.js';
 import type { CheckpointChangeKind } from '@shared/types/checkpoint.js';
 import {
@@ -772,74 +771,28 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
       };
     }
 
-    if (!ctx.permissions.allowAuto) {
-      const outcome = await ctx.confirm(
-        `Agent V wants to run a shell command:\n\n${command}\n\nAllow?`
-      );
-      if (!outcome.approved) {
-        // Audit fix H-04: surface the precise failure reason instead
-        // of always claiming the user denied the prompt.
-        const desc = describeConfirmFailure(outcome.reason, 'run shell commands');
-        return {
-          id,
-          name: 'bash',
-          ok: false,
-          output: desc.output,
-          error: desc.error,
-          durationMs: Date.now() - started
-        };
-      }
-    }
-
     const escapeConfirm = bashNeedsEscapeConfirm(command);
     if (escapeConfirm.needed) {
-      const outcome = await ctx.confirm(
-        `Agent V wants to run a shell command that may reach outside the workspace:\n\n${command}\n\n${escapeConfirm.reason}\n\nAllow?`
-      );
-      if (!outcome.approved) {
-        const desc = describeConfirmFailure(
-          outcome.reason,
-          'run commands outside the workspace'
-        );
-        return {
-          id,
-          name: 'bash',
-          ok: false,
-          output: desc.output,
-          error: desc.error,
-          durationMs: Date.now() - started
-        };
-      }
+      return {
+        id,
+        name: 'bash',
+        ok: false,
+        output:
+          `Bash blocked: command may reach outside the workspace.\n\n${command}\n\n${escapeConfirm.reason}`,
+        error: 'workspace escape',
+        durationMs: Date.now() - started
+      };
     }
 
     if (isDestructiveCommand(command)) {
-      const outcome = await ctx.confirm(
-        `Agent V is about to run a potentially DESTRUCTIVE command:\n\n${command}\n\nThis is blocked by the Prime Directives. Confirm?`
-      );
-      if (!outcome.approved) {
-        // Same H-04 mapping. The 'denied' path keeps the legacy
-        // "destructive blocked" wording for clarity; the others
-        // route through the shared describer.
-        if (outcome.reason === 'denied') {
-          return {
-            id,
-            name: 'bash',
-            ok: false,
-            output: 'Destructive command blocked by user.',
-            error: 'destructive blocked',
-            durationMs: Date.now() - started
-          };
-        }
-        const desc = describeConfirmFailure(outcome.reason, 'run a destructive command');
-        return {
-          id,
-          name: 'bash',
-          ok: false,
-          output: desc.output,
-          error: desc.error,
-          durationMs: Date.now() - started
-        };
-      }
+      return {
+        id,
+        name: 'bash',
+        ok: false,
+        output: `Destructive command blocked:\n\n${command}`,
+        error: 'destructive blocked',
+        durationMs: Date.now() - started
+      };
     }
 
     const escapeSymlinks = await findSymlinksEscapingWorkspace(ctx.workspacePath).catch(
@@ -1161,8 +1114,7 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
                   deletions: stats.deletions,
                   ...(hunks ? { hunks } : {}),
                   source: 'bash',
-                  ...(ctx.subagentId ? { subagentId: ctx.subagentId } : {}),
-                  emit: ctx.emit
+                  ...(ctx.subagentId ? { subagentId: ctx.subagentId } : {})
                 });
               } catch (err) {
                 log.debug('bash recordChange failed; continuing', {

@@ -97,8 +97,6 @@ export interface SubAgentDeps {
   /** Conversation id that owns the run. */
   conversationId: string;
   permissions: ChatPermissions;
-  /** Strict-approvals flag for this run's workspace. */
-  strictApprovals: boolean;
   signal: AbortSignal;
   /**
    * Streaming callback fired *before* a tool executes. Lets the UI render a
@@ -163,7 +161,7 @@ export interface SubAgentDeps {
   /**
    * Streaming worker text + reasoning hooks. Lift the same delta
    * surface the orchestrator's `handleAssistantTurn` already emits,
-   * but scoped to a single worker so the matching `SubAgentTrace`
+   * but scoped to a single worker so the matching delegation worker
    * card can render live output (instead of going dark until the
    * worker emits its `<result>` envelope). Each iteration mints a
    * fresh `assistantMsgId` (UUIDv4) so every iteration's stream is
@@ -192,7 +190,7 @@ export interface SubAgentDeps {
    * `handleAssistantTurn`'s `onToolCallArgsDelta` hook); the runner
    * funnels these into a `tool-call-args-delta` timeline event tagged
    * with the worker's `subagentId` so the renderer can paint a live
-   * preview inside the matching `SubAgentTrace`. Ephemeral telemetry —
+   * preview inside the matching delegation worker. Ephemeral telemetry —
    * never persisted.
    */
   onToolCallArgsDelta?: (snapshot: {
@@ -213,7 +211,7 @@ export interface SubAgentDeps {
 
 export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promise<SubAgentRun> {
   const startedAt = Date.now();
-  const allowed = validateSubagentToolset(spec.tools);
+  const allowed = [...validateSubagentToolset(spec.tools)];
   log.info('sub-agent starting', {
     id: spec.id,
     task: spec.task.slice(0, 120),
@@ -239,7 +237,7 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
   // `lookupCachedResult` with a host-authored explanation instead
   // of paying the FS round-trip + a full provider iteration. The
   // harness already tells workers not to re-read inlined files (see
-  // `04-subagent-prompt.md` "Iteration discipline") but soft rules
+  // `02-subagent-prompt.md` "Iteration discipline") but soft rules
   // degrade under load — visible in screenshot 1 where a worker
   // emitted `Read core/state.py, core/types.py` despite both being
   // inlined. This makes the rule structural.
@@ -305,7 +303,7 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
   // instruction plane.
   //
   // Result-envelope rule moved out of the data plane (review finding
-  // M10). The bundled `04-subagent-prompt.md` already enforces "Your
+  // M10). The bundled `02-subagent-prompt.md` already enforces "Your
   // LAST action MUST be emitting one `<result>…</result>` envelope"
   // in the system-instructions block, AND the host wires
   // `tool_choice: 'none'` on the wrap-up turn (`SUBAGENT_WRAPUP_ITER`)
@@ -327,6 +325,8 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
   ];
 
   const allResults: ToolResult[] = [];
+  /** At most one nested-delegate phase line per worker run. */
+  const nestedDelegatePhaseEmitted = new Set<string>();
 
   let attempt = 0;
   let lastAction: SubagentLastAction = 'none';
@@ -359,7 +359,7 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
     // Wrap-up turn: at iteration `SUBAGENT_WRAPUP_ITER` we flip
     // `tool_choice` to `'none'` so the provider is physically forced to
     // emit prose instead of more tool calls. Mirrors the harness
-    // contract in `04-subagent-prompt.md` ("Your LAST action MUST be a
+    // contract in `02-subagent-prompt.md` ("Your LAST action MUST be a
     // <result> envelope, not another tool call") and elevates that
     // soft instruction to a wire-level guarantee. The model still sees
     // `wrap_up_pending: true` in `<run_state>` so the constraint is
@@ -737,10 +737,10 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
         runId: deps.runId,
         conversationId: deps.conversationId,
         permissions: deps.permissions,
-        strictApprovals: deps.strictApprovals,
         signal: deps.signal,
         subagentId: spec.id,
-        allowlist: allowed
+        allowlist: allowed,
+        nestedDelegatePhaseEmitted
       });
       // Translate the helper's structural summary into the run-state
       // `lastAction` slot the next iteration will surface. Allowlist-
@@ -796,9 +796,8 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
     // to wrap in a `<result>` envelope. The recovery message would
     // just consume one of the worker's iterations to ask for a
     // wrap-up of empty content; the next iteration would loop back
-    // here with the same shape. Mirrors the orchestrator-side
-    // hopeless-reasoning short-circuit in `handleNoToolNoDelegate.ts`
-    // and saves a wasted provider call.
+    // here with the same shape. Mirrors the orchestrator empty-turn
+    // short-circuit in `runLoop.ts` and saves a wasted provider call.
     const hasNothingToWrap =
       assistantText.trim().length === 0 && allResults.length === 0;
     if (status === 'malformed' && hasNothingToWrap) {
@@ -870,9 +869,10 @@ export async function runSubAgent(spec: SubAgentSpec, deps: SubAgentDeps): Promi
           '</artifacts>\n' +
           '</result>\n' +
           '```\n\n' +
-          'Sub-agents cannot emit `<delegate ... />` directives — only the orchestrator ' +
-          'can. If your previous turn contained delegation directives, replace them with ' +
-          'the actual work or report `<status>failed</status>` with the reason.'
+          'Sub-agents cannot call the `delegate` tool — only the orchestrator may ' +
+          'spawn workers. If your previous turn contained delegation directives, ' +
+          'replace them with the actual work or report `<status>failed</status> ' +
+          'with the reason.'
       });
       continue;
     }

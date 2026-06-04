@@ -7,9 +7,8 @@
  * `useSettingsStore.purgeWorkspaceFromUi(id)` after the main-side
  * remove resolves.
  *
- * This test pins the wiring at the renderer level — the store-level
- * purge logic itself is exercised directly in
- * `tests/renderer/settings/workspacePermissions.test.ts`.
+ * This test pins the wiring at the renderer level — including
+ * `purgeWorkspaceFromUi` clearing per-workspace settings maps.
  */
 
 import { describe, expect, it, beforeEach, vi } from 'vitest';
@@ -37,9 +36,6 @@ beforeEach(async () => {
           'ws-A': { providerId: 'p', modelId: 'm' },
           'ws-B': { providerId: 'p', modelId: 'm2' }
         },
-        permissionsByWorkspace: {
-          'ws-A': { allowAuto: true }
-        }
       }
     },
     loading: false
@@ -99,8 +95,6 @@ describe('workspace.remove — settings cascade', () => {
     const ui = useSettingsStore.getState().settings.ui ?? {};
     expect('ws-A' in (ui.activeConversationByWorkspace ?? {})).toBe(false);
     expect('ws-A' in (ui.lastModelByWorkspace ?? {})).toBe(false);
-    expect('ws-A' in (ui.permissionsByWorkspace ?? {})).toBe(false);
-
     // Sibling workspace untouched in every map (the cascade walks
     // map-by-map; a buggy implementation that wiped the entire map
     // would also nuke ws-B).

@@ -8,7 +8,7 @@ import type { Row } from '@renderer/components/timeline/reducer/deriveRows';
 
 describe('computeTailScrollKey', () => {
   it('returns zero key for empty rows', () => {
-    expect(computeTailScrollKey([], {}, {}, {}, {})).toBe('0');
+    expect(computeTailScrollKey([], {}, {}, {})).toBe('0');
   });
 
   it('grows when the tail tool-group diff stream changes', () => {
@@ -42,16 +42,16 @@ describe('computeTailScrollKey', () => {
         ts: 2
       }
     };
-    const keyA = computeTailScrollKey(rows, {}, {}, {}, liveA);
-    const keyB = computeTailScrollKey(rows, {}, {}, {}, liveB);
+    const keyA = computeTailScrollKey(rows, {}, {}, liveA);
+    const keyB = computeTailScrollKey(rows, {}, {}, liveB);
     expect(keyA).not.toBe(keyB);
     expect(keyB).toContain(':tg-1:');
   });
 
   it('grows with assistant text length on the tail row', () => {
     const rows: Row[] = [{ kind: 'assistant-text', key: 'at-1', id: 'turn-1' }];
-    const short = computeTailScrollKey(rows, { 'turn-1': { text: 'hi' } }, {}, {}, {});
-    const long = computeTailScrollKey(rows, { 'turn-1': { text: 'hello world' } }, {}, {}, {});
+    const short = computeTailScrollKey(rows, { 'turn-1': { text: 'hi' } }, {}, {});
+    const long = computeTailScrollKey(rows, { 'turn-1': { text: 'hello world' } }, {}, {});
     expect(short).not.toBe(long);
   });
 });

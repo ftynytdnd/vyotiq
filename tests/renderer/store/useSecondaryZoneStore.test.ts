@@ -1,5 +1,5 @@
 /**
- * Secondary zone overlay slot — single open panel, closeAllOverlays.
+ * Secondary zone overlay slot — settings panel only.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,8 +11,7 @@ import { useFloatingLiveDiffStore } from '@renderer/store/useFloatingLiveDiffSto
 beforeEach(() => {
   useSecondaryZoneStore.setState({
     panel: null,
-    settingsTab: 'providers',
-    checkpointsTab: 'runs'
+    settingsTab: 'providers'
   });
   useSettingsStore.setState({
     settings: { ui: { lastSettingsTab: 'memory' } }
@@ -34,6 +33,17 @@ describe('useSecondaryZoneStore', () => {
     expect(useAttachmentPreviewStore.getState().attachment).toBeNull();
   });
 
+  it('maps legacy context tab to providers', () => {
+    useSecondaryZoneStore.getState().openSettings('context' as never);
+    expect(useSecondaryZoneStore.getState().settingsTab).toBe('providers');
+  });
+
+  it('openSettings(about) opens settings with about tab', () => {
+    useSecondaryZoneStore.getState().openSettings('about');
+    expect(useSecondaryZoneStore.getState().panel).toBe('settings');
+    expect(useSecondaryZoneStore.getState().settingsTab).toBe('about');
+  });
+
   it('closes secondary panel when opening attachment preview', () => {
     useSecondaryZoneStore.setState({ panel: 'settings' });
     useAttachmentPreviewStore.getState().open({
@@ -45,90 +55,22 @@ describe('useSecondaryZoneStore', () => {
     expect(useAttachmentPreviewStore.getState().attachment?.name).toBe('doc.pdf');
   });
 
-  it('closes secondary panel when opening live diff', () => {
-    useSecondaryZoneStore.setState({ panel: 'checkpoints' });
-    useFloatingLiveDiffStore.getState().open({
-      callId: 'tc-2',
-      filePath: 'b.ts',
-      diffStream: {
-        tool: 'edit',
-        filePath: 'b.ts',
-        additions: 0,
-        deletions: 1,
-        hunks: [],
-        settled: false,
-        ts: 2
-      }
-    });
-    expect(useSecondaryZoneStore.getState().panel).toBeNull();
-    expect(useFloatingLiveDiffStore.getState().target?.callId).toBe('tc-2');
-  });
-
-  it('closes attachment preview when opening checkpoints', async () => {
-    useAttachmentPreviewStore.getState().open({
-      name: 'x.png',
-      storedPath: 'a/x.png',
-      mimeType: 'image/png'
-    });
-    await useSecondaryZoneStore.getState().openCheckpoints('runs');
-    expect(useAttachmentPreviewStore.getState().attachment).toBeNull();
-    expect(useSecondaryZoneStore.getState().panel).toBe('checkpoints');
-  });
-
   it('closeAllOverlays clears panel and companion overlays', () => {
-    useSecondaryZoneStore.setState({ panel: 'checkpoints' });
-    useFloatingLiveDiffStore.setState({
-      target: {
-        callId: 'tc-1',
-        filePath: 'a.ts',
-        diffStream: {
-          tool: 'edit',
-          filePath: 'a.ts',
-          additions: 1,
-          deletions: 0,
-          hunks: [],
-          settled: false,
-          ts: 1
-        }
-      }
-    });
+    useSecondaryZoneStore.setState({ panel: 'settings' });
     useSecondaryZoneStore.getState().closeAllOverlays();
     expect(useSecondaryZoneStore.getState().panel).toBeNull();
-    expect(useFloatingLiveDiffStore.getState().target).toBeNull();
   });
 
   it('setSettingsTab persists lastSettingsTab via settings IPC', async () => {
     const setSpy = vi.spyOn(window.vyotiq.settings, 'set');
-    useSecondaryZoneStore.getState().setSettingsTab('shortcuts');
-    expect(useSecondaryZoneStore.getState().settingsTab).toBe('shortcuts');
+    useSecondaryZoneStore.getState().setSettingsTab('memory');
+    expect(useSecondaryZoneStore.getState().settingsTab).toBe('memory');
     expect(setSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ ui: expect.objectContaining({ lastSettingsTab: 'shortcuts' }) })
+      expect.objectContaining({ ui: expect.objectContaining({ lastSettingsTab: 'memory' }) })
     );
   });
 
-  it('setCheckpointsTab persists lastCheckpointsTab via settings IPC', async () => {
-    const setSpy = vi.spyOn(window.vyotiq.settings, 'set');
-    useSecondaryZoneStore.getState().setCheckpointsTab('files');
-    expect(useSecondaryZoneStore.getState().checkpointsTab).toBe('files');
-    expect(setSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ ui: expect.objectContaining({ lastCheckpointsTab: 'files' }) })
-    );
-  });
-
-  it('openCheckpoints restores persisted tab when tab arg omitted', async () => {
-    useSettingsStore.setState({
-      settings: { ui: { lastCheckpointsTab: 'files' } }
-    });
-    await useSecondaryZoneStore.getState().openCheckpoints();
-    expect(useSecondaryZoneStore.getState().checkpointsTab).toBe('files');
-  });
-
-  it('setCheckpointsTab remembers the active checkpoints sub-tab', () => {
-    useSecondaryZoneStore.getState().setCheckpointsTab('files');
-    expect(useSecondaryZoneStore.getState().checkpointsTab).toBe('files');
-  });
-
-  it('openSettings restores persisted tab when tab arg omitted', () => {
+  it('openSettings restores persisted tab', () => {
     useSecondaryZoneStore.getState().openSettings();
     expect(useSecondaryZoneStore.getState().settingsTab).toBe('memory');
   });

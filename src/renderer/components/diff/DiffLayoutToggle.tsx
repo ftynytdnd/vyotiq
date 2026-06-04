@@ -1,6 +1,6 @@
 /**
  * Redesigned unified / split diff layout toggle — single control reused
- * by timeline, checkpoints review, and edit approval surfaces.
+ * by timeline revert rows and edit approval surfaces.
  */
 
 import { cn } from '../../lib/cn.js';

@@ -1,6 +1,6 @@
 /**
  * Shared diff viewer — unified / split layout toggle plus rendering.
- * Used by checkpoints, review, timeline edits, and edit approval.
+ * Used by timeline revert rows, floating live diff, and edit approval.
  */
 
 import { useState } from 'react';

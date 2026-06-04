@@ -67,7 +67,7 @@ interface ArgsDeltaQueueEntry {
  * UI side; only the React-render churn changes.
  *
  * The transport layer still emits per-token deltas (so the wire
- * timing reflects real provider pacing for any future inspector),
+ * timing reflects real provider pacing on the wire),
  * and the per-token persistence coalescer in `chat.ipc.ts`
  * continues to operate independently on the main side. This batcher
  * is renderer-only.
@@ -124,7 +124,7 @@ const textDeltaAccumulators = new Map<string, TextDeltaAccumulator>();
  * per `(runId, owner)` since the last authoritative `token-usage`
  * event. Each RAF drain of the text-delta accumulator above also
  * tokenizes the running total and dispatches a `synthetic-usage-update`
- * event into the reducer so the composer pill / Inspector chip can
+ * event into the reducer so the composer token pill can
  * grow live during long generations.
  *
  * Reset triggers:
@@ -722,6 +722,16 @@ export async function bootstrapChatChannel(): Promise<void> {
         }
       } catch (err) {
         log.warn('chat:event listener threw', { runId, err });
+      }
+    })
+  );
+  unsub.push(
+    vyotiq.chat.onAwaitingUser((runId) => {
+      try {
+        flushAllTextForRun(runId);
+        useChatStore.getState().pauseForAskUser(runId);
+      } catch (err) {
+        log.warn('chat:awaiting-user listener threw', { runId, err });
       }
     })
   );

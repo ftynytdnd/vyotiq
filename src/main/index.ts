@@ -15,9 +15,7 @@ import { assertHarnessBoot } from './harness/harnessLoader.js';
 import { flushAll as flushConversations } from './conversations/conversationStore.js';
 import { flushAll as flushCheckpoints } from './checkpoints/index.js';
 import { flushWorkspaceState } from './workspace/workspaceState.js';
-import { clearAllPending as drainPendingConfirms } from './orchestrator/confirmBus.js';
 import { abortRun, listActiveRuns } from './orchestrator/AgentV.js';
-import { abortAllIdleSummaries } from './orchestrator/contextSummarizer/idleSummaryRuntime.js';
 import { sweepOrphanAttachments } from './attachments/gc.js';
 const log = logger.child('boot');
 
@@ -117,11 +115,9 @@ app.on('window-all-closed', () => {
 // enters this handler.
 let isShuttingDown = false;
 app.on('before-quit', (event) => {
-  drainPendingConfirms();
   for (const info of listActiveRuns()) {
     abortRun(info.runId);
   }
-  abortAllIdleSummaries();
   if (isShuttingDown) return;
   isShuttingDown = true;
   event.preventDefault();

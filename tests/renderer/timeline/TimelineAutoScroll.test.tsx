@@ -1,15 +1,5 @@
 /**
- * `Timeline` auto-scroll regression.
- *
- * Confirms center-on-send: the moment a new `user-prompt` event appears
- * on the chat store, the Timeline must call `scrollIntoView` on that
- * prompt — even if the user was previously scrolled up past the sticky
- * threshold.
- *
- * Also confirms that a second `user-prompt` with the same id does NOT
- * trigger a redundant snap (the effect must dedupe by id, not by
- * events array identity), and that short-but-unchanging event arrays
- * don't accidentally re-snap either.
+ * `Timeline` scroll — manual_only: no center-on-send snap.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -38,19 +28,12 @@ beforeEach(() => {
   resetStore();
   vi.useFakeTimers();
   scrollSpy = vi.fn();
-  // Route every element's scrollIntoView through our spy. The Timeline
-  // only calls it on its hidden bottom sentinel, so this is a clean
-  // signal even though we've patched the prototype.
   Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', {
     configurable: true,
     writable: true,
     value: scrollSpy
   });
 
-  // Flush rAF synchronously. The Timeline defers its actual
-  // `scrollIntoView` call inside a rAF to coalesce burst-y deltas; in
-  // the test environment we want the callback to run before the
-  // assertion so we don't have to juggle fake timers for it.
   originalRaf = window.requestAnimationFrame;
   originalCaf = window.cancelAnimationFrame;
   window.requestAnimationFrame = ((cb: FrameRequestCallback): number => {
@@ -61,11 +44,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  // Unmount FIRST so any cleanup effects (clearInterval) run while the
-  // store still has its test state. Otherwise the next test's
-  // `resetStore()` triggers a render under fake timers with a stale
-  // mounted tree, producing the act() warning the bookkeeping above is
-  // meant to suppress.
   cleanup();
   vi.useRealTimers();
   resetStore();
@@ -74,11 +52,8 @@ afterEach(() => {
 });
 
 describe('Timeline auto-scroll', () => {
-  it('scrolls when a new user-prompt lands on the store', () => {
+  it('does not center-on-send when a new user-prompt lands', () => {
     render(<Timeline />);
-    // Initial mount always calls scrollToTail() via the rows-length
-    // effect; clear the baseline call so the assertion below
-    // specifically targets the snap-on-send path.
     scrollSpy.mockClear();
 
     const event: TimelineEvent = {
@@ -89,10 +64,14 @@ describe('Timeline auto-scroll', () => {
     };
 
     act(() => {
-      useChatStore.setState((s) => ({ ...s, events: [...s.events, event] }));
+      useChatStore.setState((s) => ({
+        ...s,
+        events: [...s.events, event],
+        lastUserPromptId: event.id
+      }));
     });
 
-    expect(scrollSpy).toHaveBeenCalled();
+    expect(scrollSpy).not.toHaveBeenCalled();
   });
 
   it('does not re-snap when the same user-prompt id is still the latest', () => {
@@ -103,21 +82,16 @@ describe('Timeline auto-scroll', () => {
       content: 'still me'
     };
     act(() => {
-      useChatStore.setState((s) => ({ ...s, events: [event] }));
+      useChatStore.setState((s) => ({ ...s, events: [event], lastUserPromptId: event.id }));
     });
 
     render(<Timeline />);
     scrollSpy.mockClear();
 
-    // Bump an unrelated piece of state — NOT a new user-prompt id —
-    // and verify the snap effect stays quiet.
     act(() => {
       useChatStore.setState((s) => ({ ...s, isProcessing: true }));
     });
 
-    // The rows-length effect didn't fire (row count unchanged); the
-    // snap effect should also have stayed quiet because the latest
-    // user-prompt id didn't change.
     expect(scrollSpy).not.toHaveBeenCalled();
   });
 });

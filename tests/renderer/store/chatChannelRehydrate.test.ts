@@ -31,8 +31,6 @@ beforeEach(() => {
     assistantTexts: {},
     reasoningTexts: {},
     subagents: {},
-    summaries: {},
-    messageOverrides: {},
     runId: null,
     isProcessing: false,
     runStartedAt: null
@@ -66,6 +64,8 @@ beforeEach(() => {
       bootOrder.push('subscribe-error');
       return () => undefined;
     },
+    submitAskUser: vi.fn(async () => ({ ok: true as const })),
+    onAwaitingUser: () => () => undefined,
     listActiveRuns: vi.fn(async () => {
       bootOrder.push('rehydrate-start');
       const runs = await runsPromise;

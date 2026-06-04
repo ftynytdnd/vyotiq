@@ -9,7 +9,7 @@ describe('RunCompleteRow', () => {
     );
     expect(screen.getByText(/5 edits/i)).toBeInTheDocument();
     expect(screen.getByText(/3 files/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/completed in 12s/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/done in 12s/i)).toBeInTheDocument();
   });
 
   it('renders without a top hairline rule (May 2026 restyle)', () => {
@@ -42,5 +42,14 @@ describe('RunCompleteRow', () => {
     expect(text).toMatch(/done in/i);
     expect(text).toMatch(/38\.3k/i);
     expect(text.indexOf('done in')).toBeLessThan(text.search(/38\.3k/i));
+  });
+
+  it('uses warning tone for very long turn durations', () => {
+    const { container } = render(
+      <RunCompleteRow durationMs={500_000} completedAt={1_700_000_000_000} />
+    );
+    const duration = container.querySelector('.text-warning');
+    expect(duration?.textContent ?? '').toMatch(/8m/);
+    expect(duration?.getAttribute('title') ?? '').toMatch(/unusually long/i);
   });
 });

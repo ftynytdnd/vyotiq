@@ -187,7 +187,7 @@ export function FloatingPanel({
           actions={headerActions}
           onClose={onClose}
         />
-        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+        <div className="vx-floating-panel-body min-h-0 flex-1 overflow-y-auto">{children}</div>
       </div>
     </div>,
     document.body

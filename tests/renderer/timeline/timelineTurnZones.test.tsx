@@ -75,7 +75,7 @@ describe('Timeline turn zones', () => {
 
     const { container } = render(<Timeline />);
 
-    const weaveStream = container.querySelector('.vx-timeline-deleg-weave');
+    const weaveStream = container.querySelector('.vx-timeline-deleg-stream');
     const toolGroup = container.querySelector('[data-row-kind="tool-group"]');
     const assistant = container.querySelector('[data-row-kind="assistant-text"]');
 
@@ -178,7 +178,7 @@ describe('Timeline turn zones', () => {
         id: 'rs1',
         ts: 100,
         phase: 'delegating',
-        label: 'Delegating 2 sub-tasks…'
+        label: 'Spawning 2 workers…'
       }
     });
 
@@ -280,7 +280,7 @@ describe('Timeline turn zones', () => {
     ).toBeTruthy();
   });
 
-  it('renders completed turn rows in stream weave wrapper', () => {
+  it('renders completed turn rows in delegation stream wrapper', () => {
     useChatStore.setState({
       conversationId: 'c-zones',
       isProcessing: false,
@@ -301,7 +301,7 @@ describe('Timeline turn zones', () => {
 
     const { container } = render(<Timeline />);
 
-    expect(container.querySelector('.vx-timeline-deleg-weave')).not.toBeNull();
+    expect(container.querySelector('.vx-timeline-deleg-stream')).not.toBeNull();
     const assistant = container.querySelector('[data-row-kind="assistant-text"]');
     expect(assistant).not.toBeNull();
   });

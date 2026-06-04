@@ -12,7 +12,7 @@
  *        prepended banner from the SECOND repeat — earlier than the
  *        spin detector's THIRD-repeat trigger.
  *     2. The harness explicitly tells the model "Don't re-survey what
- *        you've already seen" (`01-orchestration-loop.md` §B).
+ *        you've already seen" (`00-orchestrator-core.md` §B).
  *     3. `<run_state>.spin_signature_hot` exposes the recurring
  *        signature directly to the model so it can pivot before any
  *        host-side counter trips.

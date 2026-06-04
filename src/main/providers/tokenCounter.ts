@@ -16,16 +16,12 @@
  *     chars/3.8 heuristic, and the `exact: false` flag is returned so
  *     the UI can render the value in italics.
  *
- * Three exported entry points:
- *   - `estimateTokens(...)`  — legacy single-prompt + attachment shape used
- *     by the composer's keystroke-debounced pre-flight estimate.
+ * Exported entry points (main-process only; renderer uses
+ * `@shared/text/tokenizeForModel` for live synthetic counts):
+ *   - `estimateTokens(...)` — single-prompt + attachment shape.
  *   - `tokenizeText(modelId, text)` — raw BPE count for any string.
- *     The renderer synthetic counter (`@shared/text/tokenizeForModel`)
- *     uses the chars/3.8 heuristic so `gpt-tokenizer` stays main-only.
- *   - `tokenizeMessages(modelId, messages, tools)` — Phase 2's full
- *     prospective-payload tokenizer. Sums every message body + the
- *     serialized tool catalogue and returns the per-part breakdown the
- *     Inspector's wire-breakdown section consumes.
+ *   - `tokenizeMessages(modelId, messages, tools)` — full message[]
+ *     + tool-schema breakdown.
  */
 
 import { promises as fs } from 'node:fs';
@@ -203,8 +199,7 @@ export async function estimateTokens(input: EstimateInput): Promise<EstimateResu
 }
 
 // ────────────────────────────────────────────────────────────────────
-// Phase 1 — additional exports for full-baseline + synthetic counter.
-// `estimateTokens` above is unchanged so the legacy IPC keeps working.
+// Phase 1 — synchronous helpers (`tokenizeText`, `tokenizeMessages`).
 // ────────────────────────────────────────────────────────────────────
 
 /**
@@ -239,7 +234,7 @@ type TokenizableMessage = Pick<ChatMessage, 'role' | 'content' | 'tool_calls' | 
 /** Tool-schema shape mirroring `ChatStreamRequest.tools[]`. Inlined here
  *  rather than imported from `chatClient.ts` so this module stays
  *  reachable from places that don't already pull in the chat client
- *  bundle (the IPC layer, the inspector snapshot builder, tests). */
+ *  bundle (tests and other lightweight callers). */
 export interface TokenizableToolSchema {
   type: 'function';
   function: {
@@ -255,8 +250,8 @@ export interface MessagesEstimateResult {
   /** True when every part used a real BPE tokenizer (no heuristic fallback). */
   exact: boolean;
   /**
-   * Per-part breakdown. Surfaced so the Inspector's wire-breakdown
-   * footer and the composer pill's hover tooltip can render the same
+   * Per-part breakdown. Surfaced so the composer token pill hover
+   * tooltip can render the same
    * authoritative numbers without re-tokenizing.
    *
    *   - `systemPrompt`: every `role:'system'` message's content concatenated
@@ -275,8 +270,8 @@ export interface MessagesEstimateResult {
 
 /**
  * Tokenize the full prospective `messages[] + tools[]` payload. Returns
- * the total token count plus the per-part breakdown the Inspector
- * surfaces.
+ * the total token count plus the per-part breakdown the composer
+ * token pill surfaces.
  *
  * Wire fidelity notes:
  *   - Tool schemas are tokenized as `JSON.stringify(tool)` (compact).

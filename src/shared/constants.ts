@@ -7,19 +7,7 @@ import type { ChatPermissions } from './types/chat.js';
 export const APP_NAME = 'Vyotiq';
 export const AGENT_NAME = 'Agent V';
 
-/**
- * Default chat permissions. Single source of truth — both the renderer
- * settings store and the main settings blob seed from this constant so
- * the wire defaults stay in lockstep.
- *
- * `allowAuto` defaults to `false` on a fresh install so first-time
- * users see a confirm prompt for every gated tool call (edits, deletes,
- * shell commands, web search, reports). Users opt into the unattended
- * path per-workspace via the composer's "Trust this workspace" toggle.
- */
-export const DEFAULT_PERMISSIONS: ChatPermissions = {
-  allowAuto: false
-};
+export const DEFAULT_PERMISSIONS: ChatPermissions = {};
 
 /**
  * Maximum characters of a single tool's `output` we retain in replay /
@@ -90,12 +78,16 @@ export const MODEL_DISCOVERY_TIMEOUT_MS = 12_000;
  * queueing the tail behind 4 active workers. The original cap was a
  * defensive guess from the streaming-rate-limit era; modern providers
  * comfortably serve 8 parallel streams per key, and the in-process
- * LCS / file-read cost is bounded by `DiffWorkerPool` (single worker)
+ * LCS / file-read cost is bounded by `DiffWorkerPool` (multi-worker pool)
  * + `createInlineFileCache` (round-shared). Specs over the cap still
  * queue behind a worker slot — see `Pending` vs `queued` distinction
  * surfaced in the renderer (`SubAgentSnapshot.queued`).
  */
-export const MAX_PARALLEL_SUBAGENTS = 8;
+/** Legacy fallback when the model omits `concurrency` on delegate calls. */
+export const DEFAULT_DELEGATE_CONCURRENCY = 32;
+
+/** Hard host ceiling — prevents accidental DoS from runaway delegate fan-out. */
+export const HOST_DELEGATE_CONCURRENCY_CEILING = 64;
 
 /**
  * Upper bound for awaiting a prior run's settlement latch on supersede.
@@ -170,23 +162,6 @@ export const MAX_FILES_PER_DELEGATE = 32;
 export const MAX_PER_TASK_BAD_STREAK = 3;
 
 /**
- * Planning-without-action nudge budget (T1-5).
- *
- * Cap on the number of times the host injects a `role:'user'` nudge
- * when the orchestrator emits a turn of pure reasoning (no output
- * text, no tool call, no `<delegate />` directive). Lifted to the
- * shared constants module so the harness `<runtime_limits>` block
- * and the run-state surface read from one place — the previous
- * location next to its consumer in `handleNoToolNoDelegate.ts` was
- * the only `MAX_*` knob NOT in this file, breaking the single-
- * source-of-truth contract every other cap honors.
- *
- * `handleNoToolNoDelegate.ts` re-exports this constant for
- * backward compatibility with existing test/import sites.
- */
-export const MAX_NUDGES_PER_RUN = 2;
-
-/**
  * Sub-agent loop limits.
  *
  * Hard cap on a single sub-agent's iteration count. The audit-pass
@@ -238,6 +213,21 @@ export const MAX_BACKOFF_MS = 8000;
 export const STREAM_INACTIVITY_TIMEOUT_MS = 60_000;
 
 /**
+ * Wall-clock cap on a single sub-agent run inside `runSubAgentPool`.
+ *
+ * Independent of {@link STREAM_INACTIVITY_TIMEOUT_MS}, which only
+ * guards idle SSE transport between provider chunks. Slow models can
+ * stream steadily yet take many minutes to finish a multi-tool worker;
+ * applying the 60 s transport knob here produced false "timed out"
+ * failures while tokens were still arriving.
+ *
+ * Five minutes is long enough for typical delegate tasks on cold /
+ * low-throughput endpoints without letting a hung worker pin a pool
+ * slot indefinitely (user Stop still wins via `AbortSignal`).
+ */
+export const SUBAGENT_RUN_TIMEOUT_MS = 300_000;
+
+/**
  * Delta-coalescing threshold for persisted streaming events.
  *
  * The chat IPC emits every `agent-text-delta`/`agent-reasoning-delta`
@@ -250,51 +240,6 @@ export const STREAM_INACTIVITY_TIMEOUT_MS = 60_000;
  * replay so the coalesced row is functionally identical.
  */
 export const PERSIST_DELTA_COALESCE_CHARS = 256;
-
-/**
- * Context-summarization tunables — single source of truth for the
- * orchestrator-side summarization layer. Mirror the build-time
- * defaults in `@shared/types/contextSummary.ts` so the runtime can
- * read them either by name (here) or via
- * `DEFAULT_CONTEXT_SUMMARY_RULES` (over there) and never drift.
- *
- * The split exists because the rules struct is a runtime-resolvable
- * shape (layered global ← workspace ← session, surfaced into the
- * Inspector) while these constants are import-time-frozen knobs
- * referenced from the harness `<runtime_limits>` block and from
- * the IPC channel registry. Keeping both eliminates "what's the
- * actual default?" ambiguity at the call site.
- */
-export const CONTEXT_SUMMARY_DEFAULT_TRIGGER_RATIO = 0.7;
-export const CONTEXT_SUMMARY_DEFAULT_KEEP_RECENT_TURNS = 4;
-export const CONTEXT_SUMMARY_MIN_MESSAGES_TO_SUMMARIZE = 6;
-export const CONTEXT_SUMMARY_DEFAULT_MAX_RETRIES = 2;
-/** Default absolute token count before the timeline budget-warning row appears. */
-export const TOKEN_BUDGET_WARNING_DEFAULT_TOKENS = 128_000;
-/**
- * Legacy ratio fallback when no absolute threshold is configured. Kept
- * for tests and callers that pass only `contextWindow` without a
- * settings-backed threshold.
- */
-export const TOKEN_BUDGET_WARNING_DEFAULT_RATIO = 0.7;
-/**
- * Filename of the optional per-workspace summarizer-prompt override.
- * Placed at `<workspace>/.vyotiq/context-summarizer.md`. When present
- * and readable, it FULLY replaces the bundled
- * `src/main/harness/05-context-summarizer.md` body — same convention
- * as Cursor / Continue projects use for per-repo agent prompts. The
- * file is never auto-written by the app.
- */
-export const CONTEXT_SUMMARY_OVERRIDE_FILENAME = 'context-summarizer.md';
-/**
- * Hard cap on the synthesized summary's text length in the persisted
- * JSONL. Prevents a runaway summarizer from writing a multi-MB
- * `context-summary-end.finalText` that bloats every transcript reload
- * across the conversation's lifetime. The renderer + reducer
- * truncate to the same cap on the live path so over-budget streams
- * are clipped at the boundary without further loss.
- */
-export const CONTEXT_SUMMARY_MAX_FINAL_CHARS = 32_000;
 
 /**
  * Hard cap on the size of a `chat:send` user prompt (Audit fix M-03).
@@ -317,13 +262,6 @@ export const MAX_CHAT_ATTACHMENTS = 10;
 
 /** Per-file size cap for external attachment ingest (10 MB). */
 export const MAX_ATTACHMENT_FILE_BYTES = 10 * 1024 * 1024;
-
-/**
- * Prefix for synthetic run ids used by idle-mode manual summarization.
- * Not registered in main `activeRuns` — cancel via
- * `CONTEXT_SUMMARY_ABORT_IDLE`, not `CHAT_ABORT`.
- */
-export const IDLE_SUMMARY_RUN_ID_PREFIX = 'idle-summary-';
 
 /** Tool execution. */
 export const BASH_TIMEOUT_MS = 30_000;
@@ -408,15 +346,7 @@ export const IPC = {
   PROVIDERS_REMOVE: 'providers:remove',
   PROVIDERS_DISCOVER_MODELS: 'providers:discover-models',
   PROVIDERS_TEST: 'providers:test',
-  /**
-   * Persist a per-model context-window override on a provider. Pass
-   * `value: null` to clear the override and fall back to the value
-   * discovered via /v1/models (if any).
-   */
-  PROVIDERS_SET_CONTEXT_OVERRIDE: 'providers:set-context-override',
-
-  // Tokens (pre-flight BPE estimate for the composer)
-  TOKENS_ESTIMATE: 'tokens:estimate',
+  // Future: per-model context-window override IPC (not wired yet).
 
   // Chat / orchestrator
   CHAT_SEND: 'chat:send',
@@ -433,95 +363,13 @@ export const IPC = {
    * silently drops them. See plan §2.4.
    */
   CHAT_LIST_ACTIVE_RUNS: 'chat:list-active-runs',
-
-  // Context summarization
-  /**
-   * Snapshot the orchestrator's current `messages[]` for a run (or
-   * the persisted initial-messages state for an idle conversation)
-   * into a `ContextInspectorSnapshot` the Inspector renders. Cheap
-   * O(N) over a Map that's typically ≤ a few dozen entries.
-   */
-  CONTEXT_SUMMARY_INSPECT: 'context-summary:inspect',
-  /**
-   * Fire a manual summarization right now. Resolves once the
-   * `context-summary-pending` event has been emitted (the actual
-   * streaming continues asynchronously and arrives through the
-   * existing `CHAT_EVENT` channel). Returns `{ ok: false, reason }`
-   * when the run is unknown / disabled / mid-summary / has no
-   * summarizable messages.
-   */
-  CONTEXT_SUMMARY_TRIGGER_MANUAL: 'context-summary:trigger-manual',
-  /**
-   * Revert the splice for a specific summaryId. Only valid until
-   * the next `user-prompt` lands (turn boundary) — after that the
-   * snapshot is GC'd and the IPC returns `{ ok: false }`.
-   */
-  CONTEXT_SUMMARY_UNDO: 'context-summary:undo',
-  /**
-   * Cancel an in-flight idle-mode summarization for a conversation.
-   * Routes through `idleSummaryRuntime.abortIdleSummary`; the
-   * streaming path emits a persisted `context-summary-aborted` event.
-   */
-  CONTEXT_SUMMARY_ABORT_IDLE: 'context-summary:abort-idle',
-  /** Cancel in-flight summarization on an active orchestrator run only. */
-  CONTEXT_SUMMARY_ABORT_LIVE: 'context-summary:abort-live',
-  /**
-   * Set / clear a per-message override on a conversation. Persisted
-   * as a `context-override-set` TimelineEvent in the JSONL so
-   * overrides survive renderer reloads and app restarts. Pass
-   * `override: null` to clear.
-   */
-  CONTEXT_SUMMARY_SET_MESSAGE_OVERRIDE: 'context-summary:set-message-override',
-  /**
-   * Clear ALL per-message overrides on a conversation. Emits a
-   * single `context-override-set` event with the synthetic
-   * `messageId: '*'` sentinel so replay can reconstruct the same
-   * state.
-   */
-  CONTEXT_SUMMARY_RESET_MESSAGE_OVERRIDES: 'context-summary:reset-message-overrides',
-  /**
-   * Read the resolved `ContextSummaryRules` (global ← workspace ←
-   * session). Used by the Settings → Context tab and the Inspector
-   * to surface what's currently in effect for the active workspace.
-   */
-  CONTEXT_SUMMARY_GET_RULES: 'context-summary:get-rules',
-  /**
-   * Persist a partial rules patch at the given scope. The IPC
-   * handler routes through `settingsStore.setSettings` for both
-   * scopes — `global` writes `contextSummary`, `workspace` writes
-   * `ui.contextSummaryByWorkspace[wsId]`. Returns the refreshed
-   * AppSettings.
-   */
-  CONTEXT_SUMMARY_UPDATE_RULES: 'context-summary:update-rules',
-  /**
-   * main → renderer broadcast: emitted whenever a run's
-   * inspector snapshot changes (a turn advanced, an override was
-   * written, a summary applied). Carries `runId` so the renderer
-   * can refetch only when the open Inspector is bound to the
-   * affected run. Throttled at the source — at most one emit per
-   * RAF-frame per run.
-   */
-  CONTEXT_SUMMARY_SNAPSHOT_CHANGED: 'context-summary:snapshot-changed',
+  /** Run paused on `ask_user`; renderer may submit answers to resume. */
+  CHAT_AWAITING_USER: 'chat:awaiting-user',
+  CHAT_SUBMIT_ASK_USER: 'chat:submit-ask-user',
 
   // Tools (mixed direction — see per-channel comments below)
   /** renderer → main: open a workspace-relative path in the OS default opener. */
   TOOLS_OPEN_PATH: 'tools:open-path',
-  /**
-   * main → renderer (broadcast): the orchestrator / a sub-agent is
-   * asking the user to confirm a gated action (write, bash, web search).
-   * Carries `{ id, message }`. The renderer renders an inline confirm
-   * UI and replies via `TOOLS_CONFIRM_RESPONSE`. See `confirmBus.ts`.
-   */
-  TOOLS_REQUEST_CONFIRM: 'tools:request-confirm',
-  /** renderer → main: reply to a `TOOLS_REQUEST_CONFIRM` with the user's choice. */
-  TOOLS_CONFIRM_RESPONSE: 'tools:confirm-response',
-  /**
-   * main → renderer (broadcast): emitted when a pending confirm request
-   * resolves WITHOUT a renderer reply (server-side timeout, shutdown
-   * drain). The renderer drops the matching pending dialog so it never
-   * lingers visible after main has already failed-closed the request.
-   */
-  TOOLS_CANCEL_CONFIRM: 'tools:cancel-confirm',
   /** renderer → main: re-execute a settled read/search/bash/ls tool call. */
   TOOLS_RERUN: 'tools:rerun',
 
@@ -552,68 +400,13 @@ export const IPC = {
   CONVERSATIONS_ARCHIVE: 'conversations:archive',
   CONVERSATIONS_UNARCHIVE: 'conversations:unarchive',
 
-  // Checkpoints (file-change review + revert)
-  /** Returns the workspace summary (runs, files, usage). */
-  CHECKPOINTS_SUMMARY: 'checkpoints:summary',
-  /** Returns a full run manifest with all entries. */
-  CHECKPOINTS_READ_RUN: 'checkpoints:read-run',
-  /** Returns a single file's compact history. */
-  CHECKPOINTS_READ_FILE_HISTORY: 'checkpoints:read-file-history',
-  /** Returns the pending change list for one conversation. */
-  CHECKPOINTS_LIST_PENDING: 'checkpoints:list-pending',
-  /** Accepts (drops from pending) — history unchanged. */
-  CHECKPOINTS_ACCEPT: 'checkpoints:accept',
-  /** Accepts every pending entry for a conversation. */
-  CHECKPOINTS_ACCEPT_ALL: 'checkpoints:accept-all',
-  /** Rejects one entry — reverts AND drops from pending. */
-  CHECKPOINTS_REJECT: 'checkpoints:reject',
-  /** Reverts a single entry by id (no pending interaction). */
-  CHECKPOINTS_REVERT_ENTRY: 'checkpoints:revert-entry',
-  /** Reverts an entire run by replaying its entries in reverse. */
-  CHECKPOINTS_REVERT_RUN: 'checkpoints:revert-run',
-  /** Reverts one file to a specific content hash from its history. */
-  CHECKPOINTS_REVERT_FILE_TO_HASH: 'checkpoints:revert-file-to-hash',
-  /** Reads the raw content blob (UTF-8) for a hash — used to preview diffs. */
+  // Checkpoints — renderer rewind + diff blobs (recording stays main-only)
+  /** Reads a snapshot blob (UTF-8) for diff previews. */
   CHECKPOINTS_READ_BLOB: 'checkpoints:read-blob',
-  /**
-   * Reads the CURRENT on-disk contents of a workspace-relative file
-   * (UTF-8). Used by `FileHistoryList` to render a "compare with current"
-   * diff against any historical snapshot without depending on the
-   * generic `read` tool. Returns `null` when the file is absent.
-   */
-  CHECKPOINTS_READ_CURRENT_FILE: 'checkpoints:read-current-file',
-  /** Writes an archive of the workspace's checkpoint store into the workspace root. */
-  CHECKPOINTS_EXPORT_ARCHIVE: 'checkpoints:export-archive',
-  /** Prune older than N days (`days: 0` clears all). */
-  CHECKPOINTS_PRUNE: 'checkpoints:prune',
-  /**
-   * Delete one specific run + its blob references + any pending rows
-   * pointing at the run's entries. Filling the gap between the
-   * coarse `PRUNE` (whole workspace, by date) and the per-row revert
-   * surfaces. The run's on-disk audit trail is gone after this; the
-   * Checkpoints view exposes it as a per-row `Delete` affordance.
-   */
-  CHECKPOINTS_DELETE_RUN: 'checkpoints:delete-run',
-  /**
-   * Compute the impact of rewinding a conversation to before a
-   * specific `user-prompt` event WITHOUT performing the rewind.
-   * Returns the affected run ids, file changes that would be
-   * reverted, and the count of transcript events that would be
-   * trimmed. The renderer drives the inline confirmation modal off
-   * this snapshot.
-   */
+  /** Rewind impact preview (inline Revert modal). */
   CHECKPOINTS_PREVIEW_REWIND: 'checkpoints:preview-rewind',
-  /**
-   * Atomically revert every file change AND trim every transcript
-   * event from the named `user-prompt` onward. The renderer's
-   * inline-on-prompt Revert button calls this after the user
-   * confirms the modal preview.
-   */
+  /** Atomic rewind to a user-prompt boundary. */
   CHECKPOINTS_REWIND_TO_PROMPT: 'checkpoints:rewind-to-prompt',
-  /** Unified diff vs git ref (default HEAD) for one file. */
-  CHECKPOINTS_GIT_BASE_DIFF: 'checkpoints:git-base-diff',
-  CHECKPOINTS_LIST_GIT_REFS: 'checkpoints:list-git-refs',
-  CHECKPOINTS_CHANGED: 'checkpoints:changed',
   /**
    * main → renderer (broadcast). Emitted when a conversation's
    * transcript was rewritten in place (currently only from

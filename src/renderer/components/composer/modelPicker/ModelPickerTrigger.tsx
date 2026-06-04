@@ -24,7 +24,7 @@ export const ModelPickerTrigger = forwardRef<HTMLButtonElement, ModelPickerTrigg
     const provider = value ? providers.find((p) => p.id === value.providerId) : null;
     const hasEnabledProvider = providers.some((p) => p.enabled);
 
-    const placeholder = hasEnabledProvider ? 'Select model…' : 'Add a provider →';
+    const placeholder = hasEnabledProvider ? 'Select model…' : 'Add provider';
     const modelId = value?.modelId ?? '';
     const tooltip = provider
       ? `${provider.name} \u00b7 ${modelId || placeholder}`
@@ -41,7 +41,7 @@ export const ModelPickerTrigger = forwardRef<HTMLButtonElement, ModelPickerTrigg
         title={tooltip}
         className={cn(
           chromeToolbarButtonClassName(open),
-          'vx-composer-model-trigger h-6 shrink-0 max-w-[10.5rem] items-center gap-1 px-1.5 text-chat-meta text-text-secondary'
+          'vx-composer-model-trigger h-6 shrink-0 max-w-[12rem] items-center gap-1 px-1.5 text-chat-meta text-text-secondary'
         )}
       >
         <span className="min-w-0 truncate font-mono" title={modelId || undefined}>

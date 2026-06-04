@@ -1,15 +1,17 @@
 /**
  * Pins the `<run_state>` envelope shape. This is the model-facing
- * surface that replaces several reactive heuristics in the audit pass —
- * if any field name or order changes silently, the harness prose that
- * references it (e.g. "Use `<run_state>` to see what you've already
- * done") would silently lose meaning.
+ * surface that replaces several reactive heuristics — if any field
+ * name or order changes silently, the harness prose that references it
+ * (e.g. "Use `<run_state>` to see what you've already done") would
+ * silently lose meaning.
  *
- * Subtraction-pass note: the `spin_nudges:` line was removed alongside
- * the host-side spin nudge / halt path. The `spin_signature_hot:` line
- * remains as pure observability — the model uses it to pivot before
- * the per-run tool-result cache starts banner-prepending identical
- * calls.
+ * Forced-action-loop note: the `planning_nudges:` and
+ * `child_redelegations:` lines were removed alongside legacy host-side
+ * planning nudges. `delegate` is now a real callable
+ * tool, so there is no "tried to call delegate as a tool" mistake to
+ * surface. The `spin_signature_hot:` line remains as pure observability
+ * — the model uses it to pivot before the per-run tool-result cache
+ * starts banner-prepending identical calls.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -18,7 +20,6 @@ import {
   createRunStateAccumulator,
   snapshotRunState
 } from '@main/orchestrator/loop/buildRunState';
-import { MAX_NUDGES_PER_RUN } from '@main/orchestrator/loop/handleNoToolNoDelegate';
 import { MAX_TOTAL_ITERATIONS } from '@shared/constants';
 import {
   createSpinSignatureBuffer,
@@ -27,7 +28,7 @@ import {
 } from '@main/orchestrator/loop/toolSpinSignature';
 
 describe('buildRunStateXml', () => {
-  it('renders the six required fields in a stable order', () => {
+  it('renders the five required fields plus failing_tasks in a stable order', () => {
     const acc = createRunStateAccumulator();
     acc.iteration = 4;
     acc.directToolRoundsTotal = 3;
@@ -36,11 +37,10 @@ describe('buildRunStateXml', () => {
     acc.spinSignatureHot = null;
 
     const counters = { consecutiveBadRounds: 0, perTaskBadStreak: new Map<string, number>() };
-    const nudges = { used: 0 };
     const spin = createSpinSignatureBuffer();
 
     const xml = buildRunStateXml(
-      snapshotRunState(acc, counters, nudges, spin, /*consecutiveBadToolRounds=*/ 0)
+      snapshotRunState(acc, counters, spin, /*consecutiveBadToolRounds=*/ 0)
     );
 
     // Outer envelope.
@@ -56,45 +56,44 @@ describe('buildRunStateXml', () => {
     expect(lines[0]).toBe(`iteration: 4 of ${MAX_TOTAL_ITERATIONS}`);
     expect(lines[1]).toBe('direct_tool_rounds: 3 (consecutive_failed_tools: 0)');
     expect(lines[2]).toBe('delegate_rounds: 1 (consecutive_bad_delegation: 0)');
-    expect(lines[3]).toBe(`planning_nudges: 0 of ${MAX_NUDGES_PER_RUN} used`);
-    expect(lines[4]).toBe('last_action: delegate');
-    expect(lines[5]).toBe('spin_signature_hot: (none)');
+    expect(lines[3]).toBe('last_action: delegate');
+    expect(lines[4]).toBe('spin_signature_hot: (none)');
+    expect(lines[5]).toBe('failing_tasks: (none)');
   });
 
-  it('does NOT include a spin_nudges counter line (subtraction-pass)', () => {
-    // Regression: the spin nudge / halt path was removed so the
-    // counter line MUST be absent. A future re-introduction would
-    // also need to re-introduce the nudge budget — this test pins
-    // both halves of that decision.
+  it('does NOT include the removed nudge / re-delegation counter lines', () => {
+    // Regression: the forced-action loop deleted the nudge machinery
+    // and the `<delegate>` XML directive, so neither counter line may
+    // appear. A future re-introduction would also need to re-introduce
+    // the underlying enforcement — this test pins their absence.
     const acc = createRunStateAccumulator();
     const xml = buildRunStateXml(
       snapshotRunState(
         acc,
         { consecutiveBadRounds: 0, perTaskBadStreak: new Map() },
-        { used: 0 },
         createSpinSignatureBuffer(),
         0
       )
     );
+    expect(xml).not.toContain('planning_nudges:');
+    expect(xml).not.toContain('child_redelegations:');
     expect(xml).not.toContain('spin_nudges:');
     expect(xml).not.toContain('MAX_ORCHESTRATOR_SPIN_NUDGES');
   });
 
-  it('reflects live counters and nudge usage', () => {
+  it('reflects live counters', () => {
     const acc = createRunStateAccumulator();
     acc.iteration = 2;
     acc.lastAction = 'direct-tool';
     const counters = { consecutiveBadRounds: 1, perTaskBadStreak: new Map<string, number>() };
-    const nudges = { used: 1 };
     const spin = createSpinSignatureBuffer();
 
     const xml = buildRunStateXml(
-      snapshotRunState(acc, counters, nudges, spin, /*consecutiveBadToolRounds=*/ 2)
+      snapshotRunState(acc, counters, spin, /*consecutiveBadToolRounds=*/ 2)
     );
 
     expect(xml).toContain('direct_tool_rounds: 0 (consecutive_failed_tools: 2)');
     expect(xml).toContain('delegate_rounds: 0 (consecutive_bad_delegation: 1)');
-    expect(xml).toContain(`planning_nudges: 1 of ${MAX_NUDGES_PER_RUN} used`);
     expect(xml).toContain('last_action: direct-tool');
   });
 
@@ -102,15 +101,14 @@ describe('buildRunStateXml', () => {
     const acc = createRunStateAccumulator();
     acc.iteration = 5;
     const counters = { consecutiveBadRounds: 0, perTaskBadStreak: new Map<string, number>() };
-    const nudges = { used: 0 };
     const spin = createSpinSignatureBuffer();
-    const sig = toolCallSignature('read', { path: 'README.md' });
+    const sig = toolCallSignature('ls', { path: 'src' });
     pushToolRound(spin, [sig]);
     pushToolRound(spin, [sig]);
     acc.spinSignatureHot = sig; // mirrors what runLoop sets each iter
 
     const xml = buildRunStateXml(
-      snapshotRunState(acc, counters, nudges, spin, /*consecutiveBadToolRounds=*/ 0)
+      snapshotRunState(acc, counters, spin, /*consecutiveBadToolRounds=*/ 0)
     );
     expect(xml).toContain(`spin_signature_hot: ${sig}`);
   });
@@ -122,7 +120,6 @@ describe('buildRunStateXml', () => {
       snapshotRunState(
         acc,
         { consecutiveBadRounds: 0, perTaskBadStreak: new Map() },
-        { used: 0 },
         createSpinSignatureBuffer(),
         0
       )
@@ -142,7 +139,6 @@ describe('buildRunStateXml', () => {
       snapshotRunState(
         acc,
         { consecutiveBadRounds: 0, perTaskBadStreak: new Map() },
-        { used: 0 },
         createSpinSignatureBuffer(),
         0
       )
@@ -160,13 +156,7 @@ describe('buildRunStateXml', () => {
       ])
     };
     const xml = buildRunStateXml(
-      snapshotRunState(
-        acc,
-        counters,
-        { used: 0 },
-        createSpinSignatureBuffer(),
-        0
-      )
+      snapshotRunState(acc, counters, createSpinSignatureBuffer(), 0)
     );
     // Header line on its own.
     expect(xml).toContain('failing_tasks:');
@@ -177,43 +167,6 @@ describe('buildRunStateXml', () => {
     expect(tail).toMatch(/streak 2:.*edit src\/foo\.ts/);
     // The "(none)" sentinel must NOT appear when a list is rendered.
     expect(tail).not.toContain('(none)');
-  });
-
-  /**
-   * T1-1: `child_redelegations:` is rendered ONLY when non-zero so the
-   * steady-state path stays silent. Pin both branches.
-   */
-  it('omits child_redelegations when the count is zero', () => {
-    const acc = createRunStateAccumulator();
-    acc.childRedelegationsTotal = 0;
-    const xml = buildRunStateXml(
-      snapshotRunState(
-        acc,
-        { consecutiveBadRounds: 0, perTaskBadStreak: new Map() },
-        { used: 0 },
-        createSpinSignatureBuffer(),
-        0
-      )
-    );
-    expect(xml).not.toContain('child_redelegations:');
-  });
-
-  it('renders child_redelegations when the model has tried to call delegate as a tool', () => {
-    const acc = createRunStateAccumulator();
-    acc.childRedelegationsTotal = 2;
-    const xml = buildRunStateXml(
-      snapshotRunState(
-        acc,
-        { consecutiveBadRounds: 0, perTaskBadStreak: new Map() },
-        { used: 0 },
-        createSpinSignatureBuffer(),
-        0
-      )
-    );
-    expect(xml).toContain('child_redelegations: 2');
-    // The line includes a one-line corrective hint so the model
-    // recognises the channel mistake without further prompting.
-    expect(xml).toContain('XML directive');
   });
 });
 

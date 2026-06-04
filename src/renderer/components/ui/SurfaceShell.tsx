@@ -32,12 +32,6 @@ export function surfaceShellInnerClassName(
   return PADDING_CLASS[padding];
 }
 
-/** List container inside a shell (checkpoints, inspector lists). */
-export const surfaceListClassName = cn(
-  surfaceShellClassName,
-  'flex flex-col gap-0.5 overflow-y-auto p-1'
-);
-
 /** Floating menu / popover panel (Vyotiq UI). */
 export const chromePopoverPanelClassName = 'vx-popover-panel';
 
@@ -68,7 +62,7 @@ export function chromeMeterClassName(className?: string): string {
   );
 }
 
-/** Selected list/tab row (dock, strip tabs, inspector). */
+/** Selected list/tab row (dock, strip tabs, settings). */
 export const chromeTabActiveClassName = 'vx-tab-pill-active';
 
 /** Idle list/tab row — transparent until hover. */
@@ -88,9 +82,6 @@ export function chromeFilterChipClassName(active?: boolean): string {
 export function chromeSegmentedTrayClassName(compact = false): string {
   return compact ? 'vx-segment inline-flex' : 'vx-segment vx-segment-fluid flex w-full';
 }
-
-/** Compact search/filter row — tint only on focus. */
-export const chromeSearchRowClassName = 'vx-search-row';
 
 /** Static status badge (Undone, attribution) — border, no fill. */
 export const chromeBadgeClassName = cn(
@@ -114,10 +105,10 @@ export const chromeProgressTrackClassName = cn(
 /** Settings / secondary-zone list shell (Vyotiq UI section body rhythm). */
 export const chromeSettingsCardClassName = 'vx-section-body rounded-none border-0 bg-transparent p-0';
 
-/** List-empty body copy inside settings / checkpoint lists. */
+/** List-empty body copy inside settings lists. */
 export const chromeListEmptyBodyClassName = 'vx-row vx-caption py-4 text-text-muted';
 
-/** Secondary-zone list empty (settings providers, checkpoint runs/files). */
+/** Secondary-zone list empty (e.g. settings providers). */
 export const chromeListEmptyClassName = cn(
   chromeSettingsCardClassName,
   chromeListEmptyBodyClassName
@@ -137,7 +128,7 @@ export const secondaryZonePanelContentClassName = cn(
   'pb-[clamp(1rem,3vw,1.25rem)]'
 );
 
-/** Settings / Checkpoints tab strip wrapper (Vyotiq UI tab bar supplies the edge). */
+/** Settings tab strip wrapper (Vyotiq UI tab bar supplies the edge). */
 export const secondaryZoneTabStripClassName = cn(
   'mb-0 shrink-0 min-w-0',
   secondaryZonePanelInsetXClassName
@@ -197,11 +188,6 @@ export const chromeCodeGutterClassName = cn(
 /** Sticky diff hunk header on code surface. */
 export const chromeCodeStickyHeaderClassName = cn(
   'sticky top-0 z-[1] border-b border-border-subtle/30 bg-surface-overlay/90 px-1 font-mono text-meta text-text-faint backdrop-blur-sm'
-);
-
-/** Soft scroll list inside modals (revert file list). */
-export const chromeScrollListClassName = cn(
-  'scrollbar-stealth overflow-y-auto rounded-inner border border-border-subtle/15 bg-surface-raised/15'
 );
 
 /** Floating toolbar on code/diff (navigator, copy cluster). */

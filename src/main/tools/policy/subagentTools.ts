@@ -5,11 +5,11 @@
  * Each receives a fresh blank context window and a restricted tool allowlist
  * tuned to its specific micro-task.
  *
- *   - `SUBAGENT_DEFAULT_TOOLS` is the read-only allowlist used when the
- *     `<delegate ... />` directive does not specify a `tools` attribute.
+ *   - `SUBAGENT_DEFAULT_TOOLS` is the read-only allowlist used when a
+ *     `delegate` call omits the `tools` argument.
  *
  *   - `SUBAGENT_FULL_TOOLS` is the upper bound — the orchestrator may opt
- *     into any subset by listing them in `<delegate tools="bash,edit" />`.
+ *     into any subset via `delegate({ tools: ["bash","edit"] })`.
  *     Anything outside this set is rejected by `validateSubagentToolset`.
  */
 
@@ -31,7 +31,7 @@ const SUBAGENT_DEFAULT_TOOLS: readonly ToolName[] = [
  *  `report` is in this set so a delegate with `tools="report"` can
  *  author HTML artifacts. It is deliberately delegate-only — heavy
  *  authoring work always goes through delegation per
- *  `00-prime-directives.md`. The orchestrator never sees it in its
+ *  `00-orchestrator-core.md`. The orchestrator never sees it in its
  *  function-calling schema. */
 const SUBAGENT_FULL_TOOLS: readonly ToolName[] = [
   'bash',
@@ -87,9 +87,6 @@ export function validateSubagentToolsetDetailed(
     if (allow.has(t)) {
       allowed.push(t as ToolName);
     } else {
-      // Defensive: the parser already trims, but a future grammar
-      // change could let a stray empty string slip through. Skip
-      // those silently — they aren't a meaningful "typo" surface.
       if (typeof t === 'string' && t.length > 0) dropped.push(t);
     }
   }

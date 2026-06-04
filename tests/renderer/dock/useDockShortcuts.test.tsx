@@ -16,7 +16,11 @@ function fireKey(key: string, init: Partial<KeyboardEventInit> = {}) {
   );
 }
 
-const dockProps = { onOpenSettings: () => {} };
+const dockProps = {
+  onOpenSettings: () => {},
+  onOpenWorkspace: () => {},
+  onSetWorkspacePath: () => {}
+};
 
 beforeEach(() => {
   useUiStore.setState({

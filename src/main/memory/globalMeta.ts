@@ -57,7 +57,7 @@ export async function writeGlobalMetaRules(content: string): Promise<void> {
  * Serialization queue for the meta-rules file. `appendGlobalMetaRule` is
  * read-modify-write (read full file → append bullet → rewrite), which
  * races when two callers run it concurrently — e.g. two sub-agents (the
- * pool runs up to `MAX_PARALLEL_SUBAGENTS` at once) that both emit a
+ * pool runs up to `DEFAULT_DELEGATE_CONCURRENCY` at once) that both emit a
  * `memory.action: 'append'` against the same target. Without a mutex,
  * the second write clobbers the first and its rule is silently lost.
  *

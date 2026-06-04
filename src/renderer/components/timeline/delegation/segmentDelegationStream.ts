@@ -1,8 +1,7 @@
 /** Walk inline stream rows and group consecutive worker-scoped rows for
- * Stream weave delegation rendering.
+ * Delegation stream rendering (inline worker mini-threads).
  */
 
-import type { Row } from '../reducer/deriveRows.js';
 import type { DisplayRow } from '../shared/displayRowTypes.js';
 
 export type DelegationStreamSegment =
@@ -21,6 +20,14 @@ function rowSubagentId(row: DisplayRow): string | undefined {
     default:
       return undefined;
   }
+}
+
+/** Worker segment key — orchestrator `delegate` tool rows never nest under workers. */
+function workerScopeId(row: DisplayRow): string | undefined {
+  const sid = rowSubagentId(row);
+  if (!sid) return undefined;
+  if (row.kind === 'tool-group' && row.toolName === 'delegate') return undefined;
+  return sid;
 }
 
 export function segmentDelegationStream(rows: DisplayRow[]): DelegationStreamSegment[] {
@@ -43,7 +50,7 @@ export function segmentDelegationStream(rows: DisplayRow[]): DelegationStreamSeg
   };
 
   for (const row of rows) {
-    const sid = rowSubagentId(row);
+    const sid = workerScopeId(row);
     if (sid) {
       flushOrchestrator();
       if (workerId !== null && workerId !== sid) flushWorker();
@@ -58,8 +65,4 @@ export function segmentDelegationStream(rows: DisplayRow[]): DelegationStreamSeg
   flushWorker();
   flushOrchestrator();
   return segments;
-}
-
-export function rowIsDelegationScoped(row: Row | DisplayRow): boolean {
-  return rowSubagentId(row as DisplayRow) !== undefined;
 }

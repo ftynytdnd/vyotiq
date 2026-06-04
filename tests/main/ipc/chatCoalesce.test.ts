@@ -270,7 +270,7 @@ describe('chat.ipc delta coalescing', () => {
       kind: 'phase',
       id: 'phase-1',
       ts: 1,
-      label: 'Delegating 2 sub-tasks'
+      label: 'Spawning 2 workers'
     });
     const phaseRows = appended.filter((a) => a.event.kind === 'phase');
     expect(phaseRows).toHaveLength(1);

@@ -9,10 +9,7 @@
  */
 
 import { promises as fs, existsSync } from 'node:fs';
-import type {
-  CheckpointEntry,
-  CheckpointRunManifest
-} from '@shared/types/checkpoint.js';
+import type { CheckpointRunManifest } from '@shared/types/checkpoint.js';
 import { runManifestPath, runsDir } from './paths.js';
 import { logger } from '../logging/logger.js';
 import { atomicWriteJson } from './atomicWrite.js';
@@ -91,46 +88,6 @@ function freshManifest(opts: {
     endedAt: null,
     entries: []
   };
-}
-
-/** Append an entry to an open run manifest and flush to disk. */
-export async function appendEntry(entry: CheckpointEntry): Promise<void> {
-  const manifest = cache.get(entry.runId);
-  if (!manifest) {
-    log.warn('appendEntry to unknown run; auto-opening', { runId: entry.runId });
-    const recovered = await openRun({
-      runId: entry.runId,
-      conversationId: entry.conversationId,
-      workspaceId: entry.workspaceId,
-      label: 'Recovered run',
-      startedAt: entry.ts
-    });
-    recovered.entries.push(entry);
-    return serialize(entry.runId, () => persist(recovered));
-  }
-  manifest.entries.push(entry);
-  return serialize(entry.runId, () => persist(manifest));
-}
-
-/**
- * Mark an entry as reverted in its run manifest. Idempotent: a second
- * call against the same entry is a no-op. Returns the patched entry
- * for callers that want to broadcast it.
- */
-export async function markEntryReverted(
-  workspaceId: string,
-  runId: string,
-  entryId: string
-): Promise<CheckpointEntry | null> {
-  const manifest = await readRun(workspaceId, runId);
-  if (!manifest) return null;
-  const entry = manifest.entries.find((e) => e.id === entryId);
-  if (!entry) return null;
-  if (entry.reverted === true) return entry;
-  entry.reverted = true;
-  cache.set(runId, manifest);
-  await serialize(runId, () => persist(manifest));
-  return entry;
 }
 
 /**
@@ -212,17 +169,4 @@ export async function listRunHeads(workspaceId: string): Promise<
   }
   out.sort((a, b) => b.startedAt - a.startedAt);
   return out;
-}
-
-/** Delete a run manifest. Used by GC / prune. */
-export async function deleteRun(workspaceId: string, runId: string): Promise<void> {
-  cache.delete(runId);
-  writeChains.delete(runId);
-  try {
-    await fs.unlink(runManifestPath(workspaceId, runId));
-  } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-      log.warn('deleteRun failed', { workspaceId, runId, err });
-    }
-  }
 }

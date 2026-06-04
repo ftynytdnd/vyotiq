@@ -1,23 +1,10 @@
 /**
  * MemoryPanel — surface for browsing and editing Agent V's persistent
- * memory. Renders inside the Settings → Memory tab. Uses ONLY existing
- * tokens / primitives (Button, Spinner, surface colors). No new design.
- *
- * Two scopes:
- *   - global: a single `meta-rules.md` file under <userData>. The textarea
- *     is the full file. Save = full overwrite. There is also an Append
- *     affordance that hits the same date-stamped append flow the agent
- *     uses internally (see globalMeta.appendGlobalMetaRule).
- *   - workspace: many `.md` notes under `<workspace>/.vyotiq/memory/`. The
- *     left column lists them; the right column shows the selected one with
- *     edit + save. Adding a new note is supported via the "+ New note" row.
- *
- * The IPC surface (`vyotiq.memory.list/read/write`) is already in place —
- * this component just calls into it.
+ * memory. Renders inside Settings → Agent → Memory.
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, RefreshCcw, Save, FilePlus2, FolderOpen } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, RefreshCcw, Save, FilePlus2, FolderOpen } from 'lucide-react';
 import type { MemoryEntry } from '@shared/types/ipc.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { Button } from '../ui/Button.js';
@@ -29,26 +16,22 @@ import { Tabs, type TabItem } from '../ui/Tabs.js';
 import { MarkdownBody } from '../timeline/markdown/MarkdownBody.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useChatStore } from '../../store/useChatStore.js';
-import { formatTimestamp } from '../checkpoints/formatTimestamp.js';
+import { formatTimestamp } from '../../lib/formatTimestamp.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import {
   ShellCaption,
-  ShellFieldActions,
   ShellFieldLabel,
   ShellRow,
-  ShellSection,
-  ShellStack
+  ShellSection
 } from '../ui/ShellSection.js';
-import { chromeListEmptyBodyClassName, chromeListEmptyClassName } from '../ui/SurfaceShell.js';
-import { cn } from '../../lib/cn.js';
 import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../lib/shellIcons.js';
 
 type Scope = 'global' | 'workspace';
 type ViewMode = 'edit' | 'preview';
 
 const SCOPE_TABS: TabItem<Scope>[] = [
-  { id: 'global', label: 'Global meta-rules' },
-  { id: 'workspace', label: 'Workspace notes' }
+  { id: 'global', label: 'Global' },
+  { id: 'workspace', label: 'Workspace' }
 ];
 
 const VIEW_MODE_TABS: TabItem<ViewMode>[] = [
@@ -62,7 +45,7 @@ interface DraftState {
   dirty: boolean;
 }
 
-export function MemoryPanel({ layout = 'split' }: { layout?: 'split' | 'stack' }) {
+export function MemoryPanel() {
   const ws = useWorkspaceStore((s) => s.info);
   const conversationId = useChatStore((s) => s.conversationId);
   const showToast = useToastStore((s) => s.show);
@@ -76,6 +59,7 @@ export function MemoryPanel({ layout = 'split' }: { layout?: 'split' | 'stack' }
   const [pendingSelectKey, setPendingSelectKey] = useState<string | null>(null);
   const [newNoteOpen, setNewNoteOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
+  const [editorOpen, setEditorOpen] = useState(false);
 
   const workspaceReady = !!ws.path;
   const isWorkspaceScope = scope === 'workspace';
@@ -127,6 +111,14 @@ export function MemoryPanel({ layout = 'split' }: { layout?: 'split' | 'stack' }
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    setEditorOpen(false);
+  }, [scope, activeKey]);
+
+  useEffect(() => {
+    if (draft?.dirty) setEditorOpen(true);
+  }, [draft?.dirty]);
+
   const onSelect = (key: string) => {
     if (draft?.dirty) {
       setPendingSelectKey(key);
@@ -174,10 +166,6 @@ export function MemoryPanel({ layout = 'split' }: { layout?: 'split' | 'stack' }
       undefined,
       conversationId ?? undefined
     );
-    // List entries now return the topic-only key (no `.md` suffix) —
-    // strip the extension the user may have typed so the selection
-    // matches the sanitized backend key. See
-    // `workspaceNotes.publicKey` for the storage-vs-display split.
     const displayKey = key.endsWith('.md') ? key.slice(0, -3) : key;
     await refresh(displayKey);
   };
@@ -186,9 +174,6 @@ export function MemoryPanel({ layout = 'split' }: { layout?: 'split' | 'stack' }
     const line = appendDraft.trim();
     if (!line) return;
     try {
-      // F-022: previously `vyotiq.memory.write('global', 'append', line)`,
-      // where `'append'` was a magic key sentinel. The new wire shape uses
-      // `mode: 'append'` and the real entry key.
       await vyotiq.memory.write('global', 'meta-rules.md', line, 'append');
       setAppendDraft('');
       await refresh('meta-rules.md');
@@ -199,12 +184,6 @@ export function MemoryPanel({ layout = 'split' }: { layout?: 'split' | 'stack' }
     }
   };
 
-  /**
-   * Reveal the selected entry's underlying file in the OS file
-   * manager. IPC errors (e.g. no workspace bound for workspace-scoped
-   * notes) surface through the shared `useToastStore` so the user
-   * gets a uniform feedback surface with the rest of the app.
-   */
   const onReveal = async () => {
     if (!draft) return;
     try {
@@ -215,53 +194,60 @@ export function MemoryPanel({ layout = 'split' }: { layout?: 'split' | 'stack' }
     }
   };
 
+  const activeEntry = draft ? list.find((e) => e.key === draft.key) : undefined;
+
   return (
-    <ShellStack>
-      <ShellSection title="Scope">
-        <ShellRow>
-          <ShellFieldLabel>Memory scope</ShellFieldLabel>
-          <ShellCaption>Switch between global meta-rules and per-workspace notes.</ShellCaption>
-          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <Tabs<Scope>
-              items={SCOPE_TABS}
-              value={scope}
-              onChange={setScope}
-              variant="segmented"
-              size="md"
-              ariaLabel="Memory scope"
-              className="min-w-0 flex-1"
-            />
-            <Button variant="ghost" onClick={() => void refresh(activeKey ?? undefined)} disabled={loading}>
-              <RefreshCcw className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
-              Refresh
-            </Button>
-          </div>
-        </ShellRow>
-      </ShellSection>
+    <ShellSection title="Memory">
+      <ShellCaption>
+        Notes are read each turn. Global{' '}
+        <span className="font-mono text-text-secondary">meta-rules.md</span> · workspace{' '}
+        <span className="font-mono text-text-secondary">.vyotiq/memory/</span>.
+      </ShellCaption>
+
+      <ShellRow className="py-0">
+        <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-2">
+          <Tabs<Scope>
+            items={SCOPE_TABS}
+            value={scope}
+            onChange={setScope}
+            variant="segmented"
+            size="md"
+            ariaLabel="Memory scope"
+            className="min-w-0 flex-1"
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void refresh(activeKey ?? undefined)}
+            disabled={loading}
+            title="Reload list and content"
+          >
+            <RefreshCcw className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
+            Refresh
+          </Button>
+        </div>
+      </ShellRow>
 
       {isWorkspaceScope && !workspaceReady ? (
-        <div className={chromeListEmptyClassName}>
-          Pick a workspace first. Workspace notes live inside{' '}
+        <div className="vx-settings-empty w-full text-row text-text-muted">
+          Pick a workspace to edit notes under{' '}
           <span className="font-mono">.vyotiq/memory/</span>.
         </div>
       ) : (
-        <ShellSection title={scope === 'global' ? 'meta-rules.md' : 'Workspace notes'}>
+        <div className="vx-settings-memory">
           <div className="vx-memory-split">
             {scope === 'workspace' && (
-              <ul className="vx-memory-list" aria-label="Workspace notes">
+              <ul
+                className="vx-settings-memory-list scrollbar-stealth"
+                aria-label="Workspace notes"
+              >
                 {loading && (
-                  <li>
-                    <div className="flex items-center gap-2 px-2 py-1 vx-caption">
-                      <LoadingHint message="Loading…" className="py-2" />
-                    </div>
+                  <li className="px-2 py-1.5">
+                    <LoadingHint message="Loading notes…" size={12} />
                   </li>
                 )}
                 {!loading && list.length === 0 && (
-                  <li>
-                    <div className={cn(chromeListEmptyBodyClassName, 'px-2 text-left')}>
-                      No notes yet.
-                    </div>
-                  </li>
+                  <li className="px-2 py-2 text-meta text-text-faint">No notes yet.</li>
                 )}
                 {list.map((entry) => (
                   <li key={entry.key}>
@@ -308,113 +294,155 @@ export function MemoryPanel({ layout = 'split' }: { layout?: 'split' | 'stack' }
               </ul>
             )}
 
-            <div className="vx-memory-editor">
+            <div className="surface-shell vx-settings-memory-editor scrollbar-stealth">
               {draft ? (
                 <>
-                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                    <div className="min-w-0 flex flex-col gap-0.5">
-                      <div className="truncate font-mono text-row text-text-secondary">
-                        {draft.key}
+                  {!editorOpen ? (
+                    <div className="vx-settings-memory-collapsed">
+                      <div className="min-w-0">
+                        <div className="truncate font-mono text-row text-text-secondary">
+                          {draft.key}
+                        </div>
+                        {draft.dirty && (
+                          <span className="text-meta text-warning">Unsaved changes</span>
+                        )}
                       </div>
-                      {(list.find((e) => e.key === draft.key) ?? list[0])?.lastReferencedAt != null && (
-                        <span className="truncate text-meta text-text-faint">
-                          Last in chat:{' '}
-                          {(list.find((e) => e.key === draft.key) ?? list[0])
-                            ?.lastReferencedConversationTitle ?? 'Chat'}{' '}
-                          ·{' '}
-                          {formatTimestamp(
-                            (list.find((e) => e.key === draft.key) ?? list[0])!.lastReferencedAt!
-                          )}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Tabs<ViewMode>
-                        items={VIEW_MODE_TABS}
-                        value={viewMode}
-                        onChange={setViewMode}
-                        variant="segmented"
-                        size="sm"
-                        ariaLabel="Note view mode"
-                      />
                       <Button
-                        variant="ghost"
-                        onClick={() => void onReveal()}
-                        title="Reveal in file manager"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setEditorOpen(true)}
                       >
-                        <FolderOpen className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
-                        Reveal
-                      </Button>
-                      <Button variant="primary" disabled={!draft.dirty} onClick={() => void onSave()}>
-                        <Save className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
-                        Save
+                        <ChevronDown
+                          className={SHELL_ROW_ICON_CLASS}
+                          strokeWidth={SHELL_ROW_ICON_STROKE}
+                        />
+                        Open editor
                       </Button>
                     </div>
-                  </div>
-                  {viewMode === 'edit' ? (
-                    <textarea
-                      value={draft.content}
-                      onChange={(e) =>
-                        setDraft((d) => (d ? { ...d, content: e.target.value, dirty: true } : d))
-                      }
-                      spellCheck={false}
-                      rows={layout === 'stack' ? 10 : 14}
-                      className={cn('vx-textarea', layout === 'stack' ? 'min-h-[240px]' : 'min-h-[360px]')}
-                    />
                   ) : (
-                    <div
-                      className={cn(
-                        'scrollbar-stealth vx-textarea overflow-y-auto',
-                        layout === 'stack' ? 'min-h-[240px]' : 'min-h-[360px]'
-                      )}
-                    >
-                      {draft.content.trim().length === 0 ? (
-                        <div className="vx-caption italic">Empty note. Switch to Edit to add content.</div>
+                    <>
+                      <div className="vx-settings-memory-toolbar">
+                        <div className="min-w-0">
+                          <div className="truncate font-mono text-row text-text-secondary">
+                            {draft.key}
+                          </div>
+                          {activeEntry?.lastReferencedAt != null && (
+                            <span className="truncate text-meta text-text-faint">
+                              Last in chat:{' '}
+                              {activeEntry.lastReferencedConversationTitle ?? 'Chat'} ·{' '}
+                              {formatTimestamp(activeEntry.lastReferencedAt)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="vx-settings-memory-toolbar-actions">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditorOpen(false)}
+                            title="Collapse editor"
+                          >
+                            <ChevronUp
+                              className={SHELL_ROW_ICON_CLASS}
+                              strokeWidth={SHELL_ROW_ICON_STROKE}
+                            />
+                          </Button>
+                          <Tabs<ViewMode>
+                            items={VIEW_MODE_TABS}
+                            value={viewMode}
+                            onChange={setViewMode}
+                            variant="segmented"
+                            size="sm"
+                            ariaLabel="Note view mode"
+                          />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => void onReveal()}
+                            title="Reveal in file manager"
+                          >
+                            <FolderOpen
+                              className={SHELL_ROW_ICON_CLASS}
+                              strokeWidth={SHELL_ROW_ICON_STROKE}
+                            />
+                            Reveal
+                          </Button>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            disabled={!draft.dirty}
+                            onClick={() => void onSave()}
+                          >
+                            <Save
+                              className={SHELL_ROW_ICON_CLASS}
+                              strokeWidth={SHELL_ROW_ICON_STROKE}
+                            />
+                            Save
+                          </Button>
+                        </div>
+                      </div>
+                      {viewMode === 'edit' ? (
+                        <textarea
+                          value={draft.content}
+                          onChange={(e) =>
+                            setDraft((d) =>
+                              d ? { ...d, content: e.target.value, dirty: true } : d
+                            )
+                          }
+                          spellCheck={false}
+                          rows={8}
+                          className="vx-textarea"
+                        />
                       ) : (
-                        <MarkdownBody text={draft.content} />
+                        <div className="scrollbar-stealth vx-textarea min-h-[9rem] overflow-y-auto">
+                          {draft.content.trim().length === 0 ? (
+                            <div className="vx-caption italic">
+                              Empty note. Switch to Edit to add content.
+                            </div>
+                          ) : (
+                            <MarkdownBody text={draft.content} />
+                          )}
+                        </div>
                       )}
-                    </div>
+                    </>
                   )}
                   {scope === 'global' && (
-                    <ShellRow>
-                      <ShellFieldLabel>Append a new rule (date-stamped)</ShellFieldLabel>
-                      <TextField
-                        className="mt-1"
-                        value={appendDraft}
-                        onChange={(e) => setAppendDraft(e.target.value)}
-                        placeholder='e.g. "Prefer TypeScript over JavaScript."'
-                      />
-                      <ShellFieldActions>
+                    <ShellRow className="border-t border-panel-edge/40 pt-3">
+                      <ShellFieldLabel>Append rule</ShellFieldLabel>
+                      <div className="vx-settings-append-row mt-1">
+                        <TextField
+                          value={appendDraft}
+                          onChange={(e) => setAppendDraft(e.target.value)}
+                          placeholder='e.g. "Prefer TypeScript over JavaScript."'
+                        />
                         <Button
                           variant="secondary"
+                          size="sm"
                           disabled={appendDraft.trim().length === 0}
                           onClick={() => void onAppendGlobal()}
                         >
-                          <Plus className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
+                          <Plus
+                            className={SHELL_ROW_ICON_CLASS}
+                            strokeWidth={SHELL_ROW_ICON_STROKE}
+                          />
                           Append
                         </Button>
-                      </ShellFieldActions>
+                      </div>
                     </ShellRow>
                   )}
                 </>
               ) : (
-                <div className={cn(chromeListEmptyBodyClassName, 'px-2 text-left')}>
+                <p className="text-meta text-text-faint py-2">
                   {loading || contentLoading
                     ? 'Loading…'
                     : scope === 'global'
                       ? 'Loading meta-rules…'
-                      : 'Select an entry above.'}
-                </div>
+                      : 'Select a note above.'}
+                </p>
               )}
             </div>
           </div>
-        </ShellSection>
+        </div>
       )}
-
-      <ShellCaption>
-        Agent V reads relevant notes automatically at the start of each turn and may append to
-        meta-rules when you issue persistent corrections.
-      </ShellCaption>
 
       <PromptDialog
         open={newNoteOpen}
@@ -432,6 +460,6 @@ export function MemoryPanel({ layout = 'split' }: { layout?: 'split' | 'stack' }
         onSubmit={(v) => void onCreateNote(v)}
         onCancel={() => setNewNoteOpen(false)}
       />
-    </ShellStack>
+    </ShellSection>
   );
 }

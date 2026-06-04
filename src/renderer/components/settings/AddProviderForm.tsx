@@ -26,6 +26,11 @@ const DIALECT_TABS: TabItem<ProviderDialect>[] = PROVIDER_DIALECTS.map((d) => ({
 
 interface AddProviderFormProps {
   onAdded?: () => void;
+  /** Controlled expand state (empty-state CTA). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Hide the link trigger (e.g. empty state uses a primary button). */
+  hideTrigger?: boolean;
 }
 
 interface Preset {
@@ -60,8 +65,18 @@ function isOpenRouterUrl(rawUrl: string): boolean {
   }
 }
 
-export function AddProviderForm({ onAdded }: AddProviderFormProps) {
-  const [open, setOpen] = useState(false);
+export function AddProviderForm({
+  onAdded,
+  open: openControlled,
+  onOpenChange,
+  hideTrigger = false
+}: AddProviderFormProps) {
+  const [openInternal, setOpenInternal] = useState(false);
+  const open = openControlled ?? openInternal;
+  const setOpen = (next: boolean) => {
+    onOpenChange?.(next);
+    if (openControlled === undefined) setOpenInternal(next);
+  };
   const [name, setName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -113,6 +128,7 @@ export function AddProviderForm({ onAdded }: AddProviderFormProps) {
   };
 
   if (!open) {
+    if (hideTrigger) return null;
     return (
       <Button variant="link" onClick={() => setOpen(true)}>
         <Plus className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} /> Add provider

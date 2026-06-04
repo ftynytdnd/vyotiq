@@ -22,10 +22,26 @@ beforeEach(() => {
 });
 
 describe('TurnRunningMeta', () => {
-  it('shows the live phase headline in the footer', () => {
+  it('hides connecting phase (composer status strip owns that headline)', () => {
     render(<TurnRunningMeta live />);
 
-    expect(screen.getByText(CONNECTING_LABEL)).toBeTruthy();
+    expect(screen.queryByText(CONNECTING_LABEL)).toBeNull();
+    expect(document.querySelector('[data-turn-running-meta]')).toBeNull();
+  });
+
+  it('shows Starting… after connecting', () => {
+    useChatStore.setState({
+      isProcessing: true,
+      latestOrchestratorRunStatus: {
+        kind: 'run-status',
+        phase: 'awaiting-response',
+        label: 'Starting…',
+        ts: Date.now()
+      } as never
+    });
+    render(<TurnRunningMeta live />);
+
+    expect(screen.getByText('Starting…')).toBeTruthy();
     expect(document.querySelector('[data-turn-running-meta]')).toBeTruthy();
   });
 

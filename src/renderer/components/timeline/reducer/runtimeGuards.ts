@@ -62,18 +62,10 @@ export function isTimelineEvent(value: unknown): value is TimelineEvent {
     // running text. Missing either corrupts state.
     case 'agent-text-delta':
     case 'agent-reasoning-delta':
-    case 'context-summary-delta':
-    case 'context-summary-reasoning-delta':
       return hasStringField(o, 'delta');
     case 'agent-text-end':
     case 'agent-reasoning-end':
     case 'agent-text-aborted':
-    case 'context-summary-end':
-    case 'context-summary-aborted':
-    case 'context-summary-undone':
-    case 'context-summary-pending':
-      // No additional required string content; base shape covers
-      // `id` + `ts` + `kind`.
       return true;
     case 'user-prompt':
     case 'agent-thought':
@@ -86,6 +78,17 @@ export function isTimelineEvent(value: unknown): value is TimelineEvent {
         hasStringField(o, 'message') ||
         hasStringField(o, 'label')
       );
+    case 'ask-user-prompt':
+      return (
+        hasStringField(o, 'displayText') &&
+        hasStringField(o, 'toolCallId') &&
+        hasStringField(o, 'runId') &&
+        typeof o['payload'] === 'object' &&
+        o['payload'] !== null &&
+        Array.isArray((o['payload'] as Record<string, unknown>)['questions'])
+      );
+    case 'ask-user-submitted':
+      return hasStringField(o, 'promptEventId') && hasStringField(o, 'toolCallId');
     case 'tool-call':
       return typeof o['call'] === 'object' && o['call'] !== null;
     case 'tool-result':
@@ -116,8 +119,6 @@ export function isTimelineEvent(value: unknown): value is TimelineEvent {
       // Persisted audit-trail kinds — base shape is enough; the
       // checkpoint store does its own per-record validation.
       return true;
-    case 'context-override-set':
-      return hasNonEmptyStringField(o, 'messageId');
     case 'synthetic-usage-update':
       // Phase 3: renderer-locally synthesized mid-stream usage update.
       // `completionTokens` carries the running total; the reducer

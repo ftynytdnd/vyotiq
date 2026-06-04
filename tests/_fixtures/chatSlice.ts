@@ -32,11 +32,7 @@
 
 import type { TimelineEvent } from '@shared/types/chat';
 import type {
-  ContextMessageOverride
-} from '@shared/types/contextSummary';
-import type {
   AssistantTextAcc,
-  ContextSummaryAcc,
   PartialToolCallArgs,
   ReasoningTextAcc,
   SubAgentSnapshot,
@@ -72,19 +68,6 @@ export interface ChatSliceFixture {
    * record on the fresh-slice fixture.
    */
   runIdToFileEditCount: Record<string, number>;
-  /**
-   * Per-summary streaming + lifecycle accumulator. Empty on the
-   * fresh-slice fixture; tests that exercise the context-summary
-   * row stamp entries here directly. Mirrors the slice's own
-   * `summaries` field one-for-one.
-   */
-  summaries: Record<string, ContextSummaryAcc>;
-  /**
-   * Per-conversation per-message override map. Mirrors the slice's
-   * own `messageOverrides` field; tests for the Inspector toggle
-   * stamp entries here. Empty default.
-   */
-  messageOverrides: Record<string, ContextMessageOverride>;
 }
 
 /**
@@ -108,8 +91,6 @@ export function chatSliceFixture(
     partialToolCallArgs: {},
     settledCallIds: {},
     runIdToFileEditCount: {},
-    summaries: {},
-    messageOverrides: {},
     ...overrides
   };
 }

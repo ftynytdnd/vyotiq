@@ -13,7 +13,6 @@ import { isRerunnableToolInput } from '@shared/tools/toolRerun.js';
 import { appendEvent, getConversationMeta } from '../conversations/conversationStore.js';
 import { runToolByName } from '../orchestrator/toolRunner.js';
 import { requireWorkspaceById } from '../workspace/workspaceState.js';
-import { getSettings, resolvePermissionsForWorkspace } from '../settings/settingsStore.js';
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import { logger } from '../logging/logger.js';
 
@@ -43,10 +42,7 @@ export async function executeToolRerun(input: ToolRerunInput): Promise<ToolRerun
   }
 
   const workspacePath = await requireWorkspaceById(meta.workspaceId);
-  const settings = await getSettings();
-  const permissions = resolvePermissionsForWorkspace(settings, meta.workspaceId);
-  const strictApprovals =
-    settings.ui?.strictApprovalsByWorkspace?.[meta.workspaceId] === true;
+  const permissions = input.permissions;
 
   const callId = randomUUID();
   const startedAt = Date.now();
@@ -72,7 +68,6 @@ export async function executeToolRerun(input: ToolRerunInput): Promise<ToolRerun
       runId: `rerun:${callId}`,
       conversationId: input.conversationId,
       permissions,
-      strictApprovals,
       emit: (event) => persistAndMirror(input.conversationId, event),
       signal: abort.signal
     });

@@ -152,6 +152,21 @@ describe('deriveRows — edit + file-edit merge fold', () => {
     expect(fileEditGroups.length).toBe(1);
   });
 
+  it('folds when assistant text closed the open tool group between result and file-edit', () => {
+    const events: TimelineEvent[] = [
+      { kind: 'user-prompt', id: 'p1', ts: 1, content: 'go' },
+      editToolCall('c1', 'src/foo.ts', 2),
+      editToolResult('c1', 'src/foo.ts', 3),
+      { kind: 'agent-text-delta', id: 'a1', ts: 4, delta: 'brief status' },
+      { kind: 'agent-text-end', id: 'a1', ts: 5 },
+      fileEdit('src/foo.ts', 6, 3, 2)
+    ];
+    const rows = deriveRows(events);
+    expect(rows.filter((r) => r.kind === 'file-edit-group')).toHaveLength(0);
+    const tg = rows.find((r) => r.kind === 'tool-group');
+    expect(tg?.kind === 'tool-group' && tg.children[0]?.fileEditAdditions).toBe(3);
+  });
+
   it('does NOT fold when the file-edit path differs from the prior edit', () => {
     // Defense against a future provider that misorders events: the
     // fold only fires when the path matches the LAST settled edit

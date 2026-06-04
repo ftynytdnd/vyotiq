@@ -31,8 +31,19 @@ import { atomicWriteString } from '../checkpoints/atomicWrite.js';
 import { deleteAttachmentsForConversation } from '../attachments/gc.js';
 import { listActiveRuns } from '../orchestrator/AgentV.js';
 import { repairNonTerminalSubagents } from '@shared/transcript/repairNonTerminalSubagents.js';
+import { migrateConversationPending } from '../checkpoints/pendingChanges.js';
 
 const log = logger.child('conversations');
+
+/** Legacy context-window summarization timeline events (removed feature). */
+const LEGACY_SUMMARY_EVENT_PREFIX = 'context-summary-';
+
+function stripLegacySummaryTimelineEvents(
+  events: ReadonlyArray<TimelineEvent>
+): TimelineEvent[] {
+  const filtered = events.filter((e) => !e.kind.startsWith(LEGACY_SUMMARY_EVENT_PREFIX));
+  return filtered.length === events.length ? [...events] : filtered;
+}
 
 const ROOT_DIR = 'conversations';
 const INDEX_FILE = 'index.json';
@@ -779,7 +790,38 @@ export async function readTranscript(id: string): Promise<TimelineEvent[]> {
     rl.on('close', () => resolve());
     rl.on('error', (err) => reject(err));
   });
-  return out;
+  const migrated = stripLegacySummaryTimelineEvents(out);
+  if (migrated.length !== out.length) {
+    const removed = out.length - migrated.length;
+    await rewriteTranscriptEvents(id, migrated, removed);
+  }
+  return migrated;
+}
+
+async function rewriteTranscriptEvents(
+  id: string,
+  events: TimelineEvent[],
+  removedCount: number
+): Promise<void> {
+  const prev = appendChains.get(id) ?? Promise.resolve();
+  const next = prev.catch(() => undefined).then(async () => {
+    if (isRecentlyRemoved(id)) return;
+    const meta = findMeta(id);
+    if (!meta) return;
+    await ensureDir();
+    const file = transcriptPath(id);
+    const body = events.map((e) => JSON.stringify(e)).join('\n') + (events.length > 0 ? '\n' : '');
+    await atomicWriteString(file, body);
+    meta.eventCount = events.length;
+    meta.updatedAt = Date.now();
+    scheduleIndexFlush();
+    log.info('migrated transcript: stripped legacy summary events', {
+      id,
+      removed: removedCount
+    });
+  });
+  appendChains.set(id, next);
+  await next;
 }
 
 /**
@@ -921,9 +963,8 @@ export async function moveConversationToWorkspace(
   meta.workspaceId = targetWorkspaceId;
   meta.updatedAt = Date.now();
   if (priorWorkspaceId && priorWorkspaceId !== targetWorkspaceId) {
-    const { migrateConversationPending } = await import('../checkpoints/pendingChanges.js');
     await migrateConversationPending(id, priorWorkspaceId, targetWorkspaceId);
-    // Legacy `reviews.json` rows are read-only after Phase 1 — not migrated.
+    // Legacy checkpoint/review sidecars on disk are not migrated.
   }
   log.info('conversation moved to workspace', {
     conversationId: id,

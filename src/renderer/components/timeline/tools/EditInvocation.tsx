@@ -44,8 +44,6 @@ import { DetailPane } from './shared/DetailPane.js';
 import { DiffStatsBadge } from './shared/DiffStatsBadge.js';
 import { CodeBlock } from './shared/CodeBlock.js';
 import { EditDiffView } from './edit/EditDiffView.js';
-import { PendingEntryDot } from '../../checkpoints/shared/PendingEntryDot.js';
-import { usePendingEntryState } from '../../checkpoints/shared/usePendingEntryState.js';
 import {
   synthesizeCreateHunks,
   synthesizeDiffPreview,
@@ -284,13 +282,6 @@ export function EditInvocation({
     (partial === true || diffStream != null || preview != null || call != null);
   const liveAutoExpand = liveAutoExpandOverride ?? computedLiveAutoExpand;
 
-  const pending = usePendingEntryState({
-    ...(data?.entryId ? { entryId: data.entryId } : {}),
-    filePath: path
-  });
-  const actions =
-    data && result?.ok && pending ? <PendingEntryDot className="mr-0.5" /> : undefined;
-
   return (
     <InvocationShell
       title="edit"
@@ -303,7 +294,6 @@ export function EditInvocation({
       {...(rowKey ? { rowKey } : {})}
       liveAutoExpand={liveAutoExpand}
       {...(groupExpanded ? { groupExpanded } : {})}
-      {...(actions ? { actions } : {})}
       call={call}
       result={result}
       partial={partial}

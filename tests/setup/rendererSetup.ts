@@ -59,23 +59,16 @@ function makeStubApi() {
       update: asyncNoop,
       remove: asyncNoop,
       discoverModels: vi.fn(async () => []),
-      test: vi.fn(async () => ({ ok: true, message: 'ok' })),
-      setContextOverride: vi.fn(async () => ({
-        id: 'p1',
-        name: 'stub',
-        baseUrl: 'http://localhost',
-        enabled: true
-      }))
-    },
-    tokens: {
-      estimate: vi.fn(async () => ({ tokens: 0, exact: false }))
+      test: vi.fn(async () => ({ ok: true, message: 'ok' }))
     },
     chat: {
       send: vi.fn(async () => ({ ok: true, conversationId: 'c1' })),
       abort: asyncNoop,
+      submitAskUser: vi.fn(async () => ({ ok: true as const })),
       onEvent: subscribe,
       onDone: subscribe,
       onError: subscribe,
+      onAwaitingUser: subscribe,
       listActiveRuns: vi.fn(async () => [])
     },
     conversations: {
@@ -88,9 +81,7 @@ function makeStubApi() {
     },
     tools: {
       openPath: asyncNoop,
-      onConfirmRequest: subscribe,
-      onConfirmCancel: subscribe,
-      respondConfirm: asyncNoop
+      rerun: asyncNoop
     },
     memory: {
       list: vi.fn(async () => []),
@@ -116,50 +107,22 @@ function makeStubApi() {
       setThemeSource: asyncNoop,
       checkForUpdates: vi.fn(async () => ({ updateAvailable: false }))
     },
-    // Checkpoints slice — stubbed to safe defaults so unguarded calls
-    // from a mounted Checkpoints view (or its store actions) resolve
-    // cleanly. Per-test overrides via `vi.spyOn(window.vyotiq.checkpoints, ...)`
-    // are the canonical way to assert wire-shape.
     checkpoints: {
-      summary: vi.fn(async () => ({
-        workspaceId: 'ws-stub',
-        runs: [],
-        files: [],
-        usage: { workspaceId: 'ws-stub', blobCount: 0, bytes: 0 }
-      })),
-      readRun: vi.fn(async () => null),
-      readFileHistory: vi.fn(async () => []),
-      listPending: vi.fn(async () => []),
-      acceptEntry: asyncNoop,
-      acceptAll: asyncNoop,
-      rejectEntry: vi.fn(async () => ({ ok: true, reverted: 0 })),
-      revertEntry: vi.fn(async () => ({ ok: true, reverted: 0 })),
-      revertRun: vi.fn(async () => ({ ok: true, reverted: 0 })),
-      revertFileToHash: vi.fn(async () => ({ ok: true, reverted: 0 })),
       readBlob: vi.fn(async () => null),
-      readCurrentFile: vi.fn(async () => null),
-      listGitRefs: vi.fn(async () => ({
+      previewRewind: vi.fn(async (input: unknown) => ({ ok: true, ...(input as object) })),
+      rewindToPrompt: vi.fn(async () => ({
         ok: true as const,
-        options: [{ ref: 'HEAD', group: 'builtin' as const }],
-        head: 'main'
+        conversationId: 'conv-stub',
+        workspaceId: 'ws-stub',
+        promptEventId: 'prompt-stub',
+        revertedRunIds: [],
+        revertedFiles: [],
+        failedFiles: [],
+        removedTranscriptEvents: 0,
+        droppedPending: 0,
+        deletedRunManifests: 0
       })),
-      gitBaseDiff: vi.fn(async () => ({ ok: false as const, reason: 'not-a-repo' as const })),
-      exportArchive: vi.fn(async () => ({ archivePath: '/tmp/archive.json', bytes: 0 })),
-      prune: vi.fn(async () => ({ removedRuns: 0, removedBlobs: 0 })),
-      deleteRun: vi.fn(async () => ({ removed: true, droppedPending: 0 })),
-      onChanged: subscribe
-    },
-    contextSummary: {
-      inspect: vi.fn(async () => null),
-      getRules: vi.fn(async () => null),
-      triggerManual: vi.fn(async () => ({ ok: false, reason: 'stub' })),
-      undo: vi.fn(async () => ({ ok: false })),
-      abortIdle: vi.fn(async () => ({ ok: false })),
-      abortLive: vi.fn(async () => ({ ok: false })),
-      setMessageOverride: asyncNoop,
-      resetMessageOverrides: asyncNoop,
-      updateRules: vi.fn(async () => ({})),
-      onSnapshotChanged: subscribe
+      onTranscriptRewound: subscribe
     },
     log: noop
   };

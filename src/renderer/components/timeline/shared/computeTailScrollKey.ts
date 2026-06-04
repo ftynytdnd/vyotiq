@@ -9,7 +9,6 @@ export function computeTailScrollKey(
   rows: DisplayRow[],
   assistantTexts: Record<string, { text: string }>,
   reasoningTexts: Record<string, { text: string }>,
-  summaries: Record<string, { text: string }>,
   liveDiffByCallId: Record<string, DiffStreamSnapshot>
 ): string {
   if (rows.length === 0) return '0';
@@ -21,9 +20,6 @@ export function computeTailScrollKey(
       break;
     case 'reasoning-line':
       growth = reasoningTexts[last.id]?.text.length ?? 0;
-      break;
-    case 'context-summary':
-      growth = summaries[last.summaryId]?.text.length ?? 0;
       break;
     case 'tool-group':
       for (const child of last.children) {

@@ -70,7 +70,10 @@ Traditionally, AI orchestration relies on hardcoded scripts for memory, context,
 You must design the agent's system prompt to act as its operating system. The harness must explicitly define the following cognitive subsystems using only structured, rule-based plain English:
 
 ## Sub-Agent Delegation (The Orchestration Pattern)
-The main natural language harness is strictly an **orchestration pattern, not a reasoning pattern.** The primary agent (Agent V) does not do the heavy thinking or coding itself. Its sole responsibility is decomposition, delegation, and verification.
+
+**Timeline UI contract (locked decisions):** see [docs/delegation-ui.md](docs/delegation-ui.md) — parallel `delegate` pool, C+D indent/mini-thread, wire-order inline timeline, and Phase 2 bugfix targets.
+
+The main natural language harness is strictly an **orchestration pattern, not a reasoning pattern.** The primary agent (Agent V) does not do the heavy thinking or coding itself. Its sole responsibility is decomposition, delegation, and verification. Orchestrator-authored `delegate` `task` strings are forwarded **verbatim** (English, one micro-task per call); see [docs/delegation-ui.md](docs/delegation-ui.md) and `src/main/harness/00-orchestrator-core.md` § B.
 
 You must design the orchestrator to follow these strict swarming rules:
 1. **Task Decomposition:** Agent V must break down every user request into micro-tasks. 
@@ -87,8 +90,7 @@ The harness must define a continuous, self-governing loop that dictates how Agen
 - **Execute & Evaluate:** The agent must evaluate the result of every action it takes. If an action fails, it must trigger its natural language retry logic with exponential backoff.
 
 ## 2. Context Management & Awareness
-The harness must contain explicit plain-English rules for managing its own context window dynamically:
-- **Context Injection:** Rules for when to automatically pull in environmental data (e.g., current directory structure, recent errors).
+The harness defines where context comes from (conversation history, envelopes, memory, research) and how sub-agents stay isolated. The host injects environmental envelopes each turn; the agent pulls more context via tools and delegation when needed. There is no automatic context-window summarization or composer/timeline token metering UI.
 
 ### Run lifecycle: abort, stop, and rehydrate (implementation contract)
 Vyotiq supports multiple concurrent chats (one orchestrator run per conversation, possibly across workspaces). The main process and renderer must agree on how **stop** and **reload** behave so events are never dropped mid-wind-down.
@@ -106,10 +108,6 @@ Vyotiq supports multiple concurrent chats (one orchestrator run per conversation
 
 **Terminal IPC (orchestrator failures)**
 - On a terminal loop error, main emits **`chat:error` then `chat:done`** for the same `runId`. The renderer handles both distinctly so the run indicator clears and the error row still lands.
-
-**Context summarizer (two stop controls in Inspector)**
-- **Cancel summary** — aborts the live summarizer stream (`CONTEXT_SUMMARY_ABORT_LIVE`); does not stop the orchestrator run.
-- **Stop run** — aborts the orchestrator via `abortRun` as above.
 
 **Envelope cache (memory retrieval)**
 - LRU key is `(conversationId, workspaceId, workspacePath)` so per-iteration query churn does not zero out hit rate.
@@ -129,7 +127,7 @@ Agent V must evolve. The orchestrator must include a mechanism where Agent V can
 ## 4. Dual-Mode Search & Research
 The harness must instruct the agent on how to conduct research autonomously:
 - **Offline Research:** Rules for exploring the local file system (using terminal/read tools) to understand the local codebase or read local documentation.
-- **Online Research:** Rules for when local context is insufficient, prompting the agent to utilize web-search capabilities to find modern solutions or documentation.
+- **Local Research:** Rules for when local context is insufficient — delegate local `search` / `read` sub-agents against the workspace and vendored deps (no outbound web search).
 
 ## 5. Natural Language Tool Definitions
 Instead of strict JSON schemas, the tools must be defined and explained within the harness using a conversational, intent-based structure. For every tool (Bash, Ls, Read, Edit, Search, Memory), the harness must explicitly define:

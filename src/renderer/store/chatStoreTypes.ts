@@ -7,6 +7,7 @@
  */
 
 import type { TimelineEvent, ChatPermissions, PromptAttachmentMeta } from '@shared/types/chat.js';
+import type { AskUserSubmitInput } from '@shared/types/askUser.js';
 import type { ActiveRunInfo } from '@shared/types/ipc.js';
 import type { ModelSelection } from '@shared/types/provider.js';
 import type { ApplyEventOptions } from '../components/timeline/reducer/applyTimelineEvent.js';
@@ -21,6 +22,7 @@ export interface ChatSlice extends TimelineState {
   conversationId: string;
   runId: string | null;
   isProcessing: boolean;
+  awaitingAskUser: boolean;
   runStartedAt: number | null;
   draft: string;
 }
@@ -31,6 +33,7 @@ export function emptySlice(conversationId: string): ChatSlice {
     conversationId,
     runId: null,
     isProcessing: false,
+    awaitingAskUser: false,
     runStartedAt: null,
     draft: ''
   };
@@ -41,6 +44,7 @@ export interface ActiveMirror extends TimelineState {
   conversationId: string | null;
   runId: string | null;
   isProcessing: boolean;
+  awaitingAskUser: boolean;
   runStartedAt: number | null;
   draft: string;
   totalRunUsage?: TokenUsageAggregate;
@@ -53,6 +57,7 @@ export const EMPTY_MIRROR: ActiveMirror = {
   conversationId: null,
   runId: null,
   isProcessing: false,
+  awaitingAskUser: false,
   runStartedAt: null,
   draft: ''
 };
@@ -81,6 +86,10 @@ export interface ChatStore extends ActiveMirror {
   ) => Promise<void>;
   abort: () => Promise<void>;
   abortRun: (runId: string) => Promise<void>;
+  submitAskUser: (input: AskUserSubmitInput) => Promise<void>;
+  /** Unified submit for panel overlay + composer Send while `awaitingAskUser`. */
+  submitPendingAskUser: (opts?: { supplementText?: string }) => Promise<void>;
+  pauseForAskUser: (runId: string) => void;
   rehydrateActiveRuns: (infos: ActiveRunInfo[]) => void;
   beginSideRun: (runId: string, conversationId: string) => void;
   prewarmSlice: (conversationId: string, events: TimelineEvent[]) => void;

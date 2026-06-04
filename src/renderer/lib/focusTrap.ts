@@ -3,7 +3,7 @@
  * {@link ComposerDialog}).
  */
 
-export const FOCUSABLE_SELECTOR = [
+const FOCUSABLE_SELECTOR = [
   'a[href]',
   'button:not([disabled])',
   'textarea:not([disabled])',
@@ -12,7 +12,7 @@ export const FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])'
 ].join(',');
 
-export function getFocusable(root: HTMLElement): HTMLElement[] {
+function getFocusable(root: HTMLElement): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
     (el) => el.offsetParent !== null || el === document.activeElement
   );

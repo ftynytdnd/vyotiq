@@ -13,9 +13,8 @@
  *   - Valid delegate tool calls are converted to `ParsedDelegate`.
  *   - `files` / `tools` work as both comma-separated strings and
  *     JSON arrays.
- *   - Missing `id` or `task` falls through to the real-tool path
- *     (so `handleToolCalls` can produce a descriptive refusal).
- *   - Malformed JSON falls through to the real-tool path.
+ *   - Missing `id` or `task` route to `invalidDelegateCalls` for a
+ *     synthetic validation error (not the intercept stub).
  *   - Mixed batches (real tools + delegate) partition correctly.
  */
 
@@ -82,7 +81,7 @@ describe('extractDelegateToolCalls', () => {
     });
   });
 
-  it('falls through to realToolCalls when id is missing', () => {
+  it('routes invalid delegate args to invalidDelegateCalls when id is missing', () => {
     const finished = [
       {
         id: 'tc-bad1',
@@ -90,12 +89,15 @@ describe('extractDelegateToolCalls', () => {
         argumentsBuf: JSON.stringify({ task: 'something', files: 'a.ts', tools: 'read' })
       }
     ];
-    const { realToolCalls, toolSourcedDelegates } = extractDelegateToolCalls(finished);
-    expect(realToolCalls).toHaveLength(1);
+    const { realToolCalls, toolSourcedDelegates, invalidDelegateCalls } =
+      extractDelegateToolCalls(finished);
+    expect(realToolCalls).toHaveLength(0);
     expect(toolSourcedDelegates).toHaveLength(0);
+    expect(invalidDelegateCalls).toHaveLength(1);
+    expect(invalidDelegateCalls[0]!.id).toBe('tc-bad1');
   });
 
-  it('falls through to realToolCalls when task is missing', () => {
+  it('routes invalid delegate args to invalidDelegateCalls when task is missing', () => {
     const finished = [
       {
         id: 'tc-bad2',
@@ -103,12 +105,14 @@ describe('extractDelegateToolCalls', () => {
         argumentsBuf: JSON.stringify({ id: 'A1', files: 'a.ts', tools: 'read' })
       }
     ];
-    const { realToolCalls, toolSourcedDelegates } = extractDelegateToolCalls(finished);
-    expect(realToolCalls).toHaveLength(1);
+    const { realToolCalls, toolSourcedDelegates, invalidDelegateCalls } =
+      extractDelegateToolCalls(finished);
+    expect(realToolCalls).toHaveLength(0);
     expect(toolSourcedDelegates).toHaveLength(0);
+    expect(invalidDelegateCalls).toHaveLength(1);
   });
 
-  it('falls through to realToolCalls on malformed JSON', () => {
+  it('routes malformed delegate JSON to invalidDelegateCalls', () => {
     const finished = [
       {
         id: 'tc-bad3',
@@ -116,9 +120,11 @@ describe('extractDelegateToolCalls', () => {
         argumentsBuf: '{broken json'
       }
     ];
-    const { realToolCalls, toolSourcedDelegates } = extractDelegateToolCalls(finished);
-    expect(realToolCalls).toHaveLength(1);
+    const { realToolCalls, toolSourcedDelegates, invalidDelegateCalls } =
+      extractDelegateToolCalls(finished);
+    expect(realToolCalls).toHaveLength(0);
     expect(toolSourcedDelegates).toHaveLength(0);
+    expect(invalidDelegateCalls).toHaveLength(1);
   });
 
   it('partitions a mixed batch correctly', () => {
@@ -155,5 +161,96 @@ describe('extractDelegateToolCalls', () => {
     expect(toolSourcedDelegates).toHaveLength(1);
     expect(toolSourcedDelegates[0]!.files).toEqual([]);
     expect(toolSourcedDelegates[0]!.tools).toEqual([]);
+  });
+
+  // ── Batched-array normalization ───────────────────────────────────
+  // The canonical fan-out is N parallel `delegate` calls in one turn,
+  // but the loop also leniently accepts a SINGLE `delegate` call whose
+  // args carry an array of specs — either as the whole args array or
+  // under a wrapper key.
+
+  it('normalizes a single delegate call whose args are a bare array of specs', () => {
+    const finished = [
+      {
+        id: 'tc-batch',
+        name: 'delegate',
+        argumentsBuf: JSON.stringify([
+          { id: 'A1', task: 'first', files: ['a.ts'], tools: ['read'] },
+          { id: 'A2', task: 'second', files: 'b.ts', tools: 'edit' }
+        ])
+      }
+    ];
+    const { realToolCalls, toolSourcedDelegates } = extractDelegateToolCalls(finished);
+    expect(realToolCalls).toHaveLength(0);
+    expect(toolSourcedDelegates).toHaveLength(2);
+    expect(toolSourcedDelegates.map((d) => d.id)).toEqual(['A1', 'A2']);
+    expect(toolSourcedDelegates[1]).toEqual({
+      id: 'A2',
+      task: 'second',
+      files: ['b.ts'],
+      tools: ['edit']
+    });
+  });
+
+  it.each(['delegates', 'tasks', 'items', 'specs'])(
+    'normalizes a single delegate call carrying specs under the %s wrapper key',
+    (key) => {
+      const finished = [
+        {
+          id: 'tc-wrapped',
+          name: 'delegate',
+          argumentsBuf: JSON.stringify({
+            [key]: [
+              { id: 'B1', task: 'one' },
+              { id: 'B2', task: 'two' }
+            ]
+          })
+        }
+      ];
+      const { realToolCalls, toolSourcedDelegates } = extractDelegateToolCalls(finished);
+      expect(realToolCalls).toHaveLength(0);
+      expect(toolSourcedDelegates.map((d) => d.id)).toEqual(['B1', 'B2']);
+    }
+  );
+
+  it('dedupes duplicate delegate ids (last spec wins)', () => {
+    const finished = [
+      {
+        id: 'tc-dup',
+        name: 'delegate',
+        argumentsBuf: JSON.stringify({
+          id: 'test_run',
+          task: 'first task'
+        })
+      },
+      {
+        id: 'tc-dup2',
+        name: 'delegate',
+        argumentsBuf: JSON.stringify({
+          id: 'test_run',
+          task: 'second task'
+        })
+      }
+    ];
+    const { toolSourcedDelegates } = extractDelegateToolCalls(finished);
+    expect(toolSourcedDelegates).toHaveLength(1);
+    expect(toolSourcedDelegates[0]?.task).toBe('second task');
+  });
+
+  it('drops invalid specs inside a batched array but keeps the valid ones', () => {
+    const finished = [
+      {
+        id: 'tc-mixed-batch',
+        name: 'delegate',
+        argumentsBuf: JSON.stringify([
+          { id: 'A1', task: 'valid' },
+          { task: 'missing id' },
+          { id: 'A3', task: 'also valid' }
+        ])
+      }
+    ];
+    const { realToolCalls, toolSourcedDelegates } = extractDelegateToolCalls(finished);
+    expect(realToolCalls).toHaveLength(0);
+    expect(toolSourcedDelegates.map((d) => d.id)).toEqual(['A1', 'A3']);
   });
 });

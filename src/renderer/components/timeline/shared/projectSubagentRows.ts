@@ -1,6 +1,6 @@
 /**
  * Display-row projection — sub-agent rows stay inline in wire order with
- * `subagentId` tags; StreamWeaveStream groups them at render time.
+ * `subagentId` tags; DelegationStream groups them at render time.
  */
 
 export type { DisplayRow } from './displayRowTypes.js';

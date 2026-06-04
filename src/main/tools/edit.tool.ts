@@ -10,10 +10,8 @@
 import { promises as fs } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { Tool, ToolContext } from './types.js';
-import { describeConfirmFailure } from './types.js';
+import type { Tool } from './types.js';
 import type { ToolResult } from '@shared/types/tool.js';
-import type { EditApprovalPayload } from '@shared/types/ipc.js';
 import {
   realpathInsideWorkspace,
   resolveCreateInsideWorkspace,
@@ -23,6 +21,7 @@ import { computeDiffHunks } from '@shared/text/diff/computeDiffHunks.js';
 import {
   countOccurrencesFlexible,
   findFlexible,
+  normalizeEditNeedles,
   suggestSimilarLines
 } from './editHelpers.js';
 import {
@@ -100,9 +99,11 @@ Create a new file:
 
 **Rules.**
 - \`oldString\` MUST match exactly, including whitespace.
+- **Re-read before every edit** after any other tool, delegate, or failed edit — file bytes drift quickly.
+- Include **5+ lines** of surrounding context so \`oldString\` is unique; never paste \`read\` line-number prefixes (\`     N\\t\`; host may auto-strip when the whole block is prefixed).
 - If \`oldString\` is not unique you MUST set \`replaceAll: true\` or expand the context until it IS unique.
-- \`create: true\` requires the file to NOT already exist.
-- When \`allowAuto\` is off (default), the user will be asked to confirm each write.`,
+- After a failed edit, **re-read** and fix the anchor — do not retry the same \`oldString\` blind.
+- \`create: true\` requires the file to NOT already exist.`,
   schema: {
     type: 'function',
     function: {
@@ -137,12 +138,6 @@ Create a new file:
       return failure(id, started, 'Error: `path` is required.', 'missing path');
     }
 
-    // Cache for the file's existing on-disk text + encoding. Populated
-    // when the strict-approval path eagerly reads the body to compute
-    // the preview diff, so the MODIFY branch below can skip a redundant
-    // `fs.readFile`. Always `null` on the non-strict path.
-    let preReadFile: { raw: string; decoded: DecodedFileText } | null = null;
-
     let abs: string;
     try {
       // Create vs modify use DIFFERENT sandbox resolvers:
@@ -165,58 +160,6 @@ Create a new file:
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return failure(id, started, `Sandbox error: ${msg}`, msg);
-    }
-
-    // Approval gate. Two layers feed it:
-    //   1. `permissions.allowAuto === false` (the default) — prompt
-    //      the user once per call via the text-only confirm.
-    //   2. `ctx.strictApprovals === true` (per-workspace toggle) —
-    //      every edit/delete pauses the run and asks for a full diff
-    //      approval, REGARDLESS of `allowAuto`. The strict path always
-    //      wins.
-    //
-    // Under `strictApprovals`, we route through `ctx.confirmEdit` so
-    // the renderer shows the full diff (`EditApprovalDialog`) instead
-    // of a text-only "Allow?" prompt. The diff is synthesized HERE
-    // from the same buffers the modify/create branch will write, so
-    // the user sees byte-identical content to what would land.
-    //
-    // The `allowAuto === false` text-only confirm exists for the
-    // non-strict workspace path: the user opted out of full auto so
-    // every write asks "Allow?" without the full diff round-trip.
-    if (ctx.strictApprovals) {
-      // Build the structured preview eagerly. For `modify` we need to
-      // read the existing file body up-front to compute hunks +
-      // postBody; that read is the same one the modify branch would
-      // perform below, so the cost is amortized rather than doubled
-      // (we cache `original` into `preReadOriginal` and reuse it).
-      const previewResult = await buildApprovalPayload({
-        a,
-        abs,
-        ctx,
-        verb: a.create ? 'create' : 'modify'
-      });
-      if (previewResult.kind === 'error') {
-        return failure(id, started, previewResult.output, previewResult.error);
-      }
-      const decision = await ctx.confirmEdit(previewResult.payload);
-      if (!decision.approved) {
-        return failure(id, started, `User denied write to ${a.path}.`, 'permission denied');
-      }
-      // Stash any pre-read file the synthesizer already did so the
-      // MODIFY branch below can skip a second `fs.readFile`.
-      preReadFile = previewResult.preReadFile;
-    } else if (!ctx.permissions.allowAuto) {
-      const verb = a.create ? 'create' : 'modify';
-      const outcome = await ctx.confirm(
-        `Agent V wants to ${verb} ${a.path}. Allow?`
-      );
-      if (!outcome.approved) {
-        // Audit fix H-04: surface the precise failure reason instead
-        // of always claiming the user denied the write.
-        const desc = describeConfirmFailure(outcome.reason, `${verb} ${a.path}`);
-        return failure(id, started, desc.output, desc.error);
-      }
     }
 
     // CREATE
@@ -266,8 +209,7 @@ Create a new file:
           additions: stats.additions,
           deletions: 0,
           source: 'edit',
-          ...(ctx.subagentId ? { subagentId: ctx.subagentId } : {}),
-          emit: ctx.emit
+          ...(ctx.subagentId ? { subagentId: ctx.subagentId } : {})
         });
         entryId = entry.id;
       } catch {
@@ -320,23 +262,25 @@ Create a new file:
       return failure(id, started, 'Error: `oldString` and `newString` are identical (no-op).', 'no-op');
     }
 
+    const needles = normalizeEditNeedles(a.oldString, a.newString);
+    const oldString = needles.oldString;
+    const newString = needles.newString;
+    if (oldString === newString) {
+      return failure(id, started, 'Error: `oldString` and `newString` are identical (no-op).', 'no-op');
+    }
+
     let rawOriginal: string;
     let decoded: DecodedFileText;
-    if (preReadFile !== null) {
-      rawOriginal = preReadFile.raw;
-      decoded = preReadFile.decoded;
-    } else {
-      try {
-        rawOriginal = await fs.readFile(abs, 'utf8');
-        decoded = decodeFileForEdit(rawOriginal);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return failure(id, started, `Cannot read ${a.path}: ${msg}`, msg);
-      }
+    try {
+      rawOriginal = await fs.readFile(abs, 'utf8');
+      decoded = decodeFileForEdit(rawOriginal);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return failure(id, started, `Cannot read ${a.path}: ${msg}`, msg);
     }
     const original = decoded.body;
 
-    const occ = countOccurrencesFlexible(original, a.oldString);
+    const occ = countOccurrencesFlexible(original, oldString);
     if (occ === 0) {
       // Build an actionable diagnostic instead of a one-line "no match".
       // Models stuck on this error otherwise burn many turns retrying the
@@ -344,7 +288,7 @@ Create a new file:
       // number prefix accidentally pasted from `read`, whitespace drift,
       // or wrong line.
       const totalLines = original.split('\n').length;
-      const suggestions = suggestSimilarLines(original, a.oldString, 3);
+      const suggestions = suggestSimilarLines(original, oldString, 3);
       const hintBlock =
         suggestions.length > 0
           ? `\nClosest existing lines (by token overlap):\n${suggestions.join('\n')}`
@@ -378,20 +322,20 @@ Create a new file:
       let cursor = 0;
       let safety = occ + 8; // guard against pathological infinite loops.
       while (safety-- > 0) {
-        const m = findFlexible(work.slice(cursor), a.oldString);
+        const m = findFlexible(work.slice(cursor), oldString);
         if (!m) break;
         const absIdx = cursor + m.index;
-        work = work.slice(0, absIdx) + a.newString + work.slice(absIdx + m.length);
-        cursor = absIdx + a.newString.length;
+        work = work.slice(0, absIdx) + newString + work.slice(absIdx + m.length);
+        cursor = absIdx + newString.length;
       }
       updated = work;
     } else {
-      const m = findFlexible(original, a.oldString);
+      const m = findFlexible(original, oldString);
       if (!m) {
         // Should be unreachable since `occ > 0`, but stay defensive.
         return failure(id, started, `Match disappeared between count and replace.`, 'race');
       }
-      updated = original.slice(0, m.index) + a.newString + original.slice(m.index + m.length);
+      updated = original.slice(0, m.index) + newString + original.slice(m.index + m.length);
     }
 
     const rawUpdated = composeOnDiskText(updated, decoded.encoding);
@@ -419,8 +363,7 @@ Create a new file:
         deletions: stats.deletions,
         hunks,
         source: 'edit',
-        ...(ctx.subagentId ? { subagentId: ctx.subagentId } : {}),
-        emit: ctx.emit
+        ...(ctx.subagentId ? { subagentId: ctx.subagentId } : {})
       });
       entryId = entry.id;
     } catch {
@@ -445,169 +388,6 @@ Create a new file:
     };
   }
 };
-
-/**
- * Build the structured `EditApprovalPayload` shown to the user when
- * `strictApprovals` is on. Two outcomes:
- *
- *   - `{ kind: 'ok', payload, preReadOriginal }` — the dialog has
- *     everything it needs; the caller forwards `payload` to
- *     `ctx.confirmEdit` and reuses `preReadOriginal` in the MODIFY
- *     branch so the file isn't read twice.
- *   - `{ kind: 'error', output, error }` — bail-out shape. The caller
- *     converts this into the same `failure(...)` shape the rest of
- *     the tool returns on early exits. Errors here are the same ones
- *     the MODIFY branch would surface (missing file, no match, etc.)
- *     just pulled forward so the user isn't shown a preview that
- *     can never apply.
- *
- * For `modify` we synthesize the post-state by applying the exact
- * same find/replace transformation the write branch will. For
- * `create` we use the literal `content` argument. For `delete` we
- * use the existing file body as `preBody` and leave `postBody`
- * undefined.
- */
-async function buildApprovalPayload(opts: {
-  a: Partial<EditArgs>;
-  abs: string;
-  ctx: ToolContext;
-  verb: 'create' | 'modify';
-}): Promise<
-  | {
-      kind: 'ok';
-      payload: EditApprovalPayload;
-      preReadFile: { raw: string; decoded: DecodedFileText } | null;
-    }
-  | { kind: 'error'; output: string; error: string }
-> {
-  const { a, abs, ctx, verb } = opts;
-  const filePath = workspaceRelative(ctx.workspacePath, abs);
-  const runId = ctx.runId;
-  const subagentSlot = ctx.subagentId ? { subagentId: ctx.subagentId } : {};
-
-  if (verb === 'create') {
-    if (typeof a.content !== 'string') {
-      return {
-        kind: 'error',
-        output: 'Error: `content` is required when `create: true`.',
-        error: 'missing content'
-      };
-    }
-    const additions = a.content.length === 0 ? 0 : a.content.split('\n').length;
-    return {
-      kind: 'ok',
-      preReadFile: null,
-      payload: {
-        kind: 'edit-approval',
-        filePath,
-        operation: 'create',
-        postBody: a.content,
-        additions,
-        deletions: 0,
-        runId,
-        ...subagentSlot
-      }
-    };
-  }
-
-  // verb === 'modify'
-  if (typeof a.oldString !== 'string' || typeof a.newString !== 'string') {
-    return {
-      kind: 'error',
-      output:
-        'Error: provide either `create: true` + `content`, or `oldString` + `newString`.',
-      error: 'invalid args'
-    };
-  }
-  if (a.oldString.length === 0) {
-    // Same rationale as the post-approval branch — review finding M8.
-    return {
-      kind: 'error',
-      output: 'Error: `oldString` cannot be empty. Provide the exact text to replace.',
-      error: 'empty oldString'
-    };
-  }
-  if (a.oldString === a.newString) {
-    return {
-      kind: 'error',
-      output: 'Error: `oldString` and `newString` are identical (no-op).',
-      error: 'no-op'
-    };
-  }
-
-  let rawOriginal: string;
-  let decoded: DecodedFileText;
-  try {
-    rawOriginal = await fs.readFile(abs, 'utf8');
-    decoded = decodeFileForEdit(rawOriginal);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { kind: 'error', output: `Cannot read ${a.path}: ${msg}`, error: msg };
-  }
-  const original = decoded.body;
-
-  const occ = countOccurrencesFlexible(original, a.oldString);
-  if (occ === 0) {
-    return {
-      kind: 'error',
-      output: `\`oldString\` not found in ${a.path}.`,
-      error: 'no match'
-    };
-  }
-  if (occ > 1 && !a.replaceAll) {
-    return {
-      kind: 'error',
-      output: `\`oldString\` matches ${occ} locations in ${a.path}. Either set \`replaceAll: true\` or expand the context to a unique match.`,
-      error: 'ambiguous'
-    };
-  }
-
-  // Synthesize the post-state. Mirrors the MODIFY branch's splicing.
-  let updated: string;
-  if (a.replaceAll) {
-    let work = original;
-    let cursor = 0;
-    let safety = occ + 8;
-    while (safety-- > 0) {
-      const m = findFlexible(work.slice(cursor), a.oldString);
-      if (!m) break;
-      const absIdx = cursor + m.index;
-      work = work.slice(0, absIdx) + a.newString + work.slice(absIdx + m.length);
-      cursor = absIdx + a.newString.length;
-    }
-    updated = work;
-  } else {
-    const m = findFlexible(original, a.oldString);
-    if (!m) {
-      return {
-        kind: 'error',
-        output: 'Match disappeared between count and replace.',
-        error: 'race'
-      };
-    }
-    updated = original.slice(0, m.index) + a.newString + original.slice(m.index + m.length);
-  }
-
-  const rawUpdated = composeOnDiskText(updated, decoded.encoding);
-  const stats = diffStats(original, updated);
-  const hunks = computeDiffHunks(original, updated);
-  return {
-    kind: 'ok',
-    preReadFile: { raw: rawOriginal, decoded },
-    payload: {
-      kind: 'edit-approval',
-      filePath,
-      operation: 'modify',
-      preBody: rawOriginal,
-      postBody: rawUpdated,
-      hunks,
-      additions: stats.additions,
-      deletions: stats.deletions,
-      runId,
-      ...subagentSlot
-    }
-  };
-}
 
 function failure(id: string, started: number, output: string, error: string): ToolResult {
   return {

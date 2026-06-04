@@ -49,13 +49,17 @@ export function dockInlineActionClassName(): string {
   return cn('vx-btn vx-btn-quiet px-2 text-row');
 }
 
+export function dockWorkspaceActionClassName(): string {
+  return cn(dockInlineActionClassName(), 'min-w-0 flex-1 justify-center');
+}
+
 export const DOCK_RESIZE_HANDLE_CLASS =
   'vx-dock-resize-handle absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize';
 
 /** Vertically centered dock anchor — rail sits mid-screen, not top-stretched. */
-export const DOCK_CENTER_CLASS = 'absolute left-4 top-1/2 z-(--z-dock-panel) -translate-y-1/2';
+const DOCK_CENTER_CLASS = 'absolute left-4 top-1/2 z-(--z-dock-panel) -translate-y-1/2';
 
-export const DOCK_FLYOUT_CENTER_CLASS = cn(
+const DOCK_FLYOUT_CENTER_CLASS = cn(
   'absolute left-4 top-1/2 z-(--z-dock-panel) flex max-h-[min(720px,calc(100vh-var(--titlebar-h)-2rem))] min-h-0 -translate-y-1/2 flex-col overflow-hidden'
 );
 
@@ -103,13 +107,6 @@ export function dockTabRowClassName(
 /** data-active attribute value for {@link dockTabRowClassName} rows. */
 export function dockTabActiveAttr(active: boolean): 'true' | 'false' {
   return active ? 'true' : 'false';
-}
-
-/** Fill color for dock / composer context meters from usage ratio. */
-export function dockChatMeterBarClassName(ratio: number): string {
-  if (ratio >= 0.9) return 'bg-danger';
-  if (ratio >= 0.7) return 'bg-warning';
-  return 'bg-edge-light-meter';
 }
 
 /** Close dock search first, then collapse the expanded flyout. */

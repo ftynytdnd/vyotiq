@@ -52,8 +52,8 @@ beforeEach(() => {
 
 async function openWorkspaceScopeAndDirty() {
   render(<MemoryPanel />);
-  await userEvent.click(screen.getByRole('tab', { name: /Workspace notes/i }));
-  // Wait until the alpha note body is loaded into the editor.
+  await userEvent.click(screen.getByRole('tab', { name: /^Workspace$/i }));
+  await userEvent.click(await screen.findByRole('button', { name: /Open editor/i }));
   const textarea = await waitFor(() =>
     screen.getByRole<HTMLTextAreaElement>('textbox')
   );
@@ -98,6 +98,7 @@ describe('MemoryPanel inline discard confirm', () => {
     await openWorkspaceScopeAndDirty();
     await userEvent.click(screen.getByRole('button', { name: /^beta$/ }));
     await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    await userEvent.click(await screen.findByRole('button', { name: /Open editor/i }));
 
     const textarea = await waitFor(() =>
       screen.getByRole<HTMLTextAreaElement>('textbox')

@@ -18,11 +18,11 @@
  *   - Optional `enterPrimaryRef` lets a child wire Enter → primary
  *     action by passing a ref the dialog will click on Enter.
  *   - `queueBadge` renders an "N queued" stepper next to the title for
- *     `ConfirmHost`-style burst flows.
+ *     stacked composer-dialog burst flows.
  *
  * No portal — the dialog renders inline so its width matches the
  * surrounding composer column. The anchor mount point handles vertical
- * stacking (multiple ConfirmHost requests render one at a time, but
+ * stacking (multiple dialog requests render one at a time, but
  * other ComposerDialog hosts can coexist).
  */
 

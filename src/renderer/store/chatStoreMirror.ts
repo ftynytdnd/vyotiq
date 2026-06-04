@@ -18,16 +18,14 @@ export function mirrorOf(slice: ChatSlice): ActiveMirror {
     toolResultSettledIds: slice.toolResultSettledIds,
     orchestratorUsage: slice.orchestratorUsage,
     latestOrchestratorRunStatus: slice.latestOrchestratorRunStatus,
-    lastDelegationPhaseTs: slice.lastDelegationPhaseTs,
     lastUserPromptId: slice.lastUserPromptId,
     lastUserPromptContent: slice.lastUserPromptContent,
     runIdToFileEditCount: slice.runIdToFileEditCount,
-    summaries: slice.summaries,
-    messageOverrides: slice.messageOverrides,
     totalRunUsage,
     conversationId: slice.conversationId,
     runId: slice.runId,
     isProcessing: slice.isProcessing,
+    awaitingAskUser: slice.awaitingAskUser,
     runStartedAt: slice.runStartedAt,
     draft: slice.draft
   };

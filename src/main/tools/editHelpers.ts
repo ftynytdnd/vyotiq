@@ -15,6 +15,45 @@
 
 const CR_RE = /\r\n/g;
 
+/**
+ * Matches each line of Vyotiq `read` tool output: optional leading spaces
+ * (5-char line-number column), digits, tab, then file bytes.
+ * Align with `read.tool.ts` (`padStart(5)` + `\t`).
+ */
+export const READ_TOOL_LINE_PREFIX_RE = /^\s*\d+\t/;
+
+/**
+ * Strip `read`-style line-number prefixes when every non-empty line has
+ * one. Leaves the string unchanged if any line lacks the prefix so
+ * legitimate `123\t…` TSV rows are not stripped unless the whole block
+ * looks like pasted `read` output.
+ */
+export function stripReadLinePrefixesIfUniform(s: string): string {
+  if (s.length === 0) return s;
+  const trailingNl = s.endsWith('\n');
+  const lines = s.split(/\r?\n/);
+  const nonEmpty = lines.filter((line) => line.length > 0);
+  if (nonEmpty.length === 0) return s;
+  if (!nonEmpty.every((line) => READ_TOOL_LINE_PREFIX_RE.test(line))) return s;
+  const stripped = lines.map((line) =>
+    line.length === 0 ? line : line.replace(READ_TOOL_LINE_PREFIX_RE, '')
+  );
+  let out = stripped.join('\n');
+  if (trailingNl && !out.endsWith('\n')) out += '\n';
+  return out;
+}
+
+/** Normalize edit needles before flexible match (CRLF + read paste). */
+export function normalizeEditNeedles(oldString: string, newString: string): {
+  oldString: string;
+  newString: string;
+} {
+  return {
+    oldString: stripReadLinePrefixesIfUniform(oldString),
+    newString: stripReadLinePrefixesIfUniform(newString)
+  };
+}
+
 /** Cheap CRLF→LF normalization. Returns identity when no CR is present
  *  (avoids allocating for the LF-only fast path). */
 function normalizeNewlines(s: string): string {

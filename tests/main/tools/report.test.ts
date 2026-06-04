@@ -15,14 +15,10 @@ import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { reportTool } from '@main/tools/report.tool';
-import type { ConfirmOutcome, ToolContext } from '@main/tools/types';
+import type { ToolContext } from '@main/tools/types';
 
 interface CtxOverrides {
-  /** Defaults to `true` so the happy-path tests never trigger a prompt. */
   allowAuto?: boolean;
-  // Audit fix H-04: ConfirmOutcome shape (replaces the legacy
-  // `Promise<boolean>` return type).
-  confirm?: (msg: string) => Promise<ConfirmOutcome>;
 }
 
 function makeCtx(workspacePath: string, overrides: CtxOverrides = {}): ToolContext {
@@ -36,9 +32,6 @@ function makeCtx(workspacePath: string, overrides: CtxOverrides = {}): ToolConte
     },
     strictApprovals: false,
     signal: new AbortController().signal,
-    // Audit fix H-04: ConfirmOutcome shape.
-    confirm: overrides.confirm ?? (async () => ({ approved: true, reason: 'approved' as const })),
-    confirmEdit: async () => ({ approved: true, acceptAllRemaining: false }),
     emit: () => { }
   };
 }
@@ -164,7 +157,7 @@ describe('reportTool — argument validation', () => {
 
 });
 
-describe('reportTool — permission gating', () => {
+describe('reportTool — allowAuto flag', () => {
   let workspace: string;
 
   beforeEach(async () => {
@@ -174,34 +167,8 @@ describe('reportTool — permission gating', () => {
     await rm(workspace, { recursive: true, force: true });
   });
 
-  it('asks for confirmation when allowAuto is false; denial → !ok and no file', async () => {
-    let confirmCalledWith: string | null = null;
-    const ctx = makeCtx(workspace, {
-      allowAuto: false,
-      // Audit fix H-04: ConfirmOutcome shape — denial reports
-      // `reason: 'denied'` so the tool surfaces the legacy
-      // "permission denied" wording.
-      confirm: async (msg: string) => {
-        confirmCalledWith = msg;
-        return { approved: false, reason: 'denied' as const };
-      }
-    });
-
-    const r = await reportTool.run({ title: 'Denied', body: '<p/>' }, ctx);
-    expect(r.ok).toBe(false);
-    expect(r.error).toMatch(/permission denied/);
-    expect(confirmCalledWith).toMatch(/wants to write a report at .vyotiq\/reports\//);
-
-    // Verify nothing landed on disk.
-    await expect(readFile(join(workspace, '.vyotiq', 'reports'))).rejects.toThrow();
-  });
-
-  it('writes the file when allowAuto is false but the user confirms', async () => {
-    const ctx = makeCtx(workspace, {
-      allowAuto: false,
-      // Audit fix H-04: ConfirmOutcome shape.
-      confirm: async () => ({ approved: true, reason: 'approved' as const })
-    });
+  it('writes the report even when allowAuto is false (post-hoc checkpoint review)', async () => {
+    const ctx = makeCtx(workspace, { allowAuto: false });
     const r = await reportTool.run({ title: 'Approved', body: '<p>ok</p>' }, ctx);
     expect(r.ok).toBe(true);
     if (r.data?.tool !== 'report') throw new Error('expected report data');

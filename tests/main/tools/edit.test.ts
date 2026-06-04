@@ -68,8 +68,6 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     strictApprovals: false,
     signal: new AbortController().signal,
     // Audit fix H-04: ConfirmOutcome shape.
-    confirm: async () => ({ approved: true, reason: 'approved' as const }),
-    confirmEdit: async () => ({ approved: true, acceptAllRemaining: false }),
     emit: () => {
       /* noop */
     },

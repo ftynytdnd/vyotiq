@@ -60,6 +60,8 @@ describe('UserPromptRow collapse', () => {
     expect(queryByRole('button', { name: /show more/i })).toBeNull();
     expect(queryByRole('button', { name: /show less/i })).toBeNull();
     expect(bubble.style.maxHeight).toBe('');
+    const bubbleShell = container.querySelector('.vx-timeline-user-bubble') as HTMLElement | null;
+    expect(bubbleShell?.className ?? '').toContain('vx-timeline-user-bubble');
   });
 
   it('clamps long prompts and expands on toggle click', () => {

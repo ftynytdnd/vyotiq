@@ -76,7 +76,7 @@ export interface ParsedResultEnvelope {
    * Resolved status. `null` when the `<result>` block exists but the
    * required `<status>` tag is missing — this is treated as `malformed`
    * by the verifier rather than silently passing as `'success'` (the
-   * harness in `04-subagent-prompt.md` mandates an explicit status).
+   * harness in `02-subagent-prompt.md` mandates an explicit status).
    */
   status: ResultStatus | null;
   /** Trimmed `<summary>` content, or empty string if absent. */

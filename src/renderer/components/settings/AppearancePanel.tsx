@@ -1,17 +1,23 @@
 import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { vyotiq } from '../../lib/ipc.js';
-import { applyAppTheme, themePrefsFromSettings, type AppDensity, type AppThemeMode } from '../../lib/theme.js';
+import {
+  applyAppTheme,
+  themePrefsFromSettings,
+  type AppDensity,
+  type AppThemeMode
+} from '../../lib/theme.js';
 import { useToastStore } from '../../store/useToastStore.js';
-import { ShellFieldLabel, ShellRow, ShellSection, ShellStack } from '../ui/ShellSection.js';
-import { Switch } from '../ui/Switch.js';
+import { ShellFieldLabel, ShellRow, ShellRowSplit, ShellSection } from '../ui/ShellSection.js';
+import { Tabs, type TabItem } from '../ui/Tabs.js';
+import { SettingsSwitchRow } from './SettingsSwitchRow.js';
 
-const THEMES: { id: AppThemeMode; label: string }[] = [
+const THEME_TABS: TabItem<AppThemeMode>[] = [
   { id: 'dark', label: 'Dark' },
   { id: 'light', label: 'Light' },
   { id: 'system', label: 'System' }
 ];
 
-const DENSITIES: { id: AppDensity; label: string }[] = [
+const DENSITY_TABS: TabItem<AppDensity>[] = [
   { id: 'compact', label: 'Compact' },
   { id: 'balanced', label: 'Balanced' },
   { id: 'airy', label: 'Airy' }
@@ -41,50 +47,43 @@ export function AppearancePanel() {
   };
 
   return (
-    <ShellStack>
-      <ShellSection title="Theme">
-        <ShellRow>
-          <ShellFieldLabel>Color scheme</ShellFieldLabel>
-          <div className="flex flex-wrap gap-1">
-            {THEMES.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className={`vx-btn px-2 py-1 text-row ${theme === t.id ? 'vx-btn-primary' : 'vx-btn-quiet'}`}
-                onClick={() => apply({ theme: t.id })}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </ShellRow>
-      </ShellSection>
-      <ShellSection title="Density">
-        <ShellRow>
-          <ShellFieldLabel>Spacing</ShellFieldLabel>
-          <div className="flex flex-wrap gap-1">
-            {DENSITIES.map((d) => (
-              <button
-                key={d.id}
-                type="button"
-                className={`vx-btn px-2 py-1 text-row ${density === d.id ? 'vx-btn-primary' : 'vx-btn-quiet'}`}
-                onClick={() => apply({ density: d.id })}
-              >
-                {d.label}
-              </button>
-            ))}
-          </div>
-        </ShellRow>
-      </ShellSection>
-      <ShellSection title="Motion">
-        <ShellRow>
-          <ShellFieldLabel>Reduce motion</ShellFieldLabel>
-          <Switch value={reducedMotion} onChange={(v) => apply({ reducedMotion: v })} />
-        </ShellRow>
-        <p className="text-meta text-text-faint">
-          When on, disables shimmer and most transitions. Also respects your OS reduced-motion setting.
-        </p>
-      </ShellSection>
-    </ShellStack>
+    <ShellSection title="Appearance">
+      <ShellRow>
+        <ShellRowSplit
+          main={<ShellFieldLabel>Color scheme</ShellFieldLabel>}
+          control={
+            <Tabs<AppThemeMode>
+              items={THEME_TABS}
+              value={theme}
+              onChange={(id) => apply({ theme: id })}
+              variant="segmented"
+              size="md"
+              ariaLabel="Color scheme"
+            />
+          }
+        />
+      </ShellRow>
+      <ShellRow>
+        <ShellRowSplit
+          main={<ShellFieldLabel>Spacing</ShellFieldLabel>}
+          control={
+            <Tabs<AppDensity>
+              items={DENSITY_TABS}
+              value={density}
+              onChange={(id) => apply({ density: id })}
+              variant="segmented"
+              size="md"
+              ariaLabel="UI density"
+            />
+          }
+        />
+      </ShellRow>
+      <SettingsSwitchRow
+        label="Reduce motion"
+        description="Less animation; honors your OS reduced-motion preference."
+        value={reducedMotion}
+        onChange={(v) => apply({ reducedMotion: v })}
+      />
+    </ShellSection>
   );
 }

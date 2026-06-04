@@ -13,17 +13,12 @@ const fileActions = {
   setWorkspacePath: () => {},
   openSettings: () => {},
   openCheckpoints: () => {},
-  openContextInspector: () => {},
   quit: () => {}
-};
-
-const viewActions = {
-  openContextInspector: () => {}
 };
 
 describe('HamburgerMenu', () => {
   it('uses the modern trigger class and exposes open state', async () => {
-    render(<HamburgerMenu fileActions={fileActions} viewActions={viewActions} />);
+    render(<HamburgerMenu fileActions={fileActions} />);
     const trigger = screen.getByRole('button', { name: 'Menu' });
     expect(trigger.className).toContain('vx-titlebar-hamburger-trigger');
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
@@ -35,9 +30,23 @@ describe('HamburgerMenu', () => {
   });
 
   it('styles menu rows with shared titlebar menu item class', async () => {
-    render(<HamburgerMenu fileActions={fileActions} viewActions={viewActions} />);
+    render(<HamburgerMenu fileActions={fileActions} />);
     await userEvent.click(screen.getByRole('button', { name: 'Menu' }));
     const row = screen.getByRole('menuitem', { name: /Settings/i });
     expect(row.className).toContain('vx-titlebar-menu-item');
+  });
+
+  it('shows a compact menu without edit or duplicate settings entries', async () => {
+    render(<HamburgerMenu fileActions={fileActions} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Menu' }));
+
+    expect(screen.getByRole('menuitem', { name: /New chat/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Settings/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Quit/i })).toBeInTheDocument();
+
+    expect(screen.queryByRole('menuitem', { name: /Undo/i })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /Providers & models/i })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /Keyboard shortcuts/i })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /Toggle DevTools/i })).toBeNull();
   });
 });

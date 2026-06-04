@@ -60,30 +60,20 @@ describe('harness audit pinning', () => {
     expect(prompt).not.toMatch(/Reasoning is invisible to the orchestrator and to the user/);
   });
 
-  it('I6 — every concrete <delegate ...> example in the harness carries tools="..."', () => {
-    // Crawl every fully-formed `<delegate ... />` directive that
-    // carries a concrete `id="..."` attribute. Generic placeholder
-    // mentions like `<delegate ... />` (used in prose to refer to
-    // "the directive") have no `id=` and are excluded — they're
-    // descriptive, not examples to copy. Each CONCRETE example must
-    // include `tools=`.
-    const directiveRe = /<delegate\b([^>]*)\/>/g;
+  it('I6 — the harness no longer contains any <delegate ...> XML directive', () => {
+    // Forced-action loop: `delegate` is now a first-class callable tool
+    // invoked via `tool_calls`, NOT a `<delegate ... />` XML directive
+    // in assistant text. The harness must NOT show any self-closing
+    // `<delegate .../>` example, otherwise the model would emit the
+    // removed syntax. (`### Tool: \`delegate\`` and prose mentioning the
+    // word "delegate" are fine — we pin the absence of the XML tag form.)
+    const directiveRe = /<delegate\b[^>]*\/>/g;
     const matches = Array.from(prompt.matchAll(directiveRe));
-    // Concrete = has `id="..."` AND no `…` ellipsis placeholder
-    // (`<delegate id="A1b" …/>` is a "spawn a NEW worker" stub that
-    // refers to the directive without showing its full attributes;
-    // it's narrative, not a copyable example).
-    const concrete = matches.filter((m) => {
-      const attrs = m[1] ?? '';
-      if (!/\bid="/.test(attrs)) return false;
-      if (attrs.includes('\u2026') || attrs.includes('...')) return false;
-      return true;
-    });
-    expect(concrete.length).toBeGreaterThan(0);
-    for (const m of concrete) {
-      const attrs = m[1] ?? '';
-      expect(attrs, `concrete delegate example missing tools=: ${m[0]}`).toMatch(/\btools=/);
-    }
+    expect(matches).toHaveLength(0);
+    // The closing-tag form must be absent too.
+    expect(prompt).not.toContain('</delegate>');
+    // …but `delegate` IS documented as a real callable tool.
+    expect(prompt).toContain('### Tool: `delegate`');
   });
 
   it('I8 — attachment flow (`<files><file path=...>`) is documented in §1', () => {
@@ -92,9 +82,11 @@ describe('harness audit pinning', () => {
     expect(prompt).toMatch(/PRE-LOADED/);
   });
 
-  it('K2 — orchestration loop §C names MAX_PARALLEL_SUBAGENTS and MAX_NUDGES_PER_RUN', () => {
-    expect(prompt).toMatch(/MAX_PARALLEL_SUBAGENTS/);
-    expect(prompt).toMatch(/MAX_NUDGES_PER_RUN/);
+  it('K2 — orchestration loop §C names DEFAULT_DELEGATE_CONCURRENCY and NOT the removed MAX_NUDGES_PER_RUN', () => {
+    expect(prompt).toMatch(/DEFAULT_DELEGATE_CONCURRENCY/);
+    // Forced-action loop deleted the planning-nudge machinery — the
+    // constant must not appear anywhere in the orchestrator prompt.
+    expect(prompt).not.toMatch(/MAX_NUDGES_PER_RUN/);
   });
 
   /**
@@ -114,14 +106,29 @@ describe('harness audit pinning', () => {
     expect(prompt).toMatch(/<runtime_limits>/);
     expect(prompt).toMatch(/MAX_TOTAL_ITERATIONS=\d+/);
     expect(prompt).toMatch(/MAX_DELEGATION_BAD_ROUNDS=\d+/);
-    expect(prompt).toMatch(/MAX_PARALLEL_SUBAGENTS=\d+/);
-    expect(prompt).toMatch(/MAX_NUDGES_PER_RUN=\d+/);
+    expect(prompt).toMatch(/DEFAULT_DELEGATE_CONCURRENCY=\d+/);
+    expect(prompt).toMatch(/SUBAGENT_RUN_TIMEOUT_MS=\d+/);
     // Backoff constants surfaced into the envelope so the harness §C
     // prose ("`BASE_BACKOFF_MS` doubling per attempt, capped at
     // `MAX_BACKOFF_MS`") resolves to the same live values the
     // `retry.ts` helper consumes.
     expect(prompt).toMatch(/BASE_BACKOFF_MS=\d+/);
     expect(prompt).toMatch(/MAX_BACKOFF_MS=\d+/);
+  });
+
+  it('delegated tool catalogue is compact and names read/edit grant patterns', () => {
+    const delegatedIdx = prompt.indexOf('# Sub-agent Tools');
+    expect(delegatedIdx).toBeGreaterThanOrEqual(0);
+    const delegatedSlice = prompt.slice(delegatedIdx);
+    expect(delegatedSlice).toContain('**`read`**');
+    expect(delegatedSlice).toContain('["read", "edit"]');
+    expect(delegatedSlice).not.toContain('### Tool: `edit`');
+  });
+
+  it('forbidden stale harness terms stay absent from the orchestrator prompt', () => {
+    expect(prompt).not.toMatch(/MAX_NUDGES_PER_RUN/);
+    expect(prompt).not.toMatch(/context summarizer/i);
+    expect(prompt).not.toMatch(/permission-mode pill/i);
   });
 
   it('orchestrator-not-direct-call list includes report (delegate-only writer)', () => {

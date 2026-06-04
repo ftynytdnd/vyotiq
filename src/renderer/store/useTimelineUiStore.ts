@@ -24,7 +24,7 @@ interface TimelineUiStore {
   /**
    * Per-conversation set of row keys the user has explicitly toggled
    * AT LEAST ONCE during this conversation. Lets consumers distinguish
-   * "user-driven" from "host-driven" expansion. The `SubAgentTrace`
+   * "user-driven" from "host-driven" expansion. Delegation worker rows
    * component reads this so that auto-expand-while-running only kicks
    * in for rows the user has not interacted with yet — once the user
    * collapses or expands a sub-agent row manually, that choice
@@ -60,6 +60,10 @@ interface TimelineUiStore {
    */
   diffFoldExpandedByScope: Record<string, ReadonlySet<string>>;
   toggleDiffFold: (scopeKey: string, foldId: string) => void;
+
+  /** True when the main timeline scroll is pinned to the latest messages. */
+  timelineAtTail: boolean;
+  setTimelineAtTail: (atTail: boolean) => void;
 }
 
 // F-010 / F-015 note: `persistTimer` and `pendingExpanded` are
@@ -124,6 +128,8 @@ export const useTimelineUiStore = create<TimelineUiStore>((set, get) => ({
   manualOverrideByConvo: {},
   diffFoldExpandedByScope: {},
   hydrated: false,
+  timelineAtTail: true,
+  setTimelineAtTail: (atTail) => set({ timelineAtTail: atTail }),
 
   hydrate: (persisted) => {
     const next: Record<string, Set<string>> = {};

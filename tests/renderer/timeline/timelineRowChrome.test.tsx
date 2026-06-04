@@ -15,7 +15,7 @@
  *   - Assistant prose row carries no rounded/tinted lane fill and
  *     surfaces an `aria-label` on the row root.
  *   - Phase rows are absent; run-complete dividers have no hairline rules.
- *   - Delegation workers render in stream-weave blocks with worker tags.
+ *   - Delegation workers render in delegation blocks with worker tags.
  *   - Hover-revealed Copy/Edit/Revert + Copy/Regenerate strips are
  *     still present beneath the user and assistant rows.
  */
@@ -91,8 +91,7 @@ function seedSettledTurn(opts: { withSubAgentModel: boolean }) {
       subagentId: 'A1',
       status: 'done'
     },
-    { kind: 'agent-text-delta', id: 'a1', ts: 150, delta: 'Done. Here is what I found.' },
-    { kind: 'phase', id: 'ph1', ts: 160, label: 'Wrapping up' }
+    { kind: 'agent-text-delta', id: 'a1', ts: 150, delta: 'Done. Here is what I found.' }
   ];
 
   useChatStore.setState({
@@ -178,12 +177,12 @@ describe('Timeline row chrome — May 2026 restyle', () => {
     expect((runComplete as HTMLElement).className).not.toMatch(/border-t/);
     expect(runComplete!.innerHTML).not.toMatch(/h-px[^"]*flex-1[^"]*bg-border-divider/);
 
-    // 5. Delegation workers use stream-weave chrome.
+    // 5. Delegation workers use delegation chrome.
     const delegationWorker = container.querySelector('[data-row-kind="delegation-worker"]');
     expect(delegationWorker).not.toBeNull();
-    expect(delegationWorker!.querySelector('.vx-timeline-deleg-weave-tag')).not.toBeNull();
-    expect(delegationWorker!.textContent ?? '').toContain('read');
-    expect(delegationWorker!.querySelector('button')?.textContent ?? '').toMatch(/Show trace/i);
+    expect(delegationWorker!.className).toContain('vx-timeline-deleg-worker');
+    expect(delegationWorker!.textContent ?? '').toContain('Read providers');
+    expect(delegationWorker!.textContent ?? '').toMatch(/A1/);
   });
 
   it('renders delegation worker blocks even when model metadata is absent', () => {
@@ -199,6 +198,6 @@ describe('Timeline row chrome — May 2026 restyle', () => {
 
     const delegationWorker = container.querySelector('[data-row-kind="delegation-worker"]');
     expect(delegationWorker).not.toBeNull();
-    expect(delegationWorker!.textContent ?? '').toContain('read');
+    expect(delegationWorker!.textContent ?? '').toContain('Read providers');
   });
 });

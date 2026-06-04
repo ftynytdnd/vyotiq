@@ -377,4 +377,35 @@ describe('replayTranscript', () => {
       expect(allContent).not.toContain('orphan');
     });
   });
+
+  it('replays structured ask-user-prompt as assistant text for resume', () => {
+    const events: TimelineEvent[] = [
+      { kind: 'user-prompt', id: 'u1', ts: 1, content: 'Which option?' },
+      {
+        kind: 'ask-user-prompt',
+        id: 'ask-1',
+        ts: 2,
+        displayText: 'Drop the legacy column?\n  - Yes (yes)\n  - No (no)',
+        toolCallId: 'tc-ask',
+        runId: 'run-1',
+        payload: {
+          questions: [
+            {
+              id: 'drop',
+              prompt: 'Drop the legacy column?',
+              options: [
+                { id: 'yes', label: 'Yes' },
+                { id: 'no', label: 'No' }
+              ]
+            }
+          ]
+        }
+      },
+      { kind: 'user-prompt', id: 'u2', ts: 3, content: 'Yes' }
+    ];
+    const msgs = replayTranscript(events);
+    const assistant = msgs.find((m) => m.role === 'assistant');
+    expect(assistant?.content).toContain('Drop the legacy column?');
+    expect(assistant?.content).toContain('Yes (yes)');
+  });
 });

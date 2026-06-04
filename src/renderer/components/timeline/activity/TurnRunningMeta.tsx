@@ -24,6 +24,8 @@ export function TurnRunningMeta({ live = false }: TurnRunningMetaProps) {
 
   if (!live || !isProcessing) return null;
 
+  if (latest?.phase === 'connecting') return null;
+
   let label = 'Running…';
   if (latest) {
     if (latest.phase === 'awaiting-response') {
@@ -40,7 +42,6 @@ export function TurnRunningMeta({ live = false }: TurnRunningMetaProps) {
         timelineRunCompleteRowClassName
       )}
       data-turn-running-meta
-      aria-live="polite"
     >
       <span className={cn(timelinePhaseHeadingClassName(true), shimmerText(true))}>{label}</span>
     </div>

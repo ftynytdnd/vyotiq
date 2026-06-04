@@ -52,8 +52,6 @@ function makeCtx(): ToolContext {
     permissions: { allowAuto: true },
     strictApprovals: false,
     signal: new AbortController().signal,
-    confirm: async () => ({ approved: true, reason: 'approved' as const }),
-    confirmEdit: async () => ({ approved: true, acceptAllRemaining: false }),
     emit: () => {
       /* noop */
     }

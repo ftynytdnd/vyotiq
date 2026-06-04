@@ -6,8 +6,6 @@ export type OpenRun = {
   lastTs: number;
   editCount: number;
   filePaths: Set<string>;
-  tokenBudgetWarnPct?: number;
-  tokenBudgetWarnTokens?: number;
 };
 export type OpenRunUsage = {
   orchestrator?: TokenUsageAggregate;
@@ -70,23 +68,11 @@ function combineRunUsage(openRunUsage: OpenRunUsage | null): TokenUsageAggregate
 export function flushRunToRows(
   out: import("../deriveRows.js").Row[],
   openRun: OpenRun | null,
-  openRunUsage: OpenRunUsage | null,
-  contextWindow?: number
+  openRunUsage: OpenRunUsage | null
 ): { openRun: OpenRun | null; openRunUsage: OpenRunUsage | null } {
   if (!openRun) return { openRun, openRunUsage };
   const durationMs = openRun.lastTs - openRun.promptTs;
   if (durationMs > 0) {
-    if (openRun.tokenBudgetWarnPct !== undefined) {
-      out.push({
-        kind: 'token-budget-warning',
-        key: `budget:${openRun.promptId}`,
-        percent: openRun.tokenBudgetWarnPct,
-        ...(openRun.tokenBudgetWarnTokens !== undefined
-          ? { tokens: openRun.tokenBudgetWarnTokens }
-          : {}),
-        ...(contextWindow !== undefined ? { ceiling: contextWindow } : {})
-      });
-    }
     const usage = combineRunUsage(openRunUsage);
     const editCount = openRun.editCount;
     const fileCount = openRun.filePaths.size;

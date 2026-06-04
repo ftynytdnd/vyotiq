@@ -8,7 +8,6 @@ import {
   addProvider,
   listProviders,
   removeProvider,
-  setContextOverride,
   updateProvider
 } from '../providers/providerStore.js';
 import { detectDialect, discoverModels, testProvider } from '../providers/modelDiscovery.js';
@@ -22,7 +21,6 @@ import { PROVIDER_DIALECTS } from '@shared/types/provider.js';
 import {
   assertString,
   assertObject,
-  assertNumber,
   assertBoolean,
   assertEnum,
   assertOptionalString
@@ -169,22 +167,4 @@ export function registerProvidersIpc(): void {
     return testProvider(id);
   });
 
-  wrapIpcHandler(
-    IPC.PROVIDERS_SET_CONTEXT_OVERRIDE,
-    async (_event, providerId: string, modelId: string, value: number | null) => {
-      assertString('providers:setContextOverride', 'providerId', providerId);
-      assertString('providers:setContextOverride', 'modelId', modelId);
-      // `value` is either a positive context-window override or
-      // `null` to clear. Reject negatives / non-numbers so a typo
-      // can't poison the per-model override map.
-      if (value !== null) {
-        assertNumber('providers:setContextOverride', 'value', value, {
-          integer: true,
-          min: 1,
-          max: 100_000_000
-        });
-      }
-      return setContextOverride(providerId, modelId, value);
-    }
-  );
 }

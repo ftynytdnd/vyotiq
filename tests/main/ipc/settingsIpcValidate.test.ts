@@ -65,38 +65,12 @@ describe('registerSettingsIpc — SETTINGS_SET payload validation', () => {
     expect(setSettingsMock).not.toHaveBeenCalled();
   });
 
-  it('accepts gatePromptOnPendingByWorkspace per-workspace map', async () => {
-    await mockIpc.__invoke(IPC.SETTINGS_SET, {
-      ui: { gatePromptOnPendingByWorkspace: { 'ws-1': true, 'ws-2': false } }
-    });
-    expect(setSettingsMock).toHaveBeenCalledOnce();
-  });
-
-  it('accepts approveAutoAcceptPendingByWorkspace per-workspace map', async () => {
-    await mockIpc.__invoke(IPC.SETTINGS_SET, {
-      ui: { approveAutoAcceptPendingByWorkspace: { 'ws-1': true } }
-    });
-    expect(setSettingsMock).toHaveBeenCalledOnce();
-  });
-
-  it('accepts tokenBudgetWarningTokens within the token cap', async () => {
-    await mockIpc.__invoke(IPC.SETTINGS_SET, {
-      ui: { tokenBudgetWarningTokens: 128_000 }
-    });
-    expect(setSettingsMock).toHaveBeenCalledOnce();
-  });
-
-  it('rejects tokenBudgetWarningTokens outside the token cap', async () => {
+  it('rejects removed legacy ui fields', async () => {
     await expect(
-      mockIpc.__invoke(IPC.SETTINGS_SET, { ui: { tokenBudgetWarningTokens: 50 } })
-    ).rejects.toThrow(/tokenBudgetWarningTokens/);
+      mockIpc.__invoke(IPC.SETTINGS_SET, {
+        ui: { gatePromptOnPendingByWorkspace: { 'ws-1': true } }
+      })
+    ).rejects.toThrow(/not a recognized ui field/);
     expect(setSettingsMock).not.toHaveBeenCalled();
-  });
-
-  it('accepts tokenBudgetWarningByWorkspace per-workspace map', async () => {
-    await mockIpc.__invoke(IPC.SETTINGS_SET, {
-      ui: { tokenBudgetWarningByWorkspace: { 'ws-1': 200_000 } }
-    });
-    expect(setSettingsMock).toHaveBeenCalledOnce();
   });
 });

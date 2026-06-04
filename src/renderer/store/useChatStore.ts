@@ -30,7 +30,6 @@
  */
 
 import { create } from 'zustand';
-import { isIdleSummaryRunId } from '@shared/contextSummary/idleSummaryRunId.js';
 import { repairNonTerminalSubagents } from '@shared/transcript/repairNonTerminalSubagents.js';
 import type { TimelineEvent } from '@shared/types/chat.js';
 import { vyotiq } from '../lib/ipc.js';
@@ -41,7 +40,9 @@ import { useSettingsStore } from './useSettingsStore.js';
 import { useWorkspaceStore } from './useWorkspaceStore.js';
 import { useToastStore } from './useToastStore.js';
 import { useCheckpointsStore } from './useCheckpointsStore.js';
-import { useSecondaryZoneStore } from './useSecondaryZoneStore.js';
+import { useAskUserDraftStore } from './askUserDraft.js';
+import { findPendingAskUserEvent } from '../lib/pendingAskUser.js';
+import { buildAskUserSubmitInput } from '../lib/buildAskUserSubmitInput.js';
 import {
   applyTimelineEvent,
   rebuildTimelineState
@@ -86,27 +87,7 @@ function prepareTranscriptEventsForLoad(
   return repairNonTerminalSubagents(events, { closeWhenIdle });
 }
 
-/**
- * Cancel the in-flight work for `runId`. Idle summarizer side-runs are
- * not in main `activeRuns` — route through `contextSummary.abortIdle`.
- * Orchestrator runs use `chat.abort` (main also accepts idle ids as a
- * fallback via `abortIdleSummaryByRunId`).
- */
-async function dispatchAbortForRun(
-  runId: string,
-  conversationId: string | null | undefined
-): Promise<void> {
-  if (isIdleSummaryRunId(runId)) {
-    if (conversationId) {
-      await vyotiq.contextSummary.abortIdle(conversationId);
-      return;
-    }
-    log.debug('abort idle summary: no conversationId; falling back to chat.abort', {
-      runId
-    });
-    await vyotiq.chat.abort(runId);
-    return;
-  }
+async function dispatchAbortForRun(runId: string): Promise<void> {
   await vyotiq.chat.abort(runId);
 }
 
@@ -204,6 +185,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             ? {
                 ...prev,
                 isProcessing: false,
+                awaitingAskUser: false,
                 runId: null,
                 runStartedAt: null,
                 latestOrchestratorRunStatus: undefined
@@ -261,6 +243,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         return withSalvagedSlice({
           ...prev,
           isProcessing: false,
+          awaitingAskUser: false,
           runId: null,
           runStartedAt: null,
           // Audit fix C3 — see `finishRun`.
@@ -329,18 +312,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           ? { lastUserPromptContent: rebuilt.lastUserPromptContent }
           : {}),
         runIdToFileEditCount: rebuilt.runIdToFileEditCount,
-        // Carry the rebuilt summarization + override state so a
-        // transcript reload restores the persisted Inspector view
-        // and the active `ContextSummaryRow`s without an extra IPC
-        // round-trip. The reducer's branches already paired
-        // `(pending, end, undone)` events into the same final
-        // shape the live path produces.
-        summaries: rebuilt.summaries,
-        messageOverrides: rebuilt.messageOverrides,
         // Keep live run fields intact when the slice already exists —
         // critical for the "switch away mid-run, switch back" flow.
         runId: prior?.runId ?? null,
         isProcessing: prior?.isProcessing ?? false,
+        awaitingAskUser: prior?.awaitingAskUser ?? false,
         runStartedAt: prior?.runStartedAt ?? null,
         draft: prior?.draft ?? ''
       };
@@ -401,7 +377,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   send: async (prompt, selection, permissions, options) => {
     // Only the active slice's `isProcessing` gates new sends.
-    if (get().isProcessing) return;
+    if (get().isProcessing || get().awaitingAskUser) return;
     const runId = randomId();
     const activeWorkspaceId = useWorkspaceStore.getState().activeId;
     const startedAt = Date.now();
@@ -501,6 +477,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         ...prev,
         runId,
         isProcessing: true,
+        awaitingAskUser: false,
         runStartedAt: startedAt
       }));
       return {
@@ -532,11 +509,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (!reply) {
         throw new Error('chat:send rejected by main process (no reply).');
       }
-      // Structured refusal: the run's workspace has
-      // `gatePromptOnPendingByWorkspace` set AND the conversation has
-      // unresolved pending checkpoint entries. Main DID NOT start a
-      // run — we just unwind the optimistic slice flag, refresh the
-      // pending list so the panel appears, and surface a toast.
       if (reply.ok === false) {
         if (reply.kind === 'unknown-conversation') {
           useToastStore
@@ -545,120 +517,28 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               'That chat no longer exists. Start a new conversation or pick another tab.',
               'danger'
             );
-          set((s) => {
-            const nextMap: Record<string, string> = { ...s.runIdToConv };
-            delete nextMap[runId];
-            const nextModelMap: Record<string, string> = { ...s.runIdToModel };
-            delete nextModelMap[runId];
-            const nextSlices = updateSlice(s.slices, boundId, (prev) => ({
-              ...prev,
-              runId: null,
-              isProcessing: false,
-              runStartedAt: null
-            }));
-            const patch = {
-              slices: nextSlices,
-              runIdToConv: nextMap,
-              runIdToModel: nextModelMap
-            };
-            return s.conversationId === boundId
-              ? { ...s, ...patch, ...mirrorOf(nextSlices[boundId]!) }
-              : { ...s, ...patch };
-          });
-          return;
         }
-        if (
-          reply.kind === 'pending-checkpoints' ||
-          reply.kind === 'pending-gate-error'
-        ) {
-          if (reply.kind === 'pending-checkpoints') {
-            useToastStore
-              .getState()
-              .show(
-                `Resolve ${reply.count} pending change${reply.count === 1 ? '' : 's'} before sending — Accept or Reject each row in the pending changes row in the timeline.`,
-                'danger'
-              );
-            void useCheckpointsStore.getState().refreshPending(reply.conversationId);
-          } else {
-            useToastStore
-              .getState()
-              .show(
-                'Could not verify pending checkpoints — fix checkpoint storage or turn off “Gate send on pending changes” before sending.',
-                'danger'
-              );
-          }
-          useSecondaryZoneStore.getState().openCheckpoints('review', {
-            conversationId: reply.conversationId,
-            ...(workspaceId ? { workspaceId } : {})
-          });
-          set((s) => {
-            const nextMap: Record<string, string> = { ...s.runIdToConv };
-            delete nextMap[runId];
-            const nextModelMap: Record<string, string> = { ...s.runIdToModel };
-            delete nextModelMap[runId];
-            const nextSlices = updateSlice(s.slices, boundId, (prev) => ({
-              ...prev,
-              runId: null,
-              isProcessing: false,
-              runStartedAt: null
-            }));
-            const patch = {
-              slices: nextSlices,
-              runIdToConv: nextMap,
-              runIdToModel: nextModelMap
-            };
-            return s.conversationId === boundId
-              ? { ...s, ...patch, ...mirrorOf(nextSlices[boundId]!) }
-              : { ...s, ...patch };
-          });
-          return;
-        }
-        if (
-          reply.kind === 'review-request-changes' ||
-          reply.kind === 'review-gate-error'
-        ) {
-          if (reply.kind === 'review-request-changes') {
-            useToastStore
-              .getState()
-              .show(
-                'Resolve review feedback before sending — open Checkpoints → Review and address the request-changes decision.',
-                'danger'
-              );
-          } else {
-            useToastStore
-              .getState()
-              .show(
-                'Could not verify review status — fix checkpoint storage or turn off “Gate send on review request changes” before sending.',
-                'danger'
-              );
-          }
-          useSecondaryZoneStore.getState().openCheckpoints('review', {
-            conversationId: reply.conversationId,
-            ...(workspaceId ? { workspaceId } : {})
-          });
-          set((s) => {
-            const nextMap: Record<string, string> = { ...s.runIdToConv };
-            delete nextMap[runId];
-            const nextModelMap: Record<string, string> = { ...s.runIdToModel };
-            delete nextModelMap[runId];
-            const nextSlices = updateSlice(s.slices, boundId, (prev) => ({
-              ...prev,
-              runId: null,
-              isProcessing: false,
-              runStartedAt: null
-            }));
-            const patch = {
-              slices: nextSlices,
-              runIdToConv: nextMap,
-              runIdToModel: nextModelMap
-            };
-            return s.conversationId === boundId
-              ? { ...s, ...patch, ...mirrorOf(nextSlices[boundId]!) }
-              : { ...s, ...patch };
-          });
-          return;
-        }
-        throw new Error('chat:send rejected by main process (unknown reply shape).');
+        set((s) => {
+          const nextMap: Record<string, string> = { ...s.runIdToConv };
+          delete nextMap[runId];
+          const nextModelMap: Record<string, string> = { ...s.runIdToModel };
+          delete nextModelMap[runId];
+          const nextSlices = updateSlice(s.slices, boundId, (prev) => ({
+            ...prev,
+            runId: null,
+            isProcessing: false,
+            runStartedAt: null
+          }));
+          const patch = {
+            slices: nextSlices,
+            runIdToConv: nextMap,
+            runIdToModel: nextModelMap
+          };
+          return s.conversationId === boundId
+            ? { ...s, ...patch, ...mirrorOf(nextSlices[boundId]!) }
+            : { ...s, ...patch };
+        });
+        return;
       }
       if (!reply.conversationId) {
         throw new Error('chat:send rejected by main process (no conversationId in reply).');
@@ -747,15 +627,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // `runId` set until the matching `done` / `error` arrives, so
       // late aborted-text events still route to the right slice.
       if (!convId) {
-        return s.runId === id ? { ...s, isProcessing: false } : s;
+        return s.runId === id ? { ...s, isProcessing: false, awaitingAskUser: false } : s;
       }
       const nextSlices = updateSlice(s.slices, convId, (prev) =>
-        prev.runId === id ? { ...prev, isProcessing: false } : prev
+        prev.runId === id ? { ...prev, isProcessing: false, awaitingAskUser: false } : prev
       );
       return { ...s, slices: nextSlices, ...mirrorOf(nextSlices[convId]!) };
     });
-    const targetConv = convId ?? get().runIdToConv[id];
-    await dispatchAbortForRun(id, targetConv);
+    await dispatchAbortForRun(id);
   },
 
   abortRun: async (runId: string) => {
@@ -768,14 +647,107 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => {
       if (!convId) return s;
       const nextSlices = updateSlice(s.slices, convId, (prev) =>
-        prev.runId === runId ? { ...prev, isProcessing: false } : prev
+        prev.runId === runId
+          ? { ...prev, isProcessing: false, awaitingAskUser: false }
+          : prev
       );
       if (s.conversationId === convId) {
         return { ...s, slices: nextSlices, ...mirrorOf(nextSlices[convId]!) };
       }
       return { ...s, slices: nextSlices };
     });
-    await dispatchAbortForRun(runId, convId);
+    await dispatchAbortForRun(runId);
+  },
+
+  pauseForAskUser: (runId) => {
+    const convId = get().runIdToConv[runId];
+    if (!convId) return;
+    set((s) => {
+      const nextSlices = updateSlice(s.slices, convId, (prev) =>
+        prev.runId === runId
+          ? { ...prev, isProcessing: false, awaitingAskUser: true }
+          : prev
+      );
+      if (s.conversationId === convId) {
+        return { ...s, slices: nextSlices, ...mirrorOf(nextSlices[convId]!) };
+      }
+      return { ...s, slices: nextSlices };
+    });
+  },
+
+  submitAskUser: async (input) => {
+    const convId = input.conversationId;
+    const markPromptSubmitted = (events: TimelineEvent[]) =>
+      events.map((e) =>
+        e.kind === 'ask-user-prompt' && e.id === input.promptEventId
+          ? { ...e, status: 'submitted' as const }
+          : e
+      );
+    set((s) => {
+      const nextSlices = updateSlice(s.slices, convId, (prev) => ({
+        ...prev,
+        isProcessing: true,
+        awaitingAskUser: false,
+        draft: '',
+        events: markPromptSubmitted(prev.events)
+      }));
+      if (s.conversationId === convId) {
+        return { ...s, slices: nextSlices, ...mirrorOf(nextSlices[convId]!) };
+      }
+      return { ...s, slices: nextSlices };
+    });
+    try {
+      const reply = await vyotiq.chat.submitAskUser(input);
+      if (!reply.ok) {
+        useToastStore
+          .getState()
+          .show(reply.message ?? 'Could not submit answers.', 'danger');
+        set((s) => {
+          const nextSlices = updateSlice(s.slices, convId, (prev) => ({
+            ...prev,
+            isProcessing: false,
+            awaitingAskUser: true
+          }));
+          if (s.conversationId === convId) {
+            return { ...s, slices: nextSlices, ...mirrorOf(nextSlices[convId]!) };
+          }
+          return { ...s, slices: nextSlices };
+        });
+      } else {
+        useAskUserDraftStore.getState().clearDraft(input.promptEventId);
+      }
+    } catch (err) {
+      log.warn('submitAskUser failed', { err });
+      useToastStore.getState().show('Could not submit answers.', 'danger');
+      set((s) => {
+        const nextSlices = updateSlice(s.slices, convId, (prev) => ({
+          ...prev,
+          isProcessing: false,
+          awaitingAskUser: true
+        }));
+        if (s.conversationId === convId) {
+          return { ...s, slices: nextSlices, ...mirrorOf(nextSlices[convId]!) };
+        }
+        return { ...s, slices: nextSlices };
+      });
+    }
+  },
+
+  submitPendingAskUser: async (opts) => {
+    const s = get();
+    const pending = findPendingAskUserEvent(s.events, s.awaitingAskUser);
+    if (!pending || !s.runId || !s.conversationId) return;
+    const draftStore = useAskUserDraftStore.getState();
+    draftStore.ensureDraft(pending.id, pending.payload);
+    const answers = draftStore.buildAnswers(pending.id, pending.payload);
+    const input = buildAskUserSubmitInput({
+      pending,
+      runId: s.runId,
+      conversationId: s.conversationId,
+      answers,
+      supplementText: opts?.supplementText
+    });
+    await get().submitAskUser(input);
   },
 
   rehydrateActiveRuns: (infos) => {
@@ -847,7 +819,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         nextSlices = updateSlice(nextSlices, info.conversationId, (prev) => ({
           ...prev,
           runId: info.runId,
-          isProcessing: true,
+          isProcessing: info.awaitingUser ? false : true,
+          awaitingAskUser: info.awaitingUser ?? false,
           runStartedAt: info.startedAt ?? prev.runStartedAt ?? Date.now()
         }));
         touched = true;
@@ -875,6 +848,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         ...prev,
         runId,
         isProcessing: true,
+        awaitingAskUser: false,
         runStartedAt: startedAt
       }));
       if (s.conversationId === conversationId) {
@@ -927,8 +901,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         ...(rebuilt.orchestratorUsage !== undefined
           ? { orchestratorUsage: rebuilt.orchestratorUsage }
           : {}),
-        summaries: rebuilt.summaries,
-        messageOverrides: rebuilt.messageOverrides,
         ...(rebuilt.lastUserPromptId !== undefined
           ? { lastUserPromptId: rebuilt.lastUserPromptId }
           : {}),
@@ -940,6 +912,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         // racing `rehydrateActiveRuns` for this same conversation.
         runId: existing?.runId ?? null,
         isProcessing: existing?.isProcessing ?? false,
+        awaitingAskUser: existing?.awaitingAskUser ?? false,
         runStartedAt: existing?.runStartedAt ?? null,
         draft: existing?.draft ?? ''
       };

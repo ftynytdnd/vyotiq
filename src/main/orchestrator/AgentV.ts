@@ -14,17 +14,14 @@ import type {
   TimelineEvent
 } from '@shared/types/chat.js';
 import type { ActiveRunInfo } from '@shared/types/ipc.js';
+import type { AskUserSubmitInput } from '@shared/types/askUser.js';
 import { IPC } from '@shared/constants.js';
+import { formatAskUserDisplayFromAnswers, formatAskUserToolResult } from '@shared/text/formatAskUserAnswers.js';
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import { wrapXml } from './envelope/index.js';
 import { resolveAttachmentsForInline } from '../attachments/resolveAttachmentsForInline.js';
 import { replayTranscript } from './replay/index.js';
 import { runOrchestratorLoop } from './loop/index.js';
-import {
-  clearConversation as clearOverridesForConversation,
-  replayCompression,
-  replayOverrideEvents
-} from './contextSummarizer/index.js';
 import {
   requireWorkspace,
   requireWorkspaceById
@@ -34,16 +31,28 @@ import {
   setActiveWorkspaceForRun
 } from '../tools/recall.tool.js';
 import { openRun as openCheckpointRun, finalizeRun as finalizeCheckpointRun } from '../checkpoints/index.js';
-import { clearEditApprovalLatch } from './confirmBus.js';
-import { getSettings } from '../settings/settingsStore.js';
 import { logger } from '../logging/logger.js';
+import {
+  clearPausedRun,
+  findPausedRunForConversation,
+  getPausedRun,
+  isRunAwaitingUser,
+  storePausedRun,
+  takePausedRun,
+  type LoopCheckpoint
+} from './pausedRunRegistry.js';
+import { registerRunCrashDrain } from './runCrashDrain.js';
 
 const log = logger.child('orchestrator/AgentV');
+
+export { findPausedRunForConversation };
 
 export interface AgentVDeps {
   emit: (event: TimelineEvent) => void;
   onDone: () => void;
   onError: (message: string) => void;
+  /** Called when the run pauses on `ask_user` (same runId stays live). */
+  onAwaitingUser?: () => void;
 }
 
 interface ActiveRun {
@@ -78,12 +87,14 @@ interface ActiveRun {
   modelId: string;
   /** Wall-clock ms when the run was registered. */
   startedAt: number;
+  /** True while latched on interactive `ask_user` (still in activeRuns). */
+  awaitingUser?: boolean;
 }
 
 const activeRuns = new Map<string, ActiveRun>();
 
 /** Abort every in-flight run and notify the renderer with a shared error. */
-export function abortAllActiveRunsWithError(message: string): void {
+function abortAllActiveRunsWithError(message: string): void {
   for (const info of listActiveRuns()) {
     abortRun(info.runId);
     safeWebContentsSend(IPC.CHAT_ERROR, info.runId, message);
@@ -94,6 +105,7 @@ export function abortRun(runId: string): void {
   const run = activeRuns.get(runId);
   if (!run) return;
   run.abort.abort();
+  clearPausedRun(runId);
   // Keep the registry entry until `startRun`'s `finally` drops it.
   // Deleting here made `listActiveRuns` / rehydrate miss in-flight
   // runs that were still winding down, so late events were routed
@@ -144,7 +156,8 @@ export function listActiveRuns(): ActiveRunInfo[] {
       ...(run.conversationId ? { conversationId: run.conversationId } : {}),
       ...(run.workspaceId ? { workspaceId: run.workspaceId } : {}),
       modelId: run.modelId,
-      startedAt: run.startedAt
+      startedAt: run.startedAt,
+      ...(run.awaitingUser ? { awaitingUser: true } : {})
     });
   }
   return out;
@@ -164,14 +177,6 @@ export function abortRunsForConversation(conversationId: string): number {
       aborted += 1;
     }
   }
-  // Conversation is going away — drop its in-memory per-message
-  // overrides too. The persisted JSONL is being tombstoned by the
-  // caller (`conversationStore.removeConversation`); leaving stale
-  // in-memory entries would leak a tiny amount of state into a
-  // future fresh conversation that happens to reuse the id (the
-  // store mints UUIDs, so collision is astronomically unlikely,
-  // but the cleanup is cheap and makes the contract explicit).
-  clearOverridesForConversation(conversationId);
   return aborted;
 }
 
@@ -246,8 +251,6 @@ export async function startRun(
     startedAt: Date.now()
   });
 
-  // Direct alias — no wrapping needed. The previous arrow wrapper was a
-  // residual from an earlier callback signature. F-027.
   const emit = deps.emit;
 
   // Mint the prompt id up-front so we can both emit it and pass it
@@ -310,28 +313,14 @@ export async function startRun(
     setActiveWorkspaceForRun(abort.signal, input.workspaceId);
   }
 
-  // Resolve the workspace's strict-approvals flag once for the whole
-  // run. The toggle takes effect on the NEXT run if the user changes
-  // it mid-flight — the in-progress run keeps the policy it started
-  // with so the agent never sees a flip mid-stream.
-  let strictApprovals = false;
   let resolvedWorkspaceId = input.workspaceId ?? '';
-  try {
-    const settings = await getSettings();
-    if (resolvedWorkspaceId) {
-      strictApprovals =
-        settings.ui?.strictApprovalsByWorkspace?.[resolvedWorkspaceId] === true;
-    }
-  } catch (err) {
-    log.warn('failed to resolve strictApprovals; defaulting to false', { err });
-  }
 
   // Open the run's checkpoint manifest BEFORE the loop body so any
   // tool that mutates files in iteration 0 already has somewhere to
   // append. Best-effort: a checkpoint-store failure must NEVER fail
   // the whole run (the orchestrator's primary contract is still
   // "answer the user"). If the open fails, tools simply degrade to
-  // the recovery branch in `appendEntry` on first append.
+  // an empty manifest until edits are recorded again.
   if (resolvedWorkspaceId && input.conversationId) {
     try {
       await openCheckpointRun({
@@ -376,55 +365,216 @@ export async function startRun(
       priorEventCount: priorTranscript?.length ?? 0,
       replayedMessageCount: Math.max(0, initialMessages.length - 2)
     });
-    // The first user-visible `connecting` row is owned by
-    // `runOrchestratorLoop`'s iteration-0 emit (see `runLoop.ts`).
-    // Emitting one here as well produced two consecutive `connecting`
-    // status rows on cold-start runs; the duplicate has been removed.
-    // Do NOT re-add a pre-loop emit — if a future change needs to
-    // surface a phase before iteration 0 (e.g. envelope-refresh wait)
-    // pick a distinct `phase` label, not `connecting`.
-    const loopResult = await runOrchestratorLoop({
+    await runLoopBody({
       input,
       workspacePath,
       workspaceId: resolvedWorkspaceId,
-      signal: abort.signal,
+      abort,
+      generation,
       emit,
+      deps,
       initialMessages,
       initialQuery: input.prompt,
-      permissions: input.permissions,
-      strictApprovals
+      permissions: input.permissions
     });
-    if (loopResult.terminalError) {
-      // Terminal halt — `runLoop` already emitted the authoritative
-      // `kind:'error'` row. `onError` alone drives `chat:error` +
-      // settlement; `onDone` would also emit `chat:done` and confuse
-      // the renderer (audit P2a).
-      deps.onError(loopResult.terminalError);
-    } else {
-      deps.onDone();
-    }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: msg });
     deps.onError(msg);
   } finally {
-    removeActiveRunIfCurrent(input.runId, generation);
-    // Clear the "Accept all remaining edits in this run" latch the
-    // user may have flipped during this run. The map keys on `runId`
-    // so cross-run leakage is impossible, but we still drop the
-    // entry eagerly so a malicious / buggy future code path can't
-    // observe a stale flag.
-    clearEditApprovalLatch(input.runId);
-    // Finalize the checkpoint manifest regardless of how the run ended.
-    // Idempotent — a second call against the same runId is a no-op.
-    if (resolvedWorkspaceId && input.conversationId) {
-      try {
-        await finalizeCheckpointRun(input.runId);
-      } catch (err) {
-        log.warn('checkpoint finalizeRun failed', { runId: input.runId, err });
+    const stillPaused = isRunAwaitingUser(input.runId);
+    if (!stillPaused) {
+      removeActiveRunIfCurrent(input.runId, generation);
+      if (resolvedWorkspaceId && input.conversationId) {
+        try {
+          await finalizeCheckpointRun(input.runId);
+        } catch (err) {
+          log.warn('checkpoint finalizeRun failed', { runId: input.runId, err });
+        }
       }
     }
   }
+}
+
+interface RunLoopBodyOpts {
+  input: ChatSendInput;
+  workspacePath: string;
+  workspaceId: string;
+  abort: AbortController;
+  generation: number;
+  emit: (event: TimelineEvent) => void;
+  deps: AgentVDeps;
+  initialMessages: ChatMessage[];
+  initialQuery: string;
+  permissions: ChatSendInput['permissions'];
+  resumeCheckpoint?: LoopCheckpoint;
+}
+
+async function runLoopBody(opts: RunLoopBodyOpts): Promise<void> {
+  const loopResult = await runOrchestratorLoop({
+    input: opts.input,
+    workspacePath: opts.workspacePath,
+    workspaceId: opts.workspaceId,
+    signal: opts.abort.signal,
+    emit: opts.emit,
+    initialMessages: opts.initialMessages,
+    initialQuery: opts.initialQuery,
+    permissions: opts.permissions,
+    ...(opts.resumeCheckpoint ? { resumeCheckpoint: opts.resumeCheckpoint } : {})
+  });
+
+  if (loopResult.pausedForAskUser) {
+    const run = activeRuns.get(opts.input.runId);
+    if (run) run.awaitingUser = true;
+    storePausedRun(opts.input.runId, {
+      generation: opts.generation,
+      input: opts.input,
+      workspacePath: opts.workspacePath,
+      workspaceId: opts.workspaceId,
+      checkpoint: loopResult.pausedForAskUser,
+      callbacks: {
+        emit: opts.emit,
+        onDone: opts.deps.onDone,
+        onError: opts.deps.onError,
+        onAwaitingUser: opts.deps.onAwaitingUser
+      }
+    });
+    opts.deps.onAwaitingUser?.();
+    return;
+  }
+
+  if (loopResult.terminalError) {
+    opts.deps.onError(loopResult.terminalError);
+  } else {
+    opts.deps.onDone();
+  }
+}
+
+/**
+ * Resume a run paused on `ask_user` with the user's structured answers.
+ */
+export async function submitAskUserAnswers(input: AskUserSubmitInput): Promise<boolean> {
+  const entry = getPausedRun(input.runId);
+  if (!entry) {
+    log.warn('submitAskUserAnswers: run not paused', { runId: input.runId });
+    return false;
+  }
+  if (entry.input.conversationId !== input.conversationId) {
+    log.warn('submitAskUserAnswers: conversation mismatch', {
+      runId: input.runId,
+      expected: entry.input.conversationId,
+      got: input.conversationId
+    });
+    return false;
+  }
+  if (input.toolCallId !== entry.checkpoint.askUserToolCallId) {
+    log.warn('submitAskUserAnswers: toolCallId mismatch', {
+      runId: input.runId,
+      expected: entry.checkpoint.askUserToolCallId,
+      got: input.toolCallId
+    });
+    return false;
+  }
+
+  const run = activeRuns.get(input.runId);
+  if (!run || run.generation !== entry.generation) {
+    log.warn('submitAskUserAnswers: active run generation mismatch', { runId: input.runId });
+    return false;
+  }
+
+  takePausedRun(input.runId);
+  run.awaitingUser = false;
+
+  const displayText = formatAskUserDisplayFromAnswers(
+    input.payload,
+    input.answers,
+    input.supplementText
+  );
+  const toolContent = formatAskUserToolResult(
+    input.payload,
+    input.answers,
+    input.supplementText
+  );
+
+  const { emit, onDone, onError, onAwaitingUser } = entry.callbacks;
+  const ts = Date.now();
+  const userPromptId = randomUUID();
+
+  emit({
+    kind: 'ask-user-submitted',
+    id: randomUUID(),
+    ts,
+    promptEventId: input.promptEventId,
+    toolCallId: input.toolCallId,
+    runId: input.runId
+  });
+  if (displayText.length > 0) {
+    emit({
+      kind: 'user-prompt',
+      id: userPromptId,
+      ts,
+      content: displayText,
+      runId: input.runId
+    });
+  }
+  emit({
+    kind: 'tool-result',
+    id: randomUUID(),
+    ts,
+    result: {
+      id: input.toolCallId,
+      name: 'ask_user',
+      ok: true,
+      output: toolContent,
+      durationMs: 0
+    }
+  });
+
+  const messages = entry.checkpoint.messages;
+  messages.push({
+    role: 'tool',
+    tool_call_id: input.toolCallId,
+    name: 'ask_user',
+    content: toolContent
+  });
+
+  try {
+    await runLoopBody({
+      input: entry.input,
+      workspacePath: entry.workspacePath,
+      workspaceId: entry.workspaceId,
+      abort: run.abort,
+      generation: entry.generation,
+      emit,
+      deps: { emit, onDone, onError, onAwaitingUser },
+      initialMessages: messages,
+      initialQuery: entry.checkpoint.query,
+      permissions: entry.input.permissions,
+      resumeCheckpoint: entry.checkpoint
+    });
+  } catch (err: unknown) {
+    clearPausedRun(input.runId);
+    const msg = err instanceof Error ? err.message : String(err);
+    emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: msg });
+    onError(msg);
+    removeActiveRunIfCurrent(input.runId, entry.generation);
+    return false;
+  }
+
+  if (!isRunAwaitingUser(input.runId)) {
+    removeActiveRunIfCurrent(input.runId, entry.generation);
+    if (entry.workspaceId && entry.input.conversationId) {
+      try {
+        await finalizeCheckpointRun(input.runId);
+      } catch (err) {
+        log.warn('checkpoint finalizeRun failed after ask_user resume', {
+          runId: input.runId,
+          err
+        });
+      }
+    }
+  }
+  return true;
 }
 
 /**
@@ -456,29 +606,8 @@ async function buildInitialMessages(
    */
   signal?: AbortSignal
 ): Promise<ChatMessage[]> {
-  // Audit fix M-09: single-pass partition of the prior transcript.
-  // Previously this site walked `priorTranscript` THREE times — once
-  // to drop the current prompt for replay, once to bin
-  // `context-override-set` events, and once to bin the three
-  // summary-related kinds. Each pass allocated a full filtered copy,
-  // so a 10 MB / ~50k-event JSONL materialised three intermediate
-  // arrays on every `chat:send`. The single-loop variant below
-  // keeps memory bounded by the three target bins (which together
-  // are a tiny fraction of the transcript) and walks the input
-  // exactly once. Behaviour is identical: each bin retains the
-  // same event-order it would have had under the original
-  // sequential filters.
   const source = priorTranscript ?? [];
   const replayEvents: TimelineEvent[] = [];
-  const overrideEvents: Array<Extract<TimelineEvent, { kind: 'context-override-set' }>> = [];
-  const summaryEvents: Array<
-    Extract<
-      TimelineEvent,
-      | { kind: 'context-summary-pending' }
-      | { kind: 'context-summary-end' }
-      | { kind: 'context-summary-undone' }
-    >
-  > = [];
   for (const e of source) {
     // Drop the just-emitted user-prompt event for the current run by
     // id. Filtering by content (the prior behavior) was unsafe — two
@@ -491,34 +620,8 @@ async function buildInitialMessages(
     } else {
       replayEvents.push(e);
     }
-    if (e.kind === 'context-override-set') {
-      overrideEvents.push(e);
-    } else if (
-      e.kind === 'context-summary-pending' ||
-      e.kind === 'context-summary-end' ||
-      e.kind === 'context-summary-undone'
-    ) {
-      summaryEvents.push(e);
-    }
   }
   const replayed = replayTranscript(replayEvents);
-
-  // Hydrate the per-conversation override store from persisted
-  // `context-override-set` events so the summarizer's per-message
-  // overrides survive renderer reloads, conversation switches, and
-  // app restarts. Scoped to this conversation; cleared on remove.
-  if (input.conversationId) {
-    replayOverrideEvents(input.conversationId, overrideEvents);
-  }
-  // Re-apply any persisted summary splices on top of the rebuilt
-  // messages. Walks `(end, undone)` pairs in transcript order;
-  // events whose `replacedMessageIds` no longer match the current
-  // id space (manual JSONL edit, ID hash drift across an upgrade)
-  // are skipped with a warn — see `replayCompression` for the
-  // matching invariant.
-  if (summaryEvents.length > 0) {
-    replayCompression(replayed, summaryEvents);
-  }
 
   const userMessageXml = wrapXml('user_message', input.prompt, undefined, { escape: true });
   const attachmentBlocks = await resolveAttachmentsForInline({
@@ -545,3 +648,5 @@ async function buildInitialMessages(
 // orchestrator modules consume shared types but should not bridge them
 // for the renderer — external callers import directly from
 // `@shared/types/chat`.
+
+registerRunCrashDrain(abortAllActiveRunsWithError);

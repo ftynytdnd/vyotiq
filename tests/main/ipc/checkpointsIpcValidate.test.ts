@@ -34,22 +34,7 @@ vi.mock('@main/checkpoints/rewindToPrompt.js', () => ({
 }));
 
 vi.mock('@main/checkpoints/index.js', () => ({
-  acceptEntry: vi.fn(),
-  acceptAll: vi.fn(),
-  rejectEntry: vi.fn(),
-  revertEntryById: vi.fn(),
-  revertRun: vi.fn(),
-  revertFileToHash: vi.fn(),
-  exportArchiveForWorkspace: vi.fn(),
-  prune: vi.fn(),
-  deleteRun: vi.fn(),
-  getSummary: vi.fn(async () => ({ workspaceId: 'ws', runs: [], files: [], usage: {} })),
-  getRunManifest: vi.fn(),
-  getFileHistory: vi.fn(),
-  listPending: vi.fn(async () => []),
-  lookupEntryLocation: vi.fn(),
-  readBlobBody: vi.fn(),
-  setCheckpointsBroadcaster: vi.fn()
+  readBlobBody: vi.fn()
 }));
 
 vi.mock('@main/workspace/workspaceState.js', () => ({

@@ -1,11 +1,11 @@
 /**
- * Top-level error row — flush log-line backed by shared `Notice`.
+ * Top-level error row — terminal run failures (provider errors, etc.).
  */
 
-import { AlertTriangle } from 'lucide-react';
-import { Notice } from '../../ui/Notice.js';
+import { AlertCircle } from 'lucide-react';
 import { timelineLogRowClassName } from '../shared/rowStyles.js';
 import { cn } from '../../../lib/cn.js';
+import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../../lib/shellIcons.js';
 
 interface ErrorRowProps {
   message: string;
@@ -13,10 +13,20 @@ interface ErrorRowProps {
 
 export function ErrorRow({ message }: ErrorRowProps) {
   return (
-    <div className={cn('vyotiq-stepfade-once vx-notice', timelineLogRowClassName)} data-row-kind="error">
-      <Notice tone="danger" size="sm" icon={AlertTriangle} className="border-0 bg-transparent p-0">
-        <div className="whitespace-pre-wrap">{message}</div>
-      </Notice>
+    <div
+      className={cn(
+        'vyotiq-stepfade-once vx-timeline-error-row',
+        timelineLogRowClassName
+      )}
+      data-row-kind="error"
+      role="alert"
+    >
+      <AlertCircle
+        className={cn(SHELL_ROW_ICON_CLASS, 'mt-0.5 shrink-0 text-danger')}
+        strokeWidth={SHELL_ROW_ICON_STROKE}
+        aria-hidden
+      />
+      <div className="min-w-0 flex-1 whitespace-pre-wrap text-row text-danger">{message}</div>
     </div>
   );
 }

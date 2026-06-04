@@ -176,34 +176,90 @@ function appendFileEditChild(out: Row[], groupIdx: number, edit: FileEditFoldInp
   out[groupIdx] = { ...row, children: [...row.children, child] };
 }
 
+function mergeFileEditIntoEditToolGroupAt(
+  out: Row[],
+  groupIdx: number,
+  edit: FileEditFoldInput
+): boolean {
+  const prior = out[groupIdx];
+  if (!prior || prior.kind !== 'tool-group' || prior.toolName !== 'edit') return false;
+  const lastIdx = prior.children.length - 1;
+  const last = prior.children[lastIdx];
+  const lastPath = editChildPath(last);
+  if (!last || !last.result || !last.result.ok || lastPath !== edit.filePath) return false;
+  const children = prior.children.slice();
+  children[lastIdx] = {
+    ...last,
+    fileEditAdditions: (last.fileEditAdditions ?? 0) + edit.additions,
+    fileEditDeletions: (last.fileEditDeletions ?? 0) + edit.deletions
+  };
+  out[groupIdx] = { ...prior, children };
+  return true;
+}
+
 /**
- * Orchestrator file-edit: merge into prior `edit` tool-group when the last
- * successful child targets the same path; otherwise fold into file-edit-group.
+ * Fold a `file-edit` event into the matching `edit` tool-group when the last
+ * settled child targets the same path (orchestrator and sub-agent). Avoids
+ * the duplicate "Edited path" tool-group + file-edit-group pair emitted for
+ * every successful `edit` tool (three wire events, one UI row).
+ *
+ * Tries `openToolGroupIdx` first, then scans backward — group breakers such
+ * as assistant-text between `tool-result` and `file-edit` clear the open
+ * index but the edit group row is still in `out`.
+ */
+function tryMergeFileEditIntoEditToolGroup(
+  out: Row[],
+  state: ScopedGroupState,
+  edit: FileEditFoldInput,
+  subagentId?: string
+): boolean {
+  const scopeId = subagentId;
+  if (state.openToolGroupIdx !== null) {
+    const open = out[state.openToolGroupIdx];
+    if (open?.kind === 'tool-group' && open.subagentId === scopeId) {
+      if (mergeFileEditIntoEditToolGroupAt(out, state.openToolGroupIdx, edit)) {
+        return true;
+      }
+    }
+  }
+  for (let i = out.length - 1; i >= 0; i--) {
+    const row = out[i];
+    if (row.kind !== 'tool-group' || row.toolName !== 'edit' || row.subagentId !== scopeId) {
+      continue;
+    }
+    if (mergeFileEditIntoEditToolGroupAt(out, i, edit)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Orchestrator file-edit: merge into prior `edit` tool-group when possible;
+ * otherwise fold into file-edit-group (bash mutations, path mismatch, etc.).
  */
 export function foldOrchestratorFileEdit(
   out: Row[],
   state: ScopedGroupState,
   edit: FileEditFoldInput
 ): boolean {
-  if (state.openToolGroupIdx !== null) {
-    const prior = out[state.openToolGroupIdx];
-    if (prior && prior.kind === 'tool-group' && prior.toolName === 'edit') {
-      const lastIdx = prior.children.length - 1;
-      const last = prior.children[lastIdx];
-      const lastPath = editChildPath(last);
-      if (last && last.result && last.result.ok && lastPath === edit.filePath) {
-        const children = prior.children.slice();
-        children[lastIdx] = {
-          ...last,
-          fileEditAdditions: (last.fileEditAdditions ?? 0) + edit.additions,
-          fileEditDeletions: (last.fileEditDeletions ?? 0) + edit.deletions
-        };
-        out[state.openToolGroupIdx] = { ...prior, children };
-        return true;
-      }
-    }
+  if (tryMergeFileEditIntoEditToolGroup(out, state, edit)) {
+    return true;
   }
-
   foldScopedFileEdit(out, state, edit);
+  return false;
+}
+
+/** Sub-agent scoped file-edit — same merge rules as orchestrator. */
+export function foldSubagentFileEdit(
+  out: Row[],
+  state: ScopedGroupState,
+  edit: FileEditFoldInput,
+  subagentId: string
+): boolean {
+  if (tryMergeFileEditIntoEditToolGroup(out, state, edit, subagentId)) {
+    return true;
+  }
+  foldScopedFileEdit(out, state, edit, subagentId);
   return false;
 }

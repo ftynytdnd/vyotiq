@@ -1,13 +1,11 @@
 /**
- * Flat hamburger action list (File / Edit / View actions, no submenus).
+ * Compact app menu — workspace actions, settings, and quit.
  */
 
 import { useRef, useState } from 'react';
 import { Popover } from '../ui/Popover.js';
 import { cn } from '../../lib/cn.js';
-import { vyotiq } from '../../lib/ipc.js';
 import type { FileMenuActions } from './menu/menus/FileMenu.js';
-import type { ViewMenuActions } from './menu/menus/ViewMenu.js';
 import { formatPlatformShortcut } from '../shortcuts/ShortcutsPanel.js';
 import {
   CHROME_LAYER_TITLEBAR_POPOVER,
@@ -22,7 +20,6 @@ import { SHELL_CHROME_ICON_CLASS, SHELL_CHROME_ICON_STROKE } from '../../lib/she
 
 interface HamburgerMenuProps {
   fileActions: FileMenuActions;
-  viewActions: ViewMenuActions;
 }
 
 type MenuEntry =
@@ -34,10 +31,6 @@ type MenuEntry =
       shortcut?: string;
       action: () => void;
     };
-
-function execEditCommand(command: string): void {
-  void document.execCommand(command);
-}
 
 function HamburgerIcon() {
   const stroke = SHELL_CHROME_ICON_STROKE;
@@ -76,10 +69,7 @@ function MenuRow({
   );
 }
 
-function buildMenuEntries(
-  fileActions: FileMenuActions,
-  viewActions: ViewMenuActions
-): MenuEntry[] {
+function buildMenuEntries(fileActions: FileMenuActions): MenuEntry[] {
   return [
     {
       type: 'item',
@@ -101,94 +91,24 @@ function buildMenuEntries(
       label: 'Set workspace path…',
       action: fileActions.setWorkspacePath
     },
+    { type: 'separator', key: 'sep-settings' },
     {
       type: 'item',
       key: 'settings',
       label: 'Settings',
       shortcut: formatPlatformShortcut('Ctrl+,'),
-      action: fileActions.openSettings
-    },
-    {
-      type: 'item',
-      key: 'checkpoints',
-      label: 'Checkpoints',
-      shortcut: formatPlatformShortcut('Ctrl+Shift+H'),
-      action: fileActions.openCheckpoints
-    },
-    {
-      type: 'item',
-      key: 'inspector',
-      label: 'Context inspector',
-      shortcut: formatPlatformShortcut('Ctrl+Shift+C'),
-      action: viewActions.openContextInspector
-    },
-    {
-      type: 'item',
-      key: 'reload',
-      label: 'Reload',
-      shortcut: formatPlatformShortcut('Ctrl+R'),
-      action: () => void vyotiq.window.reload()
-    },
-    {
-      type: 'item',
-      key: 'devtools',
-      label: 'Toggle DevTools',
-      shortcut: formatPlatformShortcut('Ctrl+Shift+I'),
-      action: () => void vyotiq.window.toggleDevTools()
-    },
-    { type: 'separator', key: 'sep-edit' },
-    {
-      type: 'item',
-      key: 'undo',
-      label: 'Undo',
-      shortcut: formatPlatformShortcut('Ctrl+Z'),
-      action: () => execEditCommand('undo')
-    },
-    {
-      type: 'item',
-      key: 'redo',
-      label: 'Redo',
-      shortcut: formatPlatformShortcut('Ctrl+Y'),
-      action: () => execEditCommand('redo')
-    },
-    {
-      type: 'item',
-      key: 'cut',
-      label: 'Cut',
-      shortcut: formatPlatformShortcut('Ctrl+X'),
-      action: () => execEditCommand('cut')
-    },
-    {
-      type: 'item',
-      key: 'copy',
-      label: 'Copy',
-      shortcut: formatPlatformShortcut('Ctrl+C'),
-      action: () => execEditCommand('copy')
-    },
-    {
-      type: 'item',
-      key: 'paste',
-      label: 'Paste',
-      shortcut: formatPlatformShortcut('Ctrl+V'),
-      action: () => execEditCommand('paste')
-    },
-    {
-      type: 'item',
-      key: 'select-all',
-      label: 'Select all',
-      shortcut: formatPlatformShortcut('Ctrl+A'),
-      action: () => execEditCommand('selectAll')
+      action: () => fileActions.openSettings()
     },
     { type: 'separator', key: 'sep-quit' },
     { type: 'item', key: 'quit', label: 'Quit', action: fileActions.quit }
   ];
 }
 
-export function HamburgerMenu({ fileActions, viewActions }: HamburgerMenuProps) {
+export function HamburgerMenu({ fileActions }: HamburgerMenuProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuId = 'titlebar-hamburger-menu';
-  const entries = buildMenuEntries(fileActions, viewActions);
+  const entries = buildMenuEntries(fileActions);
 
   const run = (fn: () => void) => {
     fn();

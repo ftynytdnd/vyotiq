@@ -1,6 +1,6 @@
 /**
  * Exponential backoff helper. Plain async/await — pairs with the
- * natural-language retry rules in `01-orchestration-loop.md` §C
+ * natural-language retry rules in `00-orchestrator-core.md` §C
  * ("Self-Correction & Three-Strike Rule"). `BASE_BACKOFF_MS` and
  * `MAX_BACKOFF_MS` are surfaced into the model's `<runtime_limits>`
  * envelope (see `harnessLoader.buildRuntimeLimitsBlock`) so the prose

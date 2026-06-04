@@ -9,15 +9,13 @@ import { cn } from '../../../lib/cn.js';
 import type { DisplayRow } from './projectSubagentRows.js';
 import type { PartitionedTurn } from './groupTurnSegment.js';
 import { TurnRunningMeta } from '../activity/TurnRunningMeta.js';
-import { StreamWeaveStream } from '../delegation/StreamWeaveStream.js';
+import { DelegationStream } from '../delegation/DelegationStream.js';
 import {
   timelineLiveTurnClassName,
   timelineTurnOuterGapClassName,
   timelineTurnZoneGapClassName,
-  timelineAgentColumnClassName,
-  timelineActivityLaneClassName
+  timelineAgentColumnClassName
 } from './rowStyles.js';
-import { splitContextSummaryRows } from './contextSummaryRows.js';
 
 interface TurnBlockProps {
   partitioned: PartitionedTurn;
@@ -33,9 +31,8 @@ export function TurnBlock({
   live = false,
   className
 }: TurnBlockProps) {
-  const { prompt, footer } = partitioned;
-  const { contextSummaryRows, inlineStreamRows } = splitContextSummaryRows(partitioned.agentStream);
-  const showAgentStream = inlineStreamRows.length > 0 || live;
+  const { prompt, agentStream, footer } = partitioned;
+  const showAgentStream = agentStream.length > 0 || live;
 
   return (
     <div
@@ -53,13 +50,8 @@ export function TurnBlock({
       {prompt && renderRow(prompt)}
 
       <div className={timelineAgentColumnClassName}>
-        {contextSummaryRows.map((row) => (
-          <div key={row.key} className={timelineActivityLaneClassName}>
-            {renderRow(row)}
-          </div>
-        ))}
         {showAgentStream && (
-          <StreamWeaveStream rows={inlineStreamRows} renderRow={renderRow} live={live} />
+          <DelegationStream rows={agentStream} renderRow={renderRow} live={live} />
         )}
 
         {live && footer.length === 0 && <TurnRunningMeta live={live} />}

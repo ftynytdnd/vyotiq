@@ -26,7 +26,6 @@ import {
   ensureSnapshot,
   upsertStep
 } from './timelineReducerShared.js';
-import { applyContextSummaryTimelineEvent } from './applyContextSummaryEvents.js';
 import {
   applySubagentLifecycleTimelineEvent,
   applySubagentStreamingEvent
@@ -451,10 +450,7 @@ export function applyTimelineEvent(
       }
       return {
         ...state,
-        latestOrchestratorRunStatus: event,
-        ...(event.phase === 'delegating'
-          ? { lastDelegationPhaseTs: event.ts }
-          : {})
+        latestOrchestratorRunStatus: event
       };
     }
 
@@ -485,18 +481,28 @@ export function applyTimelineEvent(
         toolResultSettledIds: {}
       };
     case 'agent-thought':
+    case 'ask-user-prompt':
     case 'phase':
     case 'error':
       return { ...state, events: appendTimelineEvent(state.events, event, mutate) };
+
+    case 'ask-user-submitted': {
+      const nextEvents = appendTimelineEvent(state.events, event, mutate);
+      const marked = nextEvents.map((e) =>
+        e.kind === 'ask-user-prompt' && e.id === event.promptEventId
+          ? { ...e, status: 'submitted' as const }
+          : e
+      );
+      return { ...state, events: marked };
+    }
 
     case 'checkpoint-entry':
     case 'checkpoint-revert':
     case 'checkpoint-bash-mutation':
       // Checkpoint events are persisted into the transcript so
       // replay reconstructs the same audit trail the live run had.
-      // The LIVE timeline reducer just appends — the dedicated
-      // pending-changes panel and Checkpoints view consume them
-      // through `useCheckpointsStore`, not through derived rows.
+      // The LIVE timeline reducer appends them for replay; derived
+      // rows skip these event kinds (see `deriveRows.ts`).
       // (See `deriveRows.ts` for the matching skip.)
       return { ...state, events: appendTimelineEvent(state.events, event, mutate) };
 
@@ -682,15 +688,6 @@ export function applyTimelineEvent(
         }
       };
     }
-
-    case 'context-summary-pending':
-    case 'context-summary-delta':
-    case 'context-summary-reasoning-delta':
-    case 'context-summary-end':
-    case 'context-summary-aborted':
-    case 'context-summary-undone':
-    case 'context-override-set':
-      return applyContextSummaryTimelineEvent(state, event, mutate);
 
     case 'synthetic-usage-update': {
       // Phase 3 (2026): renderer-local mid-stream completion-token

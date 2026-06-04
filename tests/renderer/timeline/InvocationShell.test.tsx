@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, screen } from '@testing-library/react';
 import { InvocationShell } from '@renderer/components/timeline/tools/shared/InvocationShell';
 
 describe('InvocationShell', () => {
@@ -26,11 +26,11 @@ describe('InvocationShell', () => {
     const { container } = render(
       <InvocationShell title="bash" summary="echo hi" ok={true} />
     );
-    expect(container.querySelector('button')).toBeNull();
+    expect(container.querySelector('button[aria-expanded]')).toBeNull();
   });
 
-  it('renders dense errorHint inline next to the summary (one visual line)', () => {
-    const { container } = render(
+  it('failed rows offer Show details instead of inline trailing chip', () => {
+    render(
       <InvocationShell
         title="edit"
         summary="storage/database.py"
@@ -40,43 +40,9 @@ describe('InvocationShell', () => {
         detail={<div>error detail</div>}
       />
     );
-    const btn = container.querySelector('button')!;
-    expect(btn.textContent).toContain('no match');
-    const belowLine = container.querySelector('.ml-5');
-    expect(belowLine).toBeNull();
-  });
-
-  it('renders non-dense errorHint inline in the trailing slot (one visual line)', () => {
-    const { container } = render(
-      <InvocationShell
-        title="bash"
-        summary="rm -rf /"
-        ok={false}
-        errorHint="permission denied"
-        detail={<div>error detail</div>}
-      />
-    );
-    const header = container.querySelector('[class*="max-w-[14rem]"]');
-    expect(header).not.toBeNull();
-    expect(header!.textContent).toContain('permission denied');
-    expect(container.querySelector('.ml-5')).toBeNull();
-  });
-
-  it('hides the inline errorHint chip once the dense row is expanded', () => {
-    const { container } = render(
-      <InvocationShell
-        title="edit"
-        summary="storage/database.py"
-        ok={false}
-        errorHint="no match"
-        dense
-        detail={<div>error detail</div>}
-      />
-    );
-    const btn = container.querySelector('button')!;
-    expect(btn.textContent).toContain('no match');
-    fireEvent.click(btn);
-    expect(btn.textContent ?? '').not.toContain('no match');
+    expect(screen.getByRole('button', { name: /Show details/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Show details/i }));
+    expect(screen.getByText('error detail')).toBeTruthy();
   });
 
   it('uses primary title while a tool call is pending', () => {
