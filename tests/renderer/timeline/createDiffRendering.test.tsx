@@ -18,8 +18,6 @@
  *      (`create: true` arg, no `result` yet) → `EditDiffView`
  *      `variant="preview"` (non-streaming) or `variant="partial"`
  *      (when `partial` prop is true and the row is in-flight).
- *   3. `PendingChangeDiff` `kind="create"` → `EditDiffView`
- *      `variant="authoritative"`.
  *
  * These tests pin the DOM-level invariants that proved the rendering
  * regression in the screenshot bug report:

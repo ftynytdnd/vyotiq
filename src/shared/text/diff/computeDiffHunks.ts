@@ -9,7 +9,7 @@
  *   - `src/main/orchestrator/diffStreamer.ts` (Phase 2) for the
  *     incremental FS-aware streaming diff, both inline and via the
  *     off-main-thread `diffWorker` pool.
- *   - `src/renderer/components/checkpoints/diffClient.ts` (re-exported)
+ *   - `@shared/text/diff/computeDiffHunks` (imported directly in renderer)
  *     for the Checkpoints / pending-changes diff against fetched blob
  *     bodies.
  *   - `src/renderer/components/timeline/tools/edit/synthesizeDiffPreview.ts`

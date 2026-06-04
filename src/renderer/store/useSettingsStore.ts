@@ -15,6 +15,7 @@ interface SettingsStore {
   initialLoadDone: boolean;
   refresh: () => Promise<void>;
   setDefaultModel: (sel: ModelSelection) => Promise<void>;
+  /** Persist global permission overrides (no settings UI yet; tests + future editor). */
   setPermissions: (patch: Partial<ChatPermissions>) => Promise<void>;
   /**
    * Persist the per-workspace last-active conversation map. Called by
@@ -31,8 +32,6 @@ interface SettingsStore {
    */
   setLastModelByWorkspace: (workspaceId: string, sel: ModelSelection) => Promise<void>;
   toggleFavoriteModel: (providerId: string, modelId: string) => Promise<void>;
-  /** Toggle a conversation id in `ui.pinnedConversationIds` for the sidebar widget. */
-  togglePinnedConversation: (conversationId: string) => Promise<void>;
   /**
    * One-shot cascade triggered by `workspace.remove`. Strips the
    * given workspace id from every per-workspace UI map at once
@@ -181,17 +180,6 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     if (set.has(key)) set.delete(key);
     else set.add(key);
     const ui = { ...(current.ui ?? {}), favoriteModels: [...set] };
-    const updated = await vyotiq.settings.set({ ui });
-    setState({ settings: { ...getState().settings, ...updated } });
-  },
-
-  togglePinnedConversation: async (conversationId) => {
-    const current = getState().settings;
-    const prev = current.ui?.pinnedConversationIds ?? [];
-    const set = new Set(prev);
-    if (set.has(conversationId)) set.delete(conversationId);
-    else set.add(conversationId);
-    const ui = { ...(current.ui ?? {}), pinnedConversationIds: [...set] };
     const updated = await vyotiq.settings.set({ ui });
     setState({ settings: { ...getState().settings, ...updated } });
   }

@@ -11,16 +11,19 @@ export function countDelegationBatch(
   subagentIds: readonly string[],
   subagents: Readonly<Record<string, SubAgentSnapshot>>
 ): DelegationBatchCounts {
+  const uniqueIds = [
+    ...new Set(subagentIds.filter((id) => typeof id === 'string' && id.length > 0))
+  ];
   let running = 0;
   let queued = 0;
   let done = 0;
-  for (const id of subagentIds) {
+  for (const id of uniqueIds) {
     const status = subagents[id]?.status;
     if (status === 'queued') queued += 1;
     else if (status === 'pending' || status === 'running') running += 1;
     else if (status) done += 1;
   }
-  return { total: subagentIds.length, running, queued, done };
+  return { total: uniqueIds.length, running, queued, done };
 }
 
 /** e.g. "4 workers · 2 running · 2 queued" */

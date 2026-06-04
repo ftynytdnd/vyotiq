@@ -3,13 +3,14 @@
  */
 
 import type { ReactNode } from 'react';
-import { Fragment, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useChatStore } from '../../../store/useChatStore.js';
 import type { DisplayRow } from '../shared/projectSubagentRows.js';
 import { segmentDelegationStream } from './segmentDelegationStream.js';
 import type { DelegationStreamSegment } from './segmentDelegationStream.js';
 import { DelegationWorker } from './DelegationWorker.js';
-import { DelegationBatchSummary } from './DelegationBatchSummary.js';
+import { DelegationConcurrentGroup } from './DelegationConcurrentGroup.js';
+import { subagentIdsForDelegationBatch } from './delegationBatchIds.js';
 
 interface DelegationStreamProps {
   rows: DisplayRow[];
@@ -54,6 +55,26 @@ function buildConcurrentGroupMap(
   return map;
 }
 
+function resolveBatchSubagentIds(
+  segments: DelegationStreamSegment[],
+  groupIndices: number[],
+  subagents: ReturnType<typeof useChatStore.getState>['subagents']
+): { batchId: string | undefined; ids: string[] } {
+  const fromSegments = groupIndices
+    .map((idx) => {
+      const seg = segments[idx];
+      return seg?.kind === 'worker' ? seg.subagentId : undefined;
+    })
+    .filter((id): id is string => typeof id === 'string' && id.length > 0);
+  const batchId =
+    fromSegments.length > 0 ? subagents[fromSegments[0]!]?.delegationBatchId : undefined;
+  const ids =
+    batchId !== undefined
+      ? subagentIdsForDelegationBatch(batchId, subagents)
+      : fromSegments;
+  return { batchId, ids };
+}
+
 export function DelegationStream({ rows, renderRow, live = false }: DelegationStreamProps) {
   const segments = useMemo(() => segmentDelegationStream(rows), [rows]);
   const subagents = useChatStore((s) => s.subagents);
@@ -63,16 +84,8 @@ export function DelegationStream({ rows, renderRow, live = false }: DelegationSt
     [segments, subagents]
   );
 
-  const renderSegment = (seg: DelegationStreamSegment, index: number) => {
-    if (seg.kind === 'orchestrator') {
-      return (
-        <Fragment key={`orch:${index}:${seg.rows[0]?.key ?? ''}`}>
-          {seg.rows.map((row) => (
-            <div key={row.key}>{renderRow(row)}</div>
-          ))}
-        </Fragment>
-      );
-    }
+  const renderWorkerSegment = (seg: DelegationStreamSegment, index: number) => {
+    if (seg.kind !== 'worker') return null;
     return (
       <DelegationWorker
         key={`worker:${seg.subagentId}:${seg.rows[0]?.key ?? index}`}
@@ -94,26 +107,40 @@ export function DelegationStream({ rows, renderRow, live = false }: DelegationSt
         groupIndices.push(i);
         i++;
       }
-      const batchSubagentIds = groupIndices
-        .map((idx) => {
-          const seg = segments[idx];
-          return seg?.kind === 'worker' ? seg.subagentId : undefined;
-        })
-        .filter((id): id is string => typeof id === 'string' && id.length > 0);
+      const { batchId, ids: batchSubagentIds } = resolveBatchSubagentIds(
+        segments,
+        groupIndices,
+        subagents
+      );
       elements.push(
-        <div
-          key={`concurrent:${gid}`}
-          className="vx-timeline-deleg-concurrent flex flex-col gap-2"
-          data-delegation-concurrent="true"
-        >
-          {batchSubagentIds.length >= 2 ? (
-            <DelegationBatchSummary subagentIds={batchSubagentIds} live={live} />
-          ) : null}
-          {groupIndices.map((idx) => renderSegment(segments[idx]!, idx))}
-        </div>
+        <DelegationConcurrentGroup
+          key={`concurrent:${gid}:${batchId ?? ''}`}
+          batchId={batchId}
+          batchSubagentIds={batchSubagentIds}
+          groupKey={gid}
+          live={live}
+          segments={segments}
+          workerSegmentIndices={groupIndices}
+          renderWorkerSegment={(idx) => {
+            const seg = segments[idx];
+            if (!seg) return null;
+            return renderWorkerSegment(seg, idx);
+          }}
+        />
       );
     } else {
-      elements.push(renderSegment(segments[i]!, i));
+      const seg = segments[i]!;
+      if (seg.kind === 'orchestrator') {
+        elements.push(
+          <div key={`orch:${i}:${seg.rows[0]?.key ?? ''}`}>
+            {seg.rows.map((row) => (
+              <div key={row.key}>{renderRow(row)}</div>
+            ))}
+          </div>
+        );
+      } else {
+        elements.push(renderWorkerSegment(seg, i));
+      }
       i++;
     }
   }

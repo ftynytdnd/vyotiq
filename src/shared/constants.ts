@@ -370,7 +370,7 @@ export const IPC = {
   // Tools (mixed direction — see per-channel comments below)
   /** renderer → main: open a workspace-relative path in the OS default opener. */
   TOOLS_OPEN_PATH: 'tools:open-path',
-  /** renderer → main: re-execute a settled read/search/bash/ls tool call. */
+  /** renderer → main: re-execute a settled read / ls / search / memory tool call. */
   TOOLS_RERUN: 'tools:rerun',
 
   // Memory

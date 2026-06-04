@@ -201,11 +201,12 @@ export async function getSettings(): Promise<AppSettings> {
 export async function setSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
   let normalized = normalizeSettingsPatch(patch);
   if (normalized.ui?.lastSettingsTab !== undefined) {
+    const ui = patch.ui ?? {};
     normalized = {
       ...patch,
       ui: {
-        ...patch.ui,
-        lastSettingsTab: migrateLastSettingsTab(patch.ui.lastSettingsTab, 'setup')
+        ...ui,
+        lastSettingsTab: migrateLastSettingsTab(ui.lastSettingsTab, 'setup')
       }
     };
   }

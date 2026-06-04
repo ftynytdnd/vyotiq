@@ -82,6 +82,13 @@ describe('harness audit pinning', () => {
     expect(prompt).toMatch(/PRE-LOADED/);
   });
 
+  it('delegation budget guidance is present in harness and runtime_limits', () => {
+    expect(prompt).toMatch(/never exceed 12/i);
+    expect(prompt).toMatch(/≤6 delegates per turn for fix\/edit/i);
+    expect(prompt).toMatch(/batch summary line/i);
+    expect(prompt).toMatch(/Recommended delegates per orchestrator turn/i);
+  });
+
   it('K2 — orchestration loop §C names DEFAULT_DELEGATE_CONCURRENCY and NOT the removed MAX_NUDGES_PER_RUN', () => {
     expect(prompt).toMatch(/DEFAULT_DELEGATE_CONCURRENCY/);
     // Forced-action loop deleted the planning-nudge machinery — the

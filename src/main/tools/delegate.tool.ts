@@ -38,13 +38,15 @@ export const delegateTool: Tool = makeInterceptOnlyTool(
 
 **WHEN to trigger it.** Whenever a task needs file contents read, code edited, shell run, or any concrete work done. Decompose into the smallest independent units and fan them out.
 
+**Per-turn budget (guidance).** Prefer 4–8 module-scoped delegates for analysis; ≤10 when planning; never exceed 12 delegate specs in one turn; ≤6 per turn for fix/edit after synthesis. Keep each \`task\` ≤3 sentences.
+
 **Notes.** \`files\` and \`tools\` are optional; omit \`tools\` for the read-only default allowlist. Sub-agents cannot \`finish\`, \`ask_user\`, or \`delegate\` — those are orchestrator-only. Only you may call \`delegate\`.`,
   {
     type: 'function',
     function: {
       name: 'delegate',
       description:
-        'Spawn a real ephemeral sub-agent to perform one micro-task in its own fresh context. Emit multiple delegate calls in a single turn to fan out concurrent parallel sub-agents. Write task prose in English.',
+        'Spawn a real ephemeral sub-agent to perform one micro-task in its own fresh context. Emit multiple delegate calls in a single turn to fan out concurrent parallel sub-agents (guidance: ≤12 per turn for analysis, ≤6 for fix/edit; prefer 4–8 module-scoped reads). Write task prose in English (≤3 sentences).',
       parameters: {
         type: 'object',
         properties: {
@@ -61,7 +63,7 @@ export const delegateTool: Tool = makeInterceptOnlyTool(
             type: 'array',
             items: { type: 'string' },
             description:
-              'Workspace-relative paths to preload. Required for edit delegations — list every path the worker will touch (minimal set). A comma-separated string is also accepted.'
+              'Workspace-relative paths to preload. Required for edit delegations — list every path the sub-agent will touch (minimal set). A comma-separated string is also accepted.'
           },
           tools: {
             type: 'array',

@@ -4,7 +4,7 @@ description: Review code changes for bugs, security issues, and architecture fit
 ---
 You are a senior software engineer performing a thorough code review to identify potential bugs, security issues, and improvements.
 
-NOTE: Never assume, guess, or speculate. Always verify, confirm, and validate. In **review mode**, verify and report root issues — do not change application code unless the user explicitly asks to implement fixes.
+NOTE: Never assume, guess, or speculate. Always verify, confirm, and validate. In **review mode**, verify and report root issues.
 
 ## Review mode vs Remediation mode
 
@@ -91,7 +91,7 @@ Canonical ledgers (do not resurrect listed removals):
 ### Survivors (do not treat as removals)
 
 - **Token usage** — `TokenUsagePill` (no composer context-budget estimate)
-- **Checkpoints / rewind** — transcript-only `previewRewind` / `rewindToPrompt`, inline `InlinePromptSession` / `RevertPromptProvider`, `useCheckpointsStore`, `diffClient.ts` (not the deleted Checkpoints review panels)
+- **Checkpoints / rewind** — transcript-only `previewRewind` / `rewindToPrompt`, inline `InlinePromptSession` / `RevertPromptProvider`, `useCheckpointsStore` (file-level checkpoint review UI removed)
 - **Delegation timeline** — `DelegationWorker`, `DelegationStream`
 
 **Allowed:** legacy migration shims that keep old transcripts/settings loadable without restoring deleted UI or runtime.

@@ -22,7 +22,7 @@
  *     the visible body of the `EditDiffView` for both pre-result
  *     `create-preview` panes and settled `data.createdContent` panes.
  *
- *   - `src/renderer/components/checkpoints/PendingChangeDiff.tsx`
+ *   - `EditDiffView` / timeline `EditInvocation` create previews
  *     (timeline pending-change rows) — for the
  *     `kind: 'create'` branch so a created file's snapshot blob
  *     reads as a green-tinted diff rather than a muted plain-text

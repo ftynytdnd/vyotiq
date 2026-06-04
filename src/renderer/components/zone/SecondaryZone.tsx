@@ -45,18 +45,12 @@ export function SecondaryZone() {
       }
     >
       <Suspense fallback={<LoadingHint />}>
-        {panel === 'settings' && (
-          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-            <SettingsPanel
-              initialTab={aboutOpen ? 'providers' : settingsTab}
-              embedded
-            />
-            <AboutOverlay
-              open={aboutOpen}
-              onClose={() => openSettings('providers')}
-            />
-          </div>
-        )}
+        {panel === 'settings' &&
+          (aboutOpen ? (
+            <AboutOverlay open onClose={() => openSettings('providers')} />
+          ) : (
+            <SettingsPanel initialTab={settingsTab} embedded />
+          ))}
       </Suspense>
     </FloatingPanel>
   );

@@ -8,15 +8,23 @@ import { timelineUserPromptBodyClassName } from '../shared/rowStyles.js';
 
 const COLLAPSED_MAX_PX = 144;
 const EXPANDED_MAX_PX = 320;
+const SINGLE_LINE_COLLAPSED_MAX_PX = 28;
 
 export interface PromptBodyProps {
   content: string;
   className?: string;
   /** Extra classes on the scrollable bubble (e.g. left border for workers). */
   bubbleClassName?: string;
+  /** `single-line` — one visible line with expand to full body (delegate tasks). */
+  variant?: 'default' | 'single-line';
 }
 
-export function PromptBody({ content, className, bubbleClassName }: PromptBodyProps) {
+export function PromptBody({
+  content,
+  className,
+  bubbleClassName,
+  variant = 'default'
+}: PromptBodyProps) {
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [overflows, setOverflows] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -25,9 +33,12 @@ export function PromptBody({ content, className, bubbleClassName }: PromptBodyPr
     const el = bubbleRef.current;
     if (!el) return;
 
+    const collapsedCap =
+      variant === 'single-line' ? SINGLE_LINE_COLLAPSED_MAX_PX : COLLAPSED_MAX_PX;
+
     const measure = () => {
       const natural = el.scrollHeight;
-      setOverflows(natural > COLLAPSED_MAX_PX + 4);
+      setOverflows(natural > collapsedCap + 4);
     };
 
     measure();
@@ -36,17 +47,19 @@ export function PromptBody({ content, className, bubbleClassName }: PromptBodyPr
     const ro = new ResizeObserver(() => measure());
     ro.observe(el);
     return () => ro.disconnect();
-  }, [content]);
+  }, [content, variant]);
 
   useEffect(() => {
     if (!overflows && expanded) setExpanded(false);
   }, [overflows, expanded]);
 
   const showToggle = overflows;
+  const collapsedCap =
+    variant === 'single-line' ? SINGLE_LINE_COLLAPSED_MAX_PX : COLLAPSED_MAX_PX;
   const maxHeightPx = showToggle
     ? expanded
       ? EXPANDED_MAX_PX
-      : COLLAPSED_MAX_PX
+      : collapsedCap
     : undefined;
 
   return (
@@ -58,6 +71,7 @@ export function PromptBody({ content, className, bubbleClassName }: PromptBodyPr
             'vx-timeline-user-bubble pl-3',
             timelineUserPromptBodyClassName,
             bubbleClassName,
+            variant === 'single-line' && !expanded && 'line-clamp-1',
             showToggle && !expanded && 'overflow-hidden',
             showToggle && expanded && 'overflow-y-auto scrollbar-stealth max-h-80'
           )}

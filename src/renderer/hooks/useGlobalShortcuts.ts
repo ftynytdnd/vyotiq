@@ -82,17 +82,9 @@ export function useGlobalShortcuts(actions: GlobalShortcutActions): void {
       }
     };
 
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
-        return;
-      }
-    };
-
     window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
     };
   }, []);
 }

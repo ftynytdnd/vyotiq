@@ -1,6 +1,6 @@
 /**
  * Floating `ask_user` overlay — anchored above the composer via
- * {@link ComposerDialogPortal}. Non-blocking: no backdrop, no focus trap.
+ * {@link ComposerDialogPortal}. Uses dialog semantics for screen readers.
  */
 
 import { useEffect } from 'react';
@@ -44,7 +44,8 @@ export function AskUserOverlay({ pending }: AskUserOverlayProps) {
         'vx-composer-dialog vx-ask-user-overlay vyotiq-composer-dialog-enter mb-2 flex max-h-[min(50vh,24rem)] flex-col',
         appComposerShellClassName
       )}
-      role="form"
+      role="dialog"
+      aria-modal="true"
       aria-label={payload.title ?? 'Clarifying questions'}
       data-ask-user-overlay
     >

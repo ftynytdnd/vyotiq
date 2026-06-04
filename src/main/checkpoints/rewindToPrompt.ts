@@ -192,40 +192,33 @@ export async function previewRewind(opts: {
   if (!located) {
     return { ok: false, error: { kind: 'unknown-prompt', promptEventId } };
   }
+  // Transcript-only rewind: file manifests are informational when present
+  // (legacy runs) but never required to confirm. Workspace files are not
+  // restored on rewind.
   const runId = await resolveRunIdForPrompt(located.prompt, workspaceId, conversationId);
-  if (!runId) {
-    // No manifest could be resolved. The renderer surfaces this as a
-    // "nothing to revert here" state rather than offering a destructive
-    // action with no concrete file rollback. Still legitimate: prompts
-    // that produced no FS edits.
-    return {
-      ok: false,
-      error: { kind: 'no-run-binding', promptEventId }
-    };
-  }
-  const boundaryManifest = await getRunManifest(workspaceId, runId);
-  if (!boundaryManifest) {
-    return { ok: false, error: { kind: 'no-run-binding', promptEventId } };
-  }
-  const affected = await selectAffectedRuns({
-    workspaceId,
-    conversationId,
-    boundaryRunId: runId,
-    boundaryStartedAt: boundaryManifest.startedAt
-  });
-
   const files: RewindFileChange[] = [];
-  const seenEntries = new Set<string>();
-  // `affected` is newest-first; within each manifest, the entries are
-  // append-only (oldest-first). The user will see them in
-  // newest-first order — same direction the actual revert walks —
-  // so iterate manifest forward but flip the per-manifest entries.
-  for (const manifest of affected) {
-    for (let i = manifest.entries.length - 1; i >= 0; i -= 1) {
-      const entry = manifest.entries[i]!;
-      if (seenEntries.has(entry.id)) continue;
-      seenEntries.add(entry.id);
-      files.push(entryToFileChange(entry));
+  const runIds: string[] = [];
+  if (runId) {
+    const boundaryManifest = await getRunManifest(workspaceId, runId);
+    if (boundaryManifest) {
+      const affected = await selectAffectedRuns({
+        workspaceId,
+        conversationId,
+        boundaryRunId: runId,
+        boundaryStartedAt: boundaryManifest.startedAt
+      });
+      const seenEntries = new Set<string>();
+      for (const manifest of affected) {
+        runIds.push(manifest.runId);
+        for (let i = manifest.entries.length - 1; i >= 0; i -= 1) {
+          const entry = manifest.entries[i]!;
+          if (seenEntries.has(entry.id)) continue;
+          seenEntries.add(entry.id);
+          files.push(entryToFileChange(entry));
+        }
+      }
+    } else if (runId) {
+      runIds.push(runId);
     }
   }
   return {
@@ -235,7 +228,7 @@ export async function previewRewind(opts: {
     promptEventId,
     promptContent: located.prompt.content,
     promptTs: located.prompt.ts,
-    runIds: affected.map((m) => m.runId),
+    runIds,
     files,
     transcriptEventsAffected: located.transcriptEventsAffected
   };

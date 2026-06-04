@@ -1,6 +1,6 @@
 /**
- * Checkpoint types. These flow through IPC for the file-change review +
- * revert surface. Persisted on disk under `<userData>/vyotiq/checkpoints/`
+ * Checkpoint types for run manifests, transcript rewind, and legacy blob
+ * reads. Persisted on disk under `<userData>/vyotiq/checkpoints/`
  * — see `src/main/checkpoints/` for the storage layout.
  *
  * Design pillars:

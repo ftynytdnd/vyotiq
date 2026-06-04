@@ -167,22 +167,29 @@ describe('UserPromptRow edit affordance', () => {
     expect(queryByRole('button', { name: /^Edit/i })).not.toBeNull();
   });
 
-  it('opens the revert preview modal when Revert is clicked', () => {
+  it('opens the revert preview modal when Revert is clicked', async () => {
     useCheckpointsStore.setState((prev) => ({
       ...prev,
       previewRewind: vi.fn(async () => ({
-        ok: false as const,
-        error: { kind: 'no-run-binding' as const, promptEventId: 'p-7' }
+        ok: true as const,
+        conversationId: 'c-1',
+        workspaceId: 'ws-1',
+        promptEventId: 'p-7',
+        promptContent: 'please undo',
+        promptTs: 1,
+        runIds: [],
+        files: [],
+        transcriptEventsAffected: 2
       }))
     }));
     useChatStore.setState({ conversationId: 'c-1', isProcessing: false });
     useWorkspaceStore.setState({ activeId: 'ws-1' });
-    const { getByRole } = render(
+    const { getByRole, findByRole } = render(
       <RevertPromptProvider>
         <UserPromptRow id="p-7" content="please undo" />
       </RevertPromptProvider>
     );
     fireEvent.click(getByRole('button', { name: /revert to before this message/i }));
-    expect(getByRole('dialog', { name: /Revert to before this message/i })).toBeInTheDocument();
+    expect(await findByRole('form', { name: /Revert to before this message/i })).toBeInTheDocument();
   });
 });

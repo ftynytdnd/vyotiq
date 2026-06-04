@@ -56,8 +56,6 @@ interface CheckpointsStore {
    * after the explicit refresh completes.
    */
   suppressNextTranscriptRewound: Set<string>;
-  /** Read a snapshot blob's UTF-8 body (diff previews). */
-  readBlob: (workspaceId: string, hash: string) => Promise<string | null>;
   /**
    * Compute the rewind impact preview WITHOUT touching disk. Drives
    * the inline revert / edit prompt session impact summary.
@@ -68,8 +66,8 @@ interface CheckpointsStore {
     promptEventId: string;
   }) => Promise<RewindPreviewResult>;
   /**
-   * Atomically revert files + trim the conversation transcript from a
-   * specific user-prompt event onward.
+   * Trim the conversation transcript from a user-prompt event onward.
+   * Workspace files on disk are not changed.
    */
   rewindToPrompt: (input: {
     conversationId: string;
@@ -82,16 +80,6 @@ interface CheckpointsStore {
 
 export const useCheckpointsStore = create<CheckpointsStore>((_setState, getState) => ({
   suppressNextTranscriptRewound: new Set<string>(),
-
-  readBlob: async (workspaceId, hash) => {
-    ensureTranscriptRewoundSubscription();
-    try {
-      return await vyotiq.checkpoints.readBlob(workspaceId, hash);
-    } catch (err) {
-      log.warn('readBlob failed', { workspaceId, hash, err });
-      return null;
-    }
-  },
 
   previewRewind: async (input) => {
     ensureTranscriptRewoundSubscription();

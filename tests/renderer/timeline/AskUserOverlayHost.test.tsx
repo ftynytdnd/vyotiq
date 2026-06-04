@@ -31,7 +31,7 @@ describe('AskUserOverlayHost', () => {
 
   it('renders floating overlay with submit control when awaiting ask_user', () => {
     render(<AskUserOverlayHost />);
-    expect(screen.getByRole('form', { name: 'Clarifying questions' })).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Clarifying questions' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Submit answers' })).toBeTruthy();
   });
 
@@ -48,6 +48,6 @@ describe('AskUserOverlayHost', () => {
       events: [{ ...askEvent, status: 'submitted' }]
     });
     render(<AskUserOverlayHost />);
-    expect(screen.queryByRole('form', { name: 'Clarifying questions' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Clarifying questions' })).toBeNull();
   });
 });

@@ -12,7 +12,7 @@ export function explainPreviewError(error: {
     case 'unknown-prompt':
       return 'This message is no longer in the transcript — it may have already been rewound.';
     case 'no-run-binding':
-      return 'No file changes are linked to this message — there is nothing to revert.';
+      return 'This message cannot be rewound — try another prompt in the transcript.';
     case 'blob-missing':
       return `A snapshot blob is missing on disk${error.hash ? ` (${error.hash.slice(0, 8)}…)` : ''}.`;
     case 'sandbox':

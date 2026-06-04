@@ -30,18 +30,7 @@ export function DelegationWorker({
   const snap = useChatStore((s) => s.subagents[subagentId]);
 
   if (snap?.status === 'queued') {
-    const tag = workerDisplayTag(snap.id, snap);
-    return (
-      <section
-        className="vx-timeline-deleg-worker border-l-2 border-border-subtle/40 opacity-80"
-        data-row-kind="delegation-worker"
-        data-subagent-id={subagentId}
-        data-worker-status="queued"
-        aria-label={`${tag}: queued`}
-      >
-        <DelegationWorkerOutline snap={snap} />
-      </section>
-    );
+    return null;
   }
 
   if (!snap) {

@@ -25,6 +25,18 @@ function snap(status: SubAgentSnapshot['status']): SubAgentSnapshot {
 }
 
 describe('delegationBatchCounts', () => {
+  it('dedupes duplicate subagent ids in batch totals', () => {
+    const subagents = {
+      a: snap('running'),
+      b: snap('queued')
+    };
+    const counts = countDelegationBatch(['a', 'a', 'b', 'b'], subagents);
+    expect(counts.total).toBe(2);
+    expect(formatDelegationBatchLabel(counts)).toBe(
+      '2 workers · 1 running · 1 queued'
+    );
+  });
+
   it('formats running and queued', () => {
     const subagents = {
       a: snap('running'),

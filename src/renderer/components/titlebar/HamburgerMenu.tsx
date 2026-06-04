@@ -94,6 +94,12 @@ function buildMenuEntries(fileActions: FileMenuActions): MenuEntry[] {
     { type: 'separator', key: 'sep-settings' },
     {
       type: 'item',
+      key: 'checkpoints',
+      label: 'Checkpoints',
+      action: fileActions.openCheckpoints
+    },
+    {
+      type: 'item',
       key: 'settings',
       label: 'Settings',
       shortcut: formatPlatformShortcut('Ctrl+,'),
