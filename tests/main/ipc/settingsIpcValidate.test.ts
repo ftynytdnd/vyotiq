@@ -15,10 +15,19 @@ const mockIpc = ipcMain as unknown as MockIpcMain;
 
 const setSettingsMock = vi.fn(async (patch: unknown) => patch);
 
-vi.mock('@main/settings/settingsStore', () => ({
-  getSettings: vi.fn(async () => ({})),
-  setSettings: (patch: unknown) => setSettingsMock(patch)
-}));
+// Stub the on-disk settings store but keep the REAL `normalizeSettingsPatch`
+// (a pure helper re-exported from `migrateUiFields`) so the validation path
+// exercises the same legacy-key migration the production handler runs before
+// `assertSettingsPatch`. Importing it from the pure module avoids pulling in
+// the store's disk/electron side effects.
+vi.mock('@main/settings/settingsStore', async () => {
+  const { normalizeSettingsPatch } = await import('@main/settings/migrateUiFields');
+  return {
+    getSettings: vi.fn(async () => ({})),
+    setSettings: (patch: unknown) => setSettingsMock(patch),
+    normalizeSettingsPatch
+  };
+});
 
 const { registerSettingsIpc } = await import('@main/ipc/settings.ipc');
 

@@ -54,7 +54,11 @@ export function migrateLegacyDockUi<T extends UiRecord>(ui: T): { ui: T; changed
 
 /** Normalize a `settings:set` patch before runtime validation (stale renderer bundles). */
 export function normalizeSettingsPatch(patch: Partial<AppSettings>): Partial<AppSettings> {
-  if (!patch.ui) return patch;
+  // Pass non-object / null / array patches through untouched so the
+  // downstream `assertSettingsPatch` gate emits the canonical
+  // "patch must be a non-null object" rejection instead of this
+  // function throwing a raw TypeError on `patch.ui`.
+  if (!patch || typeof patch !== 'object' || !patch.ui) return patch;
   const { ui, changed } = migrateLegacyDockUi({ ...patch.ui } as UiRecord);
   if (!changed) return patch;
   return { ...patch, ui: ui as AppSettings['ui'] };
