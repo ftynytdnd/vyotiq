@@ -314,25 +314,21 @@ describe('handleDelegates — envelope-before-halt fidelity', () => {
     );
 
     expect(outcome).toBe('halt');
-    // Two boundary signals must appear together: the verdict summary
-    // (phase, narration) and the escalation (error, halt trigger).
-    const phaseIdx = events.findIndex(
-      (e) =>
-        e.kind === 'phase' &&
-        typeof (e as { label?: unknown }).label === 'string' &&
-        (e as { label: string }).label.includes('Three-strike halt')
-    );
+    // Phase-row declutter (phase_spam: remove): the separate
+    // "Three-strike halt" verdict-summary `phase` divider is gone — no
+    // phase row should be emitted alongside the halt.
+    const phaseIdx = events.findIndex((e) => e.kind === 'phase');
+    expect(phaseIdx).toBe(-1);
+    // The terminal `error` row is still emitted...
     const errorIdx = events.findIndex((e) => e.kind === 'error');
-    expect(phaseIdx).toBeGreaterThanOrEqual(0);
     expect(errorIdx).toBeGreaterThanOrEqual(0);
-    // The phase MUST come before the error so the renderer paints
-    // cause-then-effect in timeline order.
-    expect(phaseIdx).toBeLessThan(errorIdx);
-    // The phase label must enumerate BOTH sub-agent ids and their
-    // structural verdicts so the user can match rows to outcomes.
-    const phaseLabel = (events[phaseIdx] as { label: string }).label;
-    expect(phaseLabel).toContain('A1=self-failed');
-    expect(phaseLabel).toContain('A2=malformed');
+    // ...and the per-task verdict summary (review finding B2) is folded
+    // INTO that single row so the diagnostic value survives without a
+    // redundant second event: the user can still match ids to outcomes.
+    const errorMessage = (events[errorIdx] as { message: string }).message;
+    expect(errorMessage).toContain('A1=self-failed');
+    expect(errorMessage).toContain('A2=malformed');
+    expect(errorMessage).toMatch(/escalating to user/);
   });
 
   it('does not halt below the threshold even on an all-bad round', async () => {
@@ -462,16 +458,19 @@ describe('handleDelegates — per-task strike map', () => {
 
     // Round-level halt did NOT trip (mixed rounds reset it).
     expect(counters.consecutiveBadRounds).toBe(0);
-    // Per-task streak is at 3 for the failing task.
+    // Per-task streak is at 3 for the failing task — the escalation
+    // signal the model consumes via `<run_state>` is intact.
     const streaks = Array.from(counters.perTaskBadStreak.values());
     expect(streaks).toContain(3);
-    // Pivot divider was emitted at least once.
+    // Phase-row declutter (phase_spam: remove): per-task escalation is
+    // log-only now — no "pivot decomposition" `phase` divider is
+    // emitted (the model adapts via run_state, not a timeline row).
     const phases = events.filter(
       (e): e is Extract<TimelineEvent, { kind: 'phase' }> => e.kind === 'phase'
     );
     expect(
       phases.some((p) => p.label.includes('pivot decomposition'))
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('clears the streak when the same task signature succeeds in a later round', async () => {
@@ -752,16 +751,17 @@ describe('handleDelegates — escalation coalescing (T1-7)', () => {
       baseOpts
     );
 
-    // Pivot phase events. Pre-T1-7 produced one PER task (3 rows);
-    // post-T1-7 collapses them into ONE summary row.
+    // Phase-row declutter (phase_spam: remove): per-task escalation no
+    // longer surfaces ANY `pivot decomposition` timeline row (coalesced
+    // or verbose) — it is log-only. What survives is the escalation
+    // STATE the model reads from `<run_state>`: all three signatures
+    // crossed the bad-streak threshold this round.
     const pivotPhases = events.filter(
       (e): e is Extract<TimelineEvent, { kind: 'phase' }> =>
         e.kind === 'phase' && e.label.includes('pivot decomposition')
     );
-    expect(pivotPhases).toHaveLength(1);
-    // The summary row enumerates count + max streak.
-    expect(pivotPhases[0]!.label).toContain('3 tasks failing');
-    expect(pivotPhases[0]!.label).toContain('max 3 rounds');
+    expect(pivotPhases).toHaveLength(0);
+    expect(Array.from(counters.perTaskBadStreak.values()).filter((n) => n >= 3)).toHaveLength(3);
   });
 
   it('keeps the per-task verbose form when 1 or 2 tasks escalate', async () => {
@@ -809,15 +809,15 @@ describe('handleDelegates — escalation coalescing (T1-7)', () => {
       baseOpts
     );
 
+    // Phase-row declutter (phase_spam: remove): no `pivot decomposition`
+    // rows for the two-task escalation either — log-only. Both task
+    // signatures still cross the bad-streak threshold in run_state.
     const pivotPhases = events.filter(
       (e): e is Extract<TimelineEvent, { kind: 'phase' }> =>
         e.kind === 'phase' && e.label.includes('pivot decomposition')
     );
-    // Two tasks → two verbose rows (the verbose form is preserved
-    // until the burst threshold of 3+ is hit).
-    expect(pivotPhases).toHaveLength(2);
-    expect(pivotPhases[0]!.label).toMatch(/Task failing 3 rounds in a row/);
-    expect(pivotPhases[1]!.label).toMatch(/Task failing 3 rounds in a row/);
+    expect(pivotPhases).toHaveLength(0);
+    expect(Array.from(counters.perTaskBadStreak.values()).filter((n) => n >= 3)).toHaveLength(2);
   });
 });
 
@@ -930,14 +930,20 @@ describe('handleDelegates — all-invented files= skip spawn', () => {
 
     expect(outcome).toBe('continue');
     expect(runSubAgentPool).not.toHaveBeenCalled();
+    // The behavioral contract is intact: the invented-files verdict is
+    // pushed into the model's message history so it learns the spawn
+    // was skipped and how to recover (run `ls`, re-delegate real paths).
     const body = messages[0]?.content ?? '';
     expect(body).toContain('invented-files');
     expect(body).toContain('A1');
     expect(body).toContain('Run `ls`');
+    // Phase-row declutter (phase_spam: remove): the invented-file skip
+    // is log-only — it no longer emits a "skipped" timeline `phase` row
+    // (the model already learns of the skip via the verdict above).
     const phases = events
       .filter((e): e is Extract<TimelineEvent, { kind: 'phase' }> => e.kind === 'phase')
       .map((e) => e.label);
-    expect(phases.some((l) => l.includes('skipped') && l.includes('A1'))).toBe(true);
+    expect(phases.some((l) => l.includes('skipped') && l.includes('A1'))).toBe(false);
   });
 
   it('still spawns when at least one files= path resolves', async () => {

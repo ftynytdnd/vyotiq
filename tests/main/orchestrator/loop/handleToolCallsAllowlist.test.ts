@@ -212,8 +212,10 @@ describe('handleToolCalls — orchestrator allowlist enforcement', () => {
 
   it('counts a SUB-AGENT delegate attempt as a re-delegation and refuses it per call', async () => {
     // A sub-agent's allowlist never includes `delegate` (it cannot nest).
-    // Each refused delegate increments `childRedelegations` and emits a
-    // "cannot nest further" phase so the trace stays legible.
+    // Each refused delegate increments `childRedelegations`. Phase-row
+    // declutter (phase_spam: remove): the "cannot nest further" `phase`
+    // row was dropped — the refusal is fed back to the model through the
+    // refused tool result itself, so the row was redundant clutter.
     const messages: ChatMessage[] = [];
     const emit = vi.fn<(e: TimelineEvent) => void>();
     const nestedDelegatePhaseEmitted = new Set<string>();
@@ -227,15 +229,17 @@ describe('handleToolCalls — orchestrator allowlist enforcement', () => {
       emit,
       { ...baseOpts, subagentId: 'W1', allowlist: ['read'], nestedDelegatePhaseEmitted }
     );
+    // Behavioral contract intact: both nested delegates refused, counted,
+    // and never executed.
     expect(runToolByName).not.toHaveBeenCalled();
     expect(summary).toEqual({ attempted: 0, failed: 0, childRedelegations: 2 });
+    // No "cannot nest further" phase row is emitted any longer.
     const phases = emit.mock.calls
       .map(([e]) => e)
       .filter((e) => e.kind === 'phase');
-    expect(phases).toHaveLength(1);
-    expect(phases[0]!.label).toContain('cannot nest further');
+    expect(phases).toHaveLength(0);
     // The refusal message uses the concise sub-agent copy — no
-    // orchestrator-only delegate-tool hint.
+    // orchestrator-only delegate-tool hint — and reaches the model.
     expect(messages).toHaveLength(2);
     for (const m of messages) {
       expect(m.content).toContain('not available for this sub-agent');

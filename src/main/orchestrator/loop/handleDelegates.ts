@@ -712,14 +712,24 @@ export async function handleDelegates(
       consecutiveBadRounds: counters.consecutiveBadRounds,
       verified: verified.map((v) => ({ id: v.id, structural: v.structural }))
     });
-    // Keep only the terminal `error` row (the per-verdict `phase`
-    // duplicate was redundant with both this row and the structured log).
+    // Single terminal `error` row (the separate per-verdict `phase`
+    // divider was dropped as part of the phase-row declutter). The
+    // per-task verdict summary that the divider used to carry (review
+    // finding B2 — "which tasks failed, and how") is folded INTO this
+    // row so the diagnostic value survives without a redundant second
+    // event: the user still sees cause (which ids / structural
+    // verdicts) and effect (the escalation) in one line.
+    const verdictSummary = verified
+      .map((v) => `${v.id}=${v.structural}`)
+      .join(', ');
     emit({
       kind: 'error',
       id: randomUUID(),
       ts: Date.now(),
       message:
-        `${MAX_DELEGATION_BAD_ROUNDS} consecutive sub-agent rounds failed verification — escalating to user.`
+        `${MAX_DELEGATION_BAD_ROUNDS} consecutive sub-agent rounds failed verification` +
+        (verdictSummary.length > 0 ? ` (${verdictSummary})` : '') +
+        ` — escalating to user.`
     });
     return 'halt';
   }
