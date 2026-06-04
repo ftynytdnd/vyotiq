@@ -184,7 +184,7 @@ function PreWithCopy({ children }: { children?: ReactNode }) {
           ),
           'group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100'
         )}
-        aria-label="Copy code"
+        aria-label={copied ? 'Copied' : 'Copy code'}
         title={copied ? 'Copied' : 'Copy'}
       >
         {copied ? (

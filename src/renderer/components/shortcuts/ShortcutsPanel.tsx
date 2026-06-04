@@ -55,6 +55,7 @@ export function ShortcutsPanel({
         <ShortcutRow combo={`${mod}+,`} label="Settings" />
       </ShortcutGroup>
       <ShortcutGroup title="Timeline">
+        <ShortcutRow combo={`${mod}+F`} label="Find in timeline" />
         <ShortcutRow combo="g j" label="Next user prompt" />
         <ShortcutRow combo="g k" label="Previous user prompt" />
         <ShortcutRow combo="Esc" label="Drop sticky scroll" />
