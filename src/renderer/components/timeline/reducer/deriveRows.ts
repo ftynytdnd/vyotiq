@@ -156,8 +156,7 @@ export interface DeriveRowsOptions {
    * haven't yet emitted their authoritative `tool-call` event. When
    * present, the deriver synthesises in-flight `tool-group` rows so
    * users see a streaming preview (path label, live diff, query) as
-   * the arguments stream in. Sub-agent partials live on the matching
-   * snapshot and are wired in by `DelegationWorker`, not here. Pass `{}`
+   * the arguments stream in. Pass `{}`
    * (or omit) for transcript rebuilds; the live timeline forwards the
    * mirror's `partialToolCallArgs` from `useChatStore`.
    */
