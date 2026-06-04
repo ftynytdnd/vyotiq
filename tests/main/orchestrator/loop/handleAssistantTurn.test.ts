@@ -1,6 +1,6 @@
 /**
- * `handleAssistantTurn` — streaming assistant turn without mid-stream XML
- * delegate parsing (delegation is tool-only via `delegate` in `runLoop`).
+ * `handleAssistantTurn` — streaming assistant turn; legacy `<delegate>`
+ * markup in prose is stripped at display time, not parsed into spawn events.
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';

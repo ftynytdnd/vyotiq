@@ -1,6 +1,6 @@
 /**
  * Coverage for `displayAssistantTurnText` — planning prose appears once
- * in the parent assistant row; sub-agent briefings carry task + roster.
+ * in the parent assistant row; legacy `<delegate>` markup is stripped.
  */
 
 import { describe, expect, it } from 'vitest';

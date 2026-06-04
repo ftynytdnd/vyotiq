@@ -443,13 +443,13 @@ describe('DiffStreamer', () => {
     });
   });
 
-  describe('create-true edit branch (sub-agent live create streaming)', () => {
+  describe('create-true edit branch (live create streaming)', () => {
     // Pins the Phase 3 fix: pre-fix the streamer silently returned for
-    // any `edit` call with `create: true`, so for sub-agent file
-    // creations no `diff-stream` event ever fired. That meant the
-    // renderer's `ToolGroupRow.liveAutoExpand` (which gates on
+    // any `edit` call with `create: true`, so for file creations no
+    // `diff-stream` event ever fired. That meant the renderer's
+    // `ToolGroupRow.liveAutoExpand` (which gates on
     // `partial && diffStream != null`) stayed `false`, the rolled-up
-    // sub-agent tool group never auto-expanded, and the renderer-side
+    // tool group never auto-expanded, and the renderer-side
     // `create-preview` (with the green-tinted `+` lines + trailing
     // `vyotiq-stream-cursor`) was hidden behind a collapsed row.
     // Post-fix the streamer emits a `diff-stream` with all-`+` hunks
@@ -669,7 +669,7 @@ describe('DiffStreamer', () => {
     // commands that create new files (`cat > newfile <<EOF…EOF`) hit
     // ENOENT in `loadBody`. Pre-fix this returned `null` →
     // `cur.closed = true` and the streamer never emitted, so a
-    // sub-agent doing `bash` creates had the same auto-expand gap
+    // bash commands that create new files had the same auto-expand gap
     // as `edit { create: true }`. Post-fix `loadBody` returns `''`
     // for ENOENT specifically, so the LCS produces all-`+` hunks
     // against the empty before-body.

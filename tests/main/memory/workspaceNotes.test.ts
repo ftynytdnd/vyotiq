@@ -106,8 +106,7 @@ describe('workspaceNotes', () => {
   });
 
   // Regression: `appendWorkspaceNote` is read-modify-write (read note →
-  // concat line → rewrite). The pool runs up to `DEFAULT_DELEGATE_CONCURRENCY`
-  // workers at once and each can emit `memory.action: 'append'` against
+  // concat line → rewrite). Parallel tool batches can emit `memory.action: 'append'` against
   // the same key. Without a per-key mutex the second write clobbers the
   // first and its line is silently lost. The fix chains appends by the
   // SANITIZED key.

@@ -512,8 +512,8 @@ export async function inlineFiles(
       slots[idx] = `<file path="${safeRel}" error="${escapeXmlAttr(msg)}" />`;
       return;
     }
-    // Round-scoped cache hit — N parallel workers in the same
-    // delegation round reading file X all share one disk read. The
+    // Round-scoped cache hit — parallel tool calls reading file X in the
+    // same iteration all share one disk read. The
     // cached value is the bare body (truncation marker included),
     // re-wrapped here under the caller's actual `<file path="…">`
     // attribute so an escape mismatch can never round-trip.

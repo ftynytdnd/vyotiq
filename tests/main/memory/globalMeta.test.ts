@@ -58,8 +58,7 @@ describe('globalMeta', () => {
   });
 
   // Regression: `appendGlobalMetaRule` is read-modify-write. Without
-  // serialization, two parallel callers (e.g. two sub-agents running in
-  // the pool) both read the pre-state and the second write clobbers
+  // serialization, two parallel callers (e.g. concurrent tool batches) both read the pre-state and the second write clobbers
   // the first, silently losing a rule. The fix chains every append
   // through a single process-wide promise so all N rules land.
   it('serializes parallel appends so every rule survives', async () => {

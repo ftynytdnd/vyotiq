@@ -1,7 +1,7 @@
 /**
  * `consumeChatStream` tests. We feed it a hand-rolled async iterable
  * mimicking real provider deltas and assert the accumulated state
- * matches what the orchestrator and sub-agent rely on.
+ * matches what the orchestrator relies on.
  */
 
 import { describe, expect, it, vi } from 'vitest';

@@ -3,16 +3,15 @@
  *
  * Problem this solves
  * -------------------
- * The orchestrator can fire several `streamChat`
- * calls against the same provider in the same millisecond (the default
- * cap from `resolveDelegateRoundConcurrency`). Cloud-hosted providers like
- * Ollama Cloud reject the second-and-onwards request with HTTP 429
- * (`{"error":"too many concurrent requests"}`). Each worker then enters
- * its own three-strike retry budget, but because the workers back off
+ * The orchestrator can fire several `streamChat` calls against the same
+ * provider in the same millisecond (parallel tool batches or concurrent
+ * runs). Cloud-hosted providers like Ollama Cloud reject the
+ * second-and-onwards request with HTTP 429
+ * (`{"error":"too many concurrent requests"}`). Each caller then enters
+ * its own three-strike retry budget, but because callers back off
  * INDEPENDENTLY they all collide again on the next retry — the
- * thundering-herd pattern. The visible symptom (see screenshot §1) is
- * concurrent runs flipping straight to `Failed` while their
- * peers are still streaming.
+ * thundering-herd pattern. The visible symptom is concurrent runs
+ * flipping straight to `Failed` while their peers are still streaming.
  *
  * What this guard does
  * --------------------

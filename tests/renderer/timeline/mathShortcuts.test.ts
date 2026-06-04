@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { normalizeMathShortcuts } from '@shared/text/mathShortcuts';
 
 describe('normalizeMathShortcuts', () => {
-  it('rewrites the pipeline-arrow form used by sub-agent intent prose', () => {
+  it('rewrites the pipeline-arrow form used in planning prose', () => {
     const out = normalizeMathShortcuts(
       'AIProvider $\\rightarrow$ NLHarness $\\rightarrow$ FileSystem'
     );

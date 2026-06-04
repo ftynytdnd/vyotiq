@@ -1,7 +1,7 @@
 /**
  * Tests for the per-provider adaptive rate guard. Pins the contract
  * `chatClient`'s 429-handling path and the orchestrator's parallel
- * sub-agent pool rely on:
+ * tool batches rely on:
  *
  *   - `acquire` resolves immediately when no cooldown is recorded.
  *   - `markRateLimited` records a deadline; subsequent `acquire` calls

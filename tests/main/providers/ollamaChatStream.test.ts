@@ -377,8 +377,7 @@ describe('streamChat (Ollama native) — error classification', () => {
    * mid-stream `{"error":"too many concurrent requests"}` envelope
    * AFTER the HTTP response was already 200. The initial-rejection
    * branch (which feeds the rate guard on 429/5xx) never runs for
-   * these — without explicit detection on the body the sub-agent
-   * pool's siblings would dog-pile on retry. The fix classifies the
+   * these — without explicit detection on the body parallel callers would dog-pile on retry. The fix classifies the
    * error as `kind: 'rate-limit'` AND calls `markRateLimited` so
    * the per-provider cooldown applies.
    *

@@ -1,6 +1,6 @@
 /**
  * Timeline inline column alignment — shared agent rail, flat activity lane,
- * delegation status ordering, and jump-chip gutter.
+ * and jump-chip gutter.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

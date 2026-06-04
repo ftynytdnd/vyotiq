@@ -92,9 +92,8 @@ Canonical ledgers (do not resurrect listed removals):
 
 - **Token usage** — `TokenUsagePill` (no composer context-budget estimate)
 - **Checkpoints / rewind** — transcript-only `previewRewind` / `rewindToPrompt`, inline `InlinePromptSession` / `RevertPromptProvider`, `useCheckpointsStore` (file-level checkpoint review UI removed)
-- **Delegation timeline** — `DelegationWorker`, `DelegationStream`
 
-**Allowed:** legacy migration shims that keep old transcripts/settings loadable without restoring deleted UI or runtime.
+**Allowed:** legacy migration shims (`normalizeLegacyTranscript`, `<delegate>` display stripping) that keep old transcripts loadable without restoring deleted UI or runtime.
 
 **Forbidden:** copying deleted modules back, re-registering removed IPC, or rebuilding removed panels to “wire up” surviving main-process storage.
 

@@ -11,7 +11,7 @@
  *
  * This pins the storage-level invariant the multi-session feature
  * depends on: switching the active workspace mid-run never reroutes a
- * sub-agent's later events into the wrong file.
+ * run's later events into the wrong file.
  */
 
 import { describe, expect, it } from 'vitest';

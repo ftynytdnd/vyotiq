@@ -1,7 +1,7 @@
 /**
  * Removing a conversation (or cascading via workspace-remove) MUST
  * abort any in-flight orchestrator run pinned to it. Without this,
- * the loop keeps iterating, calling sub-agents and burning provider
+ * the loop keeps iterating and burning provider
  * tokens for a transcript that's about to be unlinked.
  *
  * The hook is wired by `setRunAbortHooks(...)` from

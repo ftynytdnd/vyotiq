@@ -164,7 +164,7 @@ describe('streamChat — SSE frame parsing', () => {
     // to force the model to emit prose instead of calling more tools.
     // The old guard (`tools.length > 0`) stripped the `tool_choice`
     // field on the way out, so the wrap-up nudge never reached the
-    // provider and sub-agents often kept tool-calling right up to
+    // provider often kept tool-calling right up to
     // the 16-turn cap. Post-fix the field is forwarded whenever the
     // caller sets it, independent of `tools`.
     let captured: Record<string, unknown> = {};

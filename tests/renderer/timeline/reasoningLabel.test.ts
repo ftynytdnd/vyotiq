@@ -1,6 +1,6 @@
 /**
  * Unit tests for `formatReasoningLabel`. Pins the contract that
- * `ReasoningLineRow` and worker reasoning subtitles share:
+ * `ReasoningLineRow` reasoning subtitles share:
  *
  *   - Live (`done=false`) → `Thinking…`
  *   - Settled (`done=true`) → `Thought for Ns` where N is the rounded
@@ -11,7 +11,7 @@
  * Locking these via tests means a future label rewording (locale,
  * sub-second precision, etc.) requires both the helper and the tests
  * to move together — no silent drift between the orchestrator and
- * sub-agent surfaces.
+ * timeline surfaces.
  */
 
 import { describe, expect, it, vi, afterEach } from 'vitest';

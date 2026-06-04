@@ -240,7 +240,7 @@ describe('applyTimelineEvent — tok/s anchor plumbing', () => {
     expect(s.orchestratorUsage?.streamEndedAt).toBe(3_500);
   });
 
-  it('stamps stream anchors on orchestratorUsage for sub-agent text deltas', () => {
+  it('stamps stream anchors on orchestratorUsage for agent text deltas', () => {
     let s: TimelineState = INITIAL_TIMELINE_STATE;
     s = applyTimelineEvent(s, {
       kind: 'agent-text-delta',

@@ -1,5 +1,6 @@
 /**
- * deriveRows — entryId on file-edit rows and delegation-plan emission.
+ * deriveRows — entryId on file-edit rows; legacy worker lifecycle rows
+ * are flattened on load via `normalizeLegacyTranscript`.
  */
 
 import { describe, expect, it } from 'vitest';
