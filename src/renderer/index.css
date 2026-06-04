@@ -448,7 +448,7 @@ textarea {
   box-shadow: 0 16px 40px var(--color-shadow-popover);
 }
 
-/* Subtle slide + fade for streaming list items (e.g. sub-agent steps
+/* Subtle slide + fade for streaming list items (e.g. tool steps
    arriving in real time). Kept short and low-amplitude so many items
    appearing in quick succession don't feel jarring. */
 @keyframes vyotiq-stepfade {
@@ -506,7 +506,7 @@ textarea {
 
 /* ---------------------------------------------------------------------------
    Streaming shimmer — applied to in-flight timeline labels (reasoning,
-   agent-thought, sub-agent, tool call/group summaries, status pill).
+   agent-thought, tool call/group summaries, status pill).
 
    Contrast design:
      The shimmer is a *lightness* oscillation, not a color shift. Base
@@ -523,7 +523,7 @@ textarea {
        no visible color jump happens at the tile boundary.
      - Em-based tile (`background-size: 12em` text / `5em` pill) keeps
        the highlight a font-relative width across labels of every
-       length — short pills and long sub-agent lines shimmer with the
+       length — short pills and long tool rows shimmer with the
        same cadence.
      - Jittered keyframe stops (35% / 62%) drift slightly off a linear
        progression; combined with `cubic-bezier(0.45,0,0.55,1)` this

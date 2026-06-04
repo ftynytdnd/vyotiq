@@ -54,11 +54,7 @@ import {
   emptySlice
 } from './chatStoreTypes.js';
 import { mirrorOf } from './chatStoreMirror.js';
-import {
-  normalizeChatSlice,
-  shouldUnloadIdleSlice,
-  unloadIdleSlice
-} from './chatStoreRam.js';
+import { shouldUnloadIdleSlice, unloadIdleSlice } from './chatStoreRam.js';
 
 export { __resetTotalRunUsageCacheForTests } from './chatStoreTotalRunUsage.js';
 
@@ -86,10 +82,6 @@ function updateSlice(
 ): Record<string, ChatSlice> {
   const prev = slices[id] ?? emptySlice(id);
   return { ...slices, [id]: updater(prev) };
-}
-
-function withNormalizedSlice(slice: ChatSlice): ChatSlice {
-  return normalizeChatSlice(slice);
 }
 
 function maybeUnloadIdleSlice(prevId: string | null, getSlices: () => Record<string, ChatSlice>, setSlices: (next: Record<string, ChatSlice>) => void): void {
@@ -172,7 +164,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                 latestOrchestratorRunStatus: undefined
               }
             : prev;
-        return withNormalizedSlice(cleared);
+        return cleared;
       });
       // Prune the mapping so subsequent late events don't keep
       // resurrecting the dispatch path — and `runIdToConv` doesn't
@@ -221,7 +213,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => {
       const nextSlices = updateSlice(s.slices, convId, (prev) => {
         if (prev.runId !== runId) return prev;
-        return withNormalizedSlice({
+        return {
           ...prev,
           isProcessing: false,
           awaitingAskUser: false,
@@ -229,7 +221,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           runStartedAt: null,
           // Audit fix C3 — see `finishRun`.
           latestOrchestratorRunStatus: undefined
-        });
+        };
       });
       const nextMap: Record<string, string> = { ...s.runIdToConv };
       delete nextMap[runId];

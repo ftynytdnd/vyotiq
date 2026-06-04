@@ -161,7 +161,7 @@ export function chromeEmptyNoteClassName(tone: 'default' | 'muted' = 'default'):
 /** Ghost text button in settings rows (Reset, secondary actions). */
 export const chromeGhostRowButtonClassName = 'vx-btn vx-btn-quiet inline-flex shrink-0 items-center gap-1.5';
 
-/** Square icon-only ghost action (sub-agent trace, row toolbars). */
+/** Square icon-only ghost action (row toolbars, trace actions). */
 export const chromeIconActionClassName = cn(
   chromePillClassName(false),
   'w-6 text-text-faint'
@@ -206,7 +206,7 @@ export function chromeRevealIconActionClassName(className?: string): string {
 
 export type ChromeStatusTone = 'accent' | 'success' | 'warning' | 'danger' | 'neutral';
 
-/** Semantic status pill (sub-agent, file kind, envelope status). */
+/** Semantic status pill (file kind, envelope status). */
 export function chromeStatusPillClassName(
   tone: ChromeStatusTone,
   className?: string

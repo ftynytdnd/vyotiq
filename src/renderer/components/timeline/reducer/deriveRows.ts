@@ -9,7 +9,7 @@
  *     file` → `Read foo.tsx and 2 other files`. Expanded, it shows each
  *     individual call as a nested row (each further expandable to the
  *     existing bespoke detail).
- *   - Consecutive `file-edit` events (non-sub-agent) fold into a single
+ *   - Consecutive `file-edit` events fold into a single
  *     `file-edit-group` row with an expanded list of per-file cards.
  *   - Reasoning becomes a single `reasoning-line` row (`Thought for Ns`).
  *

@@ -25,7 +25,7 @@ interface InvocationShellProps {
   errorHint?: string;
   /** Expanded-detail body. Absent → row cannot expand. */
   detail?: ReactNode;
-  /** Compact variant used when nested inside a sub-agent trace or group. */
+  /** Compact variant used when nested inside a tool group. */
   dense?: boolean;
   rowKey?: string;
   liveAutoExpand?: boolean;

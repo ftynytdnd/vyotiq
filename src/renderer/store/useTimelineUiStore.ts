@@ -1,8 +1,7 @@
 /**
  * Timeline UI store — holds per-conversation expand/collapse state for
- * Cascade-style rows (tool groups, reasoning lines, sub-agent lines,
- * file-edit groups, and any nested expansions).
- *
+ * Cascade-style rows (tool groups, reasoning lines, file-edit groups,
+ * and nested expansions).
  * Persisted under `AppSettings.ui.expandedRows` via the existing
  * `settings:get` / `settings:set` IPC. Hydrated exactly once from
  * `App.tsx` after settings resolve; subsequent toggles fire-and-forget
@@ -24,11 +23,10 @@ interface TimelineUiStore {
   /**
    * Per-conversation set of row keys the user has explicitly toggled
    * AT LEAST ONCE during this conversation. Lets consumers distinguish
-   * "user-driven" from "host-driven" expansion. Delegation worker rows
-   * component reads this so that auto-expand-while-running only kicks
-   * in for rows the user has not interacted with yet — once the user
-   * collapses or expands a sub-agent row manually, that choice
-   * persists across status flips.
+   * "user-driven" from "host-driven" expansion. Tool-group rows read
+   * this so that auto-expand-while-running only kicks in for rows the
+   * user has not interacted with yet — once the user collapses or
+   * expands a row manually, that choice persists across status flips.
    *
    * NOT persisted to disk; it's a per-session signal. Cleared on
    * conversation switch by `clearConversation`.
@@ -41,7 +39,7 @@ interface TimelineUiStore {
   /**
    * Force the persisted expand state to a specific value AND record a
    * manual override. Used by rows whose effective expand state is
-   * derived from external signals (e.g. sub-agent live status) — those
+   * derived from external signals (e.g. live tool status) — those
    * cannot rely on the persisted value matching the user's current
    * visual state, so a plain `toggle` would invert the wrong baseline.
    */

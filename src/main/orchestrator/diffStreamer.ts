@@ -1,7 +1,7 @@
 /**
  * FS-aware live diff streamer (Phase 2 of the streaming-diffs plan).
  *
- * The orchestrator and every sub-agent already emit a
+ * The orchestrator already emits a
  * `tool-call-args-delta` event for every fragment of a streaming
  * tool call (see `consumeChatStream.onToolCallArgsDelta`). This
  * module subscribes to that same hook and, for `edit` / `delete`
@@ -230,13 +230,13 @@ export class DiffStreamer {
       return;
     }
 
-    // CREATE branch — sub-agents do every file create the system ever
-    // performs (the orchestrator delegates ALL file ops). Pre-fix this
+    // CREATE branch — Agent V performs every file create the system
+    // ever handles. Pre-fix this
     // branch silently returned, so for `create: true` calls no
     // `diff-stream` event ever fired. That meant
     // `ToolGroupRow.liveAutoExpand` (which gates on
     // `partial && diffStream != null`) stayed `false`, the rolled-up
-    // sub-agent tool group never auto-expanded, and the
+    // tool group never auto-expanded, and the
     // `EditInvocation`'s renderer-side `create-preview` (with the
     // green-tinted `+` lines + trailing `vyotiq-stream-cursor`) was
     // hidden behind a collapsed row. The user's report — nested workers
@@ -663,7 +663,7 @@ export class DiffStreamer {
     } catch (err: unknown) {
       const code = (err as NodeJS.ErrnoException)?.code;
       if (code === 'ENOENT') {
-        // The target doesn't exist on disk yet — typically a sub-agent
+        // The target doesn't exist on disk yet — typically a live create
         // bash-write to a new path (`cat > new.ts`) or any tool whose
         // streaming preview should diff against "empty before-body".
         // Treat as an empty body so the LCS produces all-`+` hunks,

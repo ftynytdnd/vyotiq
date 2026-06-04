@@ -42,7 +42,7 @@ export const askUserTool: Tool = makeInterceptOnlyTool(
 
 **WHY it exists.** Some decisions only the user can make. Asking is a deliberate, schema-enforced pause — not a silent stall.
 
-**WHEN to trigger it.** Only when you are genuinely blocked on a choice you cannot reasonably make yourself. Prefer making a sensible default decision and noting it over interrupting the user. Use when semantic verification of sub-agent results leaves you blocked — read the full transcript, then ask with enough context in each \`prompt\`.
+**WHEN to trigger it.** Only when you are genuinely blocked on a choice you cannot reasonably make yourself. Prefer making a sensible default decision and noting it over interrupting the user. Use when verification of prior tool results leaves you blocked — read the full transcript, then ask with enough context in each \`prompt\`.
 
 **Notes.** Write prompts in English. This ends the run cleanly. The next user message rebuilds full history and continues the task. When the user replies to structured questions, they may answer in prose (e.g. \`drop_column: keep_one_release\`).`,
   {

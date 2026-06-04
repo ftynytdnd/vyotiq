@@ -51,7 +51,7 @@ export const timelineTurnOuterGapClassName = 'vx-timeline-turn-outer last:mb-0 l
  */
 const timelineResponseLaneClassName = cn('vx-timeline-response-lane', 'flex flex-col');
 
-/** Compact clickable row header (tool groups, reasoning, sub-agent collapsed). */
+/** Compact clickable row header (tool groups, reasoning, collapsed rows). */
 export const timelineRowHeaderClassName = 'app-no-drag vx-timeline-row-header';
 
 /** Vyotiq UI quiet action pill for timeline row affordances. */

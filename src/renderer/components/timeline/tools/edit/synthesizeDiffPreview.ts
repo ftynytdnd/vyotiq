@@ -76,7 +76,7 @@ export type DiffPreview =
 /**
  * Re-export of the shared all-`+` hunk synthesiser. The implementation
  * lives in `@shared/text/diff/synthesizeCreateHunks.ts` because main's
- * `DiffStreamer` (Phase 3 — sub-agent live create streaming) needs the
+ * `DiffStreamer` live create streaming needs the
  * same algorithm to emit `diff-stream` events with all-`+` hunks for
  * `create: true` calls (no on-disk body to diff against). Single
  * source of truth keeps the preview-emit shape byte-identical across

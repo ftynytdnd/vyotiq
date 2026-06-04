@@ -74,7 +74,7 @@ export interface ProviderConfig {
   /** Whether the provider is enabled in model selectors. */
   enabled: boolean;
   /**
-   * Optional ceiling on parallel `streamChat` calls (sub-agent pool).
+   * Optional ceiling on parallel `streamChat` calls (multi-run pool).
    * When set, the host clamps model-declared `concurrency` to this value.
    */
   maxConcurrentStreams?: number;

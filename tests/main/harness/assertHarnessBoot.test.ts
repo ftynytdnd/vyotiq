@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { assertHarnessBoot } from '@main/harness/harnessLoader';
 
 describe('assertHarnessBoot', () => {
-  it('succeeds when orchestrator and sub-agent prompts match constants', () => {
+  it('succeeds when agent harness prompts match constants', () => {
     expect(() => assertHarnessBoot()).not.toThrow();
   });
 

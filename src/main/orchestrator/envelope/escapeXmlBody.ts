@@ -9,7 +9,7 @@
  *
  * Use it via `wrapXml(tag, body, attrs, { escape: true })` for any content
  * that originated outside the trust boundary (user prompts, file contents,
- * tool outputs, sub-agent text).
+ * tool outputs, etc.).
  */
 
 const XML_ESCAPES: Record<string, string> = {

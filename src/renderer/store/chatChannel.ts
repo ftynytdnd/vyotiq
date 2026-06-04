@@ -242,7 +242,7 @@ function feedParser(
 /**
  * Surrogate-callId reconciliation, mirroring the reducer's
  * `clearPartialFor`: when an authoritative `tool-call` lands without
- * a real callId match in the pool, the orchestrator/sub-agent
+ * a real callId match in the pool, the orchestrator
  * settled the lowest-index `pending:<owner>:<index>` surrogate.
  * We drop that surrogate here so the next delta on the new real id
  * starts with a fresh parser.

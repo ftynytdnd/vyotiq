@@ -3,7 +3,7 @@
  * escaped by default (most of our wrapped content is harness markdown we
  * intentionally want kept readable). Pass `{ escape: true }` for any body
  * sourced outside the trust boundary — user prompts, file contents,
- * sub-agent text, etc. This is the only safe way to embed untrusted content
+ * untrusted text, etc. This is the only safe way to embed untrusted content
  * inside the prompt without risking a `</system_instructions>` injection.
  *
  * Attribute values are ALWAYS escaped (they're untrusted by definition).

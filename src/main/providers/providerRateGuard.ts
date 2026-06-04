@@ -3,7 +3,7 @@
  *
  * Problem this solves
  * -------------------
- * The orchestrator's parallel sub-agent pool can fire several `streamChat`
+ * The orchestrator can fire several `streamChat`
  * calls against the same provider in the same millisecond (the default
  * cap from `resolveDelegateRoundConcurrency`). Cloud-hosted providers like
  * Ollama Cloud reject the second-and-onwards request with HTTP 429
@@ -11,7 +11,7 @@
  * its own three-strike retry budget, but because the workers back off
  * INDEPENDENTLY they all collide again on the next retry — the
  * thundering-herd pattern. The visible symptom (see screenshot §1) is
- * one or more sub-agents flipping straight to `Failed` while their
+ * concurrent runs flipping straight to `Failed` while their
  * peers are still streaming.
  *
  * What this guard does
@@ -29,7 +29,7 @@
  *   - No model-id validation. Unknown models surface as the provider's
  *     own 400/404 response with the body summary intact.
  *   - Cooldown is shared across ALL workers for a given provider, so
- *     the second-and-third sibling sub-agents in a pool naturally
+ *     sibling concurrent streams in a pool naturally
  *     stagger their retries instead of dog-piling.
  *
  * The guard is process-singleton; sufficient for an Electron main

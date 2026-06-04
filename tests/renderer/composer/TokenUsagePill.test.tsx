@@ -21,14 +21,12 @@ function aggregate(
 
 describe('TokenUsagePill', () => {
   it('returns null when total is missing', () => {
-    const { container } = render(<TokenUsagePill subagents={{}} />);
+    const { container } = render(<TokenUsagePill />);
     expect(container.firstChild).toBeNull();
   });
 
   it('returns null when usage is all zeros', () => {
-    const { container } = render(
-      <TokenUsagePill total={aggregate(0, 0)} subagents={{}} />
-    );
+    const { container } = render(<TokenUsagePill total={aggregate(0, 0)} />);
     expect(container.firstChild).toBeNull();
   });
 
@@ -37,7 +35,6 @@ describe('TokenUsagePill', () => {
       <TokenUsagePill
         total={aggregate(12_000, 3_400)}
         orchestrator={aggregate(10_000, 2_000)}
-        subagents={{ w1: aggregate(2_000, 1_400) }}
       />
     );
     expect(screen.getByText(/12k/)).toBeTruthy();
@@ -49,7 +46,6 @@ describe('TokenUsagePill', () => {
       <TokenUsagePill
         total={aggregate(500, 100)}
         orchestrator={aggregate(400, 80)}
-        subagents={{}}
       />
     );
     const pill = container.querySelector('.vx-composer-token-pill');

@@ -391,7 +391,7 @@ export function applyTimelineEvent(
     case 'tool-call-args-delta': {
       // Streaming partial-args preview. Fold the cumulative buffer
       // into `partialToolCallArgs` (orchestrator-level) or the
-      // matching sub-agent snapshot. We DON'T append the event to
+      // matching partial snapshot. We DON'T append the event to
       // `state.events` — it's ephemeral live telemetry and the
       // event list is the persistent backbone of replay.
       //

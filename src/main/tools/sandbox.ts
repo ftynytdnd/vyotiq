@@ -233,7 +233,7 @@ const DESTRUCTIVE_PATTERNS: RegExp[] = [
   /\brm\s+-[a-z]*r[a-z]*f?\s+\//i,
   // Workspace-root wipe variants. The bash tool spawns with `cwd` set to
   // the workspace root, so these resolve INSIDE the sandbox — the
-  // absolute-path regex above never fires. Without this line a sub-agent
+  // absolute-path regex above never fires. Without this line a tool call
   // running unchecked can destroy the user's entire working
   // tree in one call.
   //

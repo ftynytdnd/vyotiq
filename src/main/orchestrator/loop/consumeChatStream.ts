@@ -160,7 +160,7 @@ export interface StreamConsumeHooks {
    * dropped IPC frames — the latest snapshot always supersedes
    * earlier ones for the same call.
    *
-   * Used by the orchestrator / sub-agent runners to emit
+   * Used by the orchestrator to emit
    * `tool-call-args-delta` timeline events so the renderer can paint
    * a live partial-args preview (e.g. streaming diff for `edit`,
    * live path label for `read`/`ls`, streaming query for `search`)
@@ -266,8 +266,8 @@ export async function consumeChatStream(
     if (typeof delta.reasoningSignature === 'string' && delta.reasoningSignature.length > 0) {
       // Anthropic emits the signature once per closing thinking block.
       // Concatenate so a turn with multiple thinking blocks round-trips
-      // every signature; the consumer of the result (orchestrator /
-      // sub-agent) treats it as opaque bytes regardless of structure.
+      // every signature; the orchestrator treats it as opaque bytes
+      // regardless of structure.
       reasoningSignature += delta.reasoningSignature;
     }
     if (delta.toolCallDelta) {

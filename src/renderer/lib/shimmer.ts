@@ -11,7 +11,7 @@
  *
  * `shimmerStyle` returns an inline `style` object that sets the
  * `--shimmer-offset` CSS variable to a deterministic negative
- * `animation-delay` derived from a stable seed (row id, sub-agent id,
+ * `animation-delay` derived from a stable seed (row id, tool call id,
  * tool rowKey, …). Two shimmers with different seeds will be at
  * different points in their cycle on first paint, so concurrent
  * streaming surfaces desync naturally instead of marching in lockstep.

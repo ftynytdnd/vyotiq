@@ -85,9 +85,7 @@ export interface SanitizeResult {
 /**
  * Rich variant of `sanitizeToolCallPairing` that also returns the
  * stub/drop counts so callers can surface them via a `phase` event.
- * Production orchestrator path uses this; sub-agents stay on the
- * simple form because their internals are isolated from user-visible
- * timeline events anyway.
+ * Production orchestrator path uses this.
  */
 export function sanitizeToolCallPairingWithStats(messages: ChatMessage[]): SanitizeResult {
   return sanitizeImpl(messages);

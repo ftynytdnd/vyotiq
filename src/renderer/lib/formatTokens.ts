@@ -1,6 +1,6 @@
 /**
  * Token count formatters. Shared by the composer usage pill, the
- * sub-agent header usage chip, and the model-row context-window
+ * composer token pill, and the model-row context-window
  * editor. Kept in `lib/` rather than next to a specific component so
  * all three rendering sites use the same casing.
  */

@@ -210,7 +210,7 @@ export async function* streamOpenAi(
 
   // Adaptive rate guard. Sleeps any concurrent caller until a sibling
   // worker's prior 429 cools off — see `providerRateGuard.ts` for the
-  // full rationale (sub-agent pool thundering herd).
+  // full rationale (concurrent stream thundering herd).
   await acquire(req.providerId, watch.signal);
 
   let res: Response;
@@ -290,7 +290,7 @@ export async function* streamOpenAi(
     // `ProviderError` so `runLoop`'s self-correction path engages, with
     // the same rate-limit sniff + gate feed the Ollama transport uses
     // (a mid-generation 429 from OpenRouter/Groq must stagger sibling
-    // sub-agents instead of letting them dog-pile on retry).
+    // concurrent streams instead of letting them dog-pile on retry).
     if (chunk.error !== undefined && chunk.error !== null) {
       const errMsg =
         typeof chunk.error === 'string'

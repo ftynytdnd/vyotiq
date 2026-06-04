@@ -5,11 +5,6 @@
 
 import { emptySlice, type ChatSlice } from './chatStoreTypes.js';
 
-/** No-op retained for call sites; legacy sub-agent slice fields are gone. */
-export function normalizeChatSlice(slice: ChatSlice): ChatSlice {
-  return slice;
-}
-
 export function shouldUnloadIdleSlice(slice: ChatSlice | undefined): slice is ChatSlice {
   if (!slice) return false;
   if (slice.isProcessing || slice.runId) return false;

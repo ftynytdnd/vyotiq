@@ -87,13 +87,10 @@ describe('submitAskUserAnswers', () => {
       consecutiveBadToolRounds: 0,
       runStateAcc: {
         iteration: 0,
-        directToolRoundsTotal: 0,
-        delegateRoundsTotal: 0,
+        toolRoundsTotal: 0,
         lastAction: 'clarify' as const,
-        spinSignatureHot: null,
-        serialSingleDelegateRounds: 0
+        spinSignatureHot: null
       },
-      counters: { consecutiveBadRounds: 0, perTaskBadStreak: [] as Array<[string, number]> },
       spin: { window: [] as string[] },
       askUserToolCallId: 'tc-ask',
       askUserPromptEventId: 'prompt-1',

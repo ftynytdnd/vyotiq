@@ -3,7 +3,7 @@
  * to the OS clipboard.
  *
  * Centralises three responsibilities that drifted across the
- * timeline / sub-agent / pending-changes copy buttons:
+ * timeline / pending-changes copy buttons:
  *
  *   1. Catch the `navigator.clipboard.writeText` rejection. The
  *      Clipboard API rejects in several real-world cases (user denied
@@ -45,7 +45,7 @@ const log = logger.child('lib/clipboard');
  *
  * @param text  The string to ship to the clipboard.
  * @param opts.context  Optional short tag attached to the log line
- *   (`'assistant-row'`, `'sub-agent'`, …) so triage can identify the
+ *   (`'assistant-row'`, `'tool-row'`, …) so triage can identify the
  *   failing call path without combing the stack.
  * @param opts.toastOnFailure  When `false`, suppresses the danger
  *   toast and only logs. Defaults to `true` (the user-visible

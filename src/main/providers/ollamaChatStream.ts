@@ -140,7 +140,7 @@ export async function* streamOllama(
   // Adaptive rate guard. If a sibling worker just received 429 from
   // this provider, sleep until the gate's cooldown expires before we
   // pile on. No-op when the provider is healthy. See
-  // `providerRateGuard.ts` for the full rationale (sub-agent pool
+  // `providerRateGuard.ts` for the full rationale (concurrent stream
   // thundering herd).
   await acquire(req.providerId, watch.signal);
 
@@ -279,7 +279,7 @@ export async function* streamOllama(
     // response was 200; the `{"error":"too many concurrent requests"}`
     // envelope arrives on the body). The initial-rejection branch
     // above feeds `markRateLimited` only on 429 / 5xx HTTP statuses,
-    // so without this path sibling sub-agents in the same pool would
+    // so without this path sibling concurrent streams in the same pool would
     // dog-pile on retry instead of staggering. We sniff the error
     // text for rate-limit phrasing and feed the gate BEFORE throwing,
     // and promote the `ProviderError.kind` to `'rate-limit'` so the

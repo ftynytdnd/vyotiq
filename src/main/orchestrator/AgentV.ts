@@ -116,8 +116,7 @@ export function abortRun(runId: string): void {
  * Returns every active run id bound to the given `conversationId`.
  * Used by `chat.ipc.ts` to fail-fast when a second `chat:send` lands
  * for a conversation whose previous run is still streaming — otherwise
- * two orchestrator loops would interleave tool calls and sub-agent
- * traces into the same JSONL transcript.
+ * two orchestrator loops would interleave tool calls into the same
  *
  * The supersede contract guarantees there's normally at most ONE entry
  * per conversation, but this returns an array so an unforeseen race or

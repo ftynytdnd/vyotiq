@@ -262,7 +262,7 @@ export function isNonRecoverableProviderError(err: unknown): err is ProviderErro
  * OpenAI-compat gateways' `data: {"error":{...}}`). The initial-rejection
  * path only feeds `markRateLimited` on 429 / 5xx HTTP statuses, so
  * without sniffing the text a saturated provider would let sibling
- * sub-agents dog-pile on retry instead of staggering behind the gate.
+ * concurrent streams dog-pile on retry instead of staggering behind the gate.
  *
  * Patterns observed in the field:
  *   - "too many concurrent requests" / "concurrent requests exceeded"

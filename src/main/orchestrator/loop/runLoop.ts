@@ -121,8 +121,7 @@ interface RunLoopOpts {
   /** Initial messages array (system + user envelope + replayed history). */
   initialMessages: ChatMessage[];
   /** The rolling-query string used to refresh memory retrieval each iteration.
-   *  Defaults to the original user prompt; updated when direct-tool or
-   *  sub-agent results land. */
+   *  Defaults to the original user prompt; updated when tool results land. */
   initialQuery: string;
   permissions: ChatPermissions;
   /** Resume a run paused on `ask_user` — skips re-seeding the user envelope. */

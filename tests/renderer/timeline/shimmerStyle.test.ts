@@ -40,17 +40,17 @@ describe('shimmerStyle', () => {
   });
 
   it('produces a stable offset for the same seed across calls', () => {
-    const a = shimmerStyle('subagent:S1');
-    const b = shimmerStyle('subagent:S1');
+    const a = shimmerStyle('row:S1');
+    const b = shimmerStyle('row:S1');
     expect(a).toEqual(b);
   });
 
   it('emits a CSS-valid negative-ms offset for any non-empty seed', () => {
     const samples = [
       'reasoning:r-1',
-      'subagent:S42',
-      'subagent-pill:S42',
-      'subagent-task:S42',
+      'row:S42',
+      'row-pill:S42',
+      'row-task:S42',
       'tool-group:bash:0',
       'inv:read:foo.tsx:1-200',
       'thought:t1'
@@ -69,7 +69,7 @@ describe('shimmerStyle', () => {
     // bucket hash, collisions are rare but possible — assert "at least
     // 90% unique" rather than 100% so the test isn't fragile to a
     // single accidental collision.
-    const seeds = Array.from({ length: 32 }, (_, i) => `subagent:S-${i}-${(i * 7919).toString(36)}`);
+    const seeds = Array.from({ length: 32 }, (_, i) => `row:S-${i}-${(i * 7919).toString(36)}`);
     const offsets = new Set(seeds.map((s) => offsetMs(shimmerStyle(s))));
     expect(offsets.size).toBeGreaterThanOrEqual(Math.floor(seeds.length * 0.9));
   });

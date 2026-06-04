@@ -7,7 +7,7 @@
  *
  *   - `src/main/orchestrator/diffStreamer.ts` (Phase 3) — for the
  *     FS-aware live diff streamer's create-true emit path. The
- *     streamer can't read a non-existent file, so a sub-agent
+ *     streamer can't read a non-existent file, so live create
  *     `edit` call with `create: true` would otherwise have no
  *     `diff-stream` event firing, leaving `ToolGroupRow.liveAutoExpand`
  *     and every other "are we live?" predicate false. Emitting these

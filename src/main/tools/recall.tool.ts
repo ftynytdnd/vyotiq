@@ -19,7 +19,7 @@
  *     context window never balloons regardless of how long the
  *     recalled conversation is. Renderer-only events (`run-status`,
  *     `phase`, `agent-thought`, `token-usage`, `file-edit`,
- *     legacy sub-agent lifecycle kinds) are skipped.
+ *     legacy worker lifecycle kinds) are skipped.
  *
  * Returning the active conversation's own id is rejected — the
  * orchestrator already has its own transcript in-context via replay,
