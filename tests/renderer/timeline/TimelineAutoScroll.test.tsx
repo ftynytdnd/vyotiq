@@ -109,6 +109,10 @@ describe('Timeline auto-scroll', () => {
       content: 'hello agent'
     };
 
+    const anchor = document.createElement('div');
+    anchor.id = 'row-u-new';
+    document.body.appendChild(anchor);
+
     act(() => {
       useChatStore.setState((s) => ({
         ...s,
@@ -117,10 +121,26 @@ describe('Timeline auto-scroll', () => {
       }));
     });
 
-    expect(scrollSpy).toHaveBeenCalled();
     expect(
       scrollSpy.mock.calls.some((call) => call[0]?.block === 'start')
     ).toBe(true);
+  });
+
+  it('does not scroll when transcript hydrates with a trailing non-prompt event', () => {
+    act(() => {
+      useChatStore.setState({
+        conversationId: 'c-hydrate',
+        events: [
+          { kind: 'user-prompt', id: 'p1', ts: 1, content: 'hi' },
+          { kind: 'error', id: 'e1', ts: 2, message: 'provider failed' }
+        ],
+        lastUserPromptId: 'p1'
+      });
+    });
+
+    render(<Timeline />);
+    const startScrolls = scrollSpy.mock.calls.filter((call) => call[0]?.block === 'start');
+    expect(startScrolls).toHaveLength(0);
   });
 
   it('does not re-snap when the same user-prompt id is still the latest', () => {

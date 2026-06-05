@@ -78,6 +78,7 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
   const floatingLiveDiffOpen = useFloatingLiveDiffStore((s) => s.target !== null);
   const companionOverlayOpen = attachmentPreviewOpen || floatingLiveDiffOpen;
 
+  const conversationId = useChatStore((s) => s.conversationId);
   const events = useChatStore((s) => s.events);
   const isProcessing = useChatStore((s) => s.isProcessing);
   const partialToolCallArgs = useChatStore((s) => s.partialToolCallArgs);
@@ -107,6 +108,8 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
   const prevPromptIdRef = useRef<string | undefined>(undefined);
+  const prevConversationIdRef = useRef<string | null | undefined>(undefined);
+  const scrollMountedRef = useRef(false);
 
   const onRetryLastMessage = useCallback(() => {
     const prompt = lastUserPromptContent?.trim();
@@ -224,17 +227,37 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
     };
   }, [companionOverlayOpen, syncScrollTail, tailScrollKey]);
 
-  // Scroll the newest user prompt to the top of the viewport on send.
+  // Re-sync prompt scroll tracking on conversation switch (no scroll).
   useEffect(() => {
+    if (prevConversationIdRef.current === conversationId) return;
+    prevConversationIdRef.current = conversationId;
+    prevPromptIdRef.current = lastUserPromptId;
+  }, [conversationId, lastUserPromptId]);
+
+  // Scroll the newest user prompt to the top only on a live send — not on
+  // transcript hydrate/rebuild where the trailing event is usually not a
+  // fresh `user-prompt`.
+  useEffect(() => {
+    if (!scrollMountedRef.current) {
+      scrollMountedRef.current = true;
+      prevPromptIdRef.current = lastUserPromptId;
+      return;
+    }
+
     const id = lastUserPromptId;
     if (!id || prevPromptIdRef.current === id) return;
+
+    const last = events[events.length - 1];
+    const isLiveSend = last?.kind === 'user-prompt' && last.id === id;
     prevPromptIdRef.current = id;
+    if (!isLiveSend) return;
+
     stickyRef.current = true;
     setTimelineAtTail(true);
     requestAnimationFrame(() => {
       scrollToRowAnchor(id, 'smooth');
     });
-  }, [lastUserPromptId, setTimelineAtTail]);
+  }, [lastUserPromptId, events, setTimelineAtTail]);
 
   // Keyboard navigation between user prompts (`g j` / `g k`) and Esc to
   // drop sticky scroll. The `g`-prefix uses a short timeout so accidental

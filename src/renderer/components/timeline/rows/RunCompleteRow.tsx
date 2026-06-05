@@ -123,7 +123,7 @@ export function formatDuration(ms: number): string {
   return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
 }
 
-function formatWallClock(ts: number): string {
+export function formatWallClock(ts: number): string {
   const d = new Date(ts);
   const now = new Date();
   const sameDay =

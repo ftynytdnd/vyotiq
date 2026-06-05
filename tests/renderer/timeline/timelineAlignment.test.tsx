@@ -120,7 +120,7 @@ describe('Timeline inline column alignment', () => {
     expect(container.querySelector('[data-row-kind="live-status"]')).toBeNull();
   });
 
-  // Jump chip is portaled to the scroll parent's parent; happy-dom scroll metrics
+  // Jump chip is portaled above the composer footer; happy-dom scroll metrics
   // do not match production. Covered by scrollTailState.test.ts + manual QA.
   it.skip('renders jump-to-latest label without backdrop blur on the chip', async () => {
     useChatStore.setState({

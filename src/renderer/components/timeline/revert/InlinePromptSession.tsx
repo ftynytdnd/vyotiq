@@ -177,7 +177,17 @@ export function InlinePromptSession({
             A run is still active — continuing will interrupt it.
           </Notice>
         )}
-        {impact}
+        {impact &&
+          (session.isEdit ? (
+            <details className="group text-meta">
+              <summary className="cursor-pointer select-none text-text-muted hover:text-text-secondary">
+                View rewind impact
+              </summary>
+              <div className="pt-1">{impact}</div>
+            </details>
+          ) : (
+            impact
+          ))}
 
         {!session.isEdit && session.phase.kind === 'ready' && (
           <p className="whitespace-pre-wrap text-body text-text-primary">

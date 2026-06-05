@@ -4,12 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// InlinePromptSession pulls the full composer shell (model picker, attachments).
-// Stub those modules so this suite stays fast and does not contend with
-// popover / IPC wiring unrelated to rewind preview + confirm.
-vi.mock('@renderer/components/composer/modelPicker/index.js', () => ({
-  ModelPicker: () => null
-}));
+// Edit mode is compact (no inline model picker). Stub attachments IPC wiring.
 vi.mock('@renderer/components/composer/useComposerAttachments.js', () => ({
   useComposerAttachments: () => ({
     attachments: [],
@@ -158,6 +153,18 @@ describe('InlinePromptSession', () => {
 
     await waitFor(() => expect(rewindSpy).toHaveBeenCalledOnce());
     await waitFor(() => expect(onCancel).toHaveBeenCalledOnce());
+  });
+
+  it('does not render an inline model picker in edit mode', async () => {
+    installPreview(buildPreview({}));
+
+    const { findByRole, queryByRole } = renderSession({
+      kind: 'edit',
+      originalContent: 'hello'
+    });
+
+    await findByRole('textbox', { name: /Message Agent V/i });
+    expect(queryByRole('button', { name: /^Model:/i })).toBeNull();
   });
 
   it('rewinds then sends edited text on edit confirm', async () => {

@@ -9,7 +9,7 @@ import { timelineLogRowClassName, timelineRunCompleteRowClassName } from '../sha
 import { cn } from '../../../lib/cn.js';
 import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../../lib/shellIcons.js';
 import { Button } from '../../ui/Button.js';
-import { formatDuration } from './RunCompleteRow.js';
+import { formatDuration, formatWallClock } from './RunCompleteRow.js';
 
 interface ErrorRowProps {
   message: string;
@@ -45,10 +45,7 @@ function ErrorRunMeta({
     stats.push(`${fileCount} file${fileCount === 1 ? '' : 's'}`);
   }
 
-  const timeLabel = new Date(completedAt).toLocaleString(undefined, {
-    hour: 'numeric',
-    minute: '2-digit'
-  });
+  const timeLabel = formatWallClock(completedAt);
 
   return (
     <div

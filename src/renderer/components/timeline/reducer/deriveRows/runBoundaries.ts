@@ -48,31 +48,29 @@ export function flushRunToRows(
   openRunUsage: OpenRunUsage | null
 ): { openRun: OpenRun | null; openRunUsage: OpenRunUsage | null } {
   if (!openRun) return { openRun, openRunUsage };
-  const durationMs = openRun.lastTs - openRun.promptTs;
-  if (durationMs > 0) {
-    const usage = openRunUsage?.orchestrator;
-    const editCount = openRun.editCount;
-    const fileCount = openRun.filePaths.size;
-    const meta = {
+  const durationMs = Math.max(0, openRun.lastTs - openRun.promptTs);
+  const usage = openRunUsage?.orchestrator;
+  const editCount = openRun.editCount;
+  const fileCount = openRun.filePaths.size;
+  const meta = {
+    durationMs,
+    completedAt: openRun.lastTs,
+    ...(usage !== undefined ? { usage } : {}),
+    editCount,
+    fileCount
+  };
+  if (openRun.endedInError && openRun.errorKey) {
+    enrichErrorRowWithRunMeta(out, openRun.errorKey, meta);
+  } else if (durationMs > 0) {
+    out.push({
+      kind: 'run-complete',
+      key: `run:${openRun.promptId}`,
       durationMs,
       completedAt: openRun.lastTs,
       ...(usage !== undefined ? { usage } : {}),
-      editCount,
-      fileCount
-    };
-    if (openRun.endedInError && openRun.errorKey) {
-      enrichErrorRowWithRunMeta(out, openRun.errorKey, meta);
-    } else {
-      out.push({
-        kind: 'run-complete',
-        key: `run:${openRun.promptId}`,
-        durationMs,
-        completedAt: openRun.lastTs,
-        ...(usage !== undefined ? { usage } : {}),
-        ...(editCount > 0 ? { editCount } : {}),
-        ...(fileCount > 0 ? { fileCount } : {})
-      });
-    }
+      ...(editCount > 0 ? { editCount } : {}),
+      ...(fileCount > 0 ? { fileCount } : {})
+    });
   }
   return { openRun: null, openRunUsage: null };
 }
