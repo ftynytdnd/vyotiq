@@ -10,6 +10,7 @@ import type { TimelineEvent, ChatPermissions, PromptAttachmentMeta } from '@shar
 import type { AskUserSubmitInput } from '@shared/types/askUser.js';
 import type { ActiveRunInfo } from '@shared/types/ipc.js';
 import type { ModelSelection } from '@shared/types/provider.js';
+import type { MentionRef } from '@shared/types/mention.js';
 import type { ApplyEventOptions } from '../components/timeline/reducer/applyTimelineEvent.js';
 import {
   INITIAL_TIMELINE_STATE,
@@ -25,6 +26,7 @@ export interface ChatSlice extends TimelineState {
   awaitingAskUser: boolean;
   runStartedAt: number | null;
   draft: string;
+  attachmentDraft: PromptAttachmentMeta[];
 }
 
 export function emptySlice(conversationId: string): ChatSlice {
@@ -35,7 +37,8 @@ export function emptySlice(conversationId: string): ChatSlice {
     isProcessing: false,
     awaitingAskUser: false,
     runStartedAt: null,
-    draft: ''
+    draft: '',
+    attachmentDraft: []
   };
 }
 
@@ -47,6 +50,7 @@ export interface ActiveMirror extends TimelineState {
   awaitingAskUser: boolean;
   runStartedAt: number | null;
   draft: string;
+  attachmentDraft: PromptAttachmentMeta[];
   totalRunUsage?: TokenUsageAggregate;
 }
 
@@ -59,7 +63,8 @@ export const EMPTY_MIRROR: ActiveMirror = {
   isProcessing: false,
   awaitingAskUser: false,
   runStartedAt: null,
-  draft: ''
+  draft: '',
+  attachmentDraft: []
 };
 
 export interface ChatStore extends ActiveMirror {
@@ -82,16 +87,21 @@ export interface ChatStore extends ActiveMirror {
       attachments?: string[];
       attachmentMeta?: PromptAttachmentMeta[];
       promptEventId?: string;
+      mentions?: MentionRef[];
     }
   ) => Promise<void>;
   abort: () => Promise<void>;
   abortRun: (runId: string) => Promise<void>;
   submitAskUser: (input: AskUserSubmitInput) => Promise<void>;
   /** Unified submit for panel overlay + composer Send while `awaitingAskUser`. */
-  submitPendingAskUser: (opts?: { supplementText?: string }) => Promise<void>;
+  submitPendingAskUser: (opts?: {
+    supplementText?: string;
+    attachmentMeta?: PromptAttachmentMeta[];
+  }) => Promise<void>;
   pauseForAskUser: (runId: string) => void;
   rehydrateActiveRuns: (infos: ActiveRunInfo[]) => void;
   beginSideRun: (runId: string, conversationId: string) => void;
   prewarmSlice: (conversationId: string, events: TimelineEvent[]) => void;
   setDraft: (conversationId: string, text: string) => void;
+  setAttachmentDraft: (conversationId: string, attachments: PromptAttachmentMeta[]) => void;
 }

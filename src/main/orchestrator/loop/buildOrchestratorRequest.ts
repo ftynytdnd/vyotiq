@@ -26,7 +26,12 @@
 
 import type { ChatStreamRequest } from '../../providers/chatClient.js';
 import type { ChatMessage } from '@shared/types/chat.js';
-import type { ModelSelection, ProviderDialect, ThinkingEffort } from '@shared/types/provider.js';
+import type {
+  ModelSelection,
+  ModelThinkingCapabilities,
+  ProviderDialect,
+  ThinkingEffort
+} from '@shared/types/provider.js';
 import { toolSchemasFor } from '../../tools/registry.js';
 import { AGENT_TOOLS } from '../../tools/policy/index.js';
 import { supportsParallelToolCalls, supportsToolChoice } from '../../providers/capabilities.js';
@@ -51,6 +56,8 @@ export function buildOrchestratorRequest(opts: {
   wrapUp?: boolean;
   /** Resolved per-model thinking effort (drives the tool_choice gate). */
   reasoningEffort?: ThinkingEffort;
+  /** Discovered thinking capabilities for the selected model. */
+  modelThinkingCaps?: ModelThinkingCapabilities;
   /**
    * Run-scoped override set by `runLoop` after a provider 400 that
    * rejected `tool_choice`. Forces the field to be omitted even when the
@@ -65,7 +72,12 @@ export function buildOrchestratorRequest(opts: {
   // instead of sending `tool_choice: 'none'` (which they also reject).
   const toolChoiceSafe =
     !opts.omitToolChoice &&
-    supportsToolChoice(opts.dialect, opts.selection.modelId, opts.reasoningEffort);
+    supportsToolChoice(
+      opts.dialect,
+      opts.selection.modelId,
+      opts.reasoningEffort,
+      opts.modelThinkingCaps
+    );
 
   let toolChoice: 'none' | 'auto' | undefined;
   if (opts.wrapUp) {

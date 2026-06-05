@@ -45,7 +45,7 @@ export function ProviderGroupHeader({ provider }: ProviderGroupHeaderProps) {
   };
 
   return (
-    <div className="flex flex-col gap-0.5 px-2 pb-1 pt-2">
+    <div className="vx-model-picker-provider-head flex flex-col gap-0.5 pb-0.5 pt-1.5">
       <div className="flex items-center gap-1.5">
         {status !== 'ready' && (
           <span

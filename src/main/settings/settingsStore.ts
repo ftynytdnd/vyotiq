@@ -10,7 +10,7 @@
 import type { AppSettings } from '@shared/types/ipc.js';
 import type { ChatPermissions } from '@shared/types/chat.js';
 import { DEFAULT_PERMISSIONS } from '@shared/constants.js';
-import { migrateLastSettingsTab } from '@shared/settings/settingsGroups.js';
+import { resolveSettingsSectionId } from '@shared/settings/settingsSection.js';
 import { readBlob, updateBlob, type SettingsBlob } from './blob.js';
 import { migrateLegacyDockUi, normalizeSettingsPatch } from './migrateUiFields.js';
 
@@ -93,7 +93,7 @@ function normalizeBlobForPersistence(blob: SettingsBlob): { blob: SettingsBlob; 
 
   const tab = next.ui?.lastSettingsTab;
   if (tab !== undefined) {
-    const migrated = migrateLastSettingsTab(tab, 'setup');
+    const migrated = resolveSettingsSectionId(tab, 'models-api');
     if (migrated !== tab) {
       next = { ...next, ui: { ...(next.ui ?? {}), lastSettingsTab: migrated } };
       changed = true;
@@ -179,7 +179,7 @@ function publicShape(blob: SettingsBlob): AppSettings {
   if (ui?.lastSettingsTab !== undefined) {
     ui = {
       ...ui,
-      lastSettingsTab: migrateLastSettingsTab(ui.lastSettingsTab, 'setup')
+      lastSettingsTab: resolveSettingsSectionId(ui.lastSettingsTab, 'models-api')
     };
   }
 
@@ -206,7 +206,7 @@ export async function setSettings(patch: Partial<AppSettings>): Promise<AppSetti
       ...patch,
       ui: {
         ...ui,
-        lastSettingsTab: migrateLastSettingsTab(ui.lastSettingsTab, 'setup')
+        lastSettingsTab: resolveSettingsSectionId(ui.lastSettingsTab, 'models-api')
       }
     };
   }

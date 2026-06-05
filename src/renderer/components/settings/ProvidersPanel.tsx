@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown } from 'lucide-react';
 import { useProviderStore } from '../../store/useProviderStore.js';
 import { ProviderRow } from './ProviderRow.js';
 import { AddProviderForm } from './AddProviderForm.js';
@@ -8,7 +7,6 @@ import { LoadingHint } from '../ui/LoadingHint.js';
 import { Button } from '../ui/Button.js';
 import { Notice } from '../ui/Notice.js';
 import { ShellCaption, ShellRow, ShellSection } from '../ui/ShellSection.js';
-import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../lib/shellIcons.js';
 import { isLocalProvider } from '@shared/providers/isLocalProvider.js';
 import { cn } from '../../lib/cn.js';
 
@@ -16,20 +14,12 @@ function ProviderBucketBlock({
   title,
   providers,
   selectedId,
-  onSelect,
-  embedded,
-  detailOpen,
-  onDetailOpen,
-  onDetailClose
+  onSelect
 }: {
   title: string;
   providers: ReturnType<typeof useProviderStore.getState>['providers'];
   selectedId: string | null;
   onSelect: (id: string) => void;
-  embedded?: boolean;
-  detailOpen: boolean;
-  onDetailOpen: () => void;
-  onDetailClose: () => void;
 }) {
   if (providers.length === 0) return null;
   const selected = providers.find((p) => p.id === selectedId) ?? providers[0] ?? null;
@@ -55,25 +45,7 @@ function ProviderBucketBlock({
         className="surface-shell vx-settings-provider-detail scrollbar-stealth"
       >
         {selected ? (
-          !detailOpen || selectedId !== selected.id ? (
-            <div className="vx-settings-memory-collapsed">
-              <div className="min-w-0">
-                <div className="truncate text-row text-text-primary">{selected.name}</div>
-                <p className="truncate text-meta text-text-faint font-mono">{selected.baseUrl}</p>
-              </div>
-              <Button variant="secondary" size="sm" onClick={onDetailOpen}>
-                <ChevronDown className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
-                Configure
-              </Button>
-            </div>
-          ) : (
-            <ProviderRow
-              key={selected.id}
-              provider={selected}
-              embedded={embedded}
-              onCollapse={onDetailClose}
-            />
-          )
+          <ProviderRow key={selected.id} provider={selected} />
         ) : (
           <p className="text-meta text-text-faint">Select a provider.</p>
         )}
@@ -82,15 +54,13 @@ function ProviderBucketBlock({
   );
 }
 
-export function ProvidersPanel({ embedded = false }: { embedded?: boolean }) {
+export function ProvidersPanel() {
   const providers = useProviderStore((s) => s.providers);
   const loading = useProviderStore((s) => s.loading);
   const error = useProviderStore((s) => s.error);
   const refresh = useProviderStore((s) => s.refresh);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [addFormOpen, setAddFormOpen] = useState(false);
-  const [detailOpen, setDetailOpen] = useState(false);
-  const [detailBucket, setDetailBucket] = useState<'local' | 'cloud' | null>(null);
 
   useEffect(() => {
     void refresh();
@@ -115,16 +85,6 @@ export function ProvidersPanel({ embedded = false }: { embedded?: boolean }) {
     setSelectedId(first?.id ?? null);
   }, [providers, selectedId, localProviders, remoteProviders]);
 
-  useEffect(() => {
-    setDetailOpen(false);
-    setDetailBucket(null);
-  }, [selectedId]);
-
-  const openDetail = (bucket: 'local' | 'cloud') => {
-    setDetailBucket(bucket);
-    setDetailOpen(true);
-  };
-
   const localSelected =
     selectedId && localProviders.some((p) => p.id === selectedId)
       ? selectedId
@@ -136,7 +96,7 @@ export function ProvidersPanel({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <ShellSection title="Models & providers">
-      <DefaultModelRow embedded={embedded} />
+      <DefaultModelRow />
 
       <ShellRow className="pt-0">
         <ShellCaption>
@@ -206,20 +166,12 @@ export function ProvidersPanel({ embedded = false }: { embedded?: boolean }) {
             providers={localProviders}
             selectedId={localSelected}
             onSelect={setSelectedId}
-            embedded={embedded}
-            detailOpen={detailOpen && detailBucket === 'local'}
-            onDetailOpen={() => openDetail('local')}
-            onDetailClose={() => setDetailOpen(false)}
           />
           <ProviderBucketBlock
             title={`Cloud${remoteProviders.length > 0 ? ` (${remoteProviders.length})` : ''}`}
             providers={remoteProviders}
             selectedId={cloudSelected}
             onSelect={setSelectedId}
-            embedded={embedded}
-            detailOpen={detailOpen && detailBucket === 'cloud'}
-            onDetailOpen={() => openDetail('cloud')}
-            onDetailClose={() => setDetailOpen(false)}
           />
         </div>
       )}

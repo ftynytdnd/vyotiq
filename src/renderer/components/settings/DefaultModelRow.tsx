@@ -20,9 +20,10 @@ import { useProviderStore } from '../../store/useProviderStore.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { Dropdown, type DropdownItem } from '../ui/Dropdown.js';
 import { ShellCaption, ShellFieldLabel, ShellRow, ShellRowSplit } from '../ui/ShellSection.js';
+import { effectiveContextWindow } from '@shared/providers/contextWindow.js';
 import { formatTokenCount } from '../../lib/formatTokens.js';
 
-export function DefaultModelRow({ embedded: _embedded = false }: { embedded?: boolean }) {
+export function DefaultModelRow() {
   const providers = useProviderStore((s) => s.providers);
   const def = useSettingsStore((s) => s.settings.defaultModel);
   const setDefaultModel = useSettingsStore((s) => s.setDefaultModel);
@@ -36,9 +37,12 @@ export function DefaultModelRow({ embedded: _embedded = false }: { embedded?: bo
         out.push({
           value: `${p.id}::${m.id}`,
           label: m.id,
-          ...(typeof m.contextWindow === 'number'
-            ? { description: `${formatTokenCount(m.contextWindow)} context` }
-            : {}),
+          ...(() => {
+            const ctx = effectiveContextWindow(m, p.contextOverrides);
+            return typeof ctx === 'number'
+              ? { description: `${formatTokenCount(ctx)} context` }
+              : {};
+          })(),
           group: p.name
         });
       }

@@ -1,20 +1,56 @@
 /**
  * Cross-provider "thinking effort" resolution (2026).
  *
+ * Capability detection is driven by discovery metadata on `ModelInfo`
+ * (`thinking`, `supportedParameters`) — see `modelCapabilities.ts`.
+ * This module handles UI levels, wire mapping, and resolution precedence.
+ *
  * Docs:
  *   - OpenAI reasoning: https://developers.openai.com/api/docs/guides/reasoning
  *   - Anthropic adaptive: https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking
  *   - Gemini thinking: https://ai.google.dev/gemini-api/docs/thinking
  *   - DeepSeek thinking: https://api-docs.deepseek.com/guides/thinking_mode
  *   - Ollama thinking: https://docs.ollama.com/capabilities/thinking
- *
- * A single normalized {@link ThinkingEffort} knob is stored per model on
- * the provider record (`ProviderConfig.modelThinking[modelId]`). This
- * module is the single source of truth for capability detection, UI
- * levels, wire mapping, and resolution precedence.
  */
 
-import type { ProviderConfig, ProviderDialect, ThinkingEffort } from '../types/provider.js';
+import type {
+  ModelInfo,
+  ModelThinkingCapabilities,
+  ProviderConfig,
+  ProviderDialect,
+  ThinkingEffort,
+  ThinkingWireStyle
+} from '../types/provider.js';
+import {
+  thinkingFromSupportedParameters,
+  mergeThinkingCapabilities
+} from './modelCapabilities.js';
+
+export { modelIdTail } from './modelId.js';
+
+export interface ThinkingCapabilityOptions {
+  /** From discovery (`ModelInfo.supportedParameters`). */
+  supportedParameters?: string[];
+  /** From discovery (`ModelInfo.thinking`). */
+  thinking?: ModelThinkingCapabilities;
+}
+
+/** Resolve thinking capabilities from explicit fields or supported_parameters. */
+export function resolveThinkingCapabilities(
+  options?: ThinkingCapabilityOptions
+): ModelThinkingCapabilities | undefined {
+  return mergeThinkingCapabilities(
+    options?.thinking,
+    thinkingFromSupportedParameters(options?.supportedParameters)
+  );
+}
+
+/** True when the provider's model list declares reasoning API support. */
+export function modelDeclaresReasoningSupport(
+  supportedParameters: string[] | undefined
+): boolean {
+  return thinkingFromSupportedParameters(supportedParameters)?.supported === true;
+}
 
 /** Canonical ordering, weakest → strongest. */
 export const THINKING_EFFORTS: readonly ThinkingEffort[] = [
@@ -60,79 +96,36 @@ export function normalizePersistedThinkingEffort(
 }
 
 /**
- * DeepSeek V4 family is ALWAYS in thinking mode unless explicitly
- * disabled, and rejects forced/required `tool_choice` while thinking.
- */
-export function isDeepSeekThinkingModel(modelId: string): boolean {
-  const id = modelId.toLowerCase();
-  if (!id.includes('deepseek')) return false;
-  return id.includes('v4') || id.includes('reasoner');
-}
-
-function isGemini25Model(modelId: string): boolean {
-  const id = modelId.toLowerCase();
-  return id.includes('2.5') || id.includes('2-5');
-}
-
-function isGemini3Model(modelId: string): boolean {
-  const id = modelId.toLowerCase();
-  return /gemini-3|gemini3/.test(id) && !isGemini25Model(modelId);
-}
-
-/** Ollama models that accept `think: "low"|"medium"|"high"` (not just boolean). */
-export function ollamaSupportsThinkLevels(modelId: string): boolean {
-  const id = modelId.toLowerCase();
-  return id.includes('gpt-oss');
-}
-
-/**
  * Whether the model should expose thinking-effort controls in Settings
  * or the composer picker. Non-capable models remain selectable; they
  * simply hide the effort UI.
  */
 export function isThinkingCapableModel(
-  dialect: ProviderDialect | undefined,
-  modelId: string
+  _dialect: ProviderDialect | undefined,
+  _modelId: string,
+  options?: ThinkingCapabilityOptions
 ): boolean {
-  const id = modelId.toLowerCase();
-  switch (dialect ?? 'openai') {
-    case 'openai':
-      if (isDeepSeekThinkingModel(modelId)) return true;
-      if (/gpt-5|gpt5/.test(id)) return true;
-      if (/^o[134]/.test(id) || id.startsWith('o1') || id.startsWith('o3') || id.startsWith('o4'))
-        return true;
-      if (id.includes('grok') && (id.includes('reason') || id.includes('think'))) return true;
-      return false;
-    case 'anthropic-native':
-      if (!id.startsWith('claude-')) return false;
-      if (
-        id.startsWith('claude-haiku-3') ||
-        id.startsWith('claude-haiku-3.5') ||
-        id.startsWith('claude-instant-')
-      ) {
-        return false;
-      }
-      return (
-        id.includes('opus') ||
-        id.includes('sonnet') ||
-        id.includes('haiku-4') ||
-        id.includes('mythos')
-      );
-    case 'gemini-native':
-      return isGemini25Model(modelId) || isGemini3Model(modelId) || /gemini.*thinking/.test(id);
-    case 'ollama-native':
-      return (
-        id.includes('deepseek-r1') ||
-        id.includes('deepseek-v3.1') ||
-        id.includes('qwen3') ||
-        id.includes('qwen-3') ||
-        id.includes('gpt-oss') ||
-        /(^|[-_/])r1($|[-_/])/.test(id) ||
-        id.includes('thinking')
-      );
-    default:
-      return false;
+  return resolveThinkingCapabilities(options)?.supported === true;
+}
+
+export function isThinkingCapableModelInfo(
+  _dialect: ProviderDialect | undefined,
+  model: Pick<ModelInfo, 'id' | 'supportedParameters' | 'thinking'>
+): boolean {
+  return isThinkingCapableModel(_dialect, model.id, {
+    supportedParameters: model.supportedParameters,
+    thinking: model.thinking
+  });
+}
+
+function defaultEffortsForWire(wireStyle: ThinkingWireStyle | undefined): ThinkingEffort[] {
+  if (wireStyle === 'openai-deepseek') {
+    return ['off', 'low', 'medium', 'high', 'xhigh'];
   }
+  if (wireStyle === 'anthropic-adaptive' || wireStyle === 'anthropic-budget') {
+    return ['off', 'low', 'medium', 'high', 'xhigh'];
+  }
+  return ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 }
 
 /**
@@ -140,22 +133,14 @@ export function isThinkingCapableModel(
  * model is not thinking-capable. Always includes `off` when non-empty.
  */
 export function supportedThinkingEfforts(
-  dialect: ProviderDialect | undefined,
-  modelId: string
+  _dialect: ProviderDialect | undefined,
+  _modelId: string,
+  options?: ThinkingCapabilityOptions
 ): ThinkingEffort[] {
-  if (!isThinkingCapableModel(dialect, modelId)) return [];
-  switch (dialect ?? 'openai') {
-    case 'openai':
-      return isDeepSeekThinkingModel(modelId)
-        ? ['off', 'low', 'medium', 'high', 'xhigh']
-        : ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
-    case 'anthropic-native':
-      return ['off', 'low', 'medium', 'high', 'xhigh'];
-    case 'gemini-native':
-      return ['off', 'minimal', 'low', 'medium', 'high'];
-    case 'ollama-native':
-      return ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
-  }
+  const caps = resolveThinkingCapabilities(options);
+  if (!caps?.supported) return [];
+  if (caps.efforts?.length) return caps.efforts;
+  return defaultEffortsForWire(caps.wireStyle);
 }
 
 /**
@@ -193,7 +178,7 @@ export function resolveThinkingEffort(
  *   1. Composer `selection.thinkingEffort` when set
  *   2. `provider.modelThinking[modelId]`
  *   3. Legacy `anthropicThinking` (anthropic dialect only)
- *   4. `undefined` → omit wire fields (Gemini 2.5 streamer may inject dynamic budget)
+ *   4. `undefined` → omit wire fields (Gemini budget models may inject dynamic default)
  */
 export function resolveEffectiveThinkingEffort(
   provider: Pick<ProviderConfig, 'modelThinking' | 'anthropicThinking' | 'dialect'>,
@@ -205,22 +190,45 @@ export function resolveEffectiveThinkingEffort(
 }
 
 export function modelRejectsToolChoice(
-  dialect: ProviderDialect | undefined,
-  modelId: string,
-  effort: ThinkingEffort | undefined
+  _dialect: ProviderDialect | undefined,
+  _modelId: string,
+  effort: ThinkingEffort | undefined,
+  caps?: ModelThinkingCapabilities
 ): boolean {
-  if ((dialect ?? 'openai') !== 'openai') return false;
-  if (!isDeepSeekThinkingModel(modelId)) return false;
+  if (!caps?.rejectsToolChoice) return false;
   return effort !== 'off';
 }
 
+/** OpenRouter `reasoning` block (2026). See openrouter.ai/docs/api/reference/parameters */
+export interface OpenRouterReasoningBlock {
+  effort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+  exclude: boolean;
+}
+
 /**
- * OpenAI-compatible `reasoning_effort` (or `null` to omit). DeepSeek maps
- * `xhigh` → `max`; generic OpenAI passes `xhigh` through.
+ * Map normalized effort → OpenRouter's nested `reasoning` object.
+ * Prefer this over flat `reasoning_effort` on OpenRouter hosts.
  */
+export function mapOpenRouterReasoning(
+  effort: ThinkingEffort | undefined,
+  caps?: ModelThinkingCapabilities
+): OpenRouterReasoningBlock | null {
+  if (effort === undefined) return null;
+  if (effort === 'off') return { effort: 'none', exclude: true };
+  const flat = mapOpenAiReasoningEffort(effort, caps);
+  if (flat === null) return null;
+  if (flat === 'max') return { effort: 'xhigh', exclude: false };
+  return { effort: flat, exclude: false };
+}
+
+/** When true, request reasoning traces in the OpenRouter response stream. */
+export function openRouterIncludeReasoning(effort: ThinkingEffort | undefined): boolean {
+  return effort !== undefined && effort !== 'off';
+}
+
 export function mapOpenAiReasoningEffort(
   effort: ThinkingEffort | undefined,
-  modelId?: string
+  caps?: ModelThinkingCapabilities
 ): 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null {
   switch (effort) {
     case undefined:
@@ -235,7 +243,7 @@ export function mapOpenAiReasoningEffort(
     case 'high':
       return 'high';
     case 'xhigh':
-      return modelId && isDeepSeekThinkingModel(modelId) ? 'max' : 'xhigh';
+      return caps?.mapsXhighToMax ? 'max' : 'xhigh';
   }
 }
 
@@ -246,38 +254,27 @@ export function mapDeepSeekThinking(
 }
 
 export function mapAnthropicThinking(
-  modelId: string,
   effort: ThinkingEffort | undefined,
   maxTokens: number,
-  defaultMaxTokens: number
+  defaultMaxTokens: number,
+  caps?: ModelThinkingCapabilities
 ): {
   config: Record<string, unknown>;
-  effortField?: 'low' | 'medium' | 'high' | 'xhigh';
+  effortField?: 'low' | 'medium' | 'high' | 'max';
 } | null {
   if (effort === undefined || effort === 'off') return null;
-  const id = modelId.toLowerCase();
-  if (
-    id.startsWith('claude-haiku-3') ||
-    id.startsWith('claude-haiku-3.5') ||
-    id.startsWith('claude-instant-')
-  ) {
-    return null;
-  }
-  const isAdaptive =
-    id.startsWith('claude-opus-4-7') ||
-    id.startsWith('claude-opus-4-8') ||
-    id.startsWith('claude-opus-4-6') ||
-    id.startsWith('claude-sonnet-4-6') ||
-    id.startsWith('claude-mythos-');
-  if (isAdaptive) {
+  if (!caps?.supported) return null;
+
+  if (caps.wireStyle === 'anthropic-adaptive') {
     const effortField =
       effort === 'minimal'
         ? 'low'
         : effort === 'xhigh'
-          ? 'xhigh'
+          ? 'max'
           : effort;
     return { config: { type: 'adaptive' }, effortField };
   }
+
   const desired =
     effort === 'minimal' || effort === 'low'
       ? 2048
@@ -290,16 +287,17 @@ export function mapAnthropicThinking(
 
 /**
  * Gemini `thinkingConfig` for an explicit user effort. Returns `null` to
- * omit. Does NOT apply Gemini 2.5 dynamic default — see
+ * omit. Does NOT apply Gemini budget dynamic default — see
  * `resolveGeminiThinkingConfig`.
  */
 export function mapGeminiThinkingConfig(
-  modelId: string,
-  effort: ThinkingEffort | undefined
+  effort: ThinkingEffort | undefined,
+  caps?: ModelThinkingCapabilities
 ): Record<string, unknown> | null {
   if (effort === undefined) return null;
-  const isLegacy = isGemini25Model(modelId);
-  if (isLegacy) {
+  if (!caps?.supported) return null;
+
+  if (caps.wireStyle === 'gemini-budget') {
     if (effort === 'off') return { thinkingBudget: 0 };
     const budget =
       effort === 'minimal' || effort === 'low'
@@ -309,6 +307,7 @@ export function mapGeminiThinkingConfig(
           : 16384;
     return { thinkingBudget: budget };
   }
+
   if (effort === 'off') return null;
   const level =
     effort === 'xhigh' ? 'high' : effort === 'minimal' ? 'minimal' : effort;
@@ -317,16 +316,16 @@ export function mapGeminiThinkingConfig(
 
 /**
  * Full Gemini thinking config including dynamic `thinkingBudget: -1` when
- * effort is unset on 2.5 models.
+ * effort is unset on budget-style models.
  */
 export function resolveGeminiThinkingConfig(
-  modelId: string,
-  effort: ThinkingEffort | undefined
+  effort: ThinkingEffort | undefined,
+  caps?: ModelThinkingCapabilities
 ): Record<string, unknown> | null {
-  if (effort === undefined && isGemini25Model(modelId)) {
+  if (effort === undefined && caps?.defaultOn && caps.wireStyle === 'gemini-budget') {
     return { thinkingBudget: -1 };
   }
-  return mapGeminiThinkingConfig(modelId, effort);
+  return mapGeminiThinkingConfig(effort, caps);
 }
 
 export type OllamaThinkWire = boolean | 'low' | 'medium' | 'high';
@@ -335,10 +334,14 @@ export type OllamaThinkWire = boolean | 'low' | 'medium' | 'high';
  * Ollama `think` field. Returns `undefined` when the caller should omit
  * the body field (unset effort = provider default).
  */
-export function mapOllamaThink(effort: ThinkingEffort | undefined, modelId: string): OllamaThinkWire | undefined {
+export function mapOllamaThink(
+  effort: ThinkingEffort | undefined,
+  caps?: ModelThinkingCapabilities
+): OllamaThinkWire | undefined {
   if (effort === undefined) return undefined;
+  if (!caps?.supported) return undefined;
   if (effort === 'off') return false;
-  if (ollamaSupportsThinkLevels(modelId)) {
+  if (caps.wireStyle === 'ollama-levels') {
     switch (effort) {
       case 'minimal':
       case 'low':
@@ -353,6 +356,46 @@ export function mapOllamaThink(effort: ThinkingEffort | undefined, modelId: stri
     }
   }
   return true;
+}
+
+/**
+ * OpenAI Responses API `reasoning.effort`. Uses `none` instead of omitting
+ * when thinking should be off. Returns `null` to omit the `reasoning`
+ * block entirely (provider default).
+ */
+export function mapOpenAiResponsesReasoningEffort(
+  effort: ThinkingEffort | undefined
+): 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | null {
+  switch (effort) {
+    case undefined:
+      return null;
+    case 'off':
+      return 'none';
+    case 'minimal':
+      return 'minimal';
+    case 'low':
+      return 'low';
+    case 'medium':
+      return 'medium';
+    case 'high':
+      return 'high';
+    case 'xhigh':
+      return 'xhigh';
+  }
+}
+
+/** Recommended Anthropic beta headers applied when none are configured. */
+export const DEFAULT_ANTHROPIC_BETAS: readonly string[] = [
+  'compact-2026-01-12',
+  'model-context-window-exceeded-2025-08-26'
+] as const;
+
+/** Returns default betas when the provider has none; otherwise undefined. */
+export function anthropicBetasForProvider(
+  betas: string[] | undefined
+): string[] | undefined {
+  if (betas !== undefined && betas.length > 0) return betas;
+  return [...DEFAULT_ANTHROPIC_BETAS];
 }
 
 /** Migrate `modelThinking` map values on provider load. */
@@ -376,4 +419,12 @@ export function normalizeModelThinkingMap(
     map: Object.keys(out).length > 0 ? out : undefined,
     mutated
   };
+}
+
+/** @deprecated Use `resolveThinkingCapabilities` — kept for tests migrating off id heuristics. */
+export function isDeepSeekThinkingModel(
+  _modelId: string,
+  caps?: ModelThinkingCapabilities
+): boolean {
+  return caps?.wireStyle === 'openai-deepseek';
 }

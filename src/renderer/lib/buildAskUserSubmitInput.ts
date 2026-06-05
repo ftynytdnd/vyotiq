@@ -3,6 +3,7 @@
  */
 
 import type { AskUserAnswer, AskUserSubmitInput } from '@shared/types/askUser.js';
+import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import type { PendingAskUserEvent } from './pendingAskUser.js';
 
 function hasStructuredAnswer(answers: AskUserAnswer[]): boolean {
@@ -19,8 +20,9 @@ export function buildAskUserSubmitInput(opts: {
   conversationId: string;
   answers: AskUserAnswer[];
   supplementText?: string;
+  attachmentMeta?: PromptAttachmentMeta[];
 }): AskUserSubmitInput {
-  const { pending, runId, conversationId, answers, supplementText } = opts;
+  const { pending, runId, conversationId, answers, supplementText, attachmentMeta } = opts;
   const trimmed = supplementText?.trim() ?? '';
   const single = pending.payload.questions.length === 1;
 
@@ -40,6 +42,7 @@ export function buildAskUserSubmitInput(opts: {
     toolCallId: pending.toolCallId,
     payload: pending.payload,
     answers: mergedAnswers,
-    ...(extra ? { supplementText: extra } : {})
+    ...(extra ? { supplementText: extra } : {}),
+    ...(attachmentMeta && attachmentMeta.length > 0 ? { attachmentMeta } : {})
   };
 }

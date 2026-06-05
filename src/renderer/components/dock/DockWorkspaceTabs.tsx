@@ -37,7 +37,8 @@ import {
   DOCK_TAB_TRIGGER_CLASS,
   dockInlineActionClassName,
   dockTabRowClassName,
-  dockTabActiveAttr
+  dockTabActiveAttr,
+  collapseDockAfterSelection
 } from './dockShared.js';
 import { useUiStore } from '../../store/useUiStore.js';
 import { handleDockVerticalTablistKeyDown } from './dockVerticalTablistKeyboard.js';
@@ -92,7 +93,10 @@ export function DockWorkspaceTabs() {
           e,
           ids: workspaces.map((ws) => ws.id),
           activeId,
-          onActivate: (id) => void setActive(id),
+          onActivate: (id) => {
+            void setActive(id);
+            collapseDockAfterSelection();
+          },
           focusTarget: (id) =>
             scrollRef.current?.querySelector<HTMLElement>(`[data-workspace-id="${id}"]`)
         });
@@ -103,7 +107,10 @@ export function DockWorkspaceTabs() {
           key={ws.id}
           workspace={ws}
           active={ws.id === activeId}
-          onActivate={() => void setActive(ws.id)}
+          onActivate={() => {
+            void setActive(ws.id);
+            collapseDockAfterSelection();
+          }}
         />
       ))}
       <button

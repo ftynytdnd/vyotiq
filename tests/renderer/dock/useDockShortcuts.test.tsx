@@ -114,7 +114,7 @@ describe('useDockShortcuts via LeftDock mount', () => {
     useUiStore.setState({ dockExpanded: true });
     useDockSearchStore.setState({ open: true, query: 'tri' });
     render(<LeftDock {...dockProps} />);
-    const searchInput = screen.getByRole('searchbox', { name: 'Search chats' });
+    const searchInput = screen.getByRole('searchbox', { name: 'Search workspace' });
     searchInput.focus();
     fireEvent.keyDown(searchInput, { key: 'Escape', bubbles: true });
     expect(useDockSearchStore.getState().open).toBe(false);

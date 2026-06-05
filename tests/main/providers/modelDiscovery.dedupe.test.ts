@@ -26,8 +26,12 @@ describe('discoverModels in-flight dedupe', () => {
     fetchCalls = 0;
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => {
+      vi.fn(async (input: RequestInfo | URL) => {
         fetchCalls += 1;
+        const url = String(input);
+        if (url.endsWith('/api/version') || url.endsWith('/api/show')) {
+          return new Response('not found', { status: 404 });
+        }
         await new Promise((r) => setTimeout(r, 40));
         return new Response(
           JSON.stringify({ data: [{ id: 'gpt-test' }] }),
@@ -48,7 +52,8 @@ describe('discoverModels in-flight dedupe', () => {
       discoverModels('p1', true),
       discoverModels('p1', true)
     ]);
-    expect(fetchCalls).toBe(1);
+    // One coalesced discovery flight: `/v1/models` + optional `/api/version` probe.
+    expect(fetchCalls).toBe(2);
     expect(a).toEqual([{ id: 'gpt-test' }]);
     expect(b).toEqual(a);
     expect(c).toEqual(a);

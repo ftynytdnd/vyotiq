@@ -82,16 +82,15 @@ describe('discoverModels — ollama-native dialect', () => {
 
     const models = await discoverModels('p1', true);
 
-    expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toBe('https://ollama.com/api/tags');
+    expect(calls.filter((c) => c.url.endsWith('/api/show')).length).toBe(2);
     expect(models.map((m) => m.id)).toEqual([
       'gpt-oss:120b-cloud',
       'llama3.2:latest'
     ]);
     // parameter_size becomes part of the label (informational only).
     expect(models[0]!.label).toContain('120B');
-    // /api/tags does not expose context_window — it MUST be left
-    // undefined so the per-model override mechanism takes over.
+    // Without a successful /api/show probe, context stays undefined.
     expect(models[0]!.contextWindow).toBeUndefined();
   });
 

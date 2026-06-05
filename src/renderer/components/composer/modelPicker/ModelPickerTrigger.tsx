@@ -1,7 +1,6 @@
 /**
- * ModelPickerTrigger — the pill button that opens the picker. Shows
- * the model id as the primary label. Falls back to a placeholder when
- * nothing is selected.
+ * ModelPickerTrigger — pill button that opens the picker.
+ * Shows shortened tail model id; full id + provider in tooltip.
  */
 
 import { forwardRef } from 'react';
@@ -15,6 +14,7 @@ import { useProviderStore } from '../../../store/useProviderStore.js';
 import { cn } from '../../../lib/cn.js';
 import { chromeToolbarButtonClassName } from '../../ui/SurfaceShell.js';
 import { SHELL_COMPACT_ICON_CLASS, SHELL_COMPACT_ICON_STROKE } from '../../../lib/shellIcons.js';
+import { rowDisplayModelId } from './modelPickerDisplay.js';
 
 interface ModelPickerTriggerProps {
   value: ModelSelection | null;
@@ -30,14 +30,19 @@ export const ModelPickerTrigger = forwardRef<HTMLButtonElement, ModelPickerTrigg
 
     const placeholder = hasEnabledProvider ? 'Select model…' : 'Add provider';
     const modelId = value?.modelId ?? '';
+    const displayId = modelId ? rowDisplayModelId(modelId) : '';
     const effortLabel = ((): string | null => {
       if (!value || !provider) return null;
       const effort: ThinkingEffort | undefined =
         value.thinkingEffort ?? provider.modelThinking?.[value.modelId];
+      const modelInfo = provider.models?.find((m) => m.id === value.modelId);
       if (
         effort === undefined ||
         effort === 'off' ||
-        !isThinkingCapableModel(provider.dialect, value.modelId)
+        !isThinkingCapableModel(provider.dialect, value.modelId, {
+          supportedParameters: modelInfo?.supportedParameters,
+          thinking: modelInfo?.thinking
+        })
       ) {
         return null;
       }
@@ -61,10 +66,12 @@ export const ModelPickerTrigger = forwardRef<HTMLButtonElement, ModelPickerTrigg
           'vx-composer-model-trigger h-6 shrink-0 max-w-[14rem] items-center gap-1 px-1.5 text-chat-meta text-text-secondary'
         )}
       >
-        <span className="min-w-0 truncate font-mono" title={modelId || undefined}>
-          {modelId || placeholder}
+        <span className="flex min-w-0 items-baseline gap-0.5">
+          <span className="min-w-0 truncate font-mono" title={modelId || undefined}>
+            {displayId || placeholder}
+          </span>
           {effortLabel ? (
-            <span className="text-text-faint"> · {effortLabel}</span>
+            <span className="shrink-0 text-text-faint">· {effortLabel}</span>
           ) : null}
         </span>
         <ChevronDown

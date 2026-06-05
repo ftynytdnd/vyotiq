@@ -3,6 +3,7 @@ import type {
   ProviderConfig,
   ModelInfo,
   AddProviderInput,
+  OpenAiTransport,
   ProviderAttribution,
   ThinkingEffort
 } from '@shared/types/provider.js';
@@ -22,6 +23,10 @@ interface ProviderStore {
       attribution?: ProviderAttribution;
       /** Per-model thinking-effort overrides (shallow-merged store-side). */
       modelThinking?: Record<string, ThinkingEffort | null>;
+      /** Per-model context-window overrides in tokens (shallow-merged). */
+      contextOverrides?: Record<string, number | null>;
+      /** OpenAI-dialect transport selection. */
+      openaiTransport?: OpenAiTransport;
     }
   ) => Promise<void>;
   remove: (id: string) => Promise<void>;

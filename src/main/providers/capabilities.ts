@@ -2,7 +2,7 @@
  * Provider capability helpers for wire-dialect feature flags.
  */
 
-import type { ProviderDialect, ThinkingEffort } from '@shared/types/provider.js';
+import type { ModelThinkingCapabilities, ProviderDialect, ThinkingEffort } from '@shared/types/provider.js';
 import { modelRejectsToolChoice } from '@shared/providers/thinkingEffort.js';
 
 /** Whether the wire dialect accepts `parallel_tool_calls: true`. */
@@ -29,7 +29,8 @@ export function supportsParallelToolCalls(dialect: ProviderDialect | undefined):
 export function supportsToolChoice(
   dialect: ProviderDialect | undefined,
   modelId: string,
-  effort: ThinkingEffort | undefined
+  effort: ThinkingEffort | undefined,
+  caps?: ModelThinkingCapabilities
 ): boolean {
-  return !modelRejectsToolChoice(dialect, modelId, effort);
+  return !modelRejectsToolChoice(dialect, modelId, effort, caps);
 }

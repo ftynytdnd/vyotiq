@@ -31,8 +31,10 @@ interface AttachmentPickerProps {
   onClose: () => void;
   /** Already-attached paths so the picker can disable them. */
   selected: string[];
-  /** Called when the user picks one. */
+  /** Called when the user picks a file. */
   onPick: (path: string) => void;
+  /** Called when the user picks a folder (recursive file attach). */
+  onPickFolder?: (folderPath: string) => void;
   /**
    * When set, the filter input becomes controlled — the parent owns the
    * value and is notified on every change. Used by the Composer's
@@ -51,6 +53,7 @@ export function AttachmentPicker({
   onClose,
   selected,
   onPick,
+  onPickFolder,
   controlledFilter,
   onControlledFilterChange
 }: AttachmentPickerProps) {
@@ -168,19 +171,24 @@ export function AttachmentPicker({
           filtered.map((path) => {
             const isDir = path.endsWith('/');
             const cleaned = isDir ? path.slice(0, -1) : path;
-            const isSelected = selected.includes(cleaned);
+            const isSelected = !isDir && selected.includes(cleaned);
+            const folderDisabled = isDir && !onPickFolder;
             return (
               <button
                 key={path}
                 type="button"
-                disabled={isDir || isSelected}
+                disabled={folderDisabled || isSelected}
                 onClick={() => {
-                  onPick(cleaned);
+                  if (isDir) {
+                    onPickFolder?.(cleaned);
+                  } else {
+                    onPick(cleaned);
+                  }
                   onClose();
                 }}
                 className={cn(
                   'vx-dropdown-item flex w-full items-center gap-2',
-                  (isDir || isSelected) && 'opacity-40 cursor-not-allowed hover:bg-transparent'
+                  (folderDisabled || isSelected) && 'opacity-40 cursor-not-allowed hover:bg-transparent'
                 )}
               >
                 {isDir ? (
@@ -200,7 +208,9 @@ export function AttachmentPicker({
           })}
       </div>
       <div className="px-2 pt-1.5 text-meta text-text-faint">
-        Files only. Selected files are inlined into the agent's context.
+        {onPickFolder
+          ? 'Pick files or folders. Folder picks attach files recursively.'
+          : "Files only. Selected files are inlined into the agent's context."}
       </div>
       {truncation.truncated && (
         <div className="px-2 pt-0.5 text-meta text-text-faint">

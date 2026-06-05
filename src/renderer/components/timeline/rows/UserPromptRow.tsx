@@ -7,6 +7,7 @@
 
 import { Copy, Check, Pencil, Undo2 } from 'lucide-react';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
+import type { MentionRef } from '@shared/types/mention.js';
 import { PromptAttachmentCards } from '../../composer/PromptAttachmentCards.js';
 import { cn } from '../../../lib/cn.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/shellIcons.js';
@@ -26,6 +27,7 @@ interface UserPromptRowProps {
   runId?: string;
   content: string;
   attachments?: PromptAttachmentMeta[];
+  mentions?: MentionRef[];
   /** Last turn while the agent is still running. */
   live?: boolean;
 }
@@ -35,6 +37,7 @@ export function UserPromptRow({
   runId,
   content,
   attachments = [],
+  mentions = [],
   live = false
 }: UserPromptRowProps) {
   const revertCtx = useRevertPrompt();
@@ -95,7 +98,7 @@ export function UserPromptRow({
         />
       ) : (
         <>
-          <PromptBody content={content} />
+          <PromptBody content={content} mentions={mentions} />
           {attachments.length > 0 && (
             <PromptAttachmentCards items={attachments} className="mt-2" />
           )}

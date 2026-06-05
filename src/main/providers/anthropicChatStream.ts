@@ -69,7 +69,9 @@ import { acquire, markRateLimited, markSuccess } from './providerRateGuard.js';
 import { createInactivityWatch, isStreamInactivityError } from './streamInactivity.js';
 import { readSseFrames } from './sseFrameReader.js';
 import { safeText } from './errorBody.js';
+import { findProviderModel } from '@shared/providers/modelId.js';
 import {
+  anthropicBetasForProvider,
   mapAnthropicThinking,
   resolveStreamerThinkingEffort
 } from '@shared/providers/thinkingEffort.js';
@@ -191,10 +193,10 @@ export async function* streamAnthropic(
   // guide; older models get a derived `budget_tokens`.
   const anthroEffort = resolveStreamerThinkingEffort(provider, req.model, req.reasoningEffort);
   const thinking = mapAnthropicThinking(
-    req.model,
     anthroEffort,
     body['max_tokens'] as number,
-    DEFAULT_MAX_TOKENS
+    DEFAULT_MAX_TOKENS,
+    findProviderModel(provider, req.model)?.thinking
   );
   if (thinking !== null) {
     body['thinking'] = thinking.config;
@@ -209,8 +211,9 @@ export async function* streamAnthropic(
     'x-api-key': provider.apiKey,
     'anthropic-version': '2023-06-01'
   };
-  if (provider.anthropicBetas && provider.anthropicBetas.length > 0) {
-    headers['anthropic-beta'] = provider.anthropicBetas.join(',');
+  const betas = anthropicBetasForProvider(provider.anthropicBetas);
+  if (betas && betas.length > 0) {
+    headers['anthropic-beta'] = betas.join(',');
   }
 
   // Inactivity watchdog — wraps the caller's signal so a silent SSE
@@ -708,73 +711,11 @@ function toAnthropicMessages(
   return { system: systemParts.join('\n\n'), messages: wire };
 }
 
-/**
- * Phase 8 (2026): pick the right `thinking` body shape for the active
- * model + provider config, or `null` to omit the field entirely.
- *
- * Sources verified May 2026:
- *   - https://platform.claude.com/docs/en/docs/build-with-claude/extended-thinking
- *   - https://platform.claude.com/docs/en/docs/build-with-claude/adaptive-thinking
- *
- * Decision tree (in order):
- *   1. Provider hasn't opted in → no thinking field.
- *   2. Model id matches a known non-thinking model (legacy Haiku
- *      pre-4.5) → no thinking field.
- *   3. Model id matches a 2026 adaptive-tier model (Mythos / Opus
- *      4.7 / Opus 4.6 / Sonnet 4.6) → `{ type: 'adaptive' }` (no
- *      `effort` in the body — the parameter is set via the separate
- *      `effort` request field which 4.7+ honor; we don't send it
- *      automatically because misuse can interact badly with
- *      `forced tool use` on some account tiers).
- *   4. Otherwise (older thinking-capable models — Sonnet 4.5 / 4,
- *      Opus 4 / 4.5 not 4.6+, Haiku 4.5) → `{ type: 'enabled',
- *      budget_tokens }`. `budget_tokens` derives from `effort`
- *      (low ≈ 2048, medium ≈ 8192, high ≈ 16384) and is clamped to
- *      `max_tokens - 1` so the request stays valid.
- *
- * Pure / synchronous — exported for testing.
- */
-function pickThinkingConfig(
-  modelId: string,
-  cfg: { enabled: boolean; effort?: 'low' | 'medium' | 'high' } | undefined,
-  maxTokens: number
-): Record<string, unknown> | null {
-  if (!cfg || !cfg.enabled) return null;
-  const id = modelId.toLowerCase();
-  // Known non-thinking models — never emit a thinking field.
-  if (
-    id.startsWith('claude-haiku-3') ||
-    id.startsWith('claude-haiku-3.5') ||
-    id.startsWith('claude-instant-')
-  ) {
-    return null;
-  }
-  // Adaptive-tier 2026 models. Match against the canonical id stems
-  // exposed by the Models API (`claude-opus-4-7`, `claude-opus-4-6`,
-  // `claude-sonnet-4-6`, `claude-mythos-preview`). The prefix match
-  // catches both bare ids and dated suffixes (e.g.
-  // `claude-opus-4-7-20260101`) without re-listing every snapshot.
-  const isAdaptive =
-    id.startsWith('claude-opus-4-7') ||
-    id.startsWith('claude-opus-4-6') ||
-    id.startsWith('claude-sonnet-4-6') ||
-    id.startsWith('claude-mythos-');
-  if (isAdaptive) return { type: 'adaptive' };
-  // Legacy thinking-capable path — clamp budget below max_tokens.
-  const effort = cfg.effort ?? 'medium';
-  const desired = effort === 'low' ? 2048 : effort === 'high' ? 16384 : 8192;
-  const ceiling = Math.max(1024, (typeof maxTokens === 'number' ? maxTokens : DEFAULT_MAX_TOKENS) - 1);
-  const budget_tokens = Math.min(desired, ceiling);
-  return { type: 'enabled', budget_tokens };
-}
-
-
 /** Test-only export — surfaces the body translator so the unit test
  *  can assert on the exact wire shape without spinning up a mock
  *  fetch + SSE stream. Not used in production. */
 export const __anthropicInternals = {
   toAnthropicMessages,
   mapStopReason,
-  toCanonicalUsage,
-  pickThinkingConfig
+  toCanonicalUsage
 };

@@ -19,7 +19,8 @@ vi.mock('@renderer/components/composer/useComposerAttachments.js', () => ({
     remove: vi.fn(),
     peekPendingMessageId: () => 'msg-stub',
     onDrop: vi.fn(),
-    onDragOver: vi.fn()
+    onDragOver: vi.fn(),
+    onPaste: vi.fn()
   })
 }));
 
@@ -165,13 +166,15 @@ describe('InlinePromptSession', () => {
     const sendSpy = vi.fn(async () => undefined);
     useChatStore.setState((prev) => ({ ...prev, send: sendSpy }));
 
-    const { findByLabelText, findByRole } = renderSession({
+    const { findByRole } = renderSession({
       kind: 'edit',
       originalContent: 'hello'
     });
 
-    const textarea = await findByLabelText(/Edit message text/i);
-    fireEvent.change(textarea, { target: { value: 'hello again' } });
+    const editor = await findByRole('textbox', { name: /Message Agent V/i });
+    await waitFor(() => expect(editor).toHaveAttribute('contenteditable', 'true'));
+    editor.textContent = 'hello again';
+    fireEvent.input(editor);
 
     const sendBtn = await findByRole('button', { name: 'Send' });
     await waitFor(() => expect(sendBtn).not.toBeDisabled());

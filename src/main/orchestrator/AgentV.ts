@@ -20,6 +20,7 @@ import { formatAskUserDisplayFromAnswers, formatAskUserToolResult } from '@share
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import { wrapXml } from './envelope/index.js';
 import { resolveAttachmentsForInline } from '../attachments/resolveAttachmentsForInline.js';
+import { resolveMentionsForInline } from '../attachments/resolveMentionsForInline.js';
 import { replayTranscript } from './replay/index.js';
 import { runOrchestratorLoop } from './loop/index.js';
 import {
@@ -271,6 +272,8 @@ export async function startRun(
       input.attachmentMeta && input.attachmentMeta.length > 0
         ? input.attachmentMeta
         : undefined,
+    mentions:
+      input.mentions && input.mentions.length > 0 ? input.mentions : undefined,
     // Pin the prompt to its run so the inline per-prompt Revert
     // affordance (and the `rewindToPrompt` IPC) can resolve the
     // matching checkpoint manifest in O(1). Older transcripts that
@@ -513,13 +516,14 @@ export async function submitAskUserAnswers(input: AskUserSubmitInput): Promise<b
     toolCallId: input.toolCallId,
     runId: input.runId
   });
-  if (displayText.length > 0) {
+  if (displayText.length > 0 || (input.attachmentMeta?.length ?? 0) > 0) {
     emit({
       kind: 'user-prompt',
       id: userPromptId,
       ts,
-      content: displayText,
-      runId: input.runId
+      content: displayText.length > 0 ? displayText : 'See attached files.',
+      runId: input.runId,
+      ...(input.attachmentMeta?.length ? { attachments: input.attachmentMeta } : {})
     });
   }
   emit({
@@ -635,9 +639,15 @@ async function buildInitialMessages(
     workspacePath,
     signal
   });
+  const mentionBlocks = await resolveMentionsForInline({
+    mentions: input.mentions,
+    workspacePath,
+    signal
+  });
+  const inlineBlocks = [mentionBlocks, attachmentBlocks].filter((p) => p.length > 0).join('\n\n');
   const attachmentsXml =
-    attachmentBlocks.length > 0
-      ? wrapXml('attached_files', attachmentBlocks, undefined, { escape: true })
+    inlineBlocks.length > 0
+      ? wrapXml('attached_files', inlineBlocks, undefined, { escape: true })
       : '';
   const turnBody = attachmentsXml ? `${userMessageXml}\n${attachmentsXml}` : userMessageXml;
   const userEnvelope = wrapXml('turn', turnBody);

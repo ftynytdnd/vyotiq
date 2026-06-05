@@ -29,6 +29,7 @@ vi.mock('@main/providers/providerStore', () => ({
     name: 'OpenAI',
     baseUrl: 'https://api.openai.com',
     dialect: 'openai',
+    openaiTransport: 'chat-completions',
     enabled: true,
     models: [],
     apiKey: 'sk-test'

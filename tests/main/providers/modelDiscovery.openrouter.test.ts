@@ -42,7 +42,13 @@ const SAMPLE_OPENROUTER_RESPONSE = {
       pricing: { prompt: '0.0000025', completion: '0.00001' },
       architecture: { modality: 'text->text', tokenizer: 'GPT' },
       top_provider: { context_length: 128000, max_completion_tokens: 16384 },
-      supported_parameters: ['temperature', 'tools', 'response_format']
+      supported_parameters: ['temperature', 'tools', 'response_format', 'reasoning']
+    },
+    {
+      id: 'vendor/null-ctx',
+      name: 'Null Ctx',
+      context_length: null,
+      top_provider: { context_length: 65536 }
     },
     {
       id: 'anthropic/claude-sonnet-4',
@@ -88,11 +94,14 @@ describe('discoverModels (OpenRouter shape)', () => {
       const models = await discoverModels(created.id, true);
 
       // Shape assertions.
-      expect(models).toHaveLength(3);
+      expect(models).toHaveLength(4);
       const gpt = models.find((m) => m.id === 'openai/gpt-4o');
       expect(gpt).toBeDefined();
       expect(gpt?.contextWindow).toBe(128000);
       expect(gpt?.label).toBe('OpenAI: GPT-4o');
+      expect(gpt?.supportedParameters).toContain('reasoning');
+      expect(gpt?.thinking?.supported).toBe(true);
+      expect(gpt?.thinking?.wireStyle).toBe('openai-reasoning');
 
       const sonnet = models.find((m) => m.id === 'anthropic/claude-sonnet-4');
       expect(sonnet?.contextWindow).toBe(200000);
@@ -102,6 +111,9 @@ describe('discoverModels (OpenRouter shape)', () => {
       // id === name ⇒ no redundant label.
       expect(llama?.label).toBeUndefined();
       expect(llama?.contextWindow).toBe(131072);
+
+      const nullCtx = models.find((m) => m.id === 'vendor/null-ctx');
+      expect(nullCtx?.contextWindow).toBe(65536);
 
       // Attribution + auth wiring.
       // The probe URL must be the dialect-aware form — `/api` preserved.
@@ -118,8 +130,40 @@ describe('discoverModels (OpenRouter shape)', () => {
       expect(models.map((m) => m.id)).toEqual([
         'anthropic/claude-sonnet-4',
         'meta-llama/llama-3.1-8b',
-        'openai/gpt-4o'
+        'openai/gpt-4o',
+        'vendor/null-ctx'
       ]);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('parses OpenAI extended model rows (features / groups)', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'o4-mini',
+              features: ['streaming', 'reasoning_effort'],
+              groups: ['reasoning']
+            }
+          ]
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+
+    try {
+      const created = await addProvider({
+        name: 'OpenAI',
+        baseUrl: 'https://api.openai.com',
+        apiKey: 'sk-test',
+        dialect: 'openai'
+      });
+      const models = await discoverModels(created.id, true);
+      expect(models[0]?.thinking?.supported).toBe(true);
+      expect(models[0]?.thinking?.wireStyle).toBe('openai-reasoning');
     } finally {
       fetchSpy.mockRestore();
     }

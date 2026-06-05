@@ -16,29 +16,56 @@ import { logger } from '../logging/logger.js';
 import { classifyProviderError, ProviderError, looksRateLimited } from './providerError.js';
 import { acquire, markRateLimited, markSuccess } from './providerRateGuard.js';
 import { createInactivityWatch, isStreamInactivityError } from './streamInactivity.js';
-import { buildAttributionHeaders } from './attributionHeaders.js';
+import { buildAttributionHeaders, isOpenRouterHost } from './attributionHeaders.js';
 import { readSseFrames, pickSseDataLine } from './sseFrameReader.js';
 import {
   stripGeminiSignatures,
   stripReasoningContentForStrictDialects
 } from './sanitizeMessages.js';
 import { safeText } from './errorBody.js';
+import { findProviderModel } from '@shared/providers/modelId.js';
 import {
-  isDeepSeekThinkingModel,
   mapDeepSeekThinking,
   mapOpenAiReasoningEffort,
+  mapOpenRouterReasoning,
+  openRouterIncludeReasoning,
   resolveStreamerThinkingEffort
 } from '@shared/providers/thinkingEffort.js';
 
 const log = logger.child('providers/chat/openai');
+
+/** Reasoning text from OpenAI-compat / OpenRouter / DeepSeek stream deltas. */
+function extractReasoningDeltaText(delta: RawSseChoice['delta']): string | null {
+  if (!delta) return null;
+  if (typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0) {
+    return delta.reasoning_content;
+  }
+  if (typeof delta.reasoning === 'string' && delta.reasoning.length > 0) {
+    return delta.reasoning;
+  }
+  if (Array.isArray(delta.reasoning_details)) {
+    let text = '';
+    for (const detail of delta.reasoning_details) {
+      if (typeof detail?.text === 'string' && detail.text.length > 0) {
+        text += detail.text;
+      }
+    }
+    if (text.length > 0) return text;
+  }
+  return null;
+}
 
 interface RawSseChoice {
   index?: number;
   delta?: {
     role?: string;
     content?: string | null;
-    /** DeepSeek thinking-mode reasoning chunk. */
+    /** DeepSeek / OpenRouter reasoning chunk. */
     reasoning_content?: string | null;
+    /** OpenRouter unified reasoning text (2026). */
+    reasoning?: string | null;
+    /** OpenRouter structured reasoning stream (2026). */
+    reasoning_details?: Array<{ type?: string; text?: string }>;
     tool_calls?: Array<{
       index?: number;
       id?: string;
@@ -174,10 +201,21 @@ export async function* streamOpenAi(
   // re-enables `tool_choice`); other OpenAI-compat reasoning models
   // simply omit the field when effort is off/unset.
   const effort = resolveStreamerThinkingEffort(provider, req.model, req.reasoningEffort);
-  const reasoningEffort = mapOpenAiReasoningEffort(effort, req.model);
-  if (reasoningEffort !== null) body['reasoning_effort'] = reasoningEffort;
-  if (isDeepSeekThinkingModel(req.model) && effort !== undefined) {
-    body['thinking'] = mapDeepSeekThinking(effort);
+  const modelCaps = findProviderModel(provider, req.model)?.thinking;
+  if (isOpenRouterHost(provider.baseUrl)) {
+    const reasoning = mapOpenRouterReasoning(effort, modelCaps);
+    if (reasoning) {
+      body['reasoning'] = reasoning;
+      if (openRouterIncludeReasoning(effort)) {
+        body['include_reasoning'] = true;
+      }
+    }
+  } else {
+    const reasoningEffort = mapOpenAiReasoningEffort(effort, modelCaps);
+    if (reasoningEffort !== null) body['reasoning_effort'] = reasoningEffort;
+    if (modelCaps?.wireStyle === 'openai-deepseek' && effort !== undefined) {
+      body['thinking'] = mapDeepSeekThinking(effort);
+    }
   }
 
   const headers: Record<string, string> = {
@@ -348,8 +386,9 @@ export async function* streamOpenAi(
     const choice = chunk.choices?.[0];
     if (!choice) return false;
     const delta = choice.delta ?? {};
-    if (typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0) {
-      yield { reasoningDelta: delta.reasoning_content };
+    const reasoningText = extractReasoningDeltaText(delta);
+    if (reasoningText) {
+      yield { reasoningDelta: reasoningText };
     }
     if (typeof delta.content === 'string' && delta.content.length > 0) {
       yield { contentDelta: delta.content };

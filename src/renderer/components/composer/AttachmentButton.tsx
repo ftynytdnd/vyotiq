@@ -23,6 +23,7 @@ interface AttachmentButtonProps {
   onClose: () => void;
   selected: string[];
   onPick: (path: string) => void;
+  onPickFolder?: (folderPath: string) => void;
   onPickFromComputer: () => void;
   /** When true, skip the source menu and open the workspace picker directly. */
   workspaceOnly?: boolean;
@@ -36,6 +37,7 @@ export function AttachmentButton({
   onClose,
   selected,
   onPick,
+  onPickFolder,
   onPickFromComputer,
   workspaceOnly = false,
   controlledFilter,
@@ -121,6 +123,7 @@ export function AttachmentButton({
             onClose={onClose}
             selected={selected}
             onPick={onPick}
+            {...(onPickFolder ? { onPickFolder } : {})}
             {...(controlledFilter !== undefined ? { controlledFilter } : {})}
             {...(onControlledFilterChange ? { onControlledFilterChange } : {})}
           />

@@ -15,5 +15,6 @@ export function shouldUnloadIdleSlice(slice: ChatSlice | undefined): slice is Ch
 export function unloadIdleSlice(slice: ChatSlice): ChatSlice {
   if (slice.isProcessing || slice.runId) return slice;
   const draft = slice.draft;
-  return { ...emptySlice(slice.conversationId), draft };
+  const attachmentDraft = slice.attachmentDraft;
+  return { ...emptySlice(slice.conversationId), draft, attachmentDraft };
 }

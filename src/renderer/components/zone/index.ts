@@ -1,1 +1,1 @@
-export { SecondaryZone } from './SecondaryZone.js';
+/** Secondary zone removed — settings use full-screen dedicated view. */

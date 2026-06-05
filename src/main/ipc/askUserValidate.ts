@@ -3,7 +3,10 @@
  */
 
 import type { AskUserSubmitInput } from '@shared/types/askUser.js';
+import { assertAttachmentMetaArray } from './chatValidate.js';
 import { assertString } from './validate.js';
+
+const CHANNEL = 'chat:submitAskUser';
 
 export function assertAskUserSubmitInput(input: unknown): asserts input is AskUserSubmitInput {
   if (input === null || typeof input !== 'object') {
@@ -26,4 +29,5 @@ export function assertAskUserSubmitInput(input: unknown): asserts input is AskUs
   if (o['supplementText'] !== undefined && typeof o['supplementText'] !== 'string') {
     throw new Error('chat:submitAskUser supplementText must be a string when present');
   }
+  assertAttachmentMetaArray(CHANNEL, o['attachmentMeta']);
 }

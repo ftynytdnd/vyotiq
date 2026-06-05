@@ -22,7 +22,8 @@ import { createPortal } from 'react-dom';
 import { ArrowDown } from 'lucide-react';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { useChatStore } from '../../store/useChatStore.js';
-import { useSecondaryZoneStore } from '../../store/useSecondaryZoneStore.js';
+import { useAttachmentPreviewStore } from '../../store/useAttachmentPreviewStore.js';
+import { useFloatingLiveDiffStore } from '../../store/useFloatingLiveDiffStore.js';
 import { applyDeriveRowsLiveLayer, deriveRows } from './reducer/deriveRows.js';
 import { UserPromptRow } from './rows/UserPromptRow.js';
 import { AskUserRow } from './rows/AskUserRow.js';
@@ -57,7 +58,9 @@ interface TimelineProps {
 }
 
 export function Timeline({ model }: TimelineProps) {
-  const secondaryZoneOpen = useSecondaryZoneStore((s) => s.panel !== null);
+  const companionOverlayOpen =
+    useAttachmentPreviewStore((s) => s.attachment !== null) ||
+    useFloatingLiveDiffStore((s) => s.target !== null);
   const events = useChatStore((s) => s.events);
   const isProcessing = useChatStore((s) => s.isProcessing);
   // Live partial-args snapshots — pulled in so `deriveRows` can
@@ -213,7 +216,7 @@ export function Timeline({ model }: TimelineProps) {
       ro.disconnect();
       setJumpOverlayHost(null);
     };
-  }, [secondaryZoneOpen, syncScrollTail, tailScrollKey]);
+  }, [companionOverlayOpen, syncScrollTail, tailScrollKey]);
 
   // Keyboard navigation between user prompts (`g j` / `g k`) and Esc to
   // drop sticky scroll. The `g`-prefix uses a short timeout so accidental
@@ -299,7 +302,7 @@ export function Timeline({ model }: TimelineProps) {
       window.removeEventListener('keydown', onKey);
       disarm();
     };
-  }, [secondaryZoneOpen]);
+  }, [companionOverlayOpen]);
 
   // Sticky follow during streaming (manual_only — only when user is at tail): every time the derived row list
   // grows we attempt to pin — but only when the sticky bit is still
@@ -427,6 +430,7 @@ function renderRow(
           {...(r.attachments && r.attachments.length > 0
             ? { attachments: r.attachments }
             : {})}
+          {...(r.mentions && r.mentions.length > 0 ? { mentions: r.mentions } : {})}
           live={liveTurn}
         />
       );

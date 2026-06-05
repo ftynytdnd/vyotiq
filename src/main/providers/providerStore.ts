@@ -15,7 +15,7 @@ import type {
 import { PROVIDERS_FILE } from '@shared/constants.js';
 import { normalizeBaseUrl as normalizeBaseUrlShared } from '@shared/providers/normalizeBaseUrl.js';
 import { defaultMaxConcurrentStreamsForDialect } from '@shared/providers/providerConcurrencyDefaults.js';
-import { normalizeModelThinkingMap } from '@shared/providers/thinkingEffort.js';
+import { DEFAULT_ANTHROPIC_BETAS, normalizeModelThinkingMap } from '@shared/providers/thinkingEffort.js';
 import { readEncryptedJson, writeEncryptedJson } from '../secrets/safeStore.js';
 
 interface PersistedProvider extends ProviderConfig {
@@ -147,7 +147,10 @@ export async function addProvider(input: AddProviderInput): Promise<ProviderConf
     notes: input.notes,
     models: [],
     lastDiscoveredAt: undefined,
-    ...(input.attribution ? { attribution: input.attribution } : {})
+    ...(input.attribution ? { attribution: input.attribution } : {}),
+    ...(dialect === 'anthropic-native'
+      ? { anthropicBetas: [...DEFAULT_ANTHROPIC_BETAS] }
+      : {})
   };
   // Persist-then-commit: build the candidate list, write it, and only
   // assign to `cache` after the disk write succeeds. See
@@ -168,9 +171,10 @@ export async function updateProvider(
     attribution?: ProviderConfig['attribution'];
     modelThinking?: Record<string, ThinkingEffort | null>;
     anthropicThinking?: ProviderConfig['anthropicThinking'];
-    contextOverrides?: ProviderConfig['contextOverrides'];
+    contextOverrides?: Record<string, number | null>;
     anthropicBetas?: ProviderConfig['anthropicBetas'];
     geminiAuthMode?: ProviderConfig['geminiAuthMode'];
+    openaiTransport?: ProviderConfig['openaiTransport'];
   }
 ): Promise<ProviderConfig> {
   const list = await load();
@@ -218,9 +222,18 @@ export async function updateProvider(
     // all, so a renderer patch silently dropped them. Full-replace when
     // present, preserve otherwise.
     anthropicThinking: patch.anthropicThinking ?? current.anthropicThinking,
-    contextOverrides: patch.contextOverrides ?? current.contextOverrides,
+    contextOverrides: (() => {
+      if (!patch.contextOverrides) return current.contextOverrides;
+      const merged = { ...(current.contextOverrides ?? {}) };
+      for (const [key, val] of Object.entries(patch.contextOverrides)) {
+        if (val === null) delete merged[key];
+        else merged[key] = val;
+      }
+      return Object.keys(merged).length > 0 ? merged : undefined;
+    })(),
     anthropicBetas: patch.anthropicBetas ?? current.anthropicBetas,
-    geminiAuthMode: patch.geminiAuthMode ?? current.geminiAuthMode
+    geminiAuthMode: patch.geminiAuthMode ?? current.geminiAuthMode,
+    openaiTransport: patch.openaiTransport ?? current.openaiTransport
   };
   // Persist-then-commit: see `persistCandidate`.
   const candidate = list.map((p, i) => (i === idx ? next : p));

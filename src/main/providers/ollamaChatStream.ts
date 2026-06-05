@@ -30,6 +30,7 @@ import { classifyProviderError, ProviderError, looksRateLimited } from './provid
 import { acquire, markRateLimited, markSuccess } from './providerRateGuard.js';
 import { createInactivityWatch, isStreamInactivityError } from './streamInactivity.js';
 import { safeText } from './errorBody.js';
+import { findProviderModel } from '@shared/providers/modelId.js';
 import {
   mapOllamaThink,
   resolveStreamerThinkingEffort
@@ -122,7 +123,10 @@ export async function* streamOllama(
   // non-`off` effort enables it. Only sent when the user expressed a
   // preference so non-thinking models aren't forced.
   const ollamaEffort = resolveStreamerThinkingEffort(provider, req.model, req.reasoningEffort);
-  const thinkWire = mapOllamaThink(ollamaEffort, req.model);
+  const thinkWire = mapOllamaThink(
+    ollamaEffort,
+    findProviderModel(provider, req.model)?.thinking
+  );
   if (thinkWire !== undefined) body['think'] = thinkWire;
 
   const headers: Record<string, string> = {

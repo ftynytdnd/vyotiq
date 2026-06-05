@@ -1,6 +1,5 @@
 /**
- * Single model row: model id with optional effort label, context, favorite.
- * Pointer hover is CSS-only; effort panel follows click or keyboard focus.
+ * Model list row — uniform columns: check | id | effort | ctx | star.
  */
 
 import { memo } from 'react';
@@ -14,11 +13,16 @@ import {
   SHELL_MICRO_ICON_STROKE,
   SHELL_ROW_ICON_CLASS
 } from '../../../lib/shellIcons.js';
-import { formatTokenCount } from '../../../lib/formatTokens.js';
 import {
   EMPTY_FAVORITE_MODELS,
   useSettingsStore
 } from '../../../store/useSettingsStore.js';
+import { rowContextTokens } from './modelPickerContext.js';
+import {
+  rowContextBadgeLabel,
+  rowDisplayModelId,
+  shouldShowEffortBadge
+} from './modelPickerDisplay.js';
 import { rowEffortInlineLabel, rowThinkingEffort } from './modelPickerThinking.js';
 
 interface ModelRowProps {
@@ -26,12 +30,11 @@ interface ModelRowProps {
   model: ModelInfo;
   selection: ModelSelection | null;
   selected: boolean;
-  /** Arrow-key highlight (does not follow pointer hover). */
   keyboardFocused: boolean;
-  /** Drives the effort side panel for this row. */
   effortActive: boolean;
-  /** Pointer down on the row body — preview effort without selecting. */
-  onActivate: () => void;
+  /** Provider subtitle under model id (Recent / Favorites). */
+  showProviderName?: boolean;
+  onPreview?: () => void;
   onSelect: () => void;
 }
 
@@ -42,7 +45,8 @@ export const ModelRow = memo(function ModelRow({
   selected,
   keyboardFocused,
   effortActive,
-  onActivate,
+  showProviderName = false,
+  onPreview,
   onSelect
 }: ModelRowProps) {
   const favoriteKey = `${provider.id}::${model.id}`;
@@ -51,81 +55,105 @@ export const ModelRow = memo(function ModelRow({
   );
   const toggleFavorite = useSettingsStore((s) => s.toggleFavoriteModel);
 
-  const effortLabel = isThinkingCapableModel(provider.dialect, model.id)
-    ? rowEffortInlineLabel(rowThinkingEffort(provider, model.id, selection))
+  const thinkingCapable = isThinkingCapableModel(provider.dialect, model.id, {
+    supportedParameters: model.supportedParameters,
+    thinking: model.thinking
+  });
+  const effort = thinkingCapable
+    ? rowThinkingEffort(provider, model.id, selection)
+    : undefined;
+  const effortLabel = shouldShowEffortBadge(effort, thinkingCapable)
+    ? rowEffortInlineLabel(effort)
     : null;
 
+  const ctx = rowContextTokens(model, provider);
+  const ctxLabel =
+    typeof ctx === 'number' && ctx > 0 ? rowContextBadgeLabel(ctx) : null;
+
   const highlighted = keyboardFocused || effortActive;
+  const displayId = rowDisplayModelId(model.id);
+  const selectLabel = selected
+    ? `Selected: ${model.id}${showProviderName ? ` (${provider.name})` : ''}`
+    : `Select ${model.id}${showProviderName ? ` (${provider.name})` : ''}`;
 
   return (
     <div
       role="option"
       aria-selected={selected}
+      aria-label={selectLabel}
+      onMouseEnter={onPreview}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      tabIndex={-1}
       className={cn(
-        'vx-dropdown-item group flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-1',
+        'vx-model-picker-row vx-dropdown-item group cursor-pointer rounded-md',
         'hover:bg-chrome-hover-soft',
         highlighted && 'bg-chrome-active'
       )}
       data-active={highlighted ? 'true' : 'false'}
     >
-      <button
-        type="button"
-        aria-label={selected ? 'Selected model' : 'Select model'}
-        onClick={onSelect}
-        className="vx-btn vx-btn-quiet shrink-0 p-0"
-      >
+      <span className="vx-model-picker-row-check-slot" aria-hidden>
         <Check
           className={cn(
+            'vx-model-picker-row-check',
             SHELL_ROW_ICON_CLASS,
             selected ? 'text-accent' : 'opacity-0 group-hover:opacity-30'
           )}
           strokeWidth={SHELL_ACTION_ICON_STROKE}
         />
-      </button>
-      <button
-        type="button"
-        onClick={onActivate}
-        className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left"
-      >
-        <span
-          className="min-w-0 truncate font-mono text-row leading-tight"
-          title={model.id}
-        >
-          {model.id}
+      </span>
+      <div className="vx-model-picker-row-label min-w-0">
+        <span className="vx-model-picker-row-id truncate" title={model.id}>
+          {displayId}
         </span>
-        {effortLabel ? (
-          <span className="shrink-0 text-meta text-text-faint">{effortLabel}</span>
+        {showProviderName ? (
+          <span className="vx-model-picker-row-provider truncate" title={provider.name}>
+            {provider.name}
+          </span>
         ) : null}
-      </button>
-      {typeof model.contextWindow === 'number' && model.contextWindow > 0 && (
-        <span
-          className="shrink-0 font-mono text-meta text-text-faint tabular-nums"
-          title={`${model.contextWindow.toLocaleString()} token context`}
-        >
-          {formatTokenCount(model.contextWindow)}
-        </span>
-      )}
-      <button
-        type="button"
-        aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-        title={isFavorite ? 'Unfavorite' : 'Favorite'}
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => {
-          e.stopPropagation();
-          void toggleFavorite(provider.id, model.id);
-        }}
-        className={cn(
-          'vx-btn vx-btn-quiet shrink-0 px-0.5 py-0.5',
-          isFavorite || highlighted
-            ? 'opacity-100'
-            : 'opacity-0 group-hover:opacity-100'
-        )}
+      </div>
+      <span
+        className="vx-model-picker-row-slot vx-model-picker-row-slot--effort"
+        title={effortLabel ? `Thinking effort: ${effortLabel}` : undefined}
       >
-        <Star
-          className={cn(SHELL_MICRO_ICON_CLASS, isFavorite && 'fill-accent text-accent')}
-          strokeWidth={SHELL_MICRO_ICON_STROKE}
-        />
-      </button>
+        {effortLabel ? (
+          <span className="vx-model-picker-row-badge tabular-nums">{effortLabel}</span>
+        ) : null}
+      </span>
+      <span
+        className="vx-model-picker-row-slot vx-model-picker-row-slot--ctx"
+        title={ctx ? `${ctx.toLocaleString()} token context` : undefined}
+      >
+        {ctxLabel ? <span className="vx-model-picker-row-badge">{ctxLabel}</span> : null}
+      </span>
+      <span className="vx-model-picker-row-slot vx-model-picker-row-slot--star">
+        <button
+          type="button"
+          aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+          title={isFavorite ? 'Unfavorite' : 'Favorite'}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            void toggleFavorite(provider.id, model.id);
+          }}
+          className={cn(
+            'vx-btn vx-btn-quiet px-0.5 py-0.5',
+            isFavorite || highlighted
+              ? 'opacity-100'
+              : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
+          )}
+        >
+          <Star
+            className={cn(SHELL_MICRO_ICON_CLASS, isFavorite && 'fill-accent text-accent')}
+            strokeWidth={SHELL_MICRO_ICON_STROKE}
+          />
+        </button>
+      </span>
     </div>
   );
 });

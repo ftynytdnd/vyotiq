@@ -73,8 +73,8 @@ function classifyHost(baseUrl: string): AttributionHost {
   }
 }
 
-/** Legacy alias kept for callers that only need the OpenRouter check. */
-function isOpenRouterHost(baseUrl: string): boolean {
+/** True for OpenRouter hosts (`openrouter.ai`). */
+export function isOpenRouterHost(baseUrl: string): boolean {
   return classifyHost(baseUrl) === 'openrouter';
 }
 

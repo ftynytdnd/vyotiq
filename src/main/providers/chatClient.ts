@@ -18,10 +18,19 @@
 import type { ChatMessage, TokenUsage } from '@shared/types/chat.js';
 import type { ThinkingEffort } from '@shared/types/provider.js';
 import { getProviderWithKey } from './providerStore.js';
+import {
+  resolveOpenAiTransport,
+  shouldFallbackResponsesToChatCompletions
+} from '@shared/providers/openaiTransport.js';
 import { streamOpenAi } from './openaiChatStream.js';
+import {
+  responsesApiUnsupportedForRequest,
+  streamOpenAiResponses
+} from './openaiResponsesStream.js';
 import { streamOllama } from './ollamaChatStream.js';
 import { streamAnthropic } from './anthropicChatStream.js';
 import { streamGemini } from './geminiChatStream.js';
+import { isProviderError } from './providerError.js';
 
 export interface ChatStreamRequest {
   providerId: string;
@@ -165,6 +174,26 @@ export async function* streamChat(req: ChatStreamRequest): AsyncGenerator<ChatSt
   if (dialect === 'gemini-native') {
     yield* streamGemini(req, provider);
     return;
+  }
+  const transport = resolveOpenAiTransport(provider, req.model);
+  const lockedResponses = provider.openaiTransport === 'responses';
+  if (
+    transport === 'responses' &&
+    !responsesApiUnsupportedForRequest(req)
+  ) {
+    try {
+      yield* streamOpenAiResponses(req, provider);
+      return;
+    } catch (err: unknown) {
+      if (
+        isProviderError(err) &&
+        shouldFallbackResponsesToChatCompletions(err.status, lockedResponses)
+      ) {
+        yield* streamOpenAi(req, provider);
+        return;
+      }
+      throw err;
+    }
   }
   yield* streamOpenAi(req, provider);
 }

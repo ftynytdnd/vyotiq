@@ -39,7 +39,6 @@ import { cn } from '../../lib/cn.js';
 import { bindFocusTrap, focusFirstFocusable } from '../../lib/focusTrap.js';
 import { useAttachmentPreviewStore } from '../../store/useAttachmentPreviewStore.js';
 import { useFloatingLiveDiffStore } from '../../store/useFloatingLiveDiffStore.js';
-import { useSecondaryZoneStore } from '../../store/useSecondaryZoneStore.js';
 import { PanelHeader } from './PanelHeader.js';
 
 type ComposerDialogSize = 'compact' | 'expanded';
@@ -86,10 +85,9 @@ const SIZE_BODY_CLASS: Record<ComposerDialogSize, string> = {
 };
 
 function useBlockingOverlayOpen(): boolean {
-  const secondaryPanel = useSecondaryZoneStore((s) => s.panel);
   const previewOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
   const liveDiffOpen = useFloatingLiveDiffStore((s) => s.target !== null);
-  return secondaryPanel !== null || previewOpen || liveDiffOpen;
+  return previewOpen || liveDiffOpen;
 }
 
 export function ComposerDialog({

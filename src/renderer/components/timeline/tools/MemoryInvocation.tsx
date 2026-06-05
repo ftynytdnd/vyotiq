@@ -8,7 +8,7 @@ import { InvocationShell } from './shared/InvocationShell.js';
 import { DetailPane } from './shared/DetailPane.js';
 import { CodeBlock } from './shared/CodeBlock.js';
 import { toolErrorBody, toolErrorHint } from './shared/toolErrorDisplay.js';
-import { useSecondaryZoneStore } from '../../../store/useSecondaryZoneStore.js';
+import { useAppViewStore } from '../../../store/useAppViewStore.js';
 import { timelineActionPillClassName } from '../shared/rowStyles.js';
 import { cn } from '../../../lib/cn.js';
 
@@ -21,7 +21,7 @@ interface MemoryInvocationProps {
 }
 
 export function MemoryInvocation({ call, result, dense, rowKey, partial }: MemoryInvocationProps) {
-  const openMemorySettings = useSecondaryZoneStore((s) => s.openSettings);
+  const openMemorySettings = useAppViewStore((s) => s.openSettings);
   const data = result?.data?.tool === 'memory' ? result.data : null;
   const action =
     (typeof call?.args?.['action'] === 'string'

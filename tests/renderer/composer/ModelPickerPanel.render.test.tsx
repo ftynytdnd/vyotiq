@@ -54,7 +54,12 @@ beforeEach(() => {
 describe('ModelPickerPanel render budget', () => {
   it('does not re-render all rows when only lastDiscoveredAt changes', async () => {
     render(
-      <ModelPickerPanel value={null} onChange={() => {}} onClose={() => {}} />
+      <ModelPickerPanel
+        value={null}
+        onChange={() => {}}
+        onClose={() => {}}
+        onOpenProviders={() => {}}
+      />
     );
 
     const sampleKey = 'local::local-model-0';

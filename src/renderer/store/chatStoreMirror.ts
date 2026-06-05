@@ -26,6 +26,7 @@ export function mirrorOf(slice: ChatSlice): ActiveMirror {
     isProcessing: slice.isProcessing,
     awaitingAskUser: slice.awaitingAskUser,
     runStartedAt: slice.runStartedAt,
-    draft: slice.draft
+    draft: slice.draft,
+    attachmentDraft: slice.attachmentDraft
   };
 }

@@ -6,8 +6,10 @@ import { IPC } from '@shared/constants.js';
 import type {
   AddProviderInput,
   ProviderAttribution,
+  ProviderConfig,
   ThinkingEffort
 } from '@shared/types/provider.js';
+import { normalizeContextOverride } from '@shared/providers/contextWindow.js';
 import {
   LEGACY_THINKING_EFFORT_MAX,
   THINKING_EFFORTS,
@@ -26,7 +28,7 @@ import { wrapIpcHandler } from './wrapIpcHandler.js';
 // `ipcRenderer.invoke('providers:*', ...)` payload can't reach the
 // store layer with the wrong primitive types. Mirrors the
 // `chat.ipc.ts` discipline (audit fix M-03).
-import { PROVIDER_DIALECTS } from '@shared/types/provider.js';
+import { OPENAI_TRANSPORTS, PROVIDER_DIALECTS } from '@shared/types/provider.js';
 import {
   assertString,
   assertObject,
@@ -114,6 +116,8 @@ export function registerProvidersIpc(): void {
         enabled?: boolean;
         attribution?: ProviderAttribution;
         modelThinking?: Record<string, ThinkingEffort | null>;
+        contextOverrides?: Record<string, number | null>;
+        openaiTransport?: ProviderConfig['openaiTransport'];
       }
     ) => {
       assertString('providers:update', 'id', id);
@@ -151,6 +155,22 @@ export function registerProvidersIpc(): void {
           }
           (patch.modelThinking as Record<string, ThinkingEffort | null>)[modelId] = normalized!;
         }
+      }
+      if ('contextOverrides' in patch && patch.contextOverrides !== undefined) {
+        assertObject('providers:update', 'patch.contextOverrides', patch.contextOverrides);
+        for (const [modelId, raw] of Object.entries(patch.contextOverrides)) {
+          if (raw === null) continue;
+          const normalized = normalizeContextOverride(raw);
+          if (normalized === undefined) {
+            throw new Error(
+              `providers:update patch.contextOverrides.${modelId} must be a positive integer`
+            );
+          }
+          (patch.contextOverrides as Record<string, number | null>)[modelId] = normalized;
+        }
+      }
+      if ('openaiTransport' in patch && patch.openaiTransport !== undefined) {
+        assertEnum('providers:update', 'patch.openaiTransport', patch.openaiTransport, OPENAI_TRANSPORTS);
       }
       if ('attribution' in patch && patch.attribution !== undefined) {
         assertObject('providers:update', 'patch.attribution', patch.attribution);

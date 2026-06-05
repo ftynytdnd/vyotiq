@@ -56,33 +56,35 @@ export function dockWorkspaceActionClassName(): string {
 export const DOCK_RESIZE_HANDLE_CLASS =
   'vx-dock-resize-handle absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize';
 
-/** Vertically centered dock anchor — rail sits mid-screen, not top-stretched. */
-const DOCK_CENTER_CLASS = 'absolute left-4 top-1/2 z-(--z-dock-panel) -translate-y-1/2';
+/** Persistent edge strip width (px) — flyout expands to the right. */
+export const DOCK_STRIP_WIDTH = 44;
 
-const DOCK_FLYOUT_CENTER_CLASS = cn(
-  'absolute left-4 top-1/2 z-(--z-dock-panel) flex max-h-[min(720px,calc(100vh-var(--titlebar-h)-2rem))] min-h-0 -translate-y-1/2 flex-col overflow-hidden'
+export const DOCK_EDGE_CONTAINER_CLASS = cn(
+  'absolute left-0 top-[var(--titlebar-h)] bottom-0 z-(--z-dock-panel) flex min-h-0'
 );
 
 export function dockFlyoutShellClassName(isResizing: boolean): string {
   return cn(
     'vx-dock-shell vx-dock-flyout app-no-drag',
-    DOCK_FLYOUT_CENTER_CLASS,
+    'flex min-h-0 max-h-full flex-1 flex-col overflow-hidden',
     isResizing ? '' : 'transition-[width] duration-200 ease-out'
   );
 }
 
-export const DOCK_RAIL_PILL_CLASS = cn(
-  'vx-dock-rail-pill vx-dock-shell app-no-drag',
-  DOCK_CENTER_CLASS
+export const DOCK_EDGE_STRIP_CLASS = cn(
+  'vx-dock-edge-strip vx-dock-shell app-no-drag',
+  'flex w-11 shrink-0 flex-col items-center justify-between border-r border-border-subtle/50',
+  'bg-surface-raised py-2'
 );
 
-export const DOCK_WORKSPACE_PANEL_CAP = 3;
+export function workspacePanelClassName(_workspaceCount: number): string {
+  return 'flex min-h-0 flex-1 flex-col overflow-hidden';
+}
 
-export function workspacePanelClassName(workspaceCount: number): string {
-  if (workspaceCount <= DOCK_WORKSPACE_PANEL_CAP) {
-    return 'flex min-h-0 shrink-0 flex-col overflow-hidden';
-  }
-  return 'flex min-h-0 max-h-[38%] shrink-0 flex-col overflow-hidden';
+/** Collapse flyout after workspace/chat selection (strip stays visible). */
+export function collapseDockAfterSelection(): void {
+  useDockSearchStore.getState().setOpen(false);
+  useUiStore.getState().setDockExpanded(false);
 }
 
 export function clampDockWidth(width: number): number {

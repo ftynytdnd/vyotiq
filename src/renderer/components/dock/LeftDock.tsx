@@ -16,7 +16,8 @@ import {
   DOCK_DIVIDER_H_CLASS,
   DOCK_FOOTER_CLASS,
   DOCK_INSET_CLASS,
-  DOCK_RAIL_PILL_CLASS,
+  DOCK_EDGE_CONTAINER_CLASS,
+  DOCK_EDGE_STRIP_CLASS,
   DOCK_RESIZE_HANDLE_CLASS,
   dockFlyoutShellClassName,
   dockWorkspaceActionClassName,
@@ -150,6 +151,7 @@ export function LeftDock({
       style={{ width: `${expandedWidthPx}px` }}
     >
       <div className={cn(DOCK_INSET_CLASS, 'h-full gap-0 py-1')}>
+        <DockSearchPopover />
         <div className={workspacePanelClassName(workspaces.length)}>
           <DockSectionHeader label="Workspaces" />
           <div className="flex shrink-0 gap-1 px-2 pb-1">
@@ -178,7 +180,6 @@ export function LeftDock({
           <DockChatStrip workspaceId={activeWorkspaceId} />
         </div>
         <div className={DOCK_FOOTER_CLASS}>
-          <DockSearchPopover />
           <DockToolbar layout="horizontal" {...toolbarProps} collapseIcon="left" />
         </div>
       </div>
@@ -193,20 +194,29 @@ export function LeftDock({
     </nav>
   );
 
-  const collapsedRail = (
+  const edgeStrip = (
     <nav
       aria-label="Workspace and session navigation rail"
-      aria-expanded={false}
-      className={DOCK_RAIL_PILL_CLASS}
+      aria-expanded={dockExpanded}
+      className={DOCK_EDGE_STRIP_CLASS}
     >
-      <DockToolbar layout="vertical" dockStyle {...toolbarProps} collapseIcon="right" />
+      <DockToolbar
+        layout="vertical"
+        dockStyle
+        {...toolbarProps}
+        collapseIcon={dockExpanded ? 'left' : 'right'}
+        onCollapse={() => (dockExpanded ? toggleDock() : setDockExpanded(true))}
+      />
     </nav>
   );
 
   return (
     <>
       <DockExpandBackdrop />
-      {dockExpanded ? expandedPanel : collapsedRail}
+      <div className={DOCK_EDGE_CONTAINER_CLASS}>
+        {edgeStrip}
+        {dockExpanded ? expandedPanel : null}
+      </div>
     </>
   );
 }

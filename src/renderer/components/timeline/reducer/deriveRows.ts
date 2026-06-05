@@ -19,6 +19,7 @@
  */
 
 import type { PromptAttachmentMeta, TimelineEvent } from '@shared/types/chat.js';
+import type { MentionRef } from '@shared/types/mention.js';
 import type { ToolCall, ToolName, ToolResult } from '@shared/types/tool.js';
 import type { DiffStreamSnapshot, PartialToolCallArgs, TokenUsageAggregate } from './types.js';
 import { foldTokenUsage } from './types.js';
@@ -99,6 +100,7 @@ export type Row =
     runId?: string;
     content: string;
     attachments?: PromptAttachmentMeta[];
+    mentions?: MentionRef[];
   }
   | { kind: 'assistant-text'; key: string; id: string }
   | { kind: 'reasoning-line'; key: string; id: string }
@@ -260,7 +262,8 @@ export function deriveRows(
           content: e.content,
           ...(e.attachments && e.attachments.length > 0
             ? { attachments: e.attachments }
-            : {})
+            : {}),
+          ...(e.mentions && e.mentions.length > 0 ? { mentions: e.mentions } : {})
         });
         break;
 

@@ -6,6 +6,12 @@ import { useEffect, useMemo, useState } from 'react';
 import type { RewindPreview, RewindPreviewResult } from '@shared/types/checkpoint.js';
 import type { ModelSelection } from '@shared/types/provider.js';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
+import type { MentionRef } from '@shared/types/mention.js';
+import {
+  documentTrimmedPlain,
+  hasComposerContent,
+  parseMentionDocument
+} from '../../composer/mention/mentionDocument.js';
 import { useCheckpointsStore } from '../../../store/useCheckpointsStore.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import { useToastStore } from '../../../store/useToastStore.js';
@@ -87,20 +93,23 @@ export function useRewindPromptSession({
     return computeRewindImpactTotals(phase.preview.files, phase.preview.runIds.length);
   }, [phase]);
 
-  const trimmedEdit = editText.trim();
-  const hasEditContent = trimmedEdit.length > 0 || attachmentCount > 0;
+  const editDoc = parseMentionDocument(editText);
+  const trimmedEdit = documentTrimmedPlain(editDoc);
+  const hasEditContent = hasComposerContent(editDoc) || attachmentCount > 0;
   const editConfirmDisabled = isEdit && (!hasEditContent || model === null);
   const primaryDisabled = phase.kind !== 'ready' || (isEdit && editConfirmDisabled);
   const isBusy = phase.kind === 'reverting' || phase.kind === 'sending';
 
   const confirm = async (
     attachmentMeta?: PromptAttachmentMeta[],
-    attachmentPromptEventId?: string
+    attachmentPromptEventId?: string,
+    mentions?: MentionRef[]
   ) => {
     if (phase.kind !== 'ready') return;
     const hasAttachments = (attachmentMeta?.length ?? 0) > 0;
     if (isEdit) {
-      if (trimmedEdit.length === 0 && !hasAttachments) return;
+      const hasMentions = (mentions?.length ?? 0) > 0;
+      if (trimmedEdit.length === 0 && !hasAttachments && !hasMentions) return;
       if (!model) {
         showToast('Select a model before resending.', 'danger');
         return;
@@ -139,16 +148,20 @@ export function useRewindPromptSession({
     try {
       const permissions = selectEffectivePermissions(workspaceId, settings);
       const meta = hasAttachments ? attachmentMeta : undefined;
+      const hasMentions = (mentions?.length ?? 0) > 0;
       const prompt =
-        trimmedEdit.length > 0 ? trimmedEdit : hasAttachments ? 'See attached files.' : trimmedEdit;
-      await send(
-        prompt,
-        model!,
-        permissions,
-        meta?.length
-          ? { attachmentMeta: meta, promptEventId: attachmentPromptEventId }
-          : undefined
-      );
+        trimmedEdit.length > 0
+          ? trimmedEdit
+          : hasAttachments || hasMentions
+            ? 'See attached files.'
+            : trimmedEdit;
+      const sendOpts: Parameters<typeof send>[3] = {};
+      if (meta?.length) {
+        sendOpts.attachmentMeta = meta;
+        if (attachmentPromptEventId) sendOpts.promptEventId = attachmentPromptEventId;
+      }
+      if (hasMentions && mentions) sendOpts.mentions = mentions;
+      await send(prompt, model!, permissions, Object.keys(sendOpts).length > 0 ? sendOpts : undefined);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       showToast(`Could not resend the edited message: ${msg}`, 'danger');

@@ -5,6 +5,7 @@ import { IPC, MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 import { assertNumber, assertObject, assertOptionalString, assertString } from './validate.js';
+import { collectFolderFiles } from '../attachments/collectFolderFiles.js';
 import { ingestExternalFile, assertAttachmentCount } from '../attachments/ingest.js';
 import { resolveAttachmentInWorkspace } from '../attachments/resolveInWorkspace.js';
 import { realpathInsideAttachmentsRoot } from '../attachments/sandbox.js';
@@ -81,6 +82,28 @@ export function registerAttachmentsIpc(): void {
         );
       }
       return out;
+    }
+  );
+
+  wrapIpcHandler(
+    IPC.ATTACHMENTS_COLLECT_FOLDER,
+    async (
+      _event,
+      input: { workspaceId: string; folderPath: string; maxCount?: number }
+    ): Promise<{ paths: string[]; total: number; truncated: boolean }> => {
+      assertObject('attachments:collectFolder', 'input', input);
+      assertString('attachments:collectFolder', 'workspaceId', input.workspaceId);
+      assertString('attachments:collectFolder', 'folderPath', input.folderPath, {
+        maxBytes: MAX_ATTACHMENT_IO_PATH_BYTES
+      });
+      const max = input.maxCount ?? MAX_CHAT_ATTACHMENTS;
+      assertNumber('attachments:collectFolder', 'maxCount', max, {
+        integer: true,
+        min: 1,
+        max: MAX_CHAT_ATTACHMENTS
+      });
+      const workspaceRoot = await requireWorkspaceById(input.workspaceId);
+      return collectFolderFiles(workspaceRoot, input.folderPath, max);
     }
   );
 

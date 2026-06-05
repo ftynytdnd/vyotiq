@@ -285,7 +285,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         isProcessing: prior?.isProcessing ?? false,
         awaitingAskUser: prior?.awaitingAskUser ?? false,
         runStartedAt: prior?.runStartedAt ?? null,
-        draft: prior?.draft ?? ''
+        draft: prior?.draft ?? '',
+        attachmentDraft: prior?.attachmentDraft ?? []
       };
       const nextSlices = { ...s.slices, [conversationId]: nextSlice };
       // Only flip the active mirror when this transcript IS the one
@@ -471,7 +472,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             }
           : options?.attachments && options.attachments.length > 0
             ? { attachments: options.attachments }
-            : {})
+            : {}),
+        ...(options?.mentions && options.mentions.length > 0
+          ? { mentions: options.mentions }
+          : {})
       });
       if (!reply) {
         throw new Error('chat:send rejected by main process (no reply).');
@@ -656,6 +660,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         isProcessing: true,
         awaitingAskUser: false,
         draft: '',
+        attachmentDraft: [],
         events: markPromptSubmitted(prev.events)
       }));
       if (s.conversationId === convId) {
@@ -712,7 +717,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       runId: s.runId,
       conversationId: s.conversationId,
       answers,
-      supplementText: opts?.supplementText
+      supplementText: opts?.supplementText,
+      attachmentMeta: opts?.attachmentMeta
     });
     await get().submitAskUser(input);
   },
@@ -843,6 +849,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
   },
 
+  setAttachmentDraft: (conversationId, attachments) => {
+    set((s) => {
+      const nextSlices = updateSlice(s.slices, conversationId, (prev) => ({
+        ...prev,
+        attachmentDraft: attachments
+      }));
+      if (s.conversationId === conversationId) {
+        return { ...s, slices: nextSlices, attachmentDraft: attachments };
+      }
+      return { ...s, slices: nextSlices };
+    });
+  },
+
   prewarmSlice: (conversationId, events) => {
     if (!conversationId) return;
     set((s) => {
@@ -875,7 +894,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         isProcessing: existing?.isProcessing ?? false,
         awaitingAskUser: existing?.awaitingAskUser ?? false,
         runStartedAt: existing?.runStartedAt ?? null,
-        draft: existing?.draft ?? ''
+        draft: existing?.draft ?? '',
+        attachmentDraft: existing?.attachmentDraft ?? []
       };
       const nextSlices = { ...s.slices, [conversationId]: fresh };
       // Pre-warm must NOT flip the active mirror; only refresh when

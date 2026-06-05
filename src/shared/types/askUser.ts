@@ -2,6 +2,8 @@
  * Structured `ask_user` tool payload (multi-choice questions).
  */
 
+import type { PromptAttachmentMeta } from './chat.js';
+
 interface AskUserOption {
   id: string;
   label: string;
@@ -39,6 +41,7 @@ export interface AskUserSubmitInput {
   answers: AskUserAnswer[];
   /** Optional freeform supplement from the composer textarea. */
   supplementText?: string;
+  attachmentMeta?: PromptAttachmentMeta[];
 }
 
 export type AskUserSubmitReply =

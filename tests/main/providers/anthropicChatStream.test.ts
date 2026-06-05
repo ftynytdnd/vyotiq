@@ -37,14 +37,13 @@
  *     `rate_limit_error` events surface as `ProviderError(kind:
  *     'rate-limit')` and feed the rate guard.
  *
- *   - **`pickThinkingConfig`** — covers the per-model dispatch:
- *     Opus 4.7 → adaptive, Sonnet 4.6 → adaptive, Sonnet 4.5 →
- *     enabled with budget, legacy Haiku → no thinking field.
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { ChatStreamDelta } from '@main/providers/chatClient';
 import type { ChatMessage } from '@shared/types/chat';
+import { mapAnthropicThinking } from '@shared/providers/thinkingEffort.js';
+import type { ModelThinkingCapabilities } from '@shared/types/provider.js';
 
 vi.mock('@main/providers/providerStore', () => ({
   getProviderWithKey: vi.fn(async () => ({
@@ -62,8 +61,19 @@ import { streamChat } from '@main/providers/chatClient';
 import { __anthropicInternals } from '@main/providers/anthropicChatStream';
 import { _resetForTests as resetRateGuard } from '@main/providers/providerRateGuard';
 
-const { toAnthropicMessages, mapStopReason, toCanonicalUsage, pickThinkingConfig } =
-  __anthropicInternals;
+const { toAnthropicMessages, mapStopReason, toCanonicalUsage } = __anthropicInternals;
+
+const anthropicAdaptive: ModelThinkingCapabilities = {
+  supported: true,
+  wireStyle: 'anthropic-adaptive',
+  efforts: ['off', 'low', 'medium', 'high', 'xhigh']
+};
+
+const anthropicBudget: ModelThinkingCapabilities = {
+  supported: true,
+  wireStyle: 'anthropic-budget',
+  efforts: ['off', 'low', 'medium', 'high', 'xhigh']
+};
 
 function encode(text: string): Uint8Array {
   return new TextEncoder().encode(text);
@@ -618,70 +628,42 @@ describe('toCanonicalUsage — normalization', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────
-// pickThinkingConfig — per-model dispatch
+// mapAnthropicThinking — discovery-driven wire dispatch
 // ────────────────────────────────────────────────────────────────────
 
-describe('pickThinkingConfig — per-model dispatch', () => {
-  it('returns null when thinking is not enabled', () => {
-    expect(pickThinkingConfig('claude-opus-4-7', undefined, 4096)).toBeNull();
-    expect(
-      pickThinkingConfig('claude-opus-4-7', { enabled: false }, 4096)
-    ).toBeNull();
+describe('mapAnthropicThinking — discovery-driven dispatch', () => {
+  it('returns null when effort is off or caps are missing', () => {
+    expect(mapAnthropicThinking('off', 4096, 4096, anthropicAdaptive)).toBeNull();
+    expect(mapAnthropicThinking('high', 4096, 4096)).toBeNull();
   });
 
-  it('returns null for known non-thinking models even when enabled', () => {
-    expect(pickThinkingConfig('claude-haiku-3', { enabled: true }, 4096)).toBeNull();
-    expect(pickThinkingConfig('claude-haiku-3.5', { enabled: true }, 4096)).toBeNull();
-    expect(pickThinkingConfig('claude-instant-1.2', { enabled: true }, 4096)).toBeNull();
+  it('returns adaptive config for models discovered with adaptive wire', () => {
+    expect(mapAnthropicThinking('medium', 4096, 4096, anthropicAdaptive)).toEqual({
+      config: { type: 'adaptive' },
+      effortField: 'medium'
+    });
+    expect(mapAnthropicThinking('xhigh', 4096, 4096, anthropicAdaptive)).toEqual({
+      config: { type: 'adaptive' },
+      effortField: 'max'
+    });
   });
 
-  it('returns adaptive type for 2026 flagship models', () => {
-    expect(pickThinkingConfig('claude-opus-4-7', { enabled: true }, 4096)).toEqual({
-      type: 'adaptive'
-    });
-    expect(pickThinkingConfig('claude-opus-4-6', { enabled: true }, 4096)).toEqual({
-      type: 'adaptive'
-    });
-    expect(pickThinkingConfig('claude-sonnet-4-6', { enabled: true }, 4096)).toEqual({
-      type: 'adaptive'
-    });
-    expect(pickThinkingConfig('claude-mythos-preview', { enabled: true }, 4096)).toEqual({
-      type: 'adaptive'
-    });
-    // Dated suffix should still match.
-    expect(
-      pickThinkingConfig('claude-opus-4-7-20260101', { enabled: true }, 4096)
-    ).toEqual({ type: 'adaptive' });
-  });
-
-  it('returns enabled type with budget_tokens for older thinking-capable models', () => {
-    // Anthropic requires `budget_tokens < max_tokens`. Use 16384 so
-    // the requested medium budget (8192) lands well under the cap
-    // (we exercise the cap separately in the next test).
-    const out = pickThinkingConfig(
-      'claude-sonnet-4-5',
-      { enabled: true, effort: 'medium' },
-      16384
-    );
-    expect(out).toEqual({ type: 'enabled', budget_tokens: 8192 });
+  it('returns enabled type with budget_tokens for budget wire models', () => {
+    const out = mapAnthropicThinking('medium', 16384, 4096, anthropicBudget);
+    expect(out).toEqual({ config: { type: 'enabled', budget_tokens: 8192 } });
   });
 
   it('clamps budget_tokens to (max_tokens - 1)', () => {
-    // effort=high requests 16384, but max_tokens=2048 caps the budget.
-    const out = pickThinkingConfig(
-      'claude-sonnet-4-5',
-      { enabled: true, effort: 'high' },
-      2048
-    );
-    expect(out).toEqual({ type: 'enabled', budget_tokens: 2047 });
+    const out = mapAnthropicThinking('high', 2048, 4096, anthropicBudget);
+    expect(out).toEqual({ config: { type: 'enabled', budget_tokens: 2047 } });
   });
 
-  it('honors effort low / high overrides', () => {
-    expect(
-      pickThinkingConfig('claude-haiku-4-5', { enabled: true, effort: 'low' }, 4096)
-    ).toEqual({ type: 'enabled', budget_tokens: 2048 });
-    expect(
-      pickThinkingConfig('claude-haiku-4-5', { enabled: true, effort: 'high' }, 32768)
-    ).toEqual({ type: 'enabled', budget_tokens: 16384 });
+  it('honors low / high effort budgets', () => {
+    expect(mapAnthropicThinking('low', 4096, 4096, anthropicBudget)).toEqual({
+      config: { type: 'enabled', budget_tokens: 2048 }
+    });
+    expect(mapAnthropicThinking('high', 32768, 4096, anthropicBudget)).toEqual({
+      config: { type: 'enabled', budget_tokens: 16384 }
+    });
   });
 });

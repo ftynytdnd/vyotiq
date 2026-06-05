@@ -25,6 +25,7 @@ import {
   setWorkspace
 } from '../workspace/workspaceState.js';
 import { bulkRemoveOrReparentByWorkspace } from '../conversations/conversationStore.js';
+import { WORKSPACE_TREE_IGNORE } from '../workspace/workspaceTreeIgnore.js';
 import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 // Audit fix 2026-06-P2-1 — runtime shape gates for workspace-channel
@@ -206,7 +207,7 @@ export function registerWorkspaceIpc(): void {
       const depth = Math.max(1, Math.min(6, opts?.depth ?? 3));
       const raw = await fg('**/*', {
         cwd: wsPath,
-        ignore: ['**/node_modules/**', '**/.git/**', '**/dist/**', '**/out/**', '**/.next/**'],
+        ignore: [...WORKSPACE_TREE_IGNORE],
         onlyFiles: false,
         markDirectories: true,
         deep: depth,

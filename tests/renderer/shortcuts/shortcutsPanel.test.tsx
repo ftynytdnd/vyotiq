@@ -22,4 +22,11 @@ describe('ShortcutsPanel', () => {
     render(<ShortcutsPanel />);
     expect(screen.getByRole('region', { name: 'Keyboard shortcuts' })).toBeTruthy();
   });
+
+  it('documents dock search and workspace cycling', () => {
+    render(<ShortcutsPanel />);
+    expect(screen.getByText('Search chats and workspace files')).toBeInTheDocument();
+    expect(screen.getByText('Next workspace')).toBeInTheDocument();
+    expect(screen.getByText('Previous workspace')).toBeInTheDocument();
+  });
 });

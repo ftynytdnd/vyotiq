@@ -124,6 +124,7 @@ const api: VyotiqApi = {
 
   attachments: {
     pick: (input) => ipcRenderer.invoke(IPC.ATTACHMENTS_PICK, input),
+    collectFolder: (input) => ipcRenderer.invoke(IPC.ATTACHMENTS_COLLECT_FOLDER, input),
     ingestPaths: (input) => ipcRenderer.invoke(IPC.ATTACHMENTS_INGEST_PATHS, input),
     readText: (input) => ipcRenderer.invoke(IPC.ATTACHMENTS_READ_TEXT, input),
     fileUrl: (input) => ipcRenderer.invoke(IPC.ATTACHMENTS_FILE_URL, input),

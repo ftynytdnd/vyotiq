@@ -3,9 +3,12 @@ import { RefreshCcw } from 'lucide-react';
 import type { ModelInfo, ProviderDialect, ThinkingEffort } from '@shared/types/provider.js';
 import {
   effortDisplayLabel,
-  isThinkingCapableModel
+  isThinkingCapableModel,
+  type ThinkingCapabilityOptions
 } from '@shared/providers/thinkingEffort.js';
+import { ContextOverrideEditor } from '../shared/ContextOverrideEditor.js';
 import { ThinkingEffortOptionList } from '../shared/ThinkingEffortOptionList.js';
+import { effectiveContextWindow } from '@shared/providers/contextWindow.js';
 import { Button } from '../ui/Button.js';
 import { LoadingHint } from '../ui/LoadingHint.js';
 import { TextField } from '../ui/TextField.js';
@@ -27,6 +30,9 @@ interface ModelListProps {
   thinkingByModel?: Record<string, ThinkingEffort>;
   onThinkingChange?: (modelId: string, effort: ThinkingEffort) => void;
   onThinkingClear?: (modelId: string) => void;
+  contextOverrides?: Record<string, number>;
+  onContextOverrideSave?: (modelId: string, tokens: number) => void;
+  onContextOverrideClear?: (modelId: string) => void;
 }
 
 export function ModelList({
@@ -38,23 +44,39 @@ export function ModelList({
   dialect,
   thinkingByModel,
   onThinkingChange,
-  onThinkingClear
+  onThinkingClear,
+  contextOverrides,
+  onContextOverrideSave,
+  onContextOverrideClear
 }: ModelListProps) {
   const [filter, setFilter] = useState('');
   const [effortEditModelId, setEffortEditModelId] = useState<string | null>(null);
+  const [contextEditModelId, setContextEditModelId] = useState<string | null>(null);
   const visible = filter
     ? models.filter((m) => m.id.toLowerCase().includes(filter.toLowerCase()))
     : models;
 
+  const thinkingCapOpts = (m: ModelInfo): ThinkingCapabilityOptions => ({
+    supportedParameters: m.supportedParameters,
+    thinking: m.thinking
+  });
   const hasThinkingModels =
     !!onThinkingChange &&
-    visible.some((m) => isThinkingCapableModel(dialect, m.id));
+    visible.some((m) => isThinkingCapableModel(dialect, m.id, thinkingCapOpts(m)));
 
   const showEffortPanel =
     hasThinkingModels &&
     !!effortEditModelId &&
-    isThinkingCapableModel(dialect, effortEditModelId);
+    isThinkingCapableModel(
+      dialect,
+      effortEditModelId,
+      thinkingCapOpts(models.find((m) => m.id === effortEditModelId) ?? { id: effortEditModelId, thinking: undefined })
+    );
   const effortValue = effortEditModelId ? thinkingByModel?.[effortEditModelId] : undefined;
+  const showContextPanel = !!contextEditModelId && !!onContextOverrideSave;
+  const contextEditModel = contextEditModelId
+    ? models.find((m) => m.id === contextEditModelId)
+    : undefined;
 
   useEffect(() => {
     if (!effortEditModelId) return;
@@ -95,7 +117,7 @@ export function ModelList({
         <div
           className={cn(
             'scrollbar-stealth max-h-48 min-w-0 overflow-y-auto',
-            hasThinkingModels ? 'flex-1' : 'w-full'
+            hasThinkingModels || onContextOverrideSave ? 'flex-1' : 'w-full'
           )}
         >
           {visible.map((m) => {
@@ -103,7 +125,7 @@ export function ModelList({
               ? effortDisplayLabel(thinkingByModel?.[m.id])
               : null;
             const canEditEffort =
-              !!onThinkingChange && isThinkingCapableModel(dialect, m.id);
+              !!onThinkingChange && isThinkingCapableModel(dialect, m.id, thinkingCapOpts(m));
             const editing = effortEditModelId === m.id;
 
             return (
@@ -111,7 +133,12 @@ export function ModelList({
                 key={m.id}
                 role={canEditEffort ? 'button' : undefined}
                 tabIndex={canEditEffort ? 0 : undefined}
-                onClick={() => canEditEffort && setEffortEditModelId(m.id)}
+                onClick={() => {
+                  if (canEditEffort) {
+                    setEffortEditModelId(m.id);
+                    setContextEditModelId(null);
+                  }
+                }}
                 onKeyDown={(e) => {
                   if (canEditEffort && (e.key === 'Enter' || e.key === ' ')) {
                     e.preventDefault();
@@ -131,9 +158,32 @@ export function ModelList({
                   ) : null}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  {typeof m.contextWindow === 'number' && (
-                    <span className="vx-caption">{formatTokenCount(m.contextWindow)} ctx</span>
-                  )}
+                  {onContextOverrideSave ? (
+                    <button
+                      type="button"
+                      className={cn(
+                        'vx-caption rounded px-1 hover:bg-chrome-hover-soft',
+                        contextEditModelId === m.id && 'bg-chrome-active'
+                      )}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setContextEditModelId(m.id);
+                        setEffortEditModelId(null);
+                      }}
+                    >
+                      {(() => {
+                        const ctx = effectiveContextWindow(m, contextOverrides);
+                        return typeof ctx === 'number'
+                          ? `${formatTokenCount(ctx)} ctx`
+                          : 'Set ctx';
+                      })()}
+                    </button>
+                  ) : (() => {
+                      const ctx = effectiveContextWindow(m, contextOverrides);
+                      return typeof ctx === 'number' ? (
+                        <span className="vx-caption">{formatTokenCount(ctx)} ctx</span>
+                      ) : null;
+                    })()}
                 </div>
               </div>
             );
@@ -142,21 +192,33 @@ export function ModelList({
             <div className={chromeNoMatchesClassName}>No matches.</div>
           )}
         </div>
-        {hasThinkingModels && (
-          <aside className={cn(EFFORT_COLUMN_CLASS, 'flex min-h-0 flex-col')}>
+        {(hasThinkingModels || onContextOverrideSave) && (
+          <aside className={cn(EFFORT_COLUMN_CLASS, 'scrollbar-stealth flex min-h-0 flex-col overflow-y-auto')}>
             {showEffortPanel && effortEditModelId && onThinkingChange ? (
               <ThinkingEffortOptionList
                 dialect={dialect}
                 modelId={effortEditModelId}
+                supportedParameters={
+                  models.find((m) => m.id === effortEditModelId)?.supportedParameters
+                }
+                thinking={models.find((m) => m.id === effortEditModelId)?.thinking}
                 value={effortValue}
                 onSelect={(effort) => onThinkingChange(effortEditModelId, effort)}
                 onClear={() => onThinkingClear?.(effortEditModelId)}
               />
+            ) : showContextPanel && contextEditModelId && contextEditModel && onContextOverrideSave ? (
+              <ContextOverrideEditor
+                modelId={contextEditModelId}
+                discovered={contextEditModel.contextWindow}
+                override={contextOverrides?.[contextEditModelId]}
+                onSave={(tokens) => onContextOverrideSave(contextEditModelId, tokens)}
+                onClear={() => onContextOverrideClear?.(contextEditModelId)}
+              />
             ) : (
               <div className="flex flex-1 flex-col px-2.5 py-3">
-                <div className="py-1 text-meta font-medium text-text-faint">Effort</div>
+                <div className="py-1 text-meta font-medium text-text-faint">Options</div>
                 <p className="text-meta leading-snug text-text-faint">
-                  Click a model to configure effort.
+                  Click a model row or its context badge to configure.
                 </p>
               </div>
             )}

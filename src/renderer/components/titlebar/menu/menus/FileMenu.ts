@@ -7,6 +7,5 @@ export interface FileMenuActions {
   openWorkspace: () => void;
   setWorkspacePath: () => void;
   openSettings: () => void;
-  openCheckpoints: () => void;
   quit: () => void;
 }

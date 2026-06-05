@@ -49,6 +49,24 @@ export const PROVIDER_DIALECTS: readonly ProviderDialect[] = [
  */
 export type ThinkingEffort = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
+/**
+ * OpenAI-dialect wire transport. `auto` picks Responses for official
+ * OpenAI reasoning models and Chat Completions elsewhere.
+ */
+export type OpenAiTransport = 'auto' | 'chat-completions' | 'responses';
+
+export const OPENAI_TRANSPORTS: readonly OpenAiTransport[] = [
+  'auto',
+  'chat-completions',
+  'responses'
+] as const;
+
+export const OPENAI_TRANSPORT_LABELS: Record<OpenAiTransport, string> = {
+  auto: 'Auto',
+  'chat-completions': 'Chat Completions',
+  responses: 'Responses API'
+};
+
 /** Short, user-facing labels for the dialect switch in settings. */
 export const PROVIDER_DIALECT_LABELS: Record<ProviderDialect, string> = {
   'openai': 'OpenAI-compatible',
@@ -73,6 +91,12 @@ export interface ProviderConfig {
   dialect?: ProviderDialect;
   /** Whether the provider is enabled in model selectors. */
   enabled: boolean;
+  /**
+   * OpenAI-dialect transport selection (2026). Meaningful only when
+   * `dialect` is `openai` (or legacy undefined). See
+   * `@shared/providers/openaiTransport.ts`.
+   */
+  openaiTransport?: OpenAiTransport;
   /**
    * Optional ceiling on parallel `streamChat` calls (multi-run pool).
    * When set, the host clamps model-declared `concurrency` to this value.
@@ -202,6 +226,34 @@ export interface ProviderAttribution {
   title?: string;
 }
 
+/** Wire shape hint discovered at model-list time (2026). */
+export type ThinkingWireStyle =
+  | 'openai-reasoning'
+  | 'openai-deepseek'
+  | 'anthropic-adaptive'
+  | 'anthropic-budget'
+  | 'gemini-level'
+  | 'gemini-budget'
+  | 'ollama-boolean'
+  | 'ollama-levels';
+
+/**
+ * Thinking/reasoning capabilities parsed from upstream model-list APIs.
+ * Populated during discovery — never inferred from model-id patterns.
+ */
+export interface ModelThinkingCapabilities {
+  supported: boolean;
+  /** Effort levels for UI (always includes `off` when supported). */
+  efforts?: ThinkingEffort[];
+  wireStyle?: ThinkingWireStyle;
+  /** Model thinks by default; `off` disables (DeepSeek V4, Gemini 2.5). */
+  defaultOn?: boolean;
+  /** Rejects forced `tool_choice` while thinking is active. */
+  rejectsToolChoice?: boolean;
+  /** Map normalized `xhigh` → provider `max` on the wire. */
+  mapsXhighToMax?: boolean;
+}
+
 /** As returned by GET /v1/models — minimal shape. */
 export interface ModelInfo {
   id: string;
@@ -209,6 +261,14 @@ export interface ModelInfo {
   label?: string;
   /** Optional context window in tokens, if the provider exposes it. */
   contextWindow?: number;
+  /**
+   * OpenRouter (and similar routers) list compatible request parameters
+   * per model (`reasoning`, `include_reasoning`, etc.). Populated at
+   * discovery when the upstream `/v1/models` payload includes them.
+   */
+  supportedParameters?: string[];
+  /** Parsed thinking/reasoning metadata from the provider's model list. */
+  thinking?: ModelThinkingCapabilities;
 }
 
 /** Provider record with API key — only used in main process. */

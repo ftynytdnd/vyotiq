@@ -47,8 +47,9 @@ import {
   isProviderError
 } from '../../providers/providerError.js';
 import { getProviderWithKey } from '../../providers/providerStore.js';
+import { findProviderModel } from '@shared/providers/modelId.js';
 import { resolveEffectiveThinkingEffort } from '@shared/providers/thinkingEffort.js';
-import type { ModelSelection, ThinkingEffort } from '@shared/types/provider.js';
+import type { ModelSelection, ModelThinkingCapabilities, ThinkingEffort } from '@shared/types/provider.js';
 import {
   MAX_SELF_CORRECTION_ATTEMPTS,
   MAX_TOTAL_ITERATIONS
@@ -183,6 +184,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     let providerName = await resolveProviderName(opts.input.selection.providerId);
     let providerDialect = await resolveProviderDialect(opts.input.selection.providerId);
     let reasoningEffort = await resolveProviderThinking(opts.input.selection);
+    let modelThinkingCaps = await resolveModelThinkingCaps(opts.input.selection);
     // Run-scoped: flipped on once after a provider 400 that rejected the
     // `tool_choice` field, so the next request omits it instead of
     // terminating the run. See the error branch below.
@@ -197,6 +199,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             providerName = await resolveProviderName(opts.input.selection.providerId);
             providerDialect = await resolveProviderDialect(opts.input.selection.providerId);
             reasoningEffort = await resolveProviderThinking(opts.input.selection);
+            modelThinkingCaps = await resolveModelThinkingCaps(opts.input.selection);
           } catch (err) {
             log.debug('per-iter provider name refresh failed; keeping prior', {
               providerId: opts.input.selection.providerId,
@@ -250,6 +253,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           dialect: providerDialect,
           omitToolChoice,
           ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
+          ...(modelThinkingCaps !== undefined ? { modelThinkingCaps } : {}),
           ...(opts.input.conversationId !== undefined
             ? { conversationId: opts.input.conversationId }
             : {})
@@ -662,6 +666,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         wrapUp: true,
         omitToolChoice,
         ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
+        ...(modelThinkingCaps !== undefined ? { modelThinkingCaps } : {}),
         ...(opts.input.conversationId !== undefined
           ? { conversationId: opts.input.conversationId }
           : {})
@@ -972,6 +977,18 @@ async function resolveProviderDialect(
  * and the `tool_choice` omission gate. Returns `undefined` on failure
  * (treated as "provider default" everywhere downstream).
  */
+async function resolveModelThinkingCaps(
+  selection: ModelSelection
+): Promise<ModelThinkingCapabilities | undefined> {
+  try {
+    const provider = await getProviderWithKey(selection.providerId);
+    if (!provider) return undefined;
+    return findProviderModel(provider, selection.modelId)?.thinking;
+  } catch {
+    return undefined;
+  }
+}
+
 async function resolveProviderThinking(
   selection: ModelSelection
 ): Promise<ThinkingEffort | undefined> {

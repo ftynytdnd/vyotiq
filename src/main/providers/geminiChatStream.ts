@@ -62,6 +62,7 @@ import { createInactivityWatch, isStreamInactivityError } from './streamInactivi
 import { readSseFrames, pickSseDataLine } from './sseFrameReader.js';
 import { safeText } from './errorBody.js';
 import { redactUrlSecrets } from './redactUrlSecrets.js';
+import { findProviderModel } from '@shared/providers/modelId.js';
 import {
   resolveGeminiThinkingConfig,
   resolveStreamerThinkingEffort
@@ -205,7 +206,10 @@ export async function* streamGemini(
   // Thinking-effort (2026). Gemini 3.x uses `thinkingConfig.thinkingLevel`;
   // legacy 2.5 uses an integer `thinkingBudget` (0 disables).
   const geminiEffort = resolveStreamerThinkingEffort(provider, req.model, req.reasoningEffort);
-  const thinkingConfig = resolveGeminiThinkingConfig(req.model, geminiEffort);
+  const thinkingConfig = resolveGeminiThinkingConfig(
+    geminiEffort,
+    findProviderModel(provider, req.model)?.thinking
+  );
   if (thinkingConfig !== null) generationConfig['thinkingConfig'] = thinkingConfig;
   // `responseModalities` defaults to ["TEXT"] when omitted — the
   // canonical text-only path. We never request image / audio output

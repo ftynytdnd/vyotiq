@@ -45,11 +45,13 @@ export function ShortcutsPanel({
     <div role={role} aria-label="Keyboard shortcuts" className="vx-stack gap-3">
       <ShortcutGroup title="Navigation">
         <ShortcutRow combo={`${mod}+B`} label="Toggle navigation dock" />
-        <ShortcutRow combo={`${mod}+K`} label="Search chats" />
+        <ShortcutRow combo={`${mod}+K`} label="Search chats and workspace files" />
         <ShortcutRow combo={`${alt}+\u2191 / ${alt}+\u2193`} label="Prev / next chat" />
         <ShortcutRow combo="Esc" label="Close chat search, then collapse dock" />
       </ShortcutGroup>
       <ShortcutGroup title="Workspace">
+        <ShortcutRow combo={`${mod}+Tab`} label="Next workspace" />
+        <ShortcutRow combo={`${mod}+Shift+Tab`} label="Previous workspace" />
         <ShortcutRow combo={`${mod}+N`} label="New conversation" />
         <ShortcutRow combo={`${mod}+O`} label="Open workspace" />
         <ShortcutRow combo={`${mod}+,`} label="Settings" />

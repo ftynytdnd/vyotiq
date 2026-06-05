@@ -79,6 +79,31 @@ describe('AttachmentPicker', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it('calls onPickFolder when a directory row is clicked', async () => {
+    window.vyotiq.workspace.listTree = vi.fn(async () =>
+      ({
+        entries: ['src/', 'src/main.ts'],
+        truncated: false,
+        total: 2
+      }) as never
+    ) as unknown as typeof window.vyotiq.workspace.listTree;
+    const onPickFolder = vi.fn();
+    render(
+      <AttachmentPicker
+        open
+        onClose={() => {}}
+        selected={[]}
+        onPick={() => {}}
+        onPickFolder={onPickFolder}
+      />
+    );
+    await waitFor(() => {
+      expect(screen.getByText('src')).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByText('src'));
+    expect(onPickFolder).toHaveBeenCalledWith('src');
+  });
+
   it('disables already-selected entries', async () => {
     render(
       <AttachmentPicker

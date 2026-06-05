@@ -24,17 +24,10 @@ describe('rowThinkingEffort', () => {
 });
 
 describe('applyThinkingEffortChange', () => {
-  it('persists and updates selection when the row is active', () => {
+  it('persists and selects the model with effort', () => {
     const onChange = vi.fn();
     const updateProvider = vi.fn();
-    applyThinkingEffortChange(
-      'p1',
-      'gpt-5',
-      'medium',
-      { providerId: 'p1', modelId: 'gpt-5' },
-      onChange,
-      updateProvider
-    );
+    applyThinkingEffortChange('p1', 'gpt-5', 'medium', onChange, updateProvider);
     expect(updateProvider).toHaveBeenCalledWith('p1', {
       modelThinking: { 'gpt-5': 'medium' }
     });
@@ -44,19 +37,24 @@ describe('applyThinkingEffortChange', () => {
       thinkingEffort: 'medium'
     });
   });
+
+  it('selects the model even when it was not the active composer selection', () => {
+    const onChange = vi.fn();
+    const updateProvider = vi.fn();
+    applyThinkingEffortChange('p1', 'gpt-5', 'high', onChange, updateProvider);
+    expect(onChange).toHaveBeenCalledWith({
+      providerId: 'p1',
+      modelId: 'gpt-5',
+      thinkingEffort: 'high'
+    });
+  });
 });
 
 describe('applyThinkingEffortClear', () => {
   it('clears stored override and session effort for the active model', () => {
     const onChange = vi.fn();
     const updateProvider = vi.fn();
-    applyThinkingEffortClear(
-      'p1',
-      'gpt-5',
-      { providerId: 'p1', modelId: 'gpt-5', thinkingEffort: 'high' },
-      onChange,
-      updateProvider
-    );
+    applyThinkingEffortClear('p1', 'gpt-5', onChange, updateProvider);
     expect(updateProvider).toHaveBeenCalledWith('p1', {
       modelThinking: { 'gpt-5': null }
     });

@@ -10,6 +10,13 @@ import type { ModelSelection } from '@shared/types/provider';
 
 const selection: ModelSelection = { providerId: 'p', modelId: 'm' };
 
+const deepSeekThinkingCaps = {
+  supported: true,
+  wireStyle: 'openai-deepseek' as const,
+  rejectsToolChoice: true,
+  defaultOn: true
+};
+
 function baseMessages(): ChatMessage[] {
   return [
     { role: 'system', content: 'sys' },
@@ -64,7 +71,8 @@ describe('buildOrchestratorRequest', () => {
       selection: { providerId: 'p', modelId: 'deepseek-v4-flash' },
       messages,
       signal: new AbortController().signal,
-      dialect: 'openai'
+      dialect: 'openai',
+      modelThinkingCaps: deepSeekThinkingCaps
     });
     // No `tool_choice` field at all — the wire defaults to `auto`.
     expect(req.toolChoice).toBeUndefined();
@@ -81,7 +89,8 @@ describe('buildOrchestratorRequest', () => {
       messages: baseMessages(),
       signal: new AbortController().signal,
       dialect: 'openai',
-      wrapUp: true
+      wrapUp: true,
+      modelThinkingCaps: deepSeekThinkingCaps
     });
     expect(req.toolChoice).toBeUndefined();
     expect(req.tools).toEqual([]);
@@ -93,7 +102,8 @@ describe('buildOrchestratorRequest', () => {
       messages: baseMessages(),
       signal: new AbortController().signal,
       dialect: 'openai',
-      reasoningEffort: 'off'
+      reasoningEffort: 'off',
+      modelThinkingCaps: deepSeekThinkingCaps
     });
     expect(req.toolChoice).toBe('auto');
     expect(req.reasoningEffort).toBe('off');

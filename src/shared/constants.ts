@@ -307,6 +307,7 @@ export const IPC = {
   APP_PLAY_WARNING_SOUND: 'app:play-warning-sound',
 
   ATTACHMENTS_PICK: 'attachments:pick',
+  ATTACHMENTS_COLLECT_FOLDER: 'attachments:collect-folder',
   ATTACHMENTS_INGEST_PATHS: 'attachments:ingest-paths',
   ATTACHMENTS_READ_TEXT: 'attachments:read-text',
   ATTACHMENTS_FILE_URL: 'attachments:file-url',

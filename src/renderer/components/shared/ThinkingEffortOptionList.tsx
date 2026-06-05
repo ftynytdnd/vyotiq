@@ -3,7 +3,7 @@
  */
 
 import { Check } from 'lucide-react';
-import type { ProviderDialect, ThinkingEffort } from '@shared/types/provider.js';
+import type { ModelThinkingCapabilities, ProviderDialect, ThinkingEffort } from '@shared/types/provider.js';
 import {
   isThinkingCapableModel,
   supportedThinkingEfforts,
@@ -15,6 +15,8 @@ import { SHELL_ROW_ICON_CLASS, SHELL_ACTION_ICON_STROKE } from '../../lib/shellI
 export interface ThinkingEffortOptionListProps {
   dialect?: ProviderDialect;
   modelId: string;
+  supportedParameters?: string[];
+  thinking?: ModelThinkingCapabilities;
   value: ThinkingEffort | undefined;
   onSelect: (effort: ThinkingEffort) => void;
   onClear: () => void;
@@ -26,14 +28,17 @@ export interface ThinkingEffortOptionListProps {
 export function ThinkingEffortOptionList({
   dialect,
   modelId,
+  supportedParameters,
+  thinking,
   value,
   onSelect,
   onClear,
   showHeading = true,
   className
 }: ThinkingEffortOptionListProps) {
-  if (!isThinkingCapableModel(dialect, modelId)) return null;
-  const levels = supportedThinkingEfforts(dialect, modelId);
+  const capOpts = { supportedParameters, thinking };
+  if (!isThinkingCapableModel(dialect, modelId, capOpts)) return null;
+  const levels = supportedThinkingEfforts(dialect, modelId, capOpts);
   if (levels.length === 0) return null;
 
   return (

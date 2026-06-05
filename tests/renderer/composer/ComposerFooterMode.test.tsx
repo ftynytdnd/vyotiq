@@ -20,7 +20,8 @@ vi.mock('@renderer/components/composer/useComposerAttachments.js', () => ({
     clearAttachments: vi.fn(),
     peekPendingMessageId: vi.fn(),
     onDrop: vi.fn(),
-    onDragOver: vi.fn()
+    onDragOver: vi.fn(),
+    onPaste: vi.fn()
   })
 }));
 
@@ -74,7 +75,7 @@ describe('Composer footer mode', () => {
 
     const row = container.querySelector('.vx-composer-input-row');
     expect(row).not.toBeNull();
-    expect(row?.querySelector('textarea')).not.toBeNull();
+    expect(row?.querySelector('[contenteditable="true"]')).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Send' })).toBeInTheDocument();
     expect(container.querySelector('.vx-composer-footer')).toBeNull();
   });

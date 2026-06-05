@@ -3,8 +3,10 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { MentionRef } from '@shared/types/mention.js';
 import { cn } from '../../../lib/cn.js';
 import { timelineUserPromptBodyClassName } from '../shared/rowStyles.js';
+import { renderPromptBodyContent } from './promptBodyHighlight.js';
 
 const COLLAPSED_MAX_PX = 144;
 const EXPANDED_MAX_PX = 320;
@@ -12,6 +14,7 @@ const SINGLE_LINE_COLLAPSED_MAX_PX = 28;
 
 export interface PromptBodyProps {
   content: string;
+  mentions?: MentionRef[];
   className?: string;
   /** Extra classes on the scrollable bubble (e.g. left border for workers). */
   bubbleClassName?: string;
@@ -21,6 +24,7 @@ export interface PromptBodyProps {
 
 export function PromptBody({
   content,
+  mentions = [],
   className,
   bubbleClassName,
   variant = 'default'
@@ -77,7 +81,7 @@ export function PromptBody({
           )}
           style={maxHeightPx !== undefined ? { maxHeight: maxHeightPx } : undefined}
         >
-          {content}
+          {renderPromptBodyContent(content, mentions)}
         </div>
         {showToggle && !expanded && (
           <div

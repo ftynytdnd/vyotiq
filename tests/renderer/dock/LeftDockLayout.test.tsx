@@ -1,9 +1,9 @@
 /**
- * LeftDock layout — floating rail + flyout overlay.
+ * LeftDock layout — edge strip + expandable flyout.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { LeftDock } from '@renderer/components/dock/LeftDock';
 import {
   DOCK_WIDTH_DEFAULT,
@@ -56,22 +56,24 @@ describe('LeftDock layout', () => {
     expect(nav).toHaveStyle({ width: `${DOCK_WIDTH_DEFAULT}px` });
     expect(nav.className).toContain('vx-dock-flyout');
     expect(nav).toHaveAttribute('aria-modal', 'true');
-    expect(nav).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText('Workspaces')).toBeInTheDocument();
     expect(screen.getByText('Chats')).toBeInTheDocument();
     expect(screen.getByRole('tablist', { name: 'Workspaces' })).toBeInTheDocument();
     expect(screen.getByRole('tablist', { name: 'Chats in workspace' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'New chat' })).toBeInTheDocument();
+    expect(within(nav).getByRole('button', { name: 'New chat' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('navigation', { name: 'Workspace and session navigation rail' })
+    ).toBeInTheDocument();
     expect(screen.getByRole('separator', { name: 'Resize navigation dock' })).toBeInTheDocument();
   });
 
-  it('renders collapsed centered icon rail without workspace pill', () => {
+  it('renders persistent edge strip when collapsed', () => {
     useUiStore.setState({ dockExpanded: false });
     render(<LeftDock {...dockProps} />);
-    const nav = screen.getByRole('navigation', { name: 'Workspace and session navigation rail' });
-    expect(nav).toHaveAttribute('aria-expanded', 'false');
-    expect(nav.className).toContain('vx-dock-rail-pill');
-    expect(screen.queryByText('Cod')).not.toBeInTheDocument();
+    const rail = screen.getByRole('navigation', { name: 'Workspace and session navigation rail' });
+    expect(rail).toHaveAttribute('aria-expanded', 'false');
+    expect(rail.className).toContain('vx-dock-edge-strip');
+    expect(screen.queryByRole('dialog', { name: 'Workspace and session navigation' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Expand navigation' })).toBeInTheDocument();
   });
 
@@ -102,12 +104,10 @@ describe('LeftDock layout', () => {
     expect(setDockWidth).toHaveBeenCalledWith(DOCK_WIDTH_MAX);
   });
 
-  it('opens search above the footer toolbar', () => {
+  it('opens unified search at top of flyout', () => {
     useDockSearchStore.setState({ open: true, query: 'tri' });
     render(<LeftDock {...dockProps} />);
-    const search = screen.getByRole('search', { name: 'Search chats' });
-    const newChat = screen.getByRole('button', { name: 'New chat' });
-    expect(search.compareDocumentPosition(newChat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('search', { name: 'Search workspace' })).toBeInTheDocument();
   });
 
   it('closes inline search when the dock collapses', () => {
@@ -119,15 +119,6 @@ describe('LeftDock layout', () => {
     rerender(<LeftDock {...dockProps} />);
     expect(useDockSearchStore.getState().open).toBe(false);
     expect(useDockSearchStore.getState().query).toBe('');
-  });
-
-  it('centers collapsed rail as a floating pill', () => {
-    useUiStore.setState({ dockExpanded: false });
-    render(<LeftDock {...dockProps} />);
-    const nav = screen.getByRole('navigation', { name: 'Workspace and session navigation rail' });
-    expect(nav.className).toMatch(/top-1\/2/);
-    expect(nav.className).toMatch(/-translate-y-1\/2/);
-    expect(nav.className).toMatch(/left-4/);
   });
 
   it('marks resize handle while dragging', () => {

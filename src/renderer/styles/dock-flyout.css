@@ -9,14 +9,8 @@
   box-shadow: 0 16px 40px var(--color-shadow-popover);
 }
 
-.vx-dock-rail-pill {
-  border: 1px solid color-mix(in oklch, var(--color-border-subtle) 55%, transparent);
-  border-radius: var(--radius-inner);
-  background: color-mix(in oklch, var(--color-surface-raised) 90%, transparent);
-  box-shadow:
-    0 12px 32px var(--color-shadow-popover),
-    inset 0 1px 0 color-mix(in oklch, var(--color-text-primary) 5%, transparent);
-  padding: 0.5rem 0.375rem;
+.vx-dock-edge-strip {
+  box-shadow: inset -1px 0 0 color-mix(in oklch, var(--color-border-subtle) 35%, transparent);
 }
 
 .vx-dock-icon-slot {

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import type { ModelSelection } from '@shared/types/provider.js';
-import { AGENT_NAME, MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
+import { MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
 import { ComposerFooter } from './ComposerFooter.js';
 import { ComposerRunRecovery } from './ComposerRunRecovery.js';
 import { ComposerStatusStrip } from './ComposerStatusStrip.js';
@@ -9,16 +9,22 @@ import { AttachmentButton } from './AttachmentButton.js';
 import { SendButton } from './SendButton.js';
 import { ModelPicker } from './modelPicker/index.js';
 import { TokenUsagePill } from './TokenUsagePill.js';
-import { PromptAttachmentCards } from './PromptAttachmentCards.js';
+import { AttachmentCollapsible } from './AttachmentCollapsible.js';
 import { useComposerAttachments } from './useComposerAttachments.js';
-import { detectAtToken } from './atToken.js';
 import { useComposerHistory } from './useComposerHistory.js';
+import { MentionComposer } from './mention/MentionComposer.js';
 import {
-  appComposerShellClassName,
-  appComposerTextareaClassName
-} from '../ui/SurfaceShell.js';
+  documentToPlainText,
+  documentTrimmedPlain,
+  extractMentions,
+  hasComposerContent,
+  parseMentionDocument
+} from './mention/mentionDocument.js';
+import { pickComputerFileMention } from './mention/useMentionComputerPick.js';
+import { appComposerShellClassName } from '../ui/SurfaceShell.js';
 import { useChatStore } from '../../store/useChatStore.js';
-import { useSecondaryZoneStore } from '../../store/useSecondaryZoneStore.js';
+import { useAttachmentPreviewStore } from '../../store/useAttachmentPreviewStore.js';
+import { useFloatingLiveDiffStore } from '../../store/useFloatingLiveDiffStore.js';
 import {
   useSettingsStore,
   selectEffectivePermissions
@@ -48,15 +54,7 @@ export function Composer({
 }: ComposerProps) {
   const [text, setText] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
-  /**
-   * Active `@`-mention token. When non-null, the AttachmentPicker is
-   * rendered controlled-mode (filter driven by `query`) and a successful
-   * pick splices the `@…` span out of the textarea while adding the
-   * picked path to attachments. The `+` button flow remains untouched.
-   */
-  const [atMention, setAtMention] = useState<{ start: number; query: string } | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const taRef = useRef<HTMLTextAreaElement>(null);
   /** Tracks whether the current `text` came from history recall so
    *  ArrowDown can walk back toward the tail. Reset on any user
    *  keystroke that isn't history navigation. */
@@ -71,7 +69,9 @@ export function Composer({
     events,
     conversationId,
     storeDraft,
+    storeAttachmentDraft,
     setDraft,
+    setAttachmentDraft,
     totalRunUsage,
     orchestratorUsage
   } = useChatStore(
@@ -85,24 +85,37 @@ export function Composer({
       events: s.events,
       conversationId: s.conversationId,
       storeDraft: s.draft,
+      storeAttachmentDraft: s.attachmentDraft,
       setDraft: s.setDraft,
+      setAttachmentDraft: s.setAttachmentDraft,
       totalRunUsage: s.totalRunUsage,
       orchestratorUsage: s.orchestratorUsage
     }))
   );
   const activeWorkspaceIdForAttach = useWorkspaceStore((s) => s.activeId);
+  const persistAttachmentDraft = useCallback(
+    (items: Parameters<typeof setAttachmentDraft>[1]) => {
+      if (!conversationId) return;
+      setAttachmentDraft(conversationId, items);
+    },
+    [conversationId, setAttachmentDraft]
+  );
   const {
     attachments,
     addPaths,
+    addFolder,
     pickFromComputer,
     remove: removeAttachment,
     clearAttachments,
     peekPendingMessageId,
     onDrop,
-    onDragOver
+    onDragOver,
+    onPaste
   } = useComposerAttachments({
     conversationId,
-    workspaceId: activeWorkspaceIdForAttach
+    workspaceId: activeWorkspaceIdForAttach,
+    initialAttachments: storeAttachmentDraft,
+    onAttachmentsChange: persistAttachmentDraft
   });
   const selectedPaths = attachments.map(
     (a) => a.workspacePath ?? a.storedPath ?? a.name
@@ -165,26 +178,6 @@ export function Composer({
     history.reset();
   }, [conversationId, storeDraft]);
 
-  // Auto-focus the textarea when `text` changes from empty to non-empty
-  // while the textarea is not focused — catches draft hydration on
-  // conversation switch without stealing focus during normal typing.
-  const prevTextRef = useRef(text);
-  useEffect(() => {
-    const prev = prevTextRef.current;
-    prevTextRef.current = text;
-    if (!prev && text) {
-      const el = taRef.current;
-      if (el && document.activeElement !== el) {
-        el.focus();
-        el.setSelectionRange(text.length, text.length);
-      }
-    }
-  }, [text]);
-
-  useEffect(() => {
-    autosize(taRef.current);
-  }, [text]);
-
   useEffect(() => {
     return () => {
       if (draftRafRef.current !== null) {
@@ -201,7 +194,9 @@ export function Composer({
       await abort();
       return;
     }
-    const trimmed = text.trim();
+    const doc = parseMentionDocument(text);
+    const trimmed = documentTrimmedPlain(doc);
+    const mentions = extractMentions(doc);
     if (awaitingAskUser && pendingAskUser && conversationId && runId) {
       const draftReady = useAskUserDraftStore
         .getState()
@@ -210,9 +205,9 @@ export function Composer({
         showToast('Select answers in the panel above or type a reply before sending.', 'danger');
         return;
       }
+      const toSendMeta = attachments;
       setText('');
       clearAttachments();
-      setAtMention(null);
       fromHistoryRef.current = false;
       history.reset();
       if (conversationId) {
@@ -222,8 +217,12 @@ export function Composer({
         }
         selfDraftRef.current = '';
         setDraft(conversationId, '');
+        setAttachmentDraft(conversationId, []);
       }
-      await submitPendingAskUser({ supplementText: trimmed || undefined });
+      await submitPendingAskUser({
+        supplementText: trimmed || undefined,
+        attachmentMeta: toSendMeta.length > 0 ? toSendMeta : undefined
+      });
       return;
     }
     if (!trimmed && attachments.length === 0) return;
@@ -237,7 +236,6 @@ export function Composer({
       toSendMeta.length > 0 ? peekPendingMessageId() : undefined;
     setText('');
     clearAttachments();
-    setAtMention(null);
     fromHistoryRef.current = false;
     history.reset();
     // Clear the store draft synchronously so a post-send switch away
@@ -254,15 +252,15 @@ export function Composer({
       // §3.1.1.
       selfDraftRef.current = '';
       setDraft(conversationId, '');
+      setAttachmentDraft(conversationId, []);
     }
-    await send(
-      trimmed || 'See attached files.',
-      model,
-      permissions,
-      toSendMeta.length > 0
-        ? { attachmentMeta: toSendMeta, promptEventId }
-        : undefined
-    );
+    const sendOpts: Parameters<typeof send>[3] = {};
+    if (toSendMeta.length > 0) {
+      sendOpts.attachmentMeta = toSendMeta;
+      if (promptEventId) sendOpts.promptEventId = promptEventId;
+    }
+    if (mentions.length > 0) sendOpts.mentions = mentions;
+    await send(trimmed || 'See attached files.', model, permissions, sendOpts);
   };
 
   const onTextChange = (next: string) => {
@@ -270,75 +268,24 @@ export function Composer({
     fromHistoryRef.current = false;
     history.reset();
     flushDraft(next);
-    const el = taRef.current;
-    const cursor = el ? (el.selectionStart ?? next.length) : next.length;
-    setAtMention(detectAtToken(next, cursor));
-  };
-
-  /** Selection change inside the textarea can also enter / leave a token
-   *  (e.g. arrow keys move into an existing `@foo`). Re-evaluate. */
-  const onSelectionUpdate = () => {
-    const el = taRef.current;
-    if (!el) return;
-    const cursor = el.selectionStart ?? text.length;
-    setAtMention(detectAtToken(text, cursor));
-  };
-
-  /** When the user types more chars after `@`, the picker's controlled
-   *  filter advances and we splice the new query back into the textarea
-   *  at the token position. Symmetric: deleting characters narrows the
-   *  query AND shrinks the textarea token. */
-  const onMentionFilterChange = (nextQuery: string) => {
-    if (!atMention) return;
-    const before = text.slice(0, atMention.start + 1); // keep the `@`
-    const after = text.slice(atMention.start + 1 + atMention.query.length);
-    const merged = before + nextQuery + after;
-    setText(merged);
-    setAtMention({ start: atMention.start, query: nextQuery });
-    requestAnimationFrame(() => {
-      const el = taRef.current;
-      if (!el) return;
-      const cursor = atMention.start + 1 + nextQuery.length;
-      el.focus();
-      el.setSelectionRange(cursor, cursor);
-    });
-  };
-
-  /** Picking a file in `@`-mode strips the `@token` from the textarea
-   *  and adds the picked path to the attachments pill row. */
-  const onMentionPick = (path: string) => {
-    if (!atMention) {
-      void addPaths([path]);
-      return;
-    }
-    const before = text.slice(0, atMention.start);
-    const after = text.slice(atMention.start + 1 + atMention.query.length);
-    // Collapse a duplicate space that may now appear if the token was
-    // sandwiched between two spaces.
-    const collapsed =
-      before.endsWith(' ') && after.startsWith(' ') ? before + after.slice(1) : before + after;
-    setText(collapsed);
-    void addPaths([path]);
-    setAtMention(null);
-    requestAnimationFrame(() => {
-      const el = taRef.current;
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(atMention.start, atMention.start);
-    });
   };
 
   const pendingAskUser = useMemo(
     () => findPendingAskUserEvent(events, awaitingAskUser),
     [events, awaitingAskUser]
   );
+  const composerDoc = parseMentionDocument(text);
   const draftHasAnswer = useAskUserDraftStore((s) =>
     pendingAskUser
-      ? s.hasAnyAnswer(pendingAskUser.id, pendingAskUser.payload, text.trim())
+      ? s.hasAnyAnswer(
+          pendingAskUser.id,
+          pendingAskUser.payload,
+          documentTrimmedPlain(composerDoc)
+        )
       : false
   );
   const canSendContent =
-    text.trim().length > 0 ||
+    hasComposerContent(composerDoc) ||
     attachments.length > 0 ||
     (awaitingAskUser && draftHasAnswer);
   const sendState: 'idle' | 'ready' | 'processing' = isProcessing
@@ -347,23 +294,20 @@ export function Composer({
       ? 'ready'
       : 'idle';
   const footerMode = variant === 'footer';
-  const zoneOpen = useSecondaryZoneStore((s) => s.panel !== null);
+  const zoneOpen =
+    useAttachmentPreviewStore((s) => s.attachment !== null) ||
+    useFloatingLiveDiffStore((s) => s.target !== null);
   const revertPrompt = useRevertPrompt();
 
   const attachmentButton = (
     <AttachmentButton
-      open={pickerOpen || !!atMention}
+      open={pickerOpen}
       onOpen={() => setPickerOpen(true)}
-      onClose={() => {
-        setPickerOpen(false);
-        setAtMention(null);
-      }}
+      onClose={() => setPickerOpen(false)}
       selected={selectedPaths}
-      onPick={atMention ? onMentionPick : (p) => void addPaths([p])}
+      onPick={(p) => void addPaths([p])}
+      onPickFolder={(p) => void addFolder(p)}
       onPickFromComputer={() => void pickFromComputer()}
-      workspaceOnly={atMention !== null}
-      {...(atMention ? { controlledFilter: atMention.query } : {})}
-      {...(atMention ? { onControlledFilterChange: onMentionFilterChange } : {})}
     />
   );
 
@@ -385,23 +329,30 @@ export function Composer({
     </div>
   );
 
-  const textarea = (
-    <textarea
-      ref={taRef}
+  const mentionInput = (
+    <MentionComposer
       value={text}
-      aria-label={`Message ${AGENT_NAME}`}
-      aria-keyshortcuts="Enter Shift+Enter ArrowUp ArrowDown Escape"
-      onChange={(e) => onTextChange(e.target.value)}
-      onKeyUp={onSelectionUpdate}
-      onClick={onSelectionUpdate}
+      onChange={onTextChange}
+      onPaste={onPaste}
+      onPickFromComputer={async () => {
+        if (!conversationId || !activeWorkspaceIdForAttach) return null;
+        return pickComputerFileMention({
+          conversationId,
+          workspaceId: activeWorkspaceIdForAttach,
+          messageId: peekPendingMessageId()
+        });
+      }}
+      ariaKeyshortcuts="Enter Shift+Enter ArrowUp ArrowDown Escape"
+      placeholder="@ to mention files, or describe your task…"
+      className={cn(
+        footerMode ? 'min-h-[1.75rem] leading-5' : 'min-h-[2.5rem]',
+        footerMode && 'min-w-0 flex-1',
+        'transition-[height] duration-150 ease-out motion-reduce:transition-none'
+      )}
+      style={{ maxHeight: TEXTAREA_MAX_HEIGHT }}
       onKeyDown={(e) => {
         const ne = e.nativeEvent as unknown as { isComposing?: boolean; keyCode?: number };
         if (ne.isComposing || ne.keyCode === 229) return;
-        if (atMention && e.key === 'Escape') {
-          e.preventDefault();
-          setAtMention(null);
-          return;
-        }
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault();
           if (canSendContent && !model) {
@@ -412,16 +363,12 @@ export function Composer({
           void handleSend();
           return;
         }
-        if (e.key === 'ArrowUp' && text === '') {
+        if (e.key === 'ArrowUp' && !documentToPlainText(composerDoc).length) {
           e.preventDefault();
           const recalled = history.recall('up');
           if (recalled !== null) {
             setText(recalled);
             fromHistoryRef.current = true;
-            requestAnimationFrame(() => {
-              const el = taRef.current;
-              if (el) el.setSelectionRange(recalled.length, recalled.length);
-            });
           }
           return;
         }
@@ -429,27 +376,9 @@ export function Composer({
           e.preventDefault();
           const recalled = history.recall('down');
           setText(recalled ?? '');
-          if (recalled === null) {
-            fromHistoryRef.current = false;
-          }
-          requestAnimationFrame(() => {
-            const el = taRef.current;
-            if (el) {
-              const pos = recalled?.length ?? 0;
-              el.setSelectionRange(pos, pos);
-            }
-          });
+          if (recalled === null) fromHistoryRef.current = false;
         }
       }}
-      rows={1}
-      placeholder="@ to mention files, or describe your task…"
-      className={cn(
-        appComposerTextareaClassName,
-        footerMode ? 'min-h-[1.75rem] leading-5' : 'min-h-[2.5rem]',
-        footerMode && 'min-w-0 flex-1',
-        'transition-[height] duration-150 ease-out motion-reduce:transition-none'
-      )}
-      style={{ maxHeight: TEXTAREA_MAX_HEIGHT }}
     />
   );
 
@@ -498,14 +427,11 @@ export function Composer({
               </div>
             ) : null}
             <ComposerRunRecovery model={model} onOpenProviders={onOpenProviders} />
-            {attachments.length > 0 && (
-              <PromptAttachmentCards
-                items={attachments}
-                editable
-                onRemove={removeAttachment}
-                className="mb-1"
-              />
-            )}
+            <AttachmentCollapsible
+              items={attachments}
+              editable
+              onRemove={removeAttachment}
+            />
             <div
               className={cn(
                 'vx-composer-input-zone',
@@ -515,7 +441,7 @@ export function Composer({
               {chipRow}
               {footerMode ? (
                 <div className="vx-composer-input-row">
-                  {textarea}
+                  {mentionInput}
                   <SendButton
                     onClick={() => void handleSend()}
                     state={sendState}
@@ -524,7 +450,7 @@ export function Composer({
                 </div>
               ) : (
                 <>
-                  {textarea}
+                  {mentionInput}
                   <ComposerFooter
                     attachmentCount={attachments.length}
                     sendState={sendState}
@@ -540,10 +466,4 @@ export function Composer({
       </div>
     </div>
   );
-}
-
-function autosize(el: HTMLTextAreaElement | null) {
-  if (!el) return;
-  el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, TEXTAREA_MAX_HEIGHT) + 'px';
 }

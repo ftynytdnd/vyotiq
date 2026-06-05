@@ -13,7 +13,6 @@ import { Button } from '../components/ui/Button.js';
 import { FolderOpen } from 'lucide-react';
 import { cn } from '../lib/cn.js';
 import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../lib/shellIcons.js';
-import { useSecondaryZoneStore } from '../store/useSecondaryZoneStore.js';
 import { useAttachmentPreviewStore } from '../store/useAttachmentPreviewStore.js';
 import { useFloatingLiveDiffStore } from '../store/useFloatingLiveDiffStore.js';
 
@@ -35,10 +34,9 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
   const activeConversationId = useActiveConversationId();
   const conversationList = useConversationsStore((s) => s.list);
   const selecting = useConversationsStore((s) => s.selecting);
-  const secondaryPanel = useSecondaryZoneStore((s) => s.panel);
   const previewOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
   const liveDiffOpen = useFloatingLiveDiffStore((s) => s.target !== null);
-  const zoneOpen = secondaryPanel !== null || previewOpen || liveDiffOpen;
+  const zoneOpen = previewOpen || liveDiffOpen;
 
   const [model, setModel] = useState<ModelSelection | null>(null);
 

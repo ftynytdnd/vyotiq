@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { DiffStreamSnapshot } from '../components/timeline/reducer/types.js';
-import { useSecondaryZoneStore } from './useSecondaryZoneStore.js';
+import { closeSettingsForCompanionOpen } from './useAppViewStore.js';
 
 export interface FloatingLiveDiffTarget {
   callId: string;
@@ -21,7 +21,7 @@ export const useFloatingLiveDiffStore = create<FloatingLiveDiffStore>((set) => (
   userDismissedCallId: null,
   open: (target) => {
     if (useFloatingLiveDiffStore.getState().userDismissedCallId === target.callId) return;
-    useSecondaryZoneStore.getState().closeForCompanionOpen();
+    closeSettingsForCompanionOpen();
     set({ target, userDismissedCallId: null });
   },
   close: () => set({ target: null }),

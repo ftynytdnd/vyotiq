@@ -134,10 +134,10 @@ describe('getSettings — eager on-disk migration', () => {
 
     const { getSettings } = await import('@main/settings/settingsStore');
     const got = await getSettings();
-    expect(got.ui?.lastSettingsTab).toBe('agent');
+    expect(got.ui?.lastSettingsTab).toBe('agent-behavior');
 
     const onDisk = peek(SETTINGS_FILE) as { ui?: { lastSettingsTab?: string } } | null;
-    expect(onDisk?.ui?.lastSettingsTab).toBe('agent');
+    expect(onDisk?.ui?.lastSettingsTab).toBe('agent-behavior');
   });
 
   it('strips webSearchEndpoint from disk on first read', async () => {

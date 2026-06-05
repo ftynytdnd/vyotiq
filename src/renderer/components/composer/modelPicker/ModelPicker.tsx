@@ -8,32 +8,26 @@
  * layout revision (which the popover repositions against).
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { ModelPickerTrigger } from './ModelPickerTrigger.js';
 import { ModelPickerPanel } from './ModelPickerPanel.js';
 import { Popover } from '../../ui/Popover.js';
-import { useProviderStore } from '../../../store/useProviderStore.js';
 import { useUiStore } from '../../../store/useUiStore.js';
+import { DOCK_STRIP_WIDTH } from '../../dock/dockShared.js';
 
 interface ModelPickerProps {
   value: ModelSelection | null;
   onChange: (selection: ModelSelection) => void;
-  /** Routed to when the trigger is clicked while no enabled provider has any
-   *  discovered models. Avoids opening an empty popover. */
+  /** Opens Settings → providers (empty state CTA in panel). */
   onOpenProviders: () => void;
 }
 
 export function ModelPicker({ value, onChange, onOpenProviders }: ModelPickerProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const providers = useProviderStore((s) => s.providers);
   const dockExpanded = useUiStore((s) => s.dockExpanded);
   const dockWidth = useUiStore((s) => s.dockWidth);
-  const hasEnabledProvider = useMemo(
-    () => providers.some((p) => p.enabled),
-    [providers]
-  );
 
   // Bump the popover's `revision` while the dock transition is in
   // flight so the panel re-anchors smoothly.
@@ -53,19 +47,16 @@ export function ModelPicker({ value, onChange, onOpenProviders }: ModelPickerPro
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dockExpanded, dockWidth]);
-
-  const handleToggle = () => {
-    if (!hasEnabledProvider) {
-      onOpenProviders();
-      return;
-    }
-    setOpen((o) => !o);
-  };
+  }, [dockExpanded, dockWidth, DOCK_STRIP_WIDTH]);
 
   return (
     <>
-      <ModelPickerTrigger ref={triggerRef} value={value} open={open} onClick={handleToggle} />
+      <ModelPickerTrigger
+        ref={triggerRef}
+        value={value}
+        open={open}
+        onClick={() => setOpen((o) => !o)}
+      />
       <Popover
         open={open}
         onClose={() => setOpen(false)}
@@ -79,6 +70,7 @@ export function ModelPicker({ value, onChange, onOpenProviders }: ModelPickerPro
           value={value}
           onChange={onChange}
           onClose={() => setOpen(false)}
+          onOpenProviders={onOpenProviders}
         />
       </Popover>
     </>

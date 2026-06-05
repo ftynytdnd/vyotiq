@@ -22,7 +22,6 @@ export function applyThinkingEffortChange(
   providerId: string,
   modelId: string,
   effort: ThinkingEffort,
-  selection: ModelSelection | null,
   onChange: (sel: ModelSelection) => void,
   updateProvider: (
     id: string,
@@ -30,15 +29,12 @@ export function applyThinkingEffortChange(
   ) => void
 ): void {
   void updateProvider(providerId, { modelThinking: { [modelId]: effort } });
-  if (selection?.providerId === providerId && selection.modelId === modelId) {
-    onChange({ providerId, modelId, thinkingEffort: effort });
-  }
+  onChange({ providerId, modelId, thinkingEffort: effort });
 }
 
 export function applyThinkingEffortClear(
   providerId: string,
   modelId: string,
-  selection: ModelSelection | null,
   onChange: (sel: ModelSelection) => void,
   updateProvider: (
     id: string,
@@ -46,7 +42,5 @@ export function applyThinkingEffortClear(
   ) => void
 ): void {
   void updateProvider(providerId, { modelThinking: { [modelId]: null } });
-  if (selection?.providerId === providerId && selection.modelId === modelId) {
-    onChange({ providerId, modelId });
-  }
+  onChange({ providerId, modelId });
 }

@@ -6,6 +6,7 @@ import type { ToolCall, ToolResult, DiffHunk } from './tool.js';
 import type { ModelSelection, ThinkingEffort } from './provider.js';
 import type { CheckpointChangeKind } from './checkpoint.js';
 import type { AskUserStructuredPayload } from './askUser.js';
+import type { MentionRef } from './mention.js';
 
 /**
  * Internal role union for `ChatMessage`. Not exported because the only
@@ -166,6 +167,8 @@ export type TimelineEvent =
     runId?: string;
     /** Persisted attachment metadata for timeline cards after reload. */
     attachments?: PromptAttachmentMeta[];
+    /** Inline `@` file mentions (chips), resolved into context on send. */
+    mentions?: MentionRef[];
   }
   | {
     kind: 'agent-thought';
@@ -557,6 +560,8 @@ export interface ChatSendInput {
    * persisted `user-prompt` row after send.
    */
   promptEventId?: string;
+  /** Inline `@` file mentions from the composer (not attachment pills). */
+  mentions?: MentionRef[];
 }
 
 /**

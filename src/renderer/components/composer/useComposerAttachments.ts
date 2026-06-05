@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import { MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
 import { randomId } from '../../lib/ids.js';
@@ -13,17 +13,40 @@ function resolvePickPath(path: string, workspaceRoot: string | null): string {
   return `${workspaceRoot.replace(/[/\\]+$/, '')}${sep}${path.replace(/^[/\\]+/, '')}`;
 }
 
+function attachmentPathKey(meta: PromptAttachmentMeta): string {
+  return meta.workspacePath ?? meta.storedPath ?? meta.id;
+}
+
 export function useComposerAttachments(input: {
   conversationId: string | null;
   workspaceId: string | null;
-  /** Seeds attachment pills when opening inline edit (not persisted as draft). */
   initialAttachments?: PromptAttachmentMeta[];
+  onAttachmentsChange?: (attachments: PromptAttachmentMeta[]) => void;
 }) {
-  const [attachments, setAttachments] = useState<PromptAttachmentMeta[]>(
+  const [attachments, setAttachmentsState] = useState<PromptAttachmentMeta[]>(
     () => input.initialAttachments ?? []
   );
   const pendingMessageIdRef = useRef(randomId());
   const showToast = useToastStore((s) => s.show);
+  const hydratedConvRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (input.conversationId === hydratedConvRef.current) return;
+    hydratedConvRef.current = input.conversationId;
+    setAttachmentsState(input.initialAttachments ?? []);
+    pendingMessageIdRef.current = randomId();
+  }, [input.conversationId, input.initialAttachments]);
+
+  const setAttachments = useCallback(
+    (next: PromptAttachmentMeta[] | ((cur: PromptAttachmentMeta[]) => PromptAttachmentMeta[])) => {
+      setAttachmentsState((cur) => {
+        const resolved = typeof next === 'function' ? next(cur) : next;
+        input.onAttachmentsChange?.(resolved);
+        return resolved;
+      });
+    },
+    [input.onAttachmentsChange]
+  );
 
   const ensureMessageId = useCallback(() => {
     if (!pendingMessageIdRef.current) {
@@ -35,18 +58,64 @@ export function useComposerAttachments(input: {
   const clearAttachments = useCallback(() => {
     setAttachments([]);
     pendingMessageIdRef.current = randomId();
-  }, []);
+  }, [setAttachments]);
 
-  const mergeAttachments = useCallback((ingested: PromptAttachmentMeta[]) => {
-    setAttachments((cur) => {
-      const ids = new Set(cur.map((a) => a.id));
-      const next = [...cur];
-      for (const a of ingested) {
-        if (!ids.has(a.id)) next.push(a);
+  const mergeAttachments = useCallback(
+    (ingested: PromptAttachmentMeta[]) => {
+      setAttachments((cur) => {
+        const byPath = new Map(cur.map((a) => [attachmentPathKey(a), a]));
+        for (const a of ingested) {
+          byPath.set(attachmentPathKey(a), a);
+        }
+        return Array.from(byPath.values()).slice(0, MAX_CHAT_ATTACHMENTS);
+      });
+    },
+    [setAttachments]
+  );
+
+  const addFolder = useCallback(
+    async (folderPath: string) => {
+      const { conversationId, workspaceId } = input;
+      if (!conversationId || !workspaceId) {
+        showToast('Open a workspace and conversation before attaching files.', 'danger');
+        return;
       }
-      return next.slice(0, MAX_CHAT_ATTACHMENTS);
-    });
-  }, []);
+      const remaining = MAX_CHAT_ATTACHMENTS - attachments.length;
+      if (remaining <= 0) {
+        showToast(`Maximum ${MAX_CHAT_ATTACHMENTS} attachments per message.`, 'danger');
+        return;
+      }
+      try {
+        const collected = await vyotiq.attachments.collectFolder({
+          workspaceId,
+          folderPath,
+          maxCount: remaining
+        });
+        if (collected.paths.length === 0) {
+          showToast('No attachable files in that folder.', 'danger');
+          return;
+        }
+        if (collected.truncated) {
+          showToast(
+            `Folder has ${collected.total} files; attaching ${collected.paths.length} (max ${MAX_CHAT_ATTACHMENTS} per message).`,
+            'danger'
+          );
+        }
+        const workspaceRoot = useWorkspaceStore.getState().info.path;
+        const resolved = collected.paths.map((p) => resolvePickPath(p, workspaceRoot));
+        const ingested = await vyotiq.attachments.ingestPaths({
+          paths: resolved,
+          workspaceId,
+          conversationId,
+          messageId: ensureMessageId()
+        });
+        mergeAttachments(ingested);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Could not attach folder.', 'danger');
+      }
+    },
+    [attachments.length, ensureMessageId, input, mergeAttachments, showToast]
+  );
 
   const addPaths = useCallback(
     async (paths: string[]) => {
@@ -107,9 +176,12 @@ export function useComposerAttachments(input: {
     }
   }, [attachments.length, ensureMessageId, input, mergeAttachments, showToast]);
 
-  const remove = useCallback((id: string) => {
-    setAttachments((cur) => cur.filter((a) => a.id !== id));
-  }, []);
+  const remove = useCallback(
+    (id: string) => {
+      setAttachments((cur) => cur.filter((a) => a.id !== id));
+    },
+    [setAttachments]
+  );
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -134,15 +206,34 @@ export function useComposerAttachments(input: {
     e.dataTransfer.dropEffect = 'copy';
   }, []);
 
+  const onPaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      const files = Array.from(e.clipboardData.files);
+      if (files.length === 0) return;
+      e.preventDefault();
+      const paths = files
+        .map((f) => (f as File & { path?: string }).path)
+        .filter((p): p is string => typeof p === 'string' && p.length > 0);
+      if (paths.length > 0) {
+        void addPaths(paths);
+        return;
+      }
+      void pickFromComputer();
+    },
+    [addPaths, pickFromComputer]
+  );
+
   return {
     attachments,
     setAttachments,
     addPaths,
+    addFolder,
     pickFromComputer,
     remove,
     clearAttachments,
     onDrop,
     onDragOver,
+    onPaste,
     pendingMessageId: pendingMessageIdRef,
     peekPendingMessageId: ensureMessageId
   };

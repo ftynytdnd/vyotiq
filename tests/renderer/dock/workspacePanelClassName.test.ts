@@ -1,16 +1,14 @@
 /**
- * Workspace panel height cap for short workspace lists.
+ * Workspace panel height — equal split with chats panel.
  */
 
 import { describe, expect, it } from 'vitest';
-import { workspacePanelClassName, DOCK_WORKSPACE_PANEL_CAP } from '@renderer/components/dock/dockShared';
+import { workspacePanelClassName } from '@renderer/components/dock/dockShared';
 
 describe('workspacePanelClassName', () => {
-  it('uses content height for short lists', () => {
-    expect(workspacePanelClassName(DOCK_WORKSPACE_PANEL_CAP)).not.toContain('max-h');
-  });
-
-  it('caps height when many workspaces are registered', () => {
-    expect(workspacePanelClassName(DOCK_WORKSPACE_PANEL_CAP + 1)).toContain('max-h-[38%]');
+  it('uses equal flex split for any workspace count', () => {
+    expect(workspacePanelClassName(1)).toContain('flex-1');
+    expect(workspacePanelClassName(10)).toContain('flex-1');
+    expect(workspacePanelClassName(1)).not.toContain('max-h-[38%]');
   });
 });

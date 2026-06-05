@@ -7,6 +7,7 @@
  *   - Ctrl+K / Cmd+K  : open inline chat search
  *   - Escape          : close search, else collapse expanded dock
  *   - Alt+ArrowUp/Down : prev/next conversation in active workspace
+ *   - Ctrl+Tab / Ctrl+Shift+Tab : cycle workspaces
  */
 
 import { useEffect } from 'react';
@@ -28,7 +29,7 @@ function isTextInputTarget(target: EventTarget | null): boolean {
 /** Dock inline search input — Escape is handled locally (must not collapse flyout). */
 function isDockSearchInputTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  return target.closest('[role="search"][aria-label="Search chats"]') !== null;
+  return target.closest('[role="search"][aria-label="Search workspace"]') !== null;
 }
 
 export function useDockShortcuts(): void {
@@ -42,10 +43,17 @@ export function useDockShortcuts(): void {
         return;
       }
 
-      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
+      if (mod && !e.altKey && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         useUiStore.getState().setDockExpanded(true);
         useDockSearchStore.getState().setOpen(true);
+        return;
+      }
+
+      if (mod && !e.altKey && e.key === 'Tab') {
+        if (isTextInputTarget(e.target)) return;
+        e.preventDefault();
+        cycleWorkspace(e.shiftKey ? -1 : 1);
         return;
       }
 
@@ -79,6 +87,22 @@ export function useDockShortcuts(): void {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
+}
+
+function cycleWorkspace(dir: 1 | -1): void {
+  const ws = useWorkspaceStore.getState();
+  const list = ws.list;
+  if (list.length === 0) return;
+  const activeIdx = ws.activeId ? list.findIndex((w) => w.id === ws.activeId) : -1;
+  const next =
+    activeIdx === -1
+      ? dir === 1
+        ? 0
+        : list.length - 1
+      : (activeIdx + dir + list.length) % list.length;
+  const target = list[next];
+  if (!target || target.id === ws.activeId) return;
+  void ws.setActive(target.id);
 }
 
 function navigateConversation(dir: 1 | -1): void {

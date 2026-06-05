@@ -3,8 +3,9 @@ import { createPortal } from 'react-dom';
 import { useShallow } from 'zustand/react/shallow';
 import { TitleBar } from './components/titlebar/TitleBar.js';
 import { LeftDock } from './components/dock/index.js';
-import { SecondaryZone } from './components/zone/index.js';
+import { DOCK_STRIP_WIDTH } from './components/dock/dockShared.js';
 import { ChatPage } from './pages/ChatPage.js';
+import { SettingsFullView } from './components/settings/SettingsFullView.js';
 import { ToastHost } from './components/toast/ToastHost.js';
 import { LoadingHint } from './components/ui/LoadingHint.js';
 // Lazy-loaded composer dialog portals into the `ComposerDialogAnchor` slot.
@@ -26,10 +27,7 @@ import { useChatStore } from './store/useChatStore.js';
 import { useUiStore } from './store/useUiStore.js';
 import { useDockSearchStore } from './store/useDockSearchStore.js';
 import { useTimelineUiStore } from './store/useTimelineUiStore.js';
-import {
-  useSecondaryZoneStore,
-  type SettingsTabId
-} from './store/useSecondaryZoneStore.js';
+import { useAppViewStore, type SettingsSectionId } from './store/useAppViewStore.js';
 import { usePersistedPanelWidth } from './hooks/usePersistedPanelWidth.js';
 import { vyotiq } from './lib/ipc.js';
 import { logger } from './lib/logger.js';
@@ -86,17 +84,16 @@ export default function App() {
 
   const [workspacePathOpen, setWorkspacePathOpen] = useState(false);
   const [workspacePathError, setWorkspacePathError] = useState<string | null>(null);
-  const {
-    openSettings: openSecondarySettings,
-    panel: secondaryPanel,
-    closeAllOverlays
-  } = useSecondaryZoneStore(
-    useShallow((s) => ({
-      openSettings: s.openSettings,
-      panel: s.panel,
-      closeAllOverlays: s.closeAllOverlays
-    }))
-  );
+  const { appView, settingsSection, openSettings, toggleSettings, closeSettings } =
+    useAppViewStore(
+      useShallow((s) => ({
+        appView: s.view,
+        settingsSection: s.settingsSection,
+        openSettings: s.openSettings,
+        toggleSettings: s.toggleSettings,
+        closeSettings: s.closeSettings
+      }))
+    );
   const { previewAttachment, closePreview } = useAttachmentPreviewStore(
     useShallow((s) => ({ previewAttachment: s.attachment, closePreview: s.close }))
   );
@@ -107,10 +104,8 @@ export default function App() {
   const dockExpanded = useUiStore((s) => s.dockExpanded);
   const dockSearchOpen = useDockSearchStore((s) => s.open);
   const dockModalOpen = dockExpanded || dockSearchOpen;
-  const overlayOpen =
-    secondaryPanel !== null ||
-    previewAttachment !== null ||
-    liveDiffTarget !== null;
+  const overlayOpen = previewAttachment !== null || liveDiffTarget !== null;
+  const settingsOpen = appView === 'settings';
   const showToast = useToastStore((s) => s.show);
   const updateCheckDone = useRef(false);
 
@@ -156,12 +151,12 @@ export default function App() {
   useEffect(() => {
     if (!settingsReady) return;
     if (settings.ui?.firstLaunch) {
-      openSecondarySettings('appearance');
+      openSettings('appearance');
       void vyotiq.settings.set({
         ui: { firstLaunch: false, lastSettingsTab: 'appearance' }
       });
     }
-  }, [settings, settingsReady, openSecondarySettings]);
+  }, [settings, settingsReady, openSettings]);
 
   // Auto-check for updates once after settings hydrate (packaged builds only).
   useEffect(() => {
@@ -354,8 +349,8 @@ export default function App() {
     };
   }, [enabledProviderIds, discoverCached]);
 
-  const openSettings = (tab?: SettingsTabId) => {
-    openSecondarySettings(tab);
+  const openSettingsSection = (section?: SettingsSectionId | 'providers' | 'memory') => {
+    openSettings(section);
   };
 
   const pickWorkspace = useWorkspaceStore((s) => s.pick);
@@ -386,8 +381,7 @@ export default function App() {
     newConversation: () => newConversation(),
     openWorkspace: () => void pickWorkspace(),
     setWorkspacePath: openSetWorkspacePath,
-    openSettings: () => openSettings(),
-    openCheckpoints: () => openSettings('checkpoints'),
+    openSettings: () => toggleSettings(),
     quit: () => void vyotiq.window.close()
   };
 
@@ -403,10 +397,28 @@ export default function App() {
   useGlobalShortcuts({
     newConversation: fileActions.newConversation,
     openWorkspace: fileActions.openWorkspace,
-    openSettings: fileActions.openSettings,
+    openSettings: () => toggleSettings(),
     reload: () => void vyotiq.window.reload(),
     toggleDevTools: () => void vyotiq.window.toggleDevTools()
   });
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (!settingsOpen) return;
+      const target = e.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.closest('[role="dialog"]') || target.closest('[data-escape-dismiss="false"]'))
+      ) {
+        return;
+      }
+      e.preventDefault();
+      closeSettings();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [settingsOpen, closeSettings]);
 
   return (
     <div className="flex h-full flex-col bg-surface-base">
@@ -414,18 +426,22 @@ export default function App() {
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <LeftDock
-            onOpenSettings={() => openSettings()}
+            onOpenSettings={() => openSettingsSection()}
             onOpenWorkspace={() => void pickWorkspace()}
             onSetWorkspacePath={openSetWorkspacePath}
           />
           <main
             className="min-h-0 flex-1 overflow-hidden bg-surface-base"
-            inert={overlayOpen || dockModalOpen ? true : undefined}
-            aria-hidden={overlayOpen || dockModalOpen ? true : undefined}
+            style={{ paddingLeft: DOCK_STRIP_WIDTH }}
+            inert={overlayOpen || (dockModalOpen && !settingsOpen) ? true : undefined}
+            aria-hidden={overlayOpen || (dockModalOpen && !settingsOpen) ? true : undefined}
           >
-            <ChatPage onOpenProviders={() => openSettings('providers')} />
+            {settingsOpen ? (
+              <SettingsFullView initialSection={settingsSection} />
+            ) : (
+              <ChatPage onOpenProviders={() => openSettingsSection('providers')} />
+            )}
           </main>
-          <SecondaryZone />
         </div>
       </div>
       {overlayOpen &&
@@ -434,7 +450,10 @@ export default function App() {
             type="button"
             className="fixed inset-0 z-(--z-overlay-backdrop) bg-black/40"
             aria-label="Close panel"
-            onClick={closeAllOverlays}
+            onClick={() => {
+              closePreview();
+              if (liveDiffTarget) dismissLiveDiff(liveDiffTarget.callId);
+            }}
           />,
           document.body
         )}

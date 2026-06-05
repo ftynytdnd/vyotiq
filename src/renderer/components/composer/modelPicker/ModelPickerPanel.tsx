@@ -1,19 +1,13 @@
 /**
  * ModelPickerPanel — popover content. Owns search, grouped model list, and a
- * fixed-width effort column. Keyboard nav updates focus + effort target;
- * pointer hover uses CSS only (no layout reflow).
+ * compact side column. Keyboard nav updates focus + preview target;
+ * pointer hover previews without selecting.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
 import type { ModelInfo, ModelSelection, ProviderConfig } from '@shared/types/provider.js';
-import { isThinkingCapableModel } from '@shared/providers/thinkingEffort.js';
-import {
-  applyThinkingEffortChange,
-  applyThinkingEffortClear,
-  rowThinkingEffort
-} from './modelPickerThinking.js';
-import { ThinkingEffortOptionList } from '../../shared/ThinkingEffortOptionList.js';
+import { findProviderModel } from './modelPickerContext.js';
 import { useModelOptions } from './useModelOptions.js';
 import {
   EMPTY_FAVORITE_MODELS,
@@ -23,17 +17,19 @@ import {
 import { useProviderStore } from '../../../store/useProviderStore.js';
 import { ProviderGroupHeader } from './ProviderGroupHeader.js';
 import { ModelRow } from './ModelRow.js';
+import { ModelPickerSidePanel } from './ModelPickerSidePanel.js';
+import { ModelPickerHints } from './ModelPickerHints.js';
+import { ModelPickerSectionHeader } from './ModelPickerSectionHeader.js';
 import { appPopoverPanelClassName } from '../../ui/SurfaceShell.js';
+import { Button } from '../../ui/Button.js';
 import { cn } from '../../../lib/cn.js';
 import { SHELL_ROW_ICON_CLASS, SHELL_ACTION_ICON_STROKE } from '../../../lib/shellIcons.js';
-
-const PANEL_WIDTH_CLASS = 'w-[min(42rem,calc(100vw-1.5rem))]';
-const EFFORT_COLUMN_CLASS = 'w-[9.75rem] shrink-0 border-l border-border-subtle/30';
 
 interface ModelPickerPanelProps {
   value: ModelSelection | null;
   onChange: (selection: ModelSelection) => void;
   onClose: () => void;
+  onOpenProviders: () => void;
 }
 
 type NavOption = {
@@ -55,7 +51,12 @@ function parseModelKey(key: string): { providerId: string; modelId: string } | n
   return { providerId, modelId };
 }
 
-export function ModelPickerPanel({ value, onChange, onClose }: ModelPickerPanelProps) {
+export function ModelPickerPanel({
+  value,
+  onChange,
+  onClose,
+  onOpenProviders
+}: ModelPickerPanelProps) {
   const [query, setQuery] = useState('');
   const [focusedIdx, setFocusedIdx] = useState(0);
   const [activeKey, setActiveKey] = useState<string | null>(() =>
@@ -66,7 +67,7 @@ export function ModelPickerPanel({ value, onChange, onClose }: ModelPickerPanelP
   const didSyncSelectionRef = useRef(false);
   const scrollFromKeyboardRef = useRef(false);
 
-  const { localGroups, remoteGroups, flat } = useModelOptions(query);
+  const { localGroups, remoteGroups, flat, totalEnabledProviders } = useModelOptions(query);
   const favorites = useSettingsStore(
     (s) => s.settings.ui?.favoriteModels ?? EMPTY_FAVORITE_MODELS
   );
@@ -76,8 +77,12 @@ export function ModelPickerPanel({ value, onChange, onClose }: ModelPickerPanelP
   const providers = useProviderStore((s) => s.providers);
   const updateProvider = useProviderStore((s) => s.update);
 
+  const hasEnabledProvider = totalEnabledProviders > 0;
+  const hasAnyModels = flat.length > 0;
+  const trimmedQuery = query.trim();
+
   const recentOptions = useMemo(() => {
-    if (query.trim()) return [];
+    if (trimmedQuery) return [];
     const seen = new Set<string>();
     const out: Array<{ providerId: string; model: ModelInfo; provider: ProviderConfig }> = [];
     for (const sel of Object.values(lastByWs)) {
@@ -85,28 +90,28 @@ export function ModelPickerPanel({ value, onChange, onClose }: ModelPickerPanelP
       if (seen.has(key) || favorites.includes(key)) continue;
       seen.add(key);
       const p = providers.find((x) => x.id === sel.providerId && x.enabled);
-      const m = p?.models?.find((x) => x.id === sel.modelId);
+      const m = p ? findProviderModel(p, sel.modelId) : undefined;
       if (p && m) out.push({ providerId: p.id, model: m, provider: p });
     }
     return out.slice(0, 5);
-  }, [lastByWs, favorites, providers, query]);
+  }, [lastByWs, favorites, providers, trimmedQuery]);
 
   const favoriteOptions = useMemo(() => {
-    if (query.trim()) return [];
+    if (trimmedQuery) return [];
     return favorites
       .map((key) => {
         const parsed = parseModelKey(key);
         if (!parsed) return null;
         const p = providers.find((x) => x.id === parsed.providerId && x.enabled);
-        const m = p?.models?.find((x) => x.id === parsed.modelId);
+        const m = p ? findProviderModel(p, parsed.modelId) : undefined;
         if (!p || !m) return null;
         return { providerId: parsed.providerId, model: m, provider: p };
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
-  }, [favorites, providers, query]);
+  }, [favorites, providers, trimmedQuery]);
 
   const navOptions: NavOption[] = useMemo(() => {
-    if (query.trim()) {
+    if (trimmedQuery) {
       return flat.map((o) => ({
         providerId: o.providerId,
         modelId: o.modelId,
@@ -131,7 +136,12 @@ export function ModelPickerPanel({ value, onChange, onClose }: ModelPickerPanelP
       out.push({ providerId: o.providerId, modelId: o.modelId, section: 'provider' });
     }
     return out;
-  }, [query, flat, recentOptions, favoriteOptions]);
+  }, [trimmedQuery, flat, recentOptions, favoriteOptions]);
+
+  const focusedNavKey = useMemo(() => {
+    const opt = navOptions[focusedIdx];
+    return opt ? modelKey(opt.providerId, opt.modelId) : null;
+  }, [navOptions, focusedIdx]);
 
   const syncActiveFromFocused = useCallback(
     (idx: number) => {
@@ -165,30 +175,29 @@ export function ModelPickerPanel({ value, onChange, onClose }: ModelPickerPanelP
   }, [query, value, navOptions]);
 
   useEffect(() => {
-    if (!scrollFromKeyboardRef.current) return;
+    if (!scrollFromKeyboardRef.current || !focusedNavKey) return;
     scrollFromKeyboardRef.current = false;
     const el = listRef.current?.querySelector<HTMLElement>(
-      `[data-row-idx="${focusedIdx}"]`
+      `[data-model-key="${focusedNavKey}"]`
     );
     el?.scrollIntoView({ block: 'nearest' });
-  }, [focusedIdx]);
-
-  const navIndexFor = (providerId: string, modelId: string) =>
-    navOptions.findIndex((o) => o.providerId === providerId && o.modelId === modelId);
+  }, [focusedNavKey]);
 
   const activeParsed = activeKey ? parseModelKey(activeKey) : null;
   const activeProvider = activeParsed
     ? providers.find((p) => p.id === activeParsed.providerId)
     : undefined;
   const activeModelId = activeParsed?.modelId;
-  const activeThinking =
+  const activeModel: ModelInfo | undefined =
     activeProvider && activeModelId
-      ? isThinkingCapableModel(activeProvider.dialect, activeModelId)
-      : false;
-  const activeEffortValue =
-    activeProvider && activeModelId
-      ? rowThinkingEffort(activeProvider, activeModelId, value)
+      ? findProviderModel(activeProvider, activeModelId)
       : undefined;
+
+  const isActiveSelected =
+    !!value &&
+    !!activeParsed &&
+    value.providerId === activeParsed.providerId &&
+    value.modelId === activeParsed.modelId;
 
   const makeSelection = (providerId: string, modelId: string): ModelSelection => {
     if (
@@ -198,37 +207,32 @@ export function ModelPickerPanel({ value, onChange, onClose }: ModelPickerPanelP
     ) {
       return value;
     }
+    const provider = providers.find((p) => p.id === providerId);
+    const stored = provider?.modelThinking?.[modelId];
+    if (stored !== undefined) {
+      return { providerId, modelId, thinkingEffort: stored };
+    }
     return { providerId, modelId };
-  };
-
-  const focusRowByKey = (key: string) => {
-    const idx = navOptions.findIndex(
-      (o) => modelKey(o.providerId, o.modelId) === key
-    );
-    if (idx !== -1) setFocusedIdx(idx);
-    setActiveKey(key);
   };
 
   const renderModelRow = (
     provider: ProviderConfig,
     model: ModelInfo,
-    idx: number,
-    rowKey: string
+    rowKey: string,
+    showProviderName = false
   ) => {
     const key = modelKey(provider.id, model.id);
-    const navIdx = navIndexFor(provider.id, model.id);
-    const rowNavIdx = navIdx >= 0 ? navIdx : idx;
-
     return (
-      <div key={rowKey} data-row-idx={rowNavIdx} className="px-0.5 pb-px">
+      <div key={rowKey} data-model-key={key}>
         <ModelRow
           provider={provider}
           model={model}
           selection={value}
           selected={value?.providerId === provider.id && value?.modelId === model.id}
-          keyboardFocused={rowNavIdx === focusedIdx}
+          keyboardFocused={focusedNavKey === key}
           effortActive={key === activeKey}
-          onActivate={() => focusRowByKey(key)}
+          showProviderName={showProviderName}
+          onPreview={() => setActiveKey(key)}
           onSelect={() => {
             onChange(makeSelection(provider.id, model.id));
             onClose();
@@ -237,6 +241,33 @@ export function ModelPickerPanel({ value, onChange, onClose }: ModelPickerPanelP
       </div>
     );
   };
+
+  const renderPinnedRows = (
+    items: Array<{ providerId: string; model: ModelInfo; provider: ProviderConfig }>,
+    keyPrefix: string
+  ) => {
+    const sorted = [...items].sort((a, b) => {
+      const byProvider = a.provider.name.localeCompare(b.provider.name, undefined, {
+        sensitivity: 'base'
+      });
+      if (byProvider !== 0) return byProvider;
+      return a.model.id.localeCompare(b.model.id, undefined, { sensitivity: 'base' });
+    });
+    return sorted.map((o) =>
+      renderModelRow(o.provider, o.model, `${keyPrefix}-${o.providerId}-${o.model.id}`, true)
+    );
+  };
+
+  const renderProviderCatalog = (
+    groups: Array<{ provider: ProviderConfig; models: ModelInfo[] }>,
+    keyPrefix: string
+  ) =>
+    groups.map((g) => (
+      <div key={`${keyPrefix}-${g.provider.id}`} className="vx-model-picker-provider-group">
+        <ProviderGroupHeader provider={g.provider} />
+        {g.models.map((m) => renderModelRow(g.provider, m, `${keyPrefix}-${g.provider.id}-${m.id}`))}
+      </div>
+    ));
 
   const commitFocused = () => {
     const opt = navOptions[focusedIdx];
@@ -283,153 +314,126 @@ export function ModelPickerPanel({ value, onChange, onClose }: ModelPickerPanelP
     }
   };
 
+  const showEmptyState = !hasEnabledProvider || !hasAnyModels;
+
   return (
     <div
       onKeyDown={onKeyDown}
       className={cn(
         appPopoverPanelClassName,
-        PANEL_WIDTH_CLASS,
-        'flex max-h-[min(60vh,28rem)] flex-col gap-0.5 p-1'
+        'vx-model-picker-panel',
+        'flex w-[min(48rem,calc(100vw-1.5rem))] max-h-[min(68vh,34rem)] flex-col p-1'
       )}
     >
-      <div className="mx-1 mb-1 mt-1 flex items-center gap-1.5">
-        <Search
-          className={cn(SHELL_ROW_ICON_CLASS, 'text-text-faint')}
-          strokeWidth={SHELL_ACTION_ICON_STROKE}
-        />
-        <input
-          ref={inputRef}
-          type="search"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setFocusedIdx(0);
-            syncActiveFromFocused(0);
-          }}
-          placeholder="Search models…"
-          className="vx-input min-w-0 flex-1 py-0.5 text-row"
-        />
-      </div>
-      <div className="flex min-h-0 flex-1">
-        <div
-          ref={listRef}
-          role="listbox"
-          aria-label="Models"
-          className="scrollbar-stealth min-h-0 min-w-0 flex-1 overflow-y-auto"
-        >
-          {recentOptions.length > 0 && (
-            <div className="py-1">
-              <div className="px-2 py-0.5 text-meta font-medium text-text-faint">Recent</div>
-              {recentOptions.map((o) =>
-                renderModelRow(
-                  o.provider,
-                  o.model,
-                  navIndexFor(o.providerId, o.model.id),
-                  `recent-${o.providerId}-${o.model.id}`
-                )
-              )}
-            </div>
-          )}
-          {favoriteOptions.length > 0 && (
-            <div className="py-1">
-              <div className="px-2 py-0.5 text-meta font-medium text-text-faint">Favorites</div>
-              {favoriteOptions.map((o) =>
-                renderModelRow(
-                  o.provider,
-                  o.model,
-                  navIndexFor(o.providerId, o.model.id),
-                  `fav-${o.providerId}-${o.model.id}`
-                )
-              )}
-            </div>
-          )}
-          {localGroups.length > 0 && (
-            <div className="py-1">
-              <div className="px-2 py-0.5 text-meta font-medium uppercase tracking-wide text-text-faint">
-                Local
-              </div>
-              {localGroups.map((g) => (
-                <div key={g.provider.id}>
-                  <ProviderGroupHeader provider={g.provider} />
-                  {g.models.map((m) =>
-                    renderModelRow(
-                      g.provider,
-                      m,
-                      navIndexFor(g.provider.id, m.id),
-                      `local-${g.provider.id}-${m.id}`
-                    )
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-          {remoteGroups.length > 0 && (
-            <div className="py-1">
-              <div className="px-2 py-0.5 text-meta font-medium uppercase tracking-wide text-text-faint">
-                Cloud
-              </div>
-              {remoteGroups.map((g) => (
-                <div key={g.provider.id}>
-                  <ProviderGroupHeader provider={g.provider} />
-                  {g.models.map((m) =>
-                    renderModelRow(
-                      g.provider,
-                      m,
-                      navIndexFor(g.provider.id, m.id),
-                      `cloud-${g.provider.id}-${m.id}`
-                    )
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-          {navOptions.length === 0 && (
-            <div className="px-3 py-6 text-center text-meta text-text-faint">
-              {query.trim()
-                ? 'No models match your search.'
-                : 'No models available. Refresh a provider in Settings.'}
-            </div>
-          )}
+      <div className="vx-model-picker-search flex flex-col gap-1">
+        <div className="vx-search-row">
+          <Search
+            className={cn(SHELL_ROW_ICON_CLASS, 'shrink-0 text-text-faint')}
+            strokeWidth={SHELL_ACTION_ICON_STROKE}
+          />
+          <input
+            ref={inputRef}
+            type="search"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setFocusedIdx(0);
+              syncActiveFromFocused(0);
+            }}
+            placeholder="Search models…"
+            className="vx-input min-w-0 flex-1 border-0 bg-transparent py-0.5 text-row shadow-none focus:ring-0"
+            aria-label="Search models"
+          />
+          {trimmedQuery ? (
+            <span className="shrink-0 px-0.5 font-mono text-meta tabular-nums text-text-faint">
+              {navOptions.length}
+            </span>
+          ) : null}
         </div>
-        <aside className={cn(EFFORT_COLUMN_CLASS, 'flex min-h-0 flex-col')} aria-label="Model options">
-          {activeProvider && activeModelId && activeThinking ? (
-            <ThinkingEffortOptionList
-              key={activeKey ?? undefined}
-              dialect={activeProvider.dialect}
+        <ModelPickerHints />
+      </div>
+
+      {showEmptyState ? (
+        <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">
+          <p className="text-meta leading-snug text-text-faint">
+            {!hasEnabledProvider
+              ? 'Add a provider to browse models.'
+              : 'No models available yet. Refresh a provider in Settings or discover models.'}
+          </p>
+          <Button
+            variant="secondary"
+            type="button"
+            onClick={() => {
+              onOpenProviders();
+              onClose();
+            }}
+          >
+            {!hasEnabledProvider ? 'Add provider' : 'Open provider settings'}
+          </Button>
+        </div>
+      ) : (
+        <div className="vx-model-picker-body">
+          <div
+            ref={listRef}
+            role="listbox"
+            aria-label="Models"
+            className="vx-model-picker-list scrollbar-stealth"
+          >
+            {!trimmedQuery && recentOptions.length > 0 && (
+              <div className="vx-model-picker-section py-1">
+                <ModelPickerSectionHeader label="Recent" variant="pinned" />
+                {renderPinnedRows(recentOptions, 'recent')}
+              </div>
+            )}
+            {!trimmedQuery && favoriteOptions.length > 0 && (
+              <div className="vx-model-picker-section py-1">
+                <ModelPickerSectionHeader label="Favorites" variant="pinned" />
+                {renderPinnedRows(favoriteOptions, 'fav')}
+              </div>
+            )}
+            {localGroups.length > 0 && (
+              <div className="vx-model-picker-section py-1">
+                <ModelPickerSectionHeader label="Local" variant="category" />
+                {renderProviderCatalog(localGroups, trimmedQuery ? 'search-local' : 'local')}
+              </div>
+            )}
+            {remoteGroups.length > 0 && (
+              <div className="vx-model-picker-section py-1">
+                <ModelPickerSectionHeader label="Cloud" variant="category" />
+                {renderProviderCatalog(remoteGroups, trimmedQuery ? 'search-cloud' : 'cloud')}
+              </div>
+            )}
+            {navOptions.length === 0 && (
+              <div className="px-3 py-6 text-center text-meta text-text-faint">
+                No models match your search.
+              </div>
+            )}
+          </div>
+
+          {activeProvider && activeModelId ? (
+            <ModelPickerSidePanel
+              provider={activeProvider}
               modelId={activeModelId}
-              value={activeEffortValue}
-              onSelect={(effort) =>
-                applyThinkingEffortChange(
-                  activeProvider.id,
-                  activeModelId,
-                  effort,
-                  value,
-                  onChange,
-                  updateProvider
-                )
-              }
-              onClear={() =>
-                applyThinkingEffortClear(
-                  activeProvider.id,
-                  activeModelId,
-                  value,
-                  onChange,
-                  updateProvider
-                )
-              }
+              model={activeModel}
+              selection={value}
+              isSelected={isActiveSelected}
+              onChange={onChange}
+              updateProvider={updateProvider}
+              makeSelection={makeSelection}
+              className="vx-model-picker-side scrollbar-stealth"
             />
           ) : (
-            <div className="flex flex-1 flex-col px-2.5 py-3">
-              <div className="py-1 text-meta font-medium text-text-faint">Effort</div>
+            <aside
+              className="vx-model-picker-side flex flex-col justify-center px-2.5 py-3"
+              aria-label="Model options"
+            >
               <p className="text-meta leading-snug text-text-faint">
-                {activeModelId
-                  ? 'This model does not support thinking effort.'
-                  : 'Select a model to configure effort.'}
+                Hover or arrow to a model to configure effort and context.
               </p>
-            </div>
+            </aside>
           )}
-        </aside>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

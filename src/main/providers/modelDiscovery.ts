@@ -23,10 +23,24 @@
 
 import type { ModelInfo, ProviderDialect, ProviderWithKey } from '@shared/types/provider.js';
 import { MODEL_DISCOVERY_TIMEOUT_MS, MODEL_DISCOVERY_TTL_MS } from '@shared/constants.js';
+import {
+  contextWindowForDeepSeekApiModel,
+  contextWindowFromOllamaModelInfo,
+  isDeepSeekApiHost,
+  mergeContextWindows,
+  mergeThinkingCapabilities,
+  thinkingForDeepSeekApiModel,
+  thinkingFromAnthropicCapabilities,
+  thinkingFromGeminiModel,
+  thinkingFromOllamaShow,
+  thinkingFromOpenAiExtendedFields,
+  thinkingFromSupportedParameters
+} from '@shared/providers/modelCapabilities.js';
+import { DEFAULT_ANTHROPIC_BETAS } from '@shared/providers/thinkingEffort.js';
 import { normalizeBaseUrl } from '@shared/providers/normalizeBaseUrl.js';
 import { getProviderWithKey, updateProvider } from './providerStore.js';
 import { classifyProviderError, isProviderError, ProviderError } from './providerError.js';
-import { buildAttributionHeaders } from './attributionHeaders.js';
+import { buildAttributionHeaders, isOpenRouterHost } from './attributionHeaders.js';
 import { safeText as safeTextShared } from './errorBody.js';
 
 /**
@@ -47,11 +61,20 @@ import { safeText as safeTextShared } from './errorBody.js';
  * identical semantics. The timer is cleared on every exit path so a
  * fast happy-path fetch never leaks a dangling `setTimeout`.
  */
-async function fetchWithTimeout(url: string, headers: Record<string, string>): Promise<Response> {
+async function fetchWithTimeout(
+  url: string,
+  headers: Record<string, string>,
+  init?: Omit<RequestInit, 'headers' | 'signal'>
+): Promise<Response> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), MODEL_DISCOVERY_TIMEOUT_MS);
   try {
-    return await fetch(url, { method: 'GET', headers, signal: ctrl.signal });
+    return await fetch(url, {
+      method: 'GET',
+      ...init,
+      headers,
+      signal: ctrl.signal
+    });
   } finally {
     clearTimeout(timer);
   }
@@ -94,8 +117,13 @@ interface RawOpenAiModelsResponse {
     id: string;
     /** OpenRouter / some shims expose a human-friendly display name. */
     name?: string;
-    context_window?: number;
-    context_length?: number;
+    context_window?: number | null;
+    context_length?: number | null;
+    supported_parameters?: string[];
+    top_provider?: { context_length?: number | null };
+    /** OpenAI extended model rows (features / groups) when exposed. */
+    features?: string[];
+    groups?: string[];
   }>;
   /**
    * Some OpenAI-compat providers (early Ollama OpenAI shim, some vLLM
@@ -149,7 +177,9 @@ export async function discoverModels(providerId: string, force = false): Promise
     hasCacheEntry &&
     Date.now() - provider.lastDiscoveredAt! < MODEL_DISCOVERY_TTL_MS;
 
-  if (cacheFresh) return provider.models!;
+  if (cacheFresh && !cachedModelsLackExpectedMetadata(provider, provider.models!)) {
+    return provider.models!;
+  }
 
   const inflight = discoverInFlight.get(providerId);
   if (inflight) return inflight;
@@ -179,11 +209,31 @@ async function fetchAndPersistModels(
     case 'gemini-native':
       models = await fetchGeminiModels(provider);
       break;
-    default:
+    default: {
       models = await fetchOpenAiModels(provider);
+      // Local Ollama is often added as OpenAI dialect (`/v1/models` shim)
+      // which omits context sizes. When `/api/version` responds, probe
+      // `/api/show` for `num_ctx` the same way the native dialect does.
+      if (models.some((m) => m.contextWindow === undefined || m.thinking === undefined)) {
+        if (await ollamaShowApiAvailable(provider)) {
+          models = await enrichOllamaModelsFromShow(provider, models);
+        }
+      }
       break;
+    }
   }
-  await updateProvider(providerId, { models, lastDiscoveredAt: Date.now() });
+  const patch: {
+    models: ModelInfo[];
+    lastDiscoveredAt: number;
+    anthropicBetas?: string[];
+  } = { models, lastDiscoveredAt: Date.now() };
+  if (
+    dialect === 'anthropic-native' &&
+    (!provider.anthropicBetas || provider.anthropicBetas.length === 0)
+  ) {
+    patch.anthropicBetas = [...DEFAULT_ANTHROPIC_BETAS];
+  }
+  await updateProvider(providerId, patch);
   return models;
 }
 
@@ -334,6 +384,68 @@ const NON_CHAT_PATTERNS: ReadonlyArray<RegExp> = [
   /\btranscri(pt|be)\b/i      // transcription endpoints
 ];
 
+function positiveTokenCount(value: unknown): number | undefined {
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return positiveTokenCount(parsed);
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  const n = Math.floor(value);
+  return n > 0 ? n : undefined;
+}
+
+const REASONING_DISCOVERY_PARAMETERS = new Set([
+  'reasoning',
+  'include_reasoning',
+  'reasoning_effort',
+  'thinking'
+]);
+
+/**
+ * Re-fetch when a TTL-fresh cache predates capability parsing (context
+ * and/or thinking metadata missing on providers that expose them).
+ */
+function cachedModelsLackExpectedMetadata(
+  provider: ProviderWithKey,
+  models: ModelInfo[]
+): boolean {
+  return (
+    cachedModelsLackExpectedContext(provider, models) ||
+    cachedModelsLackExpectedThinking(provider, models)
+  );
+}
+
+function cachedModelsLackExpectedContext(
+  provider: ProviderWithKey,
+  models: ModelInfo[]
+): boolean {
+  if (models.length === 0) return false;
+  if (models.some((m) => m.contextWindow !== undefined)) return false;
+  const dialect = effectiveDialect(provider);
+  if (dialect === 'anthropic-native' || dialect === 'gemini-native') return true;
+  if (dialect === 'ollama-native') return true;
+  if (isOpenRouterHost(provider.baseUrl)) return true;
+  return false;
+}
+
+function cachedModelsLackExpectedThinking(
+  provider: ProviderWithKey,
+  models: ModelInfo[]
+): boolean {
+  if (models.length === 0) return false;
+  if (models.some((m) => m.thinking?.supported)) return false;
+  const dialect = effectiveDialect(provider);
+  if (dialect === 'anthropic-native' || dialect === 'gemini-native') return true;
+  if (dialect === 'ollama-native') return true;
+  if (isDeepSeekApiHost(provider.baseUrl)) return true;
+  if (isOpenRouterHost(provider.baseUrl)) {
+    return models.some((m) =>
+      m.supportedParameters?.some((p) => REASONING_DISCOVERY_PARAMETERS.has(p))
+    );
+  }
+  return false;
+}
+
 export function isNonChatModel(id: string): boolean {
   // Strip OpenRouter-style provider prefix before pattern matching so
   // `openai/text-embedding-3-small` correctly resolves to `text-embedding-3-small`.
@@ -403,9 +515,20 @@ async function fetchOpenAiModels(provider: ProviderWithKey): Promise<ModelInfo[]
       // before they reach the model picker. OpenAI-compat `/v1/models`
       // does not carry capability metadata so we match on id patterns.
       if (isNonChatModel(id)) return null;
-      const ctx =
-        (m as { context_window?: number }).context_window ??
-        (m as { context_length?: number }).context_length;
+      const entry = m as {
+        context_window?: number | null;
+        context_length?: number | null;
+        supported_parameters?: string[];
+        top_provider?: { context_length?: number | null };
+        features?: string[];
+        groups?: string[];
+      };
+      const ctx = mergeContextWindows(
+        positiveTokenCount(entry.context_window),
+        positiveTokenCount(entry.context_length),
+        positiveTokenCount(entry.top_provider?.context_length),
+        isDeepSeekApiHost(provider.baseUrl) ? contextWindowForDeepSeekApiModel() : undefined
+      );
       const info: ModelInfo = { id };
       if (
         typeof nameCandidate === 'string' &&
@@ -414,7 +537,19 @@ async function fetchOpenAiModels(provider: ProviderWithKey): Promise<ModelInfo[]
       ) {
         info.label = nameCandidate;
       }
-      if (typeof ctx === 'number') info.contextWindow = ctx;
+      if (ctx !== undefined) info.contextWindow = ctx;
+      if (Array.isArray(entry.supported_parameters) && entry.supported_parameters.length > 0) {
+        info.supportedParameters = entry.supported_parameters;
+      }
+      const thinking = mergeThinkingCapabilities(
+        thinkingFromSupportedParameters(info.supportedParameters),
+        thinkingFromOpenAiExtendedFields({
+          features: entry.features,
+          groups: entry.groups
+        }),
+        isDeepSeekApiHost(provider.baseUrl) ? thinkingForDeepSeekApiModel() : undefined
+      );
+      if (thinking) info.thinking = thinking;
       return info;
     })
     .filter((m): m is ModelInfo => m !== null)
@@ -451,7 +586,7 @@ async function fetchOllamaTags(provider: ProviderWithKey): Promise<ModelInfo[]> 
   const json = (await res.json()) as RawOllamaTagsResponse;
   const list = Array.isArray(json.models) ? json.models : [];
 
-  return list
+  const tagged = list
     .map((m) => {
       // Ollama returns both `name` (incl. tag, e.g. `llama3.2:latest`) and
       // `model` (same value in all observed responses). Prefer `model`
@@ -460,15 +595,109 @@ async function fetchOllamaTags(provider: ProviderWithKey): Promise<ModelInfo[]> 
       const id = m.model ?? m.name;
       if (!id) return null;
       const info: ModelInfo = { id };
-      // Ollama's /api/tags does not include context_window at all;
-      // discovered `contextWindow` is informational only in the model picker.
-      // `parameter_size` is informational only and shown as the label.
+      // Ollama's /api/tags does not include context_window; we probe
+      // `/api/show` per model below for `num_ctx`.
       const size = m.details?.parameter_size;
       if (size) info.label = `${id} · ${size}`;
       return info;
     })
     .filter((m): m is ModelInfo => m !== null)
     .sort((a, b) => a.id.localeCompare(b.id));
+
+  return enrichOllamaModelsFromShow(provider, tagged);
+}
+
+const OLLAMA_SHOW_CONCURRENCY = 4;
+
+/** True when the base URL exposes Ollama's `/api/*` surface (incl. OpenAI shim). */
+async function ollamaShowApiAvailable(provider: ProviderWithKey): Promise<boolean> {
+  const url = `${provider.baseUrl}/api/version`;
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (provider.apiKey) headers['Authorization'] = `Bearer ${provider.apiKey}`;
+  try {
+    const res = await fetchWithTimeout(url, headers);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+function parseOllamaShow(json: unknown): {
+  contextWindow?: number;
+  thinking?: ReturnType<typeof thinkingFromOllamaShow>;
+} {
+  if (!json || typeof json !== 'object') return {};
+  const rec = json as Record<string, unknown>;
+  let contextWindow: number | undefined;
+  const modelInfo = rec.model_info;
+  if (modelInfo && typeof modelInfo === 'object') {
+    contextWindow = contextWindowFromOllamaModelInfo(modelInfo as Record<string, unknown>);
+  }
+  const params = rec.parameters;
+  if (contextWindow === undefined && typeof params === 'string') {
+    const match = params.match(/(?:^|\n)\s*num_ctx\s+(\d+)/);
+    if (match) {
+      const n = parseInt(match[1]!, 10);
+      if (Number.isFinite(n) && n > 0) contextWindow = n;
+    }
+  }
+  const thinking = thinkingFromOllamaShow({
+    capabilities: Array.isArray(rec.capabilities)
+      ? (rec.capabilities as string[])
+      : undefined,
+    model_info:
+      modelInfo && typeof modelInfo === 'object'
+        ? (modelInfo as Record<string, unknown>)
+        : undefined
+  });
+  return { contextWindow, thinking };
+}
+
+async function enrichOllamaModelsFromShow(
+  provider: ProviderWithKey,
+  models: ModelInfo[]
+): Promise<ModelInfo[]> {
+  if (models.length === 0) return models;
+  const out = models.map((m) => ({ ...m }));
+  for (let i = 0; i < out.length; i += OLLAMA_SHOW_CONCURRENCY) {
+    const slice = out.slice(i, i + OLLAMA_SHOW_CONCURRENCY);
+    await Promise.all(
+      slice.map(async (info) => {
+        const needsContext = info.contextWindow === undefined;
+        const needsThinking = info.thinking === undefined;
+        if (!needsContext && !needsThinking) return;
+        const show = await probeOllamaModelShow(provider, info.id);
+        if (needsContext && show.contextWindow !== undefined) {
+          info.contextWindow = show.contextWindow;
+        }
+        if (needsThinking && show.thinking) info.thinking = show.thinking;
+      })
+    );
+  }
+  return out;
+}
+
+async function probeOllamaModelShow(
+  provider: ProviderWithKey,
+  modelId: string
+): Promise<ReturnType<typeof parseOllamaShow>> {
+  const url = `${provider.baseUrl}/api/show`;
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'Content-Type': 'application/json'
+  };
+  if (provider.apiKey) headers['Authorization'] = `Bearer ${provider.apiKey}`;
+  try {
+    const res = await fetchWithTimeout(url, headers, {
+      method: 'POST',
+      body: JSON.stringify({ name: modelId })
+    });
+    if (!res.ok) return {};
+    const json: unknown = await res.json();
+    return parseOllamaShow(json);
+  } catch {
+    return {};
+  }
 }
 
 /**
@@ -508,6 +737,7 @@ interface RawAnthropicModel {
   max_input_tokens?: number;
   /** Synchronous Messages API output ceiling. NOT used as `contextWindow`. */
   max_tokens?: number;
+  capabilities?: unknown;
 }
 interface RawAnthropicModelsResponse {
   data?: RawAnthropicModel[];
@@ -518,35 +748,50 @@ interface RawAnthropicModelsResponse {
 }
 
 async function fetchAnthropicModels(provider: ProviderWithKey): Promise<ModelInfo[]> {
-  const url = `${provider.baseUrl}/v1/models`;
   const headers: Record<string, string> = {
     Accept: 'application/json',
     'x-api-key': provider.apiKey,
     'anthropic-version': '2023-06-01'
   };
 
-  let res: Response;
-  try {
-    res = await fetchWithTimeout(url, headers);
-  } catch (err: unknown) {
-    throwDiscoveryNetworkError(err, url, provider);
+  const list: RawAnthropicModel[] = [];
+  let afterId: string | undefined;
+  for (;;) {
+    const url =
+      afterId !== undefined
+        ? `${provider.baseUrl}/v1/models?after_id=${encodeURIComponent(afterId)}`
+        : `${provider.baseUrl}/v1/models`;
+
+    let res: Response;
+    try {
+      res = await fetchWithTimeout(url, headers);
+    } catch (err: unknown) {
+      throwDiscoveryNetworkError(err, url, provider);
+    }
+
+    if (!res.ok) {
+      const body = await safeText(res);
+      throw classifyProviderError({
+        status: res.status,
+        statusText: res.statusText,
+        url,
+        body,
+        surface: 'discovery',
+        providerId: provider.id,
+        providerName: provider.name
+      });
+    }
+
+    const json = (await res.json()) as RawAnthropicModelsResponse;
+    const page = Array.isArray(json.data) ? json.data : [];
+    list.push(...page);
+    if (json.has_more && typeof json.last_id === 'string' && json.last_id.length > 0) {
+      afterId = json.last_id;
+      continue;
+    }
+    break;
   }
 
-  if (!res.ok) {
-    const body = await safeText(res);
-    throw classifyProviderError({
-      status: res.status,
-      statusText: res.statusText,
-      url,
-      body,
-      surface: 'discovery',
-      providerId: provider.id,
-      providerName: provider.name
-    });
-  }
-
-  const json = (await res.json()) as RawAnthropicModelsResponse;
-  const list = Array.isArray(json.data) ? json.data : [];
   return list
     .map((m) => {
       const id = m.id;
@@ -558,6 +803,8 @@ async function fetchAnthropicModels(provider: ProviderWithKey): Promise<ModelInf
       if (typeof m.max_input_tokens === 'number' && m.max_input_tokens > 0) {
         info.contextWindow = m.max_input_tokens;
       }
+      const thinking = thinkingFromAnthropicCapabilities(m.capabilities);
+      if (thinking) info.thinking = thinking;
       return info;
     })
     .filter((m): m is ModelInfo => m !== null)
@@ -609,6 +856,8 @@ interface RawGeminiModel {
   inputTokenLimit?: number;
   outputTokenLimit?: number;
   supportedGenerationMethods?: string[];
+  thinking?: boolean;
+  version?: string;
 }
 interface RawGeminiModelsResponse {
   models?: RawGeminiModel[];
@@ -616,32 +865,47 @@ interface RawGeminiModelsResponse {
 }
 
 async function fetchGeminiModels(provider: ProviderWithKey): Promise<ModelInfo[]> {
-  const url = `${provider.baseUrl}/v1beta/models`;
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (provider.apiKey) headers['x-goog-api-key'] = provider.apiKey;
 
-  let res: Response;
-  try {
-    res = await fetchWithTimeout(url, headers);
-  } catch (err: unknown) {
-    throwDiscoveryNetworkError(err, url, provider);
+  const list: RawGeminiModel[] = [];
+  let pageToken: string | undefined;
+  for (;;) {
+    const query = pageToken
+      ? `?pageToken=${encodeURIComponent(pageToken)}`
+      : '';
+    const url = `${provider.baseUrl}/v1beta/models${query}`;
+
+    let res: Response;
+    try {
+      res = await fetchWithTimeout(url, headers);
+    } catch (err: unknown) {
+      throwDiscoveryNetworkError(err, url, provider);
+    }
+
+    if (!res.ok) {
+      const body = await safeText(res);
+      throw classifyProviderError({
+        status: res.status,
+        statusText: res.statusText,
+        url,
+        body,
+        surface: 'discovery',
+        providerId: provider.id,
+        providerName: provider.name
+      });
+    }
+
+    const json = (await res.json()) as RawGeminiModelsResponse;
+    const page = Array.isArray(json.models) ? json.models : [];
+    list.push(...page);
+    if (typeof json.nextPageToken === 'string' && json.nextPageToken.length > 0) {
+      pageToken = json.nextPageToken;
+      continue;
+    }
+    break;
   }
 
-  if (!res.ok) {
-    const body = await safeText(res);
-    throw classifyProviderError({
-      status: res.status,
-      statusText: res.statusText,
-      url,
-      body,
-      surface: 'discovery',
-      providerId: provider.id,
-      providerName: provider.name
-    });
-  }
-
-  const json = (await res.json()) as RawGeminiModelsResponse;
-  const list = Array.isArray(json.models) ? json.models : [];
   return list
     .map((m) => {
       const rawName = m.name;
@@ -665,6 +929,11 @@ async function fetchGeminiModels(provider: ProviderWithKey): Promise<ModelInfo[]
       if (typeof m.inputTokenLimit === 'number' && m.inputTokenLimit > 0) {
         info.contextWindow = m.inputTokenLimit;
       }
+      const thinking = thinkingFromGeminiModel({
+        thinking: m.thinking,
+        version: m.version
+      });
+      if (thinking) info.thinking = thinking;
       return info;
     })
     .filter((m): m is ModelInfo => m !== null)

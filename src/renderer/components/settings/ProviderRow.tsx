@@ -17,11 +17,13 @@ import {
   CheckCircle2,
   XCircle,
   ChevronDown,
-  ChevronRight,
-  ChevronUp
+  ChevronRight
 } from 'lucide-react';
 import {
+  OPENAI_TRANSPORT_LABELS,
+  OPENAI_TRANSPORTS,
   PROVIDER_DIALECT_LABELS,
+  type OpenAiTransport,
   type ProviderAttribution,
   type ProviderConfig
 } from '@shared/types/provider.js';
@@ -50,10 +52,7 @@ interface ProviderRowProps {
   provider: ProviderConfig;
 }
 
-export function ProviderRow({
-  provider,
-  onCollapse
-}: ProviderRowProps & { embedded?: boolean; onCollapse?: () => void }) {
+export function ProviderRow({ provider }: ProviderRowProps) {
   const remove = useProviderStore((s) => s.remove);
   const discover = useProviderStore((s) => s.discover);
   const test = useProviderStore((s) => s.test);
@@ -118,19 +117,6 @@ export function ProviderRow({
           }
           control={
             <div className="flex flex-wrap items-center justify-end gap-2">
-              {onCollapse ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={onCollapse}
-                  title="Collapse provider details"
-                >
-                  <ChevronUp
-                    className={SHELL_ROW_ICON_CLASS}
-                    strokeWidth={SHELL_ROW_ICON_STROKE}
-                  />
-                </Button>
-              ) : null}
               <Switch
                 size="md"
                 value={provider.enabled}
@@ -185,12 +171,60 @@ export function ProviderRow({
         onThinkingClear={(modelId) =>
           void update(provider.id, { modelThinking: { [modelId]: null } })
         }
+        contextOverrides={provider.contextOverrides}
+        onContextOverrideSave={(modelId, tokens) =>
+          void update(provider.id, { contextOverrides: { [modelId]: tokens } })
+        }
+        onContextOverrideClear={(modelId) =>
+          void update(provider.id, { contextOverrides: { [modelId]: null } })
+        }
+      />
+
+      <OpenAiTransportSection
+        provider={provider}
+        onChange={(transport) => void update(provider.id, { openaiTransport: transport })}
       />
 
       <AttributionSection provider={provider} onSave={(next) => void update(provider.id, { attribution: next })} />
       </>
       )}
     </ShellRow>
+  );
+}
+
+/**
+ * OpenAI-dialect transport picker. Only shown when the provider uses the
+ * OpenAI-compatible wire (`dialect` absent or `'openai'`).
+ */
+function OpenAiTransportSection({
+  provider,
+  onChange
+}: {
+  provider: ProviderConfig;
+  onChange: (transport: OpenAiTransport) => void;
+}) {
+  if ((provider.dialect ?? 'openai') !== 'openai') return null;
+  const value = provider.openaiTransport ?? 'auto';
+  return (
+    <label className="flex max-w-md flex-col gap-1">
+      <ShellFieldLabel>OpenAI transport</ShellFieldLabel>
+      <ShellCaption>
+        Auto routes official OpenAI reasoning models to the Responses API; gateways stay on Chat
+        Completions.
+      </ShellCaption>
+      <select
+        className="vx-input w-full font-mono text-row"
+        value={value}
+        onChange={(e) => onChange(e.target.value as OpenAiTransport)}
+        aria-label="OpenAI API transport"
+      >
+        {OPENAI_TRANSPORTS.map((t) => (
+          <option key={t} value={t}>
+            {OPENAI_TRANSPORT_LABELS[t]}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

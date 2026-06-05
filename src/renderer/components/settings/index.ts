@@ -1,1 +1,1 @@
-export { SettingsPanel } from './SettingsPanel.js';
+export { SettingsFullView } from './SettingsFullView.js';

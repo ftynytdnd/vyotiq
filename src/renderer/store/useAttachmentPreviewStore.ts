@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
-import { useSecondaryZoneStore } from './useSecondaryZoneStore.js';
+import { closeSettingsForCompanionOpen } from './useAppViewStore.js';
 
 interface AttachmentPreviewStore {
   attachment: PromptAttachmentMeta | null;
@@ -11,7 +11,7 @@ interface AttachmentPreviewStore {
 export const useAttachmentPreviewStore = create<AttachmentPreviewStore>((set) => ({
   attachment: null,
   open: (attachment) => {
-    useSecondaryZoneStore.getState().closeForCompanionOpen();
+    closeSettingsForCompanionOpen();
     set({ attachment });
   },
   close: () => set({ attachment: null })

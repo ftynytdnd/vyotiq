@@ -584,6 +584,14 @@ export interface VyotiqApi {
 
         modelThinking?: Record<string, ThinkingEffort | null>;
 
+        /** Per-model context-window overrides in tokens (shallow-merged). */
+
+        contextOverrides?: Record<string, number | null>;
+
+        /** OpenAI-dialect transport when `dialect` is openai. */
+
+        openaiTransport?: import('./provider.js').OpenAiTransport;
+
       }
 
     ): Promise<ProviderConfig>;
@@ -935,6 +943,16 @@ export interface VyotiqApi {
       maxCount?: number;
 
     }): Promise<import('./chat.js').PromptAttachmentMeta[]>;
+
+    collectFolder(input: {
+
+      workspaceId: string;
+
+      folderPath: string;
+
+      maxCount?: number;
+
+    }): Promise<{ paths: string[]; total: number; truncated: boolean }>;
 
     ingestPaths(input: {
 

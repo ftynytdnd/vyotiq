@@ -11,7 +11,6 @@ const fileActions = {
   openWorkspace: () => {},
   setWorkspacePath: () => {},
   openSettings: () => {},
-  openCheckpoints: () => {},
   quit: () => {}
 };
 

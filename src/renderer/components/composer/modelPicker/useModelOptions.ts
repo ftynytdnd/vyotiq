@@ -34,10 +34,19 @@ export interface ModelOptions {
 }
 
 function buildGroups(enabled: ProviderConfig[], q: string): ModelOptionGroup[] {
+  const sorted = [...enabled].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+  );
   const groups: ModelOptionGroup[] = [];
-  for (const p of enabled) {
+  for (const p of sorted) {
     const models = p.models ?? [];
-    const matched = q ? models.filter((m) => m.id.toLowerCase().includes(q)) : models;
+    const matched = q
+      ? models
+          .filter((m) => m.id.toLowerCase().includes(q))
+          .sort((a, b) => a.id.localeCompare(b.id, undefined, { sensitivity: 'base' }))
+      : [...models].sort((a, b) =>
+          a.id.localeCompare(b.id, undefined, { sensitivity: 'base' })
+        );
     if (q && matched.length === 0) continue;
     groups.push({ provider: p, models: matched });
   }

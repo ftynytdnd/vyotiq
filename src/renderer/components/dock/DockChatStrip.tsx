@@ -29,7 +29,8 @@ import {
   DOCK_TAB_TRIGGER_CLASS,
   dockInlineActionClassName,
   dockTabRowClassName,
-  dockTabActiveAttr
+  dockTabActiveAttr,
+  collapseDockAfterSelection
 } from './dockShared.js';
 import { useConversationProcessing } from '../../hooks/chat/index.js';
 import { useChatRowFocus } from '../../hooks/chat/index.js';
@@ -98,6 +99,10 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
   }, [list, workspaceId, query, searchOpen, runningIds, activeIdByWorkspace]);
 
   const activeId = workspaceId ? activeIdByWorkspace[workspaceId] ?? null : null;
+  const selectChat = (id: string) => {
+    void select(id);
+    collapseDockAfterSelection();
+  };
   const isFiltering = searchOpen && query.trim().length > 0;
   const displayTitles = useMemo(() => buildDisplayChatTitles(entries), [entries]);
   const chatsCollapsed = useUiStore(
@@ -155,7 +160,7 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
                 entry={runningEntry}
                 displayTitle={displayTitles.get(runningEntry.id) ?? runningEntry.title}
                 active={runningEntry.id === activeId}
-                onSelect={() => void select(runningEntry.id)}
+                onSelect={() => selectChat(runningEntry.id)}
                 onRename={(title) => void rename(runningEntry.id, title)}
                 onRemove={() => void remove(runningEntry.id)}
                 onArchive={() => void archive(runningEntry.id)}
@@ -216,7 +221,7 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
           e,
           ids: entries.map((entry) => entry.id),
           activeId,
-          onActivate: (id) => void select(id),
+          onActivate: (id) => selectChat(id),
           focusTarget: (id) =>
             scrollRef.current?.querySelector<HTMLElement>(`[data-conv-id="${id}"]`)
         });
@@ -229,7 +234,7 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
           entry={entry}
           displayTitle={displayTitles.get(entry.id) ?? entry.title}
           active={entry.id === activeId}
-          onSelect={() => void select(entry.id)}
+          onSelect={() => selectChat(entry.id)}
           onRename={(title) => void rename(entry.id, title)}
           onRemove={() => void remove(entry.id)}
           onArchive={() => void archive(entry.id)}
@@ -258,7 +263,7 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
                 displayTitle={displayTitles.get(entry.id) ?? entry.title}
                 active={entry.id === activeId}
                 archived
-                onSelect={() => void select(entry.id)}
+                onSelect={() => selectChat(entry.id)}
                 onRename={(title) => void rename(entry.id, title)}
                 onRemove={() => void remove(entry.id)}
                 onArchive={() => void unarchive(entry.id)}

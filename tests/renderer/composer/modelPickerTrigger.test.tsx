@@ -36,4 +36,17 @@ describe('ModelPickerTrigger', () => {
     expect(document.querySelector('.vx-composer-model-trigger')).not.toBeNull();
     expect(screen.queryByText('Ollama Cloud')).toBeNull();
   });
+
+  it('renders vendor-prefixed ids as tail only', () => {
+    render(
+      <ModelPickerTrigger
+        value={{ providerId: 'ollama-cloud', modelId: 'openai/gpt-4o' }}
+        open={false}
+        onClick={() => {}}
+      />
+    );
+
+    expect(screen.getByText('gpt-4o')).toBeInTheDocument();
+    expect(screen.queryByText('openai/gpt-4o')).toBeNull();
+  });
 });

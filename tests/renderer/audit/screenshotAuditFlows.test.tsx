@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { ComposerStatusStrip } from '@renderer/components/composer/ComposerStatusStrip';
 import { TurnRunningMeta } from '@renderer/components/timeline/activity/TurnRunningMeta';
-import { SettingsPanel } from '@renderer/components/settings/SettingsPanel';
+import { SettingsFullView } from '@renderer/components/settings/SettingsFullView';
 import { useChatStore } from '@renderer/store/useChatStore';
 import { useSettingsStore } from '@renderer/store/useSettingsStore';
 import { useWorkspaceStore } from '@renderer/store/useWorkspaceStore';
@@ -59,7 +59,7 @@ describe('screenshot audit flows', () => {
   });
 
   it('settings agent group shows memory section', () => {
-    render(<SettingsPanel initialTab="memory" embedded />);
+    render(<SettingsFullView initialSection="agent-behavior" />);
     expect(screen.getAllByText(/Memory/i).length).toBeGreaterThan(0);
   });
 });
