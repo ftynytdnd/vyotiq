@@ -2973,8 +2973,9 @@ mark.vyotiq-timeline-find-mark-active {
 }
 
 .vx-composer-chip-row .vx-composer-model-trigger {
-  flex: 0 1 auto;
-  max-width: 14rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: min(100%, 28rem);
 }
 
 /* Composer model picker — container-query layout (popover width, not viewport). */

@@ -135,12 +135,14 @@ export function isGoldLivePhase(phase: RunStatusPhase | 'streaming-reasoning' | 
 }
 
 /** In-flight tool row title — primary while pending, settled label when done. */
-export function toolTitleClassName(running: boolean): string {
+export function toolTitleClassName(running: boolean, failed = false): string {
   return cn(
     'font-medium',
     running
       ? 'text-text-primary'
-      : 'vx-row-label text-[length:var(--text-row)] text-text-secondary'
+      : failed
+        ? 'text-danger'
+        : 'vx-row-label text-[length:var(--text-row)] text-text-secondary'
   );
 }
 

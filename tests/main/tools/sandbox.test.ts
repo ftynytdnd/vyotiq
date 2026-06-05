@@ -322,7 +322,11 @@ describe('bashNeedsEscapeConfirm', () => {
     'cat README.md',
     'echo done > ./out.log',
     'echo $USER',
-    'npm install foo~1.2.3'
+    'npm install foo~1.2.3',
+    // Windows CMD switches must not be treated as absolute POSIX paths.
+    'dir /s /b mcp.json',
+    'dir /s /b *.ts',
+    'findstr /s /i pattern *.md'
   ])('does not flag %s', (cmd) => {
     expect(bashNeedsEscapeConfirm(cmd).needed).toBe(false);
   });

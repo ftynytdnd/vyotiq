@@ -75,7 +75,7 @@ export function dockFlyoutShellClassName(isResizing: boolean): string {
 
 export const DOCK_EDGE_STRIP_CLASS = cn(
   'vx-dock-edge-strip vx-dock-shell app-no-drag',
-  'flex w-11 shrink-0 flex-col items-center justify-between border-r border-border-subtle/50',
+  'flex w-11 shrink-0 flex-col items-center justify-start border-r border-border-subtle/50',
   'bg-surface-raised py-2'
 );
 

@@ -26,7 +26,7 @@ export function ChatFooter({
   return (
     <div
       className={cn(
-        'shrink-0 px-4 pb-[max(6px,env(safe-area-inset-bottom,0px))] pt-1'
+        'shrink-0 px-4 pb-[max(6px,env(safe-area-inset-bottom,0px))] pt-3'
       )}
     >
       <div

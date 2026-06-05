@@ -75,6 +75,7 @@ export function ToolGroupRow({ rowKey, toolName, items }: ToolGroupRowProps) {
   const pendingStats = hasDiffStats && status === 'running';
 
   const running = status === 'running';
+  const failed = status === 'failed';
   const streamBody = useMemo(
     () => (running ? toolGroupStreamingBody(toolName, items) : ''),
     [running, toolName, items]
@@ -94,14 +95,18 @@ export function ToolGroupRow({ rowKey, toolName, items }: ToolGroupRowProps) {
 
   const label = (
     <span className="inline-flex min-w-0 max-w-full items-baseline gap-1 truncate text-row">
-      <span className={toolTitleClassName(running)}>{verb}</span>
+      <span className={toolTitleClassName(running, failed)}>{verb}</span>
       {primary && (
         <>
           {' '}
           <span
             className={cn(
               'font-mono',
-              running ? 'text-text-secondary' : 'text-text-muted'
+              running
+                ? 'text-text-secondary'
+                : failed
+                  ? 'text-danger/80'
+                  : 'text-text-muted'
             )}
           >
             {truncate(primary, 80)}

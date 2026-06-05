@@ -45,9 +45,17 @@ beforeEach(async () => {
     activeId: 'ws-B',
     workspaces: [{ id: 'ws-B', path: '/tmp/B', label: 'B', addedAt: 1 }]
   })) as never;
-  // The settings.set stub echoes the patch back so the store updates
-  // its local cache to the post-purge shape.
-  window.vyotiq.settings.set = vi.fn(async (patch) => patch as AppSettings) as never;
+  // The settings.set stub deep-merges like the main-process store so
+  // partial `ui` patches preserve sibling workspace entries.
+  window.vyotiq.settings.set = vi.fn(async (patch) => {
+    const current = useSettingsStore.getState().settings;
+    return {
+      ...current,
+      ...patch,
+      permissions: { ...(current.permissions ?? {}), ...(patch.permissions ?? {}) },
+      ui: { ...(current.ui ?? {}), ...(patch.ui ?? {}) }
+    } as AppSettings;
+  }) as never;
   // Seed the conversations store too so `reconcileWithMain` (which
   // runs inside `workspace.remove` to drop the deleted workspace's
   // conversations and re-stamp `activeIdByWorkspace`) doesn't wipe

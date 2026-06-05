@@ -63,7 +63,7 @@ export const ModelPickerTrigger = forwardRef<HTMLButtonElement, ModelPickerTrigg
         title={tooltip}
         className={cn(
           chromeToolbarButtonClassName(open),
-          'vx-composer-model-trigger h-6 shrink-0 max-w-[14rem] items-center gap-1 px-1.5 text-chat-meta text-text-secondary'
+          'vx-composer-model-trigger h-6 min-w-0 max-w-full items-center gap-1 px-1.5 text-chat-meta text-text-secondary'
         )}
       >
         <span className="flex min-w-0 items-baseline gap-0.5">

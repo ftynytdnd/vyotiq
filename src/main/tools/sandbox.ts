@@ -331,9 +331,12 @@ const PS_PARENT_READ =
 /**
  * Absolute POSIX path (excluding benign `/tmp` and `/dev/null`) or a
  * Windows drive-letter path. Used to gate bash with a confirm prompt.
+ *
+ * Requires at least two characters after the leading `/` so Windows CMD
+ * switches like `dir /s /b` are not mistaken for absolute paths.
  */
 const ABSOLUTE_PATH_REF =
-  /(?:^|[\s;&|'"`])\/(?!tmp(?:\/|$)|dev\/null(?:\s|$))[^\s;&|'"`]*/i;
+  /(?:^|[\s;&|'"`])\/(?!tmp(?:\/|$)|dev\/null(?:\s|$))[a-zA-Z0-9_.~\\-]{2,}[^\s;&|'"`]*/i;
 
 const WINDOWS_DRIVE_REF = /(?:^|[\s;&|'"`])[A-Za-z]:\\[^\s;&|'"`]*/;
 

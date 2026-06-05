@@ -12,7 +12,7 @@ import { cn } from '../../../lib/cn.js';
 import { reasoningHeadlineClassName } from '../shared/rowStyles.js';
 import { formatReasoningLabel } from '../../../lib/reasoningLabel.js';
 
-const REASONING_BODY_MAX_H = 'max-h-48';
+const REASONING_BODY_MAX_H = 'max-h-[min(50vh,24rem)]';
 const PROSE_COLLAPSE_DELAY_MS = 1000;
 
 function prefersReducedMotion(): boolean {
@@ -38,7 +38,13 @@ export function ReasoningLineRow({ id }: ReasoningLineRowProps) {
     }
     return false;
   });
-  const fadeReasoning = accDone && hasOrchestratorProse;
+  const hasAssistantAnswer = useChatStore((s) => {
+    for (const t of Object.values(s.assistantTexts)) {
+      if (t.text.trim().length > 0) return true;
+    }
+    return false;
+  });
+  const fadeReasoning = accDone && hasAssistantAnswer;
   const { expanded, onToggle, setExpanded, userOverridden } = useTimelineRowExpand({
     rowKey,
     defaultExpanded: false,
@@ -89,18 +95,16 @@ export function ReasoningLineRow({ id }: ReasoningLineRowProps) {
   );
 
   return (
-    <div
-      className={cn(
-        'vyotiq-stepfade-once flex flex-col transition-opacity duration-300',
-        fadeReasoning && !expanded && 'opacity-40'
-      )}
-      data-row-kind="reasoning-line"
-    >
+    <div className="vyotiq-stepfade-once flex flex-col" data-row-kind="reasoning-line">
       <TimelineRowHeader
         expanded={expanded}
         onToggle={onToggle}
         expandAriaLabel={expanded ? 'Collapse reasoning' : 'Expand reasoning'}
         panelId={`timeline-panel-${rowKey}`}
+        className={cn(
+          'transition-opacity duration-300',
+          fadeReasoning && 'opacity-50'
+        )}
       >
         {headline}
       </TimelineRowHeader>

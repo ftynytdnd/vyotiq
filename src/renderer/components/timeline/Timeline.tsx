@@ -384,7 +384,7 @@ export function Timeline({ model }: TimelineProps) {
         showJumpToLatest &&
         events.length > 0 &&
         createPortal(
-          <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-4">
+          <div className="pointer-events-none absolute inset-x-0 bottom-12 z-30 flex justify-center px-4">
             <button
               type="button"
               onClick={() => {
