@@ -17,7 +17,7 @@
  *     `RESTICK_PX` of the bottom or submit a new prompt.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowDown } from 'lucide-react';
 import type { ModelSelection } from '@shared/types/provider.js';
@@ -43,7 +43,14 @@ import { TurnBlock, groupRowsIntoTurns } from './shared/TurnBlock.js';
 import { partitionTurnSegment } from './shared/groupTurnSegment.js';
 import { timelineStackClassName } from './shared/rowStyles.js';
 import { cn } from '../../lib/cn.js';
+import { suggestProvidersForError } from '../../lib/runRecovery.js';
 import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../lib/shellIcons.js';
+import {
+  useSettingsStore,
+  selectEffectivePermissions
+} from '../../store/useSettingsStore.js';
+import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
+import { useToastStore } from '../../store/useToastStore.js';
 import { useFloatingLiveDiffAutoOpen } from './hooks/useFloatingLiveDiffAutoOpen.js';
 import { useTimelineUiStore } from '../../store/useTimelineUiStore.js';
 import { computeTailScrollKey } from './shared/computeTailScrollKey.js';
@@ -55,97 +62,66 @@ import {
 
 interface TimelineProps {
   model?: ModelSelection | null;
+  onOpenProviders?: () => void;
 }
 
-export function Timeline({ model }: TimelineProps) {
-  const companionOverlayOpen =
-    useAttachmentPreviewStore((s) => s.attachment !== null) ||
-    useFloatingLiveDiffStore((s) => s.target !== null);
+interface ErrorRowActions {
+  onRetry: () => void;
+  onOpenProviders?: () => void;
+}
+
+export function Timeline({ model, onOpenProviders }: TimelineProps) {
+  // --- Stores (fixed order; never short-circuit hooks with `||`) ---
+  const attachmentPreviewOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
+  const floatingLiveDiffOpen = useFloatingLiveDiffStore((s) => s.target !== null);
+  const companionOverlayOpen = attachmentPreviewOpen || floatingLiveDiffOpen;
+
   const events = useChatStore((s) => s.events);
   const isProcessing = useChatStore((s) => s.isProcessing);
-  // Live partial-args snapshots — pulled in so `deriveRows` can
-  // synthesize in-flight tool-group rows for calls that haven't
-  // yet emitted their authoritative `tool-call` event. Replays
-  // and idle conversations leave this as `{}`.
   const partialToolCallArgs = useChatStore((s) => s.partialToolCallArgs);
-  // Audit fix L-11 — forward the reducer-maintained settled-callId
-  // map so `deriveRows` can skip its O(R×C) walk over every
-  // tool-group row's children to recover the same set.
   const settledCallIds = useChatStore((s) => s.settledCallIds);
   const liveDiffByCallId = useChatStore((s) => s.liveDiffByCallId);
-  // Reducer-maintained primitive that flips ONLY when a new
-  // `user-prompt` event lands. Used as the snap-on-send effect's
-  // sole dependency so the effect no longer fires on every streaming
-  // delta and reverse-walks `events`. Audit fix §3.2.2.
+  const assistantTexts = useChatStore((s) => s.assistantTexts);
+  const reasoningTexts = useChatStore((s) => s.reasoningTexts);
+  const lastUserPromptContent = useChatStore((s) => s.lastUserPromptContent);
+  const send = useChatStore((s) => s.send);
 
+  const showToast = useToastStore((s) => s.show);
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
+  const settings = useSettingsStore((s) => s.settings);
+  const permissions = selectEffectivePermissions(activeWorkspaceId, settings);
+  const setTimelineAtTail = useTimelineUiStore((s) => s.setTimelineAtTail);
+
+  // --- Refs (all before any effect) ---
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollFrameRef = useRef<number | null>(null);
-
-  /**
-   * Sticky flag lives in both a ref (for listeners that fire outside
-   * React's commit cycle) and state (for re-rendering the chip). The
-   * ref is the source of truth; `setSticky` mirrors it for the view.
-   */
   const stickyRef = useRef(true);
+  const gArmedRef = useRef(false);
+  const gTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // --- Local state ---
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [jumpOverlayHost, setJumpOverlayHost] = useState<HTMLElement | null>(null);
-
-  /**
-   * Mirrors `parent.scrollTop <= AT_TOP_PX` so the `Top` pill can hide
-   * when the user is already near the top of the conversation. Without
-   * this, the pill rendered an obviously useless "scroll to top"
-   * affordance even when the user was viewing the first row of the
-   * transcript (visible in screenshots §2 / §3 — `Top` button visible
-   * with no rows above the viewport). Tracked in state because the
-   * pill is a stateless presentational component driven by parent
-   * predicates.
-   */
   const [findOpen, setFindOpen] = useState(false);
 
-  /**
-   * Id of the most recent `user-prompt` event. When this changes we
-   * force-scroll to the tail regardless of current scroll position —
-   * that is the "focus the agent" moment.
-   */
-  const baseRows = useMemo(
-    () =>
-      deriveRows(events, {
-        runActive: isProcessing,
-        settledCallIds
-      }),
-    [events, isProcessing, settledCallIds]
+  const onRetryLastMessage = useCallback(() => {
+    const prompt = lastUserPromptContent?.trim();
+    if (!prompt) return;
+    if (!model) {
+      showToast('Select a model before retrying.', 'danger');
+      return;
+    }
+    void send(prompt, model, permissions);
+  }, [lastUserPromptContent, model, permissions, send, showToast]);
+
+  const errorRowActions: ErrorRowActions = useMemo(
+    () => ({
+      onRetry: onRetryLastMessage,
+      ...(onOpenProviders ? { onOpenProviders } : {})
+    }),
+    [onOpenProviders, onRetryLastMessage]
   );
-
-  const rows = useMemo(
-    () =>
-      applyDeriveRowsLiveLayer(baseRows, {
-        partialToolCallArgs,
-        settledCallIds,
-        liveDiffByCallId
-      }),
-    [baseRows, partialToolCallArgs, settledCallIds, liveDiffByCallId]
-  );
-
-  useFloatingLiveDiffAutoOpen(rows);
-
-  const turnSegments = useMemo(() => groupRowsIntoTurns(rows), [rows]);
-  const lastTurnIndex = turnSegments.length - 1;
-  const assistantTexts = useChatStore((s) => s.assistantTexts);
-  const reasoningTexts = useChatStore((s) => s.reasoningTexts);
-
-  const tailScrollKey = useMemo(
-    () =>
-      computeTailScrollKey(rows, assistantTexts, reasoningTexts, liveDiffByCallId),
-    [rows, assistantTexts, reasoningTexts, liveDiffByCallId]
-  );
-
-  // Note: a `userPromptIndices` memo lived here previously. The `g j` /
-  // `g k` keyboard navigator below uses
-  // `containerRef.current?.querySelectorAll('[data-row-kind="user-prompt"]')`
-  // directly, so the memo's result was never read. Removed in F-004.
-
-  const setTimelineAtTail = useTimelineUiStore((s) => s.setTimelineAtTail);
 
   const applyTailState = useCallback(
     (nextSticky: boolean, scrollable: boolean, distanceFromBottom: number) => {
@@ -174,6 +150,37 @@ export function Timeline({ model }: TimelineProps) {
     }
     applyTailState(nextSticky, scrollable, distanceFromBottom);
   }, [applyTailState]);
+
+  // --- Derived rows ---
+  const baseRows = useMemo(
+    () =>
+      deriveRows(events, {
+        runActive: isProcessing,
+        settledCallIds
+      }),
+    [events, isProcessing, settledCallIds]
+  );
+
+  const rows = useMemo(
+    () =>
+      applyDeriveRowsLiveLayer(baseRows, {
+        partialToolCallArgs,
+        settledCallIds,
+        liveDiffByCallId
+      }),
+    [baseRows, partialToolCallArgs, settledCallIds, liveDiffByCallId]
+  );
+
+  useFloatingLiveDiffAutoOpen(rows);
+
+  const turnSegments = useMemo(() => groupRowsIntoTurns(rows), [rows]);
+  const lastTurnIndex = turnSegments.length - 1;
+
+  const tailScrollKey = useMemo(
+    () =>
+      computeTailScrollKey(rows, assistantTexts, reasoningTexts, liveDiffByCallId),
+    [rows, assistantTexts, reasoningTexts, liveDiffByCallId]
+  );
 
   const scheduleScroll = (fn: () => void) => {
     if (scrollFrameRef.current !== null) return;
@@ -221,8 +228,6 @@ export function Timeline({ model }: TimelineProps) {
   // Keyboard navigation between user prompts (`g j` / `g k`) and Esc to
   // drop sticky scroll. The `g`-prefix uses a short timeout so accidental
   // `j`/`k` presses don't jump.
-  const gArmedRef = useRef(false);
-  const gTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const parent = findScrollParent(containerRef.current);
     if (!parent) return;
@@ -366,7 +371,9 @@ export function Timeline({ model }: TimelineProps) {
           const segmentKey = partitioned.prompt?.key ?? `turn-${segmentIndex}`;
 
           const renderAnchoredRow = (r: DisplayRow) => (
-            <RowAnchor rowKey={r.key}>{renderRow(r, model, liveTurn)}</RowAnchor>
+            <RowAnchor rowKey={r.key}>
+              {renderRow(r, model, liveTurn, errorRowActions)}
+            </RowAnchor>
           );
 
           return (
@@ -417,8 +424,9 @@ function findScrollParent(el: HTMLElement | null): HTMLElement | null {
 function renderRow(
   r: DisplayRow,
   model: ModelSelection | null | undefined,
-  liveTurn = false
-) {
+  liveTurn = false,
+  errorRowActions?: ErrorRowActions
+): ReactNode {
   switch (r.kind) {
     case 'user-prompt':
       return (
@@ -464,7 +472,17 @@ function renderRow(
         />
       );
     case 'error':
-      return <ErrorRow key={r.key} message={r.message} />;
+      return (
+        <ErrorRow
+          key={r.key}
+          message={r.message}
+          onRetry={errorRowActions?.onRetry}
+          {...(errorRowActions?.onOpenProviders
+            ? { onOpenProviders: errorRowActions.onOpenProviders }
+            : {})}
+          showProviders={suggestProvidersForError(r.message)}
+        />
+      );
     case 'tool-group':
       return (
         <ToolGroupRow

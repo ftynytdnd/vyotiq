@@ -3,7 +3,6 @@ import { useShallow } from 'zustand/react/shallow';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
 import { ComposerFooter } from './ComposerFooter.js';
-import { ComposerRunRecovery } from './ComposerRunRecovery.js';
 import { ComposerStatusStrip } from './ComposerStatusStrip.js';
 import { AttachmentButton } from './AttachmentButton.js';
 import { SendButton } from './SendButton.js';
@@ -294,9 +293,9 @@ export function Composer({
       ? 'ready'
       : 'idle';
   const footerMode = variant === 'footer';
-  const zoneOpen =
-    useAttachmentPreviewStore((s) => s.attachment !== null) ||
-    useFloatingLiveDiffStore((s) => s.target !== null);
+  const attachmentPreviewOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
+  const floatingLiveDiffOpen = useFloatingLiveDiffStore((s) => s.target !== null);
+  const zoneOpen = attachmentPreviewOpen || floatingLiveDiffOpen;
   const revertPrompt = useRevertPrompt();
 
   const canAttach = Boolean(conversationId && activeWorkspaceIdForAttach);
@@ -315,12 +314,12 @@ export function Composer({
 
   const chipRow = (
     <div className="vx-composer-chip-row">
-      {attachmentButton}
       <ModelPicker
         value={model}
         onChange={onModelChange}
         onOpenProviders={onOpenProviders}
       />
+      {attachmentButton}
       <ComposerStatusStrip />
       <TokenUsagePill total={totalRunUsage} orchestrator={orchestratorUsage} />
       {footerMode && attachments.length > 0 && (
@@ -429,7 +428,6 @@ export function Composer({
                   'Answer in the panel above the composer, or type here and press Send.'}
               </div>
             ) : null}
-            <ComposerRunRecovery model={model} onOpenProviders={onOpenProviders} />
             <AttachmentCollapsible
               items={attachments}
               editable

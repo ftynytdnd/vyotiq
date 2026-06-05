@@ -12,7 +12,6 @@ import {
 } from '@shared/providers/thinkingEffort.js';
 import { useProviderStore } from '../../../store/useProviderStore.js';
 import { cn } from '../../../lib/cn.js';
-import { chromeToolbarButtonClassName } from '../../ui/SurfaceShell.js';
 import { SHELL_COMPACT_ICON_CLASS, SHELL_COMPACT_ICON_STROKE } from '../../../lib/shellIcons.js';
 import { rowDisplayModelId } from './modelPickerDisplay.js';
 
@@ -61,13 +60,10 @@ export const ModelPickerTrigger = forwardRef<HTMLButtonElement, ModelPickerTrigg
         aria-expanded={open}
         aria-label={`Model: ${tooltip}`}
         title={tooltip}
-        className={cn(
-          chromeToolbarButtonClassName(open),
-          'vx-composer-model-trigger h-6 min-w-0 max-w-full items-center gap-1 px-1.5 text-chat-meta text-text-secondary'
-        )}
+        className="vx-composer-model-trigger vx-btn vx-btn-quiet app-no-drag"
       >
         <span className="flex min-w-0 items-baseline gap-0.5">
-          <span className="min-w-0 truncate font-mono" title={modelId || undefined}>
+          <span className="min-w-0 truncate font-mono text-chat-meta" title={modelId || undefined}>
             {displayId || placeholder}
           </span>
           {effortLabel ? (

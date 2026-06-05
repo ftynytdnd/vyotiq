@@ -16,6 +16,7 @@ import type { ChatPermissions, TimelineEvent } from '@shared/types/chat.js';
 import type { ToolResult } from '@shared/types/tool.js';
 import { getTool, isKnownToolName } from '../tools/registry.js';
 import { lookupCachedResult, recordToolResult } from './toolResultCache.js';
+import { checkToolCallDedupe } from './toolCallDedupe.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child('orchestrator/toolRunner');
@@ -52,6 +53,13 @@ export async function runToolByName(
     };
   }
   const tool = getTool(toolName)!;
+
+  const dedupeBlocked = checkToolCallDedupe(opts.signal, tool.name, args);
+  if (dedupeBlocked) {
+    log.warn('duplicate tool call blocked', { tool: tool.name });
+    return dedupeBlocked;
+  }
+
   // Cache check — only reached for registered tools so `tool.name` is
   // the canonical `ToolName`. A hit returns the prior successful result
   // with a "you already did this" banner prepended to `output`; tool

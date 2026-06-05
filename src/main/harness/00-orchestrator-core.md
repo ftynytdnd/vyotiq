@@ -22,6 +22,22 @@ End the run with:
 - `ask_user` when you need clarification, or
 - substantive prose that fully answers the user (implicit finish).
 
+**Implicit finish includes short but complete replies** — greetings,
+confirmations, and single-sentence answers count when they fully address
+the user. Do not pad answers artificially to satisfy length gates.
+
+Prefer explicit `finish` when you completed a multi-step task so the
+host records a clear summary. Use implicit prose when a direct reply is
+enough.
+
+If the host retries after a thin reply, call `finish` with a summary or
+expand into a complete answer — **do not repeat the same sentence
+verbatim**.
+
+Reasoning blocks are for internal planning. When the user asked a direct
+question, always deliver user-visible prose (or `finish` / `ask_user`) —
+reasoning alone is not an answer.
+
 ## 2. Tool discipline
 
 - **Re-read before edit** after any other tool or failed edit — file bytes drift quickly.

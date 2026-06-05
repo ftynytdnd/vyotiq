@@ -345,7 +345,9 @@ body,
 
 input:focus-visible,
 textarea:focus-visible,
-select:focus-visible {
+select:focus-visible,
+[contenteditable]:focus-visible,
+.vx-mention-composer:focus-visible {
   outline: none;
   box-shadow: none;
 }
@@ -2972,10 +2974,46 @@ mark.vyotiq-timeline-find-mark-active {
   font-size: var(--text-chat-meta);
 }
 
-.vx-composer-chip-row .vx-composer-model-trigger {
-  flex: 1 1 auto;
+.vx-composer-model-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  height: 1.5rem;
   min-width: 0;
-  max-width: min(100%, 28rem);
+  max-width: min(100%, 20rem);
+  padding: 0 0.625rem;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in oklch, var(--color-border-subtle) 85%, transparent);
+  background: var(--color-surface-overlay);
+  font-size: var(--text-chat-meta);
+  line-height: 1;
+  color: var(--color-text-secondary);
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.vx-composer-model-trigger:hover {
+  background: var(--color-chrome-hover-soft);
+  border-color: var(--color-border-subtle);
+  color: var(--color-text-primary);
+}
+
+.vx-composer-model-trigger[aria-expanded='true'] {
+  background: var(--color-chrome-hover-soft);
+  border-color: color-mix(in oklch, var(--color-border-subtle) 70%, var(--color-text-faint) 30%);
+  color: var(--color-text-primary);
+}
+
+.vx-composer-model-trigger:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.vx-composer-chip-row .vx-composer-model-trigger {
+  flex: 0 1 auto;
+  order: -10;
 }
 
 /* Composer model picker — container-query layout (popover width, not viewport). */

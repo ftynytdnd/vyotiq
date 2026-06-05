@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { selectRunRecoveryState } from '@renderer/lib/runRecovery';
+import { selectRunRecoveryState, suggestProvidersForError } from '@renderer/lib/runRecovery';
 import type { TimelineEvent } from '@shared/types/chat';
 
 const error: TimelineEvent = {

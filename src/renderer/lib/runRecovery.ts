@@ -7,7 +7,11 @@ export interface RunRecoveryState {
 }
 
 const PROVIDER_HINT =
-  /rate\s*limit|provider failed|ollama|openai|anthropic|api key|unauthorized|forbidden|model/i;
+  /rate\s*limit|provider failed|ollama|openai|anthropic|api key|unauthorized|forbidden|model|api settings/i;
+
+export function suggestProvidersForError(message: string): boolean {
+  return PROVIDER_HINT.test(message);
+}
 
 export function selectRunRecoveryState(
   events: readonly TimelineEvent[],
@@ -23,6 +27,6 @@ export function selectRunRecoveryState(
 
   return {
     errorMessage: last.message,
-    suggestProviders: PROVIDER_HINT.test(last.message)
+    suggestProviders: suggestProvidersForError(last.message)
   };
 }

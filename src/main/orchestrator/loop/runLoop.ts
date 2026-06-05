@@ -94,11 +94,18 @@ const log = logger.child('orch/runLoop');
 
 /**
  * Minimum length (chars) of plain assistant prose for the host to accept
- * a prose-only turn as an IMPLICIT `finish`. Below this, one retry then
- * a visible error. Tuned so a real one-sentence answer clears the bar
+ * a prose-only turn as an IMPLICIT `finish`. Below this (unless the
+ * prose ends with a question mark), one retry then a visible error.
+ * Tuned so a normal greeting or one-sentence answer clears the bar
  * while a bare "Okay." / "Working on it…" does not.
  */
-const IMPLICIT_FINISH_MIN_CHARS = 40;
+const IMPLICIT_FINISH_MIN_CHARS = 28;
+
+/** User-facing copy when empty-turn retries are exhausted. */
+const USER_EMPTY_TURN_ERROR =
+  "The assistant didn't produce a complete answer. Try Retry below, switch models, or lower thinking effort.";
+
+const USER_TOOL_STRIKE_ERROR = `Tools failed ${MAX_SELF_CORRECTION_ATTEMPTS} times in a row. Try Retry below, review the errors above, or adjust your request.`;
 
 /**
  * Emit a block of text as the orchestrator's final user-facing answer,
@@ -129,6 +136,14 @@ interface RunLoopOpts {
   permissions: ChatPermissions;
   /** Resume a run paused on `ask_user` — skips re-seeding the user envelope. */
   resumeCheckpoint?: LoopCheckpoint;
+}
+
+/** Remove the last assistant row when it was prose-only (empty-turn retry). */
+function popProseOnlyAssistant(messages: ChatMessage[]): void {
+  const last = messages[messages.length - 1];
+  if (last?.role === 'assistant' && !(last.tool_calls && last.tool_calls.length > 0)) {
+    messages.pop();
+  }
 }
 
 /** Outcome of a completed orchestrator loop (success, halt, user abort, or ask_user pause). */
@@ -191,6 +206,10 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     // `tool_choice` field, so the next request omits it instead of
     // terminating the run. See the error branch below.
     let omitToolChoice = false;
+    /** Reused on empty-turn retry so the timeline shows one assistant row. */
+    let retryAssistantMsgId: string | null = null;
+    /** Reasoning-only turns without prose count as progress (capped). */
+    let consecutiveReasoningOnlyTurns = 0;
 
     for (let iter = resume?.nextIteration ?? 0; iter < MAX_TOTAL_ITERATIONS; iter++) {
       if (opts.signal.aborted) return {};
@@ -291,7 +310,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           );
         };
 
-        const turn = await handleAssistantTurn(req, emit, argsDeltaTap);
+        const turn = await handleAssistantTurn(req, emit, argsDeltaTap, {
+          ...(retryAssistantMsgId ? { assistantMsgId: retryAssistantMsgId } : {})
+        });
 
         if (turn.error) {
           // User-initiated Stop (or the run-scoped signal firing for any
@@ -363,13 +384,15 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             emit({ kind: 'agent-text-aborted', id: turn.assistantMsgId, ts: Date.now() });
           }
           if (consecutiveErrors >= MAX_SELF_CORRECTION_ATTEMPTS) {
+            const userMsg = `The provider failed ${consecutiveErrors} times in a row. Try Retry below, check API settings, or switch models.`;
+            log.warn('provider strike halt', { consecutiveErrors, detail: msg });
             emit({
               kind: 'error',
               id: randomUUID(),
               ts: Date.now(),
-              message: `Provider failed ${consecutiveErrors} times in a row: ${msg}`
+              message: userMsg
             });
-            return { terminalError: `Provider failed ${consecutiveErrors} times in a row: ${msg}` };
+            return { terminalError: userMsg };
           }
           emit({
             kind: 'agent-thought',
@@ -587,6 +610,8 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           if (actionTools.length > 0) {
             didWork = true;
             consecutiveEmptyTurns = 0;
+            consecutiveReasoningOnlyTurns = 0;
+            retryAssistantMsgId = null;
             resetSpinBuffer(spin);
             runStateAcc.toolRoundsTotal += 1;
             runStateAcc.lastAction = 'tool';
@@ -601,16 +626,14 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
                   consecutiveBadToolRounds,
                   iteration: iter
                 });
+                log.warn('tool-round strike halt', { consecutiveBadToolRounds });
                 emit({
                   kind: 'error',
                   id: randomUUID(),
                   ts: Date.now(),
-                  message:
-                    `${MAX_SELF_CORRECTION_ATTEMPTS} consecutive tool rounds failed — escalating to user.`
+                  message: USER_TOOL_STRIKE_ERROR
                 });
-                return {
-                  terminalError: `${MAX_SELF_CORRECTION_ATTEMPTS} consecutive tool rounds failed — escalating to user.`
-                };
+                return { terminalError: USER_TOOL_STRIKE_ERROR };
               }
             } else if (summary.attempted > 0) {
               consecutiveBadToolRounds = 0;
@@ -642,9 +665,35 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
 
         if (didWork) continue;
 
-        consecutiveEmptyTurns += 1;
         const proseText = turn.assistantText.trim();
-        if (proseText.length >= IMPLICIT_FINISH_MIN_CHARS) {
+        const hadNoTerminalTools =
+          finishedToolCalls.length === 0 && !finishCall && !askUserCall;
+
+        if (
+          turn.hadReasoning &&
+          !turn.hadText &&
+          hadNoTerminalTools &&
+          proseText.length === 0
+        ) {
+          consecutiveReasoningOnlyTurns += 1;
+          if (consecutiveReasoningOnlyTurns < 2) {
+            log.debug('reasoning-only turn — continuing without empty-turn strike', {
+              iteration: iter,
+              consecutiveReasoningOnlyTurns
+            });
+            runStateAcc.lastAction = 'retry';
+            continue;
+          }
+          log.warn('reasoning-only cap reached — falling through to empty-turn handling', {
+            iteration: iter,
+            consecutiveReasoningOnlyTurns
+          });
+        }
+
+        consecutiveReasoningOnlyTurns = 0;
+
+        if (isImplicitFinish(proseText)) {
+          retryAssistantMsgId = null;
           runStateAcc.lastAction = 'answer';
           log.info('implicit finish — substantive prose accepted as answer', {
             iteration: iter,
@@ -652,20 +701,32 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           });
           return {};
         }
+
+        consecutiveEmptyTurns += 1;
         if (consecutiveEmptyTurns < 2) {
           log.warn('assistant turn produced no tool call — retrying once', {
             iteration: iter,
             proseChars: proseText.length
           });
+          popProseOnlyAssistant(messages);
+          if (turn.hadText || turn.hadReasoning) {
+            emit({ kind: 'agent-text-aborted', id: turn.assistantMsgId, ts: Date.now() });
+          }
+          retryAssistantMsgId = turn.assistantMsgId;
           runStateAcc.lastAction = 'retry';
           continue;
         }
         {
-          const message =
-            'The model produced no tool call and no substantive answer after a retry — escalating to user.';
-          log.warn('empty-turn halt', { iteration: iter, consecutiveEmptyTurns });
-          emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message });
-          return { terminalError: message };
+          log.warn('empty-turn halt', {
+            iteration: iter,
+            consecutiveEmptyTurns,
+            proseChars: proseText.length,
+            technical:
+              'The model produced no tool call and no substantive answer after a retry — escalating to user.'
+          });
+          retryAssistantMsgId = null;
+          emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: USER_EMPTY_TURN_ERROR });
+          return { terminalError: USER_EMPTY_TURN_ERROR };
         }
     }
 
@@ -878,6 +939,20 @@ export function endsWithQuestionMark(s: string): boolean {
     if (!TRAILING_SKIP_CODEPOINTS.has(cp)) return false;
     end -= consumed;
   }
+  return false;
+}
+
+/**
+ * True when prose-only assistant text should end the run without a
+ * `finish` tool. Combines a lowered char threshold with the
+ * question-mark probe so short greetings and clarifying questions
+ * clear the bar while filler ("Okay.") does not.
+ */
+export function isImplicitFinish(prose: string): boolean {
+  const t = prose.trim();
+  if (t.length === 0) return false;
+  if (t.length >= IMPLICIT_FINISH_MIN_CHARS) return true;
+  if (endsWithQuestionMark(t)) return true;
   return false;
 }
 

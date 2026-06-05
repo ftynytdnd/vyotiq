@@ -89,6 +89,7 @@ vi.mock('@main/orchestrator/loop/buildOrchestratorRequest', () => ({
 import { handleAssistantTurn } from '@main/orchestrator/loop/handleAssistantTurn';
 import {
   endsWithQuestionMark,
+  isImplicitFinish,
   runOrchestratorLoop
 } from '@main/orchestrator/loop/runLoop';
 
@@ -202,7 +203,7 @@ describe('runOrchestratorLoop — abort vs retriable error', () => {
     // Final verdict is an `error` event — the three-strike escalation.
     const errors = events.filter((e) => e.kind === 'error');
     expect(errors).toHaveLength(1);
-    expect((errors[0] as { message: string }).message).toContain('Provider failed');
+    expect((errors[0] as { message: string }).message).toContain('provider failed');
   });
 
   it('does not emit an aborted marker when no partial content existed', async () => {
@@ -315,6 +316,180 @@ describe('runOrchestratorLoop — abort vs retriable error', () => {
  * through trailing whitespace + closing punctuation (capped at 8
  * code units) before reading the meaningful terminator.
  */
+describe('isImplicitFinish', () => {
+  it('accepts the 32-char greeting regression string', () => {
+    expect(isImplicitFinish('Hello! How can I help you today?')).toBe(true);
+  });
+
+  it('rejects empty and bare filler', () => {
+    expect(isImplicitFinish('')).toBe(false);
+    expect(isImplicitFinish('   ')).toBe(false);
+    expect(isImplicitFinish('Okay.')).toBe(false);
+  });
+
+  it('accepts short clarifying questions via the question probe', () => {
+    expect(isImplicitFinish('Continue?')).toBe(true);
+  });
+});
+
+describe('runOrchestratorLoop — implicit finish and empty-turn retry', () => {
+  it('completes without error on short substantive prose', async () => {
+    vi.mocked(handleAssistantTurn).mockResolvedValueOnce({
+      assistantMsgId: 'msg-greet',
+      assistantText: 'Hello! How can I help you today?',
+      reasoningText: '',
+      partialToolCalls: [],
+      hadText: true,
+      hadReasoning: false,
+      reasoningEndEmitted: false,
+      finishReason: 'stop'
+    });
+
+    const events: TimelineEvent[] = [];
+    await runOrchestratorLoop({
+      input: { ...baseInput, conversationId: 'c-1' },
+      workspacePath: '/tmp/ws',
+      workspaceId: 'ws-test',
+      signal: new AbortController().signal,
+      emit: (e) => events.push(e),
+      initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hihi' }],
+      initialQuery: 'hihi',
+      permissions: baseInput.permissions
+    });
+
+    expect(events.filter((e) => e.kind === 'error')).toHaveLength(0);
+    expect(handleAssistantTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses assistantMsgId on empty-turn retry', async () => {
+    vi.mocked(handleAssistantTurn)
+      .mockResolvedValueOnce({
+        assistantMsgId: 'msg-retry',
+        assistantText: 'Okay.',
+        reasoningText: '',
+        partialToolCalls: [],
+        hadText: true,
+        hadReasoning: false,
+        reasoningEndEmitted: false,
+        finishReason: 'stop'
+      })
+      .mockResolvedValueOnce({
+        assistantMsgId: 'msg-retry',
+        assistantText: 'Here is a complete answer with enough substance for you.',
+        reasoningText: '',
+        partialToolCalls: [],
+        hadText: true,
+        hadReasoning: false,
+        reasoningEndEmitted: false,
+        finishReason: 'stop'
+      });
+
+    const events: TimelineEvent[] = [];
+    await runOrchestratorLoop({
+      input: { ...baseInput, conversationId: 'c-1' },
+      workspacePath: '/tmp/ws',
+      workspaceId: 'ws-test',
+      signal: new AbortController().signal,
+      emit: (e) => events.push(e),
+      initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
+      initialQuery: 'hi',
+      permissions: baseInput.permissions
+    });
+
+    expect(handleAssistantTurn).toHaveBeenCalledTimes(2);
+    expect(handleAssistantTurn).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      { assistantMsgId: 'msg-retry' }
+    );
+    const aborted = events.filter((e) => e.kind === 'agent-text-aborted');
+    expect(aborted).toHaveLength(1);
+    expect((aborted[0] as { id: string }).id).toBe('msg-retry');
+    expect(events.filter((e) => e.kind === 'error')).toHaveLength(0);
+  });
+
+  it('emits friendly error after two empty filler turns', async () => {
+    vi.mocked(handleAssistantTurn).mockResolvedValue({
+      assistantMsgId: 'msg-empty',
+      assistantText: 'Okay.',
+      reasoningText: '',
+      partialToolCalls: [],
+      hadText: true,
+      hadReasoning: false,
+      reasoningEndEmitted: false,
+      finishReason: 'stop'
+    });
+
+    const events: TimelineEvent[] = [];
+    const result = await runOrchestratorLoop({
+      input: { ...baseInput, conversationId: 'c-1' },
+      workspacePath: '/tmp/ws',
+      workspaceId: 'ws-test',
+      signal: new AbortController().signal,
+      emit: (e) => events.push(e),
+      initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
+      initialQuery: 'hi',
+      permissions: baseInput.permissions
+    });
+
+    const errors = events.filter((e) => e.kind === 'error');
+    expect(errors).toHaveLength(1);
+    expect((errors[0] as { message: string }).message).toContain("didn't produce a complete answer");
+    expect(result.terminalError).toContain("didn't produce a complete answer");
+  });
+
+  it('allows two reasoning-only turns before empty-turn handling', async () => {
+    vi.mocked(handleAssistantTurn)
+      .mockResolvedValueOnce({
+        assistantMsgId: 'msg-r1',
+        assistantText: '',
+        reasoningText: 'thinking…',
+        partialToolCalls: [],
+        hadText: false,
+        hadReasoning: true,
+        reasoningEndEmitted: true,
+        finishReason: 'stop'
+      })
+      .mockResolvedValueOnce({
+        assistantMsgId: 'msg-r2',
+        assistantText: '',
+        reasoningText: 'more thinking…',
+        partialToolCalls: [],
+        hadText: false,
+        hadReasoning: true,
+        reasoningEndEmitted: true,
+        finishReason: 'stop'
+      })
+      .mockResolvedValueOnce({
+        assistantMsgId: 'msg-r3',
+        assistantText: 'Hello! How can I help you today?',
+        reasoningText: '',
+        partialToolCalls: [],
+        hadText: true,
+        hadReasoning: false,
+        reasoningEndEmitted: false,
+        finishReason: 'stop'
+      });
+
+    const events: TimelineEvent[] = [];
+    await runOrchestratorLoop({
+      input: { ...baseInput, conversationId: 'c-1' },
+      workspacePath: '/tmp/ws',
+      workspaceId: 'ws-test',
+      signal: new AbortController().signal,
+      emit: (e) => events.push(e),
+      initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
+      initialQuery: 'hi',
+      permissions: baseInput.permissions
+    });
+
+    expect(handleAssistantTurn).toHaveBeenCalledTimes(3);
+    expect(events.filter((e) => e.kind === 'error')).toHaveLength(0);
+  });
+});
+
 describe('endsWithQuestionMark', () => {
   it('returns true for plain `?`', () => {
     expect(endsWithQuestionMark('Want me to continue?')).toBe(true);

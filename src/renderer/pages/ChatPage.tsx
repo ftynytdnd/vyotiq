@@ -269,7 +269,7 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
             </div>
           )}
 
-          <Timeline model={model} />
+          <Timeline model={model} onOpenProviders={onOpenProviders} />
         </div>
       </div>
       </div>

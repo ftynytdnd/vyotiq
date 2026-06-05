@@ -39,6 +39,11 @@ export type ArgsDeltaTap = (
   argsBuf: string
 ) => void;
 
+export interface HandleAssistantTurnOpts {
+  /** Reuse a timeline id on empty-turn retry so the UI stays one row. */
+  assistantMsgId?: string;
+}
+
 export interface AssistantTurnResult {
   assistantMsgId: string;
   assistantText: string;
@@ -71,9 +76,10 @@ export interface AssistantTurnResult {
 export async function handleAssistantTurn(
   req: ChatStreamRequest,
   emit: (event: TimelineEvent) => void,
-  argsDeltaTap?: ArgsDeltaTap
+  argsDeltaTap?: ArgsDeltaTap,
+  turnOpts?: HandleAssistantTurnOpts
 ): Promise<AssistantTurnResult> {
-  const assistantMsgId = randomUUID();
+  const assistantMsgId = turnOpts?.assistantMsgId ?? randomUUID();
   // Mirror state so the caller can still see whether text/reasoning had
   // started streaming when the iterator threw mid-stream. The runLoop
   // reads `hadText || hadReasoning` to decide whether to emit
