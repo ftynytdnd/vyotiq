@@ -42,6 +42,7 @@ import { normalizeRegisteredToolName } from '@shared/tools/normalizeToolName.js'
 import { parseAskUserArgs, resolveAskUserPayload } from '@shared/text/parseAskUser.js';
 import { backoff } from '../retry.js';
 import { isAbortError } from '../abortSignal.js';
+import { isStreamInactivityError } from '../../providers/streamInactivity.js';
 import { logger } from '../../logging/logger.js';
 import {
   isNonRecoverableProviderError,
@@ -88,6 +89,12 @@ import {
 } from './buildRunState.js';
 import { buildHostEnvironmentXml } from './buildHostEnvironment.js';
 import { cloneLoopCheckpoint, type LoopCheckpoint } from '../pausedRunRegistry.js';
+import {
+  formatProviderStrikeError,
+  formatRetryThought,
+  formatToolStrikeError,
+  RUN_STOPPED_THOUGHT
+} from './runLoopMessages.js';
 
 
 const log = logger.child('orch/runLoop');
@@ -105,7 +112,14 @@ const IMPLICIT_FINISH_MIN_CHARS = 28;
 const USER_EMPTY_TURN_ERROR =
   "The assistant didn't produce a complete answer. Try Retry below, switch models, or lower thinking effort.";
 
-const USER_TOOL_STRIKE_ERROR = `Tools failed ${MAX_SELF_CORRECTION_ATTEMPTS} times in a row. Try Retry below, review the errors above, or adjust your request.`;
+/** Recent billing failures per provider — skip immediate re-hit within TTL. */
+const recentBillingBlock = new Map<string, { at: number; message: string }>();
+const BILLING_BLOCK_TTL_MS = 5 * 60 * 1000;
+
+/** Test-only: clear billing preflight cache between cases. */
+export function __test_resetRecentBillingBlock(): void {
+  recentBillingBlock.clear();
+}
 
 /**
  * Emit a block of text as the orchestrator's final user-facing answer,
@@ -152,6 +166,8 @@ interface RunLoopResult {
   terminalError?: string;
   /** Set when the run paused on `ask_user` and awaits interactive submit. */
   pausedForAskUser?: LoopCheckpoint;
+  /** Set when the run-scoped signal aborted before a terminal error row. */
+  aborted?: boolean;
 }
 
 export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopResult> {
@@ -191,6 +207,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     let injectedStubsHighWater = resume?.injectedStubsHighWater ?? 0;
     let consecutiveErrors = resume?.consecutiveErrors ?? 0;
     let consecutiveBadToolRounds = resume?.consecutiveBadToolRounds ?? 0;
+    let transportFailuresThisRun = 0;
+    let runHadLlmProgress = false;
+    let lastToolRoundFailure: string | undefined;
     const runStateAcc: RunStateAccumulator = resume
       ? { ...resume.runStateAcc }
       : createRunStateAccumulator();
@@ -199,6 +218,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     }
 
     let providerName = await resolveProviderName(opts.input.selection.providerId);
+    let providerEndpointHost = await resolveProviderEndpointHost(opts.input.selection.providerId);
     let providerDialect = await resolveProviderDialect(opts.input.selection.providerId);
     let reasoningEffort = await resolveProviderThinking(opts.input.selection);
     let modelThinkingCaps = await resolveModelThinkingCaps(opts.input.selection);
@@ -211,13 +231,23 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     /** Reasoning-only turns without prose count as progress (capped). */
     let consecutiveReasoningOnlyTurns = 0;
 
+    const billingBlock = recentBillingBlock.get(opts.input.selection.providerId);
+    if (billingBlock && Date.now() - billingBlock.at < BILLING_BLOCK_TTL_MS) {
+      emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: billingBlock.message });
+      return { terminalError: billingBlock.message };
+    }
+
     for (let iter = resume?.nextIteration ?? 0; iter < MAX_TOTAL_ITERATIONS; iter++) {
-      if (opts.signal.aborted) return {};
+      const abortedEarly = exitIfAborted(opts, emit, runHadLlmProgress);
+      if (abortedEarly) return abortedEarly;
       const iterStartedAt = Date.now();
 
         if (iter > 0) {
           try {
             providerName = await resolveProviderName(opts.input.selection.providerId);
+            providerEndpointHost = await resolveProviderEndpointHost(
+              opts.input.selection.providerId
+            );
             providerDialect = await resolveProviderDialect(opts.input.selection.providerId);
             reasoningEffort = await resolveProviderThinking(opts.input.selection);
             modelThinkingCaps = await resolveModelThinkingCaps(opts.input.selection);
@@ -290,11 +320,12 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         emitRunStatus(
           emit,
           'connecting',
-          `Connecting to ${providerName}…`,
+          formatConnectingLabel(providerName, providerEndpointHost),
           {
             providerId: opts.input.selection.providerId,
             modelId: opts.input.selection.modelId,
-            iteration: iter
+            iteration: iter,
+            ...(providerEndpointHost ? { endpointHost: providerEndpointHost } : {})
           }
         );
         req.onConnect = () => {
@@ -329,7 +360,10 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           if (isAbortError(turn.error, opts.signal)) {
             if (turn.hadText || turn.hadReasoning) {
               emit({ kind: 'agent-text-aborted', id: turn.assistantMsgId, ts: Date.now() });
+              runHadLlmProgress = true;
             }
+            const aborted = exitIfAborted(opts, emit, runHadLlmProgress);
+            if (aborted) return aborted;
             return {};
           }
           const msg = isProviderError(turn.error)
@@ -362,6 +396,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               status: turn.error.status,
               msg
             });
+            if (turn.error.kind === 'billing') {
+              recentBillingBlock.set(opts.input.selection.providerId, { at: Date.now(), message: msg });
+            }
             if (turn.hadText || turn.hadReasoning) {
               emit({ kind: 'agent-text-aborted', id: turn.assistantMsgId, ts: Date.now() });
             }
@@ -372,6 +409,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               message: msg
             });
             return { terminalError: msg };
+          }
+          if (isStreamInactivityError(turn.error) || /stream inactive/i.test(msg)) {
+            transportFailuresThisRun += 1;
           }
           consecutiveErrors += 1;
           log.warn('LLM call failed', { attempt: consecutiveErrors, msg });
@@ -384,7 +424,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             emit({ kind: 'agent-text-aborted', id: turn.assistantMsgId, ts: Date.now() });
           }
           if (consecutiveErrors >= MAX_SELF_CORRECTION_ATTEMPTS) {
-            const userMsg = `The provider failed ${consecutiveErrors} times in a row. Try Retry below, check API settings, or switch models.`;
+            const userMsg = formatProviderStrikeError(consecutiveErrors, msg);
             log.warn('provider strike halt', { consecutiveErrors, detail: msg });
             emit({
               kind: 'error',
@@ -394,16 +434,27 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             });
             return { terminalError: userMsg };
           }
+          const retryContent = formatRetryThought(msg, consecutiveErrors);
           emit({
             kind: 'agent-thought',
             id: randomUUID(),
             ts: Date.now(),
-            content: `LLM call failed (attempt ${consecutiveErrors}/${MAX_SELF_CORRECTION_ATTEMPTS}): ${msg}. Retrying.`,
+            content: retryContent,
             // Mark retry warnings as `warn` so the renderer can paint them
             // in the warning tone instead of mixing them in with the muted
             // "thinking…" indicator. See plan §H.
             severity: 'warn'
           });
+          if (transportFailuresThisRun > 1) {
+            emit({
+              kind: 'agent-thought',
+              id: randomUUID(),
+              ts: Date.now(),
+              content:
+                'The provider connection was unstable earlier in this run. Retrying may take up to a minute per attempt.',
+              severity: 'info'
+            });
+          }
           emitRunStatus(
             emit,
             'retrying',
@@ -418,12 +469,15 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           try {
             await backoff(consecutiveErrors, { signal: opts.signal });
           } catch {
+            const aborted = exitIfAborted(opts, emit, runHadLlmProgress);
+            if (aborted) return aborted;
             return {};
           }
           runStateAcc.lastAction = 'retry';
           continue;
         }
         consecutiveErrors = 0;
+        runHadLlmProgress = true;
 
         if (turn.hadReasoning && !turn.reasoningEndEmitted) {
           emit({
@@ -605,7 +659,8 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             allowlist: AGENT_TOOLS,
             onToolCallSettled
           });
-          if (opts.signal.aborted) return {};
+          const abortedAfterTools = exitIfAborted(opts, emit, runHadLlmProgress);
+          if (abortedAfterTools) return abortedAfterTools;
 
           if (actionTools.length > 0) {
             didWork = true;
@@ -619,9 +674,13 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             if (directQuery.length > 0) {
               query = clampQuery(`${opts.input.prompt} ${directQuery}`, opts.input.prompt);
             }
+            if (summary.lastFailure) {
+              lastToolRoundFailure = summary.lastFailure;
+            }
             if (summary.attempted > 0 && summary.failed === summary.attempted) {
               consecutiveBadToolRounds += 1;
               if (consecutiveBadToolRounds >= MAX_SELF_CORRECTION_ATTEMPTS) {
+                const toolStrikeMsg = formatToolStrikeError(lastToolRoundFailure);
                 log.warn('tool-round strike halt — consecutive failed tool rounds', {
                   consecutiveBadToolRounds,
                   iteration: iter
@@ -631,9 +690,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
                   kind: 'error',
                   id: randomUUID(),
                   ts: Date.now(),
-                  message: USER_TOOL_STRIKE_ERROR
+                  message: toolStrikeMsg
                 });
-                return { terminalError: USER_TOOL_STRIKE_ERROR };
+                return { terminalError: toolStrikeMsg };
               }
             } else if (summary.attempted > 0) {
               consecutiveBadToolRounds = 0;
@@ -735,7 +794,8 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
       runId: opts.input.runId,
       conversationId: opts.input.conversationId
     });
-    if (opts.signal.aborted) return {};
+    const abortedBeforeSynth = exitIfAborted(opts, emit, runHadLlmProgress);
+    if (abortedBeforeSynth) return abortedBeforeSynth;
     {
       const synthMessages = sanitizeToolCallPairingWithStats(messages).messages;
       const synthReq = buildOrchestratorRequest({
@@ -756,7 +816,10 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         if (isAbortError(synthTurn.error, opts.signal)) {
           if (synthTurn.hadText || synthTurn.hadReasoning) {
             emit({ kind: 'agent-text-aborted', id: synthTurn.assistantMsgId, ts: Date.now() });
+            runHadLlmProgress = true;
           }
+          const aborted = exitIfAborted(opts, emit, runHadLlmProgress);
+          if (aborted) return aborted;
           return {};
         }
         const msg = isProviderError(synthTurn.error)
@@ -1043,6 +1106,45 @@ async function resolveProviderName(providerId: string): Promise<string> {
     });
   }
   return providerId;
+}
+
+async function resolveProviderEndpointHost(providerId: string): Promise<string | undefined> {
+  try {
+    const provider = await getProviderWithKey(providerId);
+    if (!provider?.baseUrl) return undefined;
+    return new URL(provider.baseUrl).host;
+  } catch {
+    return undefined;
+  }
+}
+
+function formatConnectingLabel(providerName: string, endpointHost?: string): string {
+  if (endpointHost && !providerName.toLowerCase().includes(endpointHost.toLowerCase())) {
+    return `Connecting to ${providerName} (${endpointHost})…`;
+  }
+  return `Connecting to ${providerName}…`;
+}
+
+function emitRunStoppedThought(emit: (event: TimelineEvent) => void): void {
+  emit({
+    kind: 'agent-thought',
+    id: randomUUID(),
+    ts: Date.now(),
+    content: RUN_STOPPED_THOUGHT,
+    severity: 'info'
+  });
+}
+
+function exitIfAborted(
+  opts: { signal: AbortSignal },
+  emit: (event: TimelineEvent) => void,
+  runHadLlmProgress: boolean
+): RunLoopResult | null {
+  if (!opts.signal.aborted) return null;
+  if (!runHadLlmProgress) {
+    emitRunStoppedThought(emit);
+  }
+  return { aborted: true };
 }
 
 /**

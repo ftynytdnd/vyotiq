@@ -18,6 +18,7 @@ import {
   type PartialToolCallArgs,
   type TimelineState
 } from './types.js';
+import { clearStreamingToolPreview } from './clearStreamingToolPreview.js';
 import {
   appendTimelineEvent,
   autoCloseReasoning,
@@ -301,15 +302,12 @@ export function applyTimelineEvent(
       // across the conversation's lifetime (one entry per
       // historical tool call); after a hundred turns of tool use
       // it carried thousands of stale entries.
-      return {
+      return clearStreamingToolPreview({
         ...state,
         events: appendTimelineEvent(state.events, event, mutate),
         lastUserPromptId: event.id,
-        lastUserPromptContent: event.content,
-        settledCallIds: {},
-        liveDiffByCallId: {},
-        toolResultSettledIds: {}
-      };
+        lastUserPromptContent: event.content
+      });
     case 'agent-thought':
     case 'ask-user-prompt':
     case 'phase':

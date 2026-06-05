@@ -43,6 +43,7 @@ import { useCheckpointsStore } from './useCheckpointsStore.js';
 import { useAskUserDraftStore } from './askUserDraft.js';
 import { findPendingAskUserEvent } from '../lib/pendingAskUser.js';
 import { buildAskUserSubmitInput } from '../lib/buildAskUserSubmitInput.js';
+import { clearStreamingToolPreview } from '../components/timeline/reducer/clearStreamingToolPreview.js';
 import {
   applyTimelineEvent,
   rebuildTimelineState
@@ -155,14 +156,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const nextSlices = updateSlice(s.slices, convId, (prev) => {
         const cleared =
           prev.runId === runId
-            ? {
+            ? clearStreamingToolPreview({
                 ...prev,
                 isProcessing: false,
                 awaitingAskUser: false,
                 runId: null,
                 runStartedAt: null,
                 latestOrchestratorRunStatus: undefined
-              }
+              })
             : prev;
         return cleared;
       });
@@ -213,7 +214,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => {
       const nextSlices = updateSlice(s.slices, convId, (prev) => {
         if (prev.runId !== runId) return prev;
-        return {
+        return clearStreamingToolPreview({
           ...prev,
           isProcessing: false,
           awaitingAskUser: false,
@@ -221,7 +222,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           runStartedAt: null,
           // Audit fix C3 — see `finishRun`.
           latestOrchestratorRunStatus: undefined
-        };
+        });
       });
       const nextMap: Record<string, string> = { ...s.runIdToConv };
       delete nextMap[runId];
@@ -598,10 +599,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // `runId` set until the matching `done` / `error` arrives, so
       // late aborted-text events still route to the right slice.
       if (!convId) {
-        return s.runId === id ? { ...s, isProcessing: false, awaitingAskUser: false } : s;
+        return s.runId === id
+          ? clearStreamingToolPreview({
+              ...s,
+              isProcessing: false,
+              awaitingAskUser: false
+            })
+          : s;
       }
       const nextSlices = updateSlice(s.slices, convId, (prev) =>
-        prev.runId === id ? { ...prev, isProcessing: false, awaitingAskUser: false } : prev
+        prev.runId === id
+          ? clearStreamingToolPreview({
+              ...prev,
+              isProcessing: false,
+              awaitingAskUser: false
+            })
+          : prev
       );
       return { ...s, slices: nextSlices, ...mirrorOf(nextSlices[convId]!) };
     });
@@ -619,7 +632,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (!convId) return s;
       const nextSlices = updateSlice(s.slices, convId, (prev) =>
         prev.runId === runId
-          ? { ...prev, isProcessing: false, awaitingAskUser: false }
+          ? clearStreamingToolPreview({
+              ...prev,
+              isProcessing: false,
+              awaitingAskUser: false
+            })
           : prev
       );
       if (s.conversationId === convId) {

@@ -23,6 +23,10 @@ import {
   stripReasoningContentForStrictDialects
 } from './sanitizeMessages.js';
 import { safeText } from './errorBody.js';
+import {
+  PRE_HEADER_STREAM_INACTIVITY_MS,
+  STREAM_INACTIVITY_TIMEOUT_MS
+} from '@shared/constants.js';
 import { findProviderModel } from '@shared/providers/modelId.js';
 import {
   mapDeepSeekThinking,
@@ -243,7 +247,9 @@ export async function* streamOpenAi(
   // throw; the `catch` around the read loop distinguishes them via
   // `isStreamInactivityError` for structured logging.
   const watch = createInactivityWatch(
-    req.signal ? { parent: req.signal } : {}
+    req.signal
+      ? { parent: req.signal, timeoutMs: PRE_HEADER_STREAM_INACTIVITY_MS }
+      : { timeoutMs: PRE_HEADER_STREAM_INACTIVITY_MS }
   );
 
   // Adaptive rate guard. Sleeps any concurrent caller until a sibling
@@ -306,6 +312,7 @@ export async function* streamOpenAi(
       log.warn('onConnect listener threw; continuing to read stream', { err });
     }
   }
+  watch.setTimeoutMs(STREAM_INACTIVITY_TIMEOUT_MS);
 
   // Frame parser. Yields any deltas parsed from a single SSE frame.
   // Returns `true` if the payload was `[DONE]` (caller stops iterating

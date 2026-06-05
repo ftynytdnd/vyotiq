@@ -85,11 +85,13 @@ export interface HandleToolCallsResult {
   attempted: number;
   /** Of `attempted`, how many produced a `result.ok === false`. */
   failed: number;
+  /** Most recent failed tool output in this round (for terminal error copy). */
+  lastFailure?: string;
 }
 
 type DispatchOutcome =
   | { kind: 'skipped' }
-  | { kind: 'ran'; attempted: number; failed: number };
+  | { kind: 'ran'; attempted: number; failed: number; failureDetail?: string };
 
 async function dispatchOneToolCall(
   tc: PartialToolCall,
@@ -187,7 +189,12 @@ async function dispatchOneToolCall(
       name: tc.name,
       content: parseError
     });
-    return { kind: 'ran', attempted: 1, failed: 1 };
+    return {
+      kind: 'ran',
+      attempted: 1,
+      failed: 1,
+      failureDetail: formatToolFailureDetail(tc.name, parseError, 'argument parse failed')
+    };
   }
 
   emitRunStatus(emit, 'running-tool', 'Exploring', { toolName: tc.name });
@@ -225,7 +232,21 @@ async function dispatchOneToolCall(
     name: tc.name,
     content: result.output
   });
-  return { kind: 'ran', attempted: 1, failed: result.ok ? 0 : 1 };
+  return {
+    kind: 'ran',
+    attempted: 1,
+    failed: result.ok ? 0 : 1,
+    ...(!result.ok
+      ? {
+          failureDetail: formatToolFailureDetail(tc.name ?? 'unknown', result.output, result.error)
+        }
+      : {})
+  };
+}
+
+function formatToolFailureDetail(toolName: string, output: string, error?: string): string {
+  const detail = error ? `${toolName} — ${error}` : `${toolName} — ${output}`;
+  return detail.length > 160 ? `${detail.slice(0, 157)}…` : detail;
 }
 
 export async function handleToolCalls(
@@ -237,7 +258,12 @@ export async function handleToolCalls(
   const startedAt = Date.now();
   let attempted = 0;
   let failed = 0;
+  let lastFailure: string | undefined;
   const tallies = { refused: 0 };
+
+  const recordFailure = (detail?: string) => {
+    if (detail) lastFailure = detail;
+  };
 
   const batches = opts.skipDependencyBatching
     ? [finishedToolCalls.map((_, i) => i)]
@@ -307,6 +333,7 @@ export async function handleToolCalls(
       if (o.kind === 'ran') {
         attempted += o.attempted;
         failed += o.failed;
+        recordFailure(o.failureDetail);
       }
     }
 
@@ -330,6 +357,7 @@ export async function handleToolCalls(
       if (o.kind === 'ran') {
         attempted += o.attempted;
         failed += o.failed;
+        recordFailure(o.failureDetail);
       }
     }
   }
@@ -340,5 +368,5 @@ export async function handleToolCalls(
     refused: tallies.refused,
     ms: Date.now() - startedAt
   });
-  return { attempted, failed };
+  return { attempted, failed, ...(lastFailure ? { lastFailure } : {}) };
 }

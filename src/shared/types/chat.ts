@@ -396,6 +396,8 @@ export type TimelineEvent =
       providerId?: string;
       modelId?: string;
       iteration?: number;
+      /** Resolved API host for the active provider (composer status). */
+      endpointHost?: string;
     };
   }
   | { kind: 'error'; id: string; ts: number; message: string }

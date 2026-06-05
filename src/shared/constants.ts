@@ -100,6 +100,12 @@ export const MAX_BACKOFF_MS = 8000;
 export const STREAM_INACTIVITY_TIMEOUT_MS = 60_000;
 
 /**
+ * Shorter inactivity budget while waiting for HTTP response headers.
+ * After `onConnect`, transports extend to `STREAM_INACTIVITY_TIMEOUT_MS`.
+ */
+export const PRE_HEADER_STREAM_INACTIVITY_MS = 25_000;
+
+/**
  * Delta-coalescing threshold for persisted streaming events.
  *
  * The chat IPC emits every `agent-text-delta`/`agent-reasoning-delta`

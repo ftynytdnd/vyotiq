@@ -19,7 +19,7 @@ export function toolGroupSummary(
   const first = children[0];
   const rest = Math.max(0, total - 1);
   const primary = first ? extractPrimary(toolName, first) : '';
-  const verb = verbFor(toolName, first);
+  const verb = verbFor(toolName, first, children.some((c) => c.partial === true && !c.result));
   // Defect 3 (edit only): two edits to the same file previously read
   // as "snake.py and 1 other file" — misleading because there's no
   // OTHER file at all. When every `edit` child targets a single
@@ -213,7 +213,22 @@ export function tailInFlightEditChildIndex(children: ToolGroupChild[]): number |
   return null;
 }
 
-function verbFor(name: ToolName, first?: ToolGroupChild): string {
+function verbFor(name: ToolName, first?: ToolGroupChild, pending = false): string {
+  if (pending) {
+    switch (name) {
+      case 'bash': return 'Running';
+      case 'read': return 'Reading';
+      case 'ls': return 'Listing';
+      case 'edit': return 'Editing';
+      case 'delete': return 'Deleting';
+      case 'search': return isLocalSearch(first) ? 'Grepping' : 'Searching';
+      case 'memory': return 'Memory';
+      case 'recall': return 'Recalling';
+      case 'finish': return 'Finishing';
+      case 'ask_user': return 'Asking';
+      case 'unknown': return 'Running';
+    }
+  }
   switch (name) {
     case 'bash': return 'Ran';
     case 'read': return 'Read';

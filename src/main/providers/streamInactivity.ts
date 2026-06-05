@@ -53,6 +53,11 @@ export interface InactivityWatch {
    */
   poke(): void;
   /**
+   * Replace the inactivity budget (e.g. extend after response headers).
+   * Re-arms the timer when not disposed.
+   */
+  setTimeoutMs(ms: number): void;
+  /**
    * Stop the timer and detach the parent-signal listener. Call from a
    * `finally` block in the transport so the watchdog never outlives the
    * generator. Idempotent.
@@ -79,7 +84,7 @@ export interface InactivityWatchOptions {
  * stream closes.
  */
 export function createInactivityWatch(opts: InactivityWatchOptions = {}): InactivityWatch {
-  const timeoutMs = opts.timeoutMs ?? STREAM_INACTIVITY_TIMEOUT_MS;
+  let timeoutMs = opts.timeoutMs ?? STREAM_INACTIVITY_TIMEOUT_MS;
   const ctrl = new AbortController();
 
   let disposed = false;
@@ -151,9 +156,16 @@ export function createInactivityWatch(opts: InactivityWatchOptions = {}): Inacti
     }
   };
 
+  const setTimeoutMs = (ms: number): void => {
+    if (disposed) return;
+    timeoutMs = ms;
+    arm();
+  };
+
   return {
     signal: ctrl.signal,
     poke: arm,
+    setTimeoutMs,
     dispose
   };
 }

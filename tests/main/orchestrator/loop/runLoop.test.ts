@@ -13,7 +13,8 @@
  * These tests pin the new behavior:
  *
  *   - Abort path → exactly ONE `agent-text-aborted` event (when
- *     partial text/reasoning existed); ZERO `agent-thought` warning;
+ *     partial text/reasoning existed); `Run stopped.` info thought when
+ *     aborted before any stream content; ZERO retry warning;
  *     ZERO `run-status: retrying`; run exits.
  *
  *   - Non-abort transport error → existing retry behavior
@@ -90,11 +91,13 @@ import { handleAssistantTurn } from '@main/orchestrator/loop/handleAssistantTurn
 import {
   endsWithQuestionMark,
   isImplicitFinish,
-  runOrchestratorLoop
+  runOrchestratorLoop,
+  __test_resetRecentBillingBlock
 } from '@main/orchestrator/loop/runLoop';
 
 beforeEach(() => {
   vi.mocked(handleAssistantTurn).mockReset();
+  __test_resetRecentBillingBlock();
 });
 
 const baseInput = {
@@ -206,10 +209,9 @@ describe('runOrchestratorLoop — abort vs retriable error', () => {
     expect((errors[0] as { message: string }).message).toContain('provider failed');
   });
 
-  it('does not emit an aborted marker when no partial content existed', async () => {
-    // Edge case: abort fires before the stream emitted any text or
-    // reasoning. The cleanup emission is gated on `hadText ||
-    // hadReasoning`, so nothing should be produced.
+  it('emits Run stopped but no aborted marker when abort fires before stream content', async () => {
+    // Abort before any text/reasoning: no `agent-text-aborted`, but the
+    // user should still see a lightweight `Run stopped.` thought (B6).
     const ctrl = new AbortController();
     vi.mocked(handleAssistantTurn).mockImplementationOnce(async () => {
       ctrl.abort();
@@ -226,7 +228,7 @@ describe('runOrchestratorLoop — abort vs retriable error', () => {
     });
 
     const events: TimelineEvent[] = [];
-    await runOrchestratorLoop({
+    const result = await runOrchestratorLoop({
       input: { ...baseInput, conversationId: 'c-1' },
       workspacePath: '/tmp/ws',
       workspaceId: 'ws-test',
@@ -238,8 +240,12 @@ describe('runOrchestratorLoop — abort vs retriable error', () => {
       strictApprovals: false
     });
 
+    expect(result.aborted).toBe(true);
     expect(events.filter((e) => e.kind === 'agent-text-aborted')).toHaveLength(0);
-    expect(events.filter((e) => e.kind === 'agent-thought')).toHaveLength(0);
+    const stopped = events.filter(
+      (e) => e.kind === 'agent-thought' && (e as { content: string }).content === 'Run stopped.'
+    );
+    expect(stopped).toHaveLength(1);
     expect(events.filter((e) => e.kind === 'error')).toHaveLength(0);
   });
 

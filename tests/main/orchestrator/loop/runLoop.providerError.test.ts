@@ -54,12 +54,20 @@ vi.mock('@main/orchestrator/loop/buildOrchestratorRequest', () => ({
     signal: opts.signal
   }))
 }));
+vi.mock('@main/providers/providerStore', () => ({
+  getProviderWithKey: vi.fn(async () => ({
+    name: 'OpenRouter',
+    baseUrl: 'https://openrouter.ai/api',
+    dialect: 'openai'
+  }))
+}));
 
 import { handleAssistantTurn } from '@main/orchestrator/loop/handleAssistantTurn';
-import { runOrchestratorLoop } from '@main/orchestrator/loop/runLoop';
+import { runOrchestratorLoop, __test_resetRecentBillingBlock } from '@main/orchestrator/loop/runLoop';
 
 beforeEach(() => {
   vi.mocked(handleAssistantTurn).mockReset();
+  __test_resetRecentBillingBlock();
 });
 
 const baseInput = {
@@ -194,5 +202,84 @@ describe('runOrchestratorLoop — ProviderError handling', () => {
       (e) => e.kind === 'agent-thought' && (e as { severity?: string }).severity === 'warn'
     );
     expect(warnThought).toBeUndefined();
+  });
+
+  it('includes provider friendlyMessage in terminal error after rate-limit strikes', async () => {
+    const rateLimit = new ProviderError({
+      kind: 'rate-limit',
+      status: 429,
+      providerId: 'p',
+      providerName: 'OpenRouter',
+      friendlyMessage: 'OpenRouter: Rate limit exceeded.',
+      surface: 'chat',
+      rawBody: ''
+    });
+
+    vi.mocked(handleAssistantTurn).mockResolvedValue({
+      assistantMsgId: 'msg-pe',
+      assistantText: '',
+      reasoningText: '',
+      partialToolCalls: [],
+      hadText: false,
+      hadReasoning: false,
+      reasoningEndEmitted: false,
+      error: rateLimit
+    });
+
+    const events: TimelineEvent[] = [];
+    const result = await runOrchestratorLoop({
+      input: { ...baseInput, conversationId: 'c-pe' },
+      workspacePath: '/tmp/ws',
+      workspaceId: 'ws-test',
+      signal: new AbortController().signal,
+      emit: (e) => events.push(e),
+      initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
+      initialQuery: 'hi',
+      permissions: baseInput.permissions,
+      strictApprovals: false
+    });
+
+    expect(handleAssistantTurn).toHaveBeenCalledTimes(MAX_SELF_CORRECTION_ATTEMPTS);
+    expect(result.terminalError).toMatch(/Rate limit exceeded/);
+    const errors = events.filter((e) => e.kind === 'error');
+    expect(errors).toHaveLength(1);
+    expect((errors[0] as { message: string }).message).toMatch(/Rate limit exceeded/);
+    const warnThought = events.find(
+      (e) =>
+        e.kind === 'agent-thought' &&
+        (e as { severity?: string }).severity === 'warn' &&
+        (e as { content: string }).content.includes('Rate limit exceeded')
+    );
+    expect(warnThought).toBeDefined();
+    expect((warnThought as { content: string }).content).not.toContain('exceeded..');
+  });
+
+  it('emits Run stopped when aborted before the first LLM turn', async () => {
+    const ac = new AbortController();
+    ac.abort();
+    const events: TimelineEvent[] = [];
+    const result = await runOrchestratorLoop({
+      input: {
+        ...baseInput,
+        conversationId: 'c-abort',
+        selection: { providerId: 'p-abort', modelId: 'm' }
+      },
+      workspacePath: '/tmp/ws',
+      workspaceId: 'ws-test',
+      signal: ac.signal,
+      emit: (e) => events.push(e),
+      initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
+      initialQuery: 'hi',
+      permissions: baseInput.permissions,
+      strictApprovals: false
+    });
+
+    expect(result.aborted).toBe(true);
+    expect(handleAssistantTurn).not.toHaveBeenCalled();
+    expect(
+      events.some(
+        (e) => e.kind === 'agent-thought' && (e as { content: string }).content === 'Run stopped.'
+      )
+    ).toBe(true);
   });
 });
