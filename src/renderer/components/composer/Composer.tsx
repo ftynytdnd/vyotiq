@@ -299,6 +299,7 @@ export function Composer({
     useFloatingLiveDiffStore((s) => s.target !== null);
   const revertPrompt = useRevertPrompt();
 
+  const canAttach = Boolean(conversationId && activeWorkspaceIdForAttach);
   const attachmentButton = (
     <AttachmentButton
       open={pickerOpen}
@@ -308,6 +309,7 @@ export function Composer({
       onPick={(p) => void addPaths([p])}
       onPickFolder={(p) => void addFolder(p)}
       onPickFromComputer={() => void pickFromComputer()}
+      disabled={!canAttach}
     />
   );
 
@@ -384,6 +386,7 @@ export function Composer({
 
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
+    if (!canAttach) return;
     if (e.dataTransfer.types.includes('Files')) setDragOver(true);
   };
 

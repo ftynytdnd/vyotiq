@@ -1,4 +1,5 @@
 import type { ToolName } from '@shared/types/tool.js';
+import { normalizeRegisteredToolName } from '@shared/tools/normalizeToolName.js';
 import type { PartialToolCallArgs } from '../types.js';
 import { shouldSynthesizePartialToolEntry } from '../partialToolVisibility.js';
 import type { Row, ToolGroupChild } from '../deriveRows.js';
@@ -111,6 +112,8 @@ function findActivityInsertIndex(out: Row[]): number {
 }
 
 function pickToolName(raw: string | undefined): ToolName {
+  const normalized = normalizeRegisteredToolName(raw);
+  if (normalized) return normalized;
   if (raw && (KNOWN_TOOL_NAMES as readonly string[]).includes(raw)) {
     return raw as ToolName;
   }

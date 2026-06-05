@@ -1,6 +1,6 @@
 /**
- * LeftDock — floating rail + flyout panel for workspace tabs and chat strip.
- * Collapsed: centered icon pill overlay. Expanded: flyout replaces rail with full lists.
+ * LeftDock — persistent edge strip + expandable flyout for workspaces and chats.
+ * Toolbar actions live on the strip; the flyout holds search, lists, and resize.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -14,7 +14,6 @@ import {
   clampDockWidth,
   dismissDockFlyout,
   DOCK_DIVIDER_H_CLASS,
-  DOCK_FOOTER_CLASS,
   DOCK_INSET_CLASS,
   DOCK_EDGE_CONTAINER_CLASS,
   DOCK_EDGE_STRIP_CLASS,
@@ -150,7 +149,7 @@ export function LeftDock({
       className={dockFlyoutShellClassName(isResizing)}
       style={{ width: `${expandedWidthPx}px` }}
     >
-      <div className={cn(DOCK_INSET_CLASS, 'h-full gap-0 py-1')}>
+      <div className={cn(DOCK_INSET_CLASS, 'h-full gap-0 py-1 pr-2')}>
         <DockSearchPopover />
         <div className={workspacePanelClassName(workspaces.length)}>
           <DockSectionHeader label="Workspaces" />
@@ -178,9 +177,6 @@ export function LeftDock({
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <DockSectionHeader label="Chats" />
           <DockChatStrip workspaceId={activeWorkspaceId} />
-        </div>
-        <div className={DOCK_FOOTER_CLASS}>
-          <DockToolbar layout="horizontal" {...toolbarProps} collapseIcon="left" />
         </div>
       </div>
       <div

@@ -66,7 +66,7 @@ export function MentionPicker({
 
   return (
     <div
-      className={cn(appPopoverPanelClassName, 'absolute bottom-full left-0 z-50 mb-1 w-80 p-1.5 shadow-lg')}
+      className={cn(appPopoverPanelClassName, 'w-80 p-1.5 shadow-lg')}
       role="listbox"
       aria-label="Mention files"
       onMouseDown={(e) => e.preventDefault()}
@@ -121,9 +121,6 @@ export function MentionPicker({
               </button>
             );
           })}
-      </div>
-      <div className="px-2 pt-1.5 text-meta text-text-faint">
-        File mentions are inlined in your message — not attachment pills.
       </div>
     </div>
   );

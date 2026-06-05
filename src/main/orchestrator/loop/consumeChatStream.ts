@@ -30,6 +30,7 @@
  */
 
 import type { TokenUsage } from '@shared/types/chat.js';
+import { normalizeRegisteredToolName } from '@shared/tools/normalizeToolName.js';
 import type { ChatStreamDelta } from '../../providers/chatClient.js';
 import { InlineReasoningRouter } from './inlineReasoningRouter.js';
 
@@ -280,7 +281,10 @@ export async function consumeChatStream(
       if (!partialToolCalls[idx]) partialToolCalls[idx] = { argumentsBuf: '' };
       const tc = partialToolCalls[idx]!;
       if (delta.toolCallDelta.id !== undefined) tc.id = delta.toolCallDelta.id;
-      if (delta.toolCallDelta.name !== undefined) tc.name = delta.toolCallDelta.name;
+      if (delta.toolCallDelta.name !== undefined) {
+        const normalized = normalizeRegisteredToolName(delta.toolCallDelta.name);
+        tc.name = normalized ?? delta.toolCallDelta.name.trim();
+      }
       // Gemini-only: capture the thoughtSignature on whichever delta
       // carries it. The transport attaches it to the same delta as the
       // call's `name` (Gemini sends complete function-call parts in one

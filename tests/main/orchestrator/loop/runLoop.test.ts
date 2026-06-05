@@ -294,6 +294,15 @@ describe('runOrchestratorLoop — abort vs retriable error', () => {
       (e) => e.kind === 'run-status' && (e as { phase: string }).phase === 'connecting'
     );
     expect(connecting).toHaveLength(1);
+
+    const finishResult = events.find(
+      (e) => e.kind === 'tool-result' && e.result.name === 'finish'
+    );
+    expect(finishResult?.kind).toBe('tool-result');
+    if (finishResult?.kind === 'tool-result') {
+      expect(finishResult.result.ok).toBe(true);
+      expect(finishResult.result.output).toBe('Final answer.');
+    }
   });
 });
 

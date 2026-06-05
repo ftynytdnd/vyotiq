@@ -60,10 +60,8 @@ describe('LeftDock layout', () => {
     expect(screen.getByText('Chats')).toBeInTheDocument();
     expect(screen.getByRole('tablist', { name: 'Workspaces' })).toBeInTheDocument();
     expect(screen.getByRole('tablist', { name: 'Chats in workspace' })).toBeInTheDocument();
-    expect(within(nav).getByRole('button', { name: 'New chat' })).toBeInTheDocument();
-    expect(
-      screen.getByRole('navigation', { name: 'Workspace and session navigation rail' })
-    ).toBeInTheDocument();
+    const rail = screen.getByRole('navigation', { name: 'Workspace and session navigation rail' });
+    expect(within(rail).getByRole('button', { name: 'New chat' })).toBeInTheDocument();
     expect(screen.getByRole('separator', { name: 'Resize navigation dock' })).toBeInTheDocument();
   });
 

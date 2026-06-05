@@ -86,8 +86,7 @@ export const useAppViewStore = create<AppViewStore>((set, get) => ({
   setSettingsSection: (section) => {
     set({ settingsSection: section, aboutOpen: section === 'about' });
     if (isPersistableSettingsSection(section)) {
-      const ui = useSettingsStore.getState().settings.ui ?? {};
-      void vyotiq.settings.set({ ui: { ...ui, lastSettingsTab: section } });
+      void vyotiq.settings.set({ ui: { lastSettingsTab: section } });
     }
   },
   openAbout: () => {

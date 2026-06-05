@@ -17,15 +17,12 @@ export function flushPanelWidthPersistence(): void {
   if (keys.length === 0) return;
   const snapshot = { ...pendingByKey };
   pendingByKey = {};
-  const ui = useSettingsStore.getState().settings.ui ?? {};
-  const prev = ui.panelWidths ?? {};
+  const prev = useSettingsStore.getState().settings.ui?.panelWidths ?? {};
   const next = { ...prev };
   for (const key of keys) {
     next[key] = snapshot[key]!;
   }
-  void vyotiq.settings.set({
-    ui: { ...ui, panelWidths: next }
-  }).catch(() => {
+  void vyotiq.settings.set({ ui: { panelWidths: next } }).catch(() => {
     /* best-effort on unload */
   });
 }

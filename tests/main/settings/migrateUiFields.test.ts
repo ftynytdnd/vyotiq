@@ -30,4 +30,9 @@ describe('normalizeSettingsPatch', () => {
     const patch = normalizeSettingsPatch({ ui: { sidebarVisible: false } });
     expect(patch.ui).toEqual({ dockExpanded: false });
   });
+
+  it('clamps legacy dockWidth values before IPC validation', () => {
+    const patch = normalizeSettingsPatch({ ui: { dockWidth: 200, theme: 'dark' } });
+    expect(patch.ui).toEqual({ dockWidth: 220, theme: 'dark' });
+  });
 });

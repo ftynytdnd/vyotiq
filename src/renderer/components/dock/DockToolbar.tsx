@@ -67,8 +67,8 @@ export function DockToolbar({
     },
     {
       id: 'search',
-      label: 'Search chats',
-      title: 'Search chats (Ctrl+K)',
+      label: 'Search chats and files',
+      title: 'Search chats and files (Ctrl+K)',
       active: searchOpen,
       onClick: onToggleSearch
     },

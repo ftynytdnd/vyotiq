@@ -3,6 +3,7 @@
  * deprecated `sidebarOpen` → `dockExpanded` / `dockWidth`.
  */
 
+import { normalizeDockWidthInUi } from '@shared/dock/dockWidth.js';
 import type { AppSettings } from '@shared/types/ipc.js';
 
 type UiRecord = Record<string, unknown>;
@@ -59,7 +60,10 @@ export function normalizeSettingsPatch(patch: Partial<AppSettings>): Partial<App
   // "patch must be a non-null object" rejection instead of this
   // function throwing a raw TypeError on `patch.ui`.
   if (!patch || typeof patch !== 'object' || !patch.ui) return patch;
-  const { ui, changed } = migrateLegacyDockUi({ ...patch.ui } as UiRecord);
+  let { ui, changed } = migrateLegacyDockUi({ ...patch.ui } as UiRecord);
+  const dock = normalizeDockWidthInUi(ui);
+  ui = dock.ui;
+  changed = changed || dock.changed;
   if (!changed) return patch;
   return { ...patch, ui: ui as AppSettings['ui'] };
 }

@@ -33,10 +33,12 @@ import type {
 import type { ProviderDialect } from '@shared/types/provider.js';
 import { buildOrchestratorSystemPrompt } from '../../harness/harnessLoader.js';
 import { refreshEnvelopes } from '../contextManager.js';
+import { tryParseArgumentsRecord } from './parseToolArgs.js';
 import {
-  parseStringArgFromBuf,
-  tryParseArgumentsRecord
-} from './parseToolArgs.js';
+  emitFinishToolSettlement,
+  resolveFinishSummary
+} from './finishIntercept.js';
+import { normalizeRegisteredToolName } from '@shared/tools/normalizeToolName.js';
 import { parseAskUserArgs, resolveAskUserPayload } from '@shared/text/parseAskUser.js';
 import { backoff } from '../retry.js';
 import { isAbortError } from '../abortSignal.js';
@@ -417,11 +419,16 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         const finishedToolCalls = turn.partialToolCalls.filter((tc) => tc?.name);
         lockToolCallIds(finishedToolCalls);
 
-        let finishCall = finishedToolCalls.find((tc) => tc.name === 'finish');
-        const askUserCall = finishedToolCalls.find((tc) => tc.name === 'ask_user');
-        const actionTools = finishedToolCalls.filter(
-          (tc) => tc.name !== 'finish' && tc.name !== 'ask_user'
-        );
+        let finishCall: (typeof finishedToolCalls)[number] | undefined;
+        let askUserCall: (typeof finishedToolCalls)[number] | undefined;
+        const actionTools: typeof finishedToolCalls = [];
+        for (const tc of finishedToolCalls) {
+          const canonical = normalizeRegisteredToolName(tc.name);
+          if (canonical) tc.name = canonical;
+          if (canonical === 'finish' && !finishCall) finishCall = tc;
+          else if (canonical === 'ask_user' && !askUserCall) askUserCall = tc;
+          else actionTools.push(tc);
+        }
 
         // When both terminal pause and stop tools appear, clarification wins.
         if (finishCall && askUserCall) {
@@ -455,13 +462,11 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               actionTools: actionTools.length
             });
           } else {
-            const summary =
-              parseStringArgFromBuf(finishCall.argumentsBuf, 'summary') ||
-              turn.assistantText.trim() ||
-              'Done.';
+            const summary = resolveFinishSummary(finishCall, turn.assistantText);
             if (!turn.hadText) {
               emitFinalAnswer(emit, summary);
             }
+            emitFinishToolSettlement(finishCall, summary, emit);
             runStateAcc.lastAction = 'answer';
             log.info('finish tool call — delivering final answer', {
               iteration: iter,
@@ -619,6 +624,20 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               }
             }
           }
+        }
+
+        if (finishCall && actionTools.length > 0) {
+          const summary = resolveFinishSummary(finishCall, turn.assistantText);
+          if (!turn.hadText) {
+            emitFinalAnswer(emit, summary);
+          }
+          emitFinishToolSettlement(finishCall, summary, emit, messages);
+          runStateAcc.lastAction = 'answer';
+          log.info('deferred finish — delivering final answer after co-emitted tools', {
+            iteration: iter,
+            summaryChars: summary.length
+          });
+          return {};
         }
 
         if (didWork) continue;

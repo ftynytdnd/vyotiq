@@ -2,6 +2,7 @@
  * Runtime shape gates for `settings:set` patches.
  */
 
+import { DOCK_WIDTH_MAX, DOCK_WIDTH_MIN } from '@shared/dock/dockWidth.js';
 import type { AppSettings } from '@shared/types/ipc.js';
 import {
   assertBoolean,
@@ -71,7 +72,11 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
   }
   for (const k of UI_NUMERIC_KEYS) {
     if (k in ui && ui[k] !== undefined) {
-      assertNumber(channel, `patch.ui.${k}`, ui[k], { integer: true, min: 180, max: 320 });
+      assertNumber(channel, `patch.ui.${k}`, ui[k], {
+        integer: true,
+        min: DOCK_WIDTH_MIN,
+        max: DOCK_WIDTH_MAX
+      });
     }
   }
   for (const k of UI_STRING_KEYS) {

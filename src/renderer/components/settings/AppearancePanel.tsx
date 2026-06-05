@@ -33,10 +33,10 @@ export function AppearancePanel() {
   const reducedMotion = ui.reducedMotion ?? false;
 
   const apply = (next: Partial<typeof ui>) => {
-    const merged = { ...ui, ...next };
     void vyotiq.settings
-      .set({ ui: merged })
+      .set({ ui: next })
       .then(() => {
+        const merged = { ...ui, ...next };
         applyAppTheme(themePrefsFromSettings({ ...settings, ui: merged }));
         void setSettings();
       })

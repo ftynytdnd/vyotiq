@@ -183,6 +183,8 @@ function WorkspaceTab({ workspace, active, onActivate }: WorkspaceTabProps) {
         }}
         className={cn(
           dockTabRowClassName(active, 'workspace'),
+          (removeStep === 'confirm' || removeStep === 'choice') &&
+            'h-auto flex-col items-stretch gap-1 py-1',
           hasActiveRun && 'vyotiq-shimmer-pill',
           dragOver && 'bg-chrome-hover-strong ring-1 ring-border-subtle/70'
         )}
@@ -190,17 +192,20 @@ function WorkspaceTab({ workspace, active, onActivate }: WorkspaceTabProps) {
         aria-busy={hasActiveRun || undefined}
       >
         {removeStep === 'confirm' ? (
-          <DestructiveConfirm
-            variant="inline"
-            open
-            twoStep={false}
-            context={workspace.label}
-            question="Remove this workspace?"
-            confirmLabel="Continue"
-            cancelLabel="Cancel"
-            onConfirm={() => setRemoveStep('choice')}
-            onCancel={() => setRemoveStep('idle')}
-          />
+          <div className="mx-1 my-0.5 w-[calc(100%-0.5rem)]">
+            <DestructiveConfirm
+              variant="inline"
+              open
+              twoStep={false}
+              context={workspace.label}
+              question="Remove this workspace?"
+              confirmLabel="Continue"
+              cancelLabel="Cancel"
+              className="vx-inline-confirm--stacked flex-col items-stretch gap-1.5 rounded-inner border border-border-subtle/30 bg-surface-overlay/40 p-2"
+              onConfirm={() => setRemoveStep('choice')}
+              onCancel={() => setRemoveStep('idle')}
+            />
+          </div>
         ) : removeStep === 'choice' ? (
           <WorkspaceRemoveChoice
             label={workspace.label}
@@ -365,23 +370,20 @@ function WorkspaceRemoveChoice({
       role="group"
       aria-label={`Choose how to remove ${label}`}
       data-inline-confirm="true"
-      className="vx-inline-confirm flex min-w-0 items-center gap-2 px-1.5 py-0.5"
+      className="vx-inline-confirm vx-inline-confirm--stacked mx-1 my-0.5 w-[calc(100%-0.5rem)] rounded-inner border border-border-subtle/30 bg-surface-overlay/40 p-2"
     >
-      <span className="min-w-0 truncate text-row text-text-faint" aria-hidden>
-        {label}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-row text-text-secondary">
-        Delete chats too?
-      </span>
-      <Button size="sm" variant="ghost" onClick={onCancel}>
-        Cancel
-      </Button>
-      <Button size="sm" variant="secondary" onClick={onKeepChats}>
-        Keep chats
-      </Button>
-      <Button size="sm" variant="danger" onClick={onDeleteChats}>
-        Delete chats
-      </Button>
+      <span className="text-row text-text-secondary">Delete chats in “{label}” too?</span>
+      <div className="flex flex-wrap gap-1">
+        <Button size="sm" variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button size="sm" variant="secondary" onClick={onKeepChats}>
+          Keep chats
+        </Button>
+        <Button size="sm" variant="danger" onClick={onDeleteChats}>
+          Delete chats
+        </Button>
+      </div>
     </div>
   );
 }

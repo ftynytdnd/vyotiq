@@ -5,8 +5,10 @@
 import { randomUUID } from 'node:crypto';
 import type { ChatMessage, ChatPermissions, TimelineEvent } from '@shared/types/chat.js';
 import type { ToolName } from '@shared/types/tool.js';
+import { normalizeRegisteredToolName } from '@shared/tools/normalizeToolName.js';
 import { runToolByName } from '../toolRunner.js';
 import type { PartialToolCall } from './handleAssistantTurn.js';
+import { emitFinishToolSettlement, resolveFinishSummary } from './finishIntercept.js';
 import { emitRunStatus } from './emitRunStatus.js';
 import { batchIndicesByDependencies, parseDependsOnIds } from './toolDependencyBatches.js';
 import { parseToolArgs } from './parseToolArgs.js';
@@ -111,8 +113,25 @@ async function dispatchOneToolCall(
     );
     return { kind: 'skipped' };
   }
+  const canonical = normalizeRegisteredToolName(tc.name);
+  if (canonical) tc.name = canonical;
   if (!tc.id) tc.id = randomUUID();
   const callId = tc.id;
+
+  if (canonical === 'finish') {
+    const summary = resolveFinishSummary(tc, '');
+    emitFinishToolSettlement(tc, summary, emit, messages);
+    settleToolCallSurrogate(tc, opts, batchIndex);
+    return { kind: 'skipped' };
+  }
+  if (canonical === 'ask_user') {
+    tallies.refused += 1;
+    log.warn('ask_user reached handleToolCalls — run loop should intercept', {
+      callId
+    });
+    settleToolCallSurrogate(tc, opts, batchIndex);
+    return { kind: 'skipped' };
+  }
 
   if (opts.allowlist && !opts.allowlist.includes(tc.name)) {
     tallies.refused += 1;

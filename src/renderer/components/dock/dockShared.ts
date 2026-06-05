@@ -29,9 +29,11 @@ export const DOCK_TAB_TRIGGER_CLASS = 'vx-dock-tab-trigger';
 
 const DOCK_TAB_ROW_CLASS = cn('vx-dock-tab group app-no-drag shrink-0');
 
-export const DOCK_WIDTH_DEFAULT = 200;
-const DOCK_WIDTH_MIN = 180;
-export const DOCK_WIDTH_MAX = 320;
+export {
+  clampDockWidth,
+  DOCK_WIDTH_DEFAULT,
+  DOCK_WIDTH_MAX
+} from '@shared/dock/dockWidth.js';
 
 export const DOCK_INSET_CLASS = 'flex min-h-0 flex-1 flex-col gap-1 px-1.5';
 
@@ -85,10 +87,6 @@ export function workspacePanelClassName(_workspaceCount: number): string {
 export function collapseDockAfterSelection(): void {
   useDockSearchStore.getState().setOpen(false);
   useUiStore.getState().setDockExpanded(false);
-}
-
-export function clampDockWidth(width: number): number {
-  return Math.min(DOCK_WIDTH_MAX, Math.max(DOCK_WIDTH_MIN, Math.round(width)));
 }
 
 /** Active chat tab — stacks title row + context meter. */

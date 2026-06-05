@@ -3469,6 +3469,18 @@ mark.vyotiq-timeline-find-mark-active {
   scrollbar-width: thin;
 }
 
+.vx-inline-confirm--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  overflow: visible;
+}
+
+.vx-inline-confirm--stacked > span:last-of-type,
+.vx-inline-confirm--stacked > .min-w-0.flex-1 {
+  flex: none;
+  white-space: normal;
+}
+
 
 .vx-timeline-user-bubble {
   width: fit-content;

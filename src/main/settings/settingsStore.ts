@@ -12,6 +12,7 @@ import type { ChatPermissions } from '@shared/types/chat.js';
 import { DEFAULT_PERMISSIONS } from '@shared/constants.js';
 import { resolveSettingsSectionId } from '@shared/settings/settingsSection.js';
 import { readBlob, updateBlob, type SettingsBlob } from './blob.js';
+import { normalizeDockWidthInUi } from '@shared/dock/dockWidth.js';
 import { migrateLegacyDockUi, normalizeSettingsPatch } from './migrateUiFields.js';
 
 export { normalizeSettingsPatch };
@@ -109,6 +110,11 @@ function normalizeBlobForPersistence(blob: SettingsBlob): { blob: SettingsBlob; 
     let uiChanged = dockMigrated || stripped !== next.ui;
     if (ui.density === undefined) {
       ui = { ...ui, density: 'compact' };
+      uiChanged = true;
+    }
+    const dock = normalizeDockWidthInUi(ui);
+    if (dock.changed) {
+      ui = dock.ui;
       uiChanged = true;
     }
     if (uiChanged) {

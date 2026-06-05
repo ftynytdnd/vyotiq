@@ -17,6 +17,7 @@ import { MemoryInvocation } from './MemoryInvocation.js';
 import { RecallInvocation } from './RecallInvocation.js';
 import { UnknownInvocation } from './UnknownInvocation.js';
 import { AskUserInvocation } from './AskUserInvocation.js';
+import { FinishInvocation } from './FinishInvocation.js';
 
 interface ToolInvocationProps {
   call?: ToolCall;
@@ -128,10 +129,15 @@ export function ToolInvocation({
         />
       );
     case 'finish':
-      // Orchestrator action tools — dispatched specially by the run loop
-      // (intercepted by name), so they do not normally surface as standard
-      // tool cards. Fall back to the generic invocation card if one ever does.
-      return <UnknownInvocation call={call} result={result} dense={dense} rowKey={rowKey} />;
+      return (
+        <FinishInvocation
+          call={call}
+          result={result}
+          dense={dense}
+          rowKey={rowKey}
+          partial={partial}
+        />
+      );
     case 'unknown':
       return <UnknownInvocation call={call} result={result} dense={dense} rowKey={rowKey} />;
     default: {

@@ -113,9 +113,9 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
   },
 
   setActiveConversationByWorkspace: async (map) => {
-    const current = getState().settings;
-    const ui = { ...(current.ui ?? {}), activeConversationByWorkspace: map };
-    const updated = await vyotiq.settings.set({ ui });
+    const updated = await vyotiq.settings.set({
+      ui: { activeConversationByWorkspace: map }
+    });
     setState({ settings: { ...getState().settings, ...updated } });
   },
 
@@ -141,13 +141,13 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     const nextLastModel = { ...lastModel };
     delete nextLastModel[workspaceId];
     const nextCollapsed = collapsed.filter((id) => id !== workspaceId);
-    const nextUi = {
-      ...ui,
-      activeConversationByWorkspace: nextActive,
-      lastModelByWorkspace: nextLastModel,
-      collapsedWorkspaces: nextCollapsed
-    };
-    const updated = await vyotiq.settings.set({ ui: nextUi });
+    const updated = await vyotiq.settings.set({
+      ui: {
+        activeConversationByWorkspace: nextActive,
+        lastModelByWorkspace: nextLastModel,
+        collapsedWorkspaces: nextCollapsed
+      }
+    });
     setState({ settings: { ...getState().settings, ...updated } });
   },
 
@@ -167,8 +167,9 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
       return;
     }
     const next = { ...prev, [workspaceId]: { providerId: sel.providerId, modelId: sel.modelId } };
-    const ui = { ...(current.ui ?? {}), lastModelByWorkspace: next };
-    const updated = await vyotiq.settings.set({ ui });
+    const updated = await vyotiq.settings.set({
+      ui: { lastModelByWorkspace: next }
+    });
     setState({ settings: { ...getState().settings, ...updated } });
   },
 
@@ -179,8 +180,9 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     const set = new Set(prev);
     if (set.has(key)) set.delete(key);
     else set.add(key);
-    const ui = { ...(current.ui ?? {}), favoriteModels: [...set] };
-    const updated = await vyotiq.settings.set({ ui });
+    const updated = await vyotiq.settings.set({
+      ui: { favoriteModels: [...set] }
+    });
     setState({ settings: { ...getState().settings, ...updated } });
   }
 }));

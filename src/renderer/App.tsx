@@ -25,7 +25,6 @@ import { useToastStore } from './store/useToastStore.js';
 import { useConversationsStore } from './store/useConversationsStore.js';
 import { useChatStore } from './store/useChatStore.js';
 import { useUiStore } from './store/useUiStore.js';
-import { useDockSearchStore } from './store/useDockSearchStore.js';
 import { useTimelineUiStore } from './store/useTimelineUiStore.js';
 import { useAppViewStore, type SettingsSectionId } from './store/useAppViewStore.js';
 import { usePersistedPanelWidth } from './hooks/usePersistedPanelWidth.js';
@@ -101,9 +100,6 @@ export default function App() {
     useShallow((s) => ({ liveDiffTarget: s.target, dismissLiveDiff: s.dismiss }))
   );
   const attachmentPreviewWidth = usePersistedPanelWidth('attachmentPreview');
-  const dockExpanded = useUiStore((s) => s.dockExpanded);
-  const dockSearchOpen = useDockSearchStore((s) => s.open);
-  const dockModalOpen = dockExpanded || dockSearchOpen;
   const overlayOpen = previewAttachment !== null || liveDiffTarget !== null;
   const settingsOpen = appView === 'settings';
   const showToast = useToastStore((s) => s.show);
@@ -433,8 +429,8 @@ export default function App() {
           <main
             className="min-h-0 flex-1 overflow-hidden bg-surface-base"
             style={{ paddingLeft: DOCK_STRIP_WIDTH }}
-            inert={overlayOpen || (dockModalOpen && !settingsOpen) ? true : undefined}
-            aria-hidden={overlayOpen || (dockModalOpen && !settingsOpen) ? true : undefined}
+            inert={overlayOpen ? true : undefined}
+            aria-hidden={overlayOpen ? true : undefined}
           >
             {settingsOpen ? (
               <SettingsFullView initialSection={settingsSection} />

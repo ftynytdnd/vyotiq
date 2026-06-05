@@ -42,7 +42,7 @@ describe('DockWorkspaceTabs', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
 
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(screen.getByText('Delete chats too?')).toBeInTheDocument();
+    expect(screen.getByText(/Delete chats in/i)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Keep chats' }));
 
     expect(remove).toHaveBeenCalledWith(WORKSPACE.id, { deleteConversations: false });

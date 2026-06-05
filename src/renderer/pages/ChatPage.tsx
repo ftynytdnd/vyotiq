@@ -33,6 +33,7 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
   const setLastModelByWorkspace = useSettingsStore((s) => s.setLastModelByWorkspace);
   const activeConversationId = useActiveConversationId();
   const conversationList = useConversationsStore((s) => s.list);
+  const newConversation = useConversationsStore((s) => s.newConversation);
   const selecting = useConversationsStore((s) => s.selecting);
   const previewOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
   const liveDiffOpen = useFloatingLiveDiffStore((s) => s.target !== null);
@@ -213,6 +214,23 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
             isFresh && !needsSetup && 'min-h-full justify-center'
           )}
         >
+          {isFresh && !needsSetup && !activeConversationId && (
+            <div
+              className={cn(
+                'flex flex-col items-center justify-center gap-3 px-2 pb-8 pt-6 text-center',
+                emptyMinH
+              )}
+            >
+              <div className="text-body font-medium text-text-primary">Start a conversation</div>
+              <p className="max-w-md text-row text-text-muted">
+                Pick an existing chat in the dock or create a new one to begin.
+              </p>
+              <Button variant="secondary" size="sm" onClick={() => void newConversation()}>
+                New chat
+              </Button>
+            </div>
+          )}
+
           {isFresh && needsSetup && (
             <div className={cn('flex flex-col items-start justify-center px-2 pb-8 pt-6', emptyMinH)}>
               {!workspaceInfo.path ? (

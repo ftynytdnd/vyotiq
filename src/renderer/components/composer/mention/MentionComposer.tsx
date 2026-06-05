@@ -5,12 +5,13 @@
 
 import {
   useCallback,
-  useEffect,
   useLayoutEffect,
   useRef,
   type ClipboardEvent,
-  type KeyboardEvent
+  type KeyboardEvent,
+  type RefObject
 } from 'react';
+import { Popover } from '../../ui/Popover.js';
 import { AGENT_NAME } from '@shared/constants.js';
 import type { MentionRef } from '@shared/types/mention.js';
 import { detectAtToken } from '../atToken.js';
@@ -31,6 +32,7 @@ import { MentionPicker } from './MentionPicker.js';
 import { useMentionPicker, type MentionPickerRow } from './useMentionPicker.js';
 
 const TEXTAREA_MAX_HEIGHT = 168;
+const TEXTAREA_MIN_HEIGHT = 28;
 const CHIP_CLASS = 'vx-mention-chip';
 
 export interface MentionComposerProps {
@@ -167,12 +169,13 @@ export function MentionComposer({
     syncDomFromDoc(next);
   }, [value, syncDomFromDoc]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = editorRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, TEXTAREA_MAX_HEIGHT) + 'px';
-  }, [value]);
+    const next = Math.max(TEXTAREA_MIN_HEIGHT, Math.min(el.scrollHeight, TEXTAREA_MAX_HEIGHT));
+    el.style.height = `${next}px`;
+  }, [value, pickerOpen]);
 
   const applyMentionPick = useCallback(
     (path: string, ref?: Partial<MentionRef>) => {
@@ -240,20 +243,34 @@ export function MentionComposer({
     return false;
   };
 
+  const editorTriggerRef = editorRef as RefObject<HTMLElement | null>;
+
   return (
     <div className="relative min-w-0 flex-1">
-      <MentionPicker
+      <Popover
         open={pickerOpen}
-        query={atToken?.query ?? ''}
-        rows={rows}
-        loading={loading}
-        activeIndex={activeIndex}
-        onActiveIndexChange={setActiveIndex}
-        onPick={handlePickerPick}
         onClose={() => {
-          /* picker closes when @ token ends */
+          /* closes when @ token ends */
         }}
-      />
+        triggerRef={editorTriggerRef}
+        preferSide="top"
+        align="start"
+        offset={6}
+        zIndex={60}
+      >
+        <MentionPicker
+          open={pickerOpen}
+          query={atToken?.query ?? ''}
+          rows={rows}
+          loading={loading}
+          activeIndex={activeIndex}
+          onActiveIndexChange={setActiveIndex}
+          onPick={handlePickerPick}
+          onClose={() => {
+            /* picker closes when @ token ends */
+          }}
+        />
+      </Popover>
       <div
         ref={editorRef}
         role="textbox"

@@ -254,6 +254,21 @@ describe('setSettings — legacy keys are stripped on first write', () => {
     expect(onDisk?.ui?.collapsedWorkspaces).toEqual(['ws-X']);
   });
 
+  it('clamps legacy dockWidth below 220 on getSettings', async () => {
+    vi.doMock('@main/secrets/safeStore', () => safeStore);
+    const seed = (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed;
+    const peek = (safeStore as unknown as { __peek: (f: string) => unknown }).__peek;
+    seed(SETTINGS_FILE, {
+      ui: { dockWidth: 200, dockExpanded: false }
+    });
+    const { getSettings } = await import('@main/settings/settingsStore');
+    const got = await getSettings();
+    expect(got.ui?.dockWidth).toBe(220);
+
+    const onDisk = peek(SETTINGS_FILE) as { ui?: { dockWidth?: number } } | null;
+    expect(onDisk?.ui?.dockWidth).toBe(220);
+  });
+
   it('migrates sidebarVisible on disk to dockExpanded on getSettings', async () => {
     vi.doMock('@main/secrets/safeStore', () => safeStore);
     const seed = (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed;

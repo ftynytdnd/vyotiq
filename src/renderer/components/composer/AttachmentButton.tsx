@@ -25,6 +25,7 @@ interface AttachmentButtonProps {
   onPick: (path: string) => void;
   onPickFolder?: (folderPath: string) => void;
   onPickFromComputer: () => void;
+  disabled?: boolean;
   /** When true, skip the source menu and open the workspace picker directly. */
   workspaceOnly?: boolean;
   controlledFilter?: string;
@@ -39,6 +40,7 @@ export function AttachmentButton({
   onPick,
   onPickFolder,
   onPickFromComputer,
+  disabled = false,
   workspaceOnly = false,
   controlledFilter,
   onControlledFilterChange
@@ -56,11 +58,14 @@ export function AttachmentButton({
     }
   }, [open, workspaceOnly]);
 
-  const title = hasSelection
-    ? `Attach files · ${count} selected`
-    : 'Attach files';
+  const title = disabled
+    ? 'Start a chat before attaching files'
+    : hasSelection
+      ? `Attach files · ${count} selected`
+      : 'Attach files';
 
   const handleOpen = () => {
+    if (disabled) return;
     if (open) {
       onClose();
       return;
@@ -83,9 +88,11 @@ export function AttachmentButton({
         aria-haspopup="dialog"
         aria-expanded={open}
         title={title}
+        disabled={disabled}
         className={cn(
           chromeToolbarButtonClassName(open || hasSelection),
           'shrink-0',
+          disabled && 'cursor-not-allowed opacity-45',
           hasSelection ? 'gap-0.5 px-1' : 'h-[1.625rem] w-[1.625rem] px-0'
         )}
       >
