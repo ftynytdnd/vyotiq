@@ -53,7 +53,7 @@ export function TurnBlock({
             <div key={row.key}>{renderRow(row)}</div>
           ))}
 
-        {live && footer.length === 0 && <TurnRunningMeta live={live} />}
+        {live && <TurnRunningMeta live={live} />}
         {footer.map((row) => (
           <div key={row.key}>{renderRow(row)}</div>
         ))}

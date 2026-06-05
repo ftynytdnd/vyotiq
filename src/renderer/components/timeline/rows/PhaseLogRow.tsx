@@ -5,7 +5,6 @@
 import { cn } from '../../../lib/cn.js';
 import {
   isPhaseHeadlineLabel,
-  timelineAgentColumnClassName,
   timelinePhaseHeadingClassName
 } from '../shared/rowStyles.js';
 
@@ -18,7 +17,7 @@ export function PhaseLogRow({ label, tooltip }: PhaseLogRowProps) {
   const goldHeadline = isPhaseHeadlineLabel(label);
   return (
     <div
-      className={cn('vyotiq-stepfade-once py-0.5 text-meta', timelineAgentColumnClassName)}
+      className="vyotiq-stepfade-once py-0.5 text-meta"
       data-row-kind="phase"
     >
       <span

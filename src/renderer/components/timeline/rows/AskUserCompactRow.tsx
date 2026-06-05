@@ -3,9 +3,6 @@
  */
 
 import type { AskUserStructuredPayload } from '@shared/types/askUser.js';
-import { cn } from '../../../lib/cn.js';
-import { timelineAgentColumnClassName } from '../shared/rowStyles.js';
-
 interface AskUserCompactRowProps {
   payload: AskUserStructuredPayload;
   displayText: string;
@@ -19,10 +16,7 @@ export function AskUserCompactRow({ payload, displayText, status }: AskUserCompa
 
   return (
     <section
-      className={cn(
-        'vyotiq-stepfade-once rounded-inner bg-surface-raised/40 px-3 py-2',
-        timelineAgentColumnClassName
-      )}
+      className="vyotiq-stepfade-once rounded-inner bg-surface-raised/40 px-3 py-2"
       data-row-kind="ask-user-prompt"
       aria-label={title}
     >

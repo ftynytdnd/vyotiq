@@ -21,6 +21,18 @@ describe('selectRunRecoveryState', () => {
     expect(state?.suggestProviders).toBe(true);
   });
 
+  it('suggests providers for OpenRouter billing errors', () => {
+    const billing =
+      'OpenRouter: Insufficient balance. Top up at your provider dashboard or switch providers.';
+    expect(suggestProvidersForError(billing)).toBe(true);
+    const state = selectRunRecoveryState(
+      [{ kind: 'error', id: 'e2', ts: 2, message: billing }],
+      false,
+      'hi'
+    );
+    expect(state?.suggestProviders).toBe(true);
+  });
+
   it('returns null when a later non-error event superseded the failure', () => {
     const thought: TimelineEvent = {
       kind: 'agent-thought',

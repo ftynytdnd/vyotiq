@@ -1,5 +1,5 @@
 /**
- * `Timeline` scroll — manual_only: no center-on-send snap.
+ * `Timeline` scroll — prompt-to-top on send + sticky tail follow.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -94,7 +94,7 @@ describe('Timeline auto-scroll', () => {
     expect(scrollSpy).not.toHaveBeenCalled();
   });
 
-  it('follows the tail when sticky and new rows arrive', () => {
+  it('scrolls a new user prompt to the top on send', () => {
     render(
       <div data-testid="scroll-host" style={{ overflow: 'auto', height: 400 }}>
         <Timeline />
@@ -118,6 +118,9 @@ describe('Timeline auto-scroll', () => {
     });
 
     expect(scrollSpy).toHaveBeenCalled();
+    expect(
+      scrollSpy.mock.calls.some((call) => call[0]?.block === 'start')
+    ).toBe(true);
   });
 
   it('does not re-snap when the same user-prompt id is still the latest', () => {

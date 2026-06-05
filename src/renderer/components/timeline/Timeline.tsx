@@ -5,9 +5,9 @@
  * NOT mirror state into any other store.
  *
  * Auto-scroll is a three-state machine:
- *   - **Center-on-send:** a brand-new `user-prompt` event arrives →
- *     smooth-scroll that prompt to the viewport center and re-enable
- *     sticky follow, even if the user was reviewing earlier turns.
+ *   - **Prompt-to-top on send:** a brand-new `user-prompt` event arrives →
+ *     smooth-scroll that prompt to the top of the viewport and re-enable
+ *     sticky tail follow.
  *   - **Sticky:** while the user remains at (or near) the bottom,
  *     incoming streamed deltas keep the view pinned with smooth tail
  *     follow. Throttled via `requestAnimationFrame` so bursts of
@@ -63,6 +63,8 @@ import {
 interface TimelineProps {
   model?: ModelSelection | null;
   onOpenProviders?: () => void;
+  /** Portal target for the jump-to-latest chip (above the composer footer). */
+  jumpOverlayHost?: HTMLElement | null;
 }
 
 interface ErrorRowActions {
@@ -70,7 +72,7 @@ interface ErrorRowActions {
   onOpenProviders?: () => void;
 }
 
-export function Timeline({ model, onOpenProviders }: TimelineProps) {
+export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayHostProp }: TimelineProps) {
   // --- Stores (fixed order; never short-circuit hooks with `||`) ---
   const attachmentPreviewOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
   const floatingLiveDiffOpen = useFloatingLiveDiffStore((s) => s.target !== null);
@@ -84,6 +86,7 @@ export function Timeline({ model, onOpenProviders }: TimelineProps) {
   const assistantTexts = useChatStore((s) => s.assistantTexts);
   const reasoningTexts = useChatStore((s) => s.reasoningTexts);
   const lastUserPromptContent = useChatStore((s) => s.lastUserPromptContent);
+  const lastUserPromptId = useChatStore((s) => s.lastUserPromptId);
   const send = useChatStore((s) => s.send);
 
   const showToast = useToastStore((s) => s.show);
@@ -102,8 +105,8 @@ export function Timeline({ model, onOpenProviders }: TimelineProps) {
 
   // --- Local state ---
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
-  const [jumpOverlayHost, setJumpOverlayHost] = useState<HTMLElement | null>(null);
   const [findOpen, setFindOpen] = useState(false);
+  const prevPromptIdRef = useRef<string | undefined>(undefined);
 
   const onRetryLastMessage = useCallback(() => {
     const prompt = lastUserPromptContent?.trim();
@@ -206,9 +209,6 @@ export function Timeline({ model, onOpenProviders }: TimelineProps) {
     const parent = findScrollParent(containerRef.current);
     if (!parent) return;
 
-    const host = parent.parentElement;
-    setJumpOverlayHost(host);
-
     const onScroll = () => syncScrollTail();
 
     parent.addEventListener('scroll', onScroll, { passive: true });
@@ -221,9 +221,20 @@ export function Timeline({ model, onOpenProviders }: TimelineProps) {
     return () => {
       parent.removeEventListener('scroll', onScroll);
       ro.disconnect();
-      setJumpOverlayHost(null);
     };
   }, [companionOverlayOpen, syncScrollTail, tailScrollKey]);
+
+  // Scroll the newest user prompt to the top of the viewport on send.
+  useEffect(() => {
+    const id = lastUserPromptId;
+    if (!id || prevPromptIdRef.current === id) return;
+    prevPromptIdRef.current = id;
+    stickyRef.current = true;
+    setTimelineAtTail(true);
+    requestAnimationFrame(() => {
+      scrollToRowAnchor(id, 'smooth');
+    });
+  }, [lastUserPromptId, setTimelineAtTail]);
 
   // Keyboard navigation between user prompts (`g j` / `g k`) and Esc to
   // drop sticky scroll. The `g`-prefix uses a short timeout so accidental
@@ -387,25 +398,23 @@ export function Timeline({ model, onOpenProviders }: TimelineProps) {
         })}
         <div ref={bottomRef} className="h-px w-full shrink-0" aria-hidden />
       </div>
-      {jumpOverlayHost &&
+      {jumpOverlayHostProp &&
         showJumpToLatest &&
         events.length > 0 &&
         createPortal(
-          <div className="pointer-events-none absolute inset-x-0 bottom-12 z-30 flex justify-center px-4">
-            <button
-              type="button"
-              onClick={() => {
-                applyTailState(true, true, 0);
-                scrollToTail(true);
-              }}
-              className="vx-jump-to-latest-chip elev-1 pointer-events-auto flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors hover:bg-chrome-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong"
-              aria-label="Jump to latest messages"
-            >
-              <ArrowDown className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} aria-hidden />
-              <span className="vx-jump-to-latest-label">Latest</span>
-            </button>
-          </div>,
-          jumpOverlayHost
+          <button
+            type="button"
+            onClick={() => {
+              applyTailState(true, true, 0);
+              scrollToTail(true);
+            }}
+            className="vx-jump-to-latest-chip elev-1 pointer-events-auto flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors hover:bg-chrome-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong"
+            aria-label="Jump to latest messages"
+          >
+            <ArrowDown className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} aria-hidden />
+            <span className="vx-jump-to-latest-label">Latest</span>
+          </button>,
+          jumpOverlayHostProp
         )}
     </>
   );
@@ -476,6 +485,11 @@ function renderRow(
         <ErrorRow
           key={r.key}
           message={r.message}
+          {...(r.durationMs !== undefined ? { durationMs: r.durationMs } : {})}
+          {...(r.completedAt !== undefined ? { completedAt: r.completedAt } : {})}
+          {...(r.usage !== undefined ? { usage: r.usage } : {})}
+          {...(r.editCount !== undefined ? { editCount: r.editCount } : {})}
+          {...(r.fileCount !== undefined ? { fileCount: r.fileCount } : {})}
           onRetry={errorRowActions?.onRetry}
           {...(errorRowActions?.onOpenProviders
             ? { onOpenProviders: errorRowActions.onOpenProviders }

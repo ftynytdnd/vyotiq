@@ -15,26 +15,34 @@ interface ChatFooterProps {
   model: ModelSelection | null;
   onModelChange: (sel: ModelSelection) => void;
   onOpenProviders: () => void;
+  jumpOverlayHostRef?: (el: HTMLDivElement | null) => void;
 }
 
 export function ChatFooter({
   contentWidth,
   model,
   onModelChange,
-  onOpenProviders
+  onOpenProviders,
+  jumpOverlayHostRef
 }: ChatFooterProps) {
   return (
     <div
+      data-chat-footer
       className={cn(
         'shrink-0 px-4 pb-[max(6px,env(safe-area-inset-bottom,0px))] pt-3'
       )}
     >
       <div
         className={cn(
-          'mx-auto w-full transition-[max-width] duration-200 ease-out',
+          'relative mx-auto w-full transition-[max-width] duration-200 ease-out',
           contentWidth
         )}
       >
+        <div
+          ref={jumpOverlayHostRef}
+          className="pointer-events-none absolute inset-x-0 bottom-full z-30 mb-2 flex justify-center"
+          aria-hidden
+        />
         <div className={appComposerShellClassName}>
           <ChatComposerZone
             contentWidth="w-full"

@@ -1,14 +1,13 @@
 /**
  * Inline edit / revert composer — replaces the user prompt bubble in the
- * timeline. Reuses the main composer shell, model picker, and attachments.
+ * timeline. Edit mode is compact (text + send); model and attachments use
+ * the footer composer.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { Pencil, Undo2 } from 'lucide-react';
 import type { ModelSelection } from '@shared/types/provider.js';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
-import { MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
-import { AttachmentButton } from '../../composer/AttachmentButton.js';
 import { MentionComposer } from '../../composer/mention/MentionComposer.js';
 import {
   documentTrimmedPlain,
@@ -17,8 +16,6 @@ import {
   parseMentionDocument
 } from '../../composer/mention/mentionDocument.js';
 import { pickComputerFileMention } from '../../composer/mention/useMentionComputerPick.js';
-import { ModelPicker } from '../../composer/modelPicker/index.js';
-import { PromptAttachmentCards } from '../../composer/PromptAttachmentCards.js';
 import { useComposerAttachments } from '../../composer/useComposerAttachments.js';
 import { SendButton } from '../../composer/SendButton.js';
 import { Button } from '../../ui/Button.js';
@@ -58,24 +55,17 @@ export function InlinePromptSession({
   promptEventId,
   intent,
   model,
-  onModelChange,
-  onOpenProviders,
+  onModelChange: _onModelChange,
+  onOpenProviders: _onOpenProviders,
   initialAttachments = [],
   onCancel
 }: InlinePromptSessionProps) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
 
   const {
     attachments,
     setAttachments,
-    addPaths,
-    pickFromComputer,
-    remove: removeAttachment,
-    peekPendingMessageId,
-    onDrop,
-    onDragOver
+    peekPendingMessageId
   } = useComposerAttachments({
     conversationId,
     workspaceId,
@@ -141,10 +131,6 @@ export function InlinePromptSession({
     void session.confirm(attachments, attachId, mentions.length > 0 ? mentions : undefined);
   };
 
-  const selectedPaths = attachments.map(
-    (a) => a.workspacePath ?? a.storedPath ?? a.name
-  );
-
   const impact =
     session.phase.kind === 'ready' && session.totals ? (
       <RewindImpactSummary
@@ -159,22 +145,8 @@ export function InlinePromptSession({
       ref={rootRef}
       className={cn(
         'vyotiq-inline-prompt-session w-full ring-1 ring-accent/30',
-        appComposerShellClassName,
-        dragOver && 'ring-2 ring-accent/35'
+        appComposerShellClassName
       )}
-      onDragEnter={(e) => {
-        e.preventDefault();
-        if (e.dataTransfer.types.includes('Files')) setDragOver(true);
-      }}
-      onDragLeave={(e) => {
-        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-        setDragOver(false);
-      }}
-      onDragOver={onDragOver}
-      onDrop={(e) => {
-        setDragOver(false);
-        onDrop(e);
-      }}
       role="form"
       aria-label={session.isEdit ? 'Edit and resend message' : 'Revert to before this message'}
     >
@@ -215,37 +187,8 @@ export function InlinePromptSession({
           </p>
         )}
 
-        {session.isEdit && attachments.length > 0 && (
-          <PromptAttachmentCards
-            items={attachments}
-            editable
-            onRemove={removeAttachment}
-            className="mb-0.5"
-          />
-        )}
-
         {session.isEdit && (
           <>
-            <div className="vx-composer-chip-row">
-              <ModelPicker
-                value={model}
-                onChange={onModelChange}
-                onOpenProviders={onOpenProviders}
-              />
-              <AttachmentButton
-                open={pickerOpen}
-                onOpen={() => setPickerOpen(true)}
-                onClose={() => setPickerOpen(false)}
-                selected={selectedPaths}
-                onPick={(p) => void addPaths([p])}
-                onPickFromComputer={() => void pickFromComputer()}
-              />
-              {attachments.length > 0 && (
-                <span className="shrink-0 font-mono text-meta text-text-faint tabular-nums">
-                  {attachments.length}/{MAX_CHAT_ATTACHMENTS}
-                </span>
-              )}
-            </div>
             <div className="vx-composer-input-zone vx-composer-input-zone--footer">
               <div className="vx-composer-input-row">
                 <MentionComposer
@@ -276,10 +219,10 @@ export function InlinePromptSession({
               </div>
             </div>
             {!hasComposerContent(editDoc) && attachments.length === 0 && (
-              <p className="text-meta text-warning">Type a message or attach files to send.</p>
+              <p className="text-meta text-warning">Type a message to send.</p>
             )}
             {!model && (
-              <p className="text-meta text-warning">Select a model to resend.</p>
+              <p className="text-meta text-warning">Select a model in the composer below to resend.</p>
             )}
             {hasComposerContent(editDoc) &&
               intent.kind === 'edit' &&
@@ -311,4 +254,3 @@ export function InlinePromptSession({
     </div>
   );
 }
-

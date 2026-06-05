@@ -3,6 +3,17 @@ import { render, screen } from '@testing-library/react';
 import { ErrorRow } from '@renderer/components/timeline/rows/ErrorRow';
 
 describe('ErrorRow', () => {
+  it('renders merged run meta when duration is provided', () => {
+    render(
+      <ErrorRow
+        message="Provider failed."
+        durationMs={8400}
+        completedAt={Date.parse('2026-06-05T20:24:00')}
+      />
+    );
+    expect(screen.getByText(/done in 8\.4s/i)).toBeInTheDocument();
+  });
+
   it('renders retry and providers actions when supplied', () => {
     const onRetry = vi.fn();
     const onOpenProviders = vi.fn();

@@ -115,7 +115,16 @@ export type Row =
     runId: string;
     status?: 'pending' | 'submitted';
   }
-  | { kind: 'error'; key: string; message: string }
+  | {
+    kind: 'error';
+    key: string;
+    message: string;
+    durationMs?: number;
+    completedAt?: number;
+    usage?: TokenUsageAggregate;
+    editCount?: number;
+    fileCount?: number;
+  }
   | {
     kind: 'tool-group';
     key: string;
@@ -384,6 +393,10 @@ export function deriveRows(
       case 'error':
         closeGroups();
         out.push({ kind: 'error', key: e.id, message: e.message });
+        if (openRun) {
+          openRun.endedInError = true;
+          openRun.errorKey = e.id;
+        }
         break;
 
       case 'token-usage':

@@ -865,6 +865,7 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
       };
 
       const isWin = process.platform === 'win32';
+      const shellRuntime = isWin ? ('powershell' as const) : ('bash' as const);
       const child = spawn(cmd, argsFor(command), {
         cwd: ctx.workspacePath,
         detached: !isWin,
@@ -976,6 +977,7 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
           data: {
             tool: 'bash',
             command,
+            runtime: shellRuntime,
             stdout: '',
             stderr: '',
             exitCode: null,
@@ -1168,6 +1170,7 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
             data: {
               tool: 'bash',
               command,
+              runtime: shellRuntime,
               stdout,
               stderr,
               exitCode: code,

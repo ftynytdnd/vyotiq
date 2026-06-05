@@ -278,6 +278,7 @@ export function MentionComposer({
         aria-label={`Message ${AGENT_NAME}`}
         {...(ariaKeyshortcuts ? { 'aria-keyshortcuts': ariaKeyshortcuts } : {})}
         contentEditable={!disabled}
+        spellCheck={false}
         suppressContentEditableWarning
         data-placeholder={placeholder}
         className={cn(

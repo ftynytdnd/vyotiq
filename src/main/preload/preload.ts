@@ -115,6 +115,7 @@ const api: VyotiqApi = {
   },
 
   app: {
+    platform: process.platform,
     info: () => ipcRenderer.invoke(IPC.APP_INFO_GET),
     revealPath: (target) => ipcRenderer.invoke(IPC.APP_REVEAL_PATH, target),
     setThemeSource: (mode) => ipcRenderer.invoke(IPC.APP_SET_THEME_SOURCE, mode),

@@ -192,6 +192,7 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
   const emptyMinH = needsSetup ? 'min-h-[40vh]' : 'min-h-0 flex-1';
   /** Adaptive reading width — narrows when the secondary zone is open. */
   const contentWidth = zoneOpen ? 'max-w-2xl' : 'max-w-3xl';
+  const [jumpOverlayHost, setJumpOverlayHost] = useState<HTMLElement | null>(null);
 
   return (
     <RevertPromptProvider
@@ -269,7 +270,11 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
             </div>
           )}
 
-          <Timeline model={model} onOpenProviders={onOpenProviders} />
+          <Timeline
+            model={model}
+            onOpenProviders={onOpenProviders}
+            jumpOverlayHost={jumpOverlayHost}
+          />
         </div>
       </div>
       </div>
@@ -291,6 +296,7 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
         model={model}
         onModelChange={handleModelChange}
         onOpenProviders={onOpenProviders}
+        jumpOverlayHostRef={setJumpOverlayHost}
       />
     </div>
     </RevertPromptProvider>

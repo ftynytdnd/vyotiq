@@ -18,6 +18,8 @@
  */
 
 import type { ToolCall, ToolResult } from '@shared/types/tool.js';
+import { resolveShellToolTitle } from '@shared/shell/displayShell.js';
+import { getHostPlatform } from '../../../lib/hostPlatform.js';
 import type { DiffStreamSnapshot } from '../reducer/types.js';
 import { InvocationShell } from './shared/InvocationShell.js';
 import { DetailPane } from './shared/DetailPane.js';
@@ -52,7 +54,11 @@ export function BashInvocation({ call, result, dense, rowKey, partial, diffStrea
       ? (call.args['command'] as string)
       : (data?.command ?? '');
 
-  const summary = command ? `$ ${command}` : 'bash';
+  const shellTitle =
+    data?.runtime === 'powershell' || data?.runtime === 'bash'
+      ? data.runtime
+      : resolveShellToolTitle(getHostPlatform());
+  const summary = command ? `$ ${command}` : shellTitle;
 
   // Show the streaming diff while in flight against an on-disk file
   // body. Hidden once the call settles (the authoritative
@@ -117,7 +123,7 @@ export function BashInvocation({ call, result, dense, rowKey, partial, diffStrea
 
   return (
     <InvocationShell
-      title="bash"
+      title={shellTitle}
       summary={summary}
       mono
       ok={result ? result.ok : null}

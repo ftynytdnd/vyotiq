@@ -1,15 +1,18 @@
 import type { ToolName } from '@shared/types/tool.js';
+import { displayToolName } from '@shared/shell/displayShell.js';
 import { computeDiffOps } from '@shared/text/diff/computeDiffHunks.js';
+import { getHostPlatform } from '../../../../lib/hostPlatform.js';
 import type { ToolGroupChild } from '../deriveRows.js';
 export function toolGroupSummary(
   toolName: ToolName,
   children: ToolGroupChild[]
 ): { verb: string; primary: string; suffix: string } {
   const total = children.length;
+  const displayName = displayToolName(toolName, getHostPlatform());
   if (total >= 10) {
     return {
       verb: String(total),
-      primary: `${toolName} call${total === 1 ? '' : 's'}`,
+      primary: `${displayName} call${total === 1 ? '' : 's'}`,
       suffix: ''
     };
   }

@@ -2724,23 +2724,18 @@ textarea {
 
 /* Turn footer meta (run closer, token budget) � flush in the reading column. */
 .vx-timeline-log-row[data-row-kind='run-complete'] {
-  max-width: none;
-  border-radius: 0;
-  background: transparent;
-  padding: 0.375rem 0;
-  text-align: left;
-  font-size: var(--text-chat-meta);
-  color: var(--color-text-secondary);
-}
-
-.vx-timeline-log-row[data-row-kind='run-complete'] {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
   align-items: baseline;
   column-gap: 0.375rem;
-  padding-top: 0.5rem;
-  padding-bottom: 0.625rem;
+  max-width: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.5rem 0 0.625rem;
+  text-align: left;
+  font-size: var(--text-chat-meta);
+  color: var(--color-text-secondary);
 }
 
 .vx-timeline-phase {

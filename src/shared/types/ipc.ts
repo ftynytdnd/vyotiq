@@ -898,6 +898,10 @@ export interface VyotiqApi {
 
   app: {
 
+    /** Host OS platform (`process.platform` from main). */
+
+    platform: 'aix' | 'android' | 'darwin' | 'freebsd' | 'haiku' | 'linux' | 'openbsd' | 'sunos' | 'win32' | 'cygwin' | 'netbsd';
+
     /** Read the app's version + userData/settings/log paths. Cheap & idempotent. */
 
     info(): Promise<AppInfo>;

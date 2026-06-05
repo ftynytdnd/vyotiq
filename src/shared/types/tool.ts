@@ -97,6 +97,8 @@ export type ToolData =
   | {
     tool: 'bash';
     command: string;
+    /** Shell that executed the command (UI display). */
+    runtime?: 'powershell' | 'bash';
     stdout: string;
     stderr: string;
     /** Null if killed by signal. */
