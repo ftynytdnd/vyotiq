@@ -1,5 +1,5 @@
 /**
- * `Timeline` scroll — prompt-to-top on send + sticky tail follow.
+ * `Timeline` scroll — sticky tail follow without prompt-to-top on send.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -94,7 +94,7 @@ describe('Timeline auto-scroll', () => {
     expect(scrollSpy).not.toHaveBeenCalled();
   });
 
-  it('scrolls a new user prompt to the top on send', () => {
+  it('does not scroll on send (no prompt-to-top snap)', () => {
     render(
       <div data-testid="scroll-host" style={{ overflow: 'auto', height: 400 }}>
         <Timeline />
@@ -109,10 +109,6 @@ describe('Timeline auto-scroll', () => {
       content: 'hello agent'
     };
 
-    const anchor = document.createElement('div');
-    anchor.id = 'row-u-new';
-    document.body.appendChild(anchor);
-
     act(() => {
       useChatStore.setState((s) => ({
         ...s,
@@ -121,9 +117,8 @@ describe('Timeline auto-scroll', () => {
       }));
     });
 
-    expect(
-      scrollSpy.mock.calls.some((call) => call[0]?.block === 'start')
-    ).toBe(true);
+    const startScrolls = scrollSpy.mock.calls.filter((call) => call[0]?.block === 'start');
+    expect(startScrolls).toHaveLength(0);
   });
 
   it('does not scroll when transcript hydrates with a trailing non-prompt event', () => {

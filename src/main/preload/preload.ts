@@ -36,10 +36,7 @@ const api: VyotiqApi = {
   },
 
   workspace: {
-    get: () => ipcRenderer.invoke(IPC.WORKSPACE_GET),
-    pick: () => ipcRenderer.invoke(IPC.WORKSPACE_PICK),
     pickDirectory: () => ipcRenderer.invoke(IPC.WORKSPACE_PICK_DIRECTORY),
-    set: (path: string) => ipcRenderer.invoke(IPC.WORKSPACE_SET, path),
     listTree: (opts) => ipcRenderer.invoke(IPC.WORKSPACE_LIST_TREE, opts),
     list: () => ipcRenderer.invoke(IPC.WORKSPACES_LIST),
     add: (path?: string) => ipcRenderer.invoke(IPC.WORKSPACES_ADD, path),
@@ -49,6 +46,10 @@ const api: VyotiqApi = {
       ipcRenderer.invoke(IPC.WORKSPACES_REMOVE, id, opts),
     retryReachability: (id: string) =>
       ipcRenderer.invoke(IPC.WORKSPACES_RETRY_REACHABILITY, id)
+  },
+
+  tokens: {
+    estimate: (input) => ipcRenderer.invoke(IPC.TOKENS_ESTIMATE, input)
   },
 
   providers: {

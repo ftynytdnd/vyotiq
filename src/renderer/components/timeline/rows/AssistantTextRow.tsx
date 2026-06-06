@@ -12,6 +12,7 @@
  * text reaches the markdown parser.
  */
 
+import { memo } from 'react';
 import { Copy, Check } from 'lucide-react';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { AGENT_NAME } from '@shared/constants.js';
@@ -29,7 +30,7 @@ interface AssistantTextRowProps {
   model?: ModelSelection | null;
 }
 
-export function AssistantTextRow({ id, model: _model }: AssistantTextRowProps) {
+export const AssistantTextRow = memo(function AssistantTextRow({ id, model: _model }: AssistantTextRowProps) {
   const acc = useChatStore((s) => s.assistantTexts[id]);
 
   const { copied, copy } = useCopyFeedback();
@@ -80,4 +81,4 @@ export function AssistantTextRow({ id, model: _model }: AssistantTextRowProps) {
       </div>
     </div>
   );
-}
+});

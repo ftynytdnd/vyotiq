@@ -155,16 +155,16 @@ describe('InlinePromptSession', () => {
     await waitFor(() => expect(onCancel).toHaveBeenCalledOnce());
   });
 
-  it('does not render an inline model picker in edit mode', async () => {
+  it('renders an inline model picker in edit mode', async () => {
     installPreview(buildPreview({}));
 
-    const { findByRole, queryByRole } = renderSession({
+    const { findByRole } = renderSession({
       kind: 'edit',
       originalContent: 'hello'
     });
 
     await findByRole('textbox', { name: /Message Agent V/i });
-    expect(queryByRole('button', { name: /^Model:/i })).toBeNull();
+    expect(await findByRole('button', { name: /^Model:/i })).toBeInTheDocument();
   });
 
   it('rewinds then sends edited text on edit confirm', async () => {

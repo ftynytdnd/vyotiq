@@ -14,6 +14,7 @@ import { registerCheckpointsIpc } from './checkpoints.ipc.js';
 import { registerAppIpc } from './app.ipc.js';
 import { registerAttachmentsIpc } from './attachments.ipc.js';
 import { registerRendererLogRelay } from './rendererLogRelay.js';
+import { registerTokensIpc } from './tokens.ipc.js';
 import {
   abortRunsForConversation,
   abortRunsForProvider,
@@ -32,6 +33,7 @@ export function registerIpc(): void {
   registerWindowIpc();
   registerWorkspaceIpc();
   registerProvidersIpc();
+  registerTokensIpc();
   registerChatIpc();
   registerToolsIpc();
   registerMemoryIpc();

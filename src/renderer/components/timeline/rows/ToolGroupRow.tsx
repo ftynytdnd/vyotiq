@@ -2,7 +2,7 @@
  * ToolGroupRow — Cascade-style rolled-up line for each `tool-group` row.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '../../../lib/cn.js';
 import type { ToolName } from '@shared/types/tool.js';
 import {
@@ -33,7 +33,7 @@ interface ToolGroupRowProps {
 const LARGE_GROUP_THRESHOLD = 10;
 const MAX_EXPANDED_CHILDREN = 5;
 
-export function ToolGroupRow({ rowKey, toolName, items }: ToolGroupRowProps) {
+export const ToolGroupRow = memo(function ToolGroupRow({ rowKey, toolName, items }: ToolGroupRowProps) {
   const status = toolGroupStatus(items);
   const liveAutoExpand = toolGroupLiveAutoExpand(toolName, items);
   const { expanded, onToggle } = useTimelineRowExpand({ rowKey, liveAutoExpand });
@@ -171,7 +171,6 @@ export function ToolGroupRow({ rowKey, toolName, items }: ToolGroupRowProps) {
               {...(c.result ? { result: c.result } : {})}
               dense
               rowKey={`inv:${c.callId}`}
-              liveAutoExpand={false}
               groupExpanded={expanded}
               {...(c.partial ? { partial: true } : {})}
               {...(c.diffStream ? { diffStream: c.diffStream } : {})}
@@ -191,7 +190,7 @@ export function ToolGroupRow({ rowKey, toolName, items }: ToolGroupRowProps) {
       )}
     </div>
   );
-}
+});
 
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;

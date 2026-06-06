@@ -1,96 +1,56 @@
 /**
- * Composer footer status strip — live orchestrator phase during runs.
+ * Composer hint strip — ask-user reply prompt and off-tail scroll hint.
  */
 
-import { memo, useEffect, useMemo, useState } from 'react';
-import { useShallow } from 'zustand/react/shallow';
+import { memo } from 'react';
 import { useChatStore } from '../../store/useChatStore.js';
 import { useTimelineUiStore } from '../../store/useTimelineUiStore.js';
-import { formatTokensPerSecond } from '../../lib/formatTokens.js';
-import {
-  resolveLivePhaseHeadline,
-  shouldHideLivePhaseHeadline,
-  timelinePhaseHeadingClassName
-} from '../timeline/shared/rowStyles.js';
-import { shimmerText } from '../../lib/shimmer.js';
-import { cn } from '../../lib/cn.js';
-const TICK_MS = 1000;
+import type { PendingAskUserEvent } from '../../lib/pendingAskUser.js';
 
-export const ComposerStatusStrip = memo(function ComposerStatusStrip() {
+interface ComposerStatusStripProps {
+  pendingAskUser?: PendingAskUserEvent | null;
+}
+
+export const ComposerStatusStrip = memo(function ComposerStatusStrip({
+  pendingAskUser = null
+}: ComposerStatusStripProps) {
   const timelineAtTail = useTimelineUiStore((s) => s.timelineAtTail);
-  const { isProcessing, latest, runStartedAt, orchestratorUsage, hasEvents } = useChatStore(
-    useShallow((s) => ({
-      isProcessing: s.isProcessing,
-      latest: s.latestOrchestratorRunStatus,
-      runStartedAt: s.runStartedAt,
-      orchestratorUsage: s.orchestratorUsage,
-      hasEvents: s.events.length > 0
-    }))
-  );
-  const [tick, setTick] = useState(0);
+  const requestScrollToTail = useTimelineUiStore((s) => s.requestScrollToTail);
+  const hasEvents = useChatStore((s) => s.events.length > 0);
 
-  useEffect(() => {
-    if (!isProcessing) return;
-    const id = setInterval(() => setTick((n) => n + 1), TICK_MS);
-    return () => clearInterval(id);
-  }, [isProcessing]);
-
-  const label = useMemo(() => {
-    if (!isProcessing) return null;
-    if (latest) {
-      if (shouldHideLivePhaseHeadline(latest.phase)) return null;
-      return resolveLivePhaseHeadline(latest.phase, latest.label ?? 'Working…');
-    }
-    return 'Starting…';
-  }, [isProcessing, latest]);
-
-  const tokRate = useMemo(() => {
-    if (!isProcessing || !orchestratorUsage) return null;
-    const completion =
-      orchestratorUsage.latest.completionTokens +
-      (orchestratorUsage.inFlight?.completionTokens ?? 0);
-    return formatTokensPerSecond(
-      completion > 0 ? completion : undefined,
-      orchestratorUsage.streamStartedAt,
-      Date.now()
+  if (pendingAskUser) {
+    const title =
+      pendingAskUser.payload.title?.trim() ||
+      'Answer in the panel above, or type here and press Send.';
+    return (
+      <span
+        className="vx-composer-status-strip min-w-0 flex-1 truncate px-0.5 text-meta text-text-secondary"
+        role="status"
+        aria-live="polite"
+      >
+        <span className="font-medium text-text-primary">Reply needed</span>
+        {' — '}
+        {title}
+      </span>
     );
-  }, [isProcessing, orchestratorUsage, tick]);
+  }
 
   if (!timelineAtTail && hasEvents) {
     return (
       <span className="vx-composer-status-strip min-w-0 flex-1 truncate px-0.5 text-meta text-text-faint">
         Scroll down or use{' '}
-        <span className="vx-jump-to-latest-label">Latest</span> for new messages
+        <button
+          type="button"
+          className="vx-jump-to-latest-label cursor-pointer underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong"
+          onClick={requestScrollToTail}
+          aria-label="Jump to latest messages"
+        >
+          Latest
+        </button>{' '}
+        for new messages
       </span>
     );
   }
 
-  if (!isProcessing || !label) return null;
-
-  const anchor = latest?.ts ?? runStartedAt ?? Date.now();
-  const elapsed = Math.max(0, Math.floor((Date.now() - anchor) / 1000));
-  const shimmer = latest?.phase !== 'connecting';
-
-  return (
-    <div
-      className="vx-composer-status-strip flex min-w-0 flex-1 items-baseline px-0.5 text-meta"
-      aria-live="polite"
-    >
-      <span
-        className={cn(
-          timelinePhaseHeadingClassName(true),
-          shimmerText(shimmer),
-          'min-w-0 shrink'
-        )}
-      >
-        {label}
-      </span>
-      {elapsed > 0 && (
-        <span className="ml-1.5 text-text-faint tabular-nums">{elapsed}s</span>
-      )}
-      {tokRate && (
-        <span className="ml-1.5 font-mono text-text-faint tabular-nums">{tokRate}</span>
-      )}
-    </div>
-  );
+  return null;
 });

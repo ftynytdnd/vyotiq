@@ -2,13 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
-import { ComposerFooter } from './ComposerFooter.js';
 import { ComposerStatusStrip } from './ComposerStatusStrip.js';
 import { AttachmentButton } from './AttachmentButton.js';
 import { SendButton } from './SendButton.js';
 import { ModelPicker } from './modelPicker/index.js';
 import { TokenUsagePill } from './TokenUsagePill.js';
-import { AttachmentCollapsible } from './AttachmentCollapsible.js';
+import { AttachmentChipRow } from './AttachmentChipRow.js';
 import { useComposerAttachments } from './useComposerAttachments.js';
 import { useComposerHistory } from './useComposerHistory.js';
 import { MentionComposer } from './mention/MentionComposer.js';
@@ -19,11 +18,8 @@ import {
   hasComposerContent,
   parseMentionDocument
 } from './mention/mentionDocument.js';
-import { pickComputerFileMention } from './mention/useMentionComputerPick.js';
 import { appComposerShellClassName } from '../ui/SurfaceShell.js';
 import { useChatStore } from '../../store/useChatStore.js';
-import { useAttachmentPreviewStore } from '../../store/useAttachmentPreviewStore.js';
-import { useFloatingLiveDiffStore } from '../../store/useFloatingLiveDiffStore.js';
 import {
   useSettingsStore,
   selectEffectivePermissions
@@ -34,6 +30,7 @@ import { useToastStore } from '../../store/useToastStore.js';
 import { findPendingAskUserEvent } from '../../lib/pendingAskUser.js';
 import { useAskUserDraftStore } from '../../store/askUserDraft.js';
 import { useRevertPrompt } from '../timeline/revert/RevertPromptContext.js';
+import { useComposerTokenEstimate } from './useComposerTokenEstimate.js';
 
 const TEXTAREA_MAX_HEIGHT = 168;
 
@@ -41,23 +38,13 @@ interface ComposerProps {
   model: ModelSelection | null;
   onModelChange: (sel: ModelSelection) => void;
   onOpenProviders: () => void;
-  /** `footer` — flush inside the unified chat footer card. */
-  variant?: 'card' | 'footer';
 }
 
-export function Composer({
-  model,
-  onModelChange,
-  onOpenProviders,
-  variant = 'card'
-}: ComposerProps) {
+export function Composer({ model, onModelChange, onOpenProviders }: ComposerProps) {
   const [text, setText] = useState('');
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  /** Tracks whether the current `text` came from history recall so
-   *  ArrowDown can walk back toward the tail. Reset on any user
-   *  keystroke that isn't history navigation. */
   const fromHistoryRef = useRef(false);
+  const revertPrompt = useRevertPrompt();
   const {
     isProcessing,
     awaitingAskUser,
@@ -92,6 +79,10 @@ export function Composer({
     }))
   );
   const activeWorkspaceIdForAttach = useWorkspaceStore((s) => s.activeId);
+  const workspacePath = useWorkspaceStore((s) => {
+    const entry = s.activeId ? s.list.find((w) => w.id === s.activeId) : undefined;
+    return entry?.path ?? s.info.path ?? '';
+  });
   const persistAttachmentDraft = useCallback(
     (items: Parameters<typeof setAttachmentDraft>[1]) => {
       if (!conversationId) return;
@@ -101,8 +92,6 @@ export function Composer({
   );
   const {
     attachments,
-    addPaths,
-    addFolder,
     pickFromComputer,
     remove: removeAttachment,
     clearAttachments,
@@ -116,35 +105,13 @@ export function Composer({
     initialAttachments: storeAttachmentDraft,
     onAttachmentsChange: persistAttachmentDraft
   });
-  const selectedPaths = attachments.map(
-    (a) => a.workspacePath ?? a.storedPath ?? a.name
-  );
-  // Effective permissions resolve through three layers:
-  // DEFAULT_PERMISSIONS → settings.permissions (global) → per-workspace
-  // override (if any). Driven by the active workspace id; switching
-  // workspaces immediately re-resolves the menu / send pipeline so the
-  // user can see the chosen folder's policy without a reload.
   const settings = useSettingsStore((s) => s.settings);
   const permissions = selectEffectivePermissions(activeWorkspaceIdForAttach, settings);
 
   const history = useComposerHistory(events);
 
-  /** Debounced draft persistence. A single `requestAnimationFrame`
-   *  coalesces rapid keystrokes into one store write per frame so
-   *  sibling subscribers (dock, ChatPage) don't re-render on every
-   *  character. */
   const draftRafRef = useRef<number | null>(null);
   const pendingDraftRef = useRef('');
-  /**
-   * Mirrors the most recent value this composer wrote to
-   * `storeDraft` (via `flushDraft` or the post-send synchronous
-   * clear). The hydration effect compares incoming `storeDraft`
-   * against this and short-circuits when they match — that
-   * guarantees the effect's `history.reset()` and
-   * `fromHistoryRef = false` side-effects only fire on EXTERNAL
-   * draft changes (i.e. a conversation switch landing the next
-   * slice's persisted draft into the textarea). Audit fix §3.1.1.
-   */
   const selfDraftRef = useRef<string | null>(null);
 
   const flushDraft = (textToWrite: string) => {
@@ -160,18 +127,13 @@ export function Composer({
     });
   };
 
-  // Hydrate `text` from the active slice's draft on mount and whenever
-  // the active conversation (or its draft) changes.
-  //
-  // The `selfDraftRef` guard skips the effect when `storeDraft` flips
-  // because of OUR OWN `flushDraft` write — the incoming value is
-  // already what `text` holds, and re-running `history.reset()` on
-  // every keystroke would silently break a held-ArrowUp history walk.
-  // Conversation switches still hydrate because the new slice's
-  // draft can never match what this instance just wrote into the
-  // previous slice. Audit fix §3.1.1.
   useEffect(() => {
+    if (draftRafRef.current !== null) {
+      cancelAnimationFrame(draftRafRef.current);
+      draftRafRef.current = null;
+    }
     if (storeDraft === selfDraftRef.current) return;
+    selfDraftRef.current = storeDraft;
     setText(storeDraft);
     fromHistoryRef.current = false;
     history.reset();
@@ -187,6 +149,11 @@ export function Composer({
   }, []);
 
   const showToast = useToastStore((s) => s.show);
+
+  const pendingAskUser = useMemo(
+    () => findPendingAskUserEvent(events, awaitingAskUser),
+    [events, awaitingAskUser]
+  );
 
   const handleSend = async () => {
     if (isProcessing && !awaitingAskUser) {
@@ -225,10 +192,7 @@ export function Composer({
       return;
     }
     if (!trimmed && attachments.length === 0) return;
-    if (!model) {
-      showToast('Select a model before sending.', 'danger');
-      return;
-    }
+    if (!model) return;
     revertPrompt?.closeSession();
     const toSendMeta = attachments;
     const promptEventId =
@@ -237,18 +201,11 @@ export function Composer({
     clearAttachments();
     fromHistoryRef.current = false;
     history.reset();
-    // Clear the store draft synchronously so a post-send switch away
-    // and back doesn't resurrect the just-sent text.
     if (conversationId) {
       if (draftRafRef.current !== null) {
         cancelAnimationFrame(draftRafRef.current);
         draftRafRef.current = null;
       }
-      // Mirror the synchronous clear into `selfDraftRef` so the
-      // hydration effect (which observes the resulting `storeDraft`
-      // = '' transition) recognises it as our own write and
-      // short-circuits, leaving `text` already-cleared. Audit fix
-      // §3.1.1.
       selfDraftRef.current = '';
       setDraft(conversationId, '');
       setAttachmentDraft(conversationId, []);
@@ -269,11 +226,14 @@ export function Composer({
     flushDraft(next);
   };
 
-  const pendingAskUser = useMemo(
-    () => findPendingAskUserEvent(events, awaitingAskUser),
-    [events, awaitingAskUser]
-  );
   const composerDoc = parseMentionDocument(text);
+  const draftTokenEstimate = useComposerTokenEstimate({
+    model,
+    prompt: documentToPlainText(composerDoc),
+    attachmentMeta: attachments,
+    workspacePath,
+    enabled: !isProcessing && !awaitingAskUser
+  });
   const draftHasAnswer = useAskUserDraftStore((s) =>
     pendingAskUser
       ? s.hasAnyAnswer(
@@ -292,177 +252,110 @@ export function Composer({
     : (canSendContent || awaitingAskUser) && model
       ? 'ready'
       : 'idle';
-  const footerMode = variant === 'footer';
-  const attachmentPreviewOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
-  const floatingLiveDiffOpen = useFloatingLiveDiffStore((s) => s.target !== null);
-  const zoneOpen = attachmentPreviewOpen || floatingLiveDiffOpen;
-  const revertPrompt = useRevertPrompt();
+  const sendDisabled =
+    !canSendContent && sendState !== 'processing' && !awaitingAskUser;
 
   const canAttach = Boolean(conversationId && activeWorkspaceIdForAttach);
-  const attachmentButton = (
-    <AttachmentButton
-      open={pickerOpen}
-      onOpen={() => setPickerOpen(true)}
-      onClose={() => setPickerOpen(false)}
-      selected={selectedPaths}
-      onPick={(p) => void addPaths([p])}
-      onPickFolder={(p) => void addFolder(p)}
-      onPickFromComputer={() => void pickFromComputer()}
-      disabled={!canAttach}
-    />
-  );
 
-  const chipRow = (
-    <div className="vx-composer-chip-row">
-      <ModelPicker
-        value={model}
-        onChange={onModelChange}
-        onOpenProviders={onOpenProviders}
-      />
-      {attachmentButton}
-      <ComposerStatusStrip />
-      <TokenUsagePill total={totalRunUsage} orchestrator={orchestratorUsage} />
-      {footerMode && attachments.length > 0 && (
-        <span className="shrink-0 font-mono text-meta text-text-faint tabular-nums">
-          {attachments.length}/{MAX_CHAT_ATTACHMENTS}
-        </span>
-      )}
-    </div>
-  );
-
-  const mentionInput = (
-    <MentionComposer
-      value={text}
-      onChange={onTextChange}
-      onPaste={onPaste}
-      onPickFromComputer={async () => {
-        if (!conversationId || !activeWorkspaceIdForAttach) return null;
-        return pickComputerFileMention({
-          conversationId,
-          workspaceId: activeWorkspaceIdForAttach,
-          messageId: peekPendingMessageId()
-        });
-      }}
-      ariaKeyshortcuts="Enter Shift+Enter ArrowUp ArrowDown Escape"
-      placeholder="@ to mention files, or describe your task…"
-      className={cn(
-        footerMode ? 'min-h-[1.75rem] leading-5' : 'min-h-[2.5rem]',
-        footerMode && 'min-w-0 flex-1',
-        'transition-[height] duration-150 ease-out motion-reduce:transition-none'
-      )}
-      style={{ maxHeight: TEXTAREA_MAX_HEIGHT }}
-      onKeyDown={(e) => {
-        const ne = e.nativeEvent as unknown as { isComposing?: boolean; keyCode?: number };
-        if (ne.isComposing || ne.keyCode === 229) return;
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          if (canSendContent && !model) {
-            showToast('Select a model before sending.', 'danger');
-            return;
-          }
-          if (!canSendContent && !isProcessing && !awaitingAskUser) return;
-          void handleSend();
-          return;
-        }
-        if (e.key === 'ArrowUp' && !documentToPlainText(composerDoc).length) {
-          e.preventDefault();
-          const recalled = history.recall('up');
-          if (recalled !== null) {
-            setText(recalled);
-            fromHistoryRef.current = true;
-          }
-          return;
-        }
-        if (e.key === 'ArrowDown' && fromHistoryRef.current) {
-          e.preventDefault();
-          const recalled = history.recall('down');
-          setText(recalled ?? '');
-          if (recalled === null) fromHistoryRef.current = false;
-        }
-      }}
-    />
-  );
-
-  const handleDragEnter = (e: React.DragEvent) => {
-    e.preventDefault();
-    if (!canAttach) return;
-    if (e.dataTransfer.types.includes('Files')) setDragOver(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-    setDragOver(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    setDragOver(false);
-    onDrop(e);
-  };
+  const sendButtonProps = {
+    onClick: () => void handleSend(),
+    state: sendState,
+    disabled: sendDisabled
+  } as const;
 
   return (
     <div className="relative w-full">
       <div
         className={cn(
-          'flex flex-col overflow-hidden transition-shadow duration-150',
-          footerMode
-            ? 'bg-transparent'
-            : appComposerShellClassName,
-          dragOver && 'ring-2 ring-accent/35 ring-offset-0'
+          appComposerShellClassName,
+          'flex flex-col overflow-hidden transition-[background] duration-150',
+          dragOver && 'vx-composer-shell--drag-over'
         )}
-        onDragEnter={handleDragEnter}
-        onDragLeave={handleDragLeave}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          if (!canAttach) return;
+          if (e.dataTransfer.types.includes('Files')) setDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+          setDragOver(false);
+        }}
         onDragOver={onDragOver}
-        onDrop={handleDrop}
+        onDrop={(e) => {
+          setDragOver(false);
+          onDrop(e);
+        }}
       >
-        <div className="flex min-w-0 flex-col">
-          <div className="flex min-w-0 flex-1 flex-col">
-            {pendingAskUser ? (
-              <div
-                className="mb-2 rounded-md border border-accent/25 bg-accent/5 px-3 py-2 text-meta text-text-secondary"
-                role="status"
-                aria-live="polite"
-              >
-                <span className="font-medium text-text-primary">Reply needed</span>
-                {' — '}
-                {pendingAskUser.payload.title?.trim() ||
-                  'Answer in the panel above the composer, or type here and press Send.'}
-              </div>
-            ) : null}
-            <AttachmentCollapsible
-              items={attachments}
-              editable
-              onRemove={removeAttachment}
+        <div className="vx-composer-input-zone">
+          <div className="vx-composer-chip-row">
+            <ModelPicker
+              value={model}
+              onChange={onModelChange}
+              onOpenProviders={onOpenProviders}
             />
-            <div
-              className={cn(
-                'vx-composer-input-zone',
-                footerMode && 'vx-composer-input-zone--footer'
-              )}
-            >
-              {chipRow}
-              {footerMode ? (
-                <div className="vx-composer-input-row">
-                  {mentionInput}
-                  <SendButton
-                    onClick={() => void handleSend()}
-                    state={sendState}
-                    disabled={!canSendContent && sendState !== 'processing' && !awaitingAskUser}
-                  />
-                </div>
-              ) : (
-                <>
-                  {mentionInput}
-                  <ComposerFooter
-                    attachmentCount={attachments.length}
-                    sendState={sendState}
-                    onSend={() => void handleSend()}
-                    canSend={(canSendContent || awaitingAskUser) && !!model}
-                    compact={zoneOpen}
-                  />
-                </>
-              )}
-            </div>
+            <AttachmentButton
+              onPickFromComputer={() => void pickFromComputer()}
+              disabled={!canAttach}
+            />
+            <AttachmentChipRow items={attachments} onRemove={removeAttachment} />
+            {attachments.length > 0 && (
+              <span className="shrink-0 font-mono text-meta text-text-faint tabular-nums">
+                {attachments.length}/{MAX_CHAT_ATTACHMENTS}
+              </span>
+            )}
+            <ComposerStatusStrip pendingAskUser={pendingAskUser} />
           </div>
+          <div className="vx-composer-editor-slot">
+            <MentionComposer
+              value={text}
+              onChange={onTextChange}
+              onPaste={onPaste}
+              ariaKeyshortcuts="Enter Shift+Enter ArrowUp ArrowDown Escape"
+              placeholder="@ to mention files, or describe your task…"
+              className={cn(
+                'min-h-[2.5rem] min-w-0 flex-1',
+                'transition-[height] duration-150 ease-out motion-reduce:transition-none'
+              )}
+              style={{ maxHeight: TEXTAREA_MAX_HEIGHT }}
+              onKeyDown={(e) => {
+                const ne = e.nativeEvent as unknown as {
+                  isComposing?: boolean;
+                  keyCode?: number;
+                };
+                if (ne.isComposing || ne.keyCode === 229) return;
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (!canSendContent && !isProcessing && !awaitingAskUser) return;
+                  if (!isProcessing && !awaitingAskUser && !model) return;
+                  void handleSend();
+                  return;
+                }
+                if (e.key === 'ArrowUp' && !documentToPlainText(composerDoc).length) {
+                  e.preventDefault();
+                  const recalled = history.recall('up');
+                  if (recalled !== null) {
+                    setText(recalled);
+                    fromHistoryRef.current = true;
+                  }
+                  return;
+                }
+                if (e.key === 'ArrowDown' && fromHistoryRef.current) {
+                  e.preventDefault();
+                  const recalled = history.recall('down');
+                  setText(recalled ?? '');
+                  if (recalled === null) fromHistoryRef.current = false;
+                }
+              }}
+            />
+          </div>
+          <div className="vx-composer-token-slot">
+            <TokenUsagePill
+              total={totalRunUsage}
+              orchestrator={orchestratorUsage}
+              draftEstimate={draftTokenEstimate}
+            />
+          </div>
+          <SendButton {...sendButtonProps} className="vx-composer-send-slot" />
         </div>
       </div>
     </div>

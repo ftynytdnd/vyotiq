@@ -16,7 +16,8 @@ describe('renderer test harness', () => {
 
   it('exposes window.vyotiq stub', () => {
     expect(window.vyotiq).toBeDefined();
-    expect(typeof window.vyotiq.workspace.get).toBe('function');
+    expect(typeof window.vyotiq.workspace.pickDirectory).toBe('function');
+    expect(typeof window.vyotiq.tokens.estimate).toBe('function');
   });
 
   it('renders a trivial React component', () => {

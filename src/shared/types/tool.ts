@@ -21,6 +21,7 @@ export type RegisteredToolName =
   | 'search'
   | 'memory'
   | 'recall'
+  | 'report'
   | 'finish'
   | 'ask_user';
 
@@ -152,14 +153,17 @@ export type ToolData =
   }
   | {
     tool: 'search';
-    mode: 'local' | 'web';
+    mode: 'local';
     query: string;
-    /** Populated only in `local` mode. */
     matches?: SearchMatch[];
-    /** Populated only in `web` mode. */
-    webBody?: string;
-    webContentType?: string;
     truncated: boolean;
+  }
+  | {
+    tool: 'report';
+    title: string;
+    /** Workspace-relative path under `.vyotiq/reports/`. */
+    relPath: string;
+    bytes: number;
   }
   | {
     tool: 'memory';

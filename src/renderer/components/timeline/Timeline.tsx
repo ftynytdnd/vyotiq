@@ -4,17 +4,14 @@
  * timeline reducer in `useChatStore`. This file only renders — it does
  * NOT mirror state into any other store.
  *
- * Auto-scroll is a three-state machine:
- *   - **Prompt-to-top on send:** a brand-new `user-prompt` event arrives →
- *     smooth-scroll that prompt to the top of the viewport and re-enable
- *     sticky tail follow.
+ * Tail scroll contract:
  *   - **Sticky:** while the user remains at (or near) the bottom,
- *     incoming streamed deltas keep the view pinned with smooth tail
- *     follow. Throttled via `requestAnimationFrame` so bursts of
- *     tokens don't queue dozens of scrolls.
- *   - **Unstuck:** the moment the user scrolls up more than
- *     `UNSTICK_PX`, the sticky bit drops until they scroll back within
- *     `RESTICK_PX` of the bottom or submit a new prompt.
+ *     incoming streamed deltas pin the view instantly (`scrollTop`) so
+ *     live agent output stays above the composer.
+ *   - **User lock:** wheel/touch scroll-up releases sticky immediately;
+ *     tail follow is suppressed until the user returns within
+ *     `RESTICK_PX` of the bottom or taps jump-to-latest.
+ *   - **Unstuck:** scrolling up past `UNSTICK_PX` drops the sticky bit.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -23,7 +20,6 @@ import { ArrowDown } from 'lucide-react';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { useChatStore } from '../../store/useChatStore.js';
 import { useAttachmentPreviewStore } from '../../store/useAttachmentPreviewStore.js';
-import { useFloatingLiveDiffStore } from '../../store/useFloatingLiveDiffStore.js';
 import { applyDeriveRowsLiveLayer, deriveRows } from './reducer/deriveRows.js';
 import { UserPromptRow } from './rows/UserPromptRow.js';
 import { AskUserRow } from './rows/AskUserRow.js';
@@ -51,14 +47,20 @@ import {
 } from '../../store/useSettingsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
-import { useFloatingLiveDiffAutoOpen } from './hooks/useFloatingLiveDiffAutoOpen.js';
 import { useTimelineUiStore } from '../../store/useTimelineUiStore.js';
 import { computeTailScrollKey } from './shared/computeTailScrollKey.js';
+import { pinScrollParentToTail } from './shared/pinScrollToTail.js';
+import { findTimelineScrollParent } from './shared/timelineScrollParent.js';
+import { TIMELINE_VIRTUALIZE_THRESHOLD } from './shared/timelineVirtualize.js';
 import {
   TIMELINE_SCROLL_RESTICK_PX,
   TIMELINE_SCROLL_UNSTICK_PX,
   measureTimelineScrollTail
 } from './shared/scrollTailState.js';
+import {
+  VirtualizedTurnList,
+  type TimelinePinHandle
+} from './VirtualizedTurnList.js';
 
 interface TimelineProps {
   model?: ModelSelection | null;
@@ -74,9 +76,7 @@ interface ErrorRowActions {
 
 export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayHostProp }: TimelineProps) {
   // --- Stores (fixed order; never short-circuit hooks with `||`) ---
-  const attachmentPreviewOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
-  const floatingLiveDiffOpen = useFloatingLiveDiffStore((s) => s.target !== null);
-  const companionOverlayOpen = attachmentPreviewOpen || floatingLiveDiffOpen;
+  const companionOverlayOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
 
   const conversationId = useChatStore((s) => s.conversationId);
   const events = useChatStore((s) => s.events);
@@ -87,7 +87,6 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
   const assistantTexts = useChatStore((s) => s.assistantTexts);
   const reasoningTexts = useChatStore((s) => s.reasoningTexts);
   const lastUserPromptContent = useChatStore((s) => s.lastUserPromptContent);
-  const lastUserPromptId = useChatStore((s) => s.lastUserPromptId);
   const send = useChatStore((s) => s.send);
 
   const showToast = useToastStore((s) => s.show);
@@ -95,21 +94,25 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
   const settings = useSettingsStore((s) => s.settings);
   const permissions = selectEffectivePermissions(activeWorkspaceId, settings);
   const setTimelineAtTail = useTimelineUiStore((s) => s.setTimelineAtTail);
+  const scrollToTailRequest = useTimelineUiStore((s) => s.scrollToTailRequest);
 
   // --- Refs (all before any effect) ---
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollFrameRef = useRef<number | null>(null);
+  const pinHandleRef = useRef<TimelinePinHandle | null>(null);
   const stickyRef = useRef(true);
+  /** Set when the user scrolls up; blocks tail follow until they restick. */
+  const userScrollLockRef = useRef(false);
+  /** Suppresses user-lock detection while we programmatically pin the tail. */
+  const programmaticScrollRef = useRef(false);
+  const lastScrollDistanceRef = useRef<number | null>(null);
   const gArmedRef = useRef(false);
   const gTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // --- Local state ---
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
-  const prevPromptIdRef = useRef<string | undefined>(undefined);
-  const prevConversationIdRef = useRef<string | null | undefined>(undefined);
-  const scrollMountedRef = useRef(false);
 
   const onRetryLastMessage = useCallback(() => {
     const prompt = lastUserPromptContent?.trim();
@@ -142,20 +145,42 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
     [setTimelineAtTail]
   );
 
+  const releaseUserScrollLock = useCallback(() => {
+    userScrollLockRef.current = false;
+  }, []);
+
+  const engageUserScrollLock = useCallback(() => {
+    userScrollLockRef.current = true;
+    stickyRef.current = false;
+    setTimelineAtTail(false);
+  }, [setTimelineAtTail]);
+
   const syncScrollTail = useCallback(() => {
-    const parent = findScrollParent(containerRef.current);
+    const parent = findTimelineScrollParent(containerRef.current);
     if (!parent) return;
     const { scrollable, distanceFromBottom } = measureTimelineScrollTail(parent);
+
+    if (userScrollLockRef.current) {
+      if (distanceFromBottom <= TIMELINE_SCROLL_RESTICK_PX) {
+        releaseUserScrollLock();
+      } else {
+        applyTailState(false, scrollable, distanceFromBottom);
+        return;
+      }
+    }
+
     let nextSticky = stickyRef.current;
     if (!scrollable) {
       nextSticky = true;
     } else if (stickyRef.current && distanceFromBottom > TIMELINE_SCROLL_UNSTICK_PX) {
-      nextSticky = false;
+      engageUserScrollLock();
+      applyTailState(false, scrollable, distanceFromBottom);
+      return;
     } else if (!stickyRef.current && distanceFromBottom <= TIMELINE_SCROLL_RESTICK_PX) {
       nextSticky = true;
     }
     applyTailState(nextSticky, scrollable, distanceFromBottom);
-  }, [applyTailState]);
+  }, [applyTailState, engageUserScrollLock, releaseUserScrollLock]);
 
   // --- Derived rows ---
   const baseRows = useMemo(
@@ -177,8 +202,6 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
     [baseRows, partialToolCallArgs, settledCallIds, liveDiffByCallId]
   );
 
-  useFloatingLiveDiffAutoOpen(rows);
-
   const turnSegments = useMemo(() => groupRowsIntoTurns(rows), [rows]);
   const lastTurnIndex = turnSegments.length - 1;
 
@@ -196,25 +219,92 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
     });
   };
 
-  const scrollToTail = (force: boolean) => {
-    if (!force && !stickyRef.current) return;
-    scheduleScroll(() => {
-      bottomRef.current?.scrollIntoView({
-        behavior: force || stickyRef.current ? 'smooth' : 'auto',
-        block: 'end'
+  const scrollToTail = useCallback(
+    (force: boolean) => {
+      if (!force) {
+        if (userScrollLockRef.current || !stickyRef.current) return;
+      }
+      scheduleScroll(() => {
+        programmaticScrollRef.current = true;
+        if (pinHandleRef.current) {
+          pinHandleRef.current.pinToTail();
+        } else {
+          const parent = findTimelineScrollParent(containerRef.current);
+          if (parent) pinScrollParentToTail(parent);
+        }
+        requestAnimationFrame(() => {
+          programmaticScrollRef.current = false;
+          const parent = findTimelineScrollParent(containerRef.current);
+          if (parent) {
+            lastScrollDistanceRef.current = measureTimelineScrollTail(parent).distanceFromBottom;
+          }
+        });
       });
-    });
-  };
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (scrollToTailRequest === 0) return;
+    releaseUserScrollLock();
+    stickyRef.current = true;
+    applyTailState(true, true, 0);
+    scrollToTail(true);
+  }, [scrollToTailRequest, applyTailState, releaseUserScrollLock, scrollToTail]);
 
   // Resolve the scroll parent, sync tail state on mount / layout changes,
-  // and attach a passive scroll listener.
+  // and attach a passive scroll listener (stable — not re-bound per delta).
   useEffect(() => {
-    const parent = findScrollParent(containerRef.current);
+    const parent = findTimelineScrollParent(containerRef.current);
     if (!parent) return;
 
-    const onScroll = () => syncScrollTail();
+    const onScroll = () => {
+      if (!programmaticScrollRef.current) {
+        const { distanceFromBottom } = measureTimelineScrollTail(parent);
+        const prev = lastScrollDistanceRef.current;
+        if (
+          prev !== null &&
+          distanceFromBottom > prev + 4 &&
+          distanceFromBottom > TIMELINE_SCROLL_RESTICK_PX
+        ) {
+          engageUserScrollLock();
+        }
+        lastScrollDistanceRef.current = distanceFromBottom;
+      }
+      syncScrollTail();
+    };
+
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) engageUserScrollLock();
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      // Scrollbar drag / track click — not covered by wheel events.
+      const rect = parent.getBoundingClientRect();
+      const inScrollbarZone = e.clientX >= rect.right - 20;
+      if (inScrollbarZone) engageUserScrollLock();
+    };
+
+    let touchStartY: number | null = null;
+    const onTouchStart = (e: TouchEvent) => {
+      touchStartY = e.touches[0]?.clientY ?? null;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (touchStartY === null) return;
+      const y = e.touches[0]?.clientY;
+      if (y !== undefined && y > touchStartY) engageUserScrollLock();
+    };
+    const onTouchEnd = () => {
+      touchStartY = null;
+    };
 
     parent.addEventListener('scroll', onScroll, { passive: true });
+    parent.addEventListener('wheel', onWheel, { passive: true });
+    parent.addEventListener('pointerdown', onPointerDown, { passive: true });
+    parent.addEventListener('touchstart', onTouchStart, { passive: true });
+    parent.addEventListener('touchmove', onTouchMove, { passive: true });
+    parent.addEventListener('touchend', onTouchEnd, { passive: true });
+
     const ro = new ResizeObserver(() => syncScrollTail());
     ro.observe(parent);
     if (containerRef.current) ro.observe(containerRef.current);
@@ -223,47 +313,27 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
 
     return () => {
       parent.removeEventListener('scroll', onScroll);
+      parent.removeEventListener('wheel', onWheel);
+      parent.removeEventListener('pointerdown', onPointerDown);
+      parent.removeEventListener('touchstart', onTouchStart);
+      parent.removeEventListener('touchmove', onTouchMove);
+      parent.removeEventListener('touchend', onTouchEnd);
       ro.disconnect();
     };
-  }, [companionOverlayOpen, syncScrollTail, tailScrollKey]);
+  }, [companionOverlayOpen, syncScrollTail, engageUserScrollLock]);
 
-  // Re-sync prompt scroll tracking on conversation switch (no scroll).
+  // Reset scroll lock on conversation switch.
   useEffect(() => {
-    if (prevConversationIdRef.current === conversationId) return;
-    prevConversationIdRef.current = conversationId;
-    prevPromptIdRef.current = lastUserPromptId;
-  }, [conversationId, lastUserPromptId]);
-
-  // Scroll the newest user prompt to the top only on a live send — not on
-  // transcript hydrate/rebuild where the trailing event is usually not a
-  // fresh `user-prompt`.
-  useEffect(() => {
-    if (!scrollMountedRef.current) {
-      scrollMountedRef.current = true;
-      prevPromptIdRef.current = lastUserPromptId;
-      return;
-    }
-
-    const id = lastUserPromptId;
-    if (!id || prevPromptIdRef.current === id) return;
-
-    const last = events[events.length - 1];
-    const isLiveSend = last?.kind === 'user-prompt' && last.id === id;
-    prevPromptIdRef.current = id;
-    if (!isLiveSend) return;
-
+    releaseUserScrollLock();
     stickyRef.current = true;
     setTimelineAtTail(true);
-    requestAnimationFrame(() => {
-      scrollToRowAnchor(id, 'smooth');
-    });
-  }, [lastUserPromptId, events, setTimelineAtTail]);
+  }, [conversationId, releaseUserScrollLock, setTimelineAtTail]);
 
   // Keyboard navigation between user prompts (`g j` / `g k`) and Esc to
   // drop sticky scroll. The `g`-prefix uses a short timeout so accidental
   // `j`/`k` presses don't jump.
   useEffect(() => {
-    const parent = findScrollParent(containerRef.current);
+    const parent = findTimelineScrollParent(containerRef.current);
     if (!parent) return;
 
     const disarm = () => {
@@ -322,10 +392,11 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
 
         e.preventDefault();
         disarm();
-        if (stickyRef.current) {
-          const parent = findScrollParent(containerRef.current);
-          const distance = parent
-            ? measureTimelineScrollTail(parent).distanceFromBottom
+        engageUserScrollLock();
+        {
+          const scrollParent = findTimelineScrollParent(containerRef.current);
+          const distance = scrollParent
+            ? measureTimelineScrollTail(scrollParent).distanceFromBottom
             : TIMELINE_SCROLL_UNSTICK_PX + 1;
           applyTailState(false, true, distance);
         }
@@ -341,11 +412,9 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
       window.removeEventListener('keydown', onKey);
       disarm();
     };
-  }, [companionOverlayOpen]);
+  }, [companionOverlayOpen, applyTailState, engageUserScrollLock]);
 
-  // Sticky follow during streaming (manual_only — only when user is at tail): every time the derived row list
-  // grows we attempt to pin — but only when the sticky bit is still
-  // set. The rAF throttle dedupes bursts of deltas into one paint.
+  // Sticky follow during streaming: pin when tail grows if sticky and not user-locked.
   useEffect(() => {
     scrollToTail(false);
     return () => {
@@ -354,7 +423,7 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
         scrollFrameRef.current = null;
       }
     };
-  }, [tailScrollKey]);
+  }, [tailScrollKey, scrollToTail]);
 
   const locationHash = typeof window !== 'undefined' ? window.location.hash : '';
   useEffect(() => {
@@ -386,6 +455,33 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
+  const useVirtualizedList = rows.length >= TIMELINE_VIRTUALIZE_THRESHOLD;
+
+  const renderTurnBlock = useCallback(
+    (segment: typeof rows, segmentIndex: number) => {
+      const isLastTurn = segmentIndex === lastTurnIndex;
+      const liveTurn = isProcessing && isLastTurn;
+      const partitioned = partitionTurnSegment(segment);
+      const segmentKey = partitioned.prompt?.key ?? `turn-${segmentIndex}`;
+
+      const renderAnchoredRow = (r: DisplayRow) => (
+        <RowAnchor rowKey={r.key}>
+          {renderRow(r, model, liveTurn, errorRowActions)}
+        </RowAnchor>
+      );
+
+      return (
+        <TurnBlock
+          key={segmentKey}
+          live={liveTurn}
+          partitioned={partitioned}
+          renderRow={renderAnchoredRow}
+        />
+      );
+    },
+    [errorRowActions, isProcessing, lastTurnIndex, model]
+  );
+
   return (
     <>
       <TimelineFindBar
@@ -398,27 +494,17 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
         ref={containerRef}
         className={cn(timelineStackClassName, 'flex flex-col')}
       >
-        {turnSegments.map((segment, segmentIndex) => {
-          const isLastTurn = segmentIndex === lastTurnIndex;
-          const liveTurn = isProcessing && isLastTurn;
-          const partitioned = partitionTurnSegment(segment);
-          const segmentKey = partitioned.prompt?.key ?? `turn-${segmentIndex}`;
-
-          const renderAnchoredRow = (r: DisplayRow) => (
-            <RowAnchor rowKey={r.key}>
-              {renderRow(r, model, liveTurn, errorRowActions)}
-            </RowAnchor>
-          );
-
-          return (
-            <TurnBlock
-              key={segmentKey}
-              live={liveTurn}
-              partitioned={partitioned}
-              renderRow={renderAnchoredRow}
-            />
-          );
-        })}
+        {useVirtualizedList ? (
+          <VirtualizedTurnList
+            ref={pinHandleRef}
+            containerRef={containerRef}
+            turnSegments={turnSegments}
+            tailScrollKey={tailScrollKey}
+            renderTurn={renderTurnBlock}
+          />
+        ) : (
+          turnSegments.map((segment, segmentIndex) => renderTurnBlock(segment, segmentIndex))
+        )}
         <div ref={bottomRef} className="h-px w-full shrink-0" aria-hidden />
       </div>
       {jumpOverlayHostProp &&
@@ -428,6 +514,8 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
           <button
             type="button"
             onClick={() => {
+              releaseUserScrollLock();
+              stickyRef.current = true;
               applyTailState(true, true, 0);
               scrollToTail(true);
             }}
@@ -441,16 +529,6 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
         )}
     </>
   );
-}
-
-function findScrollParent(el: HTMLElement | null): HTMLElement | null {
-  let cur: HTMLElement | null = el;
-  while (cur) {
-    const overflowY = getComputedStyle(cur).overflowY;
-    if (overflowY === 'auto' || overflowY === 'scroll') return cur;
-    cur = cur.parentElement;
-  }
-  return null;
 }
 
 function renderRow(

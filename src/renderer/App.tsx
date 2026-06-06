@@ -39,8 +39,6 @@ import {
 } from './lib/theme.js';
 import { AttachmentPreviewPanel } from './components/composer/AttachmentPreviewPanel.js';
 import { useAttachmentPreviewStore } from './store/useAttachmentPreviewStore.js';
-import { LiveDiffFloatingPanel } from './components/timeline/LiveDiffFloatingPanel.js';
-import { useFloatingLiveDiffStore } from './store/useFloatingLiveDiffStore.js';
 
 const log = logger.child('app');
 
@@ -96,11 +94,8 @@ export default function App() {
   const { previewAttachment, closePreview } = useAttachmentPreviewStore(
     useShallow((s) => ({ previewAttachment: s.attachment, closePreview: s.close }))
   );
-  const { liveDiffTarget, dismissLiveDiff } = useFloatingLiveDiffStore(
-    useShallow((s) => ({ liveDiffTarget: s.target, dismissLiveDiff: s.dismiss }))
-  );
   const attachmentPreviewWidth = usePersistedPanelWidth('attachmentPreview');
-  const overlayOpen = previewAttachment !== null || liveDiffTarget !== null;
+  const overlayOpen = previewAttachment !== null;
   const settingsOpen = appView === 'settings';
   const showToast = useToastStore((s) => s.show);
   const updateCheckDone = useRef(false);
@@ -428,7 +423,12 @@ export default function App() {
           />
           <main
             className="min-h-0 flex-1 overflow-hidden bg-surface-base"
-            style={{ paddingLeft: DOCK_STRIP_WIDTH }}
+            style={{
+              paddingLeft: DOCK_STRIP_WIDTH,
+              // Mirror the dock strip inset so `mx-auto` reading columns
+              // (timeline + composer) sit on the window's visual center.
+              paddingRight: DOCK_STRIP_WIDTH
+            }}
             inert={overlayOpen ? true : undefined}
             aria-hidden={overlayOpen ? true : undefined}
           >
@@ -446,10 +446,7 @@ export default function App() {
             type="button"
             className="fixed inset-0 z-(--z-overlay-backdrop) bg-black/40"
             aria-label="Close panel"
-            onClick={() => {
-              closePreview();
-              if (liveDiffTarget) dismissLiveDiff(liveDiffTarget.callId);
-            }}
+            onClick={() => closePreview()}
           />,
           document.body
         )}
@@ -459,12 +456,6 @@ export default function App() {
         onClose={closePreview}
         initialWidth={attachmentPreviewWidth.initialWidth}
         onWidthChange={attachmentPreviewWidth.onWidthChange}
-      />
-      <LiveDiffFloatingPanel
-        target={liveDiffTarget}
-        onClose={() => {
-          if (liveDiffTarget) dismissLiveDiff(liveDiffTarget.callId);
-        }}
       />
       <Suspense fallback={<LoadingHint className="py-4" />}>
         <PromptDialog

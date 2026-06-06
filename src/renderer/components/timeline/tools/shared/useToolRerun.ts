@@ -1,5 +1,5 @@
 /**
- * Re-run a settled read/ls/search/bash/memory (list/read) tool from the timeline UI.
+ * Re-run a settled read/ls/search/memory tool from the timeline UI.
  */
 
 import { useCallback, useState } from 'react';

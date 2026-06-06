@@ -56,6 +56,8 @@ export interface ChatSliceFixture {
   reasoningTexts: Record<string, ReasoningTextAcc>;
   partialToolCallArgs: Record<string, PartialToolCallArgs>;
   settledCallIds: Record<string, true>;
+  liveDiffByCallId: Record<string, import('@renderer/components/timeline/reducer/types').DiffStreamSnapshot>;
+  toolResultSettledIds: Record<string, true>;
   orchestratorUsage?: TokenUsageAggregate;
   latestOrchestratorRunStatus?: never;
   lastUserPromptId?: string;
@@ -87,6 +89,8 @@ export function chatSliceFixture(
     reasoningTexts: {},
     partialToolCallArgs: {},
     settledCallIds: {},
+    liveDiffByCallId: {},
+    toolResultSettledIds: {},
     runIdToFileEditCount: {},
     ...overrides
   };

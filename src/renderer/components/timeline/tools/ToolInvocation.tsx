@@ -18,6 +18,7 @@ import { RecallInvocation } from './RecallInvocation.js';
 import { UnknownInvocation } from './UnknownInvocation.js';
 import { AskUserInvocation } from './AskUserInvocation.js';
 import { FinishInvocation } from './FinishInvocation.js';
+import { ReportInvocation } from './report/ReportInvocation.js';
 
 interface ToolInvocationProps {
   call?: ToolCall;
@@ -117,6 +118,17 @@ export function ToolInvocation({
       );
     case 'recall':
       return <RecallInvocation call={call} result={result} dense={dense} rowKey={rowKey} />;
+    case 'report':
+      return (
+        <ReportInvocation
+          call={call}
+          result={result}
+          dense={dense}
+          rowKey={rowKey}
+          partial={partial}
+          {...(diffStream ? { diffStream } : {})}
+        />
+      );
     case 'ask_user':
       // Interactive UI is on `ask-user-prompt` rows; resume emits result-only.
       if (!call) return null;

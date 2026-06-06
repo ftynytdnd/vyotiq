@@ -16,6 +16,8 @@ import { formatTokenCount, formatTokenCountWithUnit } from '../../lib/formatToke
 interface TokenUsagePillProps {
   total?: TokenUsageAggregate;
   orchestrator?: TokenUsageAggregate;
+  /** Pre-flight draft estimate for the current composer input. */
+  draftEstimate?: { tokens: number; exact: boolean } | null;
 }
 
 function usageLine(label: string, u: import('@shared/types/chat.js').TokenUsage | undefined): string[] {
@@ -44,15 +46,22 @@ function buildTitle(
 
 export const TokenUsagePill = memo(function TokenUsagePill({
   total,
-  orchestrator
+  orchestrator,
+  draftEstimate = null
 }: TokenUsagePillProps) {
-  if (!total) return null;
-
-  const { latest } = total;
+  const { latest } = total ?? {
+    latest: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+  };
   const hasUsage = latest.promptTokens > 0 || latest.completionTokens > 0;
-  if (!hasUsage) return null;
+  const hasDraft = draftEstimate != null && draftEstimate.tokens > 0;
 
-  const title = buildTitle(latest, orchestrator);
+  if (!hasUsage && !hasDraft) return null;
+
+  const title = hasUsage
+    ? buildTitle(latest, orchestrator)
+    : hasDraft
+      ? `Draft estimate: ~${formatTokenCountWithUnit(draftEstimate.tokens)}${draftEstimate.exact ? '' : ' (approx.)'}`
+      : '';
 
   return (
     <span
@@ -67,11 +76,19 @@ export const TokenUsagePill = memo(function TokenUsagePill({
         aria-hidden
       />
       <span className="ml-1">
-        {formatTokenCount(latest.promptTokens)}
-        <span className="mx-0.5 text-text-faint" aria-hidden>
-          /
-        </span>
-        {formatTokenCount(latest.completionTokens)}
+        {hasUsage ? (
+          <>
+            {formatTokenCount(latest.promptTokens)}
+            <span className="mx-0.5 text-text-faint" aria-hidden>
+              /
+            </span>
+            {formatTokenCount(latest.completionTokens)}
+          </>
+        ) : (
+          <span className={cn(!draftEstimate?.exact && 'italic text-text-faint')}>
+            ~{formatTokenCount(draftEstimate!.tokens)}
+          </span>
+        )}
       </span>
     </span>
   );

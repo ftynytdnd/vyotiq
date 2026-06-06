@@ -12,11 +12,15 @@ type StreamingPreviewSlice = Pick<
 >;
 
 export function clearStreamingToolPreview<T extends StreamingPreviewSlice>(state: T): T {
+  const partialToolCallArgs = state.partialToolCallArgs ?? {};
+  const liveDiffByCallId = state.liveDiffByCallId ?? {};
+  const settledCallIds = state.settledCallIds ?? {};
+  const toolResultSettledIds = state.toolResultSettledIds ?? {};
   if (
-    Object.keys(state.partialToolCallArgs).length === 0 &&
-    Object.keys(state.liveDiffByCallId).length === 0 &&
-    Object.keys(state.settledCallIds).length === 0 &&
-    Object.keys(state.toolResultSettledIds).length === 0
+    Object.keys(partialToolCallArgs).length === 0 &&
+    Object.keys(liveDiffByCallId).length === 0 &&
+    Object.keys(settledCallIds).length === 0 &&
+    Object.keys(toolResultSettledIds).length === 0
   ) {
     return state;
   }

@@ -10,7 +10,6 @@ import {
 } from '@shared/settings/settingsSection.js';
 import { vyotiq } from '../lib/ipc.js';
 import { useAttachmentPreviewStore } from './useAttachmentPreviewStore.js';
-import { useFloatingLiveDiffStore } from './useFloatingLiveDiffStore.js';
 import { useSettingsStore } from './useSettingsStore.js';
 
 export type { SettingsSectionId };
@@ -40,7 +39,6 @@ interface AppViewStore {
 
 function clearCompanionOverlays(): void {
   useAttachmentPreviewStore.getState().close();
-  useFloatingLiveDiffStore.getState().close();
 }
 
 function normalizeSectionArg(

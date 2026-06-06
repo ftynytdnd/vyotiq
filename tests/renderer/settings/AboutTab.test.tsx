@@ -1,11 +1,11 @@
 /**
- * About overlay — verifies AppInfo rendering and Reveal targets.
+ * About panel — verifies AppInfo rendering and Reveal targets.
  */
 
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { AboutOverlay } from '@renderer/components/settings/AboutOverlay.js';
+import { AboutPanel } from '@renderer/components/settings/AboutPanel.js';
 import type { AppInfo } from '@shared/types/ipc';
 
 const fixture: AppInfo = {
@@ -21,10 +21,10 @@ function stubAppInfo(): void {
   window.vyotiq.app.info = vi.fn(async () => fixture) as never;
 }
 
-describe('AboutOverlay', () => {
+describe('AboutPanel', () => {
   it('renders version, electron, and node lines from app.info()', async () => {
     stubAppInfo();
-    render(<AboutOverlay open onClose={() => {}} />);
+    render(<AboutPanel />);
 
     await waitFor(() => {
       expect(screen.getByText(fixture.version)).toBeInTheDocument();
@@ -38,7 +38,7 @@ describe('AboutOverlay', () => {
     const revealSpy = vi.fn(async () => undefined);
     window.vyotiq.app.revealPath = revealSpy as never;
 
-    render(<AboutOverlay open onClose={() => {}} />);
+    render(<AboutPanel />);
 
     await waitFor(() => {
       expect(screen.getByText(fixture.userDataDir)).toBeInTheDocument();
@@ -58,7 +58,7 @@ describe('AboutOverlay', () => {
       throw new Error('userData unavailable');
     }) as never;
 
-    render(<AboutOverlay open onClose={() => {}} />);
+    render(<AboutPanel />);
 
     await waitFor(() => {
       expect(screen.getByText(/Build info unavailable: userData unavailable/)).toBeInTheDocument();

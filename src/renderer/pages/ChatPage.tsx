@@ -14,8 +14,6 @@ import { FolderOpen } from 'lucide-react';
 import { cn } from '../lib/cn.js';
 import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../lib/shellIcons.js';
 import { useAttachmentPreviewStore } from '../store/useAttachmentPreviewStore.js';
-import { useFloatingLiveDiffStore } from '../store/useFloatingLiveDiffStore.js';
-
 import { LoadingHint } from '../components/ui/LoadingHint.js';
 import { ComposerDialogAnchor } from '../components/ui/ComposerDialogAnchor.js';
 
@@ -35,9 +33,7 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
   const conversationList = useConversationsStore((s) => s.list);
   const newConversation = useConversationsStore((s) => s.newConversation);
   const selecting = useConversationsStore((s) => s.selecting);
-  const previewOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
-  const liveDiffOpen = useFloatingLiveDiffStore((s) => s.target !== null);
-  const zoneOpen = previewOpen || liveDiffOpen;
+  const zoneOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
 
   const [model, setModel] = useState<ModelSelection | null>(null);
 
@@ -207,7 +203,7 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
             <LoadingHint message="Loading conversation…" />
           </div>
         )}
-      <div className="scrollbar-stealth flex-1 overflow-y-auto scroll-pb-6 px-4 pb-8 antialiased">
+      <div className="scrollbar-stealth vx-timeline-scroll-host flex-1 overflow-y-auto scroll-pb-6 px-4 pb-8 antialiased">
         <div
           className={cn(
             'mx-auto flex w-full flex-col transition-[max-width] duration-200 ease-out',

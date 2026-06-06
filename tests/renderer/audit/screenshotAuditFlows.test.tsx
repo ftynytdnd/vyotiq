@@ -1,10 +1,5 @@
 /**
  * Screenshot UI audit — automated flow checks (RTL).
- *
- * Manual repro (no Playwright in repo; use `npm run dev` + Electron):
- *   1. Connecting dedupe — start a run; only `.vx-composer-status-strip` shows
- *      "Connecting…", not `[data-turn-running-meta]`.
- *   2. Settings agent group — Tool access (Fully Auto) visible under Agent.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -37,15 +32,15 @@ beforeEach(() => {
     isProcessing: true,
     latestOrchestratorRunStatus: {
       kind: 'run-status',
-      phase: 'connecting',
-      label: 'Connecting to provider…',
+      phase: 'running-tool',
+      label: 'Running tool',
       ts: Date.now()
     } as never
   });
 });
 
 describe('screenshot audit flows', () => {
-  it('connecting status appears only in composer strip, not timeline meta', () => {
+  it('run phase appears in timeline meta, not composer strip', () => {
     render(
       <>
         <TurnRunningMeta live />
@@ -53,9 +48,9 @@ describe('screenshot audit flows', () => {
       </>
     );
 
-    expect(screen.getByText(/Connecting to provider/i)).toBeTruthy();
-    expect(document.querySelector('[data-turn-running-meta]')).toBeNull();
-    expect(document.querySelector('.vx-composer-status-strip')).not.toBeNull();
+    expect(screen.getByText(/Exploring/i)).toBeTruthy();
+    expect(document.querySelector('[data-turn-running-meta]')).not.toBeNull();
+    expect(document.querySelector('.vx-composer-status-strip')).toBeNull();
   });
 
   it('settings agent group shows memory section', () => {

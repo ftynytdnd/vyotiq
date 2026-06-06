@@ -21,6 +21,7 @@ import {
   documentToPlainText,
   emptyMentionDocument,
   extractMentions,
+  hasComposerContent,
   insertFileMentionAt,
   parseMentionDocument,
   replaceAtTokenWithMention,
@@ -38,7 +39,6 @@ const CHIP_CLASS = 'vx-mention-chip';
 export interface MentionComposerProps {
   value: string;
   onChange: (serialized: string) => void;
-  onPickFromComputer: () => Promise<MentionRef | null>;
   placeholder?: string;
   className?: string;
   style?: React.CSSProperties;
@@ -51,7 +51,6 @@ export interface MentionComposerProps {
 export function MentionComposer({
   value,
   onChange,
-  onPickFromComputer,
   placeholder,
   className,
   style,
@@ -95,6 +94,10 @@ export function MentionComposer({
     if (!el) return;
     syncingRef.current = true;
     el.innerHTML = '';
+    if (!hasComposerContent(doc)) {
+      syncingRef.current = false;
+      return;
+    }
     for (const seg of doc.segments) {
       if (seg.type === 'text') {
         el.appendChild(document.createTextNode(seg.value));
@@ -157,14 +160,15 @@ export function MentionComposer({
 
   useLayoutEffect(() => {
     const next = parseMentionDocument(value);
-    const prevPlain = documentToPlainText(docRef.current);
-    const nextPlain = documentToPlainText(next);
-    if (
-      prevPlain === nextPlain &&
-      extractMentions(next).length === extractMentions(docRef.current).length
-    ) {
-      return;
-    }
+    const currentSerialized = serializeMentionDocument(docRef.current);
+    const el = editorRef.current;
+    const domPlain = el?.textContent ?? '';
+    const propPlain = documentToPlainText(next);
+    const domDrifted =
+      el !== null &&
+      (domPlain !== propPlain ||
+        (!value && domPlain.length > 0 && currentSerialized === value));
+    if (currentSerialized === value && !domDrifted) return;
     docRef.current = next;
     syncDomFromDoc(next);
   }, [value, syncDomFromDoc]);
@@ -206,13 +210,6 @@ export function MentionComposer({
   );
 
   const handlePickerPick = (row: MentionPickerRow) => {
-    if (row.kind === 'from-computer') {
-      void (async () => {
-        const ref = await onPickFromComputer();
-        if (ref) applyMentionPick(ref.label, ref);
-      })();
-      return;
-    }
     if (row.kind === 'workspace-file' && row.path) {
       applyMentionPick(row.path);
     }
@@ -271,6 +268,11 @@ export function MentionComposer({
           }}
         />
       </Popover>
+      {!hasComposerContent(parsed) && placeholder ? (
+        <div className="vx-mention-composer-placeholder" aria-hidden>
+          {placeholder}
+        </div>
+      ) : null}
       <div
         ref={editorRef}
         role="textbox"
@@ -280,12 +282,10 @@ export function MentionComposer({
         contentEditable={!disabled}
         spellCheck={false}
         suppressContentEditableWarning
-        data-placeholder={placeholder}
         className={cn(
           appComposerTextareaClassName,
           'vx-mention-composer',
-          'min-h-[1.75rem] leading-5 outline-none',
-          !documentToPlainText(parsed).length && 'vx-mention-composer--empty',
+          'min-h-[2.5rem] outline-none',
           className
         )}
         style={style}

@@ -3,7 +3,7 @@
  * user prompt. Agent-side content renders as a single chronological stream.
  */
 
-import { type ReactNode } from 'react';
+import { memo, type ReactNode } from 'react';
 import { cn } from '../../../lib/cn.js';
 import type { DisplayRow } from './displayRowTypes.js';
 import type { PartitionedTurn } from './groupTurnSegment.js';
@@ -23,7 +23,7 @@ interface TurnBlockProps {
   className?: string;
 }
 
-export function TurnBlock({
+export const TurnBlock = memo(function TurnBlock({
   partitioned,
   renderRow,
   live = false,
@@ -60,7 +60,7 @@ export function TurnBlock({
       </div>
     </div>
   );
-}
+});
 
 /** Split derived rows into turn segments starting at each user-prompt. */
 export function groupRowsIntoTurns<T extends { kind: string }>(rows: T[]): T[][] {

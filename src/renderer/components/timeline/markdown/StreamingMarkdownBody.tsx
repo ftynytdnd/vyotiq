@@ -57,19 +57,21 @@ export function StreamingMarkdownBody({
 
   if (cleaned.length === 0) return null;
 
-  if (done) {
-    return <MarkdownBody text={cleaned} className={className} />;
-  }
-
+  // Keep a stable outer wrapper at stream end so the handoff to full GFM
+  // does not unmount the prose shell (avoids settle flash).
   return (
     <div className={cn('vyotiq-stream-md vx-timeline-stream-md vx-prose', className)}>
-      {blocks.map((block, idx) => (
-        <StreamBlock
-          key={streamBlockKey(block, idx)}
-          block={block}
-          isTail={idx === blocks.length - 1}
-        />
-      ))}
+      {done ? (
+        <MarkdownBody text={cleaned} />
+      ) : (
+        blocks.map((block, idx) => (
+          <StreamBlock
+            key={streamBlockKey(block, idx)}
+            block={block}
+            isTail={idx === blocks.length - 1}
+          />
+        ))
+      )}
     </div>
   );
 }

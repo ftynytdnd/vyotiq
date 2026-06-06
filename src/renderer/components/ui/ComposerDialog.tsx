@@ -1,8 +1,7 @@
 /**
  * ComposerDialog — mini FloatingPanel-style dialog anchored above the
- * chat composer. Replaces the old full-width `BottomSheet`. Used for
- * confirms / approvals / prompts that cannot fit inline at the
- * trigger (see `InlineConfirm`).
+ * chat composer. Used for confirms / approvals / prompts that cannot
+ * fit inline at the trigger (see `InlineConfirm`).
  *
  * Layout contract (per `dialog-ux-redesign.md`):
  *   - Rendered into a designated mount point inside the chat column
@@ -38,7 +37,6 @@ import {
 import { cn } from '../../lib/cn.js';
 import { bindFocusTrap, focusFirstFocusable } from '../../lib/focusTrap.js';
 import { useAttachmentPreviewStore } from '../../store/useAttachmentPreviewStore.js';
-import { useFloatingLiveDiffStore } from '../../store/useFloatingLiveDiffStore.js';
 import { PanelHeader } from './PanelHeader.js';
 
 type ComposerDialogSize = 'compact' | 'expanded';
@@ -85,9 +83,7 @@ const SIZE_BODY_CLASS: Record<ComposerDialogSize, string> = {
 };
 
 function useBlockingOverlayOpen(): boolean {
-  const previewOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
-  const liveDiffOpen = useFloatingLiveDiffStore((s) => s.target !== null);
-  return previewOpen || liveDiffOpen;
+  return useAttachmentPreviewStore((s) => s.attachment !== null);
 }
 
 export function ComposerDialog({

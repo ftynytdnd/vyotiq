@@ -224,6 +224,7 @@ function verbFor(name: ToolName, first?: ToolGroupChild, pending = false): strin
       case 'search': return isLocalSearch(first) ? 'Grepping' : 'Searching';
       case 'memory': return 'Memory';
       case 'recall': return 'Recalling';
+      case 'report': return 'Writing';
       case 'finish': return 'Finishing';
       case 'ask_user': return 'Asking';
       case 'unknown': return 'Running';
@@ -238,6 +239,7 @@ function verbFor(name: ToolName, first?: ToolGroupChild, pending = false): strin
     case 'search': return isLocalSearch(first) ? 'Grepped' : 'Searched';
     case 'memory': return 'Memory';
     case 'recall': return 'Recalled';
+    case 'report': return 'Wrote';
     case 'finish': return 'Finished';
     case 'ask_user': return 'Asked';
     case 'unknown': return 'Unknown tool';
@@ -262,6 +264,7 @@ function unitFor(name: ToolName, singular: boolean): string {
     case 'search': return singular ? 'query' : 'queries';
     case 'memory': return singular ? 'note' : 'notes';
     case 'recall': return singular ? 'conversation' : 'conversations';
+    case 'report': return singular ? 'report' : 'reports';
     case 'finish': return singular ? 'answer' : 'answers';
     case 'ask_user': return singular ? 'question' : 'questions';
     case 'unknown': return singular ? 'invocation' : 'invocations';
@@ -358,6 +361,15 @@ function extractPrimary(name: ToolName, child: ToolGroupChild): string {
         return `read ${targetId.slice(0, 8)}…`;
       }
       return action;
+    }
+    case 'report': {
+      const title =
+        typeof args['title'] === 'string'
+          ? (args['title'] as string)
+          : data?.tool === 'report'
+            ? data.title
+            : '';
+      return title;
     }
     case 'finish':
       return typeof args['summary'] === 'string' ? (args['summary'] as string) : '';

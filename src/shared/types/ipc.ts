@@ -36,7 +36,9 @@ import type {
 
   ConversationMeta,
 
-  TimelineEvent
+  TimelineEvent,
+
+  PromptAttachmentMeta
 
 } from './chat.js';
 
@@ -83,6 +85,32 @@ export type ToolRerunReply =
     message?: string;
 
   };
+
+
+
+export interface TokensEstimateInput {
+
+  modelId: string;
+
+  prompt: string;
+
+  attachments?: string[];
+
+  attachmentMeta?: PromptAttachmentMeta[];
+
+  workspacePath?: string;
+
+}
+
+
+
+export interface TokensEstimateResult {
+
+  tokens: number;
+
+  exact: boolean;
+
+}
 
 
 
@@ -484,12 +512,6 @@ export interface VyotiqApi {
 
   workspace: {
 
-    get(): Promise<WorkspaceInfo>;
-
-    /** `null` when the user dismisses the folder picker. */
-
-    pick(): Promise<WorkspaceInfo | null>;
-
     /**
 
      * Open the OS folder picker and return the chosen path without
@@ -499,8 +521,6 @@ export interface VyotiqApi {
      */
 
     pickDirectory(): Promise<string | null>;
-
-    set(path: string): Promise<WorkspaceInfo>;
 
     listTree(opts?: { depth?: number; workspaceId?: string }): Promise<WorkspaceTreeResult>;
 
@@ -555,6 +575,16 @@ export interface VyotiqApi {
      */
 
     retryReachability(id: string): Promise<WorkspacesState>;
+
+  };
+
+
+
+  // ---- Token estimation ----
+
+  tokens: {
+
+    estimate(input: TokensEstimateInput): Promise<TokensEstimateResult>;
 
   };
 
@@ -744,7 +774,7 @@ export interface VyotiqApi {
 
     openPath(path: string, workspaceId?: string): Promise<void>;
 
-    /** Re-run a settled read/ls/search/bash tool against the workspace. */
+    /** Re-run a settled read/ls/search/memory tool against the workspace. */
 
     rerun(input: ToolRerunInput): Promise<ToolRerunReply>;
 

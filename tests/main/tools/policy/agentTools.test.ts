@@ -9,6 +9,6 @@ describe('AGENT_TOOLS', () => {
       expect(names.has(n)).toBe(true);
     }
     expect(AGENT_TOOLS).not.toContain('delegate' as never);
-    expect(AGENT_TOOLS).not.toContain('report' as never);
+    expect(AGENT_TOOLS).toContain('report');
   });
 });

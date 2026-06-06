@@ -1,10 +1,9 @@
 /**
- * Full keyboard-nav typeahead for `@` mentions — workspace files,
- * from-computer ingest, and disabled future source stubs.
+ * Full keyboard-nav typeahead for `@` mentions — workspace files.
  */
 
 import { useEffect, useRef } from 'react';
-import { File, HardDrive, Sparkles, BookOpen, Globe } from 'lucide-react';
+import { File } from 'lucide-react';
 import { appPopoverPanelClassName, chromeNoMatchesClassName } from '../../ui/SurfaceShell.js';
 import { cn } from '../../../lib/cn.js';
 import {
@@ -12,7 +11,7 @@ import {
   SHELL_ROW_ICON_CLASS
 } from '../../../lib/shellIcons.js';
 import { Eyebrow } from '../../ui/Eyebrow.js';
-import type { MentionPickerRow, MentionPickerRowKind } from './useMentionPicker.js';
+import type { MentionPickerRow } from './useMentionPicker.js';
 
 export interface MentionPickerProps {
   open: boolean;
@@ -25,23 +24,6 @@ export interface MentionPickerProps {
   onClose: () => void;
 }
 
-function rowIcon(kind: MentionPickerRowKind) {
-  switch (kind) {
-    case 'workspace-file':
-      return File;
-    case 'from-computer':
-      return HardDrive;
-    case 'stub-symbol':
-      return Sparkles;
-    case 'stub-doc':
-      return BookOpen;
-    case 'stub-web':
-      return Globe;
-    default:
-      return File;
-  }
-}
-
 export function MentionPicker({
   open,
   query,
@@ -52,13 +34,11 @@ export function MentionPicker({
   onPick,
   onClose
 }: MentionPickerProps) {
-  const listRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    const el = listRef.current?.querySelector<HTMLElement>(
-      `[data-mention-row-index="${activeIndex}"]`
-    );
+    const el = listRef.current?.children[activeIndex] as HTMLElement | undefined;
     el?.scrollIntoView({ block: 'nearest' });
   }, [open, activeIndex]);
 
@@ -66,62 +46,58 @@ export function MentionPicker({
 
   return (
     <div
-      className={cn(appPopoverPanelClassName, 'w-80 p-1.5 shadow-lg')}
+      className={cn(appPopoverPanelClassName, 'vx-mention-picker max-h-64 min-w-[16rem] overflow-y-auto p-1')}
       role="listbox"
       aria-label="Mention files"
-      onMouseDown={(e) => e.preventDefault()}
     >
-      <Eyebrow className="px-2 pb-1.5">
-        Mention{' '}
-        {query ? (
-          <span className="font-mono normal-case text-text-muted">@{query}</span>
-        ) : (
-          '@…'
-        )}
-      </Eyebrow>
-      <div ref={listRef} className="max-h-72 overflow-y-auto" aria-live="polite">
-        {loading && (
-          <div className={chromeNoMatchesClassName}>Loading workspace…</div>
-        )}
-        {!loading && rows.length === 0 && (
-          <div className={chromeNoMatchesClassName}>No matches.</div>
-        )}
-        {!loading &&
-          rows.map((row, index) => {
-            const Icon = rowIcon(row.kind);
-            const isActive = index === activeIndex;
+      <Eyebrow className="px-2 pb-1 pt-0.5">Workspace files</Eyebrow>
+      {loading && rows.length === 0 ? (
+        <div className="px-2 py-1.5 text-meta text-text-faint">Loading…</div>
+      ) : rows.length === 0 ? (
+        <div className={chromeNoMatchesClassName}>No files match</div>
+      ) : (
+        <ul ref={listRef} className="flex flex-col gap-0.5">
+          {rows.map((row, i) => {
+            const Icon = File;
+            const active = i === activeIndex;
             return (
-              <button
-                key={row.id}
-                type="button"
-                role="option"
-                aria-selected={isActive}
-                data-mention-row-index={index}
-                disabled={row.disabled}
-                onMouseEnter={() => onActiveIndexChange(index)}
-                onClick={() => {
-                  if (row.disabled) return;
-                  onPick(row);
-                  onClose();
-                }}
-                className={cn(
-                  'vx-dropdown-item flex w-full items-center gap-2',
-                  row.disabled && 'cursor-not-allowed opacity-40 hover:bg-transparent',
-                  isActive && !row.disabled && 'bg-surface-raised'
-                )}
-              >
-                <Icon
-                  className={cn(SHELL_ROW_ICON_CLASS, 'text-text-faint shrink-0')}
-                  strokeWidth={SHELL_ACTION_ICON_STROKE}
-                />
-                <span className="truncate font-mono text-left">{row.label}</span>
-                {row.hint ? (
-                  <span className="ml-auto shrink-0 text-meta text-text-faint">{row.hint}</span>
-                ) : null}
-              </button>
+              <li key={row.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  disabled={row.disabled}
+                  className={cn(
+                    'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left font-mono text-row',
+                    active ? 'bg-chrome-hover text-text-primary' : 'text-text-secondary',
+                    row.disabled && 'cursor-not-allowed opacity-50'
+                  )}
+                  onMouseEnter={() => onActiveIndexChange(i)}
+                  onClick={() => {
+                    if (!row.disabled) onPick(row);
+                    onClose();
+                  }}
+                >
+                  <Icon
+                    className={SHELL_ROW_ICON_CLASS}
+                    strokeWidth={SHELL_ACTION_ICON_STROKE}
+                    aria-hidden
+                  />
+                  <span className="min-w-0 truncate">{row.label}</span>
+                  {row.hint ? (
+                    <span className="ml-auto shrink-0 text-meta text-text-faint">{row.hint}</span>
+                  ) : null}
+                </button>
+              </li>
             );
           })}
-      </div>
+        </ul>
+      )}
+      {query.trim().length > 0 && (
+        <div className="border-t border-border-subtle/30 px-2 py-1 text-meta text-text-faint">
+          Filter: {query}
+        </div>
+      )}
     </div>
   );
 }

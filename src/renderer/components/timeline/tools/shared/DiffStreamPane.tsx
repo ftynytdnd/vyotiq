@@ -28,7 +28,6 @@ export function DiffStreamPane({ diffStream, label }: DiffStreamPaneProps) {
       </div>
       <DetailPane label={label}>
         <EditDiffView
-          key={diffStream.settled ? 'diff-stream-settled' : 'diff-stream-live'}
           hunks={diffStream.hunks}
           variant={diffStream.settled ? 'authoritative' : 'partial'}
         />

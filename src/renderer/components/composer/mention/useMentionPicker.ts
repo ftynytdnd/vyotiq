@@ -8,12 +8,7 @@ import { useWorkspaceStore } from '../../../store/useWorkspaceStore.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import { useConversationsStore } from '../../../store/useConversationsStore.js';
 
-export type MentionPickerRowKind =
-  | 'workspace-file'
-  | 'from-computer'
-  | 'stub-symbol'
-  | 'stub-doc'
-  | 'stub-web';
+export type MentionPickerRowKind = 'workspace-file';
 
 export interface MentionPickerRow {
   id: string;
@@ -25,30 +20,6 @@ export interface MentionPickerRow {
 }
 
 const MAX_VISIBLE = 80;
-
-const STUB_ROWS: MentionPickerRow[] = [
-  {
-    id: 'stub-symbol',
-    kind: 'stub-symbol',
-    label: 'Symbols',
-    disabled: true,
-    hint: 'Coming soon'
-  },
-  {
-    id: 'stub-doc',
-    kind: 'stub-doc',
-    label: 'Docs',
-    disabled: true,
-    hint: 'Coming soon'
-  },
-  {
-    id: 'stub-web',
-    kind: 'stub-web',
-    label: 'Web',
-    disabled: true,
-    hint: 'Coming soon'
-  }
-];
 
 export interface UseMentionPickerInput {
   open: boolean;
@@ -112,14 +83,7 @@ export function useMentionPicker(input: UseMentionPickerInput) {
         })
       );
 
-    const computer: MentionPickerRow = {
-      id: 'from-computer',
-      kind: 'from-computer',
-      label: 'From computer…',
-      hint: 'Pick a file outside the workspace'
-    };
-
-    return [...files, computer, ...STUB_ROWS];
+    return files;
   }, [tree, query, mentionedPaths]);
 
   useEffect(() => {

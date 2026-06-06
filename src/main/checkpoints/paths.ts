@@ -2,13 +2,8 @@
  * On-disk layout for the per-workspace checkpoint store.
  *
  *   <userData>/vyotiq/checkpoints/<workspaceId>/
- *     blobs/<aa>/<sha256>     content-addressed snapshot bodies
- *     runs/<runId>.json       per-run manifest
- *     files/<base64url>.json  per-file change index
- *     pending.json            single small file: pending changes per conv
- *
- * Two-level blob fanout (`<aa>` = first 2 hex chars of the hash) caps
- * any single dir at ~256 children for a balanced hash distribution.
+ *     runs/<runId>.json       per-run manifest (rewind preview metadata)
+ *     pending.json            legacy pending index (transcript-only rewind)
  *
  * `workspaceId` is the same id `WorkspaceEntry.id` carries — stable
  * across restarts because it lives in the settings blob.
@@ -29,25 +24,12 @@ function workspaceDir(workspaceId: string): string {
   return join(checkpointsRoot(), workspaceId);
 }
 
-export function blobsDir(workspaceId: string): string {
-  return join(workspaceDir(workspaceId), 'blobs');
-}
-
 export function runsDir(workspaceId: string): string {
   return join(workspaceDir(workspaceId), 'runs');
 }
 
 export function pendingFile(workspaceId: string): string {
   return join(workspaceDir(workspaceId), 'pending.json');
-}
-
-export function blobPath(workspaceId: string, hash: string): string {
-  // `<aa>/<sha256>` — keep the FULL hash as the filename so a single
-  // glob (`blobs/*/<hash>`) can locate any blob without iterating.
-  // Two-char fanout caps `blobs/<aa>` at ~256 children for a balanced
-  // sha256 distribution, well under any FS limits.
-  const prefix = hash.slice(0, 2);
-  return join(blobsDir(workspaceId), prefix, hash);
 }
 
 export function runManifestPath(workspaceId: string, runId: string): string {

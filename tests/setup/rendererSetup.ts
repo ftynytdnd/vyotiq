@@ -40,11 +40,11 @@ function makeStubApi() {
       reload: asyncNoop,
       toggleDevTools: asyncNoop
     },
+    tokens: {
+      estimate: vi.fn(async () => ({ tokens: 0, exact: false }))
+    },
     workspace: {
-      get: vi.fn(async () => ({ path: null })),
-      pick: vi.fn(async () => ({ path: null })),
       pickDirectory: vi.fn(async () => null),
-      set: vi.fn(async () => ({ path: null })),
       listTree: vi.fn(async () => ({ entries: [], truncated: false, total: 0 })),
       list: vi.fn(async () => ({ activeId: null, workspaces: [] })),
       add: vi.fn(async () => ({ id: 'ws-stub', path: '/tmp', label: 'stub', addedAt: 0 })),

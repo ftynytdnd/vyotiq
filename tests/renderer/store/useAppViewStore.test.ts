@@ -6,8 +6,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppViewStore } from '@renderer/store/useAppViewStore';
 import { useSettingsStore } from '@renderer/store/useSettingsStore';
 import { useAttachmentPreviewStore } from '@renderer/store/useAttachmentPreviewStore';
-import { useFloatingLiveDiffStore } from '@renderer/store/useFloatingLiveDiffStore';
-
 beforeEach(() => {
   useAppViewStore.setState({
     view: 'chat',
@@ -18,7 +16,6 @@ beforeEach(() => {
     settings: { ui: { lastSettingsTab: 'agent-behavior' } }
   });
   useAttachmentPreviewStore.setState({ attachment: null });
-  useFloatingLiveDiffStore.setState({ target: null, userDismissedCallId: null });
 });
 
 describe('useAppViewStore', () => {

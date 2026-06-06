@@ -1,11 +1,7 @@
 /**
  * ChatFooter — unified bottom anchor for the chat column.
- *
- * Composer sits in a subtle bordered shell. Workspace and session
- * navigation live in the left-hand {@link LeftDock}.
  */
 
-import { appComposerShellClassName } from '../components/ui/SurfaceShell.js';
 import { ChatComposerZone } from './ChatComposerZone.js';
 import type { ModelSelection } from '@shared/types/provider.js';
 import { cn } from '../lib/cn.js';
@@ -43,16 +39,11 @@ export function ChatFooter({
           className="pointer-events-none absolute inset-x-0 bottom-full z-30 mb-2 flex justify-center"
           aria-hidden
         />
-        <div className={appComposerShellClassName}>
-          <ChatComposerZone
-            contentWidth="w-full"
-            model={model}
-            onModelChange={onModelChange}
-            onOpenProviders={onOpenProviders}
-            embedded
-            footerMode
-          />
-        </div>
+        <ChatComposerZone
+          model={model}
+          onModelChange={onModelChange}
+          onOpenProviders={onOpenProviders}
+        />
       </div>
     </div>
   );

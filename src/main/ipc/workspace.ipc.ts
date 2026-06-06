@@ -1,12 +1,5 @@
 /**
- * Workspace IPC. Pick / get / set / list-tree (single-active back-compat)
- * + the multi-workspace registry surface (`workspaces:*`).
- *
- * Legacy single-workspace channels (`workspace:get`, `workspace:pick`,
- * `workspace:set`) remain exposed on the preload bridge for internal
- * tooling and automated tests. The renderer's primary navigation path
- * uses `workspaces:*` instead; do not build new product UI on the
- * legacy trio without an explicit migration plan.
+ * Workspace IPC — directory picker, list-tree, and multi-workspace registry (`workspaces:*`).
  */
 
 import { dialog } from 'electron';
@@ -21,8 +14,7 @@ import {
   renameWorkspace,
   requireWorkspaceById,
   retryWorkspaceReachability,
-  setActiveWorkspace,
-  setWorkspace
+  setActiveWorkspace
 } from '../workspace/workspaceState.js';
 import { bulkRemoveOrReparentByWorkspace } from '../conversations/conversationStore.js';
 import { WORKSPACE_TREE_IGNORE } from '../workspace/workspaceTreeIgnore.js';
@@ -60,21 +52,8 @@ async function pickDirectoryPath(): Promise<string | null> {
 const MAX_PATH_BYTES = 4096;
 
 export function registerWorkspaceIpc(): void {
-  wrapIpcHandler(IPC.WORKSPACE_GET, async () => getWorkspace());
-
-  wrapIpcHandler(IPC.WORKSPACE_PICK, async () => {
-    const picked = await pickDirectoryPath();
-    if (!picked) return null;
-    return setWorkspace(picked);
-  });
-
   wrapIpcHandler(IPC.WORKSPACE_PICK_DIRECTORY, async (): Promise<string | null> => {
     return pickDirectoryPath();
-  });
-
-  wrapIpcHandler(IPC.WORKSPACE_SET, async (_event, path: string) => {
-    assertString('workspace:set', 'path', path, { maxBytes: MAX_PATH_BYTES });
-    return setWorkspace(path);
   });
 
   // ---- Multi-workspace registry ---------------------------------------

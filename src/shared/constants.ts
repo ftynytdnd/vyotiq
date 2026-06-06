@@ -196,12 +196,9 @@ export const IPC = {
   WINDOW_RELOAD: 'window:reload',
   WINDOW_TOGGLE_DEVTOOLS: 'window:toggle-devtools',
 
-  // Workspace (single active — preserved for back-compat title bar / tools)
-  WORKSPACE_GET: 'workspace:get',
-  WORKSPACE_PICK: 'workspace:pick',
+  // Workspace
   /** Open the folder picker and return a path without activating a workspace. */
   WORKSPACE_PICK_DIRECTORY: 'workspace:pick-directory',
-  WORKSPACE_SET: 'workspace:set',
   WORKSPACE_LIST_TREE: 'workspace:list-tree',
   // Workspaces registry (multi)
   WORKSPACES_LIST: 'workspaces:list',
@@ -224,7 +221,9 @@ export const IPC = {
   PROVIDERS_REMOVE: 'providers:remove',
   PROVIDERS_DISCOVER_MODELS: 'providers:discover-models',
   PROVIDERS_TEST: 'providers:test',
-  // Future: per-model context-window override IPC (not wired yet).
+
+  // Token estimation (main-process BPE / heuristic)
+  TOKENS_ESTIMATE: 'tokens:estimate',
 
   // Chat / orchestrator
   CHAT_SEND: 'chat:send',

@@ -1,5 +1,5 @@
 /**
- * Composer footer-mode layout — inline send beside textarea.
+ * Composer layout — inline send beside textarea; compact chip row.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,7 +14,6 @@ import { INITIAL_TIMELINE_STATE } from '@renderer/components/timeline/reducer/ty
 vi.mock('@renderer/components/composer/useComposerAttachments.js', () => ({
   useComposerAttachments: () => ({
     attachments: [],
-    addPaths: vi.fn(),
     pickFromComputer: vi.fn(),
     remove: vi.fn(),
     clearAttachments: vi.fn(),
@@ -30,6 +29,10 @@ vi.mock('@renderer/components/composer/useComposerHistory.js', () => ({
     recall: () => null,
     reset: vi.fn()
   })
+}));
+
+vi.mock('@renderer/components/composer/useComposerTokenEstimate.js', () => ({
+  useComposerTokenEstimate: () => null
 }));
 
 beforeEach(() => {
@@ -62,21 +65,44 @@ beforeEach(() => {
   } as never);
 });
 
-describe('Composer footer mode', () => {
-  it('renders inline send beside the textarea', () => {
+describe('Composer layout', () => {
+  it('renders send in the composer grid beside the textarea', () => {
     const { container } = render(
       <Composer
-        variant="footer"
         model={{ providerId: 'p1', modelId: 'm1' }}
         onModelChange={() => {}}
         onOpenProviders={() => {}}
       />
     );
 
-    const row = container.querySelector('.vx-composer-input-row');
-    expect(row).not.toBeNull();
-    expect(row?.querySelector('[contenteditable="true"]')).not.toBeNull();
+    expect(container.querySelector('.vx-composer-editor-slot [contenteditable="true"]')).not.toBeNull();
+    expect(container.querySelector('.vx-composer-send-slot')).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Send' })).toBeInTheDocument();
-    expect(container.querySelector('.vx-composer-footer')).toBeNull();
+  });
+
+  it('shows ask-user hint in the status strip', () => {
+    useChatStore.setState({
+      awaitingAskUser: true,
+      events: [
+        {
+          kind: 'ask-user-prompt',
+          id: 'q1',
+          ts: 1,
+          status: 'pending',
+          payload: { title: 'Pick a color', questions: [] }
+        }
+      ]
+    } as never);
+
+    render(
+      <Composer
+        model={{ providerId: 'p1', modelId: 'm1' }}
+        onModelChange={() => {}}
+        onOpenProviders={() => {}}
+      />
+    );
+
+    expect(screen.getByText(/Reply needed/i)).toBeInTheDocument();
+    expect(screen.getByText(/Pick a color/i)).toBeInTheDocument();
   });
 });

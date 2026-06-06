@@ -15,9 +15,9 @@ import {
   hasComposerContent,
   parseMentionDocument
 } from '../../composer/mention/mentionDocument.js';
-import { pickComputerFileMention } from '../../composer/mention/useMentionComputerPick.js';
 import { useComposerAttachments } from '../../composer/useComposerAttachments.js';
 import { SendButton } from '../../composer/SendButton.js';
+import { ModelPicker } from '../../composer/modelPicker/index.js';
 import { Button } from '../../ui/Button.js';
 import { Notice } from '../../ui/Notice.js';
 import { appComposerShellClassName } from '../../ui/SurfaceShell.js';
@@ -55,8 +55,8 @@ export function InlinePromptSession({
   promptEventId,
   intent,
   model,
-  onModelChange: _onModelChange,
-  onOpenProviders: _onOpenProviders,
+  onModelChange,
+  onOpenProviders,
   initialAttachments = [],
   onCancel
 }: InlinePromptSessionProps) {
@@ -199,40 +199,38 @@ export function InlinePromptSession({
 
         {session.isEdit && (
           <>
-            <div className="vx-composer-input-zone vx-composer-input-zone--footer">
-              <div className="vx-composer-input-row">
-                <MentionComposer
-                  value={session.editText}
-                  onChange={(next) => session.setEditText(next)}
-                  onPickFromComputer={async () =>
-                    pickComputerFileMention({
-                      conversationId,
-                      workspaceId,
-                      messageId: peekPendingMessageId()
-                    })
+            <div className="flex items-center gap-1.5">
+              <ModelPicker
+                value={model}
+                onChange={onModelChange}
+                onOpenProviders={onOpenProviders}
+              />
+            </div>
+            <div className="vx-composer-inline-row">
+              <MentionComposer
+                value={session.editText}
+                onChange={(next) => session.setEditText(next)}
+                placeholder="@ to mention files, or describe your task…"
+                className="min-h-[2.5rem] min-w-0 flex-1"
+                style={{ maxHeight: TEXTAREA_MAX_HEIGHT }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (!session.primaryDisabled) handlePrimary();
                   }
-                  placeholder="@ to mention files, or describe your task…"
-                  className="min-h-[1.75rem] min-w-0 flex-1 leading-5"
-                  style={{ maxHeight: TEXTAREA_MAX_HEIGHT }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      if (!session.primaryDisabled) handlePrimary();
-                    }
-                  }}
-                />
-                <SendButton
-                  onClick={handlePrimary}
-                  state={sendState}
-                  disabled={session.primaryDisabled}
-                />
-              </div>
+                }}
+              />
+              <SendButton
+                onClick={handlePrimary}
+                state={sendState}
+                disabled={session.primaryDisabled}
+              />
             </div>
             {!hasComposerContent(editDoc) && attachments.length === 0 && (
               <p className="text-meta text-warning">Type a message to send.</p>
             )}
             {!model && (
-              <p className="text-meta text-warning">Select a model in the composer below to resend.</p>
+              <p className="text-meta text-warning">Select a model above to resend.</p>
             )}
             {hasComposerContent(editDoc) &&
               intent.kind === 'edit' &&

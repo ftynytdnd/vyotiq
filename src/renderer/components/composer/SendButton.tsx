@@ -17,18 +17,13 @@ import {
 
 
 interface SendButtonProps {
-
   onClick: () => void;
-
   state: 'idle' | 'ready' | 'processing';
-
   disabled?: boolean;
-
+  className?: string;
 }
 
-
-
-export function SendButton({ onClick, state, disabled }: SendButtonProps) {
+export function SendButton({ onClick, state, disabled, className }: SendButtonProps) {
 
   const isProcessing = state === 'processing';
 
@@ -51,11 +46,9 @@ export function SendButton({ onClick, state, disabled }: SendButtonProps) {
       title={isProcessing ? 'Stop' : 'Send'}
 
       className={cn(
-
         'vx-btn app-no-drag h-6 w-6 shrink-0 px-0',
-
         'disabled:cursor-not-allowed',
-
+        className,
         isProcessing
 
           ? 'vx-btn-primary bg-surface-overlay/60'
