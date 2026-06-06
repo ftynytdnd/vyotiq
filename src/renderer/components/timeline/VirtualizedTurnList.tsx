@@ -1,6 +1,6 @@
 /**
  * End-anchored virtualized turn list for long transcripts.
- * Renders only visible `TurnBlock` segments; pairs with instant tail pin.
+ * Uses TanStack Virtual chat pattern: anchorTo end + followOnAppend.
  */
 
 import {
@@ -9,6 +9,7 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
   type ReactNode,
   type RefObject
 } from 'react';
@@ -16,10 +17,15 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import type { DisplayRow } from './shared/displayRowTypes.js';
 import { partitionTurnSegment } from './shared/groupTurnSegment.js';
 import { findTimelineScrollParent } from './shared/timelineScrollParent.js';
-import { pinScrollParentToTail } from './shared/pinScrollToTail.js';
+import { TIMELINE_SCROLL_UNSTICK_PX } from './shared/scrollTailState.js';
+import { estimateTailTurnHeight } from './shared/timelineVirtualize.js';
+import { findTurnIndexForRowKey } from './shared/timelineVirtualNav.js';
 
 export interface TimelinePinHandle {
   pinToTail: () => void;
+  scrollToTurnIndex: (index: number) => void;
+  scrollToRowKey: (rowKey: string) => boolean;
+  isAtEnd: () => boolean;
 }
 
 interface VirtualizedTurnListProps {
@@ -36,6 +42,7 @@ export const VirtualizedTurnList = forwardRef<TimelinePinHandle, VirtualizedTurn
     ref
   ) {
     const scrollParentRef = useRef<HTMLElement | null>(null);
+    const [tailHeightEstimate, setTailHeightEstimate] = useState(180);
 
     useEffect(() => {
       scrollParentRef.current = findTimelineScrollParent(containerRef.current);
@@ -43,6 +50,10 @@ export const VirtualizedTurnList = forwardRef<TimelinePinHandle, VirtualizedTurn
         scrollParentRef.current = null;
       };
     }, [containerRef, turnSegments.length]);
+
+    useEffect(() => {
+      setTailHeightEstimate(estimateTailTurnHeight(tailScrollKey));
+    }, [tailScrollKey]);
 
     const segmentKeys = useMemo(
       () =>
@@ -53,12 +64,17 @@ export const VirtualizedTurnList = forwardRef<TimelinePinHandle, VirtualizedTurn
       [turnSegments]
     );
 
+    const lastIndex = turnSegments.length - 1;
+
     const virtualizer = useVirtualizer({
       count: turnSegments.length,
       getScrollElement: () => scrollParentRef.current,
-      estimateSize: () => 180,
+      estimateSize: (index) =>
+        index === lastIndex ? tailHeightEstimate : 180,
       overscan: 3,
       anchorTo: 'end',
+      followOnAppend: true,
+      scrollEndThreshold: TIMELINE_SCROLL_UNSTICK_PX,
       getItemKey: (index) => segmentKeys[index] ?? index,
       measureElement: (el) => el.getBoundingClientRect().height
     });
@@ -67,23 +83,34 @@ export const VirtualizedTurnList = forwardRef<TimelinePinHandle, VirtualizedTurn
       ref,
       () => ({
         pinToTail: () => {
-          const parent = scrollParentRef.current;
-          if (parent) pinScrollParentToTail(parent);
           if (turnSegments.length > 0) {
             virtualizer.scrollToEnd({ behavior: 'instant' });
           }
-        }
+        },
+        scrollToTurnIndex: (index: number) => {
+          if (index < 0 || index >= turnSegments.length) return;
+          virtualizer.scrollToIndex(index, { align: 'start', behavior: 'instant' });
+        },
+        scrollToRowKey: (rowKey: string) => {
+          const index = findTurnIndexForRowKey(turnSegments, rowKey);
+          if (index < 0) return false;
+          virtualizer.scrollToIndex(index, { align: 'start', behavior: 'instant' });
+          return true;
+        },
+        isAtEnd: () => virtualizer.isAtEnd(TIMELINE_SCROLL_UNSTICK_PX)
       }),
-      [turnSegments.length, virtualizer]
+      [turnSegments, virtualizer]
     );
 
     useEffect(() => {
       if (turnSegments.length === 0) return;
-      const lastIndex = turnSegments.length - 1;
-      const node = scrollParentRef.current
-        ?.querySelector(`[data-virtual-turn-index="${lastIndex}"]`) as HTMLElement | null;
-      if (node) virtualizer.measureElement(node);
-    }, [tailScrollKey, turnSegments.length, virtualizer]);
+      const node = scrollParentRef.current?.querySelector(
+        `[data-virtual-turn-index="${lastIndex}"]`
+      ) as HTMLElement | null;
+      if (node) {
+        virtualizer.measureElement(node);
+      }
+    }, [tailScrollKey, turnSegments.length, lastIndex, virtualizer, tailHeightEstimate]);
 
     const virtualItems = virtualizer.getVirtualItems();
 

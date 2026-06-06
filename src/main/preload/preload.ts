@@ -90,7 +90,13 @@ const api: VyotiqApi = {
   tools: {
     openPath: (path, workspaceId) =>
       ipcRenderer.invoke(IPC.TOOLS_OPEN_PATH, path, workspaceId),
-    rerun: (input) => ipcRenderer.invoke(IPC.TOOLS_RERUN, input)
+    rerun: (input) => ipcRenderer.invoke(IPC.TOOLS_RERUN, input),
+    generateRunSummary: (input) =>
+      ipcRenderer.invoke(IPC.REPORTS_GENERATE_RUN_SUMMARY, input)
+  },
+
+  reports: {
+    open: (input) => ipcRenderer.invoke(IPC.REPORTS_OPEN, input)
   },
 
   memory: {

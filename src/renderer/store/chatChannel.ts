@@ -27,6 +27,11 @@
 import type { TimelineEvent } from '@shared/types/chat.js';
 import { vyotiq } from '../lib/ipc.js';
 import { useChatStore } from './useChatStore.js';
+import { useConversationsStore } from './useConversationsStore.js';
+import { useToastStore } from './useToastStore.js';
+import { resolveRunSummaryOfferFromRunId } from '../lib/runSummaryOffer.js';
+import { useSettingsStore } from './useSettingsStore.js';
+import { resolveReportsSettings } from '@shared/report/reportsSettings.js';
 import { isTimelineEvent } from '../components/timeline/reducer/runtimeGuards.js';
 import { createRafBatcher } from '../lib/rafBatch.js';
 import { logger } from '../lib/logger.js';
@@ -34,6 +39,25 @@ import { PartialJsonParser } from '@shared/text/partialJsonParser.js';
 import { tokenizeForModel } from '@shared/text/tokenizeForModel.js';
 
 const log = logger.child('chatChannel');
+
+function maybeNotifyRunSummaryOffer(runId: string): void {
+  const chat = useChatStore.getState();
+  const convId = chat.runIdToConv[runId];
+  if (!convId) return;
+  const slice = chat.slices[convId];
+  if (!slice) return;
+  const workspaceId =
+    useConversationsStore.getState().list.find((m) => m.id === convId)?.workspaceId ?? null;
+  if (!workspaceId) return;
+  const offer = resolveRunSummaryOfferFromRunId(runId, convId, workspaceId, slice.events);
+  if (!offer) return;
+  const reports = resolveReportsSettings(useSettingsStore.getState().settings.ui);
+  const fileLabel = `${offer.fileCount ?? 0} file${offer.fileCount === 1 ? '' : 's'}`;
+  const message = reports.enableAiRunSummary
+    ? `Edit run complete (${fileLabel}) — Quick summary or AI report below`
+    : `Edit run complete (${fileLabel}) — Quick summary below (enable AI report in Settings → Agent behavior)`;
+  useToastStore.getState().show(message, 'info', 6000);
+}
 
 interface ChannelGlobals {
   __vyotiqChatChannelUnsub?: Array<() => void>;
@@ -725,6 +749,7 @@ export async function bootstrapChatChannel(): Promise<void> {
         // local counters need their own cleanup so they don't survive
         // the run termination into a potential next session.
         resetSyntheticForRun(runId);
+        maybeNotifyRunSummaryOffer(runId);
         useChatStore.getState().finishRun(runId);
       } catch (err) {
         log.warn('chat:done listener threw', { runId, err });

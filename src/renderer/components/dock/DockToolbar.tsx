@@ -2,7 +2,7 @@
  * DockToolbar — footer / collapsed-rail actions (composer-aligned h-6 pills).
  */
 
-import { ChevronLeft, ChevronRight, Plus, Search, Settings } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Search, Settings, ArrowLeft } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { DOCK_FOOTER_TOOLBAR_CLASS, DOCK_TAB_ICON_CLASS, DOCK_TAB_ICON_STROKE } from './dockShared.js';
 import { cn } from '../../lib/cn.js';
@@ -19,16 +19,18 @@ export interface DockToolbarProps {
   className?: string;
   /** Larger icon slots and expand-first ordering for centered dock rail. */
   dockStyle?: boolean;
+  /** Strip-only mode while settings is open — back replaces settings; no expand. */
+  settingsMode?: boolean;
+  onBackFromSettings?: () => void;
 }
 
-type DockActionId = 'new' | 'search' | 'settings' | 'collapse';
+type DockActionId = 'new' | 'search' | 'settings' | 'back' | 'collapse';
 
 interface DockActionDef {
   id: DockActionId;
   label: string;
   title: string;
   active?: boolean;
-  emphasize?: boolean;
   onClick: () => void;
 }
 
@@ -41,7 +43,9 @@ export function DockToolbar({
   onCollapse,
   collapseIcon,
   className,
-  dockStyle = false
+  dockStyle = false,
+  settingsMode = false,
+  onBackFromSettings
 }: DockToolbarProps) {
   const CollapseIcon = collapseIcon === 'left' ? ChevronLeft : ChevronRight;
   const collapseLabel =
@@ -56,8 +60,7 @@ export function DockToolbar({
       id: 'collapse',
       label: collapseLabel,
       title: collapseTitle,
-      onClick: onCollapse,
-      emphasize: dockStyle && collapseIcon === 'right'
+      onClick: onCollapse
     },
     {
       id: 'new',
@@ -72,20 +75,35 @@ export function DockToolbar({
       active: searchOpen,
       onClick: onToggleSearch
     },
-    {
-      id: 'settings',
-      label: 'Settings',
-      title: 'Settings (Ctrl+,)',
-      onClick: onOpenSettings
-    }
+    ...(settingsMode
+      ? [
+          {
+            id: 'back' as const,
+            label: 'Back to chat',
+            title: 'Back to chat',
+            onClick: () => onBackFromSettings?.()
+          }
+        ]
+      : [
+          {
+            id: 'settings' as const,
+            label: 'Settings',
+            title: 'Settings (Ctrl+,)',
+            onClick: onOpenSettings
+          }
+        ])
   ];
 
   const order: DockActionId[] =
     layout === 'horizontal'
-      ? ['new', 'search', 'settings', 'collapse']
+      ? settingsMode
+        ? ['new', 'back', 'collapse']
+        : ['new', 'search', 'settings', 'collapse']
       : dockStyle
-        ? ['collapse', 'new', 'search', 'settings']
-        : ['new', 'search', 'settings', 'collapse'];
+        ? settingsMode
+          ? ['new', 'back']
+          : ['collapse', 'new', 'search', 'settings']
+        : ['new', 'search', settingsMode ? 'back' : 'settings', 'collapse'];
 
   const ordered = order
     .map((id) => actions.find((a) => a.id === id))
@@ -104,6 +122,8 @@ export function DockToolbar({
         return <Search className={iconClass} strokeWidth={stroke} />;
       case 'settings':
         return <Settings className={iconClass} strokeWidth={stroke} />;
+      case 'back':
+        return <ArrowLeft className={iconClass} strokeWidth={stroke} />;
       default: {
         const _exhaustive: never = id;
         return _exhaustive;
@@ -169,7 +189,6 @@ export function DockToolbar({
             onClick={action.onClick}
             hoverScale={dockStyle}
             dockStyle={dockStyle}
-            emphasize={action.emphasize}
           >
             {renderIcon(action.id)}
           </DockIconButton>
@@ -186,7 +205,6 @@ function DockIconButton({
   onClick,
   hoverScale,
   dockStyle,
-  emphasize,
   children
 }: {
   label: string;
@@ -195,7 +213,6 @@ function DockIconButton({
   onClick: () => void;
   hoverScale?: boolean;
   dockStyle?: boolean;
-  emphasize?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -208,7 +225,6 @@ function DockIconButton({
         dockStyle ? 'vx-dock-icon-slot vx-btn vx-btn-quiet px-0' : chromeToolbarButtonClassName(active),
         !dockStyle && 'h-6 w-6 shrink-0 px-0',
         dockStyle && active && 'bg-chrome-hover-soft text-text-primary',
-        dockStyle && emphasize && 'bg-chrome-hover-soft/60 text-text-primary',
         hoverScale && 'vx-dock-icon-hover'
       )}
     >

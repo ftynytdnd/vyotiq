@@ -11,6 +11,8 @@ import {
 import { vyotiq } from '../lib/ipc.js';
 import { useAttachmentPreviewStore } from './useAttachmentPreviewStore.js';
 import { useSettingsStore } from './useSettingsStore.js';
+import { useUiStore } from './useUiStore.js';
+import { useDockSearchStore } from './useDockSearchStore.js';
 
 export type { SettingsSectionId };
 
@@ -41,6 +43,11 @@ function clearCompanionOverlays(): void {
   useAttachmentPreviewStore.getState().close();
 }
 
+function collapseDockForSettings(): void {
+  useUiStore.getState().setDockExpanded(false);
+  useDockSearchStore.getState().setOpen(false);
+}
+
 function normalizeSectionArg(
   section: LegacySettingsTabArg | undefined,
   fallback: SettingsSectionId
@@ -64,6 +71,7 @@ export const useAppViewStore = create<AppViewStore>((set, get) => ({
   aboutOpen: false,
   openSettings: (section?: LegacySettingsTabArg) => {
     clearCompanionOverlays();
+    collapseDockForSettings();
     const nextSection = resolveInitialSection(section, get().settingsSection);
     set({
       view: 'settings',

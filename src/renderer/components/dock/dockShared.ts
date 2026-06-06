@@ -31,6 +31,7 @@ const DOCK_TAB_ROW_CLASS = cn('vx-dock-tab group app-no-drag shrink-0');
 
 export {
   clampDockWidth,
+  DOCK_STRIP_WIDTH,
   DOCK_WIDTH_DEFAULT,
   DOCK_WIDTH_MAX
 } from '@shared/dock/dockWidth.js';
@@ -58,25 +59,22 @@ export function dockWorkspaceActionClassName(): string {
 export const DOCK_RESIZE_HANDLE_CLASS =
   'vx-dock-resize-handle absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize';
 
-/** Persistent edge strip width (px) — flyout expands to the right. */
-export const DOCK_STRIP_WIDTH = 44;
-
 export const DOCK_EDGE_CONTAINER_CLASS = cn(
-  'absolute left-0 top-[var(--titlebar-h)] bottom-0 z-(--z-dock-panel) flex min-h-0'
+  'absolute left-0 top-0 bottom-0 z-(--z-dock-rail) flex min-h-0'
 );
 
 export function dockFlyoutShellClassName(isResizing: boolean): string {
   return cn(
-    'vx-dock-shell vx-dock-flyout app-no-drag',
-    'flex min-h-0 max-h-full flex-1 flex-col overflow-hidden',
+    'vx-dock-shell vx-dock-flyout app-no-drag z-(--z-dock-panel)',
+    'flex min-h-0 max-h-full flex-1 flex-col overflow-hidden pt-[var(--titlebar-h)]',
     isResizing ? '' : 'transition-[width] duration-200 ease-out'
   );
 }
 
 export const DOCK_EDGE_STRIP_CLASS = cn(
   'vx-dock-edge-strip vx-dock-shell app-no-drag',
-  'flex w-11 shrink-0 flex-col items-center justify-start border-r border-border-subtle/50',
-  'bg-surface-raised py-2'
+  'flex w-11 shrink-0 flex-col items-center justify-start',
+  'bg-surface-base pt-[var(--dock-strip-pt)] pb-2'
 );
 
 export function workspacePanelClassName(_workspaceCount: number): string {

@@ -198,6 +198,15 @@ describe('parseStreamingBlocks', () => {
     expect(blocks[0].headers).toHaveLength(2);
     expect(blocks[0].rows).toHaveLength(1);
   });
+
+  it('stages a table preview when only the header row has arrived', () => {
+    const blocks = parseStreamingBlocks('| File | Change |');
+    expect(blocks[0]).toMatchObject({
+      kind: 'table',
+      preview: true,
+      partial: true
+    });
+  });
 });
 
 describe('phase headline helpers', () => {

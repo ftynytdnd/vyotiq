@@ -43,6 +43,12 @@ import {
   type LoopCheckpoint
 } from './pausedRunRegistry.js';
 import { registerRunCrashDrain } from './runCrashDrain.js';
+import { getSettings } from '../settings/settingsStore.js';
+import { resolveReportsSettings, type ResolvedReportsSettings } from '@shared/report/reportsSettings.js';
+import {
+  HOST_REPORT_GATE_YES_INSTRUCTION,
+  isHostReportGateNoAnswer
+} from './loop/hostReportGate.js';
 
 const log = logger.child('orchestrator/AgentV');
 
@@ -346,6 +352,15 @@ export async function startRun(
     }
   }
 
+  let reportsSettings: ResolvedReportsSettings;
+  try {
+    const settings = await getSettings();
+    reportsSettings = resolveReportsSettings(settings.ui);
+  } catch (err) {
+    log.warn('getSettings failed; using report defaults', { err });
+    reportsSettings = resolveReportsSettings();
+  }
+
   try {
     const initialMessages = await buildInitialMessages(
       input,
@@ -383,7 +398,8 @@ export async function startRun(
       deps,
       initialMessages,
       initialQuery: input.prompt,
-      permissions: input.permissions
+      permissions: input.permissions,
+      reportsSettings
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -416,6 +432,7 @@ interface RunLoopBodyOpts {
   initialQuery: string;
   permissions: ChatSendInput['permissions'];
   resumeCheckpoint?: LoopCheckpoint;
+  reportsSettings: ResolvedReportsSettings;
 }
 
 async function runLoopBody(opts: RunLoopBodyOpts): Promise<void> {
@@ -428,6 +445,7 @@ async function runLoopBody(opts: RunLoopBodyOpts): Promise<void> {
     initialMessages: opts.initialMessages,
     initialQuery: opts.initialQuery,
     permissions: opts.permissions,
+    reportsSettings: opts.reportsSettings,
     ...(opts.resumeCheckpoint ? { resumeCheckpoint: opts.resumeCheckpoint } : {})
   });
 
@@ -440,6 +458,7 @@ async function runLoopBody(opts: RunLoopBodyOpts): Promise<void> {
       workspacePath: opts.workspacePath,
       workspaceId: opts.workspaceId,
       checkpoint: loopResult.pausedForAskUser,
+      reportsSettings: opts.reportsSettings,
       callbacks: {
         emit: opts.emit,
         onDone: opts.deps.onDone,
@@ -498,11 +517,17 @@ export async function submitAskUserAnswers(input: AskUserSubmitInput): Promise<b
     input.answers,
     input.supplementText
   );
-  const toolContent = formatAskUserToolResult(
+  let toolContent = formatAskUserToolResult(
     input.payload,
     input.answers,
     input.supplementText
   );
+  const hostGateNo =
+    entry.checkpoint.hostReportGate === true &&
+    isHostReportGateNoAnswer(input.payload, input.answers);
+  if (entry.checkpoint.hostReportGate && !hostGateNo) {
+    toolContent = `${toolContent}\n\n${HOST_REPORT_GATE_YES_INSTRUCTION}`;
+  }
 
   const { emit, onDone, onError, onAwaitingUser } = entry.callbacks;
   const ts = Date.now();
@@ -547,6 +572,22 @@ export async function submitAskUserAnswers(input: AskUserSubmitInput): Promise<b
     content: toolContent
   });
 
+  if (hostGateNo) {
+    onDone();
+    removeActiveRunIfCurrent(input.runId, entry.generation);
+    if (entry.workspaceId && entry.input.conversationId) {
+      try {
+        await finalizeCheckpointRun(input.runId);
+      } catch (err) {
+        log.warn('checkpoint finalizeRun failed after host gate No', {
+          runId: input.runId,
+          err
+        });
+      }
+    }
+    return true;
+  }
+
   try {
     await runLoopBody({
       input: entry.input,
@@ -559,7 +600,8 @@ export async function submitAskUserAnswers(input: AskUserSubmitInput): Promise<b
       initialMessages: messages,
       initialQuery: entry.checkpoint.query,
       permissions: entry.input.permissions,
-      resumeCheckpoint: entry.checkpoint
+      resumeCheckpoint: entry.checkpoint,
+      reportsSettings: entry.reportsSettings
     });
   } catch (err: unknown) {
     clearPausedRun(input.runId);

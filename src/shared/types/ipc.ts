@@ -70,6 +70,42 @@ export interface ToolRerunInput {
 
 }
 
+export interface GenerateRunSummaryInput {
+
+  conversationId: string;
+
+  workspaceId: string;
+
+  promptId: string;
+
+  promptPreview: string;
+
+  durationMs: number;
+
+  completedAt: number;
+
+  edits: Array<{ filePath: string; additions: number; deletions: number }>;
+
+}
+
+export type GenerateRunSummaryReply =
+
+  | { ok: true; title: string; relPath: string; bytes: number }
+
+  | { ok: false; error: string };
+
+export interface ReportsOpenInput {
+
+  relPath: string;
+
+  workspaceId?: string;
+
+  title?: string;
+
+}
+
+export type ReportsOpenReply = { ok: true } | { ok: false; error: string };
+
 
 
 export type ToolRerunReply =
@@ -237,6 +273,28 @@ export interface AppSettings {
     /** Pinned conversation ids shown at the top of the dock list. */
 
     pinnedConversationIds?: string[];
+
+    /** HTML report deliverables — auto-open, in-app browser, gate, AI footer. */
+
+    reports?: {
+
+      /** Open HTML when a report is ready (default true). */
+
+      autoOpenReports?: boolean;
+
+      /** Use Vyotiq report BrowserWindow vs OS browser (default true). */
+
+      openInAppBrowser?: boolean;
+
+      /** Host ask_user gate after large edit runs without report (default true). */
+
+      promptForReportAfterEdits?: boolean;
+
+      /** Show token-costing "AI report" footer action (default false). */
+
+      enableAiRunSummary?: boolean;
+
+    };
 
   };
 
@@ -777,6 +835,18 @@ export interface VyotiqApi {
     /** Re-run a settled read/ls/search/memory tool against the workspace. */
 
     rerun(input: ToolRerunInput): Promise<ToolRerunReply>;
+
+    /** Auto-generate an HTML run summary from edit events (no LLM round-trip). */
+    generateRunSummary(input: GenerateRunSummaryInput): Promise<GenerateRunSummaryReply>;
+
+  };
+
+  // ---- Reports (in-app browser) ----
+
+  reports: {
+
+    /** Open a workspace HTML report in the dedicated report BrowserWindow. */
+    open(input: ReportsOpenInput): Promise<ReportsOpenReply>;
 
   };
 

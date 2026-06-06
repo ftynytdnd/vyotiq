@@ -30,10 +30,13 @@ import { cn } from '../../../lib/cn.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/shellIcons.js';
 import { useCopyFeedback } from '../../../hooks/useCopyFeedback.js';
 import { TaskCheckbox } from './TaskCheckbox.js';
+import { MdTableFromMarkdown } from './MdTable.js';
 
 interface MarkdownBodyProps {
   text: string;
   className?: string;
+  /** When true, omit the outer prose wrapper (parent already scopes styles). */
+  embedded?: boolean;
 }
 
 // Hoist plugin tuples to module scope so React doesn't see new array
@@ -80,7 +83,7 @@ const MD_COMPONENTS: MdProps['components'] = {
 
 type InputCheckboxOverrideProps = InputHTMLAttributes<HTMLInputElement>;
 
-export function MarkdownBody({ text, className }: MarkdownBodyProps) {
+export function MarkdownBody({ text, className, embedded = false }: MarkdownBodyProps) {
   // Compose the two display-side text normalizers in one memo so we
   // pay the scan cost once per delta and re-render only when the
   // input string actually changes. Order matters: emoji-strip first
@@ -109,16 +112,15 @@ export function MarkdownBody({ text, className }: MarkdownBodyProps) {
     [sanitizedText]
   );
 
+  if (embedded) return tree;
   return <div className={cn('vyotiq-md vx-timeline-md vx-prose', className)}>{tree}</div>;
 }
 
 function TableWithWrap({ children, ...rest }: ComponentProps<'table'>) {
   return (
-    <div className="vx-timeline-md-table-wrap">
-      <table className="vx-timeline-md-table" {...rest}>
-        {children}
-      </table>
-    </div>
+    <MdTableFromMarkdown {...rest}>
+      {children}
+    </MdTableFromMarkdown>
   );
 }
 

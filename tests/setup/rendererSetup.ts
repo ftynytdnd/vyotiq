@@ -81,7 +81,16 @@ function makeStubApi() {
     },
     tools: {
       openPath: asyncNoop,
-      rerun: asyncNoop
+      rerun: asyncNoop,
+      generateRunSummary: vi.fn(async () => ({
+        ok: true as const,
+        title: 'Stub',
+        relPath: '.vyotiq/reports/stub.html',
+        bytes: 1
+      }))
+    },
+    reports: {
+      open: vi.fn(async () => ({ ok: true as const }))
     },
     memory: {
       list: vi.fn(async () => []),

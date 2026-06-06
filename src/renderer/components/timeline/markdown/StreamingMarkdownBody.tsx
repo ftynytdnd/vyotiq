@@ -7,6 +7,7 @@
 import {
   createElement,
   Fragment,
+  memo,
   useMemo,
   type ReactNode
 } from 'react';
@@ -23,6 +24,8 @@ import { CodeLanguageEyebrow } from '../shared/CodeLanguageEyebrow.js';
 import { useThrottledValue } from '../../../lib/useThrottledValue.js';
 import { MarkdownBody } from './MarkdownBody.js';
 import { TaskCheckbox } from './TaskCheckbox.js';
+import { MdTable } from './MdTable.js';
+import { healStreamingMarkdown } from './healStreamingMarkdown.js';
 import {
   parseStreamingBlocks,
   type InlineSpan,
@@ -38,6 +41,39 @@ interface StreamingMarkdownBodyProps {
   className?: string;
 }
 
+const HEADING_LEVELS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const;
+
+function spanText(spans: InlineSpan[]): string {
+  return spans
+    .map((s) => {
+      if (s.kind === 'text' || s.kind === 'code') return s.text;
+      if ('children' in s) return spanText(s.children);
+      return '';
+    })
+    .join('');
+}
+
+function blockContentKey(block: StreamingBlock): string {
+  switch (block.kind) {
+    case 'heading':
+      return `h${block.level}:${spanText(block.spans)}`;
+    case 'paragraph':
+      return `p:${spanText(block.spans)}`;
+    case 'blockquote':
+      return `bq:${spanText(block.spans)}`;
+    case 'hr':
+      return 'hr';
+    case 'list':
+      return `list:${block.ordered ? 'ol' : 'ul'}:${block.items.length}`;
+    case 'table':
+      return `table:${block.headers.length}:${block.rows.length}:${block.preview ? 'pv' : 'd'}:${block.partial ? 'p' : 'd'}`;
+    case 'code':
+      return `code:${block.language ?? ''}:${block.partial ? 'p' : 'd'}:${block.content.slice(0, 48)}`;
+    default:
+      return 'unknown';
+  }
+}
+
 export function StreamingMarkdownBody({
   text,
   done,
@@ -49,24 +85,28 @@ export function StreamingMarkdownBody({
   );
 
   const throttledCleaned = useThrottledValue(cleaned, done ? 0 : 120);
+  const streamSource = done ? cleaned : throttledCleaned;
 
   const blocks = useMemo(
-    () => (done ? [] : parseStreamingBlocks(throttledCleaned)),
-    [throttledCleaned, done]
+    () => (done ? [] : parseStreamingBlocks(healStreamingMarkdown(streamSource))),
+    [streamSource, done]
   );
 
   if (cleaned.length === 0) return null;
 
-  // Keep a stable outer wrapper at stream end so the handoff to full GFM
-  // does not unmount the prose shell (avoids settle flash).
+  const proseClass = cn(
+    'vyotiq-md vx-timeline-md vyotiq-stream-md vx-timeline-stream-md vx-prose',
+    className
+  );
+
   return (
-    <div className={cn('vyotiq-stream-md vx-timeline-stream-md vx-prose', className)}>
+    <div className={proseClass}>
       {done ? (
-        <MarkdownBody text={cleaned} />
+        <MarkdownBody text={cleaned} embedded />
       ) : (
         blocks.map((block, idx) => (
           <StreamBlock
-            key={streamBlockKey(block, idx)}
+            key={`block-${idx}`}
             block={block}
             isTail={idx === blocks.length - 1}
           />
@@ -76,73 +116,50 @@ export function StreamingMarkdownBody({
   );
 }
 
-const HEADING_LEVELS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const;
-
-function streamBlockKey(block: StreamingBlock, idx: number): string {
-  const tail = (text: string) => text.slice(0, 24);
-  switch (block.kind) {
-    case 'heading':
-      return `h${block.level}-${tail(block.spans.map((s) => (s.kind === 'text' ? s.text : '')).join(''))}`;
-    case 'paragraph':
-      return `p-${idx}-${tail(block.spans.map((s) => (s.kind === 'text' ? s.text : '')).join(''))}`;
-    case 'blockquote':
-      return `bq-${idx}-${tail(block.spans.map((s) => (s.kind === 'text' ? s.text : '')).join(''))}`;
-    case 'hr':
-      return `hr-${idx}`;
-    case 'list':
-      return `list-${block.ordered ? 'ol' : 'ul'}-${block.items.length}-${idx}`;
-    case 'table':
-      return `table-${block.headers.length}-${block.rows.length}-${block.partial ? 'p' : 'd'}-${idx}`;
-    case 'code':
-      return `code-${block.language ?? 'plain'}-${block.partial ? 'p' : 'd'}-${tail(block.content)}`;
-    default:
-      return `block-${idx}`;
-  }
-}
-
-function StreamBlock({ block, isTail }: { block: StreamingBlock; isTail: boolean }) {
-  switch (block.kind) {
-    case 'heading': {
-      const level = Math.min(6, Math.max(1, block.level));
-      const tag = HEADING_LEVELS[level - 1]!;
-      return createElement(
-        tag,
-        {
-          className: cn(
-            'vx-timeline-stream-heading vyotiq-stream-heading font-medium tracking-normal text-text-primary',
-            level <= 2 ? 'mt-3 mb-1.5 text-row' : 'mt-2 mb-1 text-chat-meta'
-          )
-        },
-        <InlineSpans spans={block.spans} />
-      );
-    }
-    case 'code':
-      return (
-        <StreamPreWithCopy
-          content={block.content}
-          language={block.language}
-          partial={block.partial && isTail}
-        />
-      );
-    case 'blockquote':
-      return (
-        <blockquote className="my-2 border-l-2 border-border-subtle/30 pl-[0.9em] vx-caption">
+const StreamBlock = memo(
+  function StreamBlock({ block, isTail }: { block: StreamingBlock; isTail: boolean }) {
+    switch (block.kind) {
+      case 'heading': {
+        const level = Math.min(6, Math.max(1, block.level));
+        const tag = HEADING_LEVELS[level - 1]!;
+        return createElement(
+          tag,
+          {
+            className: cn(
+              'vx-timeline-stream-heading vyotiq-stream-heading font-medium tracking-normal text-text-primary',
+              level <= 2 ? 'mt-3 mb-1.5 text-row' : 'mt-2 mb-1 text-chat-meta'
+            )
+          },
           <InlineSpans spans={block.spans} />
-        </blockquote>
-      );
-    case 'hr':
-      return <hr className="my-4 border-0 border-t border-border-subtle/20" />;
-    case 'paragraph':
-      return (
-        <p className="my-1.5 whitespace-pre-wrap break-words">
-          <InlineSpans spans={block.spans} />
-        </p>
-      );
-    case 'table':
-      return (
-        <div className="vx-timeline-md-table-wrap">
-          <table className="vx-timeline-md-table">
-            <thead>
+        );
+      }
+      case 'code':
+        return (
+          <StreamPreWithCopy
+            content={block.content}
+            language={block.language}
+            partial={block.partial && isTail}
+          />
+        );
+      case 'blockquote':
+        return (
+          <blockquote className="my-2 border-l-2 border-border-subtle/30 pl-[0.9em] vx-caption">
+            <InlineSpans spans={block.spans} />
+          </blockquote>
+        );
+      case 'hr':
+        return <hr className="my-4 border-0 border-t border-border-subtle/20" />;
+      case 'paragraph':
+        return (
+          <p className="my-1.5 whitespace-pre-wrap break-words">
+            <InlineSpans spans={block.spans} />
+          </p>
+        );
+      case 'table':
+        return (
+          <MdTable
+            busy={block.preview}
+            head={
               <tr>
                 {block.headers.map((cell, idx) => (
                   <th key={idx}>
@@ -150,30 +167,41 @@ function StreamBlock({ block, isTail }: { block: StreamingBlock; isTail: boolean
                   </th>
                 ))}
               </tr>
-            </thead>
-            <tbody>
-              {block.rows.map((row, rIdx) => (
-                <tr key={rIdx}>
-                  {row.map((cell, cIdx) => (
-                    <td key={cIdx}>
-                      <InlineSpans spans={cell} />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      );
-    case 'list':
-      return <StreamList root={{ ordered: block.ordered, items: block.items }} />;
-    default: {
-      const _exhaustive: never = block;
-      void _exhaustive;
-      return null;
+            }
+            body={
+              <>
+                {block.rows.map((row, rIdx) => (
+                  <tr key={rIdx}>
+                    {row.map((cell, cIdx) => (
+                      <td key={cIdx}>
+                        <InlineSpans spans={cell} />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </>
+            }
+          />
+        );
+      case 'list':
+        return <StreamList root={{ ordered: block.ordered, items: block.items }} />;
+      default: {
+        const _exhaustive: never = block;
+        void _exhaustive;
+        return null;
+      }
     }
+  },
+  (prev, next) => {
+    if (next.isTail || prev.isTail) {
+      return (
+        prev.isTail === next.isTail &&
+        blockContentKey(prev.block) === blockContentKey(next.block)
+      );
+    }
+    return blockContentKey(prev.block) === blockContentKey(next.block);
   }
-}
+);
 
 function StreamList({ root }: { root: StreamingListRoot }) {
   const tag = root.ordered ? 'ol' : 'ul';

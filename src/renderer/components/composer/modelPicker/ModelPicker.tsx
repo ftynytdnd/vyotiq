@@ -36,7 +36,7 @@ export function ModelPicker({ value, onChange, onOpenProviders }: ModelPickerPro
     if (!open) return;
     let frame = 0;
     let ticks = 0;
-    const MAX_TICKS = 8;
+    const MAX_TICKS = 16;
     const tick = () => {
       ticks += 1;
       setRevision((r) => r + 1);
@@ -61,8 +61,9 @@ export function ModelPicker({ value, onChange, onOpenProviders }: ModelPickerPro
         open={open}
         onClose={() => setOpen(false)}
         triggerRef={triggerRef}
-        align="end"
+        align="start"
         preferSide="top"
+        anchorStrict
         collisionPadding={{ bottom: 56, top: 12 }}
         revision={revision}
       >

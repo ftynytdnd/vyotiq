@@ -87,6 +87,23 @@ describe('StreamingMarkdownBody', () => {
     expect(container.querySelectorAll('[aria-label="Not completed"]')).toHaveLength(1);
   });
 
+  it('renders a staged table preview before the separator row arrives', () => {
+    const { container } = render(
+      <StreamingMarkdownBody text={'| File | Change |'} done={false} />
+    );
+    const wrap = container.querySelector('.vx-timeline-md-table-preview');
+    expect(wrap).not.toBeNull();
+    expect(container.querySelector('table')).not.toBeNull();
+  });
+
+  it('keeps a single prose wrapper at settle (embedded markdown body)', () => {
+    const { container } = render(
+      <StreamingMarkdownBody text={'**Done**'} done={true} />
+    );
+    const scopes = container.querySelectorAll('.vyotiq-md');
+    expect(scopes).toHaveLength(1);
+  });
+
   it('renders nested lists and tables while streaming', () => {
     const { container } = render(
       <StreamingMarkdownBody

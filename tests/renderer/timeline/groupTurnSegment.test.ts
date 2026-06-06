@@ -30,9 +30,10 @@ const toolGroup = (key: string): DisplayRow => ({
   children: []
 });
 
-const runComplete = (key: string): DisplayRow => ({
+const runComplete = (key: string, promptId = 'p1'): DisplayRow => ({
   kind: 'run-complete',
   key,
+  promptId,
   durationMs: 4200,
   completedAt: 1_700_000_004_200
 });

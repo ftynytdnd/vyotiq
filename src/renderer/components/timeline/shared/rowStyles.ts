@@ -56,6 +56,21 @@ export const timelineRowHeaderClassName = 'app-no-drag vx-timeline-row-header';
 /** Vyotiq UI quiet action pill for timeline row affordances. */
 export const timelineActionPillClassName = cn('app-no-drag vx-timeline-action');
 
+/** Primary report action (free Quick summary). */
+export const timelineActionPillPrimaryClassName = cn(
+  timelineActionPillClassName,
+  'vx-timeline-action--primary'
+);
+
+/** Secondary token-costing report action (AI report). */
+export const timelineActionPillSecondaryClassName = cn(
+  timelineActionPillClassName,
+  'vx-timeline-action--secondary'
+);
+
+/** Run-complete HTML report offer strip below the done line. */
+export const timelineReportOfferClassName = 'vx-report-offer';
+
 const timelineRowIconClassName = SHELL_ROW_ICON_CLASS;
 
 /** Chevron in row headers. */

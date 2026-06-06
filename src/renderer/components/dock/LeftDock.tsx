@@ -34,12 +34,17 @@ export interface LeftDockProps {
   onOpenSettings: () => void;
   onOpenWorkspace: () => void;
   onSetWorkspacePath: () => void;
+  /** Strip-only mode — flyout stays collapsed; gear becomes back. */
+  settingsMode?: boolean;
+  onBackFromSettings?: () => void;
 }
 
 export function LeftDock({
   onOpenSettings,
   onOpenWorkspace,
-  onSetWorkspacePath
+  onSetWorkspacePath,
+  settingsMode = false,
+  onBackFromSettings
 }: LeftDockProps) {
   useDockShortcuts();
 
@@ -68,8 +73,19 @@ export function LeftDock({
   useDockFlyoutFocus(dockExpanded, flyoutRef, dismissFlyout);
 
   const handleToggleSearch = () => {
+    if (settingsMode) return;
     if (!dockExpanded) setDockExpanded(true);
     toggleSearch();
+  };
+
+  const handleToggleDock = () => {
+    if (settingsMode) return;
+    toggleDock();
+  };
+
+  const handleExpandDock = () => {
+    if (settingsMode) return;
+    setDockExpanded(true);
   };
 
   useEffect(() => {
@@ -77,6 +93,12 @@ export function LeftDock({
       useDockSearchStore.getState().setOpen(false);
     }
   }, [dockExpanded, searchOpen]);
+
+  useEffect(() => {
+    if (!settingsMode) return;
+    if (dockExpanded) setDockExpanded(false);
+    if (searchOpen) useDockSearchStore.getState().setOpen(false);
+  }, [settingsMode, dockExpanded, searchOpen, setDockExpanded]);
 
   useEffect(() => {
     return () => {
@@ -136,7 +158,9 @@ export function LeftDock({
     onNewChat: () => void newConversation(),
     onToggleSearch: handleToggleSearch,
     onOpenSettings,
-    onCollapse: () => toggleDock()
+    onCollapse: () => handleToggleDock(),
+    settingsMode,
+    onBackFromSettings
   };
 
   const expandedPanel = (
@@ -201,17 +225,20 @@ export function LeftDock({
         dockStyle
         {...toolbarProps}
         collapseIcon={dockExpanded ? 'left' : 'right'}
-        onCollapse={() => (dockExpanded ? toggleDock() : setDockExpanded(true))}
+        onCollapse={() => (dockExpanded ? handleToggleDock() : handleExpandDock())}
       />
     </nav>
   );
 
   return (
     <>
-      <DockExpandBackdrop />
+      <DockExpandBackdrop
+        settingsMode={settingsMode}
+        flyoutWidth={dockExpanded ? expandedWidthPx : 0}
+      />
       <div className={DOCK_EDGE_CONTAINER_CLASS}>
         {edgeStrip}
-        {dockExpanded ? expandedPanel : null}
+        {dockExpanded && !settingsMode ? expandedPanel : null}
       </div>
     </>
   );

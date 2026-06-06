@@ -30,6 +30,7 @@ export function AskUserOverlay({ pending }: AskUserOverlayProps) {
     ensureDraft(pending.id, payload);
   }, [ensureDraft, pending.id, payload]);
 
+  const isHostGate = pending.source === 'host-report-gate';
   const sheet = drafts ?? {};
   const canSubmit = hasAnyAnswer(pending.id, payload, composerDraft);
 
@@ -42,28 +43,42 @@ export function AskUserOverlay({ pending }: AskUserOverlayProps) {
     <div
       className={cn(
         'vx-composer-dialog vx-ask-user-overlay vyotiq-composer-dialog-enter mb-2 flex max-h-[min(50vh,24rem)] flex-col',
-        appComposerShellClassName
+        appComposerShellClassName,
+        isHostGate && 'vx-ask-user-overlay--host-gate'
       )}
       role="dialog"
       aria-modal="true"
-      aria-label={payload.title ?? 'Clarifying questions'}
+      aria-label={
+        isHostGate ? 'Generate HTML report' : (payload.title ?? 'Clarifying questions')
+      }
       data-ask-user-overlay
     >
       <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border-subtle/30 px-3 py-2">
         <div className="min-w-0">
-          <p className="text-row font-medium text-text-primary">
-            {payload.title?.trim() || 'Your input needed'}
-          </p>
+          <div className="mb-0.5 flex flex-wrap items-center gap-2">
+            {isHostGate ? (
+              <span className="rounded-inner border border-accent/30 bg-accent-soft/40 px-1.5 py-0.5 font-mono text-meta text-accent">
+                Vyotiq
+              </span>
+            ) : null}
+            <p className="text-row font-medium text-text-primary">
+              {payload.title?.trim() || 'Your input needed'}
+            </p>
+          </div>
           <p className="text-meta text-text-faint">
-            Reply here or type in the composer and press Send
+            {isHostGate
+              ? 'Uses agent tokens only if you choose Yes — No completes the run immediately'
+              : 'Reply here or type in the composer and press Send'}
           </p>
         </div>
-        <span className="shrink-0 font-mono text-meta text-accent tabular-nums">
-          {payload.questions.length}Q
-        </span>
+        {!isHostGate ? (
+          <span className="shrink-0 font-mono text-meta text-accent tabular-nums">
+            {payload.questions.length}Q
+          </span>
+        ) : null}
       </header>
       <div className="scrollbar-stealth min-h-0 flex-1 overflow-y-auto px-3 py-2">
-        <div className="flex flex-col gap-3">
+        <div className={cn('flex flex-col gap-3', isHostGate && 'vx-ask-user-host-gate-options')}>
           {payload.questions.map((q) => {
             const d = sheet[q.id] ?? { skipped: false, selected: new Set<string>(), freeText: '' };
             const allowMultiple = q.allow_multiple === true;
@@ -72,25 +87,30 @@ export function AskUserOverlay({ pending }: AskUserOverlayProps) {
                 key={q.id}
                 className={cn(
                   'min-w-0 rounded-inner border border-border-subtle/40 px-2.5 py-2',
-                  d.skipped && 'opacity-60'
+                  d.skipped && 'opacity-60',
+                  isHostGate && 'border-border-subtle/25 bg-chrome-hover-soft/20'
                 )}
               >
-                <div className="mb-1.5 flex items-start justify-between gap-2">
-                  <p className="text-row text-text-secondary">{q.prompt}</p>
-                  <button
-                    type="button"
-                    onClick={() => skipQuestion(pending.id, q.id)}
-                    className="shrink-0 font-mono text-meta text-text-faint hover:text-text-secondary"
-                  >
-                    Skip
-                  </button>
-                </div>
+                {!isHostGate ? (
+                  <div className="mb-1.5 flex items-start justify-between gap-2">
+                    <p className="text-row text-text-secondary">{q.prompt}</p>
+                    <button
+                      type="button"
+                      onClick={() => skipQuestion(pending.id, q.id)}
+                      className="shrink-0 font-mono text-meta text-text-faint hover:text-text-secondary"
+                    >
+                      Skip
+                    </button>
+                  </div>
+                ) : (
+                  <p className="mb-2 text-row text-text-secondary">{q.prompt}</p>
+                )}
                 {d.skipped ? (
                   <p className="font-mono text-meta text-text-faint italic">Skipped</p>
                 ) : (
                   <>
                     {q.options.length > 0 ? (
-                      <ul className="mb-2 flex flex-col gap-1">
+                      <ul className={cn('flex flex-col gap-1', !isHostGate && 'mb-2')}>
                         {q.options.map((opt) => {
                           const selected = d.selected.has(opt.id);
                           return (
@@ -127,19 +147,21 @@ export function AskUserOverlay({ pending }: AskUserOverlayProps) {
                         })}
                       </ul>
                     ) : null}
-                    <input
-                      type="text"
-                      value={d.freeText}
-                      onChange={(e) => setFreeText(pending.id, q.id, e.target.value)}
-                      placeholder={
-                        q.options.length > 0 ? 'Or type your own answer…' : 'Your answer…'
-                      }
-                      className={cn(
-                        'w-full rounded-inner border border-border-subtle/50 bg-surface px-2.5 py-1.5',
-                        'font-mono text-meta text-text-primary placeholder:text-text-faint',
-                        'focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/20'
-                      )}
-                    />
+                    {!isHostGate ? (
+                      <input
+                        type="text"
+                        value={d.freeText}
+                        onChange={(e) => setFreeText(pending.id, q.id, e.target.value)}
+                        placeholder={
+                          q.options.length > 0 ? 'Or type your own answer…' : 'Your answer…'
+                        }
+                        className={cn(
+                          'w-full rounded-inner border border-border-subtle/50 bg-surface px-2.5 py-1.5',
+                          'font-mono text-meta text-text-primary placeholder:text-text-faint',
+                          'focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/20'
+                        )}
+                      />
+                    ) : null}
                     {allowMultiple && q.options.length > 0 ? (
                       <p className="mt-1 font-mono text-chat-meta text-text-faint">
                         Select one or more
@@ -164,7 +186,7 @@ export function AskUserOverlay({ pending }: AskUserOverlayProps) {
               : 'cursor-not-allowed bg-surface-raised text-text-faint'
           )}
         >
-          {isProcessing ? 'Submitting…' : 'Submit answers'}
+          {isProcessing ? 'Submitting…' : isHostGate ? 'Continue' : 'Submit answers'}
         </button>
       </footer>
     </div>

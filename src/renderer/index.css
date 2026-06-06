@@ -98,15 +98,19 @@
   --color-section-title: oklch(0.62 0.008 260);
 
   /* Overlay stacking (dock < titlebar popovers < secondary panels < confirms) */
+  --z-dock-rail: 25;
   --z-dock-backdrop: 40;
   --z-dock-panel: 50;
+  --z-titlebar: 35;
   --z-titlebar-popover: 55;
   --z-overlay-backdrop: 59;
   --z-overlay-panel: 60;
   --z-overlay-confirm: 70;
 
   /* Frame chrome — used by floating dock max-height calc */
-  --titlebar-h: 34px;
+  --titlebar-h-fallback: 34px;
+  --titlebar-h: var(--titlebar-h-measured, var(--titlebar-h-fallback));
+  --dock-strip-pt: var(--titlebar-h);
 
   /* Radii */
   --radius-card: 12px;
@@ -233,6 +237,9 @@
   --color-shadow-ambient: oklch(0.4 0.02 85 / 0.08);
   --color-shadow-ambient-soft: oklch(0.4 0.02 85 / 0.06);
   --color-shadow-ambient-deep: oklch(0.35 0.02 85 / 0.12);
+  --color-surface-raised-soft: oklch(0.94 0.012 85 / 0.65);
+  --color-chrome-segment-idle: oklch(0.92 0.012 85 / 0.55);
+  --color-chrome-segment-active: oklch(0.96 0.01 85 / 0.95);
 }
 
 [data-density='compact'] {
@@ -1971,11 +1978,15 @@ textarea {
   background: transparent;
   padding: 0.3125rem 0.625rem;
   font-size: var(--text-row);
-  color: var(--color-text-faint);
+  color: var(--color-text-muted);
   cursor: pointer;
   transition:
     background 160ms ease,
     color 160ms ease;
+}
+
+.vx-segment-item:hover:not(:disabled):not([data-active='true']) {
+  color: var(--color-text-secondary);
 }
 
 .vx-segment-item[data-active='true'] {
@@ -2609,6 +2620,43 @@ textarea {
   }
 }
 
+/* Settings — in-pane master-detail (single content column) */
+.vx-settings-inpane {
+  min-width: 0;
+}
+
+.vx-settings-inpane-nav {
+  flex: 0 0 min(10.5rem, 32%);
+}
+
+.vx-settings-inpane-content {
+  min-width: 0;
+}
+
+.vx-settings-header h1 {
+  margin: 0;
+  line-height: 1.25;
+}
+
+@media (max-width: 640px) {
+  .vx-settings-inpane {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .vx-settings-inpane-nav {
+    flex: 0 0 auto;
+    max-width: none;
+  }
+
+  .vx-settings-inpane-nav .vx-left-subnav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
 /* Long-form copy */
 .vx-prose {
   display: flex;
@@ -2714,6 +2762,56 @@ textarea {
 .vx-timeline-action:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.vx-timeline-action--primary {
+  color: var(--color-text-secondary);
+  background: var(--color-accent-soft);
+}
+
+.vx-timeline-action--primary:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--color-accent) 28%, transparent);
+  color: var(--color-text-primary);
+}
+
+.vx-timeline-action--secondary {
+  color: var(--color-text-faint);
+}
+
+.vx-timeline-action--secondary:hover:not(:disabled) {
+  color: var(--color-text-secondary);
+}
+
+.vx-report-offer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  max-width: 46rem;
+  border-radius: 4px;
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-nested);
+  padding: 0.375rem 0.625rem;
+}
+
+.vx-report-offer__label {
+  font-size: var(--text-chat-meta);
+  line-height: 1.25;
+  color: var(--color-text-faint);
+}
+
+.vx-report-offer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.vx-ask-user-overlay--host-gate {
+  border-color: color-mix(in oklch, var(--color-accent) 35%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-accent) 8%, transparent);
+}
+
+.vx-ask-user-overlay--host-gate .vx-ask-user-host-gate-options {
+  gap: 0.5rem;
 }
 
 .vx-timeline-log-row {
@@ -2849,8 +2947,10 @@ mark.vyotiq-timeline-find-mark-active {
 }
 
 .vx-timeline-stream-md ul,
-.vx-timeline-stream-md ol {
-  margin: 0.35em 0 0.75em 1.15em;
+.vx-timeline-stream-md ol,
+.vyotiq-stream-md ul,
+.vyotiq-stream-md ol {
+  margin: 0.25em 0 0.65em 1.15em;
   padding: 0;
 }
 
@@ -2862,12 +2962,22 @@ mark.vyotiq-timeline-find-mark-active {
   list-style: decimal;
 }
 
-.vx-timeline-stream-md li {
-  margin: 0.15em 0;
+.vx-timeline-stream-md li,
+.vyotiq-stream-md li {
+  margin: 0.1em 0;
 }
 
-.vx-timeline-stream-md li>p {
-  margin: 0.15em 0;
+.vx-timeline-stream-md li>p,
+.vyotiq-stream-md li>p {
+  margin: 0.1em 0;
+}
+
+.vx-timeline-md-table-preview {
+  opacity: 0.92;
+}
+
+.vx-timeline-md-table-preview table {
+  border: 1px dashed var(--color-border-subtle);
 }
 
 .vx-timeline-detail-shell {
@@ -3617,6 +3727,7 @@ mark.vyotiq-timeline-find-mark-active {
 
 .vx-titlebar {
   height: var(--titlebar-h);
+  min-height: var(--titlebar-h-fallback, var(--titlebar-h));
   --text-titlebar: 13px;
 }
 

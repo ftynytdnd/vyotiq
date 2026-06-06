@@ -146,6 +146,7 @@ export type Row =
   | {
     kind: 'run-complete';
     key: string;
+    promptId: string;
     durationMs: number;
     completedAt: number;
     usage?: TokenUsageAggregate;

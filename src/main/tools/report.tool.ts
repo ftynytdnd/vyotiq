@@ -13,6 +13,10 @@ import {
   REPORTS_SUBDIR,
   MAX_REPORT_HTML_BYTES
 } from '@shared/constants.js';
+import {
+  REPORT_TOOL_LINE_THRESHOLD,
+  TIMELINE_MARKDOWN_LINE_BUDGET
+} from '@shared/report/deliverables.js';
 import { buildReportHtml } from './reportTemplate.js';
 
 interface ReportArgs {
@@ -48,7 +52,7 @@ export const reportTool: Tool = {
   name: 'report',
   briefMarkdown: `### Tool: \`report\`
 
-**WHAT it is.** Writes a self-contained HTML deliverable (charts, tables, styled prose) into \`.vyotiq/reports/\` inside the workspace.
+**WHAT it is.** Writes a self-contained HTML deliverable (charts, tables, styled prose) into \`.vyotiq/reports/\` inside the workspace. Timeline chat stays concise Markdown (≤${TIMELINE_MARKDOWN_LINE_BUDGET} lines); put dense output here.
 
 **HOW to use it.**
 
@@ -56,9 +60,15 @@ export const reportTool: Tool = {
 { "name": "report", "arguments": { "title": "Q1 Summary", "body": "<p>…</p>", "description": "Optional subtitle" } }
 \`\`\`
 
-**WHY it exists.** For structured deliverables the user can open in their browser — audits, summaries, visual analyses — without polluting project source files.
+**Body components** (CSS classes in every report):
 
-**WHEN to trigger it.** When the user asks for a report, dashboard, or standalone HTML artifact; or when a long-form answer benefits from rich layout outside the chat timeline.`,
+- Severity matrix: \`<table class="vy-severity-table">\` with \`<span class="vy-severity vy-severity--critical|high|medium|low">\`
+- Design grid: \`<div class="vy-design-grid"><article class="vy-design-cell">…</article></div>\`
+- PR groups: \`<section class="vy-pr-group"><ul><li class="vy-pr-file">…</li></ul></section>\`
+
+**WHY it exists.** For structured deliverables the user opens in their browser — audits, PR reviews, design comparisons, visual analyses — without polluting project source or the transcript.
+
+**WHEN to trigger it.** When the user asks for a report; when prose would exceed ~${REPORT_TOOL_LINE_THRESHOLD} lines; for tabular/comparative/severity-coded output; after large multi-file edit runs you **MUST** call \`report\` when the user accepts the host prompt (one timeline paragraph, full detail in HTML). Never paste HTML into timeline chat.`,
   schema: {
     type: 'function',
     function: {

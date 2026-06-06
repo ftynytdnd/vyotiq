@@ -18,15 +18,18 @@ import {
 
 import orchestratorCore from './00-orchestrator-core.md?raw';
 import contextLearning from './01-context-learning.md?raw';
+import deliverables from './02-deliverables.md?raw';
 
 const AGENT_SECTIONS: ReadonlyArray<{ title: string; body: string }> = [
   { title: 'Agent Core', body: orchestratorCore },
-  { title: 'Context, Memory & Continuous Learning', body: contextLearning }
+  { title: 'Context, Memory & Continuous Learning', body: contextLearning },
+  { title: 'Deliverables — Markdown vs HTML Reports', body: deliverables }
 ];
 
 const BOOTSTRAP_HARNESS_MARKDOWN: ReadonlyArray<{ file: string; body: string }> = [
   { file: '00-orchestrator-core.md', body: orchestratorCore },
-  { file: '01-context-learning.md', body: contextLearning }
+  { file: '01-context-learning.md', body: contextLearning },
+  { file: '02-deliverables.md', body: deliverables }
 ];
 
 function assertHarnessMarkdownPresent(): void {

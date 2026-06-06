@@ -249,6 +249,10 @@ export const IPC = {
   TOOLS_OPEN_PATH: 'tools:open-path',
   /** renderer → main: re-execute a settled read / ls / search / memory tool call. */
   TOOLS_RERUN: 'tools:rerun',
+  /** renderer → main: write an auto-generated HTML run summary report. */
+  REPORTS_GENERATE_RUN_SUMMARY: 'reports:generate-run-summary',
+  /** renderer → main: open a workspace HTML report in the in-app browser window. */
+  REPORTS_OPEN: 'reports:open',
 
   // Memory
   MEMORY_LIST: 'memory:list',

@@ -246,6 +246,17 @@ export async function setSettings(patch: Partial<AppSettings>): Promise<AppSetti
         )
       : undefined;
 
+    const mergedUi: Record<string, unknown> = {
+      ...currentUi,
+      ...(patchUi ?? {})
+    };
+    if (patchUi?.reports) {
+      mergedUi.reports = {
+        ...(currentUi.reports as Record<string, unknown> | undefined),
+        ...patchUi.reports
+      };
+    }
+
     return {
       ...cleaned,
       ...normalized,
@@ -256,10 +267,7 @@ export async function setSettings(patch: Partial<AppSettings>): Promise<AppSetti
       },
       // Deep-merge `ui` so a partial patch (e.g. just `dockExpanded` or legacy `sidebarOpen`)
       // doesn't clobber sibling fields written by other features.
-      ui: {
-        ...currentUi,
-        ...(patchUi ?? {})
-      }
+      ui: mergedUi
     };
   });
   return publicShape(next);

@@ -30,6 +30,15 @@ const UI_RECORD_KEYS = [
   'pinnedConversationIds'
 ] as const;
 
+const UI_NESTED_OBJECT_KEYS = ['reports'] as const;
+
+const REPORTS_BOOLEAN_KEYS = [
+  'autoOpenReports',
+  'openInAppBrowser',
+  'promptForReportAfterEdits',
+  'enableAiRunSummary'
+] as const;
+
 const THEME_VALUES = ['dark', 'light', 'system'] as const;
 const DENSITY_VALUES = ['compact', 'balanced', 'airy'] as const;
 
@@ -60,6 +69,7 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
       (UI_NUMERIC_KEYS as readonly string[]).includes(key) ||
       (UI_STRING_KEYS as readonly string[]).includes(key) ||
       (UI_RECORD_KEYS as readonly string[]).includes(key) ||
+      (UI_NESTED_OBJECT_KEYS as readonly string[]).includes(key) ||
       key === 'favoriteModels';
     if (!allowed) {
       throw new Error(`${channel}: patch.ui.${key} is not a recognized ui field`);
@@ -146,6 +156,20 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
     assertStringArray(channel, 'patch.ui.pinnedConversationIds', ui.pinnedConversationIds, {
       maxItems: UI_RECORD_MAX_KEYS
     });
+  }
+  if ('reports' in ui && ui.reports !== undefined) {
+    assertObject(channel, 'patch.ui.reports', ui.reports);
+    const reports = ui.reports as Record<string, unknown>;
+    for (const key of Object.keys(reports)) {
+      if (!(REPORTS_BOOLEAN_KEYS as readonly string[]).includes(key)) {
+        throw new Error(`${channel}: patch.ui.reports.${key} is not a recognized reports field`);
+      }
+    }
+    for (const k of REPORTS_BOOLEAN_KEYS) {
+      if (k in reports && reports[k] !== undefined) {
+        assertBoolean(channel, `patch.ui.reports.${k}`, reports[k]);
+      }
+    }
   }
 }
 

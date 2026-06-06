@@ -232,6 +232,8 @@ export type TimelineEvent =
     toolCallId: string;
     runId: string;
     status?: 'pending' | 'submitted';
+    /** Distinguishes host-injected gates from agent clarifications. */
+    source?: 'host-report-gate';
   }
   /** Marks an interactive ask_user prompt as answered (UI latch). */
   | {

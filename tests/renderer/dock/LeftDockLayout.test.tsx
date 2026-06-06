@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { LeftDock } from '@renderer/components/dock/LeftDock';
 import {
+  DOCK_STRIP_WIDTH,
   DOCK_WIDTH_DEFAULT,
   DOCK_WIDTH_MAX
 } from '@renderer/components/dock/dockShared';
@@ -131,9 +132,35 @@ describe('LeftDock layout', () => {
     expect(handle).not.toHaveAttribute('data-resizing');
   });
 
-  it('collapses dock when backdrop is clicked', () => {
+  it('positions expand backdrop after the flyout so panel items stay clickable', () => {
     render(<LeftDock {...dockProps} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Close navigation' }));
-    expect(useUiStore.getState().dockExpanded).toBe(false);
+    const backdrop = screen.getByRole('button', { name: 'Close navigation' });
+    expect(backdrop).toHaveStyle({ left: `${DOCK_STRIP_WIDTH + DOCK_WIDTH_DEFAULT}px` });
+  });
+
+  it('shows back on the strip in settings mode instead of settings gear', () => {
+    render(
+      <LeftDock
+        {...dockProps}
+        settingsMode
+        onBackFromSettings={() => {}}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Back to chat' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Expand navigation' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Search chats and files' })).toBeNull();
+  });
+
+  it('does not render flyout while settings mode is active', () => {
+    useUiStore.setState({ dockExpanded: true });
+    render(
+      <LeftDock
+        {...dockProps}
+        settingsMode
+        onBackFromSettings={() => {}}
+      />
+    );
+    expect(screen.queryByRole('dialog', { name: 'Workspace and session navigation' })).toBeNull();
   });
 });

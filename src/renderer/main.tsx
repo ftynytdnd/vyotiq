@@ -8,6 +8,7 @@ import { flushTimelineUiPersistence } from './store/useTimelineUiStore.js';
 import { flushUiPersistence } from './store/useUiStore.js';
 import { flushPanelWidthPersistence } from './hooks/usePersistedPanelWidth.js';
 import './index.css';
+import './styles/shell-chrome.css';
 import './styles/titlebar-menu.css';
 import './styles/dock-flyout.css';
 import { applyAppTheme, readCachedThemePrefs } from './lib/theme.js';

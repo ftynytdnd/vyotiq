@@ -27,3 +27,4 @@
 - Orchestrator loop lives under `src/main/orchestrator/loop/` (e.g. `runLoop.ts`, `handleToolCalls.ts`).
 - Timeline UI is under `src/renderer/components/timeline/` with state in `useChatStore` and `useTimelineUiStore`.
 - Provider thinking effort and context-window logic is centralized in `src/shared/providers/thinkingEffort.ts`.
+- HTML report deliverables: Settings → Agent behavior → Reports (`settings.ui.reports`) controls auto-open, in-app report BrowserWindow, host ask_user gate after large edits, and the token-costing AI report footer button; free Quick summary uses `reports:generate-run-summary` (zero tokens).

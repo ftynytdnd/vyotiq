@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { APP_NAME, IPC } from '@shared/constants.js';
 import { safeWebContentsSend } from './safeWebContentsSend.js';
+import { setMainWindow } from './getMainWindow.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -41,6 +42,7 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     }
   });
 
+  setMainWindow(win);
   win.once('ready-to-show', () => win.show());
 
   // Forward window state changes to the renderer so the title bar can update.

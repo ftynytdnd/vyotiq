@@ -6,12 +6,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppViewStore } from '@renderer/store/useAppViewStore';
 import { useSettingsStore } from '@renderer/store/useSettingsStore';
 import { useAttachmentPreviewStore } from '@renderer/store/useAttachmentPreviewStore';
+import { useUiStore } from '@renderer/store/useUiStore';
+import { useDockSearchStore } from '@renderer/store/useDockSearchStore';
 beforeEach(() => {
   useAppViewStore.setState({
     view: 'chat',
     settingsSection: 'models-api',
     aboutOpen: false
   });
+  useUiStore.setState({ dockExpanded: true, dockWidth: 260, collapsedWorkspaces: new Set(), hydrated: true });
+  useDockSearchStore.setState({ open: true, query: 'tri' });
   useSettingsStore.setState({
     settings: { ui: { lastSettingsTab: 'agent-behavior' } }
   });
@@ -29,6 +33,8 @@ describe('useAppViewStore', () => {
     expect(useAppViewStore.getState().view).toBe('settings');
     expect(useAppViewStore.getState().settingsSection).toBe('appearance');
     expect(useAttachmentPreviewStore.getState().attachment).toBeNull();
+    expect(useUiStore.getState().dockExpanded).toBe(false);
+    expect(useDockSearchStore.getState().open).toBe(false);
   });
 
   it('maps legacy context tab to models-api', () => {

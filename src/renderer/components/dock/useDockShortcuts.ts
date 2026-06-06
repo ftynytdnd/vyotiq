@@ -17,6 +17,7 @@ import { useUiStore } from '../../store/useUiStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
+import { useAppViewStore } from '../../store/useAppViewStore.js';
 
 function isTextInputTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -36,14 +37,17 @@ export function useDockShortcuts(): void {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
+      const settingsOpen = useAppViewStore.getState().view === 'settings';
 
       if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') {
+        if (settingsOpen) return;
         e.preventDefault();
         useUiStore.getState().toggleDock();
         return;
       }
 
       if (mod && !e.altKey && e.key.toLowerCase() === 'k') {
+        if (settingsOpen) return;
         e.preventDefault();
         useUiStore.getState().setDockExpanded(true);
         useDockSearchStore.getState().setOpen(true);

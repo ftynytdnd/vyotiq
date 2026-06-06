@@ -58,6 +58,7 @@ Design complete Architecture and build and create me simple(but working and func
 ## Create each tool in separate file instead of one
    * Core function-calling tools (each in its own file under `src/main/tools/`): **bash**, **ls**, **read**, **edit**, plus **delete**, **search**, **memory**, **recall**, and **report** where policy allows.
    * Tool exposure is enforced in `src/main/tools/policy/` (`AGENT_TOOLS` allowlist per solo Agent V run).
+   * **HTML reports UX:** Settings → Agent behavior → Reports (`settings.ui.reports`) controls auto-open, in-app report `BrowserWindow`, host `ask_user` gate after large edit runs, and the token-costing **AI report** footer action. Free **Quick summary** uses `reports:generate-run-summary` (zero LLM tokens).
 
 
 ***NO complex code-based harness at all, only natural language***

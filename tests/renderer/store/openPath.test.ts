@@ -11,6 +11,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { openWorkspaceFile } from '@renderer/lib/openPath';
 import { useToastStore } from '@renderer/store/useToastStore';
+import { useSettingsStore } from '@renderer/store/useSettingsStore';
 
 const PRISTINE_TOASTS = useToastStore.getState();
 function resetToasts() {
@@ -21,6 +22,9 @@ describe('openWorkspaceFile', () => {
   beforeEach(() => {
     resetToasts();
     vi.restoreAllMocks();
+    useSettingsStore.setState({
+      settings: { ui: { reports: { openInAppBrowser: false } } }
+    } as ReturnType<typeof useSettingsStore.getState>);
   });
 
   it('forwards workspaceId to vyotiq.tools.openPath and returns true on success', async () => {
@@ -70,5 +74,26 @@ describe('openWorkspaceFile', () => {
       new Error('boom')
     );
     await expect(openWorkspaceFile('x.html')).resolves.toBe(false);
+  });
+
+  it('routes report opens through vyotiq.reports.open when in-app browser is on', async () => {
+    useSettingsStore.setState({
+      settings: { ui: { reports: { openInAppBrowser: true } } }
+    } as ReturnType<typeof useSettingsStore.getState>);
+    const reportsSpy = vi.spyOn(window.vyotiq.reports, 'open').mockResolvedValue({ ok: true });
+    const toolsSpy = vi.spyOn(window.vyotiq.tools, 'openPath');
+
+    const ok = await openWorkspaceFile('.vyotiq/reports/x.html', {
+      workspaceId: 'ws-A',
+      kind: 'report'
+    });
+
+    expect(ok).toBe(true);
+    expect(reportsSpy).toHaveBeenCalledWith({
+      relPath: '.vyotiq/reports/x.html',
+      workspaceId: 'ws-A',
+      title: undefined
+    });
+    expect(toolsSpy).not.toHaveBeenCalled();
   });
 });

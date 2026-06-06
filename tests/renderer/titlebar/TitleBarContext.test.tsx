@@ -19,7 +19,11 @@ const fileActions = {
   quit: () => {}
 };
 
-const dockProps = { onOpenSettings: () => {} };
+const dockProps = {
+  onOpenSettings: () => {},
+  onOpenWorkspace: () => {},
+  onSetWorkspacePath: () => {}
+};
 
 beforeEach(() => {
   useUiStore.setState({ dockExpanded: false, dockWidth: 260, hydrated: true });

@@ -51,7 +51,9 @@ import { useTimelineUiStore } from '../../store/useTimelineUiStore.js';
 import { computeTailScrollKey } from './shared/computeTailScrollKey.js';
 import { pinScrollParentToTail } from './shared/pinScrollToTail.js';
 import { findTimelineScrollParent } from './shared/timelineScrollParent.js';
-import { TIMELINE_VIRTUALIZE_THRESHOLD } from './shared/timelineVirtualize.js';
+import { shouldUseVirtualizedTimeline } from './shared/timelineVirtualize.js';
+import { promptTurnIndices } from './shared/timelineVirtualNav.js';
+import { runWithProgrammaticScrollGuard } from './shared/programmaticScrollGuard.js';
 import {
   TIMELINE_SCROLL_RESTICK_PX,
   TIMELINE_SCROLL_UNSTICK_PX,
@@ -98,7 +100,6 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
 
   // --- Refs (all before any effect) ---
   const containerRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const scrollFrameRef = useRef<number | null>(null);
   const pinHandleRef = useRef<TimelinePinHandle | null>(null);
   const stickyRef = useRef(true);
@@ -113,6 +114,7 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
   // --- Local state ---
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
+  const [virtualized, setVirtualized] = useState(false);
 
   const onRetryLastMessage = useCallback(() => {
     const prompt = lastUserPromptContent?.trim();
@@ -139,7 +141,7 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
         setTimelineAtTail(nextSticky);
       }
       const nextShowJump =
-        scrollable && distanceFromBottom > TIMELINE_SCROLL_RESTICK_PX;
+        scrollable && distanceFromBottom > TIMELINE_SCROLL_UNSTICK_PX;
       setShowJumpToLatest((prev) => (prev === nextShowJump ? prev : nextShowJump));
     },
     [setTimelineAtTail]
@@ -204,6 +206,13 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
 
   const turnSegments = useMemo(() => groupRowsIntoTurns(rows), [rows]);
   const lastTurnIndex = turnSegments.length - 1;
+  const promptTurns = useMemo(() => promptTurnIndices(turnSegments), [turnSegments]);
+
+  useEffect(() => {
+    setVirtualized((prev) => shouldUseVirtualizedTimeline(rows.length, prev));
+  }, [rows.length]);
+
+  const useVirtualizedList = virtualized && !findOpen;
 
   const tailScrollKey = useMemo(
     () =>
@@ -225,15 +234,14 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
         if (userScrollLockRef.current || !stickyRef.current) return;
       }
       scheduleScroll(() => {
-        programmaticScrollRef.current = true;
-        if (pinHandleRef.current) {
-          pinHandleRef.current.pinToTail();
-        } else {
-          const parent = findTimelineScrollParent(containerRef.current);
-          if (parent) pinScrollParentToTail(parent);
-        }
-        requestAnimationFrame(() => {
-          programmaticScrollRef.current = false;
+        runWithProgrammaticScrollGuard(programmaticScrollRef, () => {
+          if (useVirtualizedList && pinHandleRef.current) {
+            pinHandleRef.current.pinToTail();
+          } else {
+            const parent = findTimelineScrollParent(containerRef.current);
+            if (parent) pinScrollParentToTail(parent);
+          }
+        }, () => {
           const parent = findTimelineScrollParent(containerRef.current);
           if (parent) {
             lastScrollDistanceRef.current = measureTimelineScrollTail(parent).distanceFromBottom;
@@ -241,7 +249,7 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
         });
       });
     },
-    []
+    [useVirtualizedList]
   );
 
   useEffect(() => {
@@ -275,14 +283,11 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
     };
 
     const onWheel = (e: WheelEvent) => {
-      if (e.deltaY < 0) engageUserScrollLock();
-    };
-
-    const onPointerDown = (e: PointerEvent) => {
-      // Scrollbar drag / track click — not covered by wheel events.
-      const rect = parent.getBoundingClientRect();
-      const inScrollbarZone = e.clientX >= rect.right - 20;
-      if (inScrollbarZone) engageUserScrollLock();
+      if (e.deltaY >= -12) return;
+      const { distanceFromBottom } = measureTimelineScrollTail(parent);
+      if (distanceFromBottom > TIMELINE_SCROLL_UNSTICK_PX) {
+        engageUserScrollLock();
+      }
     };
 
     let touchStartY: number | null = null;
@@ -300,7 +305,6 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
 
     parent.addEventListener('scroll', onScroll, { passive: true });
     parent.addEventListener('wheel', onWheel, { passive: true });
-    parent.addEventListener('pointerdown', onPointerDown, { passive: true });
     parent.addEventListener('touchstart', onTouchStart, { passive: true });
     parent.addEventListener('touchmove', onTouchMove, { passive: true });
     parent.addEventListener('touchend', onTouchEnd, { passive: true });
@@ -314,7 +318,6 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
     return () => {
       parent.removeEventListener('scroll', onScroll);
       parent.removeEventListener('wheel', onWheel);
-      parent.removeEventListener('pointerdown', onPointerDown);
       parent.removeEventListener('touchstart', onTouchStart);
       parent.removeEventListener('touchmove', onTouchMove);
       parent.removeEventListener('touchend', onTouchEnd);
@@ -357,27 +360,60 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
         e.preventDefault();
         disarm();
 
-        const els = containerRef.current?.querySelectorAll('[data-row-kind="user-prompt"]');
-        if (!els || els.length === 0) return;
+        if (promptTurns.length === 0) return;
 
         const parentRect = parent.getBoundingClientRect();
-        // Find the prompt nearest to the current viewport top.
-        let nearestIdx = 0;
+        const mountedPrompts = containerRef.current?.querySelectorAll(
+          '[data-row-kind="user-prompt"]'
+        );
+
+        const turnIndexFromPrompt = (el: Element): number | null => {
+          const host = el.closest('[data-virtual-turn-index]');
+          if (!host) return null;
+          const raw = host.getAttribute('data-virtual-turn-index');
+          if (raw === null) return null;
+          const parsed = Number.parseInt(raw, 10);
+          return Number.isFinite(parsed) ? parsed : null;
+        };
+
+        let nearestListIdx = 0;
         let nearestDist = Infinity;
-        els.forEach((el, i) => {
+        mountedPrompts?.forEach((el) => {
+          const turnIdx = turnIndexFromPrompt(el);
+          const listIdx =
+            turnIdx !== null ? promptTurns.indexOf(turnIdx) : nearestListIdx;
+          if (listIdx < 0) return;
           const rect = el.getBoundingClientRect();
           const dist = Math.abs(rect.top - parentRect.top);
           if (dist < nearestDist) {
             nearestDist = dist;
-            nearestIdx = i;
+            nearestListIdx = listIdx;
           }
         });
 
         const dir = e.key === 'j' ? 1 : -1;
-        const targetIdx = Math.max(0, Math.min(els.length - 1, nearestIdx + dir));
-        const target = els[targetIdx];
-        if (target) {
-          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const targetListIdx = Math.max(
+          0,
+          Math.min(promptTurns.length - 1, nearestListIdx + dir)
+        );
+        const targetTurnIdx = promptTurns[targetListIdx]!;
+
+        const scrollPromptIntoView = (): void => {
+          const prompt =
+            containerRef.current?.querySelector(
+              `[data-virtual-turn-index="${targetTurnIdx}"] [data-row-kind="user-prompt"]`
+            ) ??
+            containerRef.current?.querySelectorAll('[data-row-kind="user-prompt"]')[
+              targetListIdx
+            ];
+          prompt?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
+
+        if (useVirtualizedList && pinHandleRef.current) {
+          pinHandleRef.current.scrollToTurnIndex(targetTurnIdx);
+          requestAnimationFrame(scrollPromptIntoView);
+        } else {
+          scrollPromptIntoView();
         }
         return;
       }
@@ -412,7 +448,7 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
       window.removeEventListener('keydown', onKey);
       disarm();
     };
-  }, [companionOverlayOpen, applyTailState, engageUserScrollLock]);
+  }, [companionOverlayOpen, applyTailState, engageUserScrollLock, promptTurns, useVirtualizedList]);
 
   // Sticky follow during streaming: pin when tail grows if sticky and not user-locked.
   useEffect(() => {
@@ -430,12 +466,22 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
     const scrollFromHash = () => {
       const rowKey = parseRowAnchorHash(window.location.hash);
       if (!rowKey) return;
-      requestAnimationFrame(() => scrollToRowAnchor(rowKey));
+      const reveal = (): void => {
+        if (!scrollToRowAnchor(rowKey)) {
+          requestAnimationFrame(reveal);
+        }
+      };
+      if (useVirtualizedList && pinHandleRef.current) {
+        pinHandleRef.current.scrollToRowKey(rowKey);
+        requestAnimationFrame(reveal);
+      } else {
+        reveal();
+      }
     };
     scrollFromHash();
     window.addEventListener('hashchange', scrollFromHash);
     return () => window.removeEventListener('hashchange', scrollFromHash);
-  }, [locationHash]);
+  }, [locationHash, useVirtualizedList]);
 
   useEffect(() => {
     const isEditable = (el: EventTarget | null): boolean => {
@@ -454,8 +500,6 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
-
-  const useVirtualizedList = rows.length >= TIMELINE_VIRTUALIZE_THRESHOLD;
 
   const renderTurnBlock = useCallback(
     (segment: typeof rows, segmentIndex: number) => {
@@ -505,7 +549,6 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
         ) : (
           turnSegments.map((segment, segmentIndex) => renderTurnBlock(segment, segmentIndex))
         )}
-        <div ref={bottomRef} className="h-px w-full shrink-0" aria-hidden />
       </div>
       {jumpOverlayHostProp &&
         showJumpToLatest &&
@@ -615,6 +658,7 @@ function renderRow(
       return (
         <RunCompleteRow
           key={r.key}
+          promptId={r.promptId}
           durationMs={r.durationMs}
           completedAt={r.completedAt}
           {...(r.usage !== undefined ? { usage: r.usage } : {})}

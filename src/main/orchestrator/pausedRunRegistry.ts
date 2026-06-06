@@ -5,6 +5,7 @@
 
 import type { ChatMessage, ChatSendInput, TimelineEvent } from '@shared/types/chat.js';
 import type { AskUserStructuredPayload } from '@shared/types/askUser.js';
+import type { ResolvedReportsSettings } from '@shared/report/reportsSettings.js';
 import type { RunStateAccumulator } from './loop/buildRunState.js';
 import type { SpinSignatureBuffer } from './loop/toolSpinSignature.js';
 
@@ -21,6 +22,11 @@ export interface LoopCheckpoint {
   askUserToolCallId: string;
   askUserPromptEventId: string;
   askUserPayload: AskUserStructuredPayload;
+  /** Host-injected report gate — No skips LLM resume; Yes resumes with report instruction. */
+  hostReportGate?: boolean;
+  pendingTerminal?: 'finish' | 'implicit-finish';
+  /** Grant +1 iteration allowance on resume from host report gate only. */
+  reportGateBonusIteration?: boolean;
 }
 
 interface PausedRunCallbacks {
@@ -37,6 +43,7 @@ export interface PausedRunEntry {
   workspaceId: string;
   checkpoint: LoopCheckpoint;
   callbacks: PausedRunCallbacks;
+  reportsSettings: ResolvedReportsSettings;
 }
 
 const pausedRuns = new Map<string, PausedRunEntry>();
@@ -84,6 +91,9 @@ export function cloneLoopCheckpoint(state: {
   askUserToolCallId: string;
   askUserPromptEventId: string;
   askUserPayload: AskUserStructuredPayload;
+  hostReportGate?: boolean;
+  pendingTerminal?: 'finish' | 'implicit-finish';
+  reportGateBonusIteration?: boolean;
 }): LoopCheckpoint {
   return {
     // Defensive shallow copy: the checkpoint must not alias the live
@@ -100,6 +110,11 @@ export function cloneLoopCheckpoint(state: {
     spin: { window: [...state.spin.window] },
     askUserToolCallId: state.askUserToolCallId,
     askUserPromptEventId: state.askUserPromptEventId,
-    askUserPayload: state.askUserPayload
+    askUserPayload: state.askUserPayload,
+    ...(state.hostReportGate !== undefined ? { hostReportGate: state.hostReportGate } : {}),
+    ...(state.pendingTerminal !== undefined ? { pendingTerminal: state.pendingTerminal } : {}),
+    ...(state.reportGateBonusIteration !== undefined
+      ? { reportGateBonusIteration: state.reportGateBonusIteration }
+      : {})
   };
 }

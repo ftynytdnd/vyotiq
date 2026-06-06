@@ -1,11 +1,12 @@
 /**
  * Shared layout classes for the frameless title bar.
  *
- * Layering (low → high): titlebar chrome (z-30) → dock panel (50) →
+ * Layering (low → high): dock rail (25) → titlebar (35) → dock flyout (50) →
  * titlebar popovers (55) → secondary panel backdrop (59) → panels (60) →
  * modals (70).
  */
 
+import { DOCK_STRIP_WIDTH } from '@shared/dock/dockWidth.js';
 import { chromePopoverPanelClassName } from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
 
@@ -13,15 +14,18 @@ import { cn } from '../../lib/cn.js';
 export const CHROME_LAYER_TITLEBAR_POPOVER = 55;
 
 export const TITLEBAR_ROOT_CLASS = cn(
-  'vx-titlebar app-drag relative z-30 flex shrink-0 select-none items-stretch bg-surface-base text-row'
+  'vx-titlebar app-drag absolute top-0 left-0 right-0 z-(--z-titlebar) flex shrink-0 select-none items-stretch bg-transparent text-row'
 );
 
 const TITLEBAR_ZONE_CLASS = 'app-no-drag flex items-center gap-0.5 py-1';
 
+/** Matches dock strip width so the hamburger centers on the rail axis. */
 export const TITLEBAR_MENUBAR_ZONE_CLASS = cn(
   TITLEBAR_ZONE_CLASS,
-  'pl-3 pr-1.5 sm:pl-3.5'
+  'shrink-0 justify-center px-0'
 );
+
+export const TITLEBAR_MENUBAR_ZONE_STYLE = { width: DOCK_STRIP_WIDTH } as const;
 
 /** Center drag region (empty — workspace/chat labels live in the dock). */
 export const TITLEBAR_BREADCRUMB_ZONE_CLASS = cn(

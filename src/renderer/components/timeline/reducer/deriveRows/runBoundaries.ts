@@ -65,6 +65,7 @@ export function flushRunToRows(
     out.push({
       kind: 'run-complete',
       key: `run:${openRun.promptId}`,
+      promptId: openRun.promptId,
       durationMs,
       completedAt: openRun.lastTs,
       ...(usage !== undefined ? { usage } : {}),

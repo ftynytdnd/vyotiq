@@ -89,6 +89,9 @@ import {
 } from './buildRunState.js';
 import { buildHostEnvironmentXml } from './buildHostEnvironment.js';
 import { cloneLoopCheckpoint, type LoopCheckpoint } from '../pausedRunRegistry.js';
+import type { ResolvedReportsSettings } from '@shared/report/reportsSettings.js';
+import { resolveReportsSettings } from '@shared/report/reportsSettings.js';
+import { maybeInterceptHostReportGate } from './hostReportGate.js';
 import {
   formatProviderStrikeError,
   formatRetryThought,
@@ -150,6 +153,8 @@ interface RunLoopOpts {
   permissions: ChatPermissions;
   /** Resume a run paused on `ask_user` — skips re-seeding the user envelope. */
   resumeCheckpoint?: LoopCheckpoint;
+  /** Snapshot of `settings.ui.reports` at run start. */
+  reportsSettings?: ResolvedReportsSettings;
 }
 
 /** Remove the last assistant row when it was prose-only (empty-turn retry). */
@@ -238,7 +243,11 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
       return { terminalError: billingBlock.message };
     }
 
-    for (let iter = resume?.nextIteration ?? 0; iter < MAX_TOTAL_ITERATIONS; iter++) {
+    const reportsSettings = opts.reportsSettings ?? resolveReportsSettings();
+    const iterationCap =
+      MAX_TOTAL_ITERATIONS + (resume?.reportGateBonusIteration ? 1 : 0);
+
+    for (let iter = resume?.nextIteration ?? 0; iter < iterationCap; iter++) {
       const abortedEarly = exitIfAborted(opts, emit, runHadLlmProgress);
       if (abortedEarly) return abortedEarly;
       const iterStartedAt = Date.now();
@@ -550,6 +559,24 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               iteration: iter,
               summaryChars: summary.length
             });
+            const gate = await maybeInterceptHostReportGate({
+              runId: opts.input.runId,
+              conversationId: opts.input.conversationId ?? '',
+              promptEventId: opts.input.promptEventId,
+              reportsSettings,
+              messages,
+              query,
+              nextIteration: iter + 1,
+              consecutiveEmptyTurns,
+              injectedStubsHighWater,
+              consecutiveErrors,
+              consecutiveBadToolRounds,
+              runStateAcc,
+              spin,
+              pendingTerminal: 'finish',
+              emit
+            });
+            if (gate) return gate;
             return {};
           }
         }
@@ -733,6 +760,24 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             iteration: iter,
             summaryChars: summary.length
           });
+          const gate = await maybeInterceptHostReportGate({
+            runId: opts.input.runId,
+            conversationId: opts.input.conversationId ?? '',
+            promptEventId: opts.input.promptEventId,
+            reportsSettings,
+            messages,
+            query,
+            nextIteration: iter + 1,
+            consecutiveEmptyTurns,
+            injectedStubsHighWater,
+            consecutiveErrors,
+            consecutiveBadToolRounds,
+            runStateAcc,
+            spin,
+            pendingTerminal: 'finish',
+            emit
+          });
+          if (gate) return gate;
           return {};
         }
 
@@ -772,6 +817,24 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             iteration: iter,
             textChars: proseText.length
           });
+          const gate = await maybeInterceptHostReportGate({
+            runId: opts.input.runId,
+            conversationId: opts.input.conversationId ?? '',
+            promptEventId: opts.input.promptEventId,
+            reportsSettings,
+            messages,
+            query,
+            nextIteration: iter + 1,
+            consecutiveEmptyTurns,
+            injectedStubsHighWater,
+            consecutiveErrors,
+            consecutiveBadToolRounds,
+            runStateAcc,
+            spin,
+            pendingTerminal: 'implicit-finish',
+            emit
+          });
+          if (gate) return gate;
           return {};
         }
 

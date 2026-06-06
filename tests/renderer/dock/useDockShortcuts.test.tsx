@@ -9,6 +9,7 @@ import { useUiStore } from '@renderer/store/useUiStore';
 import { useDockSearchStore } from '@renderer/store/useDockSearchStore';
 import { useConversationsStore } from '@renderer/store/useConversationsStore';
 import { useWorkspaceStore } from '@renderer/store/useWorkspaceStore';
+import { useAppViewStore } from '@renderer/store/useAppViewStore';
 
 function fireKey(key: string, init: Partial<KeyboardEventInit> = {}) {
   window.dispatchEvent(
@@ -23,6 +24,7 @@ const dockProps = {
 };
 
 beforeEach(() => {
+  useAppViewStore.setState({ view: 'chat', settingsSection: 'models-api', aboutOpen: false });
   useUiStore.setState({
     dockExpanded: false,
     dockWidth: 260,
@@ -134,5 +136,14 @@ describe('useDockShortcuts via LeftDock mount', () => {
     input.focus();
     fireEvent.keyDown(input, { key: 'Escape', bubbles: true });
     expect(useUiStore.getState().dockExpanded).toBe(true);
+  });
+
+  it('ignores Ctrl+B and Ctrl+K while settings is open', () => {
+    useAppViewStore.setState({ view: 'settings' });
+    render(<LeftDock {...dockProps} settingsMode onBackFromSettings={() => {}} />);
+    fireKey('b', { ctrlKey: true });
+    expect(useUiStore.getState().dockExpanded).toBe(false);
+    fireKey('k', { ctrlKey: true });
+    expect(useDockSearchStore.getState().open).toBe(false);
   });
 });

@@ -51,7 +51,14 @@ export type StreamingBlock =
   | { kind: 'blockquote'; spans: InlineSpan[] }
   | { kind: 'hr' }
   | { kind: 'list'; ordered: boolean; items: StreamingListItem[] }
-  | { kind: 'table'; headers: InlineSpan[][]; rows: InlineSpan[][][]; partial: boolean }
+  | {
+      kind: 'table';
+      headers: InlineSpan[][];
+      rows: InlineSpan[][][];
+      partial: boolean;
+      /** Header row staged before the separator line arrives. */
+      preview?: boolean;
+    }
   | { kind: 'code'; language?: string; content: string; partial: boolean };
 
 const HEADING_RE = /^(#{1,6})\s+(.+)$/;
@@ -400,25 +407,42 @@ export function parseStreamingBlocks(text: string): StreamingBlock[] {
     }
 
     const headerCells = parseTableCells(line);
-    if (headerCells && i + 1 < lines.length && isTableSeparator(lines[i + 1]!)) {
-      flushParagraph();
-      const headers = headerCells.map((c) => parseInlineSpans(c));
-      i += 2;
-      const rows: InlineSpan[][][] = [];
-      while (i < lines.length) {
-        const cells = parseTableCells(lines[i]!);
-        if (!cells) break;
-        rows.push(cells.map((c) => parseInlineSpans(c)));
-        i++;
+    if (headerCells) {
+      const hasSeparator =
+        i + 1 < lines.length && isTableSeparator(lines[i + 1]!);
+      if (hasSeparator) {
+        flushParagraph();
+        const headers = headerCells.map((c) => parseInlineSpans(c));
+        i += 2;
+        const rows: InlineSpan[][][] = [];
+        while (i < lines.length) {
+          const cells = parseTableCells(lines[i]!);
+          if (!cells) break;
+          rows.push(cells.map((c) => parseInlineSpans(c)));
+          i++;
+        }
+        blocks.push({
+          kind: 'table',
+          headers,
+          rows,
+          partial: isLastLine && rows.length === 0
+        });
+        rawSrc.push(null);
+        continue;
       }
-      blocks.push({
-        kind: 'table',
-        headers,
-        rows,
-        partial: isLastLine && rows.length === 0
-      });
-      rawSrc.push(null);
-      continue;
+      if (isLastLine) {
+        flushParagraph();
+        blocks.push({
+          kind: 'table',
+          headers: headerCells.map((c) => parseInlineSpans(c)),
+          rows: [],
+          partial: true,
+          preview: true
+        });
+        rawSrc.push(null);
+        i++;
+        continue;
+      }
     }
 
     const listMatch = matchListLine(line);

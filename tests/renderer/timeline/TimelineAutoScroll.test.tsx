@@ -22,6 +22,7 @@ function resetStore(): void {
 }
 
 let scrollSpy: ReturnType<typeof vi.fn>;
+let scrollTopValue: number;
 let originalRaf: typeof window.requestAnimationFrame;
 let originalCaf: typeof window.cancelAnimationFrame;
 
@@ -36,10 +37,13 @@ beforeEach(() => {
     configurable: true,
     get: () => 400
   });
+  scrollTopValue = 800;
   Object.defineProperty(HTMLElement.prototype, 'scrollTop', {
     configurable: true,
-    writable: true,
-    value: 800
+    get: () => scrollTopValue,
+    set: (v: number) => {
+      scrollTopValue = v;
+    }
   });
   scrollSpy = vi.fn();
   Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', {
@@ -157,5 +161,49 @@ describe('Timeline auto-scroll', () => {
     });
 
     expect(scrollSpy).not.toHaveBeenCalled();
+  });
+
+  it('pins scrollTop to the tail when streaming content grows while sticky', () => {
+    render(
+      <div data-testid="scroll-host" className="vx-timeline-scroll-host" style={{ overflow: 'auto', height: 400 }}>
+        <Timeline />
+      </div>
+    );
+
+    scrollTopValue = 1600;
+
+    act(() => {
+      useChatStore.setState((s) => ({
+        ...s,
+        isProcessing: true,
+        events: [
+          {
+            kind: 'user-prompt',
+            id: 'u1',
+            ts: 1,
+            content: 'go'
+          },
+          {
+            kind: 'assistant-text-start',
+            id: 'a1',
+            ts: 2
+          }
+        ],
+        assistantTexts: {
+          a1: { text: 'hello', done: false }
+        }
+      }));
+    });
+
+    act(() => {
+      useChatStore.setState((s) => ({
+        ...s,
+        assistantTexts: {
+          a1: { text: 'hello world — growing stream', done: false }
+        }
+      }));
+    });
+
+    expect(scrollTopValue).toBe(1600);
   });
 });

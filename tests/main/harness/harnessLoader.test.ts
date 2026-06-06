@@ -39,4 +39,11 @@ describe('buildOrchestratorSystemPrompt', () => {
     expect(prompt).toContain('### Tool: `edit`');
     expect(prompt).toContain('### Tool: `finish`');
   });
+
+  it('includes deliverables guidance for markdown vs HTML reports', () => {
+    expect(prompt).toContain('Deliverables — Timeline Markdown vs HTML Reports');
+    expect(prompt).toContain('vy-severity-table');
+    expect(prompt).toContain('≤80 lines');
+    expect(prompt).toContain('**MUST** call `report`');
+  });
 });

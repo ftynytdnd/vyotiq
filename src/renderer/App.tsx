@@ -412,33 +412,34 @@ export default function App() {
   }, [settingsOpen, closeSettings]);
 
   return (
-    <div className="flex h-full flex-col bg-surface-base">
-      <TitleBar fileActions={fileActions} />
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <LeftDock
-            onOpenSettings={() => openSettingsSection()}
-            onOpenWorkspace={() => void pickWorkspace()}
-            onSetWorkspacePath={openSetWorkspacePath}
-          />
-          <main
-            className="min-h-0 flex-1 overflow-hidden bg-surface-base"
-            style={{
-              paddingLeft: DOCK_STRIP_WIDTH,
-              // Mirror the dock strip inset so `mx-auto` reading columns
-              // (timeline + composer) sit on the window's visual center.
-              paddingRight: DOCK_STRIP_WIDTH
-            }}
-            inert={overlayOpen ? true : undefined}
-            aria-hidden={overlayOpen ? true : undefined}
-          >
-            {settingsOpen ? (
-              <SettingsFullView initialSection={settingsSection} />
-            ) : (
-              <ChatPage onOpenProviders={() => openSettingsSection('providers')} />
-            )}
-          </main>
-        </div>
+    <div className="relative flex h-full flex-col bg-surface-base">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <LeftDock
+          settingsMode={settingsOpen}
+          onBackFromSettings={closeSettings}
+          onOpenSettings={() => openSettingsSection()}
+          onOpenWorkspace={() => void pickWorkspace()}
+          onSetWorkspacePath={openSetWorkspacePath}
+        />
+        <TitleBar fileActions={fileActions} />
+        <main
+          className="relative z-0 flex h-full min-h-0 w-full flex-col overflow-hidden bg-surface-base"
+          style={{
+            paddingTop: 'var(--titlebar-h)',
+            paddingLeft: DOCK_STRIP_WIDTH,
+            // Mirror the dock strip inset so `mx-auto` reading columns
+            // (timeline + composer) sit on the window's visual center.
+            paddingRight: DOCK_STRIP_WIDTH
+          }}
+          inert={overlayOpen ? true : undefined}
+          aria-hidden={overlayOpen ? true : undefined}
+        >
+          {settingsOpen ? (
+            <SettingsFullView initialSection={settingsSection} />
+          ) : (
+            <ChatPage onOpenProviders={() => openSettingsSection('providers')} />
+          )}
+        </main>
       </div>
       {overlayOpen &&
         createPortal(

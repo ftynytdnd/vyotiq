@@ -1,0 +1,23 @@
+/**
+ * Shell chrome — title bar height fallbacks, dock rail alignment, density scaling.
+ * Measured values from useTitlebarHeight override these at runtime.
+ */
+
+:root,
+[data-density='balanced'] {
+  --titlebar-h-fallback: 34px;
+  --titlebar-h: var(--titlebar-h-measured, var(--titlebar-h-fallback));
+  --dock-strip-pt: var(--titlebar-h);
+}
+
+[data-density='compact'] {
+  --titlebar-h-fallback: 30px;
+}
+
+[data-density='airy'] {
+  --titlebar-h-fallback: 38px;
+}
+
+.vx-titlebar {
+  min-height: var(--titlebar-h-fallback);
+}

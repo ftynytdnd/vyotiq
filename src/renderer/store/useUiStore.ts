@@ -14,7 +14,7 @@ import { vyotiq } from '../lib/ipc.js';
 import {
   clampDockWidth,
   DOCK_WIDTH_DEFAULT
-} from '../components/dock/dockShared.js';
+} from '@shared/dock/dockWidth.js';
 
 const PERSIST_DEBOUNCE_MS = 200;
 
