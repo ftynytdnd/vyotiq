@@ -210,6 +210,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     let transportFailuresThisRun = 0;
     let runHadLlmProgress = false;
     let lastToolRoundFailure: string | undefined;
+    let rootToolRoundFailure: string | undefined;
     const runStateAcc: RunStateAccumulator = resume
       ? { ...resume.runStateAcc }
       : createRunStateAccumulator();
@@ -678,14 +679,26 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               lastToolRoundFailure = summary.lastFailure;
             }
             if (summary.attempted > 0 && summary.failed === summary.attempted) {
+              if (consecutiveBadToolRounds === 0 && summary.lastFailure) {
+                rootToolRoundFailure = summary.lastFailure;
+              }
               consecutiveBadToolRounds += 1;
               if (consecutiveBadToolRounds >= MAX_SELF_CORRECTION_ATTEMPTS) {
-                const toolStrikeMsg = formatToolStrikeError(lastToolRoundFailure);
+                const toolStrikeMsg = formatToolStrikeError(
+                  lastToolRoundFailure,
+                  rootToolRoundFailure
+                );
                 log.warn('tool-round strike halt — consecutive failed tool rounds', {
                   consecutiveBadToolRounds,
-                  iteration: iter
+                  iteration: iter,
+                  rootFailure: rootToolRoundFailure,
+                  lastFailure: lastToolRoundFailure
                 });
-                log.warn('tool-round strike halt', { consecutiveBadToolRounds });
+                log.warn('tool-round strike halt', {
+                  consecutiveBadToolRounds,
+                  rootFailure: rootToolRoundFailure,
+                  lastFailure: lastToolRoundFailure
+                });
                 emit({
                   kind: 'error',
                   id: randomUUID(),
@@ -696,6 +709,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               }
             } else if (summary.attempted > 0) {
               consecutiveBadToolRounds = 0;
+              rootToolRoundFailure = undefined;
               if (summary.failed < summary.attempted) {
                 const sigs = actionTools
                   .filter((tc) => tc.name)

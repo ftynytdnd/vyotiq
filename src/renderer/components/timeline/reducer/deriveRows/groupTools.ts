@@ -300,7 +300,17 @@ function extractPrimary(name: ToolName, child: ToolGroupChild): string {
       // stray period after the verb (`Listed .` → `Listed workspace`).
       const trimmed = raw.trim();
       if (trimmed === '' || trimmed === '.' || trimmed === './') {
-        return name === 'ls' ? 'workspace' : trimmed;
+        if (name === 'ls') return 'workspace';
+        // Path-less read/edit/delete calls fail validation; surface the
+        // error in the collapsed group instead of "Read and N other files".
+        if (
+          (name === 'read' || name === 'edit' || name === 'delete') &&
+          child.result &&
+          !child.result.ok
+        ) {
+          return child.result.error ?? 'missing path';
+        }
+        return trimmed;
       }
       return raw;
     }

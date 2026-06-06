@@ -56,7 +56,12 @@ export async function runToolByName(
 
   const dedupeBlocked = checkToolCallDedupe(opts.signal, tool.name, args);
   if (dedupeBlocked) {
-    log.warn('duplicate tool call blocked', { tool: tool.name });
+    log.warn('duplicate tool call blocked', {
+      tool: tool.name,
+      argKeys: Object.keys(args),
+      runId: opts.runId,
+      conversationId: opts.conversationId
+    });
     return dedupeBlocked;
   }
 

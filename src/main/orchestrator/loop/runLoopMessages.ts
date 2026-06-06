@@ -27,11 +27,21 @@ export function formatProviderStrikeError(consecutiveErrors: number, detail: str
   );
 }
 
-export function formatToolStrikeError(lastFailure?: string): string {
+export function formatToolStrikeError(
+  lastFailure?: string,
+  rootFailure?: string
+): string {
   const base = `Tools failed ${MAX_SELF_CORRECTION_ATTEMPTS} times in a row.`;
   const tail = 'Try Retry below, review the errors above, or adjust your request.';
-  if (!lastFailure?.trim()) return `${base} ${tail}`;
-  return `${base} Last error: ${sentenceEnd(lastFailure)} ${tail}`;
+  const last = lastFailure?.trim();
+  const root = rootFailure?.trim();
+  if (root && last && root !== last) {
+    return (
+      `${base} Root cause: ${sentenceEnd(root)} Last error: ${sentenceEnd(last)} ${tail}`
+    );
+  }
+  if (last) return `${base} Last error: ${sentenceEnd(last)} ${tail}`;
+  return `${base} ${tail}`;
 }
 
 export const RUN_STOPPED_THOUGHT = 'Run stopped.';

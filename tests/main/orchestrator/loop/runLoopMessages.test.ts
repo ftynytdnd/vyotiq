@@ -29,4 +29,13 @@ describe('runLoopMessages', () => {
   it('formatToolStrikeError includes last failure when provided', () => {
     expect(formatToolStrikeError('read — missing path')).toContain('read — missing path');
   });
+
+  it('formatToolStrikeError surfaces root cause when it differs from last error', () => {
+    const msg = formatToolStrikeError(
+      'read — duplicate_tool_call',
+      'read — missing path'
+    );
+    expect(msg).toContain('Root cause: read — missing path');
+    expect(msg).toContain('Last error: read — duplicate_tool_call');
+  });
 });

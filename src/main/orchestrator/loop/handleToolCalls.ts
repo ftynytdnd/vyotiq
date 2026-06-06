@@ -12,6 +12,7 @@ import { emitFinishToolSettlement, resolveFinishSummary } from './finishIntercep
 import { emitRunStatus } from './emitRunStatus.js';
 import { batchIndicesByDependencies, parseDependsOnIds } from './toolDependencyBatches.js';
 import { parseToolArgs } from './parseToolArgs.js';
+import { validateToolArgs } from './validateToolArgs.js';
 import { logger } from '../../logging/logger.js';
 
 const log = logger.child('orchestrator/handleToolCalls');
@@ -169,6 +170,11 @@ async function dispatchOneToolCall(
     }
   });
   if (parseError !== undefined) {
+    log.warn('tool arguments failed to parse', {
+      tool: tc.name,
+      callId,
+      error: 'argument parse failed'
+    });
     const syntheticResult = {
       id: callId,
       name: tc.name as ToolName,
@@ -194,6 +200,41 @@ async function dispatchOneToolCall(
       attempted: 1,
       failed: 1,
       failureDetail: formatToolFailureDetail(tc.name, parseError, 'argument parse failed')
+    };
+  }
+
+  const validation = validateToolArgs(tc.name, parsed);
+  if (!validation.ok) {
+    log.warn('tool arguments rejected before dispatch', {
+      tool: tc.name,
+      callId,
+      error: validation.error
+    });
+    const syntheticResult = {
+      id: callId,
+      name: tc.name as ToolName,
+      ok: false as const,
+      output: validation.output,
+      error: validation.error,
+      durationMs: 0
+    };
+    emit({
+      kind: 'tool-result',
+      id: randomUUID(),
+      ts: Date.now(),
+      result: syntheticResult
+    });
+    messages.push({
+      role: 'tool',
+      tool_call_id: callId,
+      name: tc.name,
+      content: validation.output
+    });
+    return {
+      kind: 'ran',
+      attempted: 1,
+      failed: 1,
+      failureDetail: formatToolFailureDetail(tc.name, validation.output, validation.error)
     };
   }
 
@@ -362,11 +403,21 @@ export async function handleToolCalls(
     }
   }
 
-  log.debug('tool round summary', {
-    attempted,
-    failed,
-    refused: tallies.refused,
-    ms: Date.now() - startedAt
-  });
+  if (failed > 0) {
+    log.warn('tool round had failures', {
+      attempted,
+      failed,
+      refused: tallies.refused,
+      lastFailure,
+      ms: Date.now() - startedAt
+    });
+  } else {
+    log.debug('tool round summary', {
+      attempted,
+      failed,
+      refused: tallies.refused,
+      ms: Date.now() - startedAt
+    });
+  }
   return { attempted, failed, ...(lastFailure ? { lastFailure } : {}) };
 }
