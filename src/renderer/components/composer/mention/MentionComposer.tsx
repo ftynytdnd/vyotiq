@@ -46,6 +46,10 @@ export interface MentionComposerProps {
   ariaKeyshortcuts?: string;
   onPaste?: (e: ClipboardEvent<HTMLDivElement>) => void;
   onKeyDown?: (e: KeyboardEvent<HTMLDivElement>) => void;
+  /** Focus the editor on mount (empty-chat landing). */
+  requestFocus?: boolean;
+  /** Changes re-trigger focus (e.g. switching empty conversations). */
+  focusSession?: string | null;
 }
 
 export function MentionComposer({
@@ -57,7 +61,9 @@ export function MentionComposer({
   disabled,
   ariaKeyshortcuts,
   onPaste,
-  onKeyDown
+  onKeyDown,
+  requestFocus,
+  focusSession
 }: MentionComposerProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<MentionDocument>(emptyMentionDocument());
@@ -88,6 +94,13 @@ export function MentionComposer({
   });
 
   atTokenRef.current = atToken;
+
+  useLayoutEffect(() => {
+    if (!requestFocus || disabled) return;
+    const el = editorRef.current;
+    if (!el) return;
+    el.focus({ preventScroll: true });
+  }, [requestFocus, disabled, focusSession]);
 
   const syncDomFromDoc = useCallback((doc: MentionDocument) => {
     const el = editorRef.current;

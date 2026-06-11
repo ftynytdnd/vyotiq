@@ -5,6 +5,7 @@ import type {
   AddProviderInput,
   OpenAiTransport,
   ProviderAttribution,
+  ProviderModelsUpdate,
   ThinkingEffort
 } from '@shared/types/provider.js';
 import { vyotiq } from '../lib/ipc.js';
@@ -19,6 +20,7 @@ interface ProviderStore {
     id: string,
     patch: Partial<AddProviderInput> & {
       enabled?: boolean;
+      billingApiKey?: string | null;
       /** OpenRouter app-attribution overrides; see ProviderConfig.attribution. */
       attribution?: ProviderAttribution;
       /** Per-model thinking-effort overrides (shallow-merged store-side). */
@@ -34,6 +36,7 @@ interface ProviderStore {
   discover: (id: string) => Promise<ModelInfo[]>;
   /** Cache-respecting discovery (used at app boot). */
   discoverCached: (id: string) => Promise<ModelInfo[]>;
+  applyModelsUpdate: (update: ProviderModelsUpdate) => void;
   test: (id: string) => Promise<{ ok: boolean; message: string }>;
 }
 
@@ -97,6 +100,16 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
       )
     });
     return models;
+  },
+
+  applyModelsUpdate: (update) => {
+    set({
+      providers: get().providers.map((p) =>
+        p.id === update.providerId
+          ? { ...p, models: update.models, lastDiscoveredAt: update.lastDiscoveredAt }
+          : p
+      )
+    });
   },
 
   test: (id) => vyotiq.providers.test(id)

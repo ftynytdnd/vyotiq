@@ -132,6 +132,7 @@ describe('streamOpenAi — usage normalization (Phase 7)', () => {
     ]);
     const usage = await collectUsage();
     expect(usage?.cachedPromptTokens).toBe(768);
+    expect(usage?.uncachedPromptTokens).toBe(256);
     expect(usage?.reasoningTokens).toBe(60);
     expect(usage?.promptTokens).toBe(1024);
     expect(usage?.completionTokens).toBe(200);

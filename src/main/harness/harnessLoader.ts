@@ -19,6 +19,7 @@ import {
 import orchestratorCore from './00-orchestrator-core.md?raw';
 import contextLearning from './01-context-learning.md?raw';
 import deliverables from './02-deliverables.md?raw';
+import staticExamples from './03-static-examples.md?raw';
 
 const AGENT_SECTIONS: ReadonlyArray<{ title: string; body: string }> = [
   { title: 'Agent Core', body: orchestratorCore },
@@ -29,6 +30,7 @@ const AGENT_SECTIONS: ReadonlyArray<{ title: string; body: string }> = [
 const BOOTSTRAP_HARNESS_MARKDOWN: ReadonlyArray<{ file: string; body: string }> = [
   { file: '00-orchestrator-core.md', body: orchestratorCore },
   { file: '01-context-learning.md', body: contextLearning },
+  { file: '03-static-examples.md', body: staticExamples },
   { file: '02-deliverables.md', body: deliverables }
 ];
 
@@ -59,13 +61,19 @@ function buildRuntimeLimitsBlock(): string {
 function buildAgentToolCatalogue(): string {
   const directNames = new Set<string>(AGENT_TOOLS);
   const tools = listTools().filter((t) => directNames.has(t.name));
-  const briefs = tools.map((t) => t.briefMarkdown).join('\n\n');
+  const index = tools
+    .map((t) => {
+      const line = t.schema.function.description.split('\n')[0]?.trim() ?? t.name;
+      return `- \`${t.name}\` — ${line}`;
+    })
+    .join('\n');
   return (
     `# Your Tools (callable via \`tool_calls\`)\n\n` +
-    `Use tools when the task needs action. You may answer in plain prose when that fully satisfies the user.\n\n` +
-    `- \`finish\` and \`ask_user\` are explicit ways to end a run. \`finish\` delivers your final answer; \`ask_user\` pauses for clarification.\n` +
-    `- Substantive prose without tools also ends the run when it fully answers the user.\n\n` +
-    briefs
+    `Full JSON schemas are on the wire \`tools[]\` array. Names-only index:\n\n` +
+    index +
+    `\n\nUse tools when the task needs action. You may answer in plain prose when that fully satisfies the user.\n` +
+    `- \`finish\` and \`ask_user\` are explicit ways to end a run.\n` +
+    `- Substantive prose without tools also ends the run when it fully answers the user.`
   );
 }
 
@@ -83,6 +91,10 @@ export function assertHarnessBoot(): void {
   if (!prompt.includes(`MAX_TOTAL_ITERATIONS=${MAX_TOTAL_ITERATIONS}`)) {
     throw new Error('harness boot: runtime_limits drift from constants.ts');
   }
+  const fewShot = buildStaticFewShotXml();
+  if (!fewShot.includes('<static_examples>') || fewShot.trim().length < 20) {
+    throw new Error('harness boot: static few-shot slot missing or empty');
+  }
 }
 
 /** System prompt for Agent V (single dynamic agent). */
@@ -99,4 +111,9 @@ export function buildOrchestratorSystemPrompt(): string {
 
 export function __resetOrchestratorPromptCacheForTests(): void {
   agentPromptCache = null;
+}
+
+/** Cache-layer slot `[1]` — static few-shot patterns (not in harness system prefix). */
+export function buildStaticFewShotXml(): string {
+  return wrapXml('static_examples', staticExamples.trim());
 }

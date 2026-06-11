@@ -9,6 +9,7 @@
  */
 
 import type { TimelineEvent, TokenUsage } from '@shared/types/chat.js';
+import { tokenUsageCountsEqual } from '@shared/token/tokenUsageCountsEqual.js';
 import { safeParsePartial } from '@shared/text/partialJsonParser.js';
 import {
   INITIAL_TIMELINE_STATE,
@@ -24,6 +25,40 @@ import {
   autoCloseReasoning,
   clearPartialFor
 } from './timelineReducerShared.js';
+
+type TokenUsageEvent = Extract<TimelineEvent, { kind: 'token-usage' }>;
+
+/** Replace the last same-turn usage row when counts match (late cache diagnostics). */
+function coalesceTokenUsageEvent(
+  events: TimelineEvent[],
+  event: TokenUsageEvent,
+  mutate: boolean
+): TimelineEvent[] {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const row = events[i];
+    if (row?.kind !== 'token-usage') continue;
+    if (row.assistantMsgId !== event.assistantMsgId) break;
+    if (!tokenUsageCountsEqual(row.usage, event.usage)) break;
+    const merged: TokenUsageEvent = {
+      ...row,
+      ts: event.ts,
+      usage: event.usage,
+      ...(event.cacheMissReason !== undefined
+        ? { cacheMissReason: event.cacheMissReason }
+        : row.cacheMissReason !== undefined
+          ? { cacheMissReason: row.cacheMissReason }
+          : {})
+    };
+    if (mutate) {
+      events[i] = merged;
+      return events;
+    }
+    const next = events.slice();
+    next[i] = merged;
+    return next;
+  }
+  return appendTimelineEvent(events, event, mutate);
+}
 
 /**
  * Optional reducer hooks. The renderer's IPC bridge (`chatChannel.ts`)
@@ -66,6 +101,11 @@ export interface ApplyEventOptions {
    * flag, replay drops to O(N) — measured 50–100ms.
    */
   mutateEvents?: boolean;
+  /**
+   * Transcript batch replay (`rebuildTimelineState`). Suppresses
+   * session-scoped side effects such as live report auto-open markers.
+   */
+  replay?: boolean;
 }
 
 export function applyTimelineEvent(
@@ -233,11 +273,18 @@ export function applyTimelineEvent(
         ...state.toolResultSettledIds,
         [resultId]: true as const
       };
+      const liveReportResultIds =
+        !opts.replay &&
+        event.result.name === 'report' &&
+        event.result.ok
+          ? { ...state.liveReportResultIds, [resultId]: true as const }
+          : state.liveReportResultIds;
       return {
         ...state,
         events: appendTimelineEvent(state.events, event, mutate),
         liveDiffByCallId: nextLiveDiff,
-        toolResultSettledIds
+        toolResultSettledIds,
+        liveReportResultIds
       };
     }
     case 'file-edit': {
@@ -258,11 +305,25 @@ export function applyTimelineEvent(
     }
 
     case 'token-usage': {
-      const eventsNext = appendTimelineEvent(state.events, event, mutate);
+      const eventsNext = coalesceTokenUsageEvent(state.events, event, mutate);
+      const sameTurn =
+        state.orchestratorUsage?.lastTurnAssistantMsgId === event.assistantMsgId;
+      const lastPromptCacheMissReason =
+        event.cacheMissReason !== undefined
+          ? event.cacheMissReason
+          : sameTurn
+            ? state.lastPromptCacheMissReason
+            : undefined;
       return {
         ...state,
         events: eventsNext,
-        orchestratorUsage: foldTokenUsage(state.orchestratorUsage, event.usage, event.ts)
+        orchestratorUsage: foldTokenUsage(
+          state.orchestratorUsage,
+          event.usage,
+          event.ts,
+          event.assistantMsgId
+        ),
+        lastPromptCacheMissReason
       };
     }
 
@@ -498,7 +559,9 @@ export function rebuildTimelineState(events: TimelineEvent[]): TimelineState {
     eventsAcc.length = 0;
   }
   let s: TimelineState = { ...INITIAL_TIMELINE_STATE, events: eventsAcc };
-  for (const e of events) s = applyTimelineEvent(s, e, { mutateEvents: true });
+  for (const e of events) {
+    s = applyTimelineEvent(s, e, { mutateEvents: true, replay: true });
+  }
   return s;
 }
 

@@ -28,7 +28,7 @@ export function ReportsPanel() {
       </ShellCaption>
       <SettingsSwitchRow
         label="Auto-open reports"
-        description="Opens HTML when a report is ready."
+        description="Opens HTML when a new report completes during a run (not on app startup)."
         value={reports.autoOpenReports}
         onChange={(v) => apply({ autoOpenReports: v })}
       />

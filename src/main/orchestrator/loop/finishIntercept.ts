@@ -8,6 +8,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ChatMessage, TimelineEvent } from '@shared/types/chat.js';
 import type { ToolName } from '@shared/types/tool.js';
+import { insertHistoryBeforeTail } from '../context/buildContextLayers.js';
 import type { PartialToolCall } from './handleAssistantTurn.js';
 import { parseStringArgFromBuf, tryParseArgumentsRecord } from './parseToolArgs.js';
 
@@ -67,10 +68,12 @@ export function emitFinishToolSettlement(
     result
   });
 
-  messages?.push({
-    role: 'tool',
-    tool_call_id: callId,
-    name: 'finish',
-    content: summary
-  });
+  if (messages) {
+    insertHistoryBeforeTail(messages, {
+      role: 'tool',
+      tool_call_id: callId,
+      name: 'finish',
+      content: summary
+    });
+  }
 }

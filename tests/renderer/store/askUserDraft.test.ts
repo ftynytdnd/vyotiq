@@ -43,4 +43,42 @@ describe('useAskUserDraftStore allow_multiple', () => {
     const answers = store.buildAnswers('prompt-1', payload);
     expect(answers[0]?.selectedOptionIds).toEqual(['react', 'svelte']);
   });
+
+  it('clears selected options when typing a custom answer on single-select', () => {
+    const singlePayload = {
+      questions: [
+        {
+          id: 'pick',
+          prompt: 'Pick one',
+          options: [{ id: 'a', label: 'Alpha' }]
+        }
+      ]
+    };
+    useAskUserDraftStore.getState().ensureDraft('prompt-2', singlePayload);
+    const store = useAskUserDraftStore.getState();
+    store.toggleOption('prompt-2', 'pick', 'a', false);
+    store.setFreeText('prompt-2', 'pick', 'custom', false);
+    const sheet = useAskUserDraftStore.getState().byPromptId['prompt-2']!.pick!;
+    expect(sheet.selected.size).toBe(0);
+    expect(sheet.freeText).toBe('custom');
+  });
+
+  it('clears free text when selecting an option on single-select', () => {
+    const singlePayload = {
+      questions: [
+        {
+          id: 'pick',
+          prompt: 'Pick one',
+          options: [{ id: 'a', label: 'Alpha' }]
+        }
+      ]
+    };
+    useAskUserDraftStore.getState().ensureDraft('prompt-3', singlePayload);
+    const store = useAskUserDraftStore.getState();
+    store.setFreeText('prompt-3', 'pick', 'custom', false);
+    store.toggleOption('prompt-3', 'pick', 'a', false);
+    const sheet = useAskUserDraftStore.getState().byPromptId['prompt-3']!.pick!;
+    expect(sheet.freeText).toBe('');
+    expect(sheet.selected).toEqual(new Set(['a']));
+  });
 });

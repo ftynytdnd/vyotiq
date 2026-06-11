@@ -14,6 +14,7 @@ import type {
   ProviderConfig,
   ModelInfo
 } from '../../shared/types/provider.js';
+import type { ProviderAccountSnapshotMap } from '../../shared/types/providerAccount.js';
 import type { AskUserSubmitInput } from '../../shared/types/askUser.js';
 
 function on<TArgs extends unknown[]>(channel: string, cb: (...args: TArgs) => void): () => void {
@@ -60,7 +61,18 @@ const api: VyotiqApi = {
     remove: (id) => ipcRenderer.invoke(IPC.PROVIDERS_REMOVE, id),
     discoverModels: (id, force): Promise<ModelInfo[]> =>
       ipcRenderer.invoke(IPC.PROVIDERS_DISCOVER_MODELS, id, force),
-    test: (id) => ipcRenderer.invoke(IPC.PROVIDERS_TEST, id)
+    test: (id) => ipcRenderer.invoke(IPC.PROVIDERS_TEST, id),
+    getAccounts: () => ipcRenderer.invoke(IPC.PROVIDERS_GET_ACCOUNTS),
+    refreshAccounts: () => ipcRenderer.invoke(IPC.PROVIDERS_REFRESH_ACCOUNTS),
+    setAccountPollSource: (source: string, active: boolean) =>
+      ipcRenderer.invoke(IPC.PROVIDERS_SET_ACCOUNT_POLL_SOURCE, source, active),
+    onAccountsUpdated: (cb) =>
+      on<[ProviderAccountSnapshotMap]>(IPC.PROVIDERS_ACCOUNT_UPDATED, (map) => cb(map)),
+    onModelsUpdated: (cb) =>
+      on<[import('@shared/types/provider.js').ProviderModelsUpdate]>(
+        IPC.PROVIDERS_MODELS_UPDATED,
+        (update) => cb(update)
+      )
   },
 
   chat: {
@@ -110,6 +122,10 @@ const api: VyotiqApi = {
   settings: {
     get: () => ipcRenderer.invoke(IPC.SETTINGS_GET),
     set: (patch) => ipcRenderer.invoke(IPC.SETTINGS_SET, patch)
+  },
+
+  promptCache: {
+    getStatus: () => ipcRenderer.invoke(IPC.PROMPT_CACHE_STATUS)
   },
 
   checkpoints: {

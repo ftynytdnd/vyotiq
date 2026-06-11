@@ -3,12 +3,20 @@ import { render, screen } from '@testing-library/react';
 import { RunCompleteRow } from '@renderer/components/timeline/rows/RunCompleteRow';
 
 describe('RunCompleteRow', () => {
-  it('includes edit and file stats when provided', () => {
+  it('includes edit, file, and command stats when provided', () => {
     render(
-      <RunCompleteRow promptId="p1" durationMs={12_400} completedAt={1_700_000_000_000} editCount={5} fileCount={3} />
+      <RunCompleteRow
+        promptId="p1"
+        durationMs={12_400}
+        completedAt={1_700_000_000_000}
+        editCount={5}
+        fileCount={3}
+        commandCount={2}
+      />
     );
     expect(screen.getByText(/5 edits/i)).toBeInTheDocument();
     expect(screen.getByText(/3 files/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 commands/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/done in 12s/i)).toBeInTheDocument();
   });
 
@@ -43,6 +51,43 @@ describe('RunCompleteRow', () => {
     expect(text).toMatch(/done in/i);
     expect(text).toMatch(/38\.3k/i);
     expect(text.indexOf('done in')).toBeLessThan(text.search(/38\.3k/i));
+  });
+
+  it('shows cached and cache-write token counts when present', () => {
+    const { container } = render(
+      <RunCompleteRow
+        promptId="p1"
+        durationMs={5_000}
+        completedAt={1_700_000_000_000}
+        usage={{
+          cumulative: {
+            totalTokens: 50_000,
+            promptTokens: 40_000,
+            completionTokens: 10_000,
+            cachedPromptTokens: 32_000,
+            cacheCreationTokens: 8_000
+          },
+          latest: {
+            totalTokens: 50_000,
+            promptTokens: 40_000,
+            completionTokens: 10_000,
+            cachedPromptTokens: 32_000,
+            cacheCreationTokens: 8_000
+          },
+          peak: {
+            totalTokens: 50_000,
+            promptTokens: 40_000,
+            completionTokens: 10_000,
+            cachedPromptTokens: 32_000,
+            cacheCreationTokens: 8_000
+          },
+          samples: 2
+        }}
+      />
+    );
+    const text = container.querySelector('[data-row-kind="run-complete"]')?.textContent ?? '';
+    expect(text).toMatch(/32k.*cached/i);
+    expect(text).toMatch(/8k.*cache write/i);
   });
 
   it('uses warning tone for very long turn durations', () => {

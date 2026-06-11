@@ -1,5 +1,5 @@
 /**
- * `EditInvocation` Phase-2 DOM caps on hunks and lines per hunk.
+ * `EditInvocation` snippet diff DOM caps.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -47,30 +47,32 @@ const call = {
   args: { path: 'src/foo.ts' }
 } as ToolCall;
 
+function snippetText(): string {
+  const el = document.querySelector('[data-snippet-diff]');
+  return el?.textContent ?? '';
+}
+
 describe('EditInvocation DOM caps', () => {
-  it('renders every hunk when under the 30-hunk cap', async () => {
-    // Omit rowKey so InvocationShell uses local expand state.
+  it('renders every line when under the snippet cap', async () => {
     render(<EditInvocation call={call} result={makeResult(makeHunks(5, 3))} />);
     await userEvent.click(screen.getByRole('button'));
-    expect(screen.queryByText(/more hunk/)).toBeNull();
-    expect(screen.getByText('hunk4-2')).toBeInTheDocument();
+    expect(screen.queryByText(/more line/)).toBeNull();
+    expect(snippetText()).toMatch(/hunk4-2/);
   });
 
-  it('truncates hunks to MAX and shows an overflow row', async () => {
-    render(<EditInvocation call={call} result={makeResult(makeHunks(50, 1))} />);
+  it('truncates to MAX_VISIBLE_LINES and shows an overflow row', async () => {
+    render(<EditInvocation call={call} result={makeResult(makeHunks(200, 1))} />);
     await userEvent.click(screen.getByRole('button'));
-    expect(screen.getByText('hunk29-0')).toBeInTheDocument();
-    expect(screen.queryByText('hunk30-0')).toBeNull();
-    // Overflow row now offers an interactive "show all" affordance;
-    // the count + "show all" copy live on the same button.
-    expect(screen.getByText(/20 more hunks.*show all/i)).toBeInTheDocument();
+    expect(snippetText()).toMatch(/hunk159-0/);
+    expect(snippetText()).not.toMatch(/hunk160-0/);
+    expect(screen.getByText(/40 more lines/)).toBeInTheDocument();
   });
 
   it('truncates lines within a single hunk', async () => {
     render(<EditInvocation call={call} result={makeResult(makeHunks(1, 250))} />);
     await userEvent.click(screen.getByRole('button'));
-    expect(screen.getByText('hunk0-199')).toBeInTheDocument();
-    expect(screen.queryByText('hunk0-200')).toBeNull();
-    expect(screen.getByText(/50 more lines in this hunk/)).toBeInTheDocument();
+    expect(snippetText()).toMatch(/hunk0-159/);
+    expect(snippetText()).not.toMatch(/hunk0-160/);
+    expect(screen.getByText(/90 more lines/)).toBeInTheDocument();
   });
 });

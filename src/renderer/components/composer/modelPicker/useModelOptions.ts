@@ -11,6 +11,7 @@ import { useMemo } from 'react';
 import type { ModelInfo, ProviderConfig } from '@shared/types/provider.js';
 import { isLocalProvider } from '@shared/providers/isLocalProvider.js';
 import { useProviderStore } from '../../../store/useProviderStore.js';
+import { filterProviderModels } from './modelPickerCatalog.js';
 
 interface ModelOptionGroup {
   provider: ProviderConfig;
@@ -40,13 +41,7 @@ function buildGroups(enabled: ProviderConfig[], q: string): ModelOptionGroup[] {
   const groups: ModelOptionGroup[] = [];
   for (const p of sorted) {
     const models = p.models ?? [];
-    const matched = q
-      ? models
-          .filter((m) => m.id.toLowerCase().includes(q))
-          .sort((a, b) => a.id.localeCompare(b.id, undefined, { sensitivity: 'base' }))
-      : [...models].sort((a, b) =>
-          a.id.localeCompare(b.id, undefined, { sensitivity: 'base' })
-        );
+    const matched = filterProviderModels(p, models, q);
     if (q && matched.length === 0) continue;
     groups.push({ provider: p, models: matched });
   }

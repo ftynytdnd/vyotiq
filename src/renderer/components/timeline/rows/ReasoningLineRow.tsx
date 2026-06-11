@@ -95,7 +95,11 @@ export function ReasoningLineRow({ id }: ReasoningLineRowProps) {
   );
 
   return (
-    <div className="vyotiq-stepfade-once flex flex-col" data-row-kind="reasoning-line">
+    <div
+      className="vyotiq-stepfade-once flex flex-col"
+      data-row-kind="reasoning-line"
+      aria-live={streaming ? 'polite' : 'off'}
+    >
       <TimelineRowHeader
         expanded={expanded}
         onToggle={onToggle}

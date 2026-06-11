@@ -111,6 +111,13 @@ export const timelineAssistantRowClassName = cn(
   'group vyotiq-stepfade-once'
 );
 
+/** Copy + inline run metadata on the assistant response row. */
+export const timelineAssistantActionRowClassName = 'vx-assistant-turn-actions';
+
+/** Inline run-complete chips beside copy — no log-row chrome. */
+export const timelineRunCompleteInlineClassName =
+  'vx-run-complete-meta--inline inline-flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5';
+
 /** User prompt body — open Vyotiq UI typography. */
 export const timelineUserPromptBodyClassName = 'vx-timeline-prompt';
 

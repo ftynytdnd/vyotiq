@@ -21,6 +21,8 @@
 
 import type { ChatMessage, TimelineEvent } from '@shared/types/chat.js';
 import { MAX_TOOL_OUTPUT_CHARS } from '@shared/constants.js';
+import { truncateUtf8Safe } from '@shared/text/truncateUtf8Safe.js';
+import { stableStringify } from '@shared/json/stableStringify.js';
 import { wrapXml } from '../envelope/index.js';
 
 export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
@@ -111,7 +113,7 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
         const tc: NonNullable<ChatMessage['tool_calls']>[number] = {
           id: e.call.id,
           type: 'function',
-          function: { name: e.call.name, arguments: JSON.stringify(e.call.args ?? {}) }
+          function: { name: e.call.name, arguments: stableStringify(e.call.args ?? {}) }
         };
         if (typeof e.call.thoughtSignature === 'string' && e.call.thoughtSignature.length > 0) {
           tc.thoughtSignature = e.call.thoughtSignature;
@@ -169,11 +171,3 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
   return messages;
 }
 
-function truncateUtf8Safe(s: string, maxChars: number): string {
-  if (s.length <= maxChars) return s;
-  let cut = maxChars;
-  const lastCode = s.charCodeAt(cut - 1);
-  if (lastCode >= 0xd800 && lastCode <= 0xdbff) cut -= 1;
-  const head = s.slice(0, cut);
-  return Buffer.from(head, 'utf8').toString('utf8');
-}

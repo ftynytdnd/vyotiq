@@ -10,6 +10,7 @@ import { useUiStore } from '@renderer/store/useUiStore';
 import { useWorkspaceStore } from '@renderer/store/useWorkspaceStore';
 import { useConversationsStore } from '@renderer/store/useConversationsStore';
 import { useDockSearchStore } from '@renderer/store/useDockSearchStore';
+import { useAppViewStore } from '@renderer/store/useAppViewStore';
 
 const fileActions = {
   newConversation: () => {},
@@ -75,5 +76,11 @@ describe('TitleBar', () => {
     );
     expect(screen.getAllByText('Codex').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('tablist', { name: 'Workspaces' })).toBeInTheDocument();
+  });
+
+  it('shows a settings breadcrumb in the title bar when settings is open', () => {
+    useAppViewStore.setState({ view: 'settings', settingsSection: 'models-api', aboutOpen: false });
+    render(<TitleBar fileActions={fileActions} />);
+    expect(screen.getByText('Models & API')).toBeInTheDocument();
   });
 });

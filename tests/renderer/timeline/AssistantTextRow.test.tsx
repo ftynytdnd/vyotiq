@@ -85,6 +85,39 @@ describe('AssistantTextRow', () => {
     expect(queryByRole('button', { name: /regenerate/i })).toBeNull();
   });
 
+  it('renders inline run-complete metadata beside copy on the same row', () => {
+    useChatStore.setState({
+      assistantTexts: {
+        'msg-1': { id: 'msg-1', text: 'Hello there.', done: true }
+      }
+    });
+
+    const { container } = render(
+      <AssistantTextRow
+        id="msg-1"
+        model={null}
+        inlineRunComplete={{
+          promptId: 'p1',
+          durationMs: 10_000,
+          completedAt: 1_700_000_000_000,
+          usage: {
+            cumulative: { totalTokens: 11_000, promptTokens: 6_000, completionTokens: 5_000 },
+            latest: { promptTokens: 6_000, completionTokens: 5_000, totalTokens: 11_000 },
+            peak: { promptTokens: 6_000, completionTokens: 5_000, totalTokens: 11_000 },
+            samples: 1
+          }
+        }}
+      />
+    );
+
+    const actionRow = container.querySelector('[data-row-kind="assistant-text"]');
+    const meta = actionRow?.querySelector('[data-run-complete-placement="inline"]');
+    expect(meta).not.toBeNull();
+    expect(actionRow?.querySelector('.vx-assistant-turn-actions--with-meta')).not.toBeNull();
+    expect(actionRow?.textContent).toMatch(/copy/i);
+    expect(actionRow?.textContent).toMatch(/11k tok/i);
+  });
+
   it('renders very long settled replies in full (no show-more fold)', () => {
     const longBody = Array.from({ length: 120 }, (_, i) => `Paragraph ${i} with enough text to wrap.`).join('\n\n');
     useChatStore.setState({

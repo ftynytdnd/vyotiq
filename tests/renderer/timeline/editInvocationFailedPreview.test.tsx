@@ -44,22 +44,13 @@ describe('EditInvocation — failed call with parseable args', () => {
     // Defect 2: full actionable output, not just the short tag.
     expect(screen.getByText(/matches 2 locations/i)).toBeInTheDocument();
 
-    // Intended diff label distinguishes this from both `diff`
-    // (authoritative) and `preview (pending)` (in-flight).
-    expect(
-      screen.getByText(/intended diff \(not applied\)/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/not applied/i)).toBeInTheDocument();
 
-    // Both the old and the new line appear in the synthetic hunk.
-    // Intra-line word highlighting may split the text into multiple
-    // spans (changed-prefix span + suffix text node), so we match by
-    // walking the rendered pre element's collapsed textContent rather
-    // than expecting a single text node.
-    const pre = screen.getByText('@@ -1 +1 @@', { exact: false })
-      .parentElement?.querySelector('pre');
-    expect(pre).not.toBeNull();
-    expect(pre!.textContent).toMatch(/-\s*old_line/);
-    expect(pre!.textContent).toMatch(/\+\s*new_line/);
+    const lines = Array.from(
+      document.querySelectorAll<HTMLElement>('.vx-snippet-diff-line')
+    ).map((el) => el.textContent ?? '');
+    expect(lines.some((t) => /old_line/.test(t))).toBe(true);
+    expect(lines.some((t) => /new_line/.test(t))).toBe(true);
   });
 
   it('omits the intended-diff pane when the failed call has no parseable args', async () => {

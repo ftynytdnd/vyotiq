@@ -258,13 +258,13 @@ describe('Timeline turn zones', () => {
 
     const { container, rerender } = render(<Timeline />);
     expect(container.querySelector('[data-row-kind="run-complete"]')).toBeNull();
-    expect(container.querySelector('[data-turn-running-meta]')).not.toBeNull();
+    expect(container.querySelector('[data-turn-sticky-footer]')).not.toBeNull();
 
     act(() => {
       useChatStore.setState({ isProcessing: false });
     });
     rerender(<Timeline />);
-    expect(container.querySelector('[data-turn-running-meta]')).toBeNull();
+    expect(container.querySelector('.vx-turn-sticky-footer__live')).toBeNull();
     expect(container.querySelector('[data-row-kind="run-complete"]')).not.toBeNull();
   });
 });

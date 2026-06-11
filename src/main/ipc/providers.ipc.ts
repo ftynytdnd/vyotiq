@@ -22,6 +22,17 @@ import {
   updateProvider
 } from '../providers/providerStore.js';
 import { detectDialect, discoverModels, testProvider } from '../providers/modelDiscovery.js';
+import {
+  refreshProviderAccountsNow,
+  setProviderAccountPollSource,
+  startProviderAccountPoller,
+  stopProviderAccountPoller
+} from '../providers/providerAccountPoller.js';
+import {
+  startProviderDiscoveryPoller,
+  stopProviderDiscoveryPoller
+} from '../providers/providerDiscoveryPoller.js';
+import { getAllProviderAccountSnapshots } from '../providers/providerAccountStore.js';
 import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 // Audit fix 2026-06-P2-1 — runtime shape gates so a hand-crafted
@@ -40,6 +51,9 @@ import {
 const log = logger.child('ipc/providers');
 
 export function registerProvidersIpc(): void {
+  startProviderAccountPoller();
+  startProviderDiscoveryPoller();
+
   wrapIpcHandler(IPC.PROVIDERS_LIST, async () => listProviders());
 
   wrapIpcHandler(IPC.PROVIDERS_ADD, async (_event, input: AddProviderInput) => {
@@ -118,6 +132,7 @@ export function registerProvidersIpc(): void {
         modelThinking?: Record<string, ThinkingEffort | null>;
         contextOverrides?: Record<string, number | null>;
         openaiTransport?: ProviderConfig['openaiTransport'];
+        billingApiKey?: string | null;
       }
     ) => {
       assertString('providers:update', 'id', id);
@@ -172,6 +187,12 @@ export function registerProvidersIpc(): void {
       if ('openaiTransport' in patch && patch.openaiTransport !== undefined) {
         assertEnum('providers:update', 'patch.openaiTransport', patch.openaiTransport, OPENAI_TRANSPORTS);
       }
+      if ('billingApiKey' in patch && patch.billingApiKey !== null && patch.billingApiKey !== undefined) {
+        assertString('providers:update', 'patch.billingApiKey', patch.billingApiKey, {
+          nonEmpty: false,
+          maxBytes: 4096
+        });
+      }
       if ('attribution' in patch && patch.attribution !== undefined) {
         assertObject('providers:update', 'patch.attribution', patch.attribution);
         const attr = patch.attribution as Record<string, unknown>;
@@ -213,4 +234,22 @@ export function registerProvidersIpc(): void {
     return testProvider(id);
   });
 
+  wrapIpcHandler(IPC.PROVIDERS_GET_ACCOUNTS, async () => getAllProviderAccountSnapshots());
+
+  wrapIpcHandler(IPC.PROVIDERS_REFRESH_ACCOUNTS, async () => refreshProviderAccountsNow());
+
+  wrapIpcHandler(
+    IPC.PROVIDERS_SET_ACCOUNT_POLL_SOURCE,
+    async (_event, source: string, active: boolean) => {
+      assertString('providers:setAccountPollSource', 'source', source, { maxBytes: 64 });
+      assertBoolean('providers:setAccountPollSource', 'active', active);
+      setProviderAccountPollSource(source, active);
+    }
+  );
+
+}
+
+export function teardownProvidersIpc(): void {
+  stopProviderDiscoveryPoller();
+  stopProviderAccountPoller();
 }

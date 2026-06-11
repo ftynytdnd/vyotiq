@@ -32,5 +32,31 @@ describe('deriveRows — ask_user', () => {
     ];
     const rows = deriveRows(events);
     expect(rows.some((r) => r.kind === 'tool-group' && r.toolName === 'ask_user')).toBe(false);
+    expect(rows.some((r) => r.kind === 'ask-user-prompt')).toBe(false);
+  });
+
+  it('does not fold ask_user tool-call into an Asking tool-group', () => {
+    const events: TimelineEvent[] = [
+      {
+        kind: 'tool-call',
+        id: 'tc-1',
+        ts: 1,
+        call: { id: 'tc-1', name: 'ask_user', args: { question: 'Where is the code?' } }
+      },
+      {
+        kind: 'ask-user-prompt',
+        id: 'prompt-1',
+        ts: 2,
+        displayText: 'Where is the code?',
+        toolCallId: 'tc-1',
+        runId: 'run-1',
+        payload: {
+          questions: [{ id: 'q1', prompt: 'Where is the code?', options: [] }]
+        }
+      }
+    ];
+    const rows = deriveRows(events);
+    expect(rows.some((r) => r.kind === 'tool-group' && r.toolName === 'ask_user')).toBe(false);
+    expect(rows.some((r) => r.kind === 'ask-user-prompt')).toBe(true);
   });
 });

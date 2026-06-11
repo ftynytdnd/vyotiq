@@ -57,6 +57,8 @@ describe('deriveRows — file-edit entryId', () => {
     ];
 
     const rows = deriveRows(events);
+    expect(rows.some((r) => r.kind === 'run-receipt')).toBe(false);
+
     const done = rows.find((r) => r.kind === 'run-complete');
     expect(done?.kind).toBe('run-complete');
     if (done?.kind !== 'run-complete') return;

@@ -667,3 +667,116 @@ describe('mapAnthropicThinking — discovery-driven dispatch', () => {
     });
   });
 });
+
+describe('prompt caching wire hints', () => {
+  beforeEach(() => {
+    resetRateGuard();
+  });
+
+  it('sends cache_control on system blocks, tools, and top-level automatic breakpoint', async () => {
+    const ref = mockAnthropicResponse([
+      frame('message_start', {
+        type: 'message_start',
+        message: { usage: { input_tokens: 10, output_tokens: 0 } }
+      }),
+      frame('message_delta', {
+        type: 'message_delta',
+        delta: { stop_reason: 'end_turn' },
+        usage: { input_tokens: 10, output_tokens: 1 }
+      }),
+      frame('message_stop', { type: 'message_stop' })
+    ]);
+
+    const messages: ChatMessage[] = [
+      { role: 'system', content: '<system_instructions>static harness</system_instructions>' },
+      { role: 'user', content: '<static_examples>patterns</static_examples>' },
+      { role: 'user', content: '<workspace_context>ws</workspace_context>' },
+      { role: 'user', content: '<runtime_context>volatile</runtime_context>' },
+      { role: 'user', content: '<turn>hi</turn>' }
+    ];
+
+    for await (const _ of streamChat({
+      providerId: 'p',
+      model: 'claude-opus-4-7',
+      messages,
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'read',
+            description: 'Read a file',
+            parameters: { type: 'object', properties: {} }
+          }
+        }
+      ]
+    })) {
+      /* drain */
+    }
+
+    const body = JSON.parse(String(ref.current?.init?.body)) as Record<string, unknown>;
+    const cacheCtl = { type: 'ephemeral', ttl: '1h' };
+    expect(body['cache_control']).toEqual(cacheCtl);
+    const system = body['system'] as Array<{ cache_control?: { type: string; ttl?: string } }>;
+    expect(system[0]?.cache_control).toEqual(cacheCtl);
+    const tools = body['tools'] as Array<{ cache_control?: { type: string; ttl?: string } }>;
+    expect(tools[tools.length - 1]?.cache_control).toEqual(cacheCtl);
+    const wireMessages = body['messages'] as Array<{
+      role: string;
+      content: Array<{ type?: string; text?: string; cache_control?: { type: string } }>;
+    }>;
+    const fewShotUser = wireMessages.find(
+      (m) => m.role === 'user' && m.content[0]?.text?.includes('static_examples')
+    );
+    expect(fewShotUser?.content[0]?.cache_control).toEqual(cacheCtl);
+    const workspaceUser = wireMessages.find(
+      (m) => m.role === 'user' && m.content[0]?.text?.includes('workspace_context')
+    );
+    expect(workspaceUser?.content[0]?.cache_control).toEqual(cacheCtl);
+  });
+
+  it('marks history cache_control when transcript history is present', async () => {
+    const ref = mockAnthropicResponse([
+      frame('message_start', {
+        type: 'message_start',
+        message: { usage: { input_tokens: 10, output_tokens: 0 } }
+      }),
+      frame('message_delta', {
+        type: 'message_delta',
+        delta: { stop_reason: 'end_turn' },
+        usage: { input_tokens: 10, output_tokens: 1 }
+      }),
+      frame('message_stop', { type: 'message_stop' })
+    ]);
+
+    const messages: ChatMessage[] = [
+      { role: 'system', content: '<system_instructions>static</system_instructions>' },
+      { role: 'user', content: '<static_examples>patterns</static_examples>' },
+      { role: 'user', content: '<workspace_context>ws</workspace_context>' },
+      { role: 'assistant', content: 'prior answer' },
+      { role: 'user', content: '<runtime_context>volatile</runtime_context>' },
+      { role: 'user', content: '<turn>hi</turn>' }
+    ];
+
+    for await (const _ of streamChat({
+      providerId: 'p',
+      model: 'claude-opus-4-7',
+      messages
+    })) {
+      /* drain */
+    }
+
+    const body = JSON.parse(String(ref.current?.init?.body)) as Record<string, unknown>;
+    const wireMessages = body['messages'] as Array<{
+      role: string;
+      content: Array<{ type?: string; text?: string; cache_control?: { type: string } }>;
+    }>;
+    const historyAssistant = wireMessages.find(
+      (m) => m.role === 'assistant' && m.content[0]?.text === 'prior answer'
+    );
+    expect(historyAssistant?.content[0]?.cache_control).toBeUndefined();
+    const fewShotUser = wireMessages.find(
+      (m) => m.role === 'user' && m.content[0]?.text?.includes('static_examples')
+    );
+    expect(fewShotUser?.content[0]?.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
+  });
+});

@@ -54,4 +54,15 @@ describe('ModelList', () => {
     expect(screen.getByText('gpt-3.5')).toBeInTheDocument();
     expect(screen.queryByText('claude-3-opus')).toBeNull();
   });
+
+  it('shows an inline configure hint instead of a detached options column', () => {
+    render(
+      <ModelList
+        models={sampleModels}
+        onContextOverrideSave={() => {}}
+      />
+    );
+    expect(screen.getByText(/Click a model row or its context badge to configure/i)).toBeInTheDocument();
+    expect(screen.queryByText('Options')).toBeNull();
+  });
 });

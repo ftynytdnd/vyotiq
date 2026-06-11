@@ -35,7 +35,10 @@ export function computeTailScrollKey(
       for (const child of last.children) {
         growth += child.additions + child.deletions;
       }
-      growth += last.children.length;
+      growth += last.children.length * 48;
+      break;
+    case 'ask-user-prompt':
+      growth += 120;
       break;
     default:
       break;

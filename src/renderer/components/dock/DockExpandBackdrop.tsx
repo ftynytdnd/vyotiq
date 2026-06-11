@@ -27,7 +27,7 @@ export function DockExpandBackdrop({
         'fixed bottom-0 right-0 z-(--z-dock-backdrop) border-0 p-0',
         'top-0',
         'bg-surface-base/55',
-        'cursor-default transition-opacity duration-200'
+        'cursor-default transition-[left,opacity] duration-200'
       )}
       onClick={dismissDockFlyout}
     />

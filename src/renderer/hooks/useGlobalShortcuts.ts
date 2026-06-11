@@ -26,6 +26,8 @@ export interface GlobalShortcutActions {
   newConversation: () => void;
   openWorkspace: () => void;
   openSettings: () => void;
+  /** When true, chat/workspace shortcuts are ignored (e.g. settings is open). */
+  blockChatActions?: () => boolean;
   /**
    * Reload handler for `Ctrl/Cmd+R`. Optional so consumers (and the
    * existing test harness) can leave it undefined when they don't
@@ -60,11 +62,13 @@ export function useGlobalShortcuts(actions: GlobalShortcutActions): void {
       if (e.altKey || e.shiftKey) return;
 
       if (key === 'n') {
+        if (ref.current.blockChatActions?.()) return;
         e.preventDefault();
         ref.current.newConversation();
         return;
       }
       if (key === 'o') {
+        if (ref.current.blockChatActions?.()) return;
         e.preventDefault();
         ref.current.openWorkspace();
         return;

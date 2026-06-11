@@ -121,21 +121,18 @@ describe('useConversationsStore.select — cross-workspace correctness', () => {
     expect(persisted?.ui?.activeConversationByWorkspace?.['ws-A']).toBe('conv-A');
   });
 
-  it('falls back to the active workspace with a warn when meta is not in the list', async () => {
-    // Conversation id is unknown — meta lookup fails. The legacy
-    // single-workspace path should still apply.
+  it('clears stale slots when meta is not in the catalogue', async () => {
+    useConversationsStore.setState({
+      activeIdByWorkspace: { 'ws-A': 'conv-ghost', 'ws-B': null }
+    });
     window.vyotiq.conversations.read = vi.fn(async () => null) as never;
     const setActiveSpy = vi.fn(async () => ({ activeId: 'ws-A', workspaces: [] }));
     window.vyotiq.workspace.setActive = setActiveSpy as never;
 
     await useConversationsStore.getState().select('conv-ghost');
 
-    // No spurious cross-workspace flip — the active workspace stays
-    // intact because we don't know where the orphan id belongs.
     expect(setActiveSpy).not.toHaveBeenCalled();
-    // Slot under the active workspace is updated to the orphan id —
-    // that's the legacy fallback (the row will get cleaned up by the
-    // next `reconcileWithMain`).
-    expect(useConversationsStore.getState().activeIdByWorkspace['ws-A']).toBe('conv-ghost');
+    expect(useConversationsStore.getState().activeIdByWorkspace['ws-A']).toBeNull();
+    expect(useChatStore.getState().conversationId).toBeNull();
   });
 });

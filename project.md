@@ -106,6 +106,14 @@ Vyotiq supports multiple concurrent chats (one Agent V run per conversation, pos
 
 **Envelope cache (memory retrieval)**
 - LRU key is `(conversationId, workspaceId, workspacePath)` so per-iteration query churn does not zero out hit rate.
+
+**Prompt / context caching (2026 provider prefixes)**
+- Message topology: static harness + `<meta_rules>` in `messages[0]` system; static `<static_examples>` few-shot in `messages[1]` user (`03-static-examples.md`); hash-gated `<workspace_context>` in `messages[2]` user; transcript history; volatile `<runtime_context>` user block (host clock, run state, session, prior conversations, memory); final `<turn>` user envelope. Full audit: `docs/prompt-caching-audit.md`.
+- Anthropic: explicit `cache_control` (default 1h ephemeral TTL) on static system, few-shot user, workspace user, and last tool schema; top-level automatic breakpoint for rolling history; `metadata.user_id` = `workspaceId`; cache-diagnostics beta via Settings or `VYOTIQ_CACHE_DIAGNOSTICS=1`.
+- OpenAI-compat: `prompt_cache_key` = `workspaceId:conversationId`; GPT-5/o3/o4 `prompt_cache_retention: "24h"` on direct OpenAI host; tiered cache-read cost fallbacks (GPT-5 90%, GPT-4.1 75%, GPT-4o 50%).
+- Gemini: harness + few-shot + workspace hoisted to `systemInstruction` (skipped in `contents[]` when cache-layered); implicit cache via `cachedContentTokenCount`; optional explicit `cachedContents` via Settings or `VYOTIQ_GEMINI_EXPLICIT_CACHE=1` (fingerprint includes all three static parts).
+- DeepSeek / xAI: automatic prefix caching (disk KV / `x-grok-conv-id`); `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` normalized to `TokenUsage`; stability from deterministic prefixes (`stableStringify`, ISO prior-conversation timestamps, workspace listing fingerprint).
+- Observability: per-turn `llm turn usage` log with `cacheRead` / `cacheWrite` / `cacheMiss`; run-complete row + composer status strip; Settings → Agent behavior → Prompt caching diagnostics panel; `token-usage` events carry optional `cacheMissReason` (Anthropic).
 - On cache hit, a **`queryFingerprint`** (trimmed rolling query, capped length) must match; otherwise the entry is treated as stale and memory retrieval rebuilds.
 
 ## 3. Local Memory & Note-Taking System
@@ -171,7 +179,7 @@ Vyotiq uses a **Shell Mono** design system on a stealth-dark oklch token palette
 ## 2. Layout Structure
 - **Frameless window** with custom title bar (no bottom border rule).
 - **Three-column shell:** Left dock | chat | secondary zone — dock and chat use `bg-surface-base`; title bar and secondary panels use `bg-surface-sidebar`, not vertical rules.
-- **Chat column** center-aligned, `max-w-3xl`.
+- **Chat column** center-aligned, adaptive width (`max-w-4xl` default, `max-w-2xl` when attachment preview is open). Agent prose rail tracks the same measure via `--timeline-agent-max-w`.
 
 ## 3. The Composer
 - **Container:** Flat `sm-composer-shell` on `surface-input` — no border, no drop shadow.
@@ -179,9 +187,12 @@ Vyotiq uses a **Shell Mono** design system on a stealth-dark oklch token palette
 - **Token pill:** Ghost text + thin track (`sm-composer-token-pill` transparent fill).
 
 ## 4. Agent Interaction UI
-- **No chat bubbles.** Chromeless timeline prose.
+- **User prompts:** Subtle inset bubble (`vx-timeline-user-bubble`) — distinct from flush agent prose.
+- **Agent prose:** Chromeless timeline markdown in the reading column.
+- **Activity lane:** Compact rollup headers per tool group — basename paths, ×N count for batches, expand for full invocation / per-file change cards (syntax-highlighted snippet diffs).
+- **Turn footer:** Sticky per-turn bar — live elapsed + tokens while running; run-complete meta when done.
+- **Ask user:** Inline expandable form in the timeline; host report gate stays in composer overlay.
 - **Settings:** Flat `ShellSection` (no left rail, no row hairlines). Link-style actions (`Button variant="link"`).
-- **Live phases:** Gold accent on streaming status lines only.
 
 ## 5. Micro-Interactions
 - **Focus:** Global accent halo (`:focus-visible`).

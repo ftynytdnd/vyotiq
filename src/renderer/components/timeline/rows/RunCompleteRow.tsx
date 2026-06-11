@@ -2,20 +2,23 @@
  * Trailing run closer — quiet flush log line (no horizontal rules).
  */
 
-import { useCallback, useMemo, useState } from 'react';
-import { formatTokenCountWithUnit } from '../../../lib/formatTokens.js';
-import type { TokenUsageAggregate } from '../reducer/types.js';
-import { cn } from '../../../lib/cn.js';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   timelineActionPillPrimaryClassName,
   timelineActionPillSecondaryClassName,
-  timelineReportOfferClassName,
-  timelineRunCompleteRowClassName
+  timelineReportOfferClassName
 } from '../shared/rowStyles.js';
+import { RunCompleteMeta, type RunCompleteMetaProps } from './RunCompleteMeta.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import { useConversationsStore } from '../../../store/useConversationsStore.js';
 import { useToastStore } from '../../../store/useToastStore.js';
 import { selectEffectivePermissions, useSettingsStore } from '../../../store/useSettingsStore.js';
+import { useProviderStore } from '../../../store/useProviderStore.js';
+import {
+  estimateRunCostUsd,
+  recordWorkspaceSpendForPrompt,
+  resolveModelForPrompt
+} from '../../../lib/workspaceSpend.js';
 import { vyotiq } from '../../../lib/ipc.js';
 import { openWorkspaceFile } from '../../../lib/openPath.js';
 import { AI_RUN_SUMMARY_USER_PROMPT } from '@shared/report/deliverables.js';
@@ -26,35 +29,23 @@ import {
   shouldOfferRunSummary
 } from '../../../lib/runSummaryOffer.js';
 
-interface RunCompleteRowProps {
-  promptId: string;
-  durationMs: number;
-  completedAt: number;
-  usage?: TokenUsageAggregate;
-  editCount?: number;
-  fileCount?: number;
-}
-
-/** Turns at or above this duration get a warning tone on the elapsed label. */
-const LONG_TURN_WARN_MS = 120_000;
-
-/** Turns at or above this duration get a stronger warning + tooltip. */
-const VERY_LONG_TURN_WARN_MS = 480_000;
+export type RunCompleteRowProps = RunCompleteMetaProps & {
+  /** When true, metadata renders inline on the assistant row instead. */
+  hideMeta?: boolean;
+};
 
 export function RunCompleteRow({
-  promptId,
-  durationMs,
-  completedAt,
-  usage,
-  editCount,
-  fileCount
+  hideMeta = false,
+  ...metaProps
 }: RunCompleteRowProps) {
+  const { promptId, durationMs, completedAt, usage, editCount, fileCount } = metaProps;
   const conversationId = useChatStore((s) => s.conversationId);
   const events = useChatStore((s) => s.events);
   const isProcessing = useChatStore((s) => s.isProcessing);
   const send = useChatStore((s) => s.send);
   const showToast = useToastStore((s) => s.show);
   const settings = useSettingsStore((s) => s.settings);
+  const providers = useProviderStore((s) => s.providers);
   const reports = resolveReportsSettings(settings.ui);
   const conversationMeta = useConversationsStore((s) =>
     conversationId ? (s.list.find((m) => m.id === conversationId) ?? null) : null
@@ -71,16 +62,7 @@ export function RunCompleteRow({
       fileCount,
       events
     });
-  }, [
-    completedAt,
-    conversationId,
-    durationMs,
-    editCount,
-    events,
-    fileCount,
-    promptId,
-    workspaceId
-  ]);
+  }, [completedAt, conversationId, editCount, events, fileCount, promptId, workspaceId]);
 
   const hadReport = useMemo(
     () => runHadReport(events, promptId, completedAt),
@@ -139,12 +121,18 @@ export function RunCompleteRow({
   const onAiReport = useCallback(() => {
     if (isProcessing || hadReport) return;
     const model =
-      conversationMeta?.lastProviderId && conversationMeta.lastModelId
-        ? {
-            providerId: conversationMeta.lastProviderId,
-            modelId: conversationMeta.lastModelId
-          }
-        : settings.defaultModel ?? null;
+      resolveModelForPrompt(
+        events,
+        promptId,
+        conversationMeta?.lastProviderId && conversationMeta?.lastModelId
+          ? {
+              providerId: conversationMeta.lastProviderId,
+              modelId: conversationMeta.lastModelId
+            }
+          : null
+      ) ??
+      settings.defaultModel ??
+      null;
     if (!model) {
       showToast('Select a model before requesting an AI report.', 'danger');
       return;
@@ -154,90 +142,41 @@ export function RunCompleteRow({
   }, [
     conversationMeta?.lastModelId,
     conversationMeta?.lastProviderId,
+    events,
     hadReport,
     isProcessing,
+    promptId,
     send,
     settings,
     showToast,
     workspaceId
   ]);
 
-  const tokenLabel =
-    usage && usage.cumulative.totalTokens > 0
-      ? formatTokenCountWithUnit(usage.cumulative.totalTokens)
-      : null;
+  const modelForCost = resolveModelForPrompt(
+    events,
+    promptId,
+    conversationMeta?.lastProviderId && conversationMeta?.lastModelId
+      ? {
+          providerId: conversationMeta.lastProviderId,
+          modelId: conversationMeta.lastModelId
+        }
+      : null
+  );
+  const costUsd =
+    usage && modelForCost ? estimateRunCostUsd(modelForCost, providers, usage.cumulative) : null;
 
-  const stats: string[] = [];
-  if (typeof editCount === 'number' && editCount > 0) {
-    stats.push(`${editCount} edit${editCount === 1 ? '' : 's'}`);
-  }
-  if (typeof fileCount === 'number' && fileCount > 0) {
-    stats.push(`${fileCount} file${fileCount === 1 ? '' : 's'}`);
-  }
+  const spendRecordedRef = useRef(false);
+  useEffect(() => {
+    if (spendRecordedRef.current || !workspaceId || costUsd === null) return;
+    spendRecordedRef.current = true;
+    void recordWorkspaceSpendForPrompt(workspaceId, promptId, costUsd);
+  }, [workspaceId, costUsd, promptId]);
 
-  const durationLabel = formatDuration(durationMs);
-  const timeLabel = formatWallClock(completedAt);
-  const tokenTitle = tokenLabel ? `${tokenLabel} used this turn` : null;
-  const veryLongTurn = durationMs >= VERY_LONG_TURN_WARN_MS;
-  const longTurn = durationMs >= LONG_TURN_WARN_MS;
-  const durationTitle = veryLongTurn
-    ? 'This turn took unusually long — often approval waits or connection delays.'
-    : longTurn
-      ? 'This turn took longer than usual.'
-      : undefined;
-  const metaParts: string[] = [`done in ${durationLabel}`];
-  if (tokenLabel) metaParts.push(tokenLabel);
-  metaParts.push(timeLabel);
-  if (stats.length > 0) metaParts.unshift(stats.join(' · '));
-  const ariaLabel = metaParts.join(' · ');
+  if (hideMeta && !offerSummary) return null;
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div
-        className={cn(
-          'vyotiq-stepfade-once vx-timeline-meta text-text-secondary',
-          timelineRunCompleteRowClassName
-        )}
-        data-row-kind="run-complete"
-        aria-label={ariaLabel}
-      >
-        {stats.length > 0 ? (
-          <>
-            <span>{stats.join(' · ')}</span>
-            <span aria-hidden className="text-text-faint/70">
-              {' · '}
-            </span>
-          </>
-        ) : null}
-        <span>
-          done in{' '}
-          <span
-            className={cn(
-              veryLongTurn && 'text-warning',
-              !veryLongTurn && longTurn && 'text-text-faint'
-            )}
-            title={durationTitle}
-          >
-            {durationLabel}
-          </span>
-        </span>
-        {tokenLabel !== null ? (
-          <>
-            <span aria-hidden className="text-text-faint/70">
-              {' · '}
-            </span>
-            <span className="font-mono tabular-nums" title={tokenTitle ?? undefined}>
-              {tokenLabel}
-            </span>
-          </>
-        ) : null}
-        <span aria-hidden className="text-text-faint/70">
-          {' · '}
-        </span>
-        <time dateTime={new Date(completedAt).toISOString()} className="tabular-nums text-text-faint">
-          {timeLabel}
-        </time>
-      </div>
+      {!hideMeta ? <RunCompleteMeta {...metaProps} /> : null}
       {offerSummary ? (
         <div className={timelineReportOfferClassName} data-report-offer>
           <p className="vx-report-offer__label">
@@ -277,33 +216,4 @@ export function RunCompleteRow({
   );
 }
 
-export function formatDuration(ms: number): string {
-  if (!Number.isFinite(ms) || ms <= 0) return '0s';
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  const totalSeconds = ms / 1000;
-  if (totalSeconds < 60) {
-    return `${totalSeconds.toFixed(totalSeconds < 10 ? 1 : 0)}s`;
-  }
-  const totalMinutes = Math.floor(totalSeconds / 60);
-  const seconds = Math.round(totalSeconds - totalMinutes * 60);
-  if (totalMinutes < 60) {
-    return seconds > 0 ? `${totalMinutes}m ${seconds}s` : `${totalMinutes}m`;
-  }
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes - hours * 60;
-  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-}
-
-export function formatWallClock(ts: number): string {
-  const d = new Date(ts);
-  const now = new Date();
-  const sameDay =
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
-  return d.toLocaleString(undefined, {
-    ...(sameDay ? {} : { month: 'short', day: 'numeric' }),
-    hour: 'numeric',
-    minute: '2-digit'
-  });
-}
+export { formatDuration, formatWallClock } from './runCompleteFormat.js';

@@ -225,8 +225,8 @@ function verbFor(name: ToolName, first?: ToolGroupChild, pending = false): strin
       case 'memory': return 'Memory';
       case 'recall': return 'Recalling';
       case 'report': return 'Writing';
-      case 'finish': return 'Finishing';
       case 'ask_user': return 'Asking';
+      case 'finish': return '';
       case 'unknown': return 'Running';
     }
   }
@@ -240,8 +240,8 @@ function verbFor(name: ToolName, first?: ToolGroupChild, pending = false): strin
     case 'memory': return 'Memory';
     case 'recall': return 'Recalled';
     case 'report': return 'Wrote';
-    case 'finish': return 'Finished';
     case 'ask_user': return 'Asked';
+    case 'finish': return '';
     case 'unknown': return 'Unknown tool';
   }
 }
@@ -265,8 +265,8 @@ function unitFor(name: ToolName, singular: boolean): string {
     case 'memory': return singular ? 'note' : 'notes';
     case 'recall': return singular ? 'conversation' : 'conversations';
     case 'report': return singular ? 'report' : 'reports';
-    case 'finish': return singular ? 'answer' : 'answers';
     case 'ask_user': return singular ? 'question' : 'questions';
+    case 'finish': return singular ? 'answer' : 'answers';
     case 'unknown': return singular ? 'invocation' : 'invocations';
   }
 }
@@ -371,10 +371,10 @@ function extractPrimary(name: ToolName, child: ToolGroupChild): string {
             : '';
       return title;
     }
-    case 'finish':
-      return typeof args['summary'] === 'string' ? (args['summary'] as string) : '';
     case 'ask_user':
       return typeof args['question'] === 'string' ? (args['question'] as string) : '';
+    case 'finish':
+      return '';
     case 'unknown': {
       // Surface whatever name the call/result reported (or empty if both
       // are also `'unknown'`) so the rolled-up row remains informative.

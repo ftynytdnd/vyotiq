@@ -155,7 +155,10 @@ export function LeftDock({
 
   const toolbarProps = {
     searchOpen,
-    onNewChat: () => void newConversation(),
+    onNewChat: () => {
+      if (settingsMode) return;
+      void newConversation();
+    },
     onToggleSearch: handleToggleSearch,
     onOpenSettings,
     onCollapse: () => handleToggleDock(),

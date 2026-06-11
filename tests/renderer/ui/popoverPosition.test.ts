@@ -1,0 +1,92 @@
+import { describe, expect, it } from 'vitest';
+import { measurePopoverPosition } from '@renderer/components/ui/popoverPosition';
+
+function mockAnchor(rect: DOMRect): HTMLElement {
+  return {
+    getBoundingClientRect: () => rect
+  } as HTMLElement;
+}
+
+function mockPopover(height: number, width = 400): HTMLElement {
+  return {
+    offsetHeight: height,
+    offsetWidth: width
+  } as HTMLElement;
+}
+
+describe('measurePopoverPosition', () => {
+  it('opens below a centered anchor when preferSide is bottom', () => {
+    const anchor = mockAnchor(new DOMRect(200, 400, 600, 120));
+    const popover = mockPopover(480, 600);
+
+    const pos = measurePopoverPosition(
+      anchor,
+      popover,
+      8,
+      'fit',
+      { bottom: 56, top: 12, left: 56, right: 56 },
+      'bottom',
+      true
+    );
+
+    expect(pos.side).toBe('bottom');
+    expect(pos.top).toBe(528);
+    expect(pos.maxHeight).toBeLessThanOrEqual(window.innerHeight - pos.top - 56);
+  });
+
+  it('does not slide a bottom panel upward over the anchor when space is tight', () => {
+    const anchor = mockAnchor(new DOMRect(200, 400, 600, 120));
+    const popover = mockPopover(600, 600);
+
+    const pos = measurePopoverPosition(
+      anchor,
+      popover,
+      8,
+      'fit',
+      { bottom: 56, top: 12, left: 56, right: 56 },
+      'bottom',
+      true
+    );
+
+    expect(pos.top).toBeGreaterThanOrEqual(528);
+    expect(pos.maxHeight).toBeDefined();
+    expect((pos.maxHeight ?? 0) + pos.top).toBeLessThanOrEqual(window.innerHeight - 56);
+  });
+
+  it('opens above the composer shell when auto prefers top', () => {
+    const anchor = mockAnchor(new DOMRect(200, 520, 600, 140));
+    const popover = mockPopover(400, 600);
+
+    const pos = measurePopoverPosition(
+      anchor,
+      popover,
+      8,
+      'fit',
+      { bottom: 56, top: 46, left: 56, right: 56 },
+      'auto',
+      true
+    );
+
+    expect(pos.side).toBe('top');
+    expect(pos.top + (pos.maxHeight ?? 0)).toBeLessThanOrEqual(520);
+  });
+
+  it('fits panel width within collision padding', () => {
+    const anchor = mockAnchor(new DOMRect(300, 400, 600, 120));
+    const popover = mockPopover(400, 768);
+
+    const pos = measurePopoverPosition(
+      anchor,
+      popover,
+      8,
+      'fit',
+      { bottom: 56, top: 46, left: 56, right: 56 },
+      'auto',
+      true
+    );
+
+    expect(pos.maxWidth).toBeDefined();
+    expect((pos.maxWidth ?? 0) + pos.left).toBeLessThanOrEqual(window.innerWidth - 56);
+    expect(pos.left).toBeGreaterThanOrEqual(56);
+  });
+});

@@ -18,6 +18,16 @@ const askEvent = {
   }
 } satisfies TimelineEvent;
 
+const hostGateEvent = {
+  ...askEvent,
+  id: 'host-gate-1',
+  source: 'host-report-gate' as const,
+  payload: {
+    title: 'Generate HTML report',
+    questions: [{ id: 'q1', prompt: 'Generate report?', options: [{ id: 'yes', label: 'Yes' }] }]
+  }
+} satisfies TimelineEvent;
+
 describe('AskUserOverlayHost', () => {
   beforeEach(() => {
     useChatStore.setState({
@@ -29,10 +39,19 @@ describe('AskUserOverlayHost', () => {
     });
   });
 
-  it('renders floating overlay with submit control when awaiting ask_user', () => {
+  it('does not render overlay for agent ask_user (inline in timeline)', () => {
     render(<AskUserOverlayHost />);
-    expect(screen.getByRole('dialog', { name: 'Clarifying questions' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Submit answers' })).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('renders floating overlay for host report gate', () => {
+    useChatStore.setState({
+      slices: { 'conv-1': { ...emptySlice('conv-1'), events: [hostGateEvent] } },
+      events: [hostGateEvent]
+    });
+    render(<AskUserOverlayHost />);
+    expect(screen.getByRole('dialog', { name: 'Generate HTML report' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy();
   });
 
   it('hides overlay when the prompt is already submitted', () => {
@@ -40,14 +59,14 @@ describe('AskUserOverlayHost', () => {
       slices: {
         'conv-1': {
           ...emptySlice('conv-1'),
-          events: [{ ...askEvent, status: 'submitted' }]
+          events: [{ ...hostGateEvent, status: 'submitted' }]
         }
       },
       conversationId: 'conv-1',
       awaitingAskUser: true,
-      events: [{ ...askEvent, status: 'submitted' }]
+      events: [{ ...hostGateEvent, status: 'submitted' }]
     });
     render(<AskUserOverlayHost />);
-    expect(screen.queryByRole('dialog', { name: 'Clarifying questions' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Generate HTML report' })).toBeNull();
   });
 });

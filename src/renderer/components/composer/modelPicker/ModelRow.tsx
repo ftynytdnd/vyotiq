@@ -23,6 +23,7 @@ import {
   rowDisplayModelId,
   shouldShowEffortBadge
 } from './modelPickerDisplay.js';
+import { formatModelPricingBadge } from '@shared/providers/modelPricing.js';
 import { rowEffortInlineLabel, rowThinkingEffort } from './modelPickerThinking.js';
 
 interface ModelRowProps {
@@ -69,6 +70,8 @@ export const ModelRow = memo(function ModelRow({
   const ctx = rowContextTokens(model, provider);
   const ctxLabel =
     typeof ctx === 'number' && ctx > 0 ? rowContextBadgeLabel(ctx) : null;
+
+  const priceLabel = formatModelPricingBadge(model.pricing);
 
   const highlighted = keyboardFocused || effortActive;
   const displayId = rowDisplayModelId(model.id);
@@ -117,6 +120,14 @@ export const ModelRow = memo(function ModelRow({
           </span>
         ) : null}
       </div>
+      <span
+        className="vx-model-picker-row-slot vx-model-picker-row-slot--price"
+        title={priceLabel ? `Pricing (in/out per M tokens): ${priceLabel}` : undefined}
+      >
+        {priceLabel ? (
+          <span className="vx-model-picker-row-badge tabular-nums">{priceLabel}</span>
+        ) : null}
+      </span>
       <span
         className="vx-model-picker-row-slot vx-model-picker-row-slot--effort"
         title={effortLabel ? `Thinking effort: ${effortLabel}` : undefined}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatAskUserDisplayFromAnswers,
+  formatAskUserReplyBubble,
   formatAskUserToolResult
 } from '@shared/text/formatAskUserAnswers';
 
@@ -36,5 +37,26 @@ describe('formatAskUserAnswers', () => {
     ]);
     expect(out).toMatch(/^User answers:/);
     expect(out).toContain('Yes (yes)');
+  });
+
+  it('formats compact reply bubble with answers only', () => {
+    const multiPayload = {
+      questions: [
+        {
+          id: 'path',
+          prompt: 'Where is the source code located?',
+          options: [{ id: 'wrong_path', label: "I'm looking in the wrong directory" }]
+        }
+      ]
+    };
+    expect(
+      formatAskUserReplyBubble(multiPayload, [
+        { questionId: 'path', selectedOptionIds: ['wrong_path'], freeText: 'hihjihi' }
+      ])
+    ).toBe("I'm looking in the wrong directory — hihjihi");
+
+    expect(
+      formatAskUserReplyBubble(payload, [{ questionId: 'drop', selectedOptionIds: ['no'] }])
+    ).toBe('No');
   });
 });

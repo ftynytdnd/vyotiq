@@ -5,7 +5,7 @@ import { shouldSynthesizePartialToolEntry } from '../partialToolVisibility.js';
 import type { Row, ToolGroupChild } from '../deriveRows.js';
 
 const KNOWN_TOOL_NAMES: readonly ToolName[] = [
-  'bash', 'ls', 'read', 'edit', 'delete', 'search', 'memory', 'recall', 'report', 'finish', 'ask_user', 'unknown'
+  'bash', 'ls', 'read', 'edit', 'delete', 'search', 'memory', 'recall', 'report', 'unknown'
 ];
 export function appendSynthesizedPartialRows(
   out: Row[],

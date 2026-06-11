@@ -21,6 +21,9 @@ const livePartition: PartitionedTurn = {
 beforeEach(() => {
   useChatStore.setState({
     isProcessing: true,
+    events: [
+      { kind: 'user-prompt', id: 'p1', ts: Date.now() - 2000, content: 'hi', runId: 'r1' }
+    ],
     latestOrchestratorRunStatus: {
       kind: 'run-status',
       phase: 'connecting',
@@ -31,7 +34,7 @@ beforeEach(() => {
 });
 
 describe('TurnBlock live status', () => {
-  it('does not duplicate connecting in timeline meta (composer strip owns it)', () => {
+  it('does not duplicate connecting label in sticky footer', () => {
     render(
       <TurnBlock
         partitioned={livePartition}
@@ -41,10 +44,11 @@ describe('TurnBlock live status', () => {
     );
 
     expect(screen.queryByText(CONNECTING_LABEL)).toBeNull();
-    expect(document.querySelector('[data-turn-running-meta]')).toBeNull();
+    expect(screen.getByText(/Connecting/)).toBeTruthy();
+    expect(document.querySelector('[data-turn-sticky-footer]')).not.toBeNull();
   });
 
-  it('renders starting label in running meta when past connecting', () => {
+  it('shows elapsed running telemetry when past connecting', () => {
     useChatStore.setState({
       latestOrchestratorRunStatus: {
         kind: 'run-status',
@@ -62,7 +66,7 @@ describe('TurnBlock live status', () => {
       />
     );
 
-    expect(screen.getByText('Starting…')).toBeTruthy();
-    expect(document.querySelector('[data-turn-running-meta]')).toBeTruthy();
+    expect(screen.getByText(/Waiting for model/)).toBeTruthy();
+    expect(document.querySelector('[data-turn-sticky-footer]')).not.toBeNull();
   });
 });

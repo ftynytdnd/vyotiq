@@ -53,7 +53,8 @@ vi.mock('@main/orchestrator/contextManager', async () => {
   };
 });
 vi.mock('@main/harness/harnessLoader', () => ({
-  buildOrchestratorSystemPrompt: () => '<system_instructions>stub</system_instructions>'
+  buildOrchestratorSystemPrompt: () => '<system_instructions>stub</system_instructions>',
+  buildStaticFewShotXml: () => '<static_examples>stub</static_examples>'
 }));
 vi.mock('@main/orchestrator/retry', async () => {
   const real = await vi.importActual<typeof import('@main/orchestrator/retry')>(
@@ -336,9 +337,51 @@ describe('isImplicitFinish', () => {
   it('accepts short clarifying questions via the question probe', () => {
     expect(isImplicitFinish('Continue?')).toBe(true);
   });
+
+  it('accepts short complete sentences via the sentence-end probe', () => {
+    expect(isImplicitFinish('My name is Ajay K.')).toBe(true);
+    expect(isImplicitFinish('I am Ajay.')).toBe(true);
+  });
+
+  it('rejects ultra-short sentence fragments', () => {
+    expect(isImplicitFinish('Okay.')).toBe(false);
+    expect(isImplicitFinish('Yes.')).toBe(false);
+  });
 });
 
 describe('runOrchestratorLoop — implicit finish and empty-turn retry', () => {
+  it('completes without error on a short direct answer', async () => {
+    vi.mocked(handleAssistantTurn).mockResolvedValueOnce({
+      assistantMsgId: 'msg-name',
+      assistantText: 'My name is Ajay K.',
+      reasoningText: '',
+      partialToolCalls: [],
+      hadText: true,
+      hadReasoning: false,
+      reasoningEndEmitted: false,
+      finishReason: 'stop'
+    });
+
+    const events: TimelineEvent[] = [];
+    await runOrchestratorLoop({
+      input: { ...baseInput, conversationId: 'c-name' },
+      workspacePath: '/tmp/ws',
+      workspaceId: 'ws-test',
+      signal: new AbortController().signal,
+      emit: (e) => events.push(e),
+      initialMessages: [
+        { role: 'system', content: '' },
+        { role: 'user', content: 'what is your name?' }
+      ],
+      initialQuery: 'what is your name?',
+      permissions: baseInput.permissions
+    });
+
+    expect(events.filter((e) => e.kind === 'error')).toHaveLength(0);
+    expect(events.filter((e) => e.kind === 'agent-text-aborted')).toHaveLength(0);
+    expect(handleAssistantTurn).toHaveBeenCalledTimes(1);
+  });
+
   it('completes without error on short substantive prose', async () => {
     vi.mocked(handleAssistantTurn).mockResolvedValueOnce({
       assistantMsgId: 'msg-greet',

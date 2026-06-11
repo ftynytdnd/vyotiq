@@ -16,8 +16,6 @@ import { SearchInvocation } from './SearchInvocation.js';
 import { MemoryInvocation } from './MemoryInvocation.js';
 import { RecallInvocation } from './RecallInvocation.js';
 import { UnknownInvocation } from './UnknownInvocation.js';
-import { AskUserInvocation } from './AskUserInvocation.js';
-import { FinishInvocation } from './FinishInvocation.js';
 import { ReportInvocation } from './report/ReportInvocation.js';
 
 interface ToolInvocationProps {
@@ -130,26 +128,10 @@ export function ToolInvocation({
         />
       );
     case 'ask_user':
-      // Interactive UI is on `ask-user-prompt` rows; resume emits result-only.
-      if (!call) return null;
-      return (
-        <AskUserInvocation
-          call={call}
-          result={result}
-          dense={dense}
-          rowKey={rowKey ?? call.id}
-        />
-      );
+      // Interactive UI lives on dedicated `ask-user-prompt` rows only.
+      return null;
     case 'finish':
-      return (
-        <FinishInvocation
-          call={call}
-          result={result}
-          dense={dense}
-          rowKey={rowKey}
-          partial={partial}
-        />
-      );
+      return null;
     case 'unknown':
       return <UnknownInvocation call={call} result={result} dense={dense} rowKey={rowKey} />;
     default: {

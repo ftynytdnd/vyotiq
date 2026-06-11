@@ -70,28 +70,35 @@ function MenuRow({
 }
 
 function buildMenuEntries(fileActions: FileMenuActions): MenuEntry[] {
+  const chatEnabled = fileActions.chatActionsEnabled !== false;
+  const chatEntries: MenuEntry[] = chatEnabled
+    ? [
+        {
+          type: 'item',
+          key: 'new',
+          label: 'New chat',
+          shortcut: formatPlatformShortcut('Ctrl+N'),
+          action: fileActions.newConversation
+        },
+        {
+          type: 'item',
+          key: 'open-ws',
+          label: 'Open workspace…',
+          shortcut: formatPlatformShortcut('Ctrl+O'),
+          action: fileActions.openWorkspace
+        },
+        {
+          type: 'item',
+          key: 'set-ws',
+          label: 'Set workspace path…',
+          action: fileActions.setWorkspacePath
+        },
+        { type: 'separator', key: 'sep-settings' }
+      ]
+    : [];
+
   return [
-    {
-      type: 'item',
-      key: 'new',
-      label: 'New chat',
-      shortcut: formatPlatformShortcut('Ctrl+N'),
-      action: fileActions.newConversation
-    },
-    {
-      type: 'item',
-      key: 'open-ws',
-      label: 'Open workspace…',
-      shortcut: formatPlatformShortcut('Ctrl+O'),
-      action: fileActions.openWorkspace
-    },
-    {
-      type: 'item',
-      key: 'set-ws',
-      label: 'Set workspace path…',
-      action: fileActions.setWorkspacePath
-    },
-    { type: 'separator', key: 'sep-settings' },
+    ...chatEntries,
     {
       type: 'item',
       key: 'settings',

@@ -80,7 +80,7 @@ export function DockToolbar({
           {
             id: 'back' as const,
             label: 'Back to chat',
-            title: 'Back to chat',
+            title: 'Back to chat (Esc)',
             onClick: () => onBackFromSettings?.()
           }
         ]
@@ -97,11 +97,11 @@ export function DockToolbar({
   const order: DockActionId[] =
     layout === 'horizontal'
       ? settingsMode
-        ? ['new', 'back', 'collapse']
+        ? ['back']
         : ['new', 'search', 'settings', 'collapse']
       : dockStyle
         ? settingsMode
-          ? ['new', 'back']
+          ? ['back']
           : ['collapse', 'new', 'search', 'settings']
         : ['new', 'search', settingsMode ? 'back' : 'settings', 'collapse'];
 
@@ -189,6 +189,7 @@ export function DockToolbar({
             onClick={action.onClick}
             hoverScale={dockStyle}
             dockStyle={dockStyle}
+            settingsExit={settingsMode && action.id === 'back'}
           >
             {renderIcon(action.id)}
           </DockIconButton>
@@ -205,6 +206,7 @@ function DockIconButton({
   onClick,
   hoverScale,
   dockStyle,
+  settingsExit,
   children
 }: {
   label: string;
@@ -213,6 +215,7 @@ function DockIconButton({
   onClick: () => void;
   hoverScale?: boolean;
   dockStyle?: boolean;
+  settingsExit?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -225,6 +228,7 @@ function DockIconButton({
         dockStyle ? 'vx-dock-icon-slot vx-btn vx-btn-quiet px-0' : chromeToolbarButtonClassName(active),
         !dockStyle && 'h-6 w-6 shrink-0 px-0',
         dockStyle && active && 'bg-chrome-hover-soft text-text-primary',
+        settingsExit && 'text-text-secondary hover:text-text-primary',
         hoverScale && 'vx-dock-icon-hover'
       )}
     >

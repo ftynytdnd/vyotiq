@@ -31,7 +31,7 @@ interface AskUserDraftStore {
     allowMultiple: boolean
   ) => void;
   skipQuestion: (promptEventId: string, questionId: string) => void;
-  setFreeText: (promptEventId: string, questionId: string, text: string) => void;
+  setFreeText: (promptEventId: string, questionId: string, text: string, allowMultiple?: boolean) => void;
   buildAnswers: (promptEventId: string, payload: AskUserStructuredPayload) => AskUserAnswer[];
   hasAnyAnswer: (
     promptEventId: string,
@@ -77,7 +77,12 @@ export const useAskUserDraftStore = create<AskUserDraftStore>((set, get) => ({
           ...s.byPromptId,
           [promptEventId]: {
             ...sheet,
-            [questionId]: { ...cur, skipped: false, selected: nextSelected }
+            [questionId]: {
+              ...cur,
+              skipped: false,
+              selected: nextSelected,
+              freeText: allowMultiple ? cur.freeText : ''
+            }
           }
         }
       };
@@ -100,17 +105,24 @@ export const useAskUserDraftStore = create<AskUserDraftStore>((set, get) => ({
     });
   },
 
-  setFreeText: (promptEventId, questionId, text) => {
+  setFreeText: (promptEventId, questionId, text, allowMultiple = false) => {
     set((s) => {
       const sheet = s.byPromptId[promptEventId];
       if (!sheet) return s;
       const cur = sheet[questionId] ?? { skipped: false, selected: new Set(), freeText: '' };
+      const trimmed = text.trim();
+      const clearOptions = !allowMultiple && trimmed.length > 0 && cur.selected.size > 0;
       return {
         byPromptId: {
           ...s.byPromptId,
           [promptEventId]: {
             ...sheet,
-            [questionId]: { ...cur, skipped: false, freeText: text }
+            [questionId]: {
+              ...cur,
+              skipped: false,
+              freeText: text,
+              selected: clearOptions ? new Set<string>() : cur.selected
+            }
           }
         }
       };

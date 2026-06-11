@@ -31,6 +31,7 @@ import {
   foldToolResult,
   type ScopedGroupState
 } from './deriveRows/scopedToolGroups.js';
+import { isTimelineHiddenTool } from '../shared/timelineHiddenTools.js';
 
 export {
   toolGroupSummary,
@@ -152,6 +153,7 @@ export type Row =
     usage?: TokenUsageAggregate;
     editCount?: number;
     fileCount?: number;
+    commandCount?: number;
   };
 
 export interface DeriveRowsOptions {
@@ -261,7 +263,14 @@ export function deriveRows(
       case 'user-prompt':
         closeGroups();
         flushRun();
-        openRun = { promptId: e.id, promptTs: e.ts, lastTs: e.ts, editCount: 0, filePaths: new Set() };
+        openRun = {
+          promptId: e.id,
+          promptTs: e.ts,
+          lastTs: e.ts,
+          editCount: 0,
+          filePaths: new Set(),
+          commandCount: 0
+        };
         out.push({
           kind: 'user-prompt',
           key: e.id,
@@ -289,6 +298,8 @@ export function deriveRows(
 
       case 'ask-user-prompt':
         closeGroups();
+        // Answers land on the user-prompt row — no post-submit status bar.
+        if (e.status === 'submitted') break;
         out.push({
           kind: 'ask-user-prompt',
           key: e.id,
@@ -363,12 +374,16 @@ export function deriveRows(
         break;
 
       case 'tool-call': {
+        if (isTimelineHiddenTool(e.call.name)) break;
         foldToolCall(out, scopedGroups, e.call);
         break;
       }
 
       case 'tool-result': {
-        if (e.result.name === 'ask_user') break;
+        if (e.result.name === 'ask_user' || isTimelineHiddenTool(e.result.name)) break;
+        if (openRun && e.result.name === 'bash' && e.result.ok) {
+          openRun.commandCount += 1;
+        }
         foldToolResult(out, scopedGroups, e.result);
         break;
       }
@@ -407,13 +422,14 @@ export function deriveRows(
           openRunUsage.orchestrator = foldTokenUsage(
             openRunUsage.orchestrator,
             e.usage,
-            e.ts
+            e.ts,
+            e.assistantMsgId
           );
         }
         break;
 
       case 'run-status':
-        // Pure live-telemetry signal — surfaced in TurnRunningMeta /
+        // Pure live-telemetry signal — surfaced in TurnStickyFooter /
         // the tail of the timeline, never as an inline row. Deliberately
         // does not close tool groups: a `run-status` landing between
         // two consecutive `tool-call`s of the same name must NOT split

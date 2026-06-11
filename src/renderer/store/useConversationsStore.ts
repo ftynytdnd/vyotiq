@@ -329,6 +329,23 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
       log.warn('select called without an active workspace', { id });
       return;
     }
+    if (!meta && get().list.length > 0) {
+      log.info('select: conversation not in catalogue; clearing stale slot', { id });
+      set((s) => {
+        let changed = false;
+        const nextActiveMap = { ...s.activeIdByWorkspace };
+        for (const [wsId, convId] of Object.entries(nextActiveMap)) {
+          if (convId === id) {
+            nextActiveMap[wsId] = null;
+            changed = true;
+          }
+        }
+        if (!changed) return s;
+        persistActiveMap(nextActiveMap);
+        return { ...s, activeIdByWorkspace: nextActiveMap };
+      });
+      return;
+    }
     if (!meta) {
       log.warn(
         'select: conversation meta not in list — using active workspace as slot owner',

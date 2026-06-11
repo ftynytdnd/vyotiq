@@ -9,6 +9,7 @@ vi.mock('@main/orchestrator/toolRunner', () => ({
 }));
 
 import { handleToolCalls } from '@main/orchestrator/loop/handleToolCalls';
+import { MAX_TOOL_OUTPUT_CHARS } from '@shared/constants';
 
 describe('handleToolCalls pre-dispatch validation', () => {
   const emit = vi.fn<(e: TimelineEvent) => void>();
@@ -42,6 +43,29 @@ describe('handleToolCalls pre-dispatch validation', () => {
     expect(resultEvt?.kind).toBe('tool-result');
     if (resultEvt?.kind === 'tool-result') {
       expect(resultEvt.result.error).toBe('missing path');
+    }
+  });
+
+  it('truncates large tool output in LLM context messages', async () => {
+    const huge = 'y'.repeat(MAX_TOOL_OUTPUT_CHARS + 1000);
+    runToolByName.mockResolvedValueOnce({
+      id: 'c1',
+      name: 'read',
+      ok: true,
+      output: huge,
+      durationMs: 1
+    });
+    const calls: PartialToolCall[] = [
+      { id: 'c1', name: 'read', argumentsBuf: '{"path":"big.txt"}' }
+    ];
+    await handleToolCalls(calls, messages, emit, baseOpts);
+    const toolMsg = messages.find((m) => m.role === 'tool');
+    expect(typeof toolMsg?.content).toBe('string');
+    expect((toolMsg?.content as string).length).toBeLessThanOrEqual(MAX_TOOL_OUTPUT_CHARS);
+    expect(toolMsg?.content).toContain('…[truncated]');
+    const resultEvt = emit.mock.calls.find((c) => c[0].kind === 'tool-result')?.[0];
+    if (resultEvt?.kind === 'tool-result') {
+      expect(resultEvt.result.output).toBe(huge);
     }
   });
 

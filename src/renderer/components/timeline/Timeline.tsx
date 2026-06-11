@@ -30,6 +30,7 @@ import { ErrorRow } from './rows/ErrorRow.js';
 import { ToolGroupRow } from './rows/ToolGroupRow.js';
 import { FileEditGroupRow } from './rows/FileEditGroupRow.js';
 import { RunCompleteRow } from './rows/RunCompleteRow.js';
+import type { RunCompleteMetaProps } from './rows/RunCompleteMeta.js';
 import { PhaseLogRow } from './rows/PhaseLogRow.js';
 import type { DisplayRow } from './shared/displayRowTypes.js';
 import { RowAnchor } from './shared/RowAnchor.js';
@@ -56,6 +57,7 @@ import { promptTurnIndices } from './shared/timelineVirtualNav.js';
 import { runWithProgrammaticScrollGuard } from './shared/programmaticScrollGuard.js';
 import {
   TIMELINE_SCROLL_RESTICK_PX,
+  TIMELINE_SCROLL_STREAM_FOLLOW_PX,
   TIMELINE_SCROLL_UNSTICK_PX,
   measureTimelineScrollTail
 } from './shared/scrollTailState.js';
@@ -69,6 +71,8 @@ interface TimelineProps {
   onOpenProviders?: () => void;
   /** Portal target for the jump-to-latest chip (above the composer footer). */
   jumpOverlayHost?: HTMLElement | null;
+  /** Animate the first user prompt from the landing composer. */
+  promptAnchorEnter?: boolean;
 }
 
 interface ErrorRowActions {
@@ -76,7 +80,12 @@ interface ErrorRowActions {
   onOpenProviders?: () => void;
 }
 
-export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayHostProp }: TimelineProps) {
+export function Timeline({
+  model,
+  onOpenProviders,
+  jumpOverlayHost: jumpOverlayHostProp,
+  promptAnchorEnter = false
+}: TimelineProps) {
   // --- Stores (fixed order; never short-circuit hooks with `||`) ---
   const companionOverlayOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
 
@@ -97,7 +106,6 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
   const permissions = selectEffectivePermissions(activeWorkspaceId, settings);
   const setTimelineAtTail = useTimelineUiStore((s) => s.setTimelineAtTail);
   const scrollToTailRequest = useTimelineUiStore((s) => s.scrollToTailRequest);
-
   // --- Refs (all before any effect) ---
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollFrameRef = useRef<number | null>(null);
@@ -110,9 +118,11 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
   const lastScrollDistanceRef = useRef<number | null>(null);
   const gArmedRef = useRef(false);
   const gTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevTailScrollKeyRef = useRef('');
 
   // --- Local state ---
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const [unreadTailBumps, setUnreadTailBumps] = useState(0);
   const [findOpen, setFindOpen] = useState(false);
   const [virtualized, setVirtualized] = useState(false);
 
@@ -136,6 +146,9 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
 
   const applyTailState = useCallback(
     (nextSticky: boolean, scrollable: boolean, distanceFromBottom: number) => {
+      if (nextSticky) {
+        setUnreadTailBumps(0);
+      }
       if (stickyRef.current !== nextSticky) {
         stickyRef.current = nextSticky;
         setTimelineAtTail(nextSticky);
@@ -231,7 +244,26 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
   const scrollToTail = useCallback(
     (force: boolean) => {
       if (!force) {
-        if (userScrollLockRef.current || !stickyRef.current) return;
+        if (userScrollLockRef.current) {
+          if (isProcessing) {
+            const parent = findTimelineScrollParent(containerRef.current);
+            if (parent) {
+              const { distanceFromBottom } = measureTimelineScrollTail(parent);
+              if (distanceFromBottom <= TIMELINE_SCROLL_STREAM_FOLLOW_PX) {
+                releaseUserScrollLock();
+                stickyRef.current = true;
+              } else {
+                return;
+              }
+            } else {
+              return;
+            }
+          } else {
+            return;
+          }
+        } else if (!stickyRef.current) {
+          return;
+        }
       }
       scheduleScroll(() => {
         runWithProgrammaticScrollGuard(programmaticScrollRef, () => {
@@ -249,7 +281,7 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
         });
       });
     },
-    [useVirtualizedList]
+    [isProcessing, releaseUserScrollLock, useVirtualizedList]
   );
 
   useEffect(() => {
@@ -452,6 +484,14 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
 
   // Sticky follow during streaming: pin when tail grows if sticky and not user-locked.
   useEffect(() => {
+    if (
+      prevTailScrollKeyRef.current &&
+      tailScrollKey !== prevTailScrollKeyRef.current &&
+      (userScrollLockRef.current || !stickyRef.current)
+    ) {
+      setUnreadTailBumps((n) => n + 1);
+    }
+    prevTailScrollKeyRef.current = tailScrollKey;
     scrollToTail(false);
     return () => {
       if (scrollFrameRef.current !== null) {
@@ -460,6 +500,10 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
       }
     };
   }, [tailScrollKey, scrollToTail]);
+
+  useEffect(() => {
+    setUnreadTailBumps(0);
+  }, [conversationId]);
 
   const locationHash = typeof window !== 'undefined' ? window.location.hash : '';
   useEffect(() => {
@@ -508,9 +552,25 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
       const partitioned = partitionTurnSegment(segment);
       const segmentKey = partitioned.prompt?.key ?? `turn-${segmentIndex}`;
 
+      const runCompleteRow = partitioned.footer.find(
+        (row): row is Extract<DisplayRow, { kind: 'run-complete' }> => row.kind === 'run-complete'
+      );
+      const inlineRunComplete =
+        runCompleteRow && partitioned.response?.kind === 'assistant-text'
+          ? runCompleteMetaFromRow(runCompleteRow)
+          : null;
+      const responseAssistantId =
+        partitioned.response?.kind === 'assistant-text' ? partitioned.response.id : null;
+
       const renderAnchoredRow = (r: DisplayRow) => (
         <RowAnchor rowKey={r.key}>
-          {renderRow(r, model, liveTurn, errorRowActions)}
+          {renderRow(r, model, liveTurn, errorRowActions, {
+            inlineRunComplete:
+              r.kind === 'assistant-text' && r.id === responseAssistantId
+                ? inlineRunComplete
+                : null,
+            hideRunCompleteMeta: r.kind === 'run-complete' && inlineRunComplete !== null
+          })}
         </RowAnchor>
       );
 
@@ -518,16 +578,19 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
         <TurnBlock
           key={segmentKey}
           live={liveTurn}
+          promptAnchorEnter={promptAnchorEnter && segmentIndex === 0}
           partitioned={partitioned}
+          compactFooter={inlineRunComplete !== null}
           renderRow={renderAnchoredRow}
         />
       );
     },
-    [errorRowActions, isProcessing, lastTurnIndex, model]
+    [errorRowActions, isProcessing, lastTurnIndex, model, promptAnchorEnter]
   );
 
   return (
     <>
+      <div id="vyotiq-timeline-announcer" className="sr-only" aria-live="polite" aria-atomic="true" />
       <TimelineFindBar
         open={findOpen}
         onClose={() => setFindOpen(false)}
@@ -545,6 +608,7 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
             turnSegments={turnSegments}
             tailScrollKey={tailScrollKey}
             renderTurn={renderTurnBlock}
+            streamFollow={isProcessing}
           />
         ) : (
           turnSegments.map((segment, segmentIndex) => renderTurnBlock(segment, segmentIndex))
@@ -559,14 +623,24 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
             onClick={() => {
               releaseUserScrollLock();
               stickyRef.current = true;
+              setUnreadTailBumps(0);
               applyTailState(true, true, 0);
               scrollToTail(true);
             }}
             className="vx-jump-to-latest-chip elev-1 pointer-events-auto flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors hover:bg-chrome-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong"
-            aria-label="Jump to latest messages"
+            aria-label={
+              unreadTailBumps > 0
+                ? `Jump to latest messages (${unreadTailBumps} updates)`
+                : 'Jump to latest messages'
+            }
           >
             <ArrowDown className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} aria-hidden />
             <span className="vx-jump-to-latest-label">Latest</span>
+            {unreadTailBumps > 0 ? (
+              <span className="vx-jump-to-latest-badge font-mono tabular-nums" aria-hidden>
+                {unreadTailBumps > 9 ? '9+' : unreadTailBumps}
+              </span>
+            ) : null}
           </button>,
           jumpOverlayHostProp
         )}
@@ -574,11 +648,31 @@ export function Timeline({ model, onOpenProviders, jumpOverlayHost: jumpOverlayH
   );
 }
 
+interface RenderRowOptions {
+  inlineRunComplete?: RunCompleteMetaProps | null;
+  hideRunCompleteMeta?: boolean;
+}
+
+function runCompleteMetaFromRow(
+  r: Extract<DisplayRow, { kind: 'run-complete' }>
+): RunCompleteMetaProps {
+  return {
+    promptId: r.promptId,
+    durationMs: r.durationMs,
+    completedAt: r.completedAt,
+    ...(r.usage !== undefined ? { usage: r.usage } : {}),
+    ...(r.editCount !== undefined ? { editCount: r.editCount } : {}),
+    ...(r.fileCount !== undefined ? { fileCount: r.fileCount } : {}),
+    ...(r.commandCount !== undefined ? { commandCount: r.commandCount } : {})
+  };
+}
+
 function renderRow(
   r: DisplayRow,
   model: ModelSelection | null | undefined,
   liveTurn = false,
-  errorRowActions?: ErrorRowActions
+  errorRowActions?: ErrorRowActions,
+  opts?: RenderRowOptions
 ): ReactNode {
   switch (r.kind) {
     case 'user-prompt':
@@ -597,7 +691,12 @@ function renderRow(
       );
     case 'assistant-text':
       return (
-        <AssistantTextRow key={r.key} id={r.id} model={model} />
+        <AssistantTextRow
+          key={r.key}
+          id={r.id}
+          model={model}
+          inlineRunComplete={opts?.inlineRunComplete ?? null}
+        />
       );
     case 'reasoning-line':
       return (
@@ -658,12 +757,8 @@ function renderRow(
       return (
         <RunCompleteRow
           key={r.key}
-          promptId={r.promptId}
-          durationMs={r.durationMs}
-          completedAt={r.completedAt}
-          {...(r.usage !== undefined ? { usage: r.usage } : {})}
-          {...(r.editCount !== undefined ? { editCount: r.editCount } : {})}
-          {...(r.fileCount !== undefined ? { fileCount: r.fileCount } : {})}
+          hideMeta={opts?.hideRunCompleteMeta}
+          {...runCompleteMetaFromRow(r)}
         />
       );
     case 'phase-log':

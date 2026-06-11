@@ -85,6 +85,9 @@ export function ModelList({
     }
   }, [visible, effortEditModelId]);
 
+  const showOptionsAside = hasThinkingModels || !!onContextOverrideSave;
+  const optionsPanelActive = showEffortPanel || showContextPanel;
+
   if (loading) {
     return (
       <div className="flex items-center gap-2 vx-caption">
@@ -113,11 +116,16 @@ export function ModelList({
         onChange={(e) => setFilter(e.target.value)}
         placeholder={`Filter ${models.length} models…`}
       />
+      {showOptionsAside && !optionsPanelActive ? (
+        <ShellCaption className="px-0.5">
+          Click a model row or its context badge to configure.
+        </ShellCaption>
+      ) : null}
       <div className="flex min-h-0 gap-0">
         <div
           className={cn(
-            'scrollbar-stealth max-h-48 min-w-0 overflow-y-auto',
-            hasThinkingModels || onContextOverrideSave ? 'flex-1' : 'w-full'
+            'scrollbar-stealth max-h-56 min-w-0 overflow-y-auto',
+            showOptionsAside && optionsPanelActive ? 'flex-1' : 'w-full'
           )}
         >
           {visible.map((m) => {
@@ -192,7 +200,8 @@ export function ModelList({
             <div className={chromeNoMatchesClassName}>No matches.</div>
           )}
         </div>
-        {(hasThinkingModels || onContextOverrideSave) && (
+        {(showEffortPanel && effortEditModelId && onThinkingChange) ||
+        (showContextPanel && contextEditModelId && contextEditModel && onContextOverrideSave) ? (
           <aside className={cn(EFFORT_COLUMN_CLASS, 'scrollbar-stealth flex min-h-0 flex-col overflow-y-auto')}>
             {showEffortPanel && effortEditModelId && onThinkingChange ? (
               <ThinkingEffortOptionList
@@ -214,16 +223,9 @@ export function ModelList({
                 onSave={(tokens) => onContextOverrideSave(contextEditModelId, tokens)}
                 onClear={() => onContextOverrideClear?.(contextEditModelId)}
               />
-            ) : (
-              <div className="flex flex-1 flex-col px-2.5 py-3">
-                <div className="py-1 text-meta font-medium text-text-faint">Options</div>
-                <p className="text-meta leading-snug text-text-faint">
-                  Click a model row or its context badge to configure.
-                </p>
-              </div>
-            )}
+            ) : null}
           </aside>
-        )}
+        ) : null}
       </div>
     </div>
   );

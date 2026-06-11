@@ -47,7 +47,7 @@ export function AppearancePanel() {
   };
 
   return (
-    <ShellSection title="Appearance">
+    <ShellSection>
       <ShellRow>
         <ShellRowSplit
           main={<ShellFieldLabel>Color scheme</ShellFieldLabel>}

@@ -33,21 +33,9 @@ describe('EditInvocation — pre-result synthetic preview', () => {
         })}
       />
     );
-    // In-flight edit rows auto-expand — no click needed.
-    // Pane label distinguishes preview from authoritative diff.
-    expect(screen.getByText(/preview \(pending\)/i)).toBeInTheDocument();
-    // The new "return 2" line is rendered as an addition and the old
-    // "return 1" line as a deletion. With Phase 1.2 LCS-based
-    // synthesis the unchanged `def foo():` becomes a context line
-    // and intra-line word diffing splits the changing token (`1` ->
-    // `2`) into its own highlighted span. The full `return 2` text
-    // therefore lives across two adjacent text nodes (`return ` +
-    // `2`), so we walk all rendered diff lines and assert the
-    // concatenated text matches.
+    expect(screen.getByText(/pending/i)).toBeInTheDocument();
     const renderedLines = Array.from(
-      document.querySelectorAll<HTMLDivElement>(
-        '[data-edit-diff-instance] pre > div'
-      )
+      document.querySelectorAll<HTMLElement>('.vx-snippet-diff-line')
     ).map((el) => (el.textContent ?? '').replace(/\s+/g, ' ').trim());
     expect(
       renderedLines.some((t) => /return 2/.test(t))
@@ -71,8 +59,8 @@ describe('EditInvocation — pre-result synthetic preview', () => {
         })}
       />
     );
-    expect(screen.getByText(/new file \(pending\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/export const HELLO = 1;/)).toBeInTheDocument();
+    expect(screen.getByText(/pending/i)).toBeInTheDocument();
+    expect(document.body.textContent ?? '').toMatch(/export const HELLO = 1;/);
   });
 
   it('does not render the preview pane when args are incomplete', async () => {

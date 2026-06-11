@@ -83,6 +83,10 @@ export interface StreamConsumeResult {
    * that ignore the flag — callers must handle `undefined` gracefully.
    */
   usage?: TokenUsage;
+  /** Anthropic response id for cache-diagnostics chaining on the next turn. */
+  anthropicMessageId?: string;
+  /** Anthropic cache-diagnostics miss reason when the beta header is enabled. */
+  anthropicCacheMissReason?: string | null;
 }
 
 /**
@@ -153,7 +157,7 @@ export interface StreamConsumeHooks {
    * `StreamConsumeResult.usage`, so callers can pick whichever surface
    * (hook for eager emission, result for after-stream bookkeeping).
    */
-  onUsage?: (usage: TokenUsage) => void;
+  onUsage?: (usage: TokenUsage, meta?: { cacheMissReason?: string | null }) => void;
   /**
    * Fired AFTER every `argumentsDelta` fragment has been folded into
    * the per-index buffer. The snapshot carries the cumulative
@@ -199,6 +203,9 @@ export async function consumeChatStream(
   let reasoningEndEmitted = false;
   let finishReason: string | undefined;
   let usage: TokenUsage | undefined;
+  let anthropicMessageId: string | undefined;
+  let anthropicCacheMissReason: string | null | undefined;
+  let usageEmittedWithMissReason = false;
   // Anthropic thinking-block signature. The transport may yield multiple
   // `reasoningSignature` frames per turn (one per closing thinking block);
   // we concatenate so a multi-block thinking turn round-trips faithfully.
@@ -314,9 +321,18 @@ export async function consumeChatStream(
       }
     }
     if (delta.finishReason) finishReason = delta.finishReason;
+    if (delta.anthropicMessageId) anthropicMessageId = delta.anthropicMessageId;
+    if (delta.anthropicCacheDiagnostics) {
+      anthropicCacheMissReason = delta.anthropicCacheDiagnostics.cacheMissReason;
+    }
     if (delta.usage) {
       usage = delta.usage;
-      hooks?.onUsage?.(delta.usage);
+      if (anthropicCacheMissReason !== undefined) usageEmittedWithMissReason = true;
+      hooks?.onUsage?.(delta.usage, {
+        ...(anthropicCacheMissReason !== undefined
+          ? { cacheMissReason: anthropicCacheMissReason }
+          : {})
+      });
     }
   }
 
@@ -327,6 +343,15 @@ export async function consumeChatStream(
   emitReasoningPortion(flushed.reasoning);
   emitTextPortion(flushed.text);
 
+  if (
+    usage !== undefined &&
+    hooks?.onUsage &&
+    anthropicCacheMissReason !== undefined &&
+    !usageEmittedWithMissReason
+  ) {
+    hooks.onUsage(usage, { cacheMissReason: anthropicCacheMissReason });
+  }
+
   return {
     assistantText,
     reasoningText,
@@ -336,6 +361,8 @@ export async function consumeChatStream(
     reasoningEndEmitted,
     ...(reasoningSignature.length > 0 ? { reasoningSignature } : {}),
     ...(finishReason !== undefined ? { finishReason } : {}),
-    ...(usage !== undefined ? { usage } : {})
+    ...(usage !== undefined ? { usage } : {}),
+    ...(anthropicMessageId !== undefined ? { anthropicMessageId } : {}),
+    ...(anthropicCacheMissReason !== undefined ? { anthropicCacheMissReason } : {})
   };
 }

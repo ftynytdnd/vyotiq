@@ -58,3 +58,13 @@ export function isPersistableSettingsSection(
 ): section is Exclude<SettingsSectionId, 'about'> {
   return section !== 'about';
 }
+
+/** Human-readable labels for settings sections (nav, title bar, headers). */
+export const SETTINGS_SECTION_LABELS: Record<SettingsSectionId, string> = {
+  'models-api': 'Models & API',
+  'agent-behavior': 'Agent behavior',
+  'workspace-data': 'Workspace data',
+  appearance: 'Appearance',
+  shortcuts: 'Shortcuts',
+  about: 'About'
+};

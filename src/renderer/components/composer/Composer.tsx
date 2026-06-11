@@ -31,6 +31,8 @@ import { findPendingAskUserEvent } from '../../lib/pendingAskUser.js';
 import { useAskUserDraftStore } from '../../store/askUserDraft.js';
 import { useRevertPrompt } from '../timeline/revert/RevertPromptContext.js';
 import { useComposerTokenEstimate } from './useComposerTokenEstimate.js';
+import { resolveComposerPlaceholder } from './composerPlaceholder.js';
+import { useProviderAccountPollSource } from '../../lib/useProviderAccountPollSource.js';
 
 const TEXTAREA_MAX_HEIGHT = 168;
 
@@ -38,11 +40,25 @@ interface ComposerProps {
   model: ModelSelection | null;
   onModelChange: (sel: ModelSelection) => void;
   onOpenProviders: () => void;
+  /** Empty-chat landing — wider shell and landing placeholder copy. */
+  landing?: boolean;
+  /** Focus the message field (empty-chat landing). */
+  requestFocus?: boolean;
+  /** Changes re-trigger focus (e.g. switching empty conversations). */
+  focusSession?: string | null;
 }
 
-export function Composer({ model, onModelChange, onOpenProviders }: ComposerProps) {
+export function Composer({
+  model,
+  onModelChange,
+  onOpenProviders,
+  landing = false,
+  requestFocus,
+  focusSession
+}: ComposerProps) {
   const [text, setText] = useState('');
   const [dragOver, setDragOver] = useState(false);
+  const [composerFocused, setComposerFocused] = useState(false);
   const fromHistoryRef = useRef(false);
   const revertPrompt = useRevertPrompt();
   const {
@@ -155,6 +171,11 @@ export function Composer({ model, onModelChange, onOpenProviders }: ComposerProp
     [events, awaitingAskUser]
   );
 
+  useProviderAccountPollSource(
+    'composer',
+    composerFocused || isProcessing || Boolean(pendingAskUser)
+  );
+
   const handleSend = async () => {
     if (isProcessing && !awaitingAskUser) {
       await abort();
@@ -263,12 +284,23 @@ export function Composer({ model, onModelChange, onOpenProviders }: ComposerProp
     disabled: sendDisabled
   } as const;
 
+  const placeholder = resolveComposerPlaceholder({
+    landing,
+    storeDraft,
+    editorPlain: documentTrimmedPlain(composerDoc),
+    eventsLength: events.length
+  });
+
+  const shellRef = useRef<HTMLDivElement>(null);
+
   return (
     <div className="relative w-full">
       <div
+        ref={shellRef}
         className={cn(
           appComposerShellClassName,
           'flex flex-col overflow-hidden transition-[background] duration-150',
+          landing && 'vx-composer-shell--landing',
           dragOver && 'vx-composer-shell--drag-over'
         )}
         onDragEnter={(e) => {
@@ -281,6 +313,12 @@ export function Composer({ model, onModelChange, onOpenProviders }: ComposerProp
           setDragOver(false);
         }}
         onDragOver={onDragOver}
+        onFocusCapture={() => setComposerFocused(true)}
+        onBlurCapture={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+            setComposerFocused(false);
+          }
+        }}
         onDrop={(e) => {
           setDragOver(false);
           onDrop(e);
@@ -292,6 +330,8 @@ export function Composer({ model, onModelChange, onOpenProviders }: ComposerProp
               value={model}
               onChange={onModelChange}
               onOpenProviders={onOpenProviders}
+              landing={landing}
+              anchorRef={shellRef}
             />
             <AttachmentButton
               onPickFromComputer={() => void pickFromComputer()}
@@ -303,17 +343,20 @@ export function Composer({ model, onModelChange, onOpenProviders }: ComposerProp
                 {attachments.length}/{MAX_CHAT_ATTACHMENTS}
               </span>
             )}
-            <ComposerStatusStrip pendingAskUser={pendingAskUser} />
+            <ComposerStatusStrip pendingAskUser={pendingAskUser} model={model} />
           </div>
           <div className="vx-composer-editor-slot">
             <MentionComposer
               value={text}
               onChange={onTextChange}
               onPaste={onPaste}
+              requestFocus={requestFocus}
+              focusSession={focusSession}
               ariaKeyshortcuts="Enter Shift+Enter ArrowUp ArrowDown Escape"
-              placeholder="@ to mention files, or describe your task…"
+              placeholder={placeholder}
               className={cn(
-                'min-h-[2.5rem] min-w-0 flex-1',
+                'min-w-0 flex-1',
+                landing ? 'min-h-[3.25rem]' : 'min-h-[2.5rem]',
                 'transition-[height] duration-150 ease-out motion-reduce:transition-none'
               )}
               style={{ maxHeight: TEXTAREA_MAX_HEIGHT }}

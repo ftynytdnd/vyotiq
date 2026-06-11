@@ -1,6 +1,8 @@
 /** Slack used by Timeline sticky / jump-to-latest logic (px). */
 export const TIMELINE_SCROLL_RESTICK_PX = 24;
 export const TIMELINE_SCROLL_UNSTICK_PX = 80;
+/** While a run is streaming, follow tail unless the user scrolls farther up. */
+export const TIMELINE_SCROLL_STREAM_FOLLOW_PX = 160;
 
 /** Minimum overflow before the transcript is considered scrollable. */
 const SCROLLABLE_EPSILON_PX = 2;

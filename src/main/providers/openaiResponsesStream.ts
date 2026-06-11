@@ -17,6 +17,7 @@ import { classifyProviderError, ProviderError, looksRateLimited } from './provid
 import { acquire, markRateLimited, markSuccess } from './providerRateGuard.js';
 import { createInactivityWatch, isStreamInactivityError } from './streamInactivity.js';
 import { buildAttributionHeaders } from './attributionHeaders.js';
+import { applyOpenAiCacheHints } from './cacheHints/openaiCacheHints.js';
 import { readSseFrames, pickSseDataLine } from './sseFrameReader.js';
 import { safeText } from './errorBody.js';
 import {
@@ -54,7 +55,7 @@ export function responsesApiUnsupportedForRequest(req: ChatStreamRequest): boole
   return false;
 }
 
-function messagesToResponsesInput(messages: ChatMessage[]): unknown[] {
+export function messagesToResponsesInput(messages: ChatMessage[]): unknown[] {
   const out: unknown[] = [];
   for (const m of messages) {
     if (m.role === 'user') {
@@ -96,6 +97,11 @@ export async function* streamOpenAiResponses(
     input: messagesToResponsesInput(stripGeminiSignatures(req.messages)),
     stream: true
   };
+  applyOpenAiCacheHints(body, provider, {
+    modelId: req.model,
+    ...(req.workspaceId !== undefined ? { workspaceId: req.workspaceId } : {}),
+    ...(req.conversationId !== undefined ? { conversationId: req.conversationId } : {})
+  });
   if (typeof req.maxTokens === 'number') body['max_output_tokens'] = req.maxTokens;
   const effort = resolveStreamerThinkingEffort(provider, req.model, req.reasoningEffort);
   const responsesEffort = mapOpenAiResponsesReasoningEffort(effort);

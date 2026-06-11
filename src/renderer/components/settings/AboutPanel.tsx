@@ -106,7 +106,7 @@ export function AboutPanel() {
 
   return (
     <section id="settings-about" className="vx-settings-section-anchor px-3 py-2">
-      <ShellSection title="About Vyotiq">
+      <ShellSection>
         <div className={cn('surface-shell vx-prose', 'px-3 py-2.5')}>
           <p className="vx-row-label">Vyotiq · Agent V</p>
           <p className="vx-row-desc">

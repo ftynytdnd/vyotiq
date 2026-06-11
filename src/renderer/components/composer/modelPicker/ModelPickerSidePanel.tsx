@@ -25,7 +25,17 @@ import {
   applyThinkingEffortClear,
   rowThinkingEffort
 } from './modelPickerThinking.js';
-import { rowDisplayModelId } from './modelPickerDisplay.js';
+import { formatModelPricingDetail } from '@shared/providers/modelPricing.js';
+import {
+  formatProviderAccountLine,
+  isProviderAccountLow,
+  managementKeyDocsUrl,
+  providerNeedsManagementKey
+} from '../../../lib/formatProviderAccount.js';
+import { useProviderAccountStore } from '../../../store/useProviderAccountStore.js';
+import {
+  rowDisplayModelId
+} from './modelPickerDisplay.js';
 
 type UpdateProvider = ReturnType<typeof useProviderStore.getState>['update'];
 
@@ -61,6 +71,11 @@ export function ModelPickerSidePanel({
   const levels = thinkingCapable
     ? supportedThinkingEfforts(provider.dialect, modelId, capOpts)
     : [];
+  const accountSnapshot = useProviderAccountStore((s) => s.snapshotFor(provider.id));
+  const accountLine = formatProviderAccountLine(accountSnapshot);
+  const accountLow = isProviderAccountLow(accountSnapshot);
+  const needsMgmtKey = providerNeedsManagementKey(accountSnapshot);
+  const mgmtDocs = managementKeyDocsUrl(accountSnapshot?.hostKind);
 
   const onEffortSelect = (effort: ThinkingEffort) => {
     applyThinkingEffortChange(provider.id, modelId, effort, onChange, updateProvider);
@@ -72,32 +87,32 @@ export function ModelPickerSidePanel({
 
   return (
     <aside
-      className={cn('flex min-h-0 flex-col overflow-y-auto', className)}
+      className={cn('vx-model-picker-side-inner flex min-h-0 flex-col overflow-y-auto', className)}
       aria-label="Model options"
     >
-      <div className="sticky top-0 z-[1] border-b border-border-subtle/30 bg-surface-overlay px-2.5 py-2">
-        <div className="flex min-w-0 items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="font-mono text-row leading-snug break-all" title={modelId}>
-              {rowDisplayModelId(modelId)}
-            </div>
-            <div className="mt-0.5 truncate text-meta text-text-faint">{provider.name}</div>
-          </div>
-          <span
-            className={cn(
-              'vx-caption shrink-0 rounded-line px-1.5 py-0.5',
-              isSelected ? 'bg-accent-soft text-accent' : 'bg-chrome-hover-soft text-text-faint'
-            )}
+      <div className="vx-model-picker-side-head sticky top-0 z-[1] border-b border-border-subtle/30 bg-surface-overlay px-2 py-1.5">
+        <div className="min-w-0">
+          <div
+            className="truncate font-mono text-row leading-snug text-text-primary"
+            title={modelId}
           >
-            {isSelected ? 'Selected' : 'Preview'}
-          </span>
+            {rowDisplayModelId(modelId)}
+          </div>
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-meta text-text-faint">{provider.name}</span>
+            {isSelected ? (
+              <span className="vx-model-picker-side-selected shrink-0 font-mono text-meta text-accent">
+                Active
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
 
       {thinkingCapable && levels.length > 0 ? (
-        <div className="flex flex-col gap-1 px-2.5 py-2">
+        <div className="flex flex-col gap-1 px-2 py-1.5">
           <div className="text-meta font-medium text-text-faint">Effort</div>
-          <div className="flex flex-col gap-px">
+          <div className="vx-model-picker-effort-grid flex flex-wrap gap-1">
             <EffortChip
               label="Default"
               selected={effortValue === undefined}
@@ -114,13 +129,54 @@ export function ModelPickerSidePanel({
           </div>
         </div>
       ) : (
-        <div className="px-2.5 py-2">
+        <div className="px-2 py-1.5">
           <div className="text-meta font-medium text-text-faint">Effort</div>
-          <p className="mt-0.5 text-meta leading-snug text-text-faint">
-            No thinking effort for this model.
-          </p>
+          <p className="mt-0.5 text-meta leading-snug text-text-faint">Not configurable</p>
         </div>
       )}
+
+      {model?.pricing ? (
+        <div className="border-t border-border-subtle/30 px-2 py-1.5">
+          <div className="text-meta font-medium text-text-faint">Pricing</div>
+          <p className="mt-0.5 font-mono text-meta leading-snug text-text-secondary">
+            {formatModelPricingDetail(model.pricing)}
+          </p>
+        </div>
+      ) : null}
+
+      {accountLine || needsMgmtKey ? (
+        <div className="border-t border-border-subtle/30 px-2 py-1.5">
+          <div className="text-meta font-medium text-text-faint">Account</div>
+          {accountLine ? (
+            <p
+              className={cn(
+                'mt-0.5 font-mono text-meta leading-snug tabular-nums',
+                accountLow ? 'text-warning' : 'text-text-secondary'
+              )}
+            >
+              {accountLine}
+            </p>
+          ) : null}
+          {needsMgmtKey ? (
+            <p className="mt-0.5 text-meta leading-snug text-text-faint">
+              Management key required for account credits.
+              {mgmtDocs ? (
+                <>
+                  {' '}
+                  <a
+                    href={mgmtDocs}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-accent underline-offset-2 hover:underline"
+                  >
+                    Docs
+                  </a>
+                </>
+              ) : null}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       <ContextOverrideEditor
         modelId={modelId}
@@ -136,7 +192,7 @@ export function ModelPickerSidePanel({
           applyContextOverrideClear(provider.id, modelId, updateProvider);
           onChange(makeSelection(provider.id, modelId));
         }}
-        className="border-t border-border-subtle/30 py-2"
+        className="border-t border-border-subtle/30 py-1.5"
       />
     </aside>
   );
@@ -156,13 +212,14 @@ function EffortChip({
       type="button"
       onClick={onClick}
       className={cn(
-        'vx-dropdown-item w-full rounded-md px-2 py-1 text-left text-meta transition-colors',
-        'hover:bg-chrome-hover-soft',
-        selected && 'bg-chrome-active font-medium text-text-primary'
+        'vx-model-picker-effort-chip rounded-md border px-1.5 py-0.5 font-mono text-meta transition-colors',
+        selected
+          ? 'border-accent/40 bg-accent-soft/35 font-medium text-text-primary'
+          : 'border-border-subtle/40 bg-transparent text-text-faint hover:border-border-subtle hover:bg-chrome-hover-soft hover:text-text-secondary'
       )}
       data-active={selected ? 'true' : 'false'}
     >
-      <span className="block truncate">{label}</span>
+      <span className="block max-w-[5.5rem] truncate">{label}</span>
     </button>
   );
 }

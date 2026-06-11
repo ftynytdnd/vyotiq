@@ -24,6 +24,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { getProviderAccountSnapshot } from '../../providers/providerAccountStore.js';
 import type {
   ChatMessage,
   ChatPermissions,
@@ -31,6 +32,7 @@ import type {
   TimelineEvent
 } from '@shared/types/chat.js';
 import type { ProviderDialect } from '@shared/types/provider.js';
+import { providerDialectReportsPromptCache } from '@shared/providers/promptCacheMetrics.js';
 import { buildOrchestratorSystemPrompt } from '../../harness/harnessLoader.js';
 import { refreshEnvelopes } from '../contextManager.js';
 import { tryParseArgumentsRecord } from './parseToolArgs.js';
@@ -60,7 +62,11 @@ import {
 import { AGENT_TOOLS } from '../../tools/policy/index.js';
 import { handleToolCalls } from './handleToolCalls.js';
 
-import { buildSystemPrompt } from './buildSystemPrompt.js';
+import {
+  applyCacheLayers,
+  insertHistoryBeforeTail,
+  isCacheLayeredTopology
+} from '../context/buildContextLayers.js';
 import { buildOrchestratorRequest } from './buildOrchestratorRequest.js';
 import { handleAssistantTurn } from './handleAssistantTurn.js';
 import { DiffStreamer } from '../diffStreamer.js';
@@ -104,12 +110,16 @@ const log = logger.child('orch/runLoop');
 
 /**
  * Minimum length (chars) of plain assistant prose for the host to accept
- * a prose-only turn as an IMPLICIT `finish`. Below this (unless the
- * prose ends with a question mark), one retry then a visible error.
- * Tuned so a normal greeting or one-sentence answer clears the bar
- * while a bare "Okay." / "Working on it…" does not.
+ * a prose-only turn as an IMPLICIT `finish`. Below this, shorter prose
+ * may still qualify via the question-mark or sentence-end probes.
  */
 const IMPLICIT_FINISH_MIN_CHARS = 28;
+
+/**
+ * Minimum length for the sentence-end probe — accepts concise direct
+ * answers ("My name is Ajay K.") while rejecting bare filler ("Okay.").
+ */
+const IMPLICIT_FINISH_MIN_SENTENCE_CHARS = 10;
 
 /** User-facing copy when empty-turn retries are exhausted. */
 const USER_EMPTY_TURN_ERROR =
@@ -157,11 +167,13 @@ interface RunLoopOpts {
   reportsSettings?: ResolvedReportsSettings;
 }
 
-/** Remove the last assistant row when it was prose-only (empty-turn retry). */
+/** Remove the last prose-only assistant row (empty-turn retry). */
 function popProseOnlyAssistant(messages: ChatMessage[]): void {
-  const last = messages[messages.length - 1];
-  if (last?.role === 'assistant' && !(last.tool_calls && last.tool_calls.length > 0)) {
-    messages.pop();
+  const idx = isCacheLayeredTopology(messages) ? messages.length - 3 : messages.length - 1;
+  if (idx < 0) return;
+  const msg = messages[idx];
+  if (msg?.role === 'assistant' && !(msg.tool_calls && msg.tool_calls.length > 0)) {
+    messages.splice(idx, 1);
   }
 }
 
@@ -236,11 +248,20 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     let retryAssistantMsgId: string | null = null;
     /** Reasoning-only turns without prose count as progress (capped). */
     let consecutiveReasoningOnlyTurns = 0;
+    /** Anthropic cache-diagnostics: prior turn `msg_…` id for prefix comparison. */
+    let lastAnthropicMessageId: string | undefined;
 
     const billingBlock = recentBillingBlock.get(opts.input.selection.providerId);
     if (billingBlock && Date.now() - billingBlock.at < BILLING_BLOCK_TTL_MS) {
       emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: billingBlock.message });
       return { terminalError: billingBlock.message };
+    }
+
+    const accountPreflight = getProviderAccountSnapshot(opts.input.selection.providerId);
+    if (accountPreflight?.balanceAvailable === false) {
+      log.warn('provider balance low — continuing (warn-only)', {
+        providerId: opts.input.selection.providerId
+      });
     }
 
     const reportsSettings = opts.reportsSettings ?? resolveReportsSettings();
@@ -282,7 +303,12 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           snapshotRunState(runStateAcc, spin, consecutiveBadToolRounds)
         );
         const hostEnvXml = buildHostEnvironmentXml();
-        messages[0] = { role: 'system', content: buildSystemPrompt(harness, env, runStateXml, hostEnvXml) };
+        applyCacheLayers(messages, {
+          harness,
+          env,
+          runStateXml,
+          hostEnvironmentXml: hostEnvXml
+        });
 
         const fp = messagesSanitizeFingerprint(messages);
         const sanitized =
@@ -317,6 +343,12 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           ...(modelThinkingCaps !== undefined ? { modelThinkingCaps } : {}),
           ...(opts.input.conversationId !== undefined
             ? { conversationId: opts.input.conversationId }
+            : {}),
+          ...(opts.input.workspaceId !== undefined
+            ? { workspaceId: opts.input.workspaceId }
+            : {}),
+          ...(providerDialect === 'anthropic-native'
+            ? { previousAnthropicMessageId: lastAnthropicMessageId ?? null }
             : {})
         });
 
@@ -489,6 +521,39 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         consecutiveErrors = 0;
         runHadLlmProgress = true;
 
+        if (turn.anthropicMessageId) {
+          lastAnthropicMessageId = turn.anthropicMessageId;
+        }
+        if (
+          turn.anthropicCacheMissReason !== undefined &&
+          turn.anthropicCacheMissReason !== null
+        ) {
+          log.warn('anthropic prompt cache prefix diverged', {
+            iteration: iter,
+            providerId: opts.input.selection.providerId,
+            modelId: opts.input.selection.modelId,
+            cacheMissReason: turn.anthropicCacheMissReason
+          });
+        }
+        if (
+          iter > 0 &&
+          providerDialect !== undefined &&
+          providerDialectReportsPromptCache(providerDialect) &&
+          turn.usage &&
+          (turn.usage.cachedPromptTokens ?? 0) === 0 &&
+          turn.usage.promptTokens >= 1024
+        ) {
+          log.warn('prompt cache read near zero on multi-turn iteration', {
+            iteration: iter,
+            providerId: opts.input.selection.providerId,
+            modelId: opts.input.selection.modelId,
+            promptTokens: turn.usage.promptTokens,
+            ...(turn.anthropicCacheMissReason !== undefined
+              ? { cacheMissReason: turn.anthropicCacheMissReason }
+              : {})
+          });
+        }
+
         if (turn.hadReasoning && !turn.reasoningEndEmitted) {
           emit({
             kind: 'agent-reasoning-end',
@@ -598,7 +663,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             turn.assistantText.trim() ||
             'Could you clarify how you would like me to proceed?';
           if (!askUserCall.id) askUserCall.id = randomUUID();
-          messages.push({
+          insertHistoryBeforeTail(messages, {
             role: 'assistant',
             content: turn.assistantText.length > 0 ? turn.assistantText : null,
             ...(turn.reasoningText.length > 0 ? { reasoning_content: turn.reasoningText } : {}),
@@ -647,7 +712,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
 
         const assistantContent: string | null =
           actionTools.length > 0 && turn.assistantText.length === 0 ? null : turn.assistantText;
-        messages.push({
+        insertHistoryBeforeTail(messages, {
           role: 'assistant',
           content: assistantContent,
           ...(turn.reasoningText.length > 0 ? { reasoning_content: turn.reasoningText } : {}),
@@ -718,11 +783,6 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
                 log.warn('tool-round strike halt — consecutive failed tool rounds', {
                   consecutiveBadToolRounds,
                   iteration: iter,
-                  rootFailure: rootToolRoundFailure,
-                  lastFailure: lastToolRoundFailure
-                });
-                log.warn('tool-round strike halt', {
-                  consecutiveBadToolRounds,
                   rootFailure: rootToolRoundFailure,
                   lastFailure: lastToolRoundFailure
                 });
@@ -886,6 +946,10 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         ...(modelThinkingCaps !== undefined ? { modelThinkingCaps } : {}),
         ...(opts.input.conversationId !== undefined
           ? { conversationId: opts.input.conversationId }
+          : {}),
+        ...(opts.input.workspaceId !== undefined ? { workspaceId: opts.input.workspaceId } : {}),
+        ...(providerDialect === 'anthropic-native'
+          ? { previousAnthropicMessageId: lastAnthropicMessageId ?? null }
           : {})
       });
       const synthTurn = await handleAssistantTurn(synthReq, emit, argsDeltaTap);
@@ -1053,12 +1117,21 @@ const MAX_TRAILING_PROBE_STEPS = 8;
  * Stable sigil set lives in `TRAILING_SKIP_CODEPOINTS` above.
  */
 
-export function endsWithQuestionMark(s: string): boolean {
+const QUESTION_MARK_CODEPOINTS = new Set<number>([
+  0x3f /* '?' */,
+  0xff1f /* '？' fullwidth */
+]);
+
+const SENTENCE_END_CODEPOINTS = new Set<number>([
+  0x2e /* '.' */,
+  0x21 /* '!' */,
+  0x3002 /* '。' ideographic full stop */,
+  0xff01 /* '！' fullwidth exclamation */
+]);
+
+function endsWithMeaningfulCodePoint(s: string, terminals: ReadonlySet<number>): boolean {
   let end = s.length;
   for (let steps = 0; steps < MAX_TRAILING_PROBE_STEPS && end > 0; steps++) {
-    // Decode the code point ending at `end`. Handle the surrogate-
-    // pair case so non-BMP punctuation (rare but possible) doesn't
-    // cause a false miss.
     let cp: number;
     let consumed: number;
     const lo = s.charCodeAt(end - 1);
@@ -1075,17 +1148,26 @@ export function endsWithQuestionMark(s: string): boolean {
       cp = lo;
       consumed = 1;
     }
-    if (cp === 0x3f /* '?' */ || cp === 0xff1f /* '？' fullwidth */) return true;
+    if (terminals.has(cp)) return true;
     if (!TRAILING_SKIP_CODEPOINTS.has(cp)) return false;
     end -= consumed;
   }
   return false;
 }
 
+export function endsWithQuestionMark(s: string): boolean {
+  return endsWithMeaningfulCodePoint(s, QUESTION_MARK_CODEPOINTS);
+}
+
+/** True when prose ends with `.` / `!` (ASCII or common CJK/fullwidth forms). */
+export function endsWithSentenceEnd(s: string): boolean {
+  return endsWithMeaningfulCodePoint(s, SENTENCE_END_CODEPOINTS);
+}
+
 /**
  * True when prose-only assistant text should end the run without a
- * `finish` tool. Combines a lowered char threshold with the
- * question-mark probe so short greetings and clarifying questions
+ * `finish` tool. Combines a char threshold with question-mark and
+ * sentence-end probes so short direct answers and clarifying questions
  * clear the bar while filler ("Okay.") does not.
  */
 export function isImplicitFinish(prose: string): boolean {
@@ -1093,6 +1175,7 @@ export function isImplicitFinish(prose: string): boolean {
   if (t.length === 0) return false;
   if (t.length >= IMPLICIT_FINISH_MIN_CHARS) return true;
   if (endsWithQuestionMark(t)) return true;
+  if (t.length >= IMPLICIT_FINISH_MIN_SENTENCE_CHARS && endsWithSentenceEnd(t)) return true;
   return false;
 }
 

@@ -3,7 +3,7 @@
  * and an open-in-browser action with optional auto-open.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { ArrowUpRight, FileText } from 'lucide-react';
 import type { ToolCall, ToolResult } from '@shared/types/tool.js';
 import type { DiffStreamSnapshot } from '../../reducer/types.js';
@@ -17,6 +17,7 @@ import { useConversationsStore } from '../../../../store/useConversationsStore.j
 import { useChatStore } from '../../../../store/useChatStore.js';
 import { useSettingsStore } from '../../../../store/useSettingsStore.js';
 import { resolveReportsSettings } from '@shared/report/reportsSettings.js';
+import { consumeLiveReportAutoOpen } from './reportAutoOpenSession.js';
 import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../../../lib/shellIcons.js';
 import { timelineActionPillClassName } from '../../shared/rowStyles.js';
 import { cn } from '../../../../lib/cn.js';
@@ -48,6 +49,7 @@ export function ReportInvocation({
     (typeof diffStream?.filePath === 'string' ? diffStream.filePath : undefined);
 
   const conversationId = useChatStore((s) => s.conversationId);
+  const liveReportResultIds = useChatStore((s) => s.liveReportResultIds);
   const reports = resolveReportsSettings(useSettingsStore((s) => s.settings.ui));
   const workspaceId = useConversationsStore((s) => {
     if (!conversationId) return null;
@@ -56,20 +58,27 @@ export function ReportInvocation({
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
   const openWorkspaceId = workspaceId ?? activeWorkspaceId ?? undefined;
 
-  const autoOpenedRef = useRef<Set<string>>(new Set());
-
   useEffect(() => {
     if (partial || !result?.ok || !relPath || !reports.autoOpenReports) return;
-    const key = result.id ?? relPath;
-    if (autoOpenedRef.current.has(key)) return;
-    autoOpenedRef.current.add(key);
+    const callId = result.id;
+    if (!callId || !liveReportResultIds[callId]) return;
+    if (!consumeLiveReportAutoOpen(callId)) return;
     void openWorkspaceFile(relPath, {
       workspaceId: openWorkspaceId,
       kind: 'report',
       context: 'report-auto',
       title
     });
-  }, [partial, relPath, result?.id, result?.ok, openWorkspaceId, reports.autoOpenReports, title]);
+  }, [
+    partial,
+    relPath,
+    result?.id,
+    result?.ok,
+    openWorkspaceId,
+    reports.autoOpenReports,
+    title,
+    liveReportResultIds
+  ]);
 
   const summary = partial
     ? `writing "${title}"…`

@@ -1,15 +1,6 @@
 /**
  * Settle test — when the authoritative `tool-result` arrives, the
- * `preview (pending)` pane swaps to the `diff` pane and the
- * underlying `EditDiffView` container changes its `data-variant`
- * from `preview` to `authoritative`.
- *
- * The CSS animation itself (the `.vyotiq-diff-settle` cascade) is
- * not asserted here — happy-dom doesn't run animations. The
- * variant transition is the testable surface: the renderer keys
- * the diff container on `variant` so React unmounts the preview
- * tree and mounts the authoritative tree, which is what re-fires
- * the keyframe at runtime.
+ * pending card swaps to authoritative and `data-variant` updates.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -60,27 +51,21 @@ function makeResult(): ToolResult {
 }
 
 describe('EditInvocation — preview → authoritative settle', () => {
-  it('transitions the pane label and the variant attr when result lands', async () => {
+  it('transitions the status chip and variant attr when result lands', async () => {
     const { rerender, container } = render(<EditInvocation call={call} />);
 
-    // Pre-result: pane label "preview (pending)", variant=preview.
-    expect(screen.getByText(/preview \(pending\)/i)).toBeInTheDocument();
-    const previewNode = container.querySelector('[data-variant="preview"]');
+    expect(screen.getByText(/pending/i)).toBeInTheDocument();
+    const previewNode = container.querySelector('[data-snippet-diff][data-variant="preview"]');
     expect(previewNode).not.toBeNull();
 
-    // Result lands — row auto-collapses when no longer in-flight.
     rerender(<EditInvocation call={call} result={makeResult()} />);
     await userEvent.click(screen.getByRole('button', { name: /edit/i }));
 
-    // Pane label flips to "diff"; preview marker is gone.
-    expect(screen.queryByText(/preview \(pending\)/i)).toBeNull();
-    expect(screen.getByText(/^diff$/i)).toBeInTheDocument();
-    const authNode = container.querySelector('[data-variant="authoritative"]');
+    expect(screen.queryByText(/^pending$/i)).toBeNull();
+    const authNode = container.querySelector('[data-snippet-diff][data-variant="authoritative"]');
     expect(authNode).not.toBeNull();
-    expect(container.querySelector('[data-variant="preview"]')).toBeNull();
+    expect(container.querySelector('[data-snippet-diff][data-variant="preview"]')).toBeNull();
 
-    // Context lines from the authoritative hunk are visible — proves
-    // the swap is data-bound, not just label-bound.
     expect(screen.getByText('context_before')).toBeInTheDocument();
     expect(screen.getByText('context_after')).toBeInTheDocument();
   });

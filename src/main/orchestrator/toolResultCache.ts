@@ -24,6 +24,7 @@
  */
 
 import type { ToolName, ToolResult } from '@shared/types/tool.js';
+import { stableStringify } from '@shared/json/stableStringify.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child('orchestrator/toolResultCache');
@@ -149,8 +150,7 @@ export function lookupCachedResult(
 
   const banner =
     `[cache] This exact \`${name}\` call has already been issued ` +
-    `${entry.hits} time${entry.hits === 1 ? '' : 's'} earlier in this run ` +
-    `(${Math.round(sincePrev / 1000)}s ago). ` +
+    `${entry.hits} time${entry.hits === 1 ? '' : 's'} earlier in this run. ` +
     `The output has not changed. If you keep seeing this, move to a ` +
     `planning or edit step instead of re-reading.\n\n`;
 
@@ -240,17 +240,4 @@ export function recordToolResult(
  */
 export function clearRunCache(signal: AbortSignal): void {
   caches.delete(signal);
-}
-
-/**
- * Stable JSON string — sort object keys so `{a:1,b:2}` and `{b:2,a:1}`
- * produce identical cache keys. Shallow — tool argument shapes are
- * flat in practice and a full recursive sort would hurt readability
- * without measurable benefit.
- */
-function stableStringify(args: Record<string, unknown>): string {
-  const keys = Object.keys(args).sort();
-  const ordered: Record<string, unknown> = {};
-  for (const k of keys) ordered[k] = args[k];
-  return JSON.stringify(ordered);
 }

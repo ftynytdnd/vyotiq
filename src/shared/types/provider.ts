@@ -18,6 +18,8 @@
  * sees a single, dialect-agnostic `ChatStreamDelta` shape.
  */
 
+import type { ModelPricing } from '../providers/modelPricing.js';
+
 /** Wire dialects supported by the chat client. */
 export type ProviderDialect =
   | 'openai'
@@ -213,6 +215,18 @@ export interface ProviderConfig {
    * scoped to the provider that actually serves the model.
    */
   modelThinking?: Record<string, ThinkingEffort>;
+  /** True when a billing/admin API key is stored (value never sent to renderer). */
+  hasBillingApiKey?: boolean;
+}
+
+/** Provider record with API keys — only used in main process. */
+export interface ProviderWithKey extends ProviderConfig {
+  apiKey: string;
+  /**
+   * Optional billing / admin API key for account snapshot fetchers.
+   * Never exposed to the renderer.
+   */
+  billingApiKey?: string;
 }
 
 /**
@@ -262,6 +276,11 @@ export interface ModelInfo {
   /** Optional context window in tokens, if the provider exposes it. */
   contextWindow?: number;
   /**
+   * Per-model pricing when the upstream model list exposes it (OpenRouter,
+   * some routers). Normalized to USD per million tokens.
+   */
+  pricing?: ModelPricing;
+  /**
    * OpenRouter (and similar routers) list compatible request parameters
    * per model (`reasoning`, `include_reasoning`, etc.). Populated at
    * discovery when the upstream `/v1/models` payload includes them.
@@ -309,4 +328,11 @@ export interface ModelSelection {
    * per-model setting or provider default (omit wire fields).
    */
   thinkingEffort?: ThinkingEffort;
+}
+
+/** Push payload when background discovery refreshes a provider's model list. */
+export interface ProviderModelsUpdate {
+  providerId: string;
+  models: ModelInfo[];
+  lastDiscoveredAt: number;
 }

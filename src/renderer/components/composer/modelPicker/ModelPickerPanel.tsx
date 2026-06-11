@@ -14,12 +14,24 @@ import {
   EMPTY_LAST_MODEL_BY_WORKSPACE,
   useSettingsStore
 } from '../../../store/useSettingsStore.js';
+import { useProviderAccountStore } from '../../../store/useProviderAccountStore.js';
 import { useProviderStore } from '../../../store/useProviderStore.js';
+import {
+  formatProviderAccountLine,
+  isProviderAccountLow
+} from '../../../lib/formatProviderAccount.js';
 import { ProviderGroupHeader } from './ProviderGroupHeader.js';
 import { ModelRow } from './ModelRow.js';
 import { ModelPickerSidePanel } from './ModelPickerSidePanel.js';
 import { ModelPickerHints } from './ModelPickerHints.js';
 import { ModelPickerSectionHeader } from './ModelPickerSectionHeader.js';
+import {
+  buildPinnedModelKeys,
+  catalogModelCount,
+  modelPickerKey,
+  visibleCatalogGroups,
+  type CatalogProviderGroup
+} from './modelPickerCatalog.js';
 import { appPopoverPanelClassName } from '../../ui/SurfaceShell.js';
 import { Button } from '../../ui/Button.js';
 import { cn } from '../../../lib/cn.js';
@@ -39,7 +51,7 @@ type NavOption = {
 };
 
 function modelKey(providerId: string, modelId: string): string {
-  return `${providerId}::${modelId}`;
+  return modelPickerKey(providerId, modelId);
 }
 
 function parseModelKey(key: string): { providerId: string; modelId: string } | null {
@@ -109,6 +121,20 @@ export function ModelPickerPanel({
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
   }, [favorites, providers, trimmedQuery]);
+
+  const pinnedCatalogKeys = useMemo(
+    () => buildPinnedModelKeys(recentOptions, favoriteOptions, trimmedQuery.length > 0),
+    [recentOptions, favoriteOptions, trimmedQuery]
+  );
+
+  const visibleLocalGroups = useMemo(
+    () => visibleCatalogGroups(localGroups, pinnedCatalogKeys),
+    [localGroups, pinnedCatalogKeys]
+  );
+  const visibleRemoteGroups = useMemo(
+    () => visibleCatalogGroups(remoteGroups, pinnedCatalogKeys),
+    [remoteGroups, pinnedCatalogKeys]
+  );
 
   const navOptions: NavOption[] = useMemo(() => {
     if (trimmedQuery) {
@@ -184,6 +210,12 @@ export function ModelPickerPanel({
   }, [focusedNavKey]);
 
   const activeParsed = activeKey ? parseModelKey(activeKey) : null;
+  const accountProviderId = activeParsed?.providerId ?? value?.providerId;
+  const accountSnapshot = useProviderAccountStore((s) =>
+    accountProviderId ? s.snapshotFor(accountProviderId) : undefined
+  );
+  const accountLine = formatProviderAccountLine(accountSnapshot);
+  const accountLow = isProviderAccountLow(accountSnapshot);
   const activeProvider = activeParsed
     ? providers.find((p) => p.id === activeParsed.providerId)
     : undefined;
@@ -258,13 +290,10 @@ export function ModelPickerPanel({
     );
   };
 
-  const renderProviderCatalog = (
-    groups: Array<{ provider: ProviderConfig; models: ModelInfo[] }>,
-    keyPrefix: string
-  ) =>
+  const renderProviderCatalog = (groups: CatalogProviderGroup[], keyPrefix: string) =>
     groups.map((g) => (
       <div key={`${keyPrefix}-${g.provider.id}`} className="vx-model-picker-provider-group">
-        <ProviderGroupHeader provider={g.provider} />
+        <ProviderGroupHeader provider={g.provider} modelCount={g.models.length} />
         {g.models.map((m) => renderModelRow(g.provider, m, `${keyPrefix}-${g.provider.id}-${m.id}`))}
       </div>
     ));
@@ -322,7 +351,7 @@ export function ModelPickerPanel({
       className={cn(
         appPopoverPanelClassName,
         'vx-model-picker-panel',
-        'flex w-[min(48rem,calc(100vw-1.5rem))] max-h-[min(68vh,34rem)] flex-col p-1'
+        'flex h-full max-h-full min-h-0 w-full flex-col p-1'
       )}
     >
       <div className="vx-model-picker-search flex flex-col gap-1">
@@ -380,27 +409,46 @@ export function ModelPickerPanel({
             className="vx-model-picker-list scrollbar-stealth"
           >
             {!trimmedQuery && recentOptions.length > 0 && (
-              <div className="vx-model-picker-section py-1">
-                <ModelPickerSectionHeader label="Recent" variant="pinned" />
+              <div className="vx-model-picker-section">
+                <ModelPickerSectionHeader
+                  label="Recent"
+                  variant="pinned"
+                  count={recentOptions.length}
+                />
                 {renderPinnedRows(recentOptions, 'recent')}
               </div>
             )}
             {!trimmedQuery && favoriteOptions.length > 0 && (
-              <div className="vx-model-picker-section py-1">
-                <ModelPickerSectionHeader label="Favorites" variant="pinned" />
+              <div className="vx-model-picker-section">
+                <ModelPickerSectionHeader
+                  label="Favorites"
+                  variant="pinned"
+                  count={favoriteOptions.length}
+                />
                 {renderPinnedRows(favoriteOptions, 'fav')}
               </div>
             )}
-            {localGroups.length > 0 && (
-              <div className="vx-model-picker-section py-1">
-                <ModelPickerSectionHeader label="Local" variant="category" />
-                {renderProviderCatalog(localGroups, trimmedQuery ? 'search-local' : 'local')}
+            {visibleLocalGroups.length > 0 && (
+              <div className="vx-model-picker-section">
+                <ModelPickerSectionHeader
+                  label="Local"
+                  variant="category"
+                  count={catalogModelCount(visibleLocalGroups)}
+                />
+                {renderProviderCatalog(visibleLocalGroups, trimmedQuery ? 'search-local' : 'local')}
               </div>
             )}
-            {remoteGroups.length > 0 && (
-              <div className="vx-model-picker-section py-1">
-                <ModelPickerSectionHeader label="Cloud" variant="category" />
-                {renderProviderCatalog(remoteGroups, trimmedQuery ? 'search-cloud' : 'cloud')}
+            {visibleRemoteGroups.length > 0 && (
+              <div className="vx-model-picker-section">
+                <ModelPickerSectionHeader
+                  label="Cloud"
+                  variant="category"
+                  count={catalogModelCount(visibleRemoteGroups)}
+                />
+                {renderProviderCatalog(
+                  visibleRemoteGroups,
+                  trimmedQuery ? 'search-cloud' : 'cloud'
+                )}
               </div>
             )}
             {navOptions.length === 0 && (
@@ -424,16 +472,47 @@ export function ModelPickerPanel({
             />
           ) : (
             <aside
-              className="vx-model-picker-side flex flex-col justify-center px-2.5 py-3"
+              className="vx-model-picker-side vx-model-picker-side--empty flex flex-col justify-center px-2 py-2"
               aria-label="Model options"
             >
               <p className="text-meta leading-snug text-text-faint">
-                Hover or arrow to a model to configure effort and context.
+                Arrow to a model for effort and context.
               </p>
             </aside>
           )}
         </div>
       )}
+
+      {!showEmptyState ? (
+        <footer className="vx-model-picker-footer flex shrink-0 items-center justify-between gap-2 border-t border-border-subtle/25 px-2 py-1">
+          <div className="min-w-0 flex flex-col gap-0.5">
+            <span className="font-mono text-meta tabular-nums text-text-faint">
+              {navOptions.length} model{navOptions.length === 1 ? '' : 's'}
+            </span>
+            {accountLine ? (
+              <span
+                className={cn(
+                  'truncate font-mono text-meta tabular-nums',
+                  accountLow ? 'text-warning' : 'text-text-faint'
+                )}
+                title={accountLine}
+              >
+                {accountLine}
+              </span>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              onOpenProviders();
+              onClose();
+            }}
+            className="vx-btn vx-btn-quiet px-1.5 py-0.5 font-mono text-meta text-text-faint hover:text-text-secondary"
+          >
+            Manage providers
+          </button>
+        </footer>
+      ) : null}
     </div>
   );
 }

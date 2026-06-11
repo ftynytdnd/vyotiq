@@ -17,6 +17,7 @@ export function AskUserOverlayHost() {
   );
   const pending = findPendingAskUserEvent(events, awaitingAskUser);
   if (!pending || pending.status === 'submitted') return null;
+  if (pending.source !== 'host-report-gate') return null;
 
   return (
     <ComposerDialogPortal>

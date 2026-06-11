@@ -16,6 +16,7 @@ import { flushAll as flushConversations } from './conversations/conversationStor
 import { flushAll as flushCheckpoints } from './checkpoints/index.js';
 import { flushWorkspaceState } from './workspace/workspaceState.js';
 import { abortRun, listActiveRuns } from './orchestrator/AgentV.js';
+import { getSettings } from './settings/settingsStore.js';
 import { sweepOrphanAttachments } from './attachments/gc.js';
 const log = logger.child('boot');
 
@@ -79,6 +80,7 @@ async function bootstrap() {
   await app.whenReady();
 
   registerIpc();
+  await getSettings().catch((err) => log.warn('settings preload failed; using defaults', { err }));
   log.info('app ready; ipc registered');
 
   // Attachment GC: conversation-delete hook is always active (see
@@ -122,6 +124,7 @@ app.on('before-quit', (event) => {
   isShuttingDown = true;
   event.preventDefault();
   Promise.allSettled([
+    import('./ipc/providers.ipc.js').then((m) => m.teardownProvidersIpc()),
     flushConversations(),
     flushCheckpoints(),
     // Belt-and-suspenders re-write of the workspace registry. Public

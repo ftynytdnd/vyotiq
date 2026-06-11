@@ -21,7 +21,8 @@ describe('timelineVirtualize', () => {
   });
 
   it('estimates taller tail turns for streaming growth', () => {
-    expect(estimateTailTurnHeight('12:0')).toBe(180);
-    expect(estimateTailTurnHeight('12:600')).toBeGreaterThan(180);
+    expect(estimateTailTurnHeight('12:0')).toBe(200);
+    expect(estimateTailTurnHeight('12:600')).toBeGreaterThan(200);
+    expect(estimateTailTurnHeight('12:600')).toBeLessThanOrEqual(4800);
   });
 });

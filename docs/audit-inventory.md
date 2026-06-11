@@ -40,3 +40,4 @@ Ledger of remediation items closed in the 2026-06 full-app pass. Do not resurrec
 - `npm run typecheck` — pass
 - `npm test` — 1867+ passed, 2 skipped (happy-dom limits above)
 - `npm run knip` — 0 unused files under `src/`
+- `npm run build

@@ -9,7 +9,8 @@ vi.mock('@main/orchestrator/loop/index.js', () => ({
   runOrchestratorLoop
 }));
 vi.mock('@main/harness/harnessLoader.js', () => ({
-  buildOrchestratorSystemPrompt: () => ''
+  buildOrchestratorSystemPrompt: () => '',
+  buildStaticFewShotXml: () => '<static_examples></static_examples>'
 }));
 vi.mock('@main/orchestrator/replay/index.js', () => ({
   replayTranscript: vi.fn(() => [])

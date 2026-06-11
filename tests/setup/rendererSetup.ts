@@ -59,7 +59,12 @@ function makeStubApi() {
       update: asyncNoop,
       remove: asyncNoop,
       discoverModels: vi.fn(async () => []),
-      test: vi.fn(async () => ({ ok: true, message: 'ok' }))
+      test: vi.fn(async () => ({ ok: true, message: 'ok' })),
+      getAccounts: vi.fn(async () => ({})),
+      refreshAccounts: vi.fn(async () => ({})),
+      setAccountPollSource: asyncNoop,
+      onAccountsUpdated: subscribe,
+      onModelsUpdated: subscribe
     },
     chat: {
       send: vi.fn(async () => ({ ok: true, conversationId: 'c1' })),
@@ -101,6 +106,11 @@ function makeStubApi() {
     settings: {
       get: vi.fn(async () => ({})),
       set: vi.fn(async (patch: object) => patch)
+    },
+    promptCache: {
+      getStatus: vi.fn(async () => ({
+        geminiExplicitCache: { state: 'disabled' as const }
+      }))
     },
     app: {
       info: vi.fn(async () => ({

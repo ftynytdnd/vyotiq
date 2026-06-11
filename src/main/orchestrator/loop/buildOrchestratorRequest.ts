@@ -46,6 +46,18 @@ const SYNTHESIS_INSTRUCTION =
   'user-facing answer for the task now as plain text — summarize what was ' +
   'done, what was found, and any remaining caveats.';
 
+/** Merge wrap-up prose into the turn slot so cache-layered indices stay stable. */
+function appendWrapUpInstruction(messages: readonly ChatMessage[]): ChatMessage[] {
+  const copy = [...messages];
+  const last = copy[copy.length - 1];
+  if (last?.role === 'user') {
+    const prev = typeof last.content === 'string' ? last.content : '';
+    copy[copy.length - 1] = { role: 'user', content: `${prev}\n\n${SYNTHESIS_INSTRUCTION}` };
+    return copy;
+  }
+  return [...copy, { role: 'user', content: SYNTHESIS_INSTRUCTION }];
+}
+
 export function buildOrchestratorRequest(opts: {
   selection: ModelSelection;
   messages: ChatMessage[];
@@ -66,6 +78,8 @@ export function buildOrchestratorRequest(opts: {
    */
   omitToolChoice?: boolean;
   conversationId?: string;
+  workspaceId?: string;
+  previousAnthropicMessageId?: string | null;
 }): ChatStreamRequest {
   // Thinking models that reject a `tool_choice` field (DeepSeek V4):
   // omit the field on every turn, and on wrap-up drop the tools array
@@ -92,9 +106,7 @@ export function buildOrchestratorRequest(opts: {
   const tools =
     opts.wrapUp && !toolChoiceSafe ? [] : toolSchemasFor(AGENT_TOOLS);
 
-  const messages = opts.wrapUp
-    ? [...opts.messages, { role: 'user' as const, content: SYNTHESIS_INSTRUCTION }]
-    : opts.messages;
+  const messages = opts.wrapUp ? appendWrapUpInstruction(opts.messages) : opts.messages;
 
   return {
     providerId: opts.selection.providerId,
@@ -109,6 +121,10 @@ export function buildOrchestratorRequest(opts: {
     signal: opts.signal,
     ...(opts.conversationId !== undefined
       ? { conversationId: opts.conversationId }
+      : {}),
+    ...(opts.workspaceId !== undefined ? { workspaceId: opts.workspaceId } : {}),
+    ...(opts.previousAnthropicMessageId !== undefined
+      ? { previousAnthropicMessageId: opts.previousAnthropicMessageId }
       : {})
   };
 }

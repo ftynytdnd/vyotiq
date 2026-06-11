@@ -18,6 +18,7 @@ import {
   selectEnabledProviderIds,
   useProviderStore
 } from './store/useProviderStore.js';
+import { useProviderAccountStore } from './store/useProviderAccountStore.js';
 import { retryDynamicImport } from './lib/retryDynamicImport.js';
 import { useWorkspaceStore } from './store/useWorkspaceStore.js';
 import { useSettingsStore, selectSettingsReady } from './store/useSettingsStore.js';
@@ -267,11 +268,13 @@ export default function App() {
       ? (activeIdByWorkspace[activeWorkspaceId] ?? null)
       : null;
 
-  // Workspace switch: follow the persisted last-active slot for the
-  // newly active workspace. Skip when the mirror already shows that
-  // hydrated conversation — avoids redundant `select()` supersede churn.
+  // Follow the persisted last-active slot for the active workspace once
+  // settings + the conversation catalogue are ready. Skip when the mirror
+  // already shows that hydrated conversation — avoids redundant
+  // `select()` supersede churn from duplicate boot-time effects.
   useEffect(() => {
     if (!activeMapHydrated || !activeWorkspaceId) return;
+    if (conversationsList.length === 0) return;
     if (!slotIsValidForWorkspace || !activeSlotConversationId) {
       useChatStore.getState().setActiveConversation(null);
       return;
@@ -288,36 +291,9 @@ export default function App() {
   }, [
     activeMapHydrated,
     activeWorkspaceId,
-    activeSlotConversationId,
-    slotIsValidForWorkspace,
-    selectConversation
-  ]);
-
-  // List validation: once the conversation catalogue arrives, re-check
-  // that the active workspace slot still resolves. Does not re-select
-  // when the user is already viewing a valid hydrated conversation.
-  useEffect(() => {
-    if (!activeMapHydrated || !activeWorkspaceId || conversationsList.length === 0) return;
-    if (!slotIsValidForWorkspace) {
-      useChatStore.getState().setActiveConversation(null);
-      return;
-    }
-    if (!activeSlotConversationId) return;
-    const chat = useChatStore.getState();
-    const conv = useConversationsStore.getState();
-    if (
-      chat.conversationId === activeSlotConversationId &&
-      conv.hydratedIds.has(activeSlotConversationId)
-    ) {
-      return;
-    }
-    void selectConversation(activeSlotConversationId);
-  }, [
-    activeMapHydrated,
-    activeWorkspaceId,
     conversationsList,
-    slotIsValidForWorkspace,
     activeSlotConversationId,
+    slotIsValidForWorkspace,
     selectConversation
   ]);
 
@@ -339,6 +315,21 @@ export default function App() {
       cancelled = true;
     };
   }, [enabledProviderIds, discoverCached]);
+
+  // Live provider account snapshots (5s main-process poller + push updates).
+  const hydrateAccounts = useProviderAccountStore((s) => s.hydrate);
+  const applyAccountMap = useProviderAccountStore((s) => s.applyMap);
+  const applyModelsUpdate = useProviderStore((s) => s.applyModelsUpdate);
+  useEffect(() => {
+    void hydrateAccounts();
+    const off = vyotiq.providers.onAccountsUpdated(applyAccountMap);
+    return off;
+  }, [hydrateAccounts, applyAccountMap]);
+
+  useEffect(() => {
+    const off = vyotiq.providers.onModelsUpdated(applyModelsUpdate);
+    return off;
+  }, [applyModelsUpdate]);
 
   const openSettingsSection = (section?: SettingsSectionId | 'providers' | 'memory') => {
     openSettings(section);
@@ -369,11 +360,12 @@ export default function App() {
   // File menu actions are wired here (the only place that knows the
   // settings modal opener) and threaded down into the title bar.
   const fileActions = {
-    newConversation: () => newConversation(),
+    newConversation: () => void newConversation(),
     openWorkspace: () => void pickWorkspace(),
     setWorkspacePath: openSetWorkspacePath,
     openSettings: () => toggleSettings(),
-    quit: () => void vyotiq.window.close()
+    quit: () => void vyotiq.window.close(),
+    chatActionsEnabled: !settingsOpen
   };
 
   // Bind window-level accelerators that match the labels in
@@ -389,6 +381,7 @@ export default function App() {
     newConversation: fileActions.newConversation,
     openWorkspace: fileActions.openWorkspace,
     openSettings: () => toggleSettings(),
+    blockChatActions: () => useAppViewStore.getState().view === 'settings',
     reload: () => void vyotiq.window.reload(),
     toggleDevTools: () => void vyotiq.window.toggleDevTools()
   });
@@ -427,9 +420,7 @@ export default function App() {
           style={{
             paddingTop: 'var(--titlebar-h)',
             paddingLeft: DOCK_STRIP_WIDTH,
-            // Mirror the dock strip inset so `mx-auto` reading columns
-            // (timeline + composer) sit on the window's visual center.
-            paddingRight: DOCK_STRIP_WIDTH
+            paddingRight: settingsOpen ? 0 : DOCK_STRIP_WIDTH
           }}
           inert={overlayOpen ? true : undefined}
           aria-hidden={overlayOpen ? true : undefined}

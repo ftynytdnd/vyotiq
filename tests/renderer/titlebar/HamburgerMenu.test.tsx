@@ -48,4 +48,16 @@ describe('HamburgerMenu', () => {
     expect(screen.queryByRole('menuitem', { name: /Keyboard shortcuts/i })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: /Toggle DevTools/i })).toBeNull();
   });
+
+  it('hides chat and workspace rows when chatActionsEnabled is false', async () => {
+    render(
+      <HamburgerMenu
+        fileActions={{ ...fileActions, chatActionsEnabled: false }}
+      />
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Menu' }));
+    expect(screen.queryByRole('menuitem', { name: /New chat/i })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /Open workspace/i })).toBeNull();
+    expect(screen.getByRole('menuitem', { name: /Settings/i })).toBeInTheDocument();
+  });
 });

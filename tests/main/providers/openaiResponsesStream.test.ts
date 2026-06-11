@@ -63,4 +63,68 @@ describe('streamOpenAiResponses', () => {
     expect(parsed.stream).toBe(true);
     expect(parsed.reasoning).toEqual({ effort: 'high' });
   });
+
+  it('includes prompt_cache_key on responses body when workspace and conversation ids set', async () => {
+    const sse =
+      'data: {"type":"response.output_text.delta","delta":"Hi"}\n\n' +
+      'data: [DONE]\n\n';
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(new TextEncoder().encode(sse));
+        c.close();
+      }
+    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      body
+    } as Response);
+
+    for await (const _ of streamChat({
+      providerId: 'p',
+      model: 'gpt-5.3',
+      messages: [{ role: 'user', content: 'hello' }],
+      workspaceId: 'ws-9',
+      conversationId: 'conv-9'
+    })) {
+      /* drain */
+    }
+
+    const parsed = JSON.parse(String((fetchMock.mock.calls[0]![1] as RequestInit).body)) as {
+      prompt_cache_key?: string;
+      prompt_cache_retention?: string;
+    };
+    expect(parsed.prompt_cache_key).toBe('ws-9:conv-9');
+    expect(parsed.prompt_cache_retention).toBe('24h');
+  });
+
+  it('normalizes input_tokens_details.cached_tokens into cachedPromptTokens', async () => {
+    const sse =
+      'data: {"type":"response.output_text.delta","delta":"Hi"}\n\n' +
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":2048,"output_tokens":64,"total_tokens":2112,"input_tokens_details":{"cached_tokens":1536},"output_tokens_details":{"reasoning_tokens":12}}}}\n\n' +
+      'data: [DONE]\n\n';
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(new TextEncoder().encode(sse));
+        c.close();
+      }
+    });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      body
+    } as Response);
+
+    let usage: { cachedPromptTokens?: number; promptTokens?: number } | undefined;
+    for await (const d of streamChat({
+      providerId: 'p',
+      model: 'gpt-5.3',
+      messages: [{ role: 'user', content: 'hello' }]
+    })) {
+      if (d.usage) usage = d.usage;
+    }
+
+    expect(usage?.promptTokens).toBe(2048);
+    expect(usage?.cachedPromptTokens).toBe(1536);
+  });
 });

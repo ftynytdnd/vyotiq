@@ -99,6 +99,8 @@ describe('discoverModels (OpenRouter shape)', () => {
       expect(gpt).toBeDefined();
       expect(gpt?.contextWindow).toBe(128000);
       expect(gpt?.label).toBe('OpenAI: GPT-4o');
+      expect(gpt?.pricing?.inputPerMillion).toBeCloseTo(2.5, 4);
+      expect(gpt?.pricing?.outputPerMillion).toBeCloseTo(10, 4);
       expect(gpt?.supportedParameters).toContain('reasoning');
       expect(gpt?.thinking?.supported).toBe(true);
       expect(gpt?.thinking?.wireStyle).toBe('openai-reasoning');

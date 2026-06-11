@@ -2,10 +2,6 @@
  * ModelPicker — host component. Owns the trigger pill and delegates the
  * popover panel to the portal-based `Popover` primitive so the panel
  * escapes the composer's `overflow:hidden` clip.
- *
- * Outside-click, Escape, and resize/scroll repositioning are handled by
- * `Popover`; this file only owns whether the panel is open and the
- * layout revision (which the popover repositions against).
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -15,39 +11,49 @@ import { ModelPickerPanel } from './ModelPickerPanel.js';
 import { Popover } from '../../ui/Popover.js';
 import { useUiStore } from '../../../store/useUiStore.js';
 import { DOCK_STRIP_WIDTH } from '../../dock/dockShared.js';
+import { useModelPickerCollisionPadding } from './useModelPickerCollisionPadding.js';
+import { useProviderAccountPollSource } from '../../../lib/useProviderAccountPollSource.js';
 
 interface ModelPickerProps {
   value: ModelSelection | null;
   onChange: (selection: ModelSelection) => void;
-  /** Opens Settings → providers (empty state CTA in panel). */
   onOpenProviders: () => void;
+  /** Empty-chat landing — anchor to composer shell, auto-flip above/below. */
+  landing?: boolean;
+  /** Composer shell — used as popover anchor on landing. */
+  anchorRef?: React.RefObject<HTMLElement | null>;
 }
 
-export function ModelPicker({ value, onChange, onOpenProviders }: ModelPickerProps) {
+export function ModelPicker({
+  value,
+  onChange,
+  onOpenProviders,
+  landing = false,
+  anchorRef
+}: ModelPickerProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dockExpanded = useUiStore((s) => s.dockExpanded);
   const dockWidth = useUiStore((s) => s.dockWidth);
+  const collisionPadding = useModelPickerCollisionPadding();
 
-  // Bump the popover's `revision` while the dock transition is in
-  // flight so the panel re-anchors smoothly.
+  useProviderAccountPollSource('model-picker', open);
+
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     if (!open) return;
     let frame = 0;
     let ticks = 0;
-    const MAX_TICKS = 16;
+    const MAX_TICKS = 20;
     const tick = () => {
       ticks += 1;
       setRevision((r) => r + 1);
-      if (ticks < MAX_TICKS) {
-        frame = requestAnimationFrame(tick);
-      }
+      if (ticks < MAX_TICKS) frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dockExpanded, dockWidth, DOCK_STRIP_WIDTH]);
+  }, [dockExpanded, dockWidth, DOCK_STRIP_WIDTH, open, landing]);
 
   return (
     <>
@@ -61,11 +67,13 @@ export function ModelPicker({ value, onChange, onOpenProviders }: ModelPickerPro
         open={open}
         onClose={() => setOpen(false)}
         triggerRef={triggerRef}
-        align="start"
-        preferSide="top"
-        anchorStrict
-        collisionPadding={{ bottom: 56, top: 12 }}
+        anchorRef={anchorRef}
+        align={anchorRef ? 'fit' : 'start'}
+        preferSide={landing ? 'auto' : 'top'}
+        anchorStrict={!!anchorRef}
+        collisionPadding={collisionPadding}
         revision={revision}
+        fitMaxWidth={640}
       >
         <ModelPickerPanel
           value={value}

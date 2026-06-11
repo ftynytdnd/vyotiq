@@ -1,21 +1,45 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { AskUserRow } from '@renderer/components/timeline/rows/AskUserRow.js';
+import { useChatStore } from '@renderer/store/useChatStore';
+import { INITIAL_TIMELINE_STATE } from '@renderer/components/timeline/reducer/types';
+import { emptySlice } from '@renderer/store/chatStoreTypes';
+import type { TimelineEvent } from '@shared/types/chat';
+
+const askEvent = {
+  kind: 'ask-user-prompt',
+  id: 'prompt-1',
+  ts: 1,
+  displayText: 'Pick one\n  - Alpha (a)',
+  toolCallId: 'tc-1',
+  runId: 'run-1',
+  payload: {
+    questions: [
+      {
+        id: 'q1',
+        prompt: 'Pick one',
+        options: [{ id: 'a', label: 'Alpha' }]
+      }
+    ]
+  }
+} satisfies TimelineEvent;
 
 describe('AskUserRow', () => {
-  it('renders compact summary without plain-text preview details', () => {
+  beforeEach(() => {
+    useChatStore.setState({
+      ...INITIAL_TIMELINE_STATE,
+      slices: { 'conv-1': { ...emptySlice('conv-1'), events: [askEvent] } },
+      conversationId: 'conv-1',
+      awaitingAskUser: true,
+      events: [askEvent]
+    });
+  });
+
+  it('renders inline form when pending ask_user matches this row', () => {
     const { container } = render(
       <AskUserRow
-        payload={{
-          questions: [
-            {
-              id: 'q1',
-              prompt: 'Pick one',
-              options: [{ id: 'a', label: 'Alpha' }]
-            }
-          ]
-        }}
-        displayText="Pick one\n  - Alpha (a)"
+        payload={askEvent.payload}
+        displayText={askEvent.displayText}
         promptEventId="prompt-1"
         toolCallId="tc-1"
         runId="run-1"
@@ -23,8 +47,8 @@ describe('AskUserRow', () => {
       />
     );
     expect(screen.getByText('Clarifying questions')).toBeTruthy();
-    expect(screen.getByText(/panel above the composer/i)).toBeTruthy();
-    expect(container.querySelector('details')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Submit answers' })).toBeTruthy();
+    expect(container.querySelector('[data-ask-user-form]')).not.toBeNull();
     expect(container.querySelector('[data-ask-user-overlay]')).toBeNull();
   });
 });

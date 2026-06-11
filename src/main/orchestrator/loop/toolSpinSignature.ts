@@ -41,6 +41,8 @@
  *     surface for the same condition.
  */
 
+import { stableStringify } from '@shared/json/stableStringify.js';
+
 /**
  * Number of consecutive identical rounds that surface the signature
  * as "hot" in `<run_state>.spin_signature_hot`. Pure observability —
@@ -114,9 +116,5 @@ export function spinHotSignature(state: SpinSignatureBuffer): string | null {
  * same normalization.
  */
 export function toolCallSignature(name: string, args: Record<string, unknown>): string {
-  // Sort keys so `{a:1,b:2}` and `{b:2,a:1}` hash identically.
-  const sortedKeys = Object.keys(args).sort();
-  const stable: Record<string, unknown> = {};
-  for (const k of sortedKeys) stable[k] = args[k];
-  return `${name}|${JSON.stringify(stable)}`;
+  return `${name}|${stableStringify(args)}`;
 }

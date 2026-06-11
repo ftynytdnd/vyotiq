@@ -7,6 +7,7 @@
  * self-correction retry path.
  */
 
+import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
 import { promises as fs } from 'node:fs';
 import { escapeXmlAttr, wrapXml } from './envelope/index.js';
@@ -126,26 +127,9 @@ async function sessionContextBody(
  *  for the full dock conversation list when it actually needs it. */
 const PRIOR_CONVERSATIONS_LIMIT = 5;
 
-/**
- * Render a coarse "x ago" string for an updatedAt timestamp. Pure UI
- * sugar so the agent can sort prior conversations by recency at a
- * glance without having to convert epoch ms itself. Bounds:
- *   < 60s  → "just now"
- *   < 60m  → "Nm ago"
- *   < 24h  → "Nh ago"
- *   < 30d  → "Nd ago"
- *   else   → ISO date prefix.
- */
-function relativeAge(updatedAt: number): string {
-  const deltaMs = Date.now() - updatedAt;
-  if (deltaMs < 60_000) return 'just now';
-  const m = Math.floor(deltaMs / 60_000);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 30) return `${d}d ago`;
-  return new Date(updatedAt).toISOString().slice(0, 10);
+/** Stable ISO timestamp for prior-conversation rows (prompt-cache safe). */
+function formatUpdatedAtIso(updatedAt: number): string {
+  return new Date(updatedAt).toISOString();
 }
 
 /**
@@ -193,7 +177,7 @@ async function priorConversationsBody(
       const model = m.lastProviderId && m.lastModelId
         ? ` | ${m.lastProviderId}/${m.lastModelId}`
         : '';
-      return `- id=${m.id} | ${title} | ${relativeAge(m.updatedAt)} | ${m.eventCount} events${model}`;
+      return `- id=${m.id} | ${title} | ${formatUpdatedAtIso(m.updatedAt)} | ${m.eventCount} events${model}`;
     });
     const more = others.length > top.length
       ? `\n(${others.length - top.length} older conversation${others.length - top.length === 1 ? '' : 's'} not shown — call \`recall\` with \`action: 'list'\` for the full set.)`
@@ -254,12 +238,46 @@ export async function buildContextEnvelope(
         .join('\n\n');
 
   return {
-    workspaceXml: wrapXml('workspace_context', topLevel),
+    workspaceXml: getStableWorkspaceXml(workspaceId, workspacePath, topLevel),
     sessionXml: wrapXml('session_context', sessionBody),
     priorConversationsXml: wrapXml('prior_conversations', priorBody),
     memoryXml: wrapXml('recent_memory', memoryBody),
     metaRulesXml: wrapXml('meta_rules', mem.metaRules.trim())
   };
+}
+
+/** Fingerprint-gated workspace XML — reuse identical listing strings. */
+const workspaceXmlByFingerprint = new Map<string, { fingerprint: string; workspaceXml: string }>();
+
+function workspaceCacheKey(workspaceId: string | undefined, workspacePath: string | undefined): string {
+  return `${workspaceId ?? ''}\u0000${workspacePath ?? ''}`;
+}
+
+function fingerprintWorkspaceBody(body: string): string {
+  return createHash('sha256').update(body).digest('hex');
+}
+
+/**
+ * Returns a stable `<workspace_context>` wrapper. Skips re-wrapping when
+ * the top-level listing body is byte-identical to the last value for this
+ * workspace — keeps the prompt prefix stable for provider-side caching.
+ */
+export function getStableWorkspaceXml(
+  workspaceId: string | undefined,
+  workspacePath: string | undefined,
+  topLevelBody: string
+): string {
+  const key = workspaceCacheKey(workspaceId, workspacePath);
+  const fingerprint = fingerprintWorkspaceBody(topLevelBody);
+  const hit = workspaceXmlByFingerprint.get(key);
+  if (hit && hit.fingerprint === fingerprint) return hit.workspaceXml;
+  const workspaceXml = wrapXml('workspace_context', topLevelBody);
+  workspaceXmlByFingerprint.set(key, { fingerprint, workspaceXml });
+  return workspaceXml;
+}
+
+export function __resetWorkspaceXmlCacheForTests(): void {
+  workspaceXmlByFingerprint.clear();
 }
 
 const ENVELOPE_TTL_MS = 3_000;

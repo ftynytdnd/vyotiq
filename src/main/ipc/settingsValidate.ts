@@ -30,7 +30,7 @@ const UI_RECORD_KEYS = [
   'pinnedConversationIds'
 ] as const;
 
-const UI_NESTED_OBJECT_KEYS = ['reports'] as const;
+const UI_NESTED_OBJECT_KEYS = ['reports', 'promptCaching'] as const;
 
 const REPORTS_BOOLEAN_KEYS = [
   'autoOpenReports',
@@ -38,6 +38,13 @@ const REPORTS_BOOLEAN_KEYS = [
   'promptForReportAfterEdits',
   'enableAiRunSummary'
 ] as const;
+
+const PROMPT_CACHING_BOOLEAN_KEYS = [
+  'anthropicCacheDiagnostics',
+  'geminiExplicitCache'
+] as const;
+
+const PROMPT_CACHING_TTL_VALUES = ['5m', '1h'] as const;
 
 const THEME_VALUES = ['dark', 'light', 'system'] as const;
 const DENSITY_VALUES = ['compact', 'balanced', 'airy'] as const;
@@ -70,7 +77,9 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
       (UI_STRING_KEYS as readonly string[]).includes(key) ||
       (UI_RECORD_KEYS as readonly string[]).includes(key) ||
       (UI_NESTED_OBJECT_KEYS as readonly string[]).includes(key) ||
-      key === 'favoriteModels';
+      key === 'favoriteModels' ||
+      key === 'workspaceSpendUsd' ||
+      key === 'workspaceSpendIncrement';
     if (!allowed) {
       throw new Error(`${channel}: patch.ui.${key} is not a recognized ui field`);
     }
@@ -152,6 +161,27 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
       assertString(channel, `patch.ui.lastModelByWorkspace[${wsId}].modelId`, s.modelId);
     }
   }
+  if ('workspaceSpendUsd' in ui && ui.workspaceSpendUsd !== undefined) {
+    assertObject(channel, 'patch.ui.workspaceSpendUsd', ui.workspaceSpendUsd);
+    const map = ui.workspaceSpendUsd as Record<string, unknown>;
+    assertRecordKeyCount(channel, 'patch.ui.workspaceSpendUsd', map, UI_RECORD_MAX_KEYS);
+    for (const [wsId, spend] of Object.entries(map)) {
+      assertString(channel, 'patch.ui.workspaceSpendUsd key', wsId);
+      assertNumber(channel, `patch.ui.workspaceSpendUsd[${wsId}]`, spend, { min: 0, max: 1_000_000 });
+    }
+  }
+  if ('workspaceSpendIncrement' in ui && ui.workspaceSpendIncrement !== undefined) {
+    assertObject(channel, 'patch.ui.workspaceSpendIncrement', ui.workspaceSpendIncrement);
+    const map = ui.workspaceSpendIncrement as Record<string, unknown>;
+    assertRecordKeyCount(channel, 'patch.ui.workspaceSpendIncrement', map, UI_RECORD_MAX_KEYS);
+    for (const [wsId, delta] of Object.entries(map)) {
+      assertString(channel, 'patch.ui.workspaceSpendIncrement key', wsId);
+      assertNumber(channel, `patch.ui.workspaceSpendIncrement[${wsId}]`, delta, {
+        min: 0,
+        max: 1_000_000
+      });
+    }
+  }
   if ('pinnedConversationIds' in ui && ui.pinnedConversationIds !== undefined) {
     assertStringArray(channel, 'patch.ui.pinnedConversationIds', ui.pinnedConversationIds, {
       maxItems: UI_RECORD_MAX_KEYS
@@ -169,6 +199,33 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
       if (k in reports && reports[k] !== undefined) {
         assertBoolean(channel, `patch.ui.reports.${k}`, reports[k]);
       }
+    }
+  }
+  if ('promptCaching' in ui && ui.promptCaching !== undefined) {
+    assertObject(channel, 'patch.ui.promptCaching', ui.promptCaching);
+    const promptCaching = ui.promptCaching as Record<string, unknown>;
+    for (const key of Object.keys(promptCaching)) {
+      const allowed =
+        (PROMPT_CACHING_BOOLEAN_KEYS as readonly string[]).includes(key) ||
+        key === 'anthropicCacheTtl';
+      if (!allowed) {
+        throw new Error(
+          `${channel}: patch.ui.promptCaching.${key} is not a recognized promptCaching field`
+        );
+      }
+    }
+    for (const k of PROMPT_CACHING_BOOLEAN_KEYS) {
+      if (k in promptCaching && promptCaching[k] !== undefined) {
+        assertBoolean(channel, `patch.ui.promptCaching.${k}`, promptCaching[k]);
+      }
+    }
+    if ('anthropicCacheTtl' in promptCaching && promptCaching.anthropicCacheTtl !== undefined) {
+      assertEnum(
+        channel,
+        'patch.ui.promptCaching.anthropicCacheTtl',
+        promptCaching.anthropicCacheTtl,
+        PROMPT_CACHING_TTL_VALUES
+      );
     }
   }
 }

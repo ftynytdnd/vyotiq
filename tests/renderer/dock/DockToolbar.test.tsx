@@ -56,4 +56,21 @@ describe('DockToolbar', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
     expect(onOpenSettings).toHaveBeenCalledOnce();
   });
+
+  it('shows only back in settings strip mode', () => {
+    render(
+      <DockToolbar
+        layout="vertical"
+        dockStyle
+        settingsMode
+        onBackFromSettings={vi.fn()}
+        {...baseProps}
+        collapseIcon="right"
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Back to chat' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Search chats and files' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull();
+  });
 });

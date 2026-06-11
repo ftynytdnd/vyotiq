@@ -17,9 +17,11 @@ import { normalizeBaseUrl as normalizeBaseUrlShared } from '@shared/providers/no
 import { defaultMaxConcurrentStreamsForDialect } from '@shared/providers/providerConcurrencyDefaults.js';
 import { DEFAULT_ANTHROPIC_BETAS, normalizeModelThinkingMap } from '@shared/providers/thinkingEffort.js';
 import { readEncryptedJson, writeEncryptedJson } from '../secrets/safeStore.js';
+import { evictProviderCaches } from './evictProviderCaches.js';
 
 interface PersistedProvider extends ProviderConfig {
   apiKey: string;
+  billingApiKey?: string;
 }
 
 let cache: PersistedProvider[] | null = null;
@@ -110,9 +112,10 @@ async function persistCandidate(list: PersistedProvider[]): Promise<void> {
 
 /** Strips the API key from a provider record before exposing to the renderer. */
 function redact(p: PersistedProvider): ProviderConfig {
-  const { apiKey: _apiKey, ...safe } = p;
+  const { apiKey: _apiKey, billingApiKey: _billing, ...safe } = p;
   void _apiKey;
-  return safe;
+  void _billing;
+  return { ...safe, hasBillingApiKey: Boolean(_billing?.trim()) };
 }
 
 export async function listProviders(): Promise<ProviderConfig[]> {
@@ -175,6 +178,7 @@ export async function updateProvider(
     anthropicBetas?: ProviderConfig['anthropicBetas'];
     geminiAuthMode?: ProviderConfig['geminiAuthMode'];
     openaiTransport?: ProviderConfig['openaiTransport'];
+    billingApiKey?: string | null;
   }
 ): Promise<ProviderConfig> {
   const list = await load();
@@ -233,12 +237,21 @@ export async function updateProvider(
     })(),
     anthropicBetas: patch.anthropicBetas ?? current.anthropicBetas,
     geminiAuthMode: patch.geminiAuthMode ?? current.geminiAuthMode,
-    openaiTransport: patch.openaiTransport ?? current.openaiTransport
+    openaiTransport: patch.openaiTransport ?? current.openaiTransport,
+    billingApiKey:
+      patch.billingApiKey === null
+        ? undefined
+        : patch.billingApiKey !== undefined
+          ? patch.billingApiKey
+          : current.billingApiKey
   };
   // Persist-then-commit: see `persistCandidate`.
   const candidate = list.map((p, i) => (i === idx ? next : p));
   await persistCandidate(candidate);
   cache = candidate;
+  if (patch.enabled === false && current.enabled !== false) {
+    evictProviderCaches(id);
+  }
   return redact(next);
 }
 
@@ -263,6 +276,7 @@ export async function removeProvider(id: string): Promise<void> {
   if (abortRunsForProviderHook) {
     abortRunsForProviderHook(id);
   }
+  evictProviderCaches(id);
 }
 
 // Base-URL normalization moved to `@shared/providers/normalizeBaseUrl`

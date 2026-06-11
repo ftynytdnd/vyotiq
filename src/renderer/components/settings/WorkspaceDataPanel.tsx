@@ -18,7 +18,7 @@ export function WorkspaceDataPanel() {
   const pick = useWorkspaceStore((s) => s.pick);
 
   return (
-    <ShellSection title="Workspaces">
+    <ShellSection>
       <ShellRow className="pt-0">
         <ShellCaption>
           Agent tools are sandboxed inside each workspace root. Switch workspaces from the dock

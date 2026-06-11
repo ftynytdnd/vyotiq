@@ -16,12 +16,16 @@ import type {
 import type { ActiveRunInfo } from '@shared/types/ipc.js';
 import type { AskUserSubmitInput } from '@shared/types/askUser.js';
 import { IPC } from '@shared/constants.js';
-import { formatAskUserDisplayFromAnswers, formatAskUserToolResult } from '@shared/text/formatAskUserAnswers.js';
+import { formatAskUserReplyBubble, formatAskUserToolResult } from '@shared/text/formatAskUserAnswers.js';
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import { wrapXml } from './envelope/index.js';
 import { resolveAttachmentsForInline } from '../attachments/resolveAttachmentsForInline.js';
 import { resolveMentionsForInline } from '../attachments/resolveMentionsForInline.js';
 import { replayTranscript } from './replay/index.js';
+import {
+  insertHistoryBeforeTail,
+  seedCacheLayeredMessages
+} from './context/buildContextLayers.js';
 import { runOrchestratorLoop } from './loop/index.js';
 import {
   requireWorkspace,
@@ -286,7 +290,9 @@ export async function startRun(
     // lack this field fall back to a `manifest.startedAt ≈ event.ts`
     // heuristic — see `resolveRunIdForPrompt` in
     // `src/main/checkpoints/rewindToPrompt.ts`.
-    runId: input.runId
+    runId: input.runId,
+    providerId: input.selection.providerId,
+    modelId: input.selection.modelId
   });
 
   let workspacePath: string;
@@ -512,7 +518,7 @@ export async function submitAskUserAnswers(input: AskUserSubmitInput): Promise<b
   takePausedRun(input.runId);
   run.awaitingUser = false;
 
-  const displayText = formatAskUserDisplayFromAnswers(
+  const displayText = formatAskUserReplyBubble(
     input.payload,
     input.answers,
     input.supplementText
@@ -565,7 +571,7 @@ export async function submitAskUserAnswers(input: AskUserSubmitInput): Promise<b
   });
 
   const messages = entry.checkpoint.messages;
-  messages.push({
+  insertHistoryBeforeTail(messages, {
     role: 'tool',
     tool_call_id: input.toolCallId,
     name: 'ask_user',
@@ -694,11 +700,7 @@ async function buildInitialMessages(
   const turnBody = attachmentsXml ? `${userMessageXml}\n${attachmentsXml}` : userMessageXml;
   const userEnvelope = wrapXml('turn', turnBody);
 
-  return [
-    { role: 'system', content: '' }, // filled per-iteration
-    ...replayed,
-    { role: 'user', content: userEnvelope }
-  ];
+  return seedCacheLayeredMessages(replayed, userEnvelope);
 }
 
 // `ChatPermissions` is intentionally NOT re-exported here. Layering rule:

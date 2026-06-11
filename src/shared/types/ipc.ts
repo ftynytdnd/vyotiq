@@ -24,6 +24,8 @@ import type {
 
 } from './provider.js';
 
+import type { ProviderAccountSnapshotMap } from './providerAccount.js';
+
 import type {
 
   ChatSendInput,
@@ -258,6 +260,12 @@ export interface AppSettings {
 
     favoriteModels?: string[];
 
+    /**
+     * Cumulative estimated API spend (USD) per workspace id.
+     * Updated when runs complete and model pricing is available.
+     */
+    workspaceSpendUsd?: Record<string, number>;
+
     /** Last floating panel widths by panel id. */
 
     panelWidths?: Record<string, number>;
@@ -295,6 +303,28 @@ export interface AppSettings {
       enableAiRunSummary?: boolean;
 
     };
+
+    /** Prompt / context caching diagnostics and provider options. */
+
+    promptCaching?: {
+
+      /** Anthropic cache-diagnostics beta (default false). */
+
+      anthropicCacheDiagnostics?: boolean;
+
+      /** Anthropic cache TTL — `1h` default for long agent sessions. */
+
+      anthropicCacheTtl?: '5m' | '1h';
+
+      /** Force Gemini explicit `cachedContents` (large prefixes also auto-enable). */
+
+      geminiExplicitCache?: boolean;
+
+    };
+
+    /** Atomic workspace spend increments (USD) — merged server-side. */
+
+    workspaceSpendIncrement?: Record<string, number>;
 
   };
 
@@ -680,6 +710,9 @@ export interface VyotiqApi {
 
         openaiTransport?: import('./provider.js').OpenAiTransport;
 
+        /** Optional billing/admin API key (encrypted in main). Pass null to clear. */
+        billingApiKey?: string | null;
+
       }
 
     ): Promise<ProviderConfig>;
@@ -689,6 +722,16 @@ export interface VyotiqApi {
     discoverModels(id: string, force?: boolean): Promise<ModelInfo[]>;
 
     test(id: string): Promise<{ ok: boolean; message: string }>;
+
+    getAccounts(): Promise<ProviderAccountSnapshotMap>;
+
+    refreshAccounts(): Promise<ProviderAccountSnapshotMap>;
+
+    setAccountPollSource(source: string, active: boolean): Promise<void>;
+
+    onAccountsUpdated(cb: (map: ProviderAccountSnapshotMap) => void): () => void;
+
+    onModelsUpdated(cb: (update: import('./provider.js').ProviderModelsUpdate) => void): () => void;
 
   };
 
@@ -925,6 +968,16 @@ export interface VyotiqApi {
     get(): Promise<AppSettings>;
 
     set(patch: Partial<AppSettings>): Promise<AppSettings>;
+
+  };
+
+
+
+  /** Prompt-cache runtime diagnostics (main-process). */
+
+  promptCache: {
+
+    getStatus(): Promise<import('./promptCache.js').PromptCacheRuntimeStatus>;
 
   };
 

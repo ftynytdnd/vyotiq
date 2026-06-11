@@ -18,9 +18,13 @@
 
 import { randomUUID } from 'node:crypto';
 import type { TimelineEvent, TokenUsage } from '@shared/types/chat.js';
+import { tokenUsageCountsEqual } from '@shared/token/tokenUsageCountsEqual.js';
 import type { ChatStreamRequest } from '../../providers/chatClient.js';
 import { streamChat } from '../../providers/chatClient.js';
 import { consumeChatStream, type PartialToolCall } from './consumeChatStream.js';
+import { logger } from '../../logging/logger.js';
+
+const log = logger.child('orchestrator/assistant-turn');
 
 export type { PartialToolCall };
 
@@ -70,6 +74,10 @@ export interface AssistantTurnResult {
   finishReason?: string;
   /** Provider-reported token usage for this turn (when available). */
   usage?: TokenUsage;
+  /** Anthropic `msg_…` id — chain into the next turn for cache diagnostics. */
+  anthropicMessageId?: string;
+  /** Anthropic cache-diagnostics miss reason when beta is enabled. */
+  anthropicCacheMissReason?: string | null;
   error?: unknown;
 }
 
@@ -87,6 +95,8 @@ export async function handleAssistantTurn(
   let hadText = false;
   let hadReasoning = false;
   let reasoningEffortStamped = false;
+  let lastEmittedUsage: TokenUsage | undefined;
+  let lastEmittedCacheMissReason: string | null | undefined;
 
   try {
     const stream = streamChat(req);
@@ -132,13 +142,38 @@ export async function handleAssistantTurn(
       // Emit a `token-usage` timeline event as soon as the final usage
       // frame arrives so the composer's usage pill can update without
       // waiting for the whole turn to settle.
-      onUsage: (usage) => {
+      onUsage: (usage, meta) => {
+        const usageUnchanged =
+          lastEmittedUsage !== undefined && tokenUsageCountsEqual(lastEmittedUsage, usage);
+        const missReason = meta?.cacheMissReason;
+        if (
+          usageUnchanged &&
+          (missReason === undefined || missReason === lastEmittedCacheMissReason)
+        ) {
+          return;
+        }
+        lastEmittedUsage = usage;
+        if (missReason !== undefined) lastEmittedCacheMissReason = missReason;
+
+        log.info('llm turn usage', {
+          providerId: req.providerId,
+          model: req.model,
+          promptTokens: usage.promptTokens,
+          cacheRead: usage.cachedPromptTokens ?? 0,
+          cacheWrite: usage.cacheCreationTokens ?? 0,
+          cacheMiss: usage.uncachedPromptTokens ?? 0,
+          completionTokens: usage.completionTokens,
+          ...(missReason !== undefined && missReason !== null
+            ? { cacheMissReason: missReason }
+            : {})
+        });
         emit({
           kind: 'token-usage',
           id: randomUUID(),
           ts: Date.now(),
           assistantMsgId,
-          usage
+          usage,
+          ...(missReason !== undefined ? { cacheMissReason: missReason } : {})
         });
       },
       // Emit a `tool-call-args-delta` per fragment so the renderer

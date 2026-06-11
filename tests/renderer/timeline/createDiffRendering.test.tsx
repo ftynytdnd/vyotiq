@@ -67,19 +67,14 @@ describe('Created-file rendering — settled (timeline)', () => {
     const btn = container.querySelector('button')!;
     await userEvent.click(btn);
 
-    // The diff container surfaced with the authoritative variant —
-    // proves the route was `EditDiffView` and NOT `CodeBlock`.
-    const diffNode = container.querySelector('[data-variant="authoritative"]');
+    expect(container.querySelector('[data-file-change-card]')).not.toBeNull();
+    const diffNode = container.querySelector('[data-snippet-diff][data-variant="authoritative"]');
     expect(diffNode).not.toBeNull();
-    // Pane label is `diff` (the same label modify edits use).
-    expect(container.textContent ?? '').toContain('diff');
     // All three body lines are present.
     expect(container.textContent ?? '').toContain('line A');
     expect(container.textContent ?? '').toContain('line B');
     expect(container.textContent ?? '').toContain('line C');
-    // The pre-fix `created content` label MUST NOT appear (that was
-    // the muted-CodeBlock pane the user was looking at).
-    expect(container.textContent ?? '').not.toContain('created content');
+    expect(container.querySelector('.vx-snippet-diff-line--add')).not.toBeNull();
     // The pre-fix path used `CodeBlock` — its container has the
     // `font-mono whitespace-pre` shell. We don't sniff that exact
     // class set; the proof is the `data-variant` attr above. The
@@ -102,15 +97,13 @@ describe('Created-file rendering — streaming preview (timeline)', () => {
     const { container } = render(<EditInvocation call={call} partial />);
     // The row auto-expands during live streaming (the `liveAutoExpand`
     // wire from the previous fix). No click needed.
-    const partialNode = container.querySelector('[data-variant="partial"]');
+    const partialNode = container.querySelector('[data-snippet-diff][data-variant="partial"]');
     expect(partialNode).not.toBeNull();
-    // Streaming label.
-    expect(container.textContent ?? '').toContain('new file streaming…');
     // The new-file lines are visible — proves the body actually
     // renders (not just an empty diff shell).
     expect(container.textContent ?? '').toContain('STREAM_LINE_1');
     expect(container.textContent ?? '').toContain('STREAM_LINE_2');
-    expect(container.querySelector('.vyotiq-stream-cursor')).toBeNull();
+    expect(container.querySelector('.vyotiq-stream-cursor')).not.toBeNull();
   });
 
   it('renders a non-streaming `preview` variant when partial flag is off', async () => {
@@ -123,9 +116,9 @@ describe('Created-file rendering — streaming preview (timeline)', () => {
     };
     const { container } = render(<EditInvocation call={call} />);
 
-    const previewNode = container.querySelector('[data-variant="preview"]');
+    const previewNode = container.querySelector('[data-snippet-diff][data-variant="preview"]');
     expect(previewNode).not.toBeNull();
-    expect(container.textContent ?? '').toContain('new file (pending)');
+    expect(container.textContent ?? '').toContain('pending');
     expect(container.textContent ?? '').toContain('hello');
     // No live cursor on the non-streaming preview.
     expect(container.querySelector('.vyotiq-stream-cursor')).toBeNull();
@@ -153,9 +146,9 @@ describe('Created-file rendering — streaming preview (timeline)', () => {
     const { container } = render(
       <EditInvocation call={call} partial diffStream={diffStream} />
     );
-    expect(container.querySelector('[data-variant="partial"]')).not.toBeNull();
+    expect(container.querySelector('[data-snippet-diff][data-variant="partial"]')).not.toBeNull();
     expect(container.textContent ?? '').toContain('after');
-    expect(container.querySelector('.vyotiq-stream-cursor')).toBeNull();
+    expect(container.querySelector('.vyotiq-stream-cursor')).not.toBeNull();
   });
 });
 
@@ -181,9 +174,9 @@ describe('Created-file rendering — failed call (intended diff)', () => {
     // The intended-diff pane renders the new-file body as a
     // preview-variant EditDiffView (failed branch uses `preview`,
     // not `partial`, since the call never actually streamed).
-    const previewNode = container.querySelector('[data-variant="preview"]');
+    const previewNode = container.querySelector('[data-snippet-diff][data-variant="preview"]');
     expect(previewNode).not.toBeNull();
-    expect(container.textContent ?? '').toContain('intended diff (not applied)');
+    expect(container.textContent ?? '').toContain('not applied');
     expect(container.textContent ?? '').toContain('WOULD_HAVE_BEEN_HERE');
     // The error pane still carries the actionable output.
     expect(container.textContent ?? '').toContain('Workspace policy denied');

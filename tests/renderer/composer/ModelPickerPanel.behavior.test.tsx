@@ -58,7 +58,7 @@ beforeEach(() => {
 });
 
 describe('ModelPickerPanel behavior', () => {
-  it('shows favorited model in both Favorites and provider group', () => {
+  it('dedupes favorited model from provider catalog', () => {
     render(
       <ModelPickerPanel
         value={null}
@@ -68,8 +68,9 @@ describe('ModelPickerPanel behavior', () => {
       />
     );
 
-    const duplicates = document.querySelectorAll('[data-model-key="remote::remote-model-0"]');
-    expect(duplicates.length).toBe(2);
+    const inFavorites = document.querySelectorAll('[data-model-key="remote::remote-model-0"]');
+    expect(inFavorites.length).toBe(1);
+    expect(screen.getByText(/Favorites · 1/)).toBeInTheDocument();
   });
 
   it('does not close when effort changes via side panel', () => {
@@ -106,5 +107,18 @@ describe('ModelPickerPanel behavior', () => {
 
     expect(screen.getByText('search', { exact: false })).toBeInTheDocument();
     expect(document.querySelector('.vx-model-picker-hints')).not.toBeNull();
+  });
+
+  it('shows manage providers footer', () => {
+    render(
+      <ModelPickerPanel
+        value={null}
+        onChange={() => {}}
+        onClose={() => {}}
+        onOpenProviders={() => {}}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: 'Manage providers' })).toBeInTheDocument();
   });
 });

@@ -37,7 +37,7 @@ describe('discoverModels — DeepSeek host protocol', () => {
       const models = await discoverModels('p-deepseek', true);
       expect(models[0]?.thinking?.supported).toBe(true);
       expect(models[0]?.thinking?.wireStyle).toBe('openai-deepseek');
-      expect(models[0]?.contextWindow).toBe(1_000_000);
+      expect(models[0]?.contextWindow).toBeUndefined();
     } finally {
       fetchSpy.mockRestore();
     }

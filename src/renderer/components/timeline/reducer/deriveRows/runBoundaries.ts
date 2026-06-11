@@ -7,6 +7,8 @@ export type OpenRun = {
   lastTs: number;
   editCount: number;
   filePaths: Set<string>;
+  /** Successful `bash` tool results in this run. */
+  commandCount: number;
   /** Terminal `error` event ended this run — merge stats into that row. */
   endedInError?: boolean;
   errorKey?: string;
@@ -24,6 +26,7 @@ function enrichErrorRowWithRunMeta(
     usage?: TokenUsageAggregate;
     editCount: number;
     fileCount: number;
+    commandCount: number;
   }
 ): void {
   for (let i = out.length - 1; i >= 0; i--) {
@@ -35,7 +38,8 @@ function enrichErrorRowWithRunMeta(
         completedAt: meta.completedAt,
         ...(meta.usage !== undefined ? { usage: meta.usage } : {}),
         ...(meta.editCount > 0 ? { editCount: meta.editCount } : {}),
-        ...(meta.fileCount > 0 ? { fileCount: meta.fileCount } : {})
+        ...(meta.fileCount > 0 ? { fileCount: meta.fileCount } : {}),
+        ...(meta.commandCount > 0 ? { commandCount: meta.commandCount } : {})
       };
       return;
     }
@@ -52,12 +56,14 @@ export function flushRunToRows(
   const usage = openRunUsage?.orchestrator;
   const editCount = openRun.editCount;
   const fileCount = openRun.filePaths.size;
+  const commandCount = openRun.commandCount;
   const meta = {
     durationMs,
     completedAt: openRun.lastTs,
     ...(usage !== undefined ? { usage } : {}),
     editCount,
-    fileCount
+    fileCount,
+    commandCount
   };
   if (openRun.endedInError && openRun.errorKey) {
     enrichErrorRowWithRunMeta(out, openRun.errorKey, meta);
@@ -70,7 +76,8 @@ export function flushRunToRows(
       completedAt: openRun.lastTs,
       ...(usage !== undefined ? { usage } : {}),
       ...(editCount > 0 ? { editCount } : {}),
-      ...(fileCount > 0 ? { fileCount } : {})
+      ...(fileCount > 0 ? { fileCount } : {}),
+      ...(commandCount > 0 ? { commandCount } : {})
     });
   }
   return { openRun: null, openRunUsage: null };

@@ -8,4 +8,6 @@ export interface FileMenuActions {
   setWorkspacePath: () => void;
   openSettings: () => void;
   quit: () => void;
+  /** Hide chat/workspace rows while settings (or similar) is open. */
+  chatActionsEnabled?: boolean;
 }

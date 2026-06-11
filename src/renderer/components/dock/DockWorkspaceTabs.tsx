@@ -41,6 +41,8 @@ import {
   collapseDockAfterSelection
 } from './dockShared.js';
 import { useUiStore } from '../../store/useUiStore.js';
+import { useSettingsStore } from '../../store/useSettingsStore.js';
+import { formatWorkspaceSpend } from '../../lib/workspaceSpend.js';
 import { handleDockVerticalTablistKeyDown } from './dockVerticalTablistKeyboard.js';
 
 export function DockWorkspaceTabs() {
@@ -50,6 +52,10 @@ export function DockWorkspaceTabs() {
   const addWorkspace = useWorkspaceStore((s) => s.add);
   const loading = useWorkspaceStore((s) => s.loading);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const activeSpend = useSettingsStore((s) =>
+    activeId ? s.settings.ui?.workspaceSpendUsd?.[activeId] : undefined
+  );
+  const activeSpendLabel = formatWorkspaceSpend(activeSpend);
 
   useEffect(() => {
     if (!activeId || !scrollRef.current) return;
@@ -113,6 +119,14 @@ export function DockWorkspaceTabs() {
           }}
         />
       ))}
+      {activeSpendLabel ? (
+        <div
+          className="px-2 py-0.5 font-mono text-meta tabular-nums text-text-faint"
+          title="Estimated API spend for this workspace"
+        >
+          {activeSpendLabel}
+        </div>
+      ) : null}
       <button
         type="button"
         aria-label="Add workspace"

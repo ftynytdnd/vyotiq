@@ -13,6 +13,8 @@ import { emitRunStatus } from './emitRunStatus.js';
 import { batchIndicesByDependencies, parseDependsOnIds } from './toolDependencyBatches.js';
 import { parseToolArgs } from './parseToolArgs.js';
 import { validateToolArgs } from './validateToolArgs.js';
+import { insertHistoryBeforeTail } from '../context/buildContextLayers.js';
+import { truncateToolOutputForContext } from '@shared/text/truncateUtf8Safe.js';
 import { logger } from '../../logging/logger.js';
 
 const log = logger.child('orchestrator/handleToolCalls');
@@ -54,11 +56,11 @@ function emitSyntheticToolFailure(
     ts: Date.now(),
     result: syntheticResult,
   });
-  messages.push({
+  insertHistoryBeforeTail(messages, {
     role: 'tool',
     tool_call_id: callId,
     name: tc.name ?? 'unknown',
-    content: output
+    content: truncateToolOutputForContext(output)
   });
 }
 
@@ -144,7 +146,7 @@ async function dispatchOneToolCall(
     });
     const refusalMessage =
       `Tool "${tc.name}" is not in the agent allowlist (${opts.allowlist.join(', ')}).`;
-    messages.push({
+    insertHistoryBeforeTail(messages, {
       role: 'tool',
       tool_call_id: callId,
       name: tc.name,
@@ -189,7 +191,7 @@ async function dispatchOneToolCall(
       ts: Date.now(),
       result: syntheticResult,
     });
-    messages.push({
+    insertHistoryBeforeTail(messages, {
       role: 'tool',
       tool_call_id: callId,
       name: tc.name,
@@ -224,7 +226,7 @@ async function dispatchOneToolCall(
       ts: Date.now(),
       result: syntheticResult
     });
-    messages.push({
+    insertHistoryBeforeTail(messages, {
       role: 'tool',
       tool_call_id: callId,
       name: tc.name,
@@ -267,11 +269,11 @@ async function dispatchOneToolCall(
       ...(result.data.entryId ? { entryId: result.data.entryId } : {})
     });
   }
-  messages.push({
+  insertHistoryBeforeTail(messages, {
     role: 'tool',
     tool_call_id: callId,
     name: tc.name,
-    content: result.output
+    content: truncateToolOutputForContext(result.output)
   });
   return {
     kind: 'ran',

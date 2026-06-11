@@ -11,8 +11,8 @@ describe('modelPickerDisplay', () => {
     expect(rowDisplayModelId('gemma4:31b')).toBe('gemma4:31b');
   });
 
-  it('rowContextBadgeLabel formats with ctx suffix', () => {
-    expect(rowContextBadgeLabel(262_144)).toBe('262.1k ctx');
+  it('rowContextBadgeLabel formats compact token count', () => {
+    expect(rowContextBadgeLabel(262_144)).toBe('262.1k');
   });
 
   it('shouldShowEffortBadge hides default and off', () => {

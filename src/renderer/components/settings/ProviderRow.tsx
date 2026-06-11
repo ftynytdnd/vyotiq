@@ -27,11 +27,14 @@ import {
   type ProviderAttribution,
   type ProviderConfig
 } from '@shared/types/provider.js';
+import { isLocalProvider } from '@shared/providers/isLocalProvider.js';
+import { classifyProviderHost } from '@shared/providers/providerHostKind.js';
 import { Button } from '../ui/Button.js';
 import { DestructiveConfirm } from '../ui/DestructiveConfirm.js';
 import { Switch } from '../ui/Switch.js';
 import { TextField } from '../ui/TextField.js';
 import { ModelList } from './ModelList.js';
+import { ProviderAccountSummary } from './ProviderAccountSummary.js';
 import { useProviderStore } from '../../store/useProviderStore.js';
 import {
   ShellActionRow,
@@ -113,6 +116,7 @@ export function ProviderRow({ provider }: ProviderRowProps) {
               <ShellCaption className="mt-1">
                 {PROVIDER_DIALECT_LABELS[provider.dialect ?? 'openai']}
               </ShellCaption>
+              <ProviderAccountSummary provider={provider} />
             </>
           }
           control={
@@ -186,6 +190,11 @@ export function ProviderRow({ provider }: ProviderRowProps) {
       />
 
       <AttributionSection provider={provider} onSave={(next) => void update(provider.id, { attribution: next })} />
+
+      <BillingApiKeySection
+        provider={provider}
+        onSave={(billingApiKey) => void update(provider.id, { billingApiKey })}
+      />
       </>
       )}
     </ShellRow>
@@ -384,6 +393,105 @@ function AttributionSection({
             )}
             <Button variant="primary" onClick={onSubmit}>
               Save attribution
+            </Button>
+          </ShellFieldActions>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function billingKeyHelp(provider: ProviderConfig): string {
+  const kind = classifyProviderHost(provider);
+  switch (kind) {
+    case 'openrouter':
+      return 'OpenRouter Management key unlocks `/v1/credits` (account-wide balance). Your inference key is still used for chat.';
+    case 'xai':
+      return 'xAI Management key (BillingRead) unlocks prepaid balance via the Management API at management-api.x.ai.';
+    case 'openai':
+      return 'OpenAI Admin key (`sk-admin…`) unlocks organization usage and cost APIs alongside prepaid credit grants.';
+    case 'anthropic':
+      return 'Anthropic Admin key (`sk-ant-admin…`) unlocks weekly cost reports. Balance remains dashboard-only.';
+    default:
+      return 'Optional. Provider-specific admin or billing keys unlock usage and balance APIs where available. Stored encrypted — never shown again after save.';
+  }
+}
+
+function BillingApiKeySection({
+  provider,
+  onSave
+}: {
+  provider: ProviderConfig;
+  onSave: (billingApiKey: string | null) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [value, setValue] = useState('');
+  const [savedTick, setSavedTick] = useState(false);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (savedTimerRef.current !== null) clearTimeout(savedTimerRef.current);
+    };
+  }, []);
+
+  if (isLocalProvider(provider)) return null;
+
+  const summary = provider.hasBillingApiKey ? 'Configured' : 'Not set';
+
+  const onSubmit = () => {
+    onSave(value.trim().length > 0 ? value.trim() : null);
+    setValue('');
+    setSavedTick(true);
+    if (savedTimerRef.current !== null) clearTimeout(savedTimerRef.current);
+    savedTimerRef.current = setTimeout(() => {
+      savedTimerRef.current = null;
+      setSavedTick(false);
+    }, 1500);
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="vx-btn-text inline-flex items-center gap-1.5 self-start"
+        aria-expanded={expanded}
+      >
+        {expanded ? (
+          <ChevronDown className={SHELL_COMPACT_ICON_CLASS} strokeWidth={SHELL_COMPACT_ICON_STROKE} />
+        ) : (
+          <ChevronRight className={SHELL_COMPACT_ICON_CLASS} strokeWidth={SHELL_COMPACT_ICON_STROKE} />
+        )}
+        <span>Billing / Admin API key</span>
+        <span className="text-text-faint">· {summary}</span>
+      </button>
+      {expanded && (
+        <div className="flex flex-col gap-2 py-1">
+          <ShellCaption>{billingKeyHelp(provider)}</ShellCaption>
+          <label className="flex flex-col">
+            <ShellFieldLabel>Admin / billing key</ShellFieldLabel>
+            <TextField
+              type="password"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={provider.hasBillingApiKey ? 'Enter new key to replace' : 'Paste admin key'}
+              autoComplete="off"
+            />
+          </label>
+          <ShellFieldActions grouped>
+            {savedTick && (
+              <span className="mr-auto flex items-center gap-1 text-row text-success">
+                <CheckCircle2 className={SHELL_COMPACT_ICON_CLASS} strokeWidth={SHELL_COMPACT_ICON_STROKE} /> Saved
+              </span>
+            )}
+            {provider.hasBillingApiKey ? (
+              <Button variant="ghost" onClick={() => onSave(null)}>
+                Clear key
+              </Button>
+            ) : null}
+            <Button variant="primary" onClick={onSubmit}>
+              Save billing key
             </Button>
           </ShellFieldActions>
         </div>

@@ -212,6 +212,23 @@ describe('useGlobalShortcuts', () => {
     removeSpy.mockRestore();
   });
 
+  it('does NOT fire newConversation or openWorkspace when blockChatActions returns true', () => {
+    const onNew = vi.fn();
+    const onOpen = vi.fn();
+    render(
+      <Harness
+        newConversation={onNew}
+        openWorkspace={onOpen}
+        openSettings={() => {}}
+        blockChatActions={() => true}
+      />
+    );
+    fireKey('n', { ctrlKey: true });
+    fireKey('o', { ctrlKey: true });
+    expect(onNew).not.toHaveBeenCalled();
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
   it('silently ignores Ctrl+R / Ctrl+Shift+I when handlers are undefined', () => {
     // Sibling handlers must NOT be invoked either — the keystrokes
     // should be a no-op when the optional reload / toggleDevTools

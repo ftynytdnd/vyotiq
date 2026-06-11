@@ -14,8 +14,13 @@ interface AskUserRowProps {
   status?: 'pending' | 'submitted';
 }
 
-export function AskUserRow({ payload, displayText, status }: AskUserRowProps) {
+export function AskUserRow({ payload, displayText, promptEventId, status }: AskUserRowProps) {
   return (
-    <AskUserCompactRow payload={payload} displayText={displayText} status={status} />
+    <AskUserCompactRow
+      payload={payload}
+      displayText={displayText}
+      promptEventId={promptEventId}
+      {...(status ? { status } : {})}
+    />
   );
 }

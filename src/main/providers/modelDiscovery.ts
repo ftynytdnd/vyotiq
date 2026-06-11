@@ -24,7 +24,6 @@
 import type { ModelInfo, ProviderDialect, ProviderWithKey } from '@shared/types/provider.js';
 import { MODEL_DISCOVERY_TIMEOUT_MS, MODEL_DISCOVERY_TTL_MS } from '@shared/constants.js';
 import {
-  contextWindowForDeepSeekApiModel,
   contextWindowFromOllamaModelInfo,
   isDeepSeekApiHost,
   mergeContextWindows,
@@ -36,11 +35,13 @@ import {
   thinkingFromOpenAiExtendedFields,
   thinkingFromSupportedParameters
 } from '@shared/providers/modelCapabilities.js';
+import { attachModelPricing } from '@shared/providers/attachModelPricing.js';
 import { DEFAULT_ANTHROPIC_BETAS } from '@shared/providers/thinkingEffort.js';
 import { normalizeBaseUrl } from '@shared/providers/normalizeBaseUrl.js';
 import { getProviderWithKey, updateProvider } from './providerStore.js';
 import { classifyProviderError, isProviderError, ProviderError } from './providerError.js';
 import { buildAttributionHeaders, isOpenRouterHost } from './attributionHeaders.js';
+import { recordProviderRateLimits } from './providerRateLimitCapture.js';
 import { safeText as safeTextShared } from './errorBody.js';
 
 /**
@@ -491,6 +492,8 @@ async function fetchOpenAiModels(provider: ProviderWithKey): Promise<ModelInfo[]
     });
   }
 
+  recordProviderRateLimits(provider.id, res.headers);
+
   const json = (await res.json()) as RawOpenAiModelsResponse;
   const list = Array.isArray(json.data)
     ? json.data
@@ -526,8 +529,7 @@ async function fetchOpenAiModels(provider: ProviderWithKey): Promise<ModelInfo[]
       const ctx = mergeContextWindows(
         positiveTokenCount(entry.context_window),
         positiveTokenCount(entry.context_length),
-        positiveTokenCount(entry.top_provider?.context_length),
-        isDeepSeekApiHost(provider.baseUrl) ? contextWindowForDeepSeekApiModel() : undefined
+        positiveTokenCount(entry.top_provider?.context_length)
       );
       const info: ModelInfo = { id };
       if (
@@ -550,6 +552,8 @@ async function fetchOpenAiModels(provider: ProviderWithKey): Promise<ModelInfo[]
         isDeepSeekApiHost(provider.baseUrl) ? thinkingForDeepSeekApiModel() : undefined
       );
       if (thinking) info.thinking = thinking;
+      const pricing = attachModelPricing(provider, id, m);
+      if (pricing) info.pricing = pricing;
       return info;
     })
     .filter((m): m is ModelInfo => m !== null)
@@ -805,6 +809,8 @@ async function fetchAnthropicModels(provider: ProviderWithKey): Promise<ModelInf
       }
       const thinking = thinkingFromAnthropicCapabilities(m.capabilities);
       if (thinking) info.thinking = thinking;
+      const pricing = attachModelPricing(provider, id, m);
+      if (pricing) info.pricing = pricing;
       return info;
     })
     .filter((m): m is ModelInfo => m !== null)
@@ -896,6 +902,8 @@ async function fetchGeminiModels(provider: ProviderWithKey): Promise<ModelInfo[]
       });
     }
 
+    recordProviderRateLimits(provider.id, res.headers);
+
     const json = (await res.json()) as RawGeminiModelsResponse;
     const page = Array.isArray(json.models) ? json.models : [];
     list.push(...page);
@@ -934,6 +942,8 @@ async function fetchGeminiModels(provider: ProviderWithKey): Promise<ModelInfo[]
         version: m.version
       });
       if (thinking) info.thinking = thinking;
+      const pricing = attachModelPricing(provider, id, m);
+      if (pricing) info.pricing = pricing;
       return info;
     })
     .filter((m): m is ModelInfo => m !== null)

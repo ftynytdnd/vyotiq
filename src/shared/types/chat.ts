@@ -44,6 +44,7 @@ type ChatRole = 'system' | 'user' | 'assistant' | 'tool';
  *   - DeepSeek V4 (OpenAI-compat with non-standard cache field names):
  *       reasoningTokens     = usage.completion_tokens_details.reasoning_tokens
  *       cachedPromptTokens  = usage.prompt_cache_hit_tokens
+ *       uncachedPromptTokens = usage.prompt_cache_miss_tokens
  *
  *   - xAI Grok 4.x (OpenAI-compat):
  *       reasoningTokens     = usage.completion_tokens_details.reasoning_tokens
@@ -73,6 +74,8 @@ export interface TokenUsage {
    *  (a write with no subsequent read is a billing footgun on Sonnet
    *  4.6+). */
   cacheCreationTokens?: number;
+  /** DeepSeek-only: subset of `promptTokens` not served from disk KV cache. */
+  uncachedPromptTokens?: number;
 }
 
 export interface ChatMessage {
@@ -165,6 +168,9 @@ export type TimelineEvent =
     ts: number;
     content: string;
     runId?: string;
+    /** Model used for this run — stable per prompt for cost badges on replay. */
+    providerId?: string;
+    modelId?: string;
     /** Persisted attachment metadata for timeline cards after reload. */
     attachments?: PromptAttachmentMeta[];
     /** Inline `@` file mentions (chips), resolved into context on send. */
@@ -363,6 +369,8 @@ export type TimelineEvent =
     ts: number;
     assistantMsgId: string;
     usage: TokenUsage;
+    /** Anthropic cache-diagnostics miss reason when beta is enabled. */
+    cacheMissReason?: string | null;
   }
   /**
    * Live orchestrator telemetry for the "waiting" window between streaming

@@ -68,6 +68,17 @@ export interface ChatStreamRequest {
    * still works without it, just with lower hit rates.
    */
   conversationId?: string;
+  /**
+   * Run-pinned workspace id — combined with `conversationId` for OpenAI
+   * `prompt_cache_key` routing stickiness. Also forwarded to Anthropic
+   * `metadata.user_id` for workspace-scoped cache isolation (2026).
+   */
+  workspaceId?: string;
+  /**
+   * Prior Anthropic `msg_…` id for cache-diagnostics beta comparisons.
+   * Pass `null` on the first turn to opt in without a prior fingerprint.
+   */
+  previousAnthropicMessageId?: string | null;
   /** OpenAI-compat: allow multiple tool calls per assistant turn. */
   parallelToolCalls?: boolean;
   /**
@@ -148,6 +159,10 @@ export interface ChatStreamDelta {
    * snake_case wire format.
    */
   usage?: TokenUsage;
+  /** Anthropic-only: response `id` from `message_start` for diagnostics chaining. */
+  anthropicMessageId?: string;
+  /** Anthropic cache-diagnostics beta result (when enabled). */
+  anthropicCacheDiagnostics?: { cacheMissReason: string | null };
 }
 
 /**

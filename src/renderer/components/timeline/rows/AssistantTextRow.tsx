@@ -23,14 +23,25 @@ import { StreamingMarkdownBody } from '../markdown/StreamingMarkdownBody.js';
 import { cn } from '../../../lib/cn.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/shellIcons.js';
 import { useCopyFeedback } from '../../../hooks/useCopyFeedback.js';
-import { timelineActionPillClassName, timelineAssistantRowClassName } from '../shared/rowStyles.js';
+import {
+  timelineActionPillClassName,
+  timelineAssistantActionRowClassName,
+  timelineAssistantRowClassName
+} from '../shared/rowStyles.js';
+import { RunCompleteMeta, type RunCompleteMetaProps } from './RunCompleteMeta.js';
 
 interface AssistantTextRowProps {
   id: string;
   model?: ModelSelection | null;
+  /** Run-complete metadata rendered inline beside the copy action. */
+  inlineRunComplete?: RunCompleteMetaProps | null;
 }
 
-export const AssistantTextRow = memo(function AssistantTextRow({ id, model: _model }: AssistantTextRowProps) {
+export const AssistantTextRow = memo(function AssistantTextRow({
+  id,
+  model: _model,
+  inlineRunComplete = null
+}: AssistantTextRowProps) {
   const acc = useChatStore((s) => s.assistantTexts[id]);
 
   const { copied, copy } = useCopyFeedback();
@@ -52,6 +63,8 @@ export const AssistantTextRow = memo(function AssistantTextRow({ id, model: _mod
       className={timelineAssistantRowClassName}
       data-row-kind="assistant-text"
       aria-label={`${AGENT_NAME} response`}
+      aria-live={acc.done ? 'off' : 'polite'}
+      aria-busy={!acc.done}
     >
       <div className="flex flex-col gap-1.5">
         {streamingEmpty ? (
@@ -63,22 +76,35 @@ export const AssistantTextRow = memo(function AssistantTextRow({ id, model: _mod
           <StreamingMarkdownBody text={acc.text} done={acc.done} />
         )}
       </div>
-      <div className="flex items-center gap-1 pt-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto">
-        <button
-          type="button"
-          onClick={handleCopy}
-          className={timelineActionPillClassName}
-          title={copied ? 'Copied' : 'Copy'}
-          aria-label={copied ? 'Copied response' : 'Copy response'}
-        >
-          {copied ? (
-            <Check className={cn(SHELL_ROW_ICON_CLASS, 'text-success')} strokeWidth={SHELL_ACTION_ICON_STROKE} />
-          ) : (
-            <Copy className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+      {acc.done ? (
+        <div
+          className={cn(
+            timelineAssistantActionRowClassName,
+            inlineRunComplete && 'vx-assistant-turn-actions--with-meta'
           )}
-          <span>{copied ? 'Copied' : 'Copy'}</span>
-        </button>
-      </div>
+        >
+          <div className="vx-assistant-turn-actions__copy">
+            <button
+              type="button"
+              onClick={handleCopy}
+              className={timelineActionPillClassName}
+              title={copied ? 'Copied' : 'Copy'}
+              aria-label={copied ? 'Copied response' : 'Copy response'}
+            >
+              {copied ? (
+                <Check
+                  className={cn(SHELL_ROW_ICON_CLASS, 'text-success')}
+                  strokeWidth={SHELL_ACTION_ICON_STROKE}
+                />
+              ) : (
+                <Copy className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+              )}
+              <span>{copied ? 'Copied' : 'Copy'}</span>
+            </button>
+          </div>
+          {inlineRunComplete ? <RunCompleteMeta {...inlineRunComplete} inline /> : null}
+        </div>
+      ) : null}
     </div>
   );
 });

@@ -63,10 +63,21 @@ import { readSseFrames, pickSseDataLine } from './sseFrameReader.js';
 import { safeText } from './errorBody.js';
 import { redactUrlSecrets } from './redactUrlSecrets.js';
 import { findProviderModel } from '@shared/providers/modelId.js';
+import { recordProviderRateLimits } from './providerRateLimitCapture.js';
 import {
   resolveGeminiThinkingConfig,
   resolveStreamerThinkingEffort
 } from '@shared/providers/thinkingEffort.js';
+import {
+  CACHE_LAYER_WORKSPACE_INDEX,
+  buildGeminiStaticInstructionTexts,
+  extractFewShotBlock,
+  extractStaticSystemForWire,
+  extractWorkspaceBlock,
+  isCacheLayeredTopology
+} from '../orchestrator/context/buildContextLayers.js';
+import { resolveGeminiExplicitCacheName } from './cacheHints/geminiExplicitCache.js';
+import { normalizeWireTools } from './normalizeWireTools.js';
 
 const log = logger.child('providers/chat/gemini');
 
@@ -142,6 +153,9 @@ interface GeminiUsageMetadata {
    * Verified May 2026 against `ai.google.dev/gemini-api/docs/caching`.
    */
   cachedContentTokenCount?: number;
+  promptTokensDetails?: {
+    cachedContentTokenCount?: number;
+  };
 }
 
 interface GeminiStreamFrame {
@@ -170,15 +184,41 @@ export async function* streamGemini(
   // tool message becomes a `functionResponse` part on a `user`-role
   // turn (Gemini doesn't have a dedicated tool role).
   const translated = toGeminiContents(req.messages);
+  const wireTools = normalizeWireTools(req.tools);
 
   const body: Record<string, unknown> = { contents: translated.contents };
-  if (translated.systemInstruction !== null) {
+  const staticParts = buildGeminiStaticInstructionTexts(req.messages);
+  const staticSystemOnly = extractStaticSystemForWire(req.messages);
+  const fewShotBlock = extractFewShotBlock(req.messages);
+  const workspaceBlock = extractWorkspaceBlock(req.messages);
+  let explicitCacheName: string | undefined;
+  if (staticParts.length > 0 && provider.apiKey) {
+    explicitCacheName = await resolveGeminiExplicitCacheName({
+      providerId: req.providerId,
+      model: req.model,
+      baseUrl: provider.baseUrl,
+      apiKey: provider.apiKey,
+      geminiAuthMode: provider.geminiAuthMode,
+      staticSystem: staticSystemOnly,
+      fewShotBlock,
+      workspaceBlock,
+      tools: wireTools,
+      signal: req.signal
+    });
+  }
+  if (explicitCacheName) {
+    body['cachedContent'] = explicitCacheName;
+  } else if (staticParts.length > 0) {
+    body['systemInstruction'] = {
+      parts: staticParts.map((text) => ({ text }))
+    };
+  } else if (translated.systemInstruction !== null) {
     body['systemInstruction'] = translated.systemInstruction;
   }
-  if (req.tools && req.tools.length > 0) {
+  if (!explicitCacheName && wireTools && wireTools.length > 0) {
     body['tools'] = [
       {
-        functionDeclarations: req.tools.map((t) => ({
+        functionDeclarations: wireTools.map((t) => ({
           name: t.function.name,
           description: t.function.description,
           parameters: t.function.parameters
@@ -262,6 +302,8 @@ export async function* streamGemini(
     }
     throw err;
   }
+
+  recordProviderRateLimits(req.providerId, res.headers);
 
   if (!res.ok || !res.body) {
     watch.dispose();
@@ -502,7 +544,14 @@ function toCanonicalUsage(u: GeminiUsageMetadata): TokenUsage {
     totalTokens: total
   };
   if (typeof u.thoughtsTokenCount === 'number') out.reasoningTokens = u.thoughtsTokenCount;
-  if (typeof u.cachedContentTokenCount === 'number') out.cachedPromptTokens = u.cachedContentTokenCount;
+  const cachedExplicit =
+    typeof u.cachedContentTokenCount === 'number' ? u.cachedContentTokenCount : 0;
+  const cachedImplicit =
+    typeof u.promptTokensDetails?.cachedContentTokenCount === 'number'
+      ? u.promptTokensDetails.cachedContentTokenCount
+      : 0;
+  const cached = Math.max(cachedExplicit, cachedImplicit);
+  if (cached > 0) out.cachedPromptTokens = cached;
   return out;
 }
 
@@ -538,10 +587,13 @@ function toGeminiContents(messages: readonly ChatMessage[]): {
   systemInstruction: { parts: GeminiPart[] } | null;
   contents: GeminiContent[];
 } {
+  const layered = isCacheLayeredTopology(messages);
   const systemParts: string[] = [];
   const contents: GeminiContent[] = [];
 
-  for (const m of messages) {
+  for (let i = 0; i < messages.length; i++) {
+    if (layered && i <= CACHE_LAYER_WORKSPACE_INDEX) continue;
+    const m = messages[i]!;
     if (m.role === 'system') {
       const c = m.content;
       if (typeof c === 'string' && c.length > 0) systemParts.push(c);

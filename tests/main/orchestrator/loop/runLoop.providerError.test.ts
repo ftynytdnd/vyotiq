@@ -21,13 +21,15 @@ vi.mock('@main/orchestrator/contextManager', async () => {
     refreshEnvelopes: vi.fn(async () => ({
       workspaceXml: '<workspace_context>stub</workspace_context>',
       sessionXml: '<session_context>stub</session_context>',
+      priorConversationsXml: '<prior_conversations>stub</prior_conversations>',
       memoryXml: '<recent_memory>stub</recent_memory>',
       metaRulesXml: '<meta_rules>stub</meta_rules>'
     }))
   };
 });
 vi.mock('@main/harness/harnessLoader', () => ({
-  buildOrchestratorSystemPrompt: () => '<system_instructions>stub</system_instructions>'
+  buildOrchestratorSystemPrompt: () => '<system_instructions>stub</system_instructions>',
+  buildStaticFewShotXml: () => '<static_examples>stub</static_examples>'
 }));
 vi.mock('@main/orchestrator/retry', async () => {
   const real = await vi.importActual<typeof import('@main/orchestrator/retry')>(

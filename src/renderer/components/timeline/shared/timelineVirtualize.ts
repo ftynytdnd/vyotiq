@@ -13,11 +13,11 @@ export function shouldUseVirtualizedTimeline(
   return currentlyVirtualized;
 }
 
-/** Rough tail-turn height from streaming growth key (`rows:growth`). */
+/** Rough tail-turn height from streaming growth key (`rows:lastKey:growth`). */
 export function estimateTailTurnHeight(tailScrollKey: string): number {
-  const colon = tailScrollKey.indexOf(':');
-  const growth =
-    colon >= 0 ? Number.parseInt(tailScrollKey.slice(colon + 1), 10) : 0;
-  if (!Number.isFinite(growth) || growth <= 0) return 180;
-  return Math.min(4000, 180 + Math.floor(growth / 6));
+  const parts = tailScrollKey.split(':');
+  const growth = Number.parseInt(parts[parts.length - 1] ?? '0', 10);
+  const base = 200;
+  if (!Number.isFinite(growth) || growth <= 0) return base;
+  return Math.min(4800, base + Math.floor(growth / 6));
 }

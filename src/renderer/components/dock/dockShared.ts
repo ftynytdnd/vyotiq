@@ -66,7 +66,7 @@ export const DOCK_EDGE_CONTAINER_CLASS = cn(
 export function dockFlyoutShellClassName(isResizing: boolean): string {
   return cn(
     'vx-dock-shell vx-dock-flyout app-no-drag z-(--z-dock-panel)',
-    'flex min-h-0 max-h-full flex-1 flex-col overflow-hidden pt-[var(--titlebar-h)]',
+    'mt-[var(--titlebar-h)] flex min-h-0 max-h-[calc(100%-var(--titlebar-h))] flex-1 flex-col overflow-hidden',
     isResizing ? '' : 'transition-[width] duration-200 ease-out'
   );
 }

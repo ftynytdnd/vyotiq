@@ -61,6 +61,18 @@ describe('foldTokenUsage', () => {
     agg = foldTokenUsage(agg, { promptTokens: 1, completionTokens: 1, totalTokens: 2 });
     expect(agg.latest).toEqual({ promptTokens: 1, completionTokens: 1, totalTokens: 2 });
   });
+
+  it('does not increment samples for same-turn metadata-only repeats', () => {
+    const usage = {
+      promptTokens: 2048,
+      completionTokens: 100,
+      totalTokens: 2148,
+      cachedPromptTokens: 1536
+    };
+    let agg = foldTokenUsage(undefined, usage, 1, 'm1');
+    agg = foldTokenUsage(agg, usage, 2, 'm1');
+    expect(agg.samples).toBe(1);
+  });
 });
 
 describe('applyTimelineEvent: token-usage', () => {
@@ -91,9 +103,9 @@ describe('applyTimelineEvent: token-usage', () => {
     expect(u?.latest).toEqual({ promptTokens: 500, completionTokens: 200, totalTokens: 700 });
     expect(u?.peak).toEqual({ promptTokens: 1000, completionTokens: 200, totalTokens: 1050 });
     expect(u?.cumulative).toEqual({
-      promptTokens: 1500,
-      completionTokens: 250,
-      totalTokens: 1750
+      promptTokens: 500,
+      completionTokens: 200,
+      totalTokens: 700
     });
     expect(u?.samples).toBe(2);
   });
@@ -101,6 +113,50 @@ describe('applyTimelineEvent: token-usage', () => {
   it('appends token-usage events into the events array so transcripts persist them', () => {
     const s = applyTimelineEvent(INITIAL_TIMELINE_STATE, usageEvent({}));
     expect(s.events.some((e) => e.kind === 'token-usage')).toBe(true);
+  });
+
+  it('coalesces duplicate same-turn usage rows when cache diagnostics arrive late', () => {
+    let s = applyTimelineEvent(
+      INITIAL_TIMELINE_STATE,
+      usageEvent({
+        id: 'e1',
+        assistantMsgId: 'm1',
+        usage: { promptTokens: 2048, completionTokens: 100, totalTokens: 2148, cachedPromptTokens: 1536 }
+      })
+    );
+    s = applyTimelineEvent(
+      s,
+      usageEvent({
+        id: 'e2',
+        assistantMsgId: 'm1',
+        usage: { promptTokens: 2048, completionTokens: 100, totalTokens: 2148, cachedPromptTokens: 1536 },
+        cacheMissReason: 'tools_changed'
+      })
+    );
+    expect(s.events.filter((e) => e.kind === 'token-usage')).toHaveLength(1);
+    expect(s.events[0]).toMatchObject({
+      kind: 'token-usage',
+      cacheMissReason: 'tools_changed'
+    });
+    expect(s.orchestratorUsage?.samples).toBe(1);
+  });
+
+  it('stores cacheMissReason on token-usage and clears it on a new assistant turn', () => {
+    let s = applyTimelineEvent(
+      INITIAL_TIMELINE_STATE,
+      usageEvent({ assistantMsgId: 'm1', cacheMissReason: 'system_changed' })
+    );
+    expect(s.lastPromptCacheMissReason).toBe('system_changed');
+
+    s = applyTimelineEvent(
+      s,
+      usageEvent({
+        id: 'e2',
+        assistantMsgId: 'm2',
+        usage: { promptTokens: 50, completionTokens: 10, totalTokens: 60 }
+      })
+    );
+    expect(s.lastPromptCacheMissReason).toBeUndefined();
   });
 });
 
@@ -137,6 +193,43 @@ describe('stampUsageStart', () => {
     expect(stamped.streamStartedAt).toBe(5000);
     expect(stamped.latest.promptTokens).toBe(100);
     expect(stamped.samples).toBe(1);
+  });
+});
+
+describe('foldTokenUsage — same-turn cumulative replacement', () => {
+  it('replaces prior snapshot for the same assistantMsgId instead of summing', () => {
+    const turnA = 'assistant-a';
+    let agg = foldTokenUsage(
+      undefined,
+      { promptTokens: 1000, completionTokens: 50, totalTokens: 1050, cachedPromptTokens: 400 },
+      1,
+      turnA
+    );
+    agg = foldTokenUsage(
+      agg,
+      { promptTokens: 1200, completionTokens: 80, totalTokens: 1280, cachedPromptTokens: 900 },
+      2,
+      turnA
+    );
+    expect(agg.cumulative.promptTokens).toBe(1200);
+    expect(agg.cumulative.cachedPromptTokens).toBe(900);
+    expect(agg.samples).toBe(2);
+  });
+
+  it('sums across different assistantMsgId turns', () => {
+    let agg = foldTokenUsage(
+      undefined,
+      { promptTokens: 500, completionTokens: 20, totalTokens: 520 },
+      1,
+      'turn-1'
+    );
+    agg = foldTokenUsage(
+      agg,
+      { promptTokens: 300, completionTokens: 10, totalTokens: 310 },
+      2,
+      'turn-2'
+    );
+    expect(agg.cumulative.promptTokens).toBe(800);
   });
 });
 

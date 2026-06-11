@@ -54,6 +54,24 @@ export const SETTINGS_FILE = 'settings.json';
 /** Model discovery cache TTL (ms). */
 export const MODEL_DISCOVERY_TTL_MS = 5 * 60 * 1000;
 
+/** Background provider account poll interval while UI is actively viewing billing (ms). */
+export const PROVIDER_ACCOUNT_POLL_ACTIVE_MS = 5_000;
+
+/** Background provider account poll interval when idle (ms). */
+export const PROVIDER_ACCOUNT_POLL_IDLE_MS = 60_000;
+
+/** @deprecated Use PROVIDER_ACCOUNT_POLL_ACTIVE_MS — kept for tests referencing the old name. */
+export const PROVIDER_ACCOUNT_POLL_MS = PROVIDER_ACCOUNT_POLL_ACTIVE_MS;
+
+/** Per-fetch wall-clock budget for provider account requests. */
+export const PROVIDER_ACCOUNT_TIMEOUT_MS = 10_000;
+
+/** USD fallback threshold below which account snapshots flag `lowBalance`. */
+export const PROVIDER_LOW_BALANCE_USD = 1;
+
+/** Low-balance warning when balance falls below this fraction of last top-up / peak balance. */
+export const PROVIDER_LOW_BALANCE_PERCENT = 0.1;
+
 /**
  * Per-fetch wall-clock budget for provider model-discovery requests
  * (`detectDialect` probes, `fetchOpenAiModels`, `fetchOllamaTags`).
@@ -221,6 +239,14 @@ export const IPC = {
   PROVIDERS_REMOVE: 'providers:remove',
   PROVIDERS_DISCOVER_MODELS: 'providers:discover-models',
   PROVIDERS_TEST: 'providers:test',
+  /** Push: latest provider account snapshots (main → renderer). */
+  PROVIDERS_ACCOUNT_UPDATED: 'providers:account-updated',
+  PROVIDERS_GET_ACCOUNTS: 'providers:get-accounts',
+  PROVIDERS_REFRESH_ACCOUNTS: 'providers:refresh-accounts',
+  /** Renderer toggles poll cadence sources (`model-picker`, `composer`, `settings-providers`). */
+  PROVIDERS_SET_ACCOUNT_POLL_SOURCE: 'providers:set-account-poll-source',
+  /** Push: refreshed model list for one provider (main → renderer). */
+  PROVIDERS_MODELS_UPDATED: 'providers:models-updated',
 
   // Token estimation (main-process BPE / heuristic)
   TOKENS_ESTIMATE: 'tokens:estimate',
@@ -263,6 +289,7 @@ export const IPC = {
   // Settings
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
+  PROMPT_CACHE_STATUS: 'prompt-cache:status',
 
   // Conversations (persistent transcripts)
   CONVERSATIONS_LIST: 'conversations:list',

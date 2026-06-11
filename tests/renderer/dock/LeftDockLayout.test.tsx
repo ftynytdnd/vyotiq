@@ -150,6 +150,7 @@ describe('LeftDock layout', () => {
     expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Expand navigation' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Search chats and files' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull();
   });
 
   it('does not render flyout while settings mode is active', () => {

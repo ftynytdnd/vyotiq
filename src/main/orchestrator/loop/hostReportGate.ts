@@ -15,6 +15,7 @@ import { readTranscript } from '../../conversations/conversationStore.js';
 import { cloneLoopCheckpoint, type LoopCheckpoint } from '../pausedRunRegistry.js';
 import type { RunStateAccumulator } from './buildRunState.js';
 import type { SpinSignatureBuffer } from './toolSpinSignature.js';
+import { insertHistoryBeforeTail } from '../context/buildContextLayers.js';
 import { logger } from '../../logging/logger.js';
 
 const log = logger.child('orch/hostReportGate');
@@ -127,7 +128,7 @@ export async function maybeInterceptHostReportGate(
   const toolCallId = randomUUID();
   const promptEventId = randomUUID();
 
-  ctx.messages.push({
+  insertHistoryBeforeTail(ctx.messages, {
     role: 'assistant',
     content: null,
     tool_calls: [

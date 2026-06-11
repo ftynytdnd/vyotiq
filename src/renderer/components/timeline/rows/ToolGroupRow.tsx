@@ -21,7 +21,9 @@ import {
   scrubPreviewSlice,
   toolGroupStreamingBody
 } from '../shared/toolGroupScrubPreview.js';
+import { useToolStatusAnnouncer } from '../shared/useToolStatusAnnouncer.js';
 import { toolTitleClassName } from '../shared/rowStyles.js';
+import { formatToolGroupDisplayPrimary } from '../shared/formatToolGroupDisplayPrimary.js';
 import { CodeBlock } from '../tools/shared/CodeBlock.js';
 
 interface ToolGroupRowProps {
@@ -40,6 +42,7 @@ export const ToolGroupRow = memo(function ToolGroupRow({ rowKey, toolName, items
   const [showAllChildren, setShowAllChildren] = useState(false);
   const [scrubHover, setScrubHover] = useState(false);
   const [scrubRatio, setScrubRatio] = useState(0);
+  const panelId = `tool-group-panel-${rowKey}`;
 
   useEffect(() => {
     setShowAllChildren(false);
@@ -48,6 +51,11 @@ export const ToolGroupRow = memo(function ToolGroupRow({ rowKey, toolName, items
   const { verb, primary, suffix } = useMemo(
     () => toolGroupSummary(toolName, items),
     [toolName, items]
+  );
+
+  const { display: primaryDisplay, title: primaryTitle } = useMemo(
+    () => formatToolGroupDisplayPrimary(toolName, primary),
+    [toolName, primary]
   );
 
   const { additions: rawAdditions, deletions: rawDeletions } = useMemo(
@@ -93,10 +101,15 @@ export const ToolGroupRow = memo(function ToolGroupRow({ rowKey, toolName, items
   const visibleItems =
     hiddenChildCount > 0 ? items.slice(0, MAX_EXPANDED_CHILDREN) : items;
 
+  const summaryLabel = `${verb}${primary ? ` ${primary}` : ''}${suffix ?? ''}`;
+  useToolStatusAnnouncer(summaryLabel, status);
+
+  const showCount = items.length > 1 && !hasDiffStats;
+
   const label = (
     <span className="inline-flex min-w-0 max-w-full items-baseline gap-1 truncate text-row">
       <span className={toolTitleClassName(running, failed)}>{verb}</span>
-      {primary && (
+      {primaryDisplay && (
         <>
           {' '}
           <span
@@ -108,8 +121,9 @@ export const ToolGroupRow = memo(function ToolGroupRow({ rowKey, toolName, items
                   ? 'text-danger/80'
                   : 'text-text-muted'
             )}
+            {...(primaryTitle ? { title: primaryTitle } : {})}
           >
-            {truncate(primary, 80)}
+            {primaryDisplay}
           </span>
         </>
       )}
@@ -118,7 +132,11 @@ export const ToolGroupRow = memo(function ToolGroupRow({ rowKey, toolName, items
   );
 
   return (
-    <div className="vyotiq-stepfade-once relative flex flex-col" data-row-kind="tool-group">
+    <div
+      className="vx-timeline-activity-row vyotiq-stepfade-once relative flex flex-col"
+      data-row-kind="tool-group"
+      data-status={status}
+    >
       <div
         onMouseEnter={() => setScrubHover(true)}
         onMouseLeave={() => {
@@ -136,17 +154,29 @@ export const ToolGroupRow = memo(function ToolGroupRow({ rowKey, toolName, items
           expanded={expanded}
           onToggle={onToggle}
           expandable
+          chevronOnRight
           expandAriaLabel={expanded ? 'Collapse tool group' : 'Expand tool group'}
           rowAnchorKey={rowKey}
+          panelId={panelId}
           trailing={
-            hasDiffStats ? (
-              <DiffStatsBadge
-                additions={additions}
-                deletions={deletions}
-                pending={pendingStats}
-                className="shrink-0"
-              />
-            ) : undefined
+            <>
+              {showCount ? (
+                <span
+                  className="vx-tool-group-count shrink-0 font-mono tabular-nums"
+                  aria-label={`${items.length} tool calls`}
+                >
+                  ×{items.length}
+                </span>
+              ) : null}
+              {hasDiffStats ? (
+                <DiffStatsBadge
+                  additions={additions}
+                  deletions={deletions}
+                  pending={pendingStats}
+                  className="shrink-0"
+                />
+              ) : null}
+            </>
           }
         >
           {label}
@@ -164,6 +194,7 @@ export const ToolGroupRow = memo(function ToolGroupRow({ rowKey, toolName, items
 
       {expanded && (
         <DetailShell variant="flat" gap="gap-1">
+          <div id={panelId} className="contents">
           {visibleItems.map((c) => (
             <ToolInvocation
               key={c.callId}
@@ -186,13 +217,9 @@ export const ToolGroupRow = memo(function ToolGroupRow({ rowKey, toolName, items
               Show all {items.length} calls
             </button>
           )}
+          </div>
         </DetailShell>
       )}
     </div>
   );
 });
-
-function truncate(s: string, max: number): string {
-  if (s.length <= max) return s;
-  return s.slice(0, max - 1) + '…';
-}

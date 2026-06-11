@@ -49,7 +49,7 @@ describe('buildOrchestratorRequest', () => {
     expect(names).toEqual([...AGENT_TOOLS].sort());
   });
 
-  it('sends tool_choice:"none" on the wrap-up synthesis turn and appends a synthesis instruction', () => {
+  it('sends tool_choice:"none" on the wrap-up synthesis turn and merges synthesis into the turn slot', () => {
     const messages = baseMessages();
     const req = buildOrchestratorRequest({
       selection,
@@ -60,8 +60,10 @@ describe('buildOrchestratorRequest', () => {
     expect(req.toolChoice).toBe('none');
     const last = req.messages[req.messages.length - 1]!;
     expect(last.role).toBe('user');
+    expect(String(last.content)).toMatch(/do the thing/);
     expect(String(last.content)).toMatch(/final turn and tool calling is disabled/i);
     expect(req.temperature).toBeUndefined();
+    expect(req.messages).toHaveLength(2);
     expect(messages).toHaveLength(2);
   });
 

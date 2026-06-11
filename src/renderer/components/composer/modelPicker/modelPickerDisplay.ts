@@ -9,7 +9,7 @@ export function rowDisplayModelId(modelId: string): string {
 
 /** Compact context badge label for model rows. */
 export function rowContextBadgeLabel(tokens: number): string {
-  return `${formatTokenCount(tokens)} ctx`;
+  return formatTokenCount(tokens);
 }
 
 /** Whether effort should appear as a row badge (hide default/off). */

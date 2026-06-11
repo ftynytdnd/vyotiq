@@ -5,6 +5,7 @@
  */
 
 import type { TimelineEvent, TokenUsage } from '@shared/types/chat.js';
+import { tokenUsageCountsEqual } from '@shared/token/tokenUsageCountsEqual.js';
 import type { DiffHunk } from '@shared/types/tool.js';
 
 export interface AssistantTextAcc {
@@ -88,6 +89,11 @@ export interface TokenUsageAggregate {
   cumulative: TokenUsage;
   /** Count of usage events folded in. Useful for empty-state checks. */
   samples: number;
+  /**
+   * Last `token-usage` assistant turn id — used to replace (not sum)
+   * cumulative snapshots when providers emit multiple frames per turn.
+   */
+  lastTurnAssistantMsgId?: string;
   inFlight?: TokenUsage;
   streamStartedAt?: number;
   streamEndedAt?: number;
@@ -104,6 +110,8 @@ export interface TimelineState {
   reasoningTexts: Record<string, ReasoningTextAcc>;
   /** Aggregated token usage for the active Agent V run. */
   orchestratorUsage?: TokenUsageAggregate;
+  /** Anthropic cache-diagnostics miss reason from the latest token-usage event. */
+  lastPromptCacheMissReason?: string | null;
   /**
    * Latest orchestrator-scoped `run-status` event.
    */
@@ -114,6 +122,8 @@ export interface TimelineState {
   settledCallIds: Record<string, true>;
   liveDiffByCallId: Record<string, DiffStreamSnapshot>;
   toolResultSettledIds: Record<string, true>;
+  /** Report tool-results that settled via live IPC this session (not transcript replay). */
+  liveReportResultIds: Record<string, true>;
   runIdToFileEditCount: Record<string, number>;
 }
 
@@ -125,13 +135,54 @@ export const INITIAL_TIMELINE_STATE: TimelineState = {
   settledCallIds: {},
   liveDiffByCallId: {},
   toolResultSettledIds: {},
+  liveReportResultIds: {},
   runIdToFileEditCount: {}
 };
+
+function subtractUsage(base: TokenUsage, sub: TokenUsage): TokenUsage {
+  const out: TokenUsage = {
+    promptTokens: Math.max(0, base.promptTokens - sub.promptTokens),
+    completionTokens: Math.max(0, base.completionTokens - sub.completionTokens),
+    totalTokens: Math.max(0, base.totalTokens - sub.totalTokens)
+  };
+  const reasoning = diffOpt(base.reasoningTokens, sub.reasoningTokens);
+  if (reasoning !== undefined) out.reasoningTokens = reasoning;
+  const cached = diffOpt(base.cachedPromptTokens, sub.cachedPromptTokens);
+  if (cached !== undefined) out.cachedPromptTokens = cached;
+  const cacheCreation = diffOpt(base.cacheCreationTokens, sub.cacheCreationTokens);
+  if (cacheCreation !== undefined) out.cacheCreationTokens = cacheCreation;
+  const uncached = diffOpt(base.uncachedPromptTokens, sub.uncachedPromptTokens);
+  if (uncached !== undefined) out.uncachedPromptTokens = uncached;
+  return out;
+}
+
+function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
+  const out: TokenUsage = {
+    promptTokens: a.promptTokens + b.promptTokens,
+    completionTokens: a.completionTokens + b.completionTokens,
+    totalTokens: a.totalTokens + b.totalTokens
+  };
+  const reasoning = sumOpt(a.reasoningTokens, b.reasoningTokens);
+  if (reasoning !== undefined) out.reasoningTokens = reasoning;
+  const cached = sumOpt(a.cachedPromptTokens, b.cachedPromptTokens);
+  if (cached !== undefined) out.cachedPromptTokens = cached;
+  const cacheCreation = sumOpt(a.cacheCreationTokens, b.cacheCreationTokens);
+  if (cacheCreation !== undefined) out.cacheCreationTokens = cacheCreation;
+  const uncached = sumOpt(a.uncachedPromptTokens, b.uncachedPromptTokens);
+  if (uncached !== undefined) out.uncachedPromptTokens = uncached;
+  return out;
+}
+
+function diffOpt(a: number | undefined, b: number | undefined): number | undefined {
+  if (a === undefined && b === undefined) return undefined;
+  return Math.max(0, (a ?? 0) - (b ?? 0));
+}
 
 export function foldTokenUsage(
   prior: TokenUsageAggregate | undefined,
   next: TokenUsage,
-  ts?: number
+  ts?: number,
+  assistantMsgId?: string
 ): TokenUsageAggregate {
   if (!prior) {
     return {
@@ -139,6 +190,7 @@ export function foldTokenUsage(
       peak: next,
       cumulative: next,
       samples: 1,
+      ...(assistantMsgId !== undefined ? { lastTurnAssistantMsgId: assistantMsgId } : {}),
       ...(typeof ts === 'number' ? { streamEndedAt: ts } : {})
     };
   }
@@ -153,27 +205,27 @@ export function foldTokenUsage(
   if (peakCached !== undefined) peak.cachedPromptTokens = peakCached;
   const peakCacheCreation = maxOpt(prior.peak.cacheCreationTokens, next.cacheCreationTokens);
   if (peakCacheCreation !== undefined) peak.cacheCreationTokens = peakCacheCreation;
+  const peakUncached = maxOpt(prior.peak.uncachedPromptTokens, next.uncachedPromptTokens);
+  if (peakUncached !== undefined) peak.uncachedPromptTokens = peakUncached;
 
-  const cumulative: TokenUsage = {
-    promptTokens: prior.cumulative.promptTokens + next.promptTokens,
-    completionTokens: prior.cumulative.completionTokens + next.completionTokens,
-    totalTokens: prior.cumulative.totalTokens + next.totalTokens
-  };
-  const cumReasoning = sumOpt(prior.cumulative.reasoningTokens, next.reasoningTokens);
-  if (cumReasoning !== undefined) cumulative.reasoningTokens = cumReasoning;
-  const cumCached = sumOpt(prior.cumulative.cachedPromptTokens, next.cachedPromptTokens);
-  if (cumCached !== undefined) cumulative.cachedPromptTokens = cumCached;
-  const cumCacheCreation = sumOpt(
-    prior.cumulative.cacheCreationTokens,
-    next.cacheCreationTokens
-  );
-  if (cumCacheCreation !== undefined) cumulative.cacheCreationTokens = cumCacheCreation;
+  const sameTurn =
+    assistantMsgId !== undefined &&
+    prior.lastTurnAssistantMsgId === assistantMsgId;
+  const metadataOnlyRepeat = sameTurn && tokenUsageCountsEqual(prior.latest, next);
+  const cumulative = sameTurn
+    ? addUsage(subtractUsage(prior.cumulative, prior.latest), next)
+    : addUsage(prior.cumulative, next);
 
   const out: TokenUsageAggregate = {
     latest: next,
     peak,
     cumulative,
-    samples: prior.samples + 1
+    samples: metadataOnlyRepeat ? prior.samples : prior.samples + 1,
+    ...(assistantMsgId !== undefined
+      ? { lastTurnAssistantMsgId: assistantMsgId }
+      : prior.lastTurnAssistantMsgId !== undefined
+        ? { lastTurnAssistantMsgId: prior.lastTurnAssistantMsgId }
+        : {})
   };
   if (typeof prior.streamStartedAt === 'number') {
     out.streamStartedAt = prior.streamStartedAt;

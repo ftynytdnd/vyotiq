@@ -17,6 +17,7 @@ import { classifyProviderError, ProviderError, looksRateLimited } from './provid
 import { acquire, markRateLimited, markSuccess } from './providerRateGuard.js';
 import { createInactivityWatch, isStreamInactivityError } from './streamInactivity.js';
 import { buildAttributionHeaders, isOpenRouterHost } from './attributionHeaders.js';
+import { recordProviderRateLimits } from './providerRateLimitCapture.js';
 import { readSseFrames, pickSseDataLine } from './sseFrameReader.js';
 import {
   stripGeminiSignatures,
@@ -35,6 +36,8 @@ import {
   openRouterIncludeReasoning,
   resolveStreamerThinkingEffort
 } from '@shared/providers/thinkingEffort.js';
+import { applyOpenAiCacheHints } from './cacheHints/openaiCacheHints.js';
+import { normalizeWireTools } from './normalizeWireTools.js';
 
 const log = logger.child('providers/chat/openai');
 
@@ -171,8 +174,14 @@ export async function* streamOpenAi(
     // estimates.
     stream_options: { include_usage: true }
   };
-  if (req.tools && req.tools.length > 0) {
-    body['tools'] = req.tools;
+  applyOpenAiCacheHints(body, provider, {
+    modelId: req.model,
+    ...(req.workspaceId !== undefined ? { workspaceId: req.workspaceId } : {}),
+    ...(req.conversationId !== undefined ? { conversationId: req.conversationId } : {})
+  });
+  const wireTools = normalizeWireTools(req.tools);
+  if (wireTools && wireTools.length > 0) {
+    body['tools'] = wireTools;
     // Only forward `tool_choice` when the caller set one. An OMITTED
     // choice (undefined) is deliberate for thinking models — DeepSeek
     // V4 returns HTTP 400 ("Thinking mode does not support this
@@ -272,6 +281,8 @@ export async function* streamOpenAi(
     }
     throw err;
   }
+
+  recordProviderRateLimits(req.providerId, res.headers);
 
   if (!res.ok || !res.body) {
     watch.dispose();
@@ -379,6 +390,7 @@ export async function* streamOpenAi(
           : typeof cachedFromDeepSeek === 'number'
             ? cachedFromDeepSeek
             : undefined;
+      const uncachedFromDeepSeek = u.prompt_cache_miss_tokens;
       const reasoningTokens = u.completion_tokens_details?.reasoning_tokens;
       yield {
         usage: {
@@ -386,6 +398,9 @@ export async function* streamOpenAi(
           completionTokens: completion,
           totalTokens: total,
           ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
+          ...(typeof uncachedFromDeepSeek === 'number'
+            ? { uncachedPromptTokens: uncachedFromDeepSeek }
+            : {}),
           ...(typeof reasoningTokens === 'number' ? { reasoningTokens } : {})
         }
       };

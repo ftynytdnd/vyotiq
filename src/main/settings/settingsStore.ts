@@ -14,6 +14,7 @@ import { resolveSettingsSectionId } from '@shared/settings/settingsSection.js';
 import { readBlob, updateBlob, type SettingsBlob } from './blob.js';
 import { normalizeDockWidthInUi } from '@shared/dock/dockWidth.js';
 import { migrateLegacyDockUi, normalizeSettingsPatch } from './migrateUiFields.js';
+import { syncPromptCachingFromSettings } from './promptCachingRuntime.js';
 
 export { normalizeSettingsPatch };
 
@@ -201,7 +202,9 @@ export async function getSettings(): Promise<AppSettings> {
   const raw = await readBlob();
   const { blob: normalized, changed } = normalizeBlobForPersistence(raw);
   const persisted = changed ? await updateBlob(() => normalized) : raw;
-  return publicShape(persisted);
+  const settings = publicShape(persisted);
+  syncPromptCachingFromSettings(settings);
+  return settings;
 }
 
 export async function setSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
@@ -246,14 +249,38 @@ export async function setSettings(patch: Partial<AppSettings>): Promise<AppSetti
         )
       : undefined;
 
+    const spendIncrement = patchUi?.workspaceSpendIncrement as
+      | Record<string, number>
+      | undefined;
+    const patchUiSansIncrement = patchUi ? { ...patchUi } : undefined;
+    if (patchUiSansIncrement && spendIncrement !== undefined) {
+      delete patchUiSansIncrement.workspaceSpendIncrement;
+    }
+
     const mergedUi: Record<string, unknown> = {
       ...currentUi,
-      ...(patchUi ?? {})
+      ...(patchUiSansIncrement ?? {})
     };
+    if (spendIncrement && Object.keys(spendIncrement).length > 0) {
+      const prev = (currentUi.workspaceSpendUsd as Record<string, number> | undefined) ?? {};
+      const next = { ...prev };
+      for (const [workspaceId, delta] of Object.entries(spendIncrement)) {
+        if (typeof delta === 'number' && Number.isFinite(delta) && delta > 0) {
+          next[workspaceId] = (next[workspaceId] ?? 0) + delta;
+        }
+      }
+      mergedUi.workspaceSpendUsd = next;
+    }
     if (patchUi?.reports) {
       mergedUi.reports = {
         ...(currentUi.reports as Record<string, unknown> | undefined),
         ...patchUi.reports
+      };
+    }
+    if (patchUi?.promptCaching) {
+      mergedUi.promptCaching = {
+        ...(currentUi.promptCaching as Record<string, unknown> | undefined),
+        ...patchUi.promptCaching
       };
     }
 
@@ -270,5 +297,7 @@ export async function setSettings(patch: Partial<AppSettings>): Promise<AppSetti
       ui: mergedUi
     };
   });
-  return publicShape(next);
+  const settings = publicShape(next);
+  syncPromptCachingFromSettings(settings);
+  return settings;
 }

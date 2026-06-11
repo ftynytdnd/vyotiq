@@ -66,6 +66,7 @@ describe('discoverModels — native capability parsing', () => {
     expect(models[0]?.contextWindow).toBe(1_000_000);
     expect(models[0]?.thinking?.supported).toBe(true);
     expect(models[0]?.thinking?.wireStyle).toBe('anthropic-adaptive');
+    expect(models[0]?.pricing?.inputPerMillion).toBe(15);
   });
 
   it('parses Gemini thinking + context from models list', async () => {
@@ -108,5 +109,6 @@ describe('discoverModels — native capability parsing', () => {
     expect(flash?.contextWindow).toBe(1_048_576);
     expect(flash?.thinking?.wireStyle).toBe('gemini-budget');
     expect(pro?.thinking?.wireStyle).toBe('gemini-level');
+    expect(pro?.pricing?.inputPerMillion).toBe(2);
   });
 });

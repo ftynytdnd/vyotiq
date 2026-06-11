@@ -43,6 +43,9 @@ export function ShortcutsPanel({
   const role = presentation === 'dialog' ? 'dialog' : 'region';
   return (
     <div role={role} aria-label="Keyboard shortcuts" className="vx-stack gap-3">
+      <ShortcutGroup title="Settings">
+        <ShortcutRow combo="Esc" label="Close settings" />
+      </ShortcutGroup>
       <ShortcutGroup title="Navigation">
         <ShortcutRow combo={`${mod}+B`} label="Toggle navigation dock" />
         <ShortcutRow combo={`${mod}+K`} label="Search chats and workspace files" />

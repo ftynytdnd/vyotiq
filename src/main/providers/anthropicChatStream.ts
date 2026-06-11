@@ -66,6 +66,7 @@ import type { ProviderWithKey } from '@shared/types/provider.js';
 import { logger } from '../logging/logger.js';
 import { classifyProviderError, ProviderError } from './providerError.js';
 import { acquire, markRateLimited, markSuccess } from './providerRateGuard.js';
+import { recordProviderRateLimits } from './providerRateLimitCapture.js';
 import { createInactivityWatch, isStreamInactivityError } from './streamInactivity.js';
 import { readSseFrames } from './sseFrameReader.js';
 import { safeText } from './errorBody.js';
@@ -75,6 +76,19 @@ import {
   mapAnthropicThinking,
   resolveStreamerThinkingEffort
 } from '@shared/providers/thinkingEffort.js';
+import {
+  applyAnthropicAutomaticCache,
+  buildAnthropicSystemBlocks,
+  markAnthropicToolCache,
+  markFewShotUserCache,
+  markWorkspaceUserCache
+} from './cacheHints/anthropicCacheHints.js';
+import {
+  ANTHROPIC_CACHE_DIAGNOSIS_BETA,
+  isAnthropicCacheDiagnosticsEnabled,
+  parseAnthropicCacheDiagnostics
+} from './cacheHints/anthropicCacheDiagnostics.js';
+import { normalizeWireTools } from './normalizeWireTools.js';
 
 const log = logger.child('providers/chat/anthropic');
 
@@ -152,14 +166,34 @@ export async function* streamAnthropic(
     messages: translated.messages,
     stream: true
   };
-  if (translated.system.length > 0) body['system'] = translated.system;
+  const systemBlocks = buildAnthropicSystemBlocks(req.messages, translated.system);
+  if (systemBlocks.length > 0) body['system'] = systemBlocks;
+  const wireMessages = translated.messages as unknown as Array<{
+    role: string;
+    content: Array<Record<string, unknown>>;
+  }>;
+  markFewShotUserCache(wireMessages, req.messages);
+  markWorkspaceUserCache(wireMessages, req.messages);
+  applyAnthropicAutomaticCache(body);
+  if (req.workspaceId?.trim()) {
+    body['metadata'] = { user_id: req.workspaceId.trim() };
+  }
+  const cacheDiagnosticsOn = isAnthropicCacheDiagnosticsEnabled();
+  if (cacheDiagnosticsOn) {
+    body['diagnostics'] = {
+      previous_message_id: req.previousAnthropicMessageId ?? null
+    };
+  }
   if (typeof req.temperature === 'number') body['temperature'] = req.temperature;
-  if (req.tools && req.tools.length > 0) {
-    body['tools'] = req.tools.map((t) => ({
+  const wireTools = normalizeWireTools(req.tools);
+  if (wireTools && wireTools.length > 0) {
+    const tools = wireTools.map((t) => ({
       name: t.function.name,
       description: t.function.description,
       input_schema: t.function.parameters
     }));
+    markAnthropicToolCache(tools);
+    body['tools'] = tools;
     // OpenAI-shape `tool_choice` → Anthropic's structured form.
     if (req.toolChoice === 'auto') body['tool_choice'] = { type: 'auto' };
     else if (req.toolChoice === 'required') body['tool_choice'] = { type: 'any' };
@@ -211,9 +245,10 @@ export async function* streamAnthropic(
     'x-api-key': provider.apiKey,
     'anthropic-version': '2023-06-01'
   };
-  const betas = anthropicBetasForProvider(provider.anthropicBetas);
-  if (betas && betas.length > 0) {
-    headers['anthropic-beta'] = betas.join(',');
+  const betas = new Set(anthropicBetasForProvider(provider.anthropicBetas) ?? []);
+  if (cacheDiagnosticsOn) betas.add(ANTHROPIC_CACHE_DIAGNOSIS_BETA);
+  if (betas.size > 0) {
+    headers['anthropic-beta'] = [...betas].join(',');
   }
 
   // Inactivity watchdog — wraps the caller's signal so a silent SSE
@@ -247,6 +282,8 @@ export async function* streamAnthropic(
     }
     throw err;
   }
+
+  recordProviderRateLimits(req.providerId, res.headers);
 
   if (!res.ok || !res.body) {
     watch.dispose();
@@ -336,6 +373,12 @@ export async function* streamAnthropic(
         if (usage) {
           cumUsage = { ...usage };
           yield { usage: toCanonicalUsage(cumUsage) };
+        }
+        const msgId = typeof message?.['id'] === 'string' ? message['id'] : undefined;
+        if (msgId) yield { anthropicMessageId: msgId };
+        const startDiag = parseAnthropicCacheDiagnostics(message?.['diagnostics']);
+        if (startDiag) {
+          yield { anthropicCacheDiagnostics: { cacheMissReason: startDiag.cacheMissReason } };
         }
         return false;
       }
@@ -450,6 +493,10 @@ export async function* streamAnthropic(
           // running snapshot field-by-field, NEVER add.
           cumUsage = { ...(cumUsage ?? {}), ...usage };
           yield { usage: toCanonicalUsage(cumUsage) };
+        }
+        const deltaDiag = parseAnthropicCacheDiagnostics(payload['diagnostics']);
+        if (deltaDiag) {
+          yield { anthropicCacheDiagnostics: { cacheMissReason: deltaDiag.cacheMissReason } };
         }
         if (stopReason !== null) {
           yield { finishReason: mapStopReason(stopReason) };

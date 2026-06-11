@@ -32,6 +32,8 @@ interface SettingsStore {
    */
   setLastModelByWorkspace: (workspaceId: string, sel: ModelSelection) => Promise<void>;
   toggleFavoriteModel: (providerId: string, modelId: string) => Promise<void>;
+  /** Accumulate estimated API spend for a workspace (USD). */
+  addWorkspaceSpend: (workspaceId: string, usd: number) => Promise<void>;
   /**
    * One-shot cascade triggered by `workspace.remove`. Strips the
    * given workspace id from every per-workspace UI map at once
@@ -125,9 +127,11 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     const active = ui.activeConversationByWorkspace ?? {};
     const lastModel = ui.lastModelByWorkspace ?? {};
     const collapsed = ui.collapsedWorkspaces ?? [];
+    const spend = ui.workspaceSpendUsd ?? {};
     const inAny =
       workspaceId in active ||
       workspaceId in lastModel ||
+      workspaceId in spend ||
       collapsed.includes(workspaceId);
     if (!inAny) return;
     // Build cleaned copies. Spread + delete keeps the other entries
@@ -140,11 +144,14 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     delete nextActive[workspaceId];
     const nextLastModel = { ...lastModel };
     delete nextLastModel[workspaceId];
+    const nextSpend = { ...spend };
+    delete nextSpend[workspaceId];
     const nextCollapsed = collapsed.filter((id) => id !== workspaceId);
     const updated = await vyotiq.settings.set({
       ui: {
         activeConversationByWorkspace: nextActive,
         lastModelByWorkspace: nextLastModel,
+        workspaceSpendUsd: nextSpend,
         collapsedWorkspaces: nextCollapsed
       }
     });
@@ -182,6 +189,14 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     else set.add(key);
     const updated = await vyotiq.settings.set({
       ui: { favoriteModels: [...set] }
+    });
+    setState({ settings: { ...getState().settings, ...updated } });
+  },
+
+  addWorkspaceSpend: async (workspaceId, usd) => {
+    if (!Number.isFinite(usd) || usd <= 0) return;
+    const updated = await vyotiq.settings.set({
+      ui: { workspaceSpendIncrement: { [workspaceId]: usd } }
     });
     setState({ settings: { ...getState().settings, ...updated } });
   }

@@ -17,7 +17,10 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import type { DisplayRow } from './shared/displayRowTypes.js';
 import { partitionTurnSegment } from './shared/groupTurnSegment.js';
 import { findTimelineScrollParent } from './shared/timelineScrollParent.js';
-import { TIMELINE_SCROLL_UNSTICK_PX } from './shared/scrollTailState.js';
+import {
+  TIMELINE_SCROLL_STREAM_FOLLOW_PX,
+  TIMELINE_SCROLL_UNSTICK_PX
+} from './shared/scrollTailState.js';
 import { estimateTailTurnHeight } from './shared/timelineVirtualize.js';
 import { findTurnIndexForRowKey } from './shared/timelineVirtualNav.js';
 
@@ -34,11 +37,13 @@ interface VirtualizedTurnListProps {
   /** Grows during streaming — triggers remeasure of the tail turn. */
   tailScrollKey: string;
   renderTurn: (segment: DisplayRow[], segmentIndex: number) => ReactNode;
+  /** Widen end-follow slack while the trailing run is still open. */
+  streamFollow?: boolean;
 }
 
 export const VirtualizedTurnList = forwardRef<TimelinePinHandle, VirtualizedTurnListProps>(
   function VirtualizedTurnList(
-    { containerRef, turnSegments, tailScrollKey, renderTurn },
+    { containerRef, turnSegments, tailScrollKey, renderTurn, streamFollow = false },
     ref
   ) {
     const scrollParentRef = useRef<HTMLElement | null>(null);
@@ -74,7 +79,9 @@ export const VirtualizedTurnList = forwardRef<TimelinePinHandle, VirtualizedTurn
       overscan: 3,
       anchorTo: 'end',
       followOnAppend: true,
-      scrollEndThreshold: TIMELINE_SCROLL_UNSTICK_PX,
+      scrollEndThreshold: streamFollow
+        ? TIMELINE_SCROLL_STREAM_FOLLOW_PX
+        : TIMELINE_SCROLL_UNSTICK_PX,
       getItemKey: (index) => segmentKeys[index] ?? index,
       measureElement: (el) => el.getBoundingClientRect().height
     });
@@ -97,7 +104,10 @@ export const VirtualizedTurnList = forwardRef<TimelinePinHandle, VirtualizedTurn
           virtualizer.scrollToIndex(index, { align: 'start', behavior: 'instant' });
           return true;
         },
-        isAtEnd: () => virtualizer.isAtEnd(TIMELINE_SCROLL_UNSTICK_PX)
+        isAtEnd: () =>
+          virtualizer.isAtEnd(
+            streamFollow ? TIMELINE_SCROLL_STREAM_FOLLOW_PX : TIMELINE_SCROLL_UNSTICK_PX
+          )
       }),
       [turnSegments, virtualizer]
     );

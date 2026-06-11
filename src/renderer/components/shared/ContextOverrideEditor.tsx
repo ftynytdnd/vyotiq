@@ -88,10 +88,10 @@ export function ContextOverrideEditor({
           <div className="flex items-baseline justify-between gap-2">
             <div className="text-meta font-medium text-text-faint">Context</div>
             {effectiveLabel ? (
-              <span className="font-mono text-meta tabular-nums text-text-faint">
+              <span className="font-mono text-meta tabular-nums text-text-secondary">
                 {effectiveLabel}
                 {override !== undefined && discovered !== undefined && override !== discovered
-                  ? ` · ${formatTokenCount(discovered)} disc.`
+                  ? ` · ${formatTokenCount(discovered)}`
                   : null}
               </span>
             ) : (
@@ -99,13 +99,13 @@ export function ContextOverrideEditor({
             )}
           </div>
           <TextField
-            className="w-full font-mono text-row"
+            className="vx-model-picker-context-input w-full font-mono text-meta"
             inputMode="numeric"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onBlur={onBlur}
             onKeyDown={onKeyDown}
-            placeholder="Token limit…"
+            placeholder="Override tokens…"
             aria-label="Context window tokens"
           />
           {override !== undefined ? (

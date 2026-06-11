@@ -22,7 +22,7 @@ export function ShellSection({
   className,
   variant = 'flat'
 }: {
-  title: string;
+  title?: string;
   children: ReactNode;
   className?: string;
   /** `flat` — Linear-lite, no left rail. `rail` — legacy inset rail. */
@@ -30,7 +30,7 @@ export function ShellSection({
 }) {
   return (
     <section className={cn('vx-section', className)}>
-      <h3 className="vx-section-head">{title}</h3>
+      {title ? <h3 className="vx-section-head">{title}</h3> : null}
       <div className={cn('vx-section-body', variant === 'rail' && 'vx-section-body--rail')}>
         {children}
       </div>

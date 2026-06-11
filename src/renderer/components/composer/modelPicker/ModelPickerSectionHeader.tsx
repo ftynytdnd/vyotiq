@@ -9,14 +9,17 @@ interface ModelPickerSectionHeaderProps {
   label: string;
   /** Local / Cloud use uppercase eyebrow styling. */
   variant?: 'pinned' | 'category';
+  count?: number;
 }
 
 export function ModelPickerSectionHeader({
   label,
-  variant = 'pinned'
+  variant = 'pinned',
+  count
 }: ModelPickerSectionHeaderProps) {
+  const title = count !== undefined ? `${label} · ${count}` : label;
   return (
-    <div className="vx-model-picker-section-head px-2 py-0.5">
+    <div className="vx-model-picker-section-head">
       <Eyebrow
         as="span"
         bold={variant === 'category'}
@@ -26,7 +29,7 @@ export function ModelPickerSectionHeader({
           variant === 'pinned' && 'normal-case tracking-normal'
         )}
       >
-        {label}
+        {title}
       </Eyebrow>
     </div>
   );
