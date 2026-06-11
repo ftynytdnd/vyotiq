@@ -115,4 +115,4 @@ Fallback rates in `cachePricingDefaults.ts` when discovery omits cache-read pric
 - **`toolResultCache` `[cache]` banner** — intentional on repeat tool hits; invalidates history prefix.
 - **No explicit Anthropic history breakpoint** — four explicit slots reserved for system, few-shot, workspace, tools; rolling history uses top-level automatic caching.
 - **Groq / Mistral / Together** — automatic provider-side caching only; no explicit wire hints.
-- **Ollama native** — no `cachedPromptTokens` on the wire; composer cache warning and run-loop cache-miss logs are suppressed (`providerDialectReportsPromptCache`).
+- **Ollama native** — no `cachedPromptTokens` on the wire; composer cache warning and run-loop cache-miss logs are suppressed (`providerDialectReportsPromptCache`). Models such as `gemma4:31b` are Google Gemma weights hosted on Ollama, not the Gemini API — the composer cache strip prefixes the provider name (e.g. “Ollama Cloud”) when cache metrics are shown for cache-capable dialects.

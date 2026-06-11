@@ -26,9 +26,9 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip({
   model = null
 }: ComposerStatusStripProps) {
   const providers = useProviderStore((s) => s.providers);
-  const providerDialect = model
-    ? providers.find((p) => p.id === model.providerId)?.dialect
-    : undefined;
+  const provider = model ? providers.find((p) => p.id === model.providerId) : undefined;
+  const providerDialect = provider?.dialect;
+  const providerLabel = provider?.name;
   const reportsPromptCache =
     providerDialect !== undefined && providerDialectReportsPromptCache(providerDialect);
   const account = useProviderAccountStore((s) =>
@@ -79,6 +79,12 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip({
             : undefined
         }
       >
+        {providerLabel ? (
+          <>
+            <span className="text-text-secondary">{providerLabel}</span>
+            {' · '}
+          </>
+        ) : null}
         {cacheWarn ? (
           <>
             <span className="font-medium text-warning">No cache read</span>

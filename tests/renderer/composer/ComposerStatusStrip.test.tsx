@@ -87,6 +87,7 @@ describe('ComposerStatusStrip', () => {
 
     render(<ComposerStatusStrip model={openAiModel} />);
     const strip = screen.getByRole('status');
+    expect(strip.textContent).toMatch(/OpenAI/);
     expect(strip.textContent).toMatch(/34k tok cached/);
     expect(strip.textContent).toMatch(/68% of prompt/);
   });
@@ -104,6 +105,7 @@ describe('ComposerStatusStrip', () => {
 
     render(<ComposerStatusStrip model={openAiModel} />);
     const strip = screen.getByRole('status');
+    expect(strip.textContent).toMatch(/OpenAI/);
     expect(strip.textContent).toMatch(/No cache read/);
     expect(strip.textContent).toMatch(/4\.1k tok prompt/);
   });
