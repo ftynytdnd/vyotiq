@@ -26,6 +26,38 @@ export type RegisteredToolName =
   | 'ask_user';
 
 /**
+ * Runtime catalogue of registered tool names — the single source of truth
+ * for code that needs the names at runtime (the registry, the policy
+ * allowlist, and the provider-name normalizer). Shared code cannot import
+ * the main-process registry, so this array lives here and the assertion
+ * below guarantees it stays in lock-step with `RegisteredToolName`:
+ * dropping or adding a union member without updating this array is a
+ * compile error.
+ */
+export const REGISTERED_TOOL_NAMES = [
+  'bash',
+  'ls',
+  'read',
+  'edit',
+  'delete',
+  'search',
+  'memory',
+  'recall',
+  'report',
+  'finish',
+  'ask_user'
+] as const satisfies readonly RegisteredToolName[];
+
+// Compile-time completeness guard: fails if any `RegisteredToolName` is
+// missing from `REGISTERED_TOOL_NAMES` above.
+type _AllRegisteredNamesCovered =
+  Exclude<RegisteredToolName, (typeof REGISTERED_TOOL_NAMES)[number]> extends never
+    ? true
+    : never;
+const _allRegisteredNamesCovered: _AllRegisteredNamesCovered = true;
+void _allRegisteredNamesCovered;
+
+/**
  * The set of tool names that may appear on a `ToolCall` / `ToolResult`.
  * Includes the `'unknown'` sentinel used at the result boundary when an
  * inbound tool name does not match any registered tool — it lets the

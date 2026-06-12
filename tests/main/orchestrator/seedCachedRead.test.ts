@@ -25,7 +25,7 @@ describe('seedCachedRead', () => {
     const hit = lookupCachedResult(sig, 'read', { path: 'core/agent.py' });
     expect(hit).not.toBeNull();
     expect(hit!.ok).toBe(true);
-    expect(hit!.output).toContain('inlined into the <files> block');
+    expect(hit!.output).toContain('inlined into the <attached_files> block');
     expect(hit!.output).not.toMatch(/^\[cache\] This exact `read` call/);
     clearRunCache(sig);
   });
@@ -55,7 +55,7 @@ describe('seedCachedRead', () => {
     seedCachedRead(sig, 'core/agent.py');
     seedCachedRead(sig, 'core/agent.py');
     const hit = lookupCachedResult(sig, 'read', { path: 'core/agent.py' });
-    expect(hit!.output).toContain('inlined into the <files> block');
+    expect(hit!.output).toContain('inlined into the <attached_files> block');
     clearRunCache(sig);
   });
 });

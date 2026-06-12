@@ -18,9 +18,12 @@
  *
  * Scope: keyed by `AbortSignal` (one cache bucket per orchestrator run).
  *
- * Invalidation: any call to a **write-shaped** tool (`edit`, `bash`,
- * `memory write/append`) clears the run's cache so subsequent reads
- * see fresh workspace state.
+ * Invalidation: any call to a **write-shaped** tool (`edit`, `delete`,
+ * `bash`, `report`, `memory write/append`) clears the run's cache so
+ * subsequent reads see fresh workspace state. `delete` and `report` are
+ * included because both mutate the on-disk workspace (`delete` unlinks a
+ * file; `report` writes under `.vyotiq/reports`), so a previously cached
+ * `read`/`ls`/`search` could otherwise return stale content.
  */
 
 import type { ToolName, ToolResult } from '@shared/types/tool.js';
@@ -35,7 +38,7 @@ const log = logger.child('orchestrator/toolResultCache');
  * write produces byte-identical output. Only these are cached.
  *
  * Notably excluded:
- *   - `edit`, `bash` — write-shaped.
+ *   - `edit`, `delete`, `bash`, `report` — write-shaped.
  *   - `memory` — action-dependent (cached inside the key, see
  *     `cacheableKey` below; write actions invalidate).
  */
@@ -65,7 +68,7 @@ function cacheableKey(name: ToolName, args: Record<string, unknown>): string | n
  * subsequent reads see fresh data.
  */
 function isWriteShaped(name: ToolName, args: Record<string, unknown>): boolean {
-  if (name === 'edit' || name === 'bash') return true;
+  if (name === 'edit' || name === 'delete' || name === 'bash' || name === 'report') return true;
   if (name === 'memory') {
     const action = typeof args.action === 'string' ? args.action : '';
     return action === 'write' || action === 'append';
@@ -82,8 +85,8 @@ interface CacheEntry {
    * recorded by an actual tool run. The lookup
    * path skips the "you already issued this N times" banner for
    * seeded entries because the seed's own `output` is the
-   * authoritative explanation ("this file is already in your <files>
-   * block, re-read suppressed"). Without this flag the banner would
+   * authoritative explanation ("this file is already in your
+   * <attached_files> block, re-read suppressed"). Without this flag the banner would
    * lie to the model on the FIRST `read` of a pre-seeded file.
    */
   seeded?: boolean;
@@ -182,7 +185,7 @@ export function seedCachedRead(signal: AbortSignal, rel: string): void {
     name: 'read',
     ok: true,
     output:
-      `[host] The file "${rel}" was already inlined into the <files> block ` +
+      `[host] The file "${rel}" was already inlined into the <attached_files> block ` +
       `at the top of your conversation. The host has short-circuited this ` +
       `\`read\` to save you a round-trip. Use the inlined content directly. ` +
       `If you need a specific line range that exceeds the inline cap, ` +

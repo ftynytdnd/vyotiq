@@ -43,9 +43,9 @@ vi.mock('@main/orchestrator/contextManager', async () => {
       workspaceXml: '<workspace_context>stub</workspace_context>',
       sessionXml: '<session_context>stub</session_context>',
       // `priorConversationsXml` is required on `ContextEnvelopes`; the
-      // runLoop forwards it into `buildSystemPrompt` so a missing field
-      // would TS-fail (and at runtime would land as `undefined` in the
-      // prompt).
+      // runLoop forwards it through `applyCacheLayers` into the runtime
+      // tail, so a missing field would TS-fail (and at runtime would land
+      // as `undefined` in the prompt).
       priorConversationsXml: '<prior_conversations>stub</prior_conversations>',
       memoryXml: '<recent_memory>stub</recent_memory>',
       metaRulesXml: '<meta_rules>stub</meta_rules>'

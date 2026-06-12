@@ -253,6 +253,33 @@ export type TimelineEvent =
   | { kind: 'tool-call'; id: string; ts: number; call: ToolCall }
   | { kind: 'tool-result'; id: string; ts: number; result: ToolResult }
   /**
+   * Reversible context compaction marker. Emitted by the orchestrator
+   * (`src/main/orchestrator/context/contextCompaction.ts`) when a large
+   * `tool-result` body is offloaded to an on-disk artifact and replaced
+   * with a short banner in the in-memory prompt. Persisted to the JSONL
+   * transcript so cross-turn replay (`replayTranscript.ts`) reconstructs
+   * the lean banner for `toolCallId` instead of re-inflating the full
+   * output — keeping the model's working context near the same ceiling
+   * the live run reached, and letting the model `read` the artifact on
+   * demand (handle pattern; see `docs/context-compaction-design.md`).
+   *
+   * Carries no visible row: `deriveRows.ts` skips it (the one-time
+   * `agent-thought` notice covers user-facing feedback). The renderer
+   * reducer appends it to `events` purely as an audit-trail record.
+   */
+  | {
+    kind: 'tool-compacted';
+    id: string;
+    ts: number;
+    runId: string;
+    /** The `tool_call_id` whose result body was offloaded. */
+    toolCallId: string;
+    /** Workspace-relative artifact path holding the full output. */
+    relativePath: string;
+    /** Original tool-result output length in chars (audit/metrics). */
+    originalChars: number;
+  }
+  /**
    * Live partial-args snapshot for a streaming tool call. Emitted by
    * `consumeChatStream` every time the provider delivers a new
    * `argumentsDelta` fragment, BEFORE the matching `tool-call` event

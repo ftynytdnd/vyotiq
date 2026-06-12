@@ -23,7 +23,7 @@ export const finishTool: Tool = makeInterceptOnlyTool(
 { "name": "finish", "arguments": { "summary": "Done. I refactored X and verified Y; here is what changed…" } }
 \`\`\`
 
-**WHY it exists.** A run only stops when you explicitly finish. This makes "the task is complete" a deliberate, schema-enforced action instead of a guess based on whether you stopped emitting tool calls.
+**WHY it exists.** It makes "the task is complete" a deliberate, schema-enforced action with a clean final answer. A turn of substantive prose that fully answers the user also ends the run (implicit finish), but calling \`finish\` is the explicit, unambiguous signal — prefer it when the work involved tools or edits.
 
 **WHEN to trigger it.** Once the work is verified done and you have a final answer for the user.
 

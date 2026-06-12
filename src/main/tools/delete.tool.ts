@@ -34,10 +34,9 @@ export const deleteTool: Tool = {
 **WHEN to trigger it.** Whenever you need to remove a tracked file. Never use \`bash\` for removals unless the file is obviously scratch (e.g. a build artifact under \`dist/\`) and the user is unlikely to want it back.
 
 **Rules.**
-- Fails if the target is a directory (use a focused \`edit\` flow for folder cleanups).
+- Fails if the target is a directory — delete files individually (use \`bash\` for whole-folder cleanups of obviously scratch output).
 - Fails if the target does not exist.
-- Refuses binary-looking files (same UTF-8 gate as \`read\`).
-- Deleting a directory requires \`recursive: true\`.`,
+- Refuses binary-looking files (same UTF-8 gate as \`read\`).`,
   schema: {
     type: 'function',
     function: {

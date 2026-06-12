@@ -97,6 +97,21 @@ when the user's question requires information you don't yet have:
   `recall` with `action:"list"`, then `recall` with `action:"read"` for the
   matching `conversationId`.
 
+### Compacted tool results
+
+When context approaches the model window, the host offloads older, large
+tool outputs to disk to keep the working set lean. Such a `role:"tool"`
+message is replaced with a one-line banner like:
+
+```
+[compacted — full output at .vyotiq/compaction/<id>/<run>/<callId>.txt — use read to restore]
+```
+
+The full output is NOT lost. If you need its contents again, call `read`
+with that exact path to restore it on demand. Do not re-run the original
+tool to "get the output back" — re-reading the artifact is cheaper and
+returns the identical bytes.
+
 ---
 
 ## C. Memory Protocol

@@ -322,6 +322,45 @@ export interface AppSettings {
 
     };
 
+    /** Run limits and long-task context options. */
+
+    agentBehavior?: {
+
+      /** Optional cumulative per-run token ceiling. */
+
+      runTokenBudget?: {
+
+        enabled?: boolean;
+
+        maxTotalTokens?: number;
+
+      };
+
+      /**
+       * Reversible context compaction (default off). When enabled, large
+       * tool outputs are offloaded to `.vyotiq/compaction/...` and replaced
+       * with `read`-restorable banners once the prompt nears the model
+       * window. See `docs/context-compaction-design.md`.
+       */
+
+      contextCompaction?: {
+
+        enabled?: boolean;
+
+      };
+
+      /** Optional per-run wall-clock ceiling. */
+
+      runWallClockBudget?: {
+
+        enabled?: boolean;
+
+        maxDurationMs?: number;
+
+      };
+
+    };
+
     /** Atomic workspace spend increments (USD) — merged server-side. */
 
     workspaceSpendIncrement?: Record<string, number>;

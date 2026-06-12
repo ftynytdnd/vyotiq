@@ -49,13 +49,54 @@ export function getTool(name: string): Tool | undefined {
   return (TOOLS as Record<string, Tool>)[name];
 }
 
+/**
+ * Tools that are never batched by the dependency scheduler: `finish` and
+ * `ask_user` are intercepted by the run loop and terminate/​pause the run,
+ * so a `depends_on` edge on them is meaningless. Every other tool may
+ * declare dependencies on sibling calls in the same assistant turn.
+ */
+const DEPENDS_ON_EXCLUDED = new Set<string>(['finish', 'ask_user']);
+
+/**
+ * Shared `depends_on` wire-schema property. Injected centrally (rather
+ * than duplicated across every tool file) so the model can discover the
+ * dependency-batching contract that `toolDependencyBatches.ts` already
+ * consumes. Independent calls omit it and run in parallel.
+ */
+const DEPENDS_ON_PROPERTY = {
+  type: 'array',
+  items: { type: 'string' },
+  description:
+    'Optional. IDs of other tool calls in THIS SAME assistant turn that must ' +
+    "finish before this call runs. Set it only when this call needs another " +
+    "call's output; omit it for independent calls so they execute in parallel."
+} as const;
+
+function withDependsOn(schema: Tool['schema']): Tool['schema'] {
+  const params = schema.function.parameters as Record<string, unknown>;
+  const properties = {
+    ...((params.properties as Record<string, unknown> | undefined) ?? {}),
+    depends_on: DEPENDS_ON_PROPERTY
+  };
+  return {
+    type: 'function',
+    function: {
+      ...schema.function,
+      parameters: { ...params, properties }
+    }
+  };
+}
+
 /** Schemas for a specific subset of tools, by name. Names not in the registry
  *  are silently dropped. This function is the PHYSICAL enforcement chokepoint
  *  for the agent tool-policy split: tools not in `AGENT_TOOLS` are never
- *  exposed on the wire. Policy lives in `tools/policy/agentTools.ts`. */
+ *  exposed on the wire. Policy lives in `tools/policy/agentTools.ts`.
+ *
+ *  Action tools get an injected optional `depends_on` parameter so the
+ *  model can declare cross-call ordering (see `toolDependencyBatches.ts`). */
 export function toolSchemasFor(names: readonly string[]) {
   const allowed = new Set(names);
   return listTools()
     .filter((t) => allowed.has(t.name))
-    .map((t) => t.schema);
+    .map((t) => (DEPENDS_ON_EXCLUDED.has(t.name) ? t.schema : withDependsOn(t.schema)));
 }

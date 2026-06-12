@@ -19,7 +19,7 @@ export function toolGroupSummary(
   const first = children[0];
   const rest = Math.max(0, total - 1);
   const primary = first ? extractPrimary(toolName, first) : '';
-  const verb = verbFor(toolName, first, children.some((c) => c.partial === true && !c.result));
+  const verb = verbFor(toolName, children.some((c) => c.partial === true && !c.result));
   // Defect 3 (edit only): two edits to the same file previously read
   // as "snake.py and 1 other file" — misleading because there's no
   // OTHER file at all. When every `edit` child targets a single
@@ -213,7 +213,7 @@ export function tailInFlightEditChildIndex(children: ToolGroupChild[]): number |
   return null;
 }
 
-function verbFor(name: ToolName, first?: ToolGroupChild, pending = false): string {
+function verbFor(name: ToolName, pending = false): string {
   if (pending) {
     switch (name) {
       case 'bash': return 'Running';
@@ -221,7 +221,9 @@ function verbFor(name: ToolName, first?: ToolGroupChild, pending = false): strin
       case 'ls': return 'Listing';
       case 'edit': return 'Editing';
       case 'delete': return 'Deleting';
-      case 'search': return isLocalSearch(first) ? 'Grepping' : 'Searching';
+      // `search` is local-only (SearchData.mode is always 'local'), so the
+      // verb is always the grep form — no remote-search branch.
+      case 'search': return 'Grepping';
       case 'memory': return 'Memory';
       case 'recall': return 'Recalling';
       case 'report': return 'Writing';
@@ -236,7 +238,7 @@ function verbFor(name: ToolName, first?: ToolGroupChild, pending = false): strin
     case 'ls': return 'Listed';
     case 'edit': return 'Edited';
     case 'delete': return 'Deleted';
-    case 'search': return isLocalSearch(first) ? 'Grepped' : 'Searched';
+    case 'search': return 'Grepped';
     case 'memory': return 'Memory';
     case 'recall': return 'Recalled';
     case 'report': return 'Wrote';
@@ -244,14 +246,6 @@ function verbFor(name: ToolName, first?: ToolGroupChild, pending = false): strin
     case 'finish': return '';
     case 'unknown': return 'Unknown tool';
   }
-}
-
-function isLocalSearch(child: ToolGroupChild | undefined): boolean {
-  const mode = child?.call?.args?.['mode'];
-  if (mode === 'local') return true;
-  if (mode === 'web') return false;
-  const data = child?.result?.data;
-  return data?.tool === 'search' ? data.mode === 'local' : true;
 }
 
 function unitFor(name: ToolName, singular: boolean): string {

@@ -113,7 +113,9 @@ describe('toolGroupSummary — edit branch', () => {
     expect(out.primary).toBe('scrollbar-stealth-mask-image');
   });
 
-  it('keeps web search wording distinct from local grep', () => {
+  it('labels search as local grep even when a stray non-local mode is passed', () => {
+    // `search` is local-only; the tool executes locally regardless of a
+    // model-supplied `mode`, so the verb is always the grep form.
     const call: ToolCall = {
       id: 'search:web',
       name: 'search',
@@ -121,7 +123,7 @@ describe('toolGroupSummary — edit branch', () => {
     };
     const out = toolGroupSummary('search', [{ callId: call.id, call }]);
 
-    expect(out.verb).toBe('Searched');
+    expect(out.verb).toBe('Grepped');
     expect(out.primary).toBe('OpenAI docs');
   });
 });

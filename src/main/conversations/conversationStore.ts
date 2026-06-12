@@ -26,9 +26,14 @@ import type {
 } from '@shared/types/chat.js';
 import { logger } from '../logging/logger.js';
 import { sanitizeTitle } from './titleSanitizer.js';
-import { getActiveWorkspace, listWorkspaces } from '../workspace/workspaceState.js';
+import {
+  getActiveWorkspace,
+  listWorkspaces,
+  requireWorkspaceById
+} from '../workspace/workspaceState.js';
 import { atomicWriteString } from '../checkpoints/atomicWrite.js';
 import { deleteAttachmentsForConversation } from '../attachments/gc.js';
+import { cleanupCompactionArtifactsForConversation } from '../orchestrator/context/compactionArtifacts.js';
 import { normalizeLegacyTranscript } from '@shared/transcript/normalizeLegacyTranscript.js';
 import { migrateConversationPending } from '../checkpoints/pendingChanges.js';
 
@@ -469,6 +474,20 @@ export async function removeConversation(id: string): Promise<void> {
   }
   if (removedMeta?.workspaceId) {
     void deleteAttachmentsForConversation(removedMeta.workspaceId, id);
+    // Reclaim reversible-compaction artifacts under the workspace
+    // `.vyotiq/compaction/<id>` tree. Best-effort: the transcript (and
+    // its `tool-compacted` markers) is already gone, so these artifacts
+    // can never be referenced again.
+    void requireWorkspaceById(removedMeta.workspaceId)
+      .then((workspacePath) =>
+        cleanupCompactionArtifactsForConversation(workspacePath, id)
+      )
+      .catch((err: unknown) => {
+        log.warn('failed to clean compaction artifacts on conversation remove', {
+          conversationId: id,
+          err: err instanceof Error ? err.message : String(err)
+        });
+      });
   }
   scheduleIndexFlush();
   await flushIndex();

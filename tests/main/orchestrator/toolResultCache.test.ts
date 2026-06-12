@@ -5,8 +5,9 @@
  *   1. Read-shaped calls (ls/read/search/recall + memory list/read) are
  *      memoized and the second hit short-circuits tool execution with a
  *      "you already did this" banner prepended.
- *   2. Write-shaped calls (edit/bash, memory write/append) invalidate
- *      the entire per-signal cache so subsequent reads see fresh state.
+ *   2. Write-shaped calls (edit/delete/bash/report, memory write/append)
+ *      invalidate the entire per-signal cache so subsequent reads see
+ *      fresh state.
  *   3. Failed results are NEVER cached — a transient failure must not
  *      poison the cache.
  *   4. Different AbortSignals (= different runs) do not share entries.
@@ -167,6 +168,39 @@ describe('toolResultCache', () => {
     );
 
     expect(lookupCachedResult(sig, 'read', { path: 'a.ts' })).toBeNull();
+  });
+
+  it('invalidates the cache when a delete runs (fresh reads after removal)', () => {
+    const sig = new AbortController().signal;
+    recordToolResult(sig, 'read', { path: 'gone.ts' }, okResult('still here'));
+    recordToolResult(sig, 'ls', { path: '.' }, { ...okResult('gone.ts'), name: 'ls' });
+    expect(lookupCachedResult(sig, 'read', { path: 'gone.ts' })).not.toBeNull();
+
+    // delete mutates the workspace — cached reads/listings must be evicted.
+    recordToolResult(
+      sig,
+      'delete',
+      { path: 'gone.ts' },
+      { id: 'tc', name: 'delete', ok: true, output: 'Deleted gone.ts', durationMs: 1 }
+    );
+
+    expect(lookupCachedResult(sig, 'read', { path: 'gone.ts' })).toBeNull();
+    expect(lookupCachedResult(sig, 'ls', { path: '.' })).toBeNull();
+  });
+
+  it('invalidates the cache when a report runs (writes under .vyotiq/reports)', () => {
+    const sig = new AbortController().signal;
+    recordToolResult(sig, 'ls', { path: '.vyotiq/reports' }, { ...okResult('(empty)'), name: 'ls' });
+    expect(lookupCachedResult(sig, 'ls', { path: '.vyotiq/reports' })).not.toBeNull();
+
+    recordToolResult(
+      sig,
+      'report',
+      { title: 'Audit' },
+      { id: 'tc', name: 'report', ok: true, output: 'wrote report', durationMs: 1 }
+    );
+
+    expect(lookupCachedResult(sig, 'ls', { path: '.vyotiq/reports' })).toBeNull();
   });
 
   it('treats memory write/append as invalidating but memory read/list as cacheable', () => {

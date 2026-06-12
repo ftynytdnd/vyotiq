@@ -24,9 +24,24 @@ import { MAX_TOOL_OUTPUT_CHARS } from '@shared/constants.js';
 import { truncateUtf8Safe } from '@shared/text/truncateUtf8Safe.js';
 import { stableStringify } from '@shared/json/stableStringify.js';
 import { wrapXml } from '../envelope/index.js';
+import { buildCompactionBanner } from '../context/compactionArtifacts.js';
 
 export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
   const messages: ChatMessage[] = [];
+
+  // Pre-pass: collect reversible-compaction markers. A `tool-compacted`
+  // event is persisted in a LATER iteration than the original
+  // `tool-result` it offloads, so we must resolve the map up front and
+  // then emit the lean banner (not the full output) when the matching
+  // tool row is rebuilt below. This keeps replayed cross-turn memory at
+  // the same lean ceiling the live run reached; the model re-reads the
+  // artifact on demand. See `docs/context-compaction-design.md`.
+  const compactedByCallId = new Map<string, string>();
+  for (const e of events) {
+    if (e.kind === 'tool-compacted') {
+      compactedByCallId.set(e.toolCallId, e.relativePath);
+    }
+  }
 
   let curAssistantId: string | null = null;
   let curText = '';
@@ -140,7 +155,11 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
           callId = pendingCallIds.shift() ?? e.result.id;
         }
         const meta = toolCallMeta.get(callId);
-        const output = truncateUtf8Safe(e.result.output, MAX_TOOL_OUTPUT_CHARS);
+        const compactedPath = compactedByCallId.get(callId);
+        const output =
+          compactedPath !== undefined
+            ? buildCompactionBanner(compactedPath)
+            : truncateUtf8Safe(e.result.output, MAX_TOOL_OUTPUT_CHARS);
         messages.push({
           role: 'tool',
           tool_call_id: callId,
@@ -154,6 +173,10 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
       case 'file-edit':
       case 'error':
       case 'token-usage':
+        break;
+      case 'tool-compacted':
+        // Resolved in the pre-pass above; the matching `tool-result`
+        // emits the banner instead of the full output.
         break;
       case 'ask-user-prompt': {
         flushAssistant({ dropUnpairedToolCalls: true });

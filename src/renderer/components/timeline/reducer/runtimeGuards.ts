@@ -114,6 +114,13 @@ export function isTimelineEvent(value: unknown): value is TimelineEvent {
       // Persisted audit-trail kinds — base shape is enough; the
       // checkpoint store does its own per-record validation.
       return true;
+    case 'tool-compacted':
+      // Persisted compaction marker — replay keys off `toolCallId`
+      // and `relativePath`; reject if either is missing.
+      return (
+        hasNonEmptyStringField(o, 'toolCallId') &&
+        hasNonEmptyStringField(o, 'relativePath')
+      );
     case 'synthetic-usage-update':
       // Phase 3: renderer-locally synthesized mid-stream usage update.
       // `completionTokens` carries the running total; the reducer

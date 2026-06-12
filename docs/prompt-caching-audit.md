@@ -57,7 +57,7 @@ Few-shot body from `src/main/harness/03-static-examples.md` via `buildStaticFewS
 | `toolResultCache` banner | `[cache]` prefix + hit count on repeat | History | Intentional; elapsed-time removed (was volatile) |
 | `normalizeWireTools` | Key order drift | Wire tools | `stableStringify` sort |
 | `toolResultCache` local `stableStringify` | Shallow vs deep sort | Cache keys | Consolidated to shared module |
-| `buildSystemPrompt` (deprecated) | Merges all layers | N/A | Not used in production path |
+| `buildSystemPrompt` (removed) | Merged all layers | N/A | Deleted — production uses `applyCacheLayers` only |
 | Iteration-cap wrap-up | Synthesis instruction | Turn slot (`[n-1]`) | Merged into turn content — never a 6th user message |
 | Anthropic `metadata.user_id` | Workspace id | Request metadata | Stable per workspace (isolation) |
 

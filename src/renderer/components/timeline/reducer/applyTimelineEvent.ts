@@ -388,11 +388,12 @@ export function applyTimelineEvent(
     case 'checkpoint-entry':
     case 'checkpoint-revert':
     case 'checkpoint-bash-mutation':
-      // Checkpoint events are persisted into the transcript so
-      // replay reconstructs the same audit trail the live run had.
-      // The LIVE timeline reducer appends them for replay; derived
-      // rows skip these event kinds (see `deriveRows.ts`).
-      // (See `deriveRows.ts` for the matching skip.)
+    case 'tool-compacted':
+      // Audit-trail kinds persisted into the transcript so replay
+      // reconstructs the same state the live run had (`tool-compacted`
+      // lets the main-process replay rebuild lean banners). The LIVE
+      // reducer appends them for replay; derived rows skip these event
+      // kinds (see `deriveRows.ts`).
       return { ...state, events: appendTimelineEvent(state.events, event, mutate) };
 
     case 'diff-stream': {

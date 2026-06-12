@@ -71,6 +71,39 @@ function stripDeprecatedUiFields<T extends Record<string, unknown>>(ui: T): T {
   return rest as T;
 }
 
+/**
+ * One-time migration of the removed soft `tokenBudgetWarningTokens` field
+ * into the new `agentBehavior.runTokenBudget`. We preserve the user's
+ * previously-chosen ceiling so it pre-populates the new Run-limits control,
+ * but leave the hard halt OFF: the legacy field only WARNED, so silently
+ * converting it into a run-ending budget would change behavior without
+ * consent. Runs once because `stripDeprecatedUiFields` then drops the
+ * legacy key.
+ */
+function migrateLegacyTokenBudgetWarning<T extends Record<string, unknown>>(
+  ui: T
+): { ui: T; changed: boolean } {
+  const legacy = ui['tokenBudgetWarningTokens'];
+  if (typeof legacy !== 'number' || !Number.isFinite(legacy) || legacy <= 0) {
+    return { ui, changed: false };
+  }
+  const agentBehavior = (ui['agentBehavior'] as Record<string, unknown> | undefined) ?? {};
+  // Don't clobber an explicitly-configured budget.
+  if (agentBehavior['runTokenBudget'] !== undefined) {
+    return { ui, changed: false };
+  }
+  return {
+    ui: {
+      ...ui,
+      agentBehavior: {
+        ...agentBehavior,
+        runTokenBudget: { enabled: false, maxTotalTokens: Math.round(legacy) }
+      }
+    },
+    changed: true
+  };
+}
+
 function normalizeBlobForPersistence(blob: SettingsBlob): { blob: SettingsBlob; changed: boolean } {
   let changed = false;
   let next: SettingsBlob = { ...blob };
@@ -106,9 +139,11 @@ function normalizeBlobForPersistence(blob: SettingsBlob): { blob: SettingsBlob; 
     const { ui: migrated, changed: dockMigrated } = migrateLegacyDockUi({
       ...next.ui
     } as Record<string, unknown>);
-    const stripped = stripDeprecatedUiFields(migrated);
+    const { ui: tokenMigrated, changed: tokenBudgetMigrated } =
+      migrateLegacyTokenBudgetWarning(migrated);
+    const stripped = stripDeprecatedUiFields(tokenMigrated);
     let ui = stripped;
-    let uiChanged = dockMigrated || stripped !== next.ui;
+    let uiChanged = dockMigrated || tokenBudgetMigrated || stripped !== next.ui;
     if (ui.density === undefined) {
       ui = { ...ui, density: 'compact' };
       uiChanged = true;
@@ -282,6 +317,30 @@ export async function setSettings(patch: Partial<AppSettings>): Promise<AppSetti
         ...(currentUi.promptCaching as Record<string, unknown> | undefined),
         ...patchUi.promptCaching
       };
+    }
+    if (patchUi?.agentBehavior) {
+      const agentPatch = patchUi.agentBehavior as NonNullable<AppSettings['ui']>['agentBehavior'];
+      const prev = (currentUi.agentBehavior as Record<string, unknown> | undefined) ?? {};
+      const next = { ...prev, ...agentPatch } as Record<string, unknown>;
+      if (agentPatch?.runTokenBudget) {
+        next.runTokenBudget = {
+          ...(prev.runTokenBudget as Record<string, unknown> | undefined),
+          ...agentPatch.runTokenBudget
+        };
+      }
+      if (agentPatch?.runWallClockBudget) {
+        next.runWallClockBudget = {
+          ...(prev.runWallClockBudget as Record<string, unknown> | undefined),
+          ...agentPatch.runWallClockBudget
+        };
+      }
+      if (agentPatch?.contextCompaction) {
+        next.contextCompaction = {
+          ...(prev.contextCompaction as Record<string, unknown> | undefined),
+          ...agentPatch.contextCompaction
+        };
+      }
+      mergedUi.agentBehavior = next;
     }
 
     return {

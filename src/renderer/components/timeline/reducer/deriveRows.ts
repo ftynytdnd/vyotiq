@@ -459,6 +459,12 @@ export function deriveRows(
         // and `run-status` above, they must NOT close the open tool group.
         break;
 
+      case 'tool-compacted':
+        // Reversible-compaction audit marker — replay-only data, no
+        // inline row (the one-time `agent-thought` notice covers the
+        // user-facing signal). Must NOT close the open tool group.
+        break;
+
       case 'synthetic-usage-update':
         // Phase 3 (2026): renderer-local mid-stream completion-token
         // estimate. Surfaces ONLY on the composer token pill via the

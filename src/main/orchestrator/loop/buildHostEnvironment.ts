@@ -13,9 +13,9 @@
  * `refreshEnvelopes`: that path has a 3-second TTL cache keyed on
  * `(conversationId, workspaceId, workspacePath)` so two iterations of
  * the same run inside that window would share a stale timestamp. Real-
- * time is the whole point of this surface, so it stays alongside
- * `runStateXml` as a per-iteration positional argument to
- * `buildSystemPrompt`.
+ * time is the whole point of this surface, so it is rebuilt every
+ * iteration and written into the runtime tail alongside `runStateXml`
+ * by `applyCacheLayers` (see `context/buildContextLayers.ts`).
  *
  * Field selection — chosen for actionability, not exhaustiveness:
  *   - `now_utc` / `local_time` (with IANA tz + numeric offset) /

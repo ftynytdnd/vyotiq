@@ -35,6 +35,7 @@ import {
 import { useConversationProcessing } from '../../hooks/chat/index.js';
 import { useChatRowFocus } from '../../hooks/chat/index.js';
 import { BackgroundRunsBadge, RunningTitle, RunStopButton } from '../runIndicators/index.js';
+import { runningChatIdsFromSlices } from './collectRunningChatIds.js';
 import { useChatStore } from '../../store/useChatStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
@@ -63,13 +64,7 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
   const searchOpen = useDockSearchStore((s) => s.open);
 
   const runningIds = useChatStore(
-    useShallow((s) => {
-      const set = new Set<string>();
-      for (const [id, slice] of Object.entries(s.slices)) {
-        if (slice.isProcessing) set.add(id);
-      }
-      return set;
-    })
+    useShallow((s) => runningChatIdsFromSlices(s.slices))
   );
 
   const entries = useMemo(() => {
@@ -302,7 +297,7 @@ function ChatTab({
   const deleteOpenRef = useRef(false);
   const lastTrashClickRef = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { isProcessing, runId } = useConversationProcessing(entry.id);
+  const { isRunActive, runId } = useConversationProcessing(entry.id);
   const registerRowRef = useChatRowFocus(entry.id);
 
   useEffect(() => {
@@ -332,7 +327,7 @@ function ChatTab({
         role="tab"
         aria-selected={active}
         tabIndex={active ? 0 : -1}
-        draggable={!editing && !isProcessing && !deleteOpen}
+        draggable={!editing && !isRunActive && !deleteOpen}
         onDragStart={(e) => {
           e.dataTransfer.setData(CONV_DRAG_MIME, entry.id);
           e.dataTransfer.effectAllowed = 'move';
@@ -350,7 +345,7 @@ function ChatTab({
               open
               context={displayTitle}
               question={
-                isProcessing
+                isRunActive
                   ? 'Remove this chat? A run is still active in it.'
                   : 'Remove this chat?'
               }
@@ -393,7 +388,7 @@ function ChatTab({
                 className={DOCK_TAB_TRIGGER_CLASS}
                 title={displayTitle}
               >
-                {isProcessing ? (
+                {isRunActive ? (
                   <RunningTitle id={entry.id} title={displayTitle} className={DOCK_TAB_LABEL_CLASS} />
                 ) : (
                   <span className={DOCK_TAB_LABEL_CLASS}>{displayTitle}</span>
@@ -403,7 +398,7 @@ function ChatTab({
           )}
           {!editing && !deleteOpen && (
             <span className={cn('flex shrink-0 items-center', DOCK_HOVER_ACTIONS)}>
-              {isProcessing && runId ? (
+              {isRunActive && runId ? (
                 <RunStopButton runId={runId} conversationTitle={entry.title} />
               ) : (
                 <>

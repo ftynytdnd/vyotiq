@@ -4,19 +4,11 @@
  */
 
 import type { RegisteredToolName } from '@shared/types/tool.js';
+import { REGISTERED_TOOL_NAMES } from '@shared/types/tool.js';
 
-const REGISTERED = new Set<string>([
-  'bash',
-  'ls',
-  'read',
-  'edit',
-  'delete',
-  'search',
-  'memory',
-  'recall',
-  'finish',
-  'ask_user'
-]);
+// Derived from the canonical catalogue so a new tool can never be
+// silently un-normalizable (previously `report` was missing here).
+const REGISTERED = new Set<string>(REGISTERED_TOOL_NAMES);
 
 export function normalizeRegisteredToolName(
   raw: string | undefined | null

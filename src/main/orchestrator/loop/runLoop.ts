@@ -41,7 +41,7 @@ import {
   resolveFinishSummary
 } from './finishIntercept.js';
 import { normalizeRegisteredToolName } from '@shared/tools/normalizeToolName.js';
-import { parseAskUserArgs, resolveAskUserPayload } from '@shared/text/parseAskUser.js';
+import { pauseRunForAskUser } from './askUserPause.js';
 import { backoff } from '../retry.js';
 import { isAbortError } from '../abortSignal.js';
 import { isStreamInactivityError } from '../../providers/streamInactivity.js';
@@ -56,6 +56,8 @@ import { findProviderModel } from '@shared/providers/modelId.js';
 import { resolveEffectiveThinkingEffort } from '@shared/providers/thinkingEffort.js';
 import type { ModelSelection, ModelThinkingCapabilities, ThinkingEffort } from '@shared/types/provider.js';
 import {
+  IMPLICIT_FINISH_MIN_CHARS,
+  IMPLICIT_FINISH_MIN_SENTENCE_CHARS,
   MAX_SELF_CORRECTION_ATTEMPTS,
   MAX_TOTAL_ITERATIONS
 } from '@shared/constants.js';
@@ -94,13 +96,22 @@ import {
   type RunStateAccumulator
 } from './buildRunState.js';
 import { buildHostEnvironmentXml } from './buildHostEnvironment.js';
-import { cloneLoopCheckpoint, type LoopCheckpoint } from '../pausedRunRegistry.js';
+import type { LoopCheckpoint } from '../pausedRunRegistry.js';
 import type { ResolvedReportsSettings } from '@shared/report/reportsSettings.js';
 import { resolveReportsSettings } from '@shared/report/reportsSettings.js';
+import {
+  isRunTokenBudgetExceeded,
+  isRunWallClockBudgetExceeded,
+  resolveAgentBehaviorSettings,
+  type ResolvedAgentBehaviorSettings
+} from '@shared/settings/agentBehaviorSettings.js';
+import { applyContextCompactionIfEnabled } from '../context/contextCompaction.js';
 import { maybeInterceptHostReportGate } from './hostReportGate.js';
 import {
   formatProviderStrikeError,
   formatRetryThought,
+  formatRunTokenBudgetError,
+  formatRunWallClockBudgetError,
   formatToolStrikeError,
   RUN_STOPPED_THOUGHT
 } from './runLoopMessages.js';
@@ -113,13 +124,11 @@ const log = logger.child('orch/runLoop');
  * a prose-only turn as an IMPLICIT `finish`. Below this, shorter prose
  * may still qualify via the question-mark or sentence-end probes.
  */
-const IMPLICIT_FINISH_MIN_CHARS = 28;
 
 /**
  * Minimum length for the sentence-end probe — accepts concise direct
  * answers ("My name is Ajay K.") while rejecting bare filler ("Okay.").
  */
-const IMPLICIT_FINISH_MIN_SENTENCE_CHARS = 10;
 
 /** User-facing copy when empty-turn retries are exhausted. */
 const USER_EMPTY_TURN_ERROR =
@@ -165,6 +174,10 @@ interface RunLoopOpts {
   resumeCheckpoint?: LoopCheckpoint;
   /** Snapshot of `settings.ui.reports` at run start. */
   reportsSettings?: ResolvedReportsSettings;
+  /** Snapshot of `settings.ui.agentBehavior` at run start. */
+  agentBehaviorSettings?: ResolvedAgentBehaviorSettings;
+  /** Wall-clock anchor for optional per-run duration budget. */
+  runStartedAt?: number;
 }
 
 /** Remove the last prose-only assistant row (empty-turn retry). */
@@ -214,7 +227,10 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     diffWorkerPool.dispose();
   };
 
-  // Guarantee disposal on every exit path: abort signal + finally.
+  // Guarantee disposal on every exit path: abort signal + finally. The
+  // listener is removed in `finally` so that pause/resume cycles (which
+  // re-invoke this loop with the SAME run signal) do not accumulate stale
+  // listeners that retain references to already-disposed worker pools.
   opts.signal.addEventListener('abort', disposeStreaming, { once: true });
 
   try {
@@ -228,9 +244,10 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     let runHadLlmProgress = false;
     let lastToolRoundFailure: string | undefined;
     let rootToolRoundFailure: string | undefined;
+    let runCumulativeTokens = resume?.runCumulativeTokens ?? 0;
     const runStateAcc: RunStateAccumulator = resume
       ? { ...resume.runStateAcc }
-      : createRunStateAccumulator();
+     : createRunStateAccumulator();
     if (resume) {
       query = resume.query;
     }
@@ -265,12 +282,28 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     }
 
     const reportsSettings = opts.reportsSettings ?? resolveReportsSettings();
+    const agentBehaviorSettings =
+      opts.agentBehaviorSettings ?? resolveAgentBehaviorSettings();
+    const compactionLogged = { value: false };
     const iterationCap =
       MAX_TOTAL_ITERATIONS + (resume?.reportGateBonusIteration ? 1 : 0);
+    let hostReportGatePendingTerminal = resume?.hostReportGate
+      ? resume.pendingTerminal
+      : undefined;
+    const runStartedAtMs = opts.runStartedAt ?? Date.now();
+    let consecutiveSpinHotIterations = 0;
+    let spinHotNudgeEmitted = false;
 
     for (let iter = resume?.nextIteration ?? 0; iter < iterationCap; iter++) {
       const abortedEarly = exitIfAborted(opts, emit, runHadLlmProgress);
       if (abortedEarly) return abortedEarly;
+      if (
+        isRunWallClockBudgetExceeded(Date.now() - runStartedAtMs, agentBehaviorSettings)
+      ) {
+        const wallClockMsg = formatRunWallClockBudgetError(agentBehaviorSettings);
+        emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: wallClockMsg });
+        return { terminalError: wallClockMsg };
+      }
       const iterStartedAt = Date.now();
 
         if (iter > 0) {
@@ -299,6 +332,28 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         );
         runStateAcc.iteration = iter;
         runStateAcc.spinSignatureHot = spinHotSignature(spin);
+        if (runStateAcc.spinSignatureHot) {
+          consecutiveSpinHotIterations += 1;
+          emitRunStatus(emit, 'nudging', 'Repeating tool pattern — pivot approach…', {
+            providerId: opts.input.selection.providerId,
+            modelId: opts.input.selection.modelId,
+            iteration: iter
+          });
+          if (consecutiveSpinHotIterations >= 3 && !spinHotNudgeEmitted) {
+            spinHotNudgeEmitted = true;
+            emit({
+              kind: 'agent-thought',
+              id: randomUUID(),
+              ts: Date.now(),
+              content:
+                'The same tool pattern has repeated several times. Pivot strategy or ask the user before the iteration cap.',
+              severity: 'warn'
+            });
+          }
+        } else {
+          consecutiveSpinHotIterations = 0;
+          spinHotNudgeEmitted = false;
+        }
         const runStateXml = buildRunStateXml(
           snapshotRunState(runStateAcc, spin, consecutiveBadToolRounds)
         );
@@ -309,6 +364,17 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           runStateXml,
           hostEnvironmentXml: hostEnvXml
         });
+        const compacted = await applyContextCompactionIfEnabled(messages, {
+          conversationId: opts.input.conversationId,
+          runId: opts.input.runId,
+          workspacePath: opts.workspacePath,
+          modelId: opts.input.selection.modelId,
+          providerId: opts.input.selection.providerId,
+          agentBehavior: agentBehaviorSettings,
+          emit
+        }, compactionLogged);
+        messages.length = 0;
+        messages.push(...compacted);
 
         const fp = messagesSanitizeFingerprint(messages);
         const sanitized =
@@ -521,6 +587,28 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         consecutiveErrors = 0;
         runHadLlmProgress = true;
 
+        if (turn.usage) {
+          runCumulativeTokens += turn.usage.totalTokens;
+          if (isRunTokenBudgetExceeded(runCumulativeTokens, agentBehaviorSettings)) {
+            const budgetMsg = formatRunTokenBudgetError(
+              runCumulativeTokens,
+              agentBehaviorSettings.runTokenBudget.maxTotalTokens
+            );
+            log.warn('run token budget exceeded', {
+              runId: opts.input.runId,
+              cumulativeTotal: runCumulativeTokens,
+              maxTotalTokens: agentBehaviorSettings.runTokenBudget.maxTotalTokens
+            });
+            emit({
+              kind: 'error',
+              id: randomUUID(),
+              ts: Date.now(),
+              message: budgetMsg
+            });
+            return { terminalError: budgetMsg };
+          }
+        }
+
         if (turn.anthropicMessageId) {
           lastAnthropicMessageId = turn.anthropicMessageId;
         }
@@ -639,75 +727,41 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               runStateAcc,
               spin,
               pendingTerminal: 'finish',
-              emit
+              emit,
+              runCumulativeTokens
             });
             if (gate) return gate;
             return {};
           }
         }
 
-        if (askUserCall) {
-          if (actionTools.length > 0) {
-            log.warn('ask_user immediate pause — skipping co-emitted tools', {
-              iteration: iter,
-              runId: opts.input.runId,
-              actionTools: actionTools.length
-            });
-          }
-          const askArgs = parseAskUserArgs(
-            tryParseArgumentsRecord(askUserCall.argumentsBuf) ?? {}
-          );
-          const payload = resolveAskUserPayload(askArgs);
-          const question =
-            askArgs.displayText ||
-            turn.assistantText.trim() ||
-            'Could you clarify how you would like me to proceed?';
-          if (!askUserCall.id) askUserCall.id = randomUUID();
-          insertHistoryBeforeTail(messages, {
-            role: 'assistant',
-            content: turn.assistantText.length > 0 ? turn.assistantText : null,
-            ...(turn.reasoningText.length > 0 ? { reasoning_content: turn.reasoningText } : {}),
-            tool_calls: [
-              {
-                id: askUserCall.id,
-                type: 'function' as const,
-                function: { name: 'ask_user', arguments: askUserCall.argumentsBuf || '{}' }
-              }
-            ]
-          });
-          const promptEventId = randomUUID();
-          emit({
-            kind: 'ask-user-prompt',
-            id: promptEventId,
-            ts: Date.now(),
-            displayText: question,
-            payload,
-            toolCallId: askUserCall.id,
-            runId: opts.input.runId,
-            status: 'pending'
-          });
-          runStateAcc.lastAction = 'clarify';
-          log.info('ask_user tool call — pausing run for interactive user reply', {
+        if (askUserCall && actionTools.length === 0) {
+          return pauseRunForAskUser({
+            askUserCall,
+            assistantText: turn.assistantText,
+            reasoningText: turn.reasoningText,
             iteration: iter,
-            questionChars: question.length,
-            toolCallId: askUserCall.id
+            runId: opts.input.runId,
+            messages,
+            query,
+            nextIteration: iter + 1,
+            consecutiveEmptyTurns,
+            injectedStubsHighWater,
+            consecutiveErrors,
+            consecutiveBadToolRounds,
+            runStateAcc,
+            spin,
+            runCumulativeTokens,
+            emit
           });
-          return {
-            pausedForAskUser: cloneLoopCheckpoint({
-              messages,
-              query,
-              nextIteration: iter + 1,
-              consecutiveEmptyTurns,
-              injectedStubsHighWater,
-              consecutiveErrors,
-              consecutiveBadToolRounds,
-              runStateAcc,
-              spin,
-              askUserToolCallId: askUserCall.id,
-              askUserPromptEventId: promptEventId,
-              askUserPayload: payload
-            })
-          };
+        }
+
+        if (askUserCall && actionTools.length > 0) {
+          log.warn('ask_user deferred — running co-emitted tools first', {
+            iteration: iter,
+            runId: opts.input.runId,
+            actionTools: actionTools.length
+          });
         }
 
         const assistantContent: string | null =
@@ -805,6 +859,19 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
                   );
                 pushToolRound(spin, sigs);
               }
+              if (
+                hostReportGatePendingTerminal &&
+                actionTools.some(
+                  (tc) => normalizeRegisteredToolName(tc.name) === 'report'
+                )
+              ) {
+                log.info('pending terminal — ending run after host report gate report', {
+                  iteration: iter,
+                  pendingTerminal: hostReportGatePendingTerminal
+                });
+                hostReportGatePendingTerminal = undefined;
+                return {};
+              }
             }
           }
         }
@@ -835,10 +902,33 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             runStateAcc,
             spin,
             pendingTerminal: 'finish',
-            emit
+            emit,
+            runCumulativeTokens
           });
           if (gate) return gate;
           return {};
+        }
+
+        if (askUserCall && actionTools.length > 0) {
+          return pauseRunForAskUser({
+            askUserCall,
+            assistantText: turn.assistantText,
+            reasoningText: turn.reasoningText,
+            iteration: iter,
+            runId: opts.input.runId,
+            messages,
+            query,
+            nextIteration: iter + 1,
+            consecutiveEmptyTurns,
+            injectedStubsHighWater,
+            consecutiveErrors,
+            consecutiveBadToolRounds,
+            runStateAcc,
+            spin,
+            runCumulativeTokens,
+            emit,
+            deferred: true
+          });
         }
 
         if (didWork) continue;
@@ -892,7 +982,8 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             runStateAcc,
             spin,
             pendingTerminal: 'implicit-finish',
-            emit
+            emit,
+            runCumulativeTokens
           });
           if (gate) return gate;
           return {};
@@ -996,6 +1087,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
       return {};
     }
   } finally {
+    opts.signal.removeEventListener('abort', disposeStreaming);
     try {
       disposeStreaming();
     } catch (err) {
