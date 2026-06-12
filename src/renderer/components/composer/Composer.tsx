@@ -7,6 +7,7 @@ import { AttachmentButton } from './AttachmentButton.js';
 import { SendButton } from './SendButton.js';
 import { ModelPicker } from './modelPicker/index.js';
 import { TokenUsagePill } from './TokenUsagePill.js';
+import { ContextWindowMeter } from './ContextWindowMeter.js';
 import { AttachmentChipRow } from './AttachmentChipRow.js';
 import { useComposerAttachments } from './useComposerAttachments.js';
 import { useComposerHistory } from './useComposerHistory.js';
@@ -392,6 +393,11 @@ export function Composer({
             />
           </div>
           <div className="vx-composer-token-slot">
+            <ContextWindowMeter
+              model={model}
+              conversationId={conversationId}
+              disabled={isProcessing || awaitingAskUser}
+            />
             <TokenUsagePill
               total={totalRunUsage}
               orchestrator={orchestratorUsage}

@@ -83,14 +83,14 @@ export function SettingsFullView({ initialSection = 'models-api' }: SettingsFull
       id: t.id,
       label: t.label,
       tabId: `settings-tab-${t.id}`,
-      panelId: `settings-panel-${activeSection}`,
+      panelId: `settings-panel-${t.id}`,
       icon: <t.Icon className={SHELL_TAB_ICON_CLASS} strokeWidth={SHELL_TAB_ICON_STROKE} aria-hidden />
     })),
     {
       id: ABOUT_NAV_ITEM.id,
       label: ABOUT_NAV_ITEM.label,
       tabId: 'settings-tab-about',
-      panelId: `settings-panel-${activeSection}`,
+      panelId: 'settings-panel-about',
       icon: (
         <ABOUT_NAV_ITEM.Icon
           className={SHELL_TAB_ICON_CLASS}

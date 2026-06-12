@@ -51,7 +51,8 @@ vi.mock('@main/orchestrator/contextManager', async () => {
       sessionXml: '',
       priorConversationsXml: '',
       memoryXml: '',
-      metaRulesXml: ''
+      metaRulesXml: '',
+      runProgressXml: ''
     }))
   };
 });

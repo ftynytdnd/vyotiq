@@ -16,7 +16,10 @@
 import { listConversations } from '../../conversations/conversationStore.js';
 import { listWorkspaces } from '../../workspace/workspaceState.js';
 import { logger } from '../../logging/logger.js';
-import { sweepOrphanCompactionArtifacts } from './compactionArtifacts.js';
+import {
+  sweepOrphanCompactionArtifacts,
+  sweepOrphanSummaryArtifacts
+} from './compactionArtifacts.js';
 
 const log = logger.child('orch/compactionSweep');
 
@@ -47,6 +50,7 @@ export async function sweepOrphanCompactionAllWorkspaces(): Promise<number> {
   for (const ws of wsState.workspaces) {
     const live = liveByWorkspace.get(ws.id) ?? new Set<string>();
     removed += await sweepOrphanCompactionArtifacts(ws.path, live);
+    removed += await sweepOrphanSummaryArtifacts(ws.path, live);
   }
   return removed;
 }

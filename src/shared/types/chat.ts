@@ -278,6 +278,77 @@ export type TimelineEvent =
     relativePath: string;
     /** Original tool-result output length in chars (audit/metrics). */
     originalChars: number;
+    /**
+     * Why the row was offloaded:
+     *   - `'size'`  — a large tool-RESULT body (≥ threshold).
+     *   - `'clear'` — a tool-RESULT older than the keep-last-N window
+     *                 (host-side tool-result clearing).
+     *   - `'input'` — a large tool-CALL argument body on the assistant turn
+     *                 (host-side equivalent of Anthropic `clear_tool_inputs`).
+     * Optional for back-compat with markers persisted before the unified
+     * reduction engine; absent ⇒ treat as `'size'` (a tool-result offload).
+     */
+    reason?: 'size' | 'clear' | 'input';
+  }
+  /**
+   * Reversible context summarization marker (last-resort lossy reduction).
+   * Emitted by the orchestrator when reversible offload cannot keep the prompt
+   * under the trigger threshold, or on a manual context reset. Collapses ALL
+   * prior history into a single structured `<context_summary>` block (mirrors
+   * Anthropic server-side compaction / Claude Code `/compact`): on replay
+   * (`replayTranscript.ts`), everything accumulated before this marker is
+   * discarded and replaced with the summary message, so later turns continue
+   * from the lean context the live run reached. The full pre-summary transcript
+   * is saved under `.vyotiq/context-summaries/...` for recovery.
+   *
+   * Surfaces a single user-facing `agent-thought` notice; the marker row
+   * itself renders no activity-lane row.
+   */
+  | {
+    kind: 'context-summary';
+    id: string;
+    ts: number;
+    runId: string;
+    /** Structured summary text inserted into the lean context. */
+    summary: string;
+    /** Workspace-relative path to the full pre-summary transcript (recovery). */
+    relativePath: string;
+    /** Original summarized history length in chars (audit/metrics). */
+    originalChars: number;
+    /** How many history messages were collapsed (audit/metrics). */
+    originalMessages: number;
+  }
+  /**
+   * Live context-window usage telemetry (Phase: context-management 2026).
+   * Emitted once per loop iteration with the current estimated prompt size
+   * against the model's *effective* window. Drives the composer context meter
+   * and the warn/trigger color states.
+   *
+   * IMPORTANT: pure live telemetry — intentionally NOT persisted to the JSONL
+   * transcript (see `isPersistentEvent` in `chat.ipc.ts`). The renderer also
+   * derives an at-rest estimate from persisted `token-usage` so the meter is
+   * still meaningful between runs and on replay.
+   */
+  | {
+    kind: 'context-usage';
+    id: string;
+    ts: number;
+    /** Estimated total prompt tokens for the next request. */
+    usedTokens: number;
+    /** Usable window = advertised × effectiveWindowFraction. */
+    effectiveWindow: number;
+    /** Raw advertised/overridden window for the active model. */
+    advertisedWindow: number;
+    /** Severity classification (`ok` | `warn` | `trigger` | `critical`). */
+    level: 'ok' | 'warn' | 'trigger' | 'critical';
+    /** True when `usedTokens` came from an exact tokenizer / provider count. */
+    exact: boolean;
+    /**
+     * Optional per-segment token breakdown (static prefix / history / tool
+     * schemas) surfaced in the composer meter tooltip. Absent on derived /
+     * at-rest paths that only know the total.
+     */
+    byPart?: { systemPrompt: number; history: number; tools: number };
   }
   /**
    * Live partial-args snapshot for a streaming tool call. Emitted by

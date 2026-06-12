@@ -31,11 +31,6 @@ export function formatBalanceAmount(snapshot: ProviderAccountSnapshot | undefine
   return null;
 }
 
-/** @deprecated Use formatBalanceAmount */
-export function formatBalanceUsd(snapshot: ProviderAccountSnapshot | undefined): string | null {
-  return formatBalanceAmount(snapshot);
-}
-
 function formatResetAt(ms: number): string {
   const delta = ms - Date.now();
   if (delta <= 0) return 'now';

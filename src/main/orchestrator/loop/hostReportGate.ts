@@ -38,6 +38,7 @@ export interface HostReportGateContext {
   spin: SpinSignatureBuffer;
   pendingTerminal: PendingTerminalKind;
   emit: (event: TimelineEvent) => void;
+  runCumulativeTokens: number;
 }
 
 export interface HostReportGatePause {
@@ -176,7 +177,8 @@ export async function maybeInterceptHostReportGate(
       askUserPayload: payload,
       hostReportGate: true,
       pendingTerminal: ctx.pendingTerminal,
-      reportGateBonusIteration: true
+      reportGateBonusIteration: true,
+      runCumulativeTokens: ctx.runCumulativeTokens
     })
   };
 }

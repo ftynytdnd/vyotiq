@@ -50,6 +50,10 @@ import { registerRunCrashDrain } from './runCrashDrain.js';
 import { getSettings } from '../settings/settingsStore.js';
 import { resolveReportsSettings, type ResolvedReportsSettings } from '@shared/report/reportsSettings.js';
 import {
+  resolveAgentBehaviorSettings,
+  type ResolvedAgentBehaviorSettings
+} from '@shared/settings/agentBehaviorSettings.js';
+import {
   HOST_REPORT_GATE_YES_INSTRUCTION,
   isHostReportGateNoAnswer
 } from './loop/hostReportGate.js';
@@ -359,12 +363,15 @@ export async function startRun(
   }
 
   let reportsSettings: ResolvedReportsSettings;
+  let agentBehaviorSettings: ResolvedAgentBehaviorSettings;
   try {
     const settings = await getSettings();
     reportsSettings = resolveReportsSettings(settings.ui);
+    agentBehaviorSettings = resolveAgentBehaviorSettings(settings.ui);
   } catch (err) {
     log.warn('getSettings failed; using report defaults', { err });
     reportsSettings = resolveReportsSettings();
+    agentBehaviorSettings = resolveAgentBehaviorSettings();
   }
 
   try {
@@ -405,7 +412,9 @@ export async function startRun(
       initialMessages,
       initialQuery: input.prompt,
       permissions: input.permissions,
-      reportsSettings
+      reportsSettings,
+      agentBehaviorSettings,
+      runStartedAt: activeRuns.get(input.runId)?.startedAt ?? Date.now()
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -439,6 +448,8 @@ interface RunLoopBodyOpts {
   permissions: ChatSendInput['permissions'];
   resumeCheckpoint?: LoopCheckpoint;
   reportsSettings: ResolvedReportsSettings;
+  agentBehaviorSettings: ResolvedAgentBehaviorSettings;
+  runStartedAt?: number;
 }
 
 async function runLoopBody(opts: RunLoopBodyOpts): Promise<void> {
@@ -452,6 +463,8 @@ async function runLoopBody(opts: RunLoopBodyOpts): Promise<void> {
     initialQuery: opts.initialQuery,
     permissions: opts.permissions,
     reportsSettings: opts.reportsSettings,
+    agentBehaviorSettings: opts.agentBehaviorSettings,
+    ...(opts.runStartedAt !== undefined ? { runStartedAt: opts.runStartedAt } : {}),
     ...(opts.resumeCheckpoint ? { resumeCheckpoint: opts.resumeCheckpoint } : {})
   });
 
@@ -465,6 +478,7 @@ async function runLoopBody(opts: RunLoopBodyOpts): Promise<void> {
       workspaceId: opts.workspaceId,
       checkpoint: loopResult.pausedForAskUser,
       reportsSettings: opts.reportsSettings,
+      agentBehaviorSettings: opts.agentBehaviorSettings,
       callbacks: {
         emit: opts.emit,
         onDone: opts.deps.onDone,
@@ -607,7 +621,9 @@ export async function submitAskUserAnswers(input: AskUserSubmitInput): Promise<b
       initialQuery: entry.checkpoint.query,
       permissions: entry.input.permissions,
       resumeCheckpoint: entry.checkpoint,
-      reportsSettings: entry.reportsSettings
+      reportsSettings: entry.reportsSettings,
+      agentBehaviorSettings: entry.agentBehaviorSettings,
+      runStartedAt: run.startedAt
     });
   } catch (err: unknown) {
     clearPausedRun(input.runId);

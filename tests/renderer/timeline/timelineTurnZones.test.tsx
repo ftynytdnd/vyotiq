@@ -239,11 +239,12 @@ describe('Timeline turn zones', () => {
     expect(assistant?.closest('.timeline-agent-column')).not.toBeNull();
   });
 
-  it('shows run-complete when isProcessing flips false on the trailing turn', () => {
+  it('shows run-complete when the run fully ends on the trailing turn', () => {
     act(() => {
       useChatStore.setState({
         conversationId: 'c-zones',
         isProcessing: true,
+        awaitingAskUser: false,
         latestOrchestratorRunStatus: undefined,
         events: [
           { kind: 'user-prompt', id: 'p1', ts: 1000, content: 'Go' },
@@ -261,10 +262,56 @@ describe('Timeline turn zones', () => {
     expect(container.querySelector('[data-turn-sticky-footer]')).not.toBeNull();
 
     act(() => {
-      useChatStore.setState({ isProcessing: false });
+      useChatStore.setState({ isProcessing: false, awaitingAskUser: false });
     });
     rerender(<Timeline />);
     expect(container.querySelector('.vx-turn-sticky-footer__live')).toBeNull();
     expect(container.querySelector('[data-row-kind="run-complete"]')).not.toBeNull();
+  });
+
+  it('suppresses run-complete while paused for ask_user', () => {
+    act(() => {
+      useChatStore.setState({
+        conversationId: 'c-zones',
+        isProcessing: true,
+        awaitingAskUser: false,
+        runId: 'run-ask',
+        events: [
+          { kind: 'user-prompt', id: 'p1', ts: 1000, content: 'Go' },
+          {
+            kind: 'ask-user-prompt',
+            id: 'ask-1',
+            ts: 2000,
+            status: 'pending',
+            displayText: 'Which file?',
+            toolCallId: 'tc-ask',
+            runId: 'run-ask',
+            payload: {
+              questions: [
+                {
+                  id: 'q1',
+                  prompt: 'Which file?',
+                  options: [{ id: 'a', label: 'src/index.ts' }]
+                }
+              ]
+            }
+          }
+        ] satisfies TimelineEvent[]
+      });
+    });
+
+    const { container, rerender } = render(<Timeline />);
+    expect(container.querySelector('[data-row-kind="run-complete"]')).toBeNull();
+
+    act(() => {
+      useChatStore.setState({ isProcessing: false, awaitingAskUser: true });
+    });
+    rerender(<Timeline />);
+
+    expect(container.querySelector('[data-row-kind="run-complete"]')).toBeNull();
+    expect(container.querySelector('.vx-turn-sticky-footer__live')).not.toBeNull();
+    expect(container.querySelector('.vx-turn-sticky-footer__live')?.textContent).toContain(
+      'Awaiting your answer'
+    );
   });
 });

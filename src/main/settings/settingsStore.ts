@@ -340,6 +340,12 @@ export async function setSettings(patch: Partial<AppSettings>): Promise<AppSetti
           ...agentPatch.contextCompaction
         };
       }
+      if (agentPatch?.contextManagement) {
+        next.contextManagement = {
+          ...(prev.contextManagement as Record<string, unknown> | undefined),
+          ...agentPatch.contextManagement
+        };
+      }
       mergedUi.agentBehavior = next;
     }
 

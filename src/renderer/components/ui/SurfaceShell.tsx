@@ -122,12 +122,6 @@ export const chromeNoMatchesClassName = cn(
 /** Horizontal inset matching the dialog body padding. */
 const secondaryZonePanelInsetXClassName = 'px-[clamp(0.875rem,3vw,1rem)]';
 
-/** Scrollable panel body inset below a full-bleed tab strip. */
-export const secondaryZonePanelContentClassName = cn(
-  secondaryZonePanelInsetXClassName,
-  'pb-[clamp(1rem,3vw,1.25rem)]'
-);
-
 /** Settings tab strip wrapper (Vyotiq UI tab bar supplies the edge). */
 export const secondaryZoneTabStripClassName = cn(
   'mb-0 shrink-0 min-w-0',

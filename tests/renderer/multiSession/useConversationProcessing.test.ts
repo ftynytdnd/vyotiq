@@ -30,12 +30,22 @@ beforeEach(() => {
 describe('useConversationProcessing', () => {
   it('returns idle for unknown ids', () => {
     const { result } = renderHook(() => useConversationProcessing('conv-missing'));
-    expect(result.current).toEqual({ isProcessing: false, runId: null });
+    expect(result.current).toEqual({
+      isProcessing: false,
+      awaitingAskUser: false,
+      isRunActive: false,
+      runId: null
+    });
   });
 
   it('returns idle when id is null', () => {
     const { result } = renderHook(() => useConversationProcessing(null));
-    expect(result.current).toEqual({ isProcessing: false, runId: null });
+    expect(result.current).toEqual({
+      isProcessing: false,
+      awaitingAskUser: false,
+      isRunActive: false,
+      runId: null
+    });
   });
 
   it('reflects the slice flags', () => {
@@ -50,7 +60,33 @@ describe('useConversationProcessing', () => {
       }
     });
     const { result } = renderHook(() => useConversationProcessing('conv-A'));
-    expect(result.current).toEqual({ isProcessing: true, runId: 'run-A' });
+    expect(result.current).toEqual({
+      isProcessing: true,
+      awaitingAskUser: false,
+      isRunActive: true,
+      runId: 'run-A'
+    });
+  });
+
+  it('treats ask_user pause as run-active', () => {
+    useChatStore.setState({
+      slices: {
+        'conv-A': chatSliceFixture({
+          conversationId: 'conv-A',
+          runId: 'run-A',
+          isProcessing: false,
+          awaitingAskUser: true,
+          runStartedAt: 1
+        })
+      }
+    });
+    const { result } = renderHook(() => useConversationProcessing('conv-A'));
+    expect(result.current).toEqual({
+      isProcessing: false,
+      awaitingAskUser: true,
+      isRunActive: true,
+      runId: 'run-A'
+    });
   });
 
   it('does NOT re-render on unrelated-slice mutations', () => {
@@ -73,7 +109,12 @@ describe('useConversationProcessing', () => {
       return useConversationProcessing('conv-A');
     });
     const baseline = renderCount;
-    expect(result.current).toEqual({ isProcessing: true, runId: 'run-A' });
+    expect(result.current).toEqual({
+      isProcessing: true,
+      awaitingAskUser: false,
+      isRunActive: true,
+      runId: 'run-A'
+    });
 
     // Mutate conv-B's slice — same shape, different flag — and confirm
     // conv-A's consumer didn't re-render.
@@ -87,7 +128,12 @@ describe('useConversationProcessing', () => {
     });
 
     expect(renderCount).toBe(baseline);
-    expect(result.current).toEqual({ isProcessing: true, runId: 'run-A' });
+    expect(result.current).toEqual({
+      isProcessing: true,
+      awaitingAskUser: false,
+      isRunActive: true,
+      runId: 'run-A'
+    });
   });
 
   it('flips the consumer when its OWN slice transitions', () => {
@@ -113,6 +159,11 @@ describe('useConversationProcessing', () => {
       }));
     });
 
-    expect(result.current).toEqual({ isProcessing: false, runId: null });
+    expect(result.current).toEqual({
+      isProcessing: false,
+      awaitingAskUser: false,
+      isRunActive: false,
+      runId: null
+    });
   });
 });

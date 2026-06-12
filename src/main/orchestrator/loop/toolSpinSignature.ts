@@ -11,8 +11,8 @@
  *     1. `toolResultCache` returns identical (name, args) reads with a
  *        prepended banner from the SECOND repeat — earlier than the
  *        spin detector's THIRD-repeat trigger.
- *     2. The harness explicitly tells the model "Don't re-survey what
- *        you've already seen" (`00-orchestrator-core.md` §B).
+ *     2. The harness tells the model to pivot on hot signatures
+ *        (`00-orchestrator-core.md` §6 soft signals).
  *     3. `<run_state>.spin_signature_hot` exposes the recurring
  *        signature directly to the model so it can pivot before any
  *        host-side counter trips.

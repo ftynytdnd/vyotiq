@@ -9,6 +9,8 @@ import { wrapXml } from '../orchestrator/envelope/index.js';
 import { AGENT_TOOLS } from '../tools/policy/index.js';
 import {
   BASE_BACKOFF_MS,
+  IMPLICIT_FINISH_MIN_CHARS,
+  IMPLICIT_FINISH_MIN_SENTENCE_CHARS,
   MAX_BACKOFF_MS,
   MAX_SELF_CORRECTION_ATTEMPTS,
   MAX_TOOL_OUTPUT_CHARS,
@@ -53,7 +55,12 @@ function buildRuntimeLimitsBlock(): string {
       `BASE_BACKOFF_MS=${BASE_BACKOFF_MS}`,
       `MAX_BACKOFF_MS=${MAX_BACKOFF_MS}`,
       `STREAM_INACTIVITY_TIMEOUT_MS=${STREAM_INACTIVITY_TIMEOUT_MS}`,
-      `MAX_TOOL_OUTPUT_CHARS=${MAX_TOOL_OUTPUT_CHARS}`
+      `MAX_TOOL_OUTPUT_CHARS=${MAX_TOOL_OUTPUT_CHARS}`,
+      `IMPLICIT_FINISH_MIN_CHARS=${IMPLICIT_FINISH_MIN_CHARS}`,
+      `IMPLICIT_FINISH_MIN_SENTENCE_CHARS=${IMPLICIT_FINISH_MIN_SENTENCE_CHARS}`,
+      'RUN_TOKEN_BUDGET=optional (Settings → Agent behavior → Run limits)',
+      'RUN_WALL_CLOCK_BUDGET=optional (Settings → Agent behavior → Run limits)',
+      'CONTEXT_COMPACTION=optional (Settings → Agent behavior → Run limits)'
     ].join('\n')
   );
 }
@@ -61,16 +68,11 @@ function buildRuntimeLimitsBlock(): string {
 function buildAgentToolCatalogue(): string {
   const directNames = new Set<string>(AGENT_TOOLS);
   const tools = listTools().filter((t) => directNames.has(t.name));
-  const index = tools
-    .map((t) => {
-      const line = t.schema.function.description.split('\n')[0]?.trim() ?? t.name;
-      return `- \`${t.name}\` — ${line}`;
-    })
-    .join('\n');
+  const briefs = tools.map((t) => t.briefMarkdown.trim()).join('\n\n---\n\n');
   return (
     `# Your Tools (callable via \`tool_calls\`)\n\n` +
-    `Full JSON schemas are on the wire \`tools[]\` array. Names-only index:\n\n` +
-    index +
+    `Full JSON schemas are on the wire \`tools[]\` array. Plain-English briefs:\n\n` +
+    briefs +
     `\n\nUse tools when the task needs action. You may answer in plain prose when that fully satisfies the user.\n` +
     `- \`finish\` and \`ask_user\` are explicit ways to end a run.\n` +
     `- Substantive prose without tools also ends the run when it fully answers the user.`

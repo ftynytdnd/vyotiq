@@ -40,8 +40,6 @@ export const DOCK_INSET_CLASS = 'flex min-h-0 flex-1 flex-col gap-1 px-1.5';
 
 export const DOCK_DIVIDER_H_CLASS = 'mx-2 h-0 shrink-0';
 
-export const DOCK_FOOTER_CLASS = 'shrink-0';
-
 export const DOCK_FOOTER_TOOLBAR_CLASS = 'px-1.5 py-0';
 
 /** Empty / loading copy — icon + muted text, no background box. */

@@ -88,6 +88,7 @@ import {
   isAnthropicCacheDiagnosticsEnabled,
   parseAnthropicCacheDiagnostics
 } from './cacheHints/anthropicCacheDiagnostics.js';
+import { ANTHROPIC_COMPACTION_BETA, ANTHROPIC_CONTEXT_MANAGEMENT_BETA } from './capabilities.js';
 import { normalizeWireTools } from './normalizeWireTools.js';
 
 const log = logger.child('providers/chat/anthropic');
@@ -247,6 +248,43 @@ export async function* streamAnthropic(
   };
   const betas = new Set(anthropicBetasForProvider(provider.anthropicBetas) ?? []);
   if (cacheDiagnosticsOn) betas.add(ANTHROPIC_CACHE_DIAGNOSIS_BETA);
+
+  // Opportunistic native context editing (server-side tool-result clearing).
+  // Backstop ON TOP of the host-side reversible reduction: keeps the most
+  // recent tool results and lets the server drop older ones once the prompt
+  // crosses the trigger. Only attached when the orchestrator opted in.
+  const ctxEdit = req.anthropicContextEditing;
+  if (ctxEdit && ctxEdit.triggerInputTokens > 0) {
+    betas.add(ANTHROPIC_CONTEXT_MANAGEMENT_BETA);
+    const clearEdit: Record<string, unknown> = {
+      type: 'clear_tool_uses_20250919',
+      trigger: { type: 'input_tokens', value: ctxEdit.triggerInputTokens },
+      keep: { type: 'tool_uses', value: Math.max(0, ctxEdit.keepToolUses) }
+    };
+    if (typeof ctxEdit.clearAtLeastTokens === 'number' && ctxEdit.clearAtLeastTokens > 0) {
+      clearEdit['clear_at_least'] = { type: 'input_tokens', value: ctxEdit.clearAtLeastTokens };
+    }
+    if (ctxEdit.clearToolInputs === true) {
+      clearEdit['clear_tool_inputs'] = true;
+    }
+    if (ctxEdit.excludeTools && ctxEdit.excludeTools.length > 0) {
+      clearEdit['exclude_tools'] = [...ctxEdit.excludeTools];
+    }
+    const edits: Array<Record<string, unknown>> = [clearEdit];
+    // Opt-in server-side compaction backstop (`compact_20260112`). Stateless
+    // from our side: we keep sending full host-managed history and the server
+    // re-summarizes earlier turns before the model sees them. Requires its own
+    // beta header and a trigger ≥ 50k tokens.
+    if (ctxEdit.serverCompaction && ctxEdit.serverCompaction.triggerTokens >= 50_000) {
+      betas.add(ANTHROPIC_COMPACTION_BETA);
+      edits.push({
+        type: 'compact_20260112',
+        trigger: { type: 'input_tokens', value: ctxEdit.serverCompaction.triggerTokens }
+      });
+    }
+    body['context_management'] = { edits };
+  }
+
   if (betas.size > 0) {
     headers['anthropic-beta'] = [...betas].join(',');
   }

@@ -156,7 +156,7 @@ export function FloatingPanel({
       {showBackdrop ? (
         <button
           type="button"
-          className="absolute inset-0 bg-black/40 pointer-events-auto"
+          className="absolute inset-0 bg-scrim pointer-events-auto"
           aria-label="Close panel"
           onClick={onClose}
         />

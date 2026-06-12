@@ -14,14 +14,22 @@
  */
 
 import { useShallow } from 'zustand/react/shallow';
+import { isSliceRunActive } from '../../lib/isSliceRunActive.js';
 import { useChatStore } from '../../store/useChatStore.js';
 
 interface ConversationProcessing {
   isProcessing: boolean;
+  awaitingAskUser: boolean;
+  isRunActive: boolean;
   runId: string | null;
 }
 
-const IDLE: ConversationProcessing = { isProcessing: false, runId: null };
+const IDLE: ConversationProcessing = {
+  isProcessing: false,
+  awaitingAskUser: false,
+  isRunActive: false,
+  runId: null
+};
 
 export function useConversationProcessing(id: string | null): ConversationProcessing {
   return useChatStore(
@@ -29,7 +37,12 @@ export function useConversationProcessing(id: string | null): ConversationProces
       if (!id) return IDLE;
       const slice = s.slices[id];
       if (!slice) return IDLE;
-      return { isProcessing: slice.isProcessing, runId: slice.runId };
+      return {
+        isProcessing: slice.isProcessing,
+        awaitingAskUser: slice.awaitingAskUser,
+        isRunActive: isSliceRunActive(slice),
+        runId: slice.runId
+      };
     })
   );
 }

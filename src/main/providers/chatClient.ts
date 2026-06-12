@@ -82,6 +82,32 @@ export interface ChatStreamRequest {
   /** OpenAI-compat: allow multiple tool calls per assistant turn. */
   parallelToolCalls?: boolean;
   /**
+   * Anthropic-native opportunistic context editing (server-side
+   * `clear_tool_uses`). Set by the orchestrator only when host context
+   * management is enabled and the provider speaks the Anthropic dialect. Acts
+   * as a backstop on top of the host-side reversible reduction — keeps the
+   * last `keepToolUses` tool results and lets the server drop older ones once
+   * the prompt crosses `triggerInputTokens`. Other dialects ignore it.
+   */
+  anthropicContextEditing?: {
+    keepToolUses: number;
+    triggerInputTokens: number;
+    /** Minimum tokens the server should clear per pass (`clear_at_least`). */
+    clearAtLeastTokens?: number;
+    /** Also clear the tool-call inputs of old tool uses (`clear_tool_inputs`). */
+    clearToolInputs?: boolean;
+    /** Tool names the server must never clear (`exclude_tools`). */
+    excludeTools?: readonly string[];
+    /**
+     * Opt-in server-side compaction backstop (`compact_20260112`). When set,
+     * the server summarizes earlier history into a compaction block once the
+     * prompt crosses `triggerTokens`. Stateless from our side: we keep sending
+     * full history (host reduction governs resend size) and the server
+     * re-compacts each turn.
+     */
+    serverCompaction?: { triggerTokens: number };
+  };
+  /**
    * Optional callback fired exactly once per request, the moment the
    * HTTP response headers have been received but before any SSE chunk
    * has been parsed. Lets the caller distinguish two distinct waiting

@@ -16,6 +16,62 @@ export const DEFAULT_PERMISSIONS: ChatPermissions = {};
  */
 export const MAX_TOOL_OUTPUT_CHARS = 8_000;
 
+/** Host implicit-finish prose thresholds (mirrored in harness `<runtime_limits>`). */
+export const IMPLICIT_FINISH_MIN_CHARS = 28;
+export const IMPLICIT_FINISH_MIN_SENTENCE_CHARS = 10;
+
+/** Reversible context compaction — see `docs/context-management-design.md`. */
+export const COMPACT_MIN_TOOL_OUTPUT_CHARS = 4_000;
+/**
+ * Minimum chars of a stored tool-CALL argument body before it is worth
+ * offloading to disk (host-side equivalent of Anthropic `clear_tool_inputs`).
+ * Tool arguments below this rarely move the needle and churning them breaks
+ * the prompt cache for no gain.
+ */
+export const COMPACT_MIN_TOOL_INPUT_CHARS = 4_000;
+/** Fallback when model context window is unknown at compaction time. */
+export const COMPACT_DEFAULT_CONTEXT_WINDOW = 128_000;
+
+/**
+ * Unified context-window management defaults (2026 context-engineering
+ * research: manage proactively well before the hard limit to avoid
+ * "context rot"; reversible reduction first, lossy summarization last).
+ * See `docs/context-management-design.md`.
+ */
+/** Fraction of the effective window at which proactive reduction triggers. */
+export const CONTEXT_DEFAULT_TRIGGER_FRACTION = 0.75;
+/** Fraction of the effective window at which the UI shows an early warning. */
+export const CONTEXT_DEFAULT_WARN_FRACTION = 0.7;
+/**
+ * Usable share of a model's advertised context window. Advertised windows
+ * overstate the length over which a model reasons reliably; we treat 90%
+ * as the working ceiling and compute thresholds against it.
+ */
+export const CONTEXT_DEFAULT_EFFECTIVE_WINDOW_FRACTION = 0.9;
+/**
+ * Adaptive absolute ceiling on the usable window (tokens). 2026 context-rot
+ * research (Chroma's 18-model study) shows reasoning degradation onset is
+ * roughly *absolute* (~tens of thousands of tokens), not proportional to the
+ * advertised window. So a flat fraction of a 1M window (e.g. 750k) sits far
+ * past where rot sets in. The effective window is therefore capped at
+ * `min(advertised × fraction, absoluteCeiling)`. Set to 0 to disable the cap
+ * (pure fractional behavior). 200k balances large-context capability against
+ * the measured rot curve and matches the practical ceiling of today's
+ * strongest long-context coding models.
+ */
+export const CONTEXT_DEFAULT_ABSOLUTE_CEILING_TOKENS = 200_000;
+/** Most-recent tool results kept verbatim when clearing older ones. */
+export const CONTEXT_DEFAULT_KEEP_LAST_TOOL_RESULTS = 3;
+/** Minimum tokens a reduction pass must free, else it is skipped (protects the prompt cache). */
+export const CONTEXT_DEFAULT_MIN_SAVINGS_TOKENS = 2_000;
+/** Cooldown between automatic reduction passes for one run (anti-thrash). */
+export const CONTEXT_DEFAULT_COOLDOWN_MS = 15_000;
+/** Subfolder under WORKSPACE_DOTDIR for reversible pre-summary transcripts. */
+export const CONTEXT_SUMMARY_SUBDIR = 'context-summaries';
+
+/** Default per-run wall-clock budget when enabled (30 minutes). */
+export const DEFAULT_RUN_WALL_CLOCK_BUDGET_MS = 30 * 60 * 1000;
+
 /** Folder name used inside the workspace for memory + agent artifacts. */
 export const WORKSPACE_DOTDIR = '.vyotiq';
 
@@ -59,9 +115,6 @@ export const PROVIDER_ACCOUNT_POLL_ACTIVE_MS = 5_000;
 
 /** Background provider account poll interval when idle (ms). */
 export const PROVIDER_ACCOUNT_POLL_IDLE_MS = 60_000;
-
-/** @deprecated Use PROVIDER_ACCOUNT_POLL_ACTIVE_MS — kept for tests referencing the old name. */
-export const PROVIDER_ACCOUNT_POLL_MS = PROVIDER_ACCOUNT_POLL_ACTIVE_MS;
 
 /** Per-fetch wall-clock budget for provider account requests. */
 export const PROVIDER_ACCOUNT_TIMEOUT_MS = 10_000;
@@ -269,6 +322,14 @@ export const IPC = {
   /** Run paused on `ask_user`; renderer may submit answers to resume. */
   CHAT_AWAITING_USER: 'chat:awaiting-user',
   CHAT_SUBMIT_ASK_USER: 'chat:submit-ask-user',
+
+  // Context window management (manual controls)
+  /** renderer → main: force a reversible reduction pass on a conversation now. */
+  CONTEXT_COMPACT_NOW: 'context:compact-now',
+  /** renderer → main: summarize the conversation so far and continue from a lean context. */
+  CONTEXT_RESET: 'context:reset',
+  /** renderer → main: read the full content of an offloaded reduction artifact. */
+  CONTEXT_READ_ARTIFACT: 'context:read-artifact',
 
   // Tools (mixed direction — see per-channel comments below)
   /** renderer → main: open a workspace-relative path in the OS default opener. */

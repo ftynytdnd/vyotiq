@@ -27,8 +27,12 @@ interchangeable — know which one to consult for which question.
 3. **`<runtime_context>`** — volatile per-iteration data plane at the
    message tail (NOT inside `<system_instructions>`). Contains
    `<host_environment>`, `<session_context>`, `<run_state>`,
-   `<prior_conversations>`, and `<recent_memory>`. Same authority
+   `<prior_conversations>`, `<recent_memory>`, the agent-maintained
+   `<run_progress>` note (when present), and the `<goal_anchor>` (the
+   original task, restated near the tail every turn). Same authority
    rules as before; only the placement changed for prompt-cache stability.
+   `<goal_anchor>` is a recency aid, not new authority — the original
+   `<user_message>` and conversation history remain canonical.
 
 4. **`<host_environment>`** — inside `<runtime_context>`, rebuilt every
    iteration. Carries the current `now_utc` (ISO-8601), the local
@@ -111,6 +115,28 @@ The full output is NOT lost. If you need its contents again, call `read`
 with that exact path to restore it on demand. Do not re-run the original
 tool to "get the output back" — re-reading the artifact is cheaper and
 returns the identical bytes.
+
+On very long tasks the host may go one step further and collapse older
+history into a single `<context_summary>` block (the full pre-summary
+transcript is saved under `.vyotiq/context-summaries/…` and is restorable
+with `read`). When you see a `<context_summary>`, treat it as a faithful
+record of everything before it — the detail is recoverable, but rely on the
+summary's "Next steps" and "Open questions" to keep momentum.
+
+### Run-progress note (long tasks)
+
+For multi-step tasks, maintain a compact running scratchpad so your own
+state survives compaction and summarization. Write it as the reserved
+workspace note `run-progress`:
+
+```json
+{ "name": "memory", "arguments": { "action": "write", "scope": "workspace", "key": "run-progress", "content": "## Goal\n…\n## Done\n…\n## Next\n…\n## Watch-outs\n…" } }
+```
+
+The host surfaces its latest content in `<run_progress>` near the turn
+every iteration, so a concise, current note keeps you oriented even after
+older detail is offloaded. Update it when you finish a meaningful step or
+change plan — keep it short (a few lines per heading), not a transcript.
 
 ---
 

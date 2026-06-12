@@ -420,11 +420,3 @@ export function normalizeModelThinkingMap(
     mutated
   };
 }
-
-/** @deprecated Use `resolveThinkingCapabilities` — kept for tests migrating off id heuristics. */
-export function isDeepSeekThinkingModel(
-  _modelId: string,
-  caps?: ModelThinkingCapabilities
-): boolean {
-  return caps?.wireStyle === 'openai-deepseek';
-}

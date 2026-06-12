@@ -136,11 +136,6 @@ export function resolveLivePhaseHeadline(
   return label;
 }
 
-/** Phases where the live status headline should not appear (content is streaming). */
-export function shouldHideLivePhaseHeadline(phase: string): boolean {
-  return phase === 'streaming-text' || phase === 'streaming-reasoning';
-}
-
 /** Whether a persisted phase divider label is a live-phase headline. */
 export function isPhaseHeadlineLabel(label: string): boolean {
   const normalized = label.trim().toLowerCase();

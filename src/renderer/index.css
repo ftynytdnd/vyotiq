@@ -32,6 +32,10 @@
   --color-border-subtle: oklch(0.30 0.005 260 / 0.4);
   --color-border-strong: oklch(0.40 0.005 260 / 0.6);
 
+  /* Modal scrim — dim backdrop behind floating panels / companion overlays.
+     Token (not a hardcoded `bg-black/40`) so every overlay dims identically. */
+  --color-scrim: oklch(0 0 0 / 0.4);
+
   /* Accent + state
      --------------------------------------------------------------------
      Vyotiq identity: steel violet. Chosen to sit cleanly on the
@@ -2715,24 +2719,7 @@ textarea {
   }
 }
 
-/* Left subnav — settings providers / appearance master-detail */
-.vx-left-subnav-layout {
-  display: flex;
-  min-width: 0;
-  gap: 0.75rem;
-}
-
-.vx-left-subnav-rail {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 0 0 min(11rem, 34%);
-}
-
-.vx-left-subnav-content {
-  min-width: 0;
-}
-
+/* Left subnav — settings sections rail */
 .vx-left-subnav {
   display: flex;
   flex-direction: column;
@@ -2770,15 +2757,6 @@ textarea {
 }
 
 @container vx-panel (max-width: 520px) {
-  .vx-left-subnav-layout {
-    flex-direction: column;
-  }
-
-  .vx-left-subnav-rail {
-    flex-basis: auto;
-    max-width: none;
-  }
-
   .vx-left-subnav {
     flex-direction: row;
     flex-wrap: wrap;
@@ -3445,7 +3423,47 @@ mark.vyotiq-timeline-find-mark-active {
   grid-area: token;
   display: flex;
   align-items: flex-end;
+  gap: 0.625rem;
   padding-bottom: 0.375rem;
+}
+
+/* Context-window meter — sits left of the token usage pill. */
+.vx-context-meter {
+  min-width: 0;
+}
+
+.vx-context-meter__action {
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+}
+
+.vx-context-meter__action:disabled {
+  cursor: default;
+}
+
+/* Active-reduction pulse — the host is trimming context in the trigger/critical
+   zone. A gentle opacity pulse on the meter bar signals "managing now". */
+.vx-context-meter__bar--active {
+  animation: vx-context-meter-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes vx-context-meter-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vx-context-meter__bar--active {
+    animation: none;
+  }
 }
 
 .vx-composer-send-slot {

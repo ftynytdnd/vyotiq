@@ -9,11 +9,11 @@ interface RunningTitleProps {
 }
 
 export function RunningTitle({ id, title, className }: RunningTitleProps) {
-  const { isProcessing } = useConversationProcessing(id);
+  const { isRunActive } = useConversationProcessing(id);
   return (
     <span
-      className={shimmerText(isProcessing, cn('min-w-0 flex-1 truncate', className))}
-      style={isProcessing ? shimmerStyle(`conv:${id}`) : undefined}
+      className={shimmerText(isRunActive, cn('min-w-0 flex-1 truncate', className))}
+      style={isRunActive ? shimmerStyle(`conv:${id}`) : undefined}
       title={title}
     >
       {title}

@@ -49,6 +49,7 @@ export interface ChatSliceFixture {
   conversationId: string;
   runId: string | null;
   isProcessing: boolean;
+  awaitingAskUser?: boolean;
   runStartedAt: number | null;
   draft: string;
   events: TimelineEvent[];
@@ -83,6 +84,7 @@ export function chatSliceFixture(
   return {
     runId: null,
     isProcessing: false,
+    awaitingAskUser: false,
     runStartedAt: null,
     draft: '',
     events: [],

@@ -16,6 +16,7 @@ import { registerAttachmentsIpc } from './attachments.ipc.js';
 import { registerRendererLogRelay } from './rendererLogRelay.js';
 import { registerTokensIpc } from './tokens.ipc.js';
 import { registerReportsIpc } from './reports.ipc.js';
+import { registerContextIpc } from './context.ipc.js';
 import {
   abortRunsForConversation,
   abortRunsForProvider,
@@ -38,6 +39,7 @@ export function registerIpc(): void {
   registerChatIpc();
   registerToolsIpc();
   registerReportsIpc();
+  registerContextIpc();
   registerMemoryIpc();
   registerSettingsIpc();
   registerConversationsIpc();

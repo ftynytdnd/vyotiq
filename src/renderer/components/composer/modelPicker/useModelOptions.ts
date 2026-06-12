@@ -28,8 +28,6 @@ interface FlatOption {
 export interface ModelOptions {
   localGroups: ModelOptionGroup[];
   remoteGroups: ModelOptionGroup[];
-  /** @deprecated Prefer localGroups + remoteGroups — kept for callers still on flat groups. */
-  groups: ModelOptionGroup[];
   flat: FlatOption[];
   totalEnabledProviders: number;
 }
@@ -68,7 +66,6 @@ export function useModelOptions(query: string): ModelOptions {
     return {
       localGroups,
       remoteGroups,
-      groups,
       flat,
       totalEnabledProviders: enabled.length
     };

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   formatProviderStrikeError,
   formatRetryThought,
+  formatRunTokenBudgetError,
   formatToolStrikeError,
   sentenceEnd
 } from '@main/orchestrator/loop/runLoopMessages';
@@ -28,6 +29,13 @@ describe('runLoopMessages', () => {
 
   it('formatToolStrikeError includes last failure when provided', () => {
     expect(formatToolStrikeError('read — missing path')).toContain('read — missing path');
+  });
+
+  it('formatRunTokenBudgetError cites cumulative and max totals', () => {
+    const msg = formatRunTokenBudgetError(1_500_000, 1_000_000);
+    expect(msg).toContain('1,500,000');
+    expect(msg).toContain('1,000,000');
+    expect(msg).toContain('Start a new message to continue');
   });
 
   it('formatToolStrikeError surfaces root cause when it differs from last error', () => {

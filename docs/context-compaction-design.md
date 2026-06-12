@@ -1,6 +1,15 @@
 # Reversible Context Compaction — Design (2026)
 
-Status: **shipped** — `settings.ui.agentBehavior.contextCompaction.enabled` defaults to `false` (opt-in). When enabled, `src/main/orchestrator/context/contextCompaction.ts` offloads large tool outputs to `.vyotiq/compaction/...` and replaces their in-context bodies with `read`-restorable banners once the prompt nears the model window. Durability is end-to-end: a persisted `tool-compacted` timeline event lets `replayTranscript.ts` rebuild the lean banner across turns, and artifacts are reclaimed on conversation delete (`cleanupCompactionArtifactsForConversation`) plus a startup orphan sweep (`sweepOrphanCompactionAllWorkspaces`).
+> **Superseded.** Reversible compaction is now one tier inside the unified
+> context-window management system. See **`docs/context-management-design.md`**
+> for the current design (on by default; tool-result clearing → on-disk
+> compaction → reversible summarization; goal anchor + run-progress note;
+> manual Compact/Reset; composer meter). The notes below are retained for
+> historical context on the original opt-in compaction tier.
+
+Status (historical): originally shipped opt-in via
+`settings.ui.agentBehavior.contextCompaction.enabled` (now folded into
+`contextManagement`, on by default). `src/main/orchestrator/context/contextCompaction.ts` offloads large tool outputs to `.vyotiq/compaction/...` and replaces their in-context bodies with `read`-restorable banners once the prompt nears the model window. Durability is end-to-end: a persisted `tool-compacted` timeline event lets `replayTranscript.ts` rebuild the lean banner across turns, and artifacts are reclaimed on conversation delete (`cleanupCompactionArtifactsForConversation`) plus a startup orphan sweep (`sweepOrphanCompactionAllWorkspaces`).
 
 ## Problem
 

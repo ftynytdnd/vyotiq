@@ -8,12 +8,85 @@ import {
 } from '@shared/settings/agentBehaviorSettings';
 
 describe('resolveAgentBehaviorSettings', () => {
-  it('defaults token budget off and compaction off', () => {
+  it('defaults token budget off and context management on', () => {
     const resolved = resolveAgentBehaviorSettings();
     expect(resolved.runTokenBudget.enabled).toBe(false);
     expect(resolved.runTokenBudget.maxTotalTokens).toBe(DEFAULT_RUN_TOKEN_BUDGET_MAX);
-    expect(resolved.contextCompaction.enabled).toBe(false);
+    expect(resolved.contextManagement.enabled).toBe(true);
     expect(resolved.runWallClockBudget.enabled).toBe(false);
+  });
+
+  it('context management: defaults, legacy fallback, and fraction clamps', () => {
+    const def = resolveAgentBehaviorSettings();
+    expect(def.contextManagement.triggerFraction).toBe(0.75);
+    expect(def.contextManagement.warnFraction).toBe(0.7);
+    expect(def.contextManagement.effectiveWindowFraction).toBe(0.9);
+    expect(def.contextManagement.keepLastToolResults).toBe(3);
+
+    // Legacy `contextCompaction.enabled` seeds the master switch when the
+    // new object is absent.
+    const legacyOff = resolveAgentBehaviorSettings({
+      agentBehavior: { contextCompaction: { enabled: false } }
+    });
+    expect(legacyOff.contextManagement.enabled).toBe(false);
+
+    // New object wins over the legacy flag.
+    const both = resolveAgentBehaviorSettings({
+      agentBehavior: {
+        contextCompaction: { enabled: false },
+        contextManagement: { enabled: true }
+      }
+    });
+    expect(both.contextManagement.enabled).toBe(true);
+
+    // warnFraction is forced below triggerFraction.
+    const clamped = resolveAgentBehaviorSettings({
+      agentBehavior: {
+        contextManagement: { triggerFraction: 0.6, warnFraction: 0.9 }
+      }
+    });
+    expect(clamped.contextManagement.triggerFraction).toBe(0.6);
+    expect(clamped.contextManagement.warnFraction).toBeLessThan(0.6);
+  });
+
+  it('context management: new advanced knobs (ceiling, summary model, server compaction)', () => {
+    const def = resolveAgentBehaviorSettings();
+    expect(def.contextManagement.absoluteCeilingTokens).toBe(200_000);
+    expect(def.contextManagement.summaryModel).toBeNull();
+    expect(def.contextManagement.serverSideCompaction).toBe(false);
+
+    // 0 disables the adaptive ceiling explicitly.
+    const noCeiling = resolveAgentBehaviorSettings({
+      agentBehavior: { contextManagement: { absoluteCeilingTokens: 0 } }
+    });
+    expect(noCeiling.contextManagement.absoluteCeilingTokens).toBe(0);
+
+    // Out-of-range ceiling clamps into the safe band.
+    const tinyCeiling = resolveAgentBehaviorSettings({
+      agentBehavior: { contextManagement: { absoluteCeilingTokens: 100 } }
+    });
+    expect(tinyCeiling.contextManagement.absoluteCeilingTokens).toBe(16_000);
+
+    // Summary model requires BOTH ids; partial → null.
+    const partial = resolveAgentBehaviorSettings({
+      agentBehavior: { contextManagement: { summaryModel: { providerId: 'anthropic', modelId: '' } } }
+    });
+    expect(partial.contextManagement.summaryModel).toBeNull();
+
+    const full = resolveAgentBehaviorSettings({
+      agentBehavior: {
+        contextManagement: { summaryModel: { providerId: 'anthropic', modelId: 'claude-haiku' } }
+      }
+    });
+    expect(full.contextManagement.summaryModel).toEqual({
+      providerId: 'anthropic',
+      modelId: 'claude-haiku'
+    });
+
+    const compactOn = resolveAgentBehaviorSettings({
+      agentBehavior: { contextManagement: { serverSideCompaction: true } }
+    });
+    expect(compactOn.contextManagement.serverSideCompaction).toBe(true);
   });
 
   it('clamps maxTotalTokens into allowed range', () => {

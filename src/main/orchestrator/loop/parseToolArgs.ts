@@ -29,17 +29,6 @@ export function tryParseArgumentsRecord(buf: string): Record<string, unknown> {
 }
 
 /**
- * Lenient parse preserving top-level arrays when present.
- */
-export function tryParseArgumentsUnknown(buf: string): unknown {
-  try {
-    return JSON.parse(buf || '{}');
-  } catch {
-    return {};
-  }
-}
-
-/**
  * Strict parse for tool dispatch. Surfaces `parseError` on malformed JSON
  * or a non-object shape so callers can short-circuit with a synthetic
  * failure instead of running tools with `{}`.

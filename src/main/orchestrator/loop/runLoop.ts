@@ -35,6 +35,7 @@ import type { ProviderDialect } from '@shared/types/provider.js';
 import { providerDialectReportsPromptCache } from '@shared/providers/promptCacheMetrics.js';
 import { buildOrchestratorSystemPrompt } from '../../harness/harnessLoader.js';
 import { refreshEnvelopes } from '../contextManager.js';
+import { wrapXml } from '../envelope/index.js';
 import { tryParseArgumentsRecord } from './parseToolArgs.js';
 import {
   emitFinishToolSettlement,
@@ -66,9 +67,11 @@ import { handleToolCalls } from './handleToolCalls.js';
 
 import {
   applyCacheLayers,
+  buildContextPressureXml,
   insertHistoryBeforeTail,
   isCacheLayeredTopology
 } from '../context/buildContextLayers.js';
+import type { ContextLevel } from '@shared/context/contextLevel.js';
 import { buildOrchestratorRequest } from './buildOrchestratorRequest.js';
 import { handleAssistantTurn } from './handleAssistantTurn.js';
 import { DiffStreamer } from '../diffStreamer.js';
@@ -105,7 +108,12 @@ import {
   resolveAgentBehaviorSettings,
   type ResolvedAgentBehaviorSettings
 } from '@shared/settings/agentBehaviorSettings.js';
-import { applyContextCompactionIfEnabled } from '../context/contextCompaction.js';
+import {
+  createContextReductionState,
+  reduceContextIfNeeded
+} from '../context/contextCompaction.js';
+import { estimatePromptTokensSync } from '../context/contextBudget.js';
+import { toolSchemasFor } from '../../tools/registry.js';
 import { maybeInterceptHostReportGate } from './hostReportGate.js';
 import {
   formatProviderStrikeError,
@@ -129,6 +137,9 @@ const log = logger.child('orch/runLoop');
  * Minimum length for the sentence-end probe — accepts concise direct
  * answers ("My name is Ajay K.") while rejecting bare filler ("Okay.").
  */
+
+/** Cap on the original-task body echoed in the per-turn `<goal_anchor>`. */
+const GOAL_ANCHOR_MAX_CHARS = 600;
 
 /** User-facing copy when empty-turn retries are exhausted. */
 const USER_EMPTY_TURN_ERROR =
@@ -284,7 +295,25 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     const reportsSettings = opts.reportsSettings ?? resolveReportsSettings();
     const agentBehaviorSettings =
       opts.agentBehaviorSettings ?? resolveAgentBehaviorSettings();
-    const compactionLogged = { value: false };
+    const reductionState = createContextReductionState();
+    const budgetToolSchemas = toolSchemasFor(AGENT_TOOLS);
+    // Calibration: provider-reported prompt tokens ÷ our estimate, carried turn
+    // to turn so the budget/meter anchor to what the provider actually bills.
+    let calibrationRatio: number | undefined;
+    // Post-reduction usage level from the previous iteration drives the
+    // proactive `<context_pressure>` note on the next turn (one-turn lag is
+    // fine: it reflects the lean prompt the model just saw).
+    let lastUsageLevel: ContextLevel = 'ok';
+    // Raw (uncalibrated) estimate of the exact array sent this turn — the
+    // calibration denominator once the provider returns real prompt tokens.
+    let rawEstimateThisTurn = 0;
+    // Goal anchor — restate the original task near the tail every turn so it
+    // survives reversible reduction / summarization (counters lost-in-middle).
+    const goalAnchorBody = opts.input.prompt.trim().slice(0, GOAL_ANCHOR_MAX_CHARS);
+    const goalAnchorXml =
+      goalAnchorBody.length > 0
+        ? wrapXml('goal_anchor', `Original task (stay aligned to this): ${goalAnchorBody}`)
+        : '';
     const iterationCap =
       MAX_TOTAL_ITERATIONS + (resume?.reportGateBonusIteration ? 1 : 0);
     let hostReportGatePendingTerminal = resume?.hostReportGate
@@ -358,23 +387,107 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           snapshotRunState(runStateAcc, spin, consecutiveBadToolRounds)
         );
         const hostEnvXml = buildHostEnvironmentXml();
+        const contextPressureXml = agentBehaviorSettings.contextManagement.enabled
+          ? buildContextPressureXml(lastUsageLevel)
+          : '';
         applyCacheLayers(messages, {
           harness,
           env,
           runStateXml,
-          hostEnvironmentXml: hostEnvXml
+          hostEnvironmentXml: hostEnvXml,
+          ...(goalAnchorXml.length > 0 ? { goalAnchorXml } : {}),
+          ...(contextPressureXml.length > 0 ? { contextPressureXml } : {})
         });
-        const compacted = await applyContextCompactionIfEnabled(messages, {
-          conversationId: opts.input.conversationId,
-          runId: opts.input.runId,
-          workspacePath: opts.workspacePath,
-          modelId: opts.input.selection.modelId,
-          providerId: opts.input.selection.providerId,
-          agentBehavior: agentBehaviorSettings,
-          emit
-        }, compactionLogged);
-        messages.length = 0;
-        messages.push(...compacted);
+        // Defensive: context reduction is always-on, so a failure here (e.g.
+        // a transient provider-store read) must never abort the run — fall
+        // back to the unreduced messages and let the provider's own limit /
+        // self-correction path handle any overflow.
+        // Single budget evaluation per iteration: the reduction pass evaluates
+        // usage, (optionally) reduces, and returns the POST-reduction usage —
+        // which we reuse for the composer meter telemetry + the Anthropic
+        // backstop window (no duplicate tokenize/provider lookup).
+        let advertisedWindowForTurn = 0;
+        try {
+          const reduction = await reduceContextIfNeeded(
+            messages,
+            {
+              ...(opts.input.conversationId !== undefined
+                ? { conversationId: opts.input.conversationId }
+                : {}),
+              runId: opts.input.runId,
+              workspacePath: opts.workspacePath,
+              modelId: opts.input.selection.modelId,
+              providerId: opts.input.selection.providerId,
+              settings: agentBehaviorSettings.contextManagement,
+              tools: budgetToolSchemas,
+              signal: opts.signal,
+              ...(calibrationRatio !== undefined ? { calibrationRatio } : {}),
+              emit
+            },
+            reductionState
+          );
+          messages.length = 0;
+          messages.push(...reduction.messages);
+
+          const usage = reduction.usage;
+          advertisedWindowForTurn = usage.advertisedWindow;
+          lastUsageLevel = usage.level;
+          if (usage.effectiveWindow > 0) {
+            emit({
+              kind: 'context-usage',
+              id: randomUUID(),
+              ts: Date.now(),
+              usedTokens: usage.usedTokens,
+              effectiveWindow: usage.effectiveWindow,
+              advertisedWindow: usage.advertisedWindow,
+              level: usage.level,
+              exact: usage.exact,
+              ...(usage.byPart ? { byPart: usage.byPart } : {})
+            });
+          }
+        } catch (err) {
+          // Defensive: context reduction is always-on, so a failure here (e.g.
+          // a transient provider-store read) must never abort the run — fall
+          // back to the unreduced messages and let the provider's own limit /
+          // self-correction path handle any overflow.
+          log.warn('context reduction failed; continuing with full context', {
+            runId: opts.input.runId,
+            err: err instanceof Error ? err.message : String(err)
+          });
+        }
+
+        // Opportunistic Anthropic native context-editing backstop: only when
+        // host context management is on, the dialect is Anthropic, and we know
+        // the window. Trigger sits ABOVE the host trigger so it only fires if
+        // host-side reduction somehow fell behind (defense in depth).
+        const cmSettings = agentBehaviorSettings.contextManagement;
+        const anthropicContextEditing =
+          cmSettings.enabled &&
+          providerDialect === 'anthropic-native' &&
+          advertisedWindowForTurn > 0
+            ? {
+              keepToolUses: cmSettings.keepLastToolResults,
+              triggerInputTokens: Math.floor(advertisedWindowForTurn * 0.92),
+              // Free a worthwhile chunk per server pass + clear stale tool
+              // inputs (mirrors the host-side `clear_tool_inputs` tier).
+              clearAtLeastTokens: 8_192,
+              clearToolInputs: true,
+              // Opt-in server-side compaction backstop. The API requires the
+              // compaction trigger to be ≥ 50k tokens; sit it below the
+              // clear_tool_uses trigger so summarization only fires if clearing
+              // alone can't keep the prompt lean.
+              ...(cmSettings.serverSideCompaction
+                ? {
+                  serverCompaction: {
+                    triggerTokens: Math.max(
+                      50_000,
+                      Math.floor(advertisedWindowForTurn * 0.85)
+                    )
+                  }
+                }
+                : {})
+            }
+            : undefined;
 
         const fp = messagesSanitizeFingerprint(messages);
         const sanitized =
@@ -387,6 +500,14 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               return next;
             })();
         const candidateMessages = sanitized.messages;
+        // Raw (uncalibrated) estimate of the EXACT array we are about to send —
+        // the denominator for calibration once the provider returns real
+        // prompt tokens for this turn.
+        rawEstimateThisTurn = estimatePromptTokensSync(
+          opts.input.selection.modelId,
+          candidateMessages,
+          budgetToolSchemas
+        ).tokens;
         if (sanitized.stats.injectedStubs > injectedStubsHighWater) {
           const newCount = sanitized.stats.injectedStubs - injectedStubsHighWater;
           injectedStubsHighWater = sanitized.stats.injectedStubs;
@@ -415,7 +536,8 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             : {}),
           ...(providerDialect === 'anthropic-native'
             ? { previousAnthropicMessageId: lastAnthropicMessageId ?? null }
-            : {})
+            : {}),
+          ...(anthropicContextEditing !== undefined ? { anthropicContextEditing } : {})
         });
 
         if (iter > 0) {
@@ -586,6 +708,19 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         }
         consecutiveErrors = 0;
         runHadLlmProgress = true;
+
+        // Calibrate future estimates to what the provider actually billed for
+        // THIS prompt. `promptTokens` is the exact input size; dividing by our
+        // raw estimate yields a multiplicative correction (clamped) that
+        // anchors the heuristic to the provider's real tokenizer.
+        if (
+          turn.usage &&
+          turn.usage.promptTokens > 0 &&
+          rawEstimateThisTurn > 0
+        ) {
+          const ratio = turn.usage.promptTokens / rawEstimateThisTurn;
+          calibrationRatio = Math.min(2, Math.max(0.5, ratio));
+        }
 
         if (turn.usage) {
           runCumulativeTokens += turn.usage.totalTokens;

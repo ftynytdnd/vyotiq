@@ -1,10 +1,11 @@
 /**
  * Context manager. Builds the dynamic envelope wrappers (workspace context,
  * session context, prior conversations, recent memory, meta-rules) and
- * inlines attachment files for the user envelope. No host-side history
- * trimming — the full rolling message array is passed to the provider as-is
- * and any context-window overflow is handled by the run loop's standard
- * self-correction retry path.
+ * inlines attachment files for the user envelope. History reduction (tiered,
+ * reversible-first) is owned by the context-management system, gated by
+ * `settings.ui.agentBehavior.contextManagement` (on by default) — see
+ * `docs/context-management-design.md`. This module also surfaces the
+ * agent-maintained `<run_progress>` note in the runtime tail.
  */
 
 import { createHash } from 'node:crypto';
@@ -12,10 +13,21 @@ import { basename } from 'node:path';
 import { promises as fs } from 'node:fs';
 import { escapeXmlAttr, wrapXml } from './envelope/index.js';
 import { retrieveRelevantMemory } from '../memory/retrieval.js';
+import { readWorkspaceNote } from '../memory/workspaceNotes.js';
 import { getWorkspace } from '../workspace/workspaceState.js';
 import { listConversations } from '../conversations/conversationStore.js';
 import type { ConversationMeta } from '@shared/types/chat';
 import { realpathInsideWorkspace } from '../tools/sandbox.js';
+
+/**
+ * Reserved workspace-memory note key the agent maintains as a structured
+ * run-progress scratchpad. Surfaced read-only in `<run_progress>` near the
+ * turn so it survives reversible reduction / summarization. The harness
+ * instructs the agent to keep it current via the `memory` tool.
+ */
+export const RUN_PROGRESS_NOTE_KEY = 'run-progress';
+/** Cap on the run-progress body folded into the runtime tail. */
+const RUN_PROGRESS_MAX_CHARS = 2_000;
 
 const TOP_LEVEL_LIMIT = 60;
 
@@ -79,6 +91,13 @@ export interface ContextEnvelopes {
    * of conversation-index size.
    */
   priorConversationsXml: string;
+  /**
+   * `<run_progress>` — the agent-maintained structured progress note
+   * (`RUN_PROGRESS_NOTE_KEY` workspace memory). Empty string when no note
+   * exists yet. Surfaced near the turn so the agent's own running state
+   * survives reversible reduction / summarization.
+   */
+  runProgressXml: string;
 }
 
 /**
@@ -213,10 +232,14 @@ export async function buildContextEnvelope(
   // `sessionContextBody` and `priorConversationsBody`. A transient failure
   // resolves to `undefined` so each helper falls back to its own catch path.
   const sharedListPromise = listConversations().catch(() => undefined);
-  const [topLevel, mem, conversationsList] = await Promise.all([
+  const runProgressPromise = workspacePath
+    ? readWorkspaceNote(RUN_PROGRESS_NOTE_KEY, workspacePath).catch(() => null)
+    : Promise.resolve(null);
+  const [topLevel, mem, conversationsList, runProgressNote] = await Promise.all([
     workspaceTopLevel(workspacePath),
     retrieveRelevantMemory(userPrompt, undefined, workspacePath),
-    sharedListPromise
+    sharedListPromise,
+    runProgressPromise
   ]);
   const [sessionBody, priorBody] = await Promise.all([
     sessionContextBody(conversationId, conversationsList),
@@ -237,17 +260,31 @@ export async function buildContextEnvelope(
         )
         .join('\n\n');
 
+  const runProgressBody =
+    runProgressNote && runProgressNote.content.trim().length > 0
+      ? runProgressNote.content.trim().slice(0, RUN_PROGRESS_MAX_CHARS)
+      : '';
+
   return {
     workspaceXml: getStableWorkspaceXml(workspaceId, workspacePath, topLevel),
     sessionXml: wrapXml('session_context', sessionBody),
     priorConversationsXml: wrapXml('prior_conversations', priorBody),
     memoryXml: wrapXml('recent_memory', memoryBody),
-    metaRulesXml: wrapXml('meta_rules', mem.metaRules.trim())
+    metaRulesXml: wrapXml('meta_rules', mem.metaRules.trim()),
+    runProgressXml: runProgressBody.length > 0 ? wrapXml('run_progress', runProgressBody) : ''
   };
 }
 
 /** Fingerprint-gated workspace XML — reuse identical listing strings. */
 const workspaceXmlByFingerprint = new Map<string, { fingerprint: string; workspaceXml: string }>();
+/**
+ * Cap on distinct-workspace entries. Keyed by workspace, so the natural size is
+ * "workspaces touched this session", but a long-lived process that visits many
+ * workspaces would otherwise grow unbounded — the design guarantees all caches
+ * are bounded. Insertion-ordered LRU: a hit refreshes recency, overflow evicts
+ * the least-recently-used workspace.
+ */
+const WORKSPACE_XML_CACHE_MAX = 16;
 
 function workspaceCacheKey(workspaceId: string | undefined, workspacePath: string | undefined): string {
   return `${workspaceId ?? ''}\u0000${workspacePath ?? ''}`;
@@ -270,9 +307,19 @@ export function getStableWorkspaceXml(
   const key = workspaceCacheKey(workspaceId, workspacePath);
   const fingerprint = fingerprintWorkspaceBody(topLevelBody);
   const hit = workspaceXmlByFingerprint.get(key);
-  if (hit && hit.fingerprint === fingerprint) return hit.workspaceXml;
+  if (hit && hit.fingerprint === fingerprint) {
+    // Refresh recency (re-insert moves the key to the end of iteration order).
+    workspaceXmlByFingerprint.delete(key);
+    workspaceXmlByFingerprint.set(key, hit);
+    return hit.workspaceXml;
+  }
   const workspaceXml = wrapXml('workspace_context', topLevelBody);
+  workspaceXmlByFingerprint.delete(key);
   workspaceXmlByFingerprint.set(key, { fingerprint, workspaceXml });
+  if (workspaceXmlByFingerprint.size > WORKSPACE_XML_CACHE_MAX) {
+    const oldest = workspaceXmlByFingerprint.keys().next().value;
+    if (oldest !== undefined) workspaceXmlByFingerprint.delete(oldest);
+  }
   return workspaceXml;
 }
 

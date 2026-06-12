@@ -6,6 +6,7 @@
 import type { ChatMessage, ChatSendInput, TimelineEvent } from '@shared/types/chat.js';
 import type { AskUserStructuredPayload } from '@shared/types/askUser.js';
 import type { ResolvedReportsSettings } from '@shared/report/reportsSettings.js';
+import type { ResolvedAgentBehaviorSettings } from '@shared/settings/agentBehaviorSettings.js';
 import type { RunStateAccumulator } from './loop/buildRunState.js';
 import type { SpinSignatureBuffer } from './loop/toolSpinSignature.js';
 
@@ -27,6 +28,8 @@ export interface LoopCheckpoint {
   pendingTerminal?: 'finish' | 'implicit-finish';
   /** Grant +1 iteration allowance on resume from host report gate only. */
   reportGateBonusIteration?: boolean;
+  /** Summed provider `usage.totalTokens` across LLM turns in this run. */
+  runCumulativeTokens?: number;
 }
 
 interface PausedRunCallbacks {
@@ -44,6 +47,7 @@ export interface PausedRunEntry {
   checkpoint: LoopCheckpoint;
   callbacks: PausedRunCallbacks;
   reportsSettings: ResolvedReportsSettings;
+  agentBehaviorSettings: ResolvedAgentBehaviorSettings;
 }
 
 const pausedRuns = new Map<string, PausedRunEntry>();
@@ -94,6 +98,7 @@ export function cloneLoopCheckpoint(state: {
   hostReportGate?: boolean;
   pendingTerminal?: 'finish' | 'implicit-finish';
   reportGateBonusIteration?: boolean;
+  runCumulativeTokens?: number;
 }): LoopCheckpoint {
   return {
     // Defensive shallow copy: the checkpoint must not alias the live
@@ -115,6 +120,9 @@ export function cloneLoopCheckpoint(state: {
     ...(state.pendingTerminal !== undefined ? { pendingTerminal: state.pendingTerminal } : {}),
     ...(state.reportGateBonusIteration !== undefined
       ? { reportGateBonusIteration: state.reportGateBonusIteration }
+      : {}),
+    ...(state.runCumulativeTokens !== undefined
+      ? { runCumulativeTokens: state.runCumulativeTokens }
       : {})
   };
 }

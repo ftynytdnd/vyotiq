@@ -30,7 +30,7 @@ const UI_RECORD_KEYS = [
   'pinnedConversationIds'
 ] as const;
 
-const UI_NESTED_OBJECT_KEYS = ['reports', 'promptCaching'] as const;
+const UI_NESTED_OBJECT_KEYS = ['reports', 'promptCaching', 'agentBehavior'] as const;
 
 const REPORTS_BOOLEAN_KEYS = [
   'autoOpenReports',
@@ -45,6 +45,22 @@ const PROMPT_CACHING_BOOLEAN_KEYS = [
 ] as const;
 
 const PROMPT_CACHING_TTL_VALUES = ['5m', '1h'] as const;
+
+const CONTEXT_MANAGEMENT_BOOLEAN_KEYS = ['enabled', 'summarizationEnabled'] as const;
+
+const CONTEXT_MANAGEMENT_FRACTION_KEYS = [
+  'triggerFraction',
+  'warnFraction',
+  'effectiveWindowFraction'
+] as const;
+
+const CONTEXT_MANAGEMENT_KEYS = [
+  ...CONTEXT_MANAGEMENT_BOOLEAN_KEYS,
+  ...CONTEXT_MANAGEMENT_FRACTION_KEYS,
+  'keepLastToolResults',
+  'cooldownMs',
+  'minSavingsTokens'
+] as const;
 
 const THEME_VALUES = ['dark', 'light', 'system'] as const;
 const DENSITY_VALUES = ['compact', 'balanced', 'airy'] as const;
@@ -226,6 +242,137 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
         promptCaching.anthropicCacheTtl,
         PROMPT_CACHING_TTL_VALUES
       );
+    }
+  }
+  if ('agentBehavior' in ui && ui.agentBehavior !== undefined) {
+    assertObject(channel, 'patch.ui.agentBehavior', ui.agentBehavior);
+    const agentBehavior = ui.agentBehavior as Record<string, unknown>;
+    for (const key of Object.keys(agentBehavior)) {
+      if (
+        key !== 'runTokenBudget' &&
+        key !== 'runWallClockBudget' &&
+        key !== 'contextCompaction' &&
+        key !== 'contextManagement'
+      ) {
+        throw new Error(
+          `${channel}: patch.ui.agentBehavior.${key} is not a recognized agentBehavior field`
+        );
+      }
+    }
+    if ('runTokenBudget' in agentBehavior && agentBehavior.runTokenBudget !== undefined) {
+      assertObject(channel, 'patch.ui.agentBehavior.runTokenBudget', agentBehavior.runTokenBudget);
+      const budget = agentBehavior.runTokenBudget as Record<string, unknown>;
+      for (const key of Object.keys(budget)) {
+        if (key !== 'enabled' && key !== 'maxTotalTokens') {
+          throw new Error(
+            `${channel}: patch.ui.agentBehavior.runTokenBudget.${key} is not a recognized field`
+          );
+        }
+      }
+      if ('enabled' in budget && budget.enabled !== undefined) {
+        assertBoolean(channel, 'patch.ui.agentBehavior.runTokenBudget.enabled', budget.enabled);
+      }
+      if ('maxTotalTokens' in budget && budget.maxTotalTokens !== undefined) {
+        assertNumber(channel, 'patch.ui.agentBehavior.runTokenBudget.maxTotalTokens', budget.maxTotalTokens, {
+          min: 10_000,
+          max: 50_000_000
+        });
+      }
+    }
+    if ('runWallClockBudget' in agentBehavior && agentBehavior.runWallClockBudget !== undefined) {
+      assertObject(
+        channel,
+        'patch.ui.agentBehavior.runWallClockBudget',
+        agentBehavior.runWallClockBudget
+      );
+      const wall = agentBehavior.runWallClockBudget as Record<string, unknown>;
+      for (const key of Object.keys(wall)) {
+        if (key !== 'enabled' && key !== 'maxDurationMs') {
+          throw new Error(
+            `${channel}: patch.ui.agentBehavior.runWallClockBudget.${key} is not a recognized field`
+          );
+        }
+      }
+      if ('enabled' in wall && wall.enabled !== undefined) {
+        assertBoolean(channel, 'patch.ui.agentBehavior.runWallClockBudget.enabled', wall.enabled);
+      }
+      if ('maxDurationMs' in wall && wall.maxDurationMs !== undefined) {
+        assertNumber(channel, 'patch.ui.agentBehavior.runWallClockBudget.maxDurationMs', wall.maxDurationMs, {
+          min: 60_000,
+          max: 24 * 60 * 60 * 1000
+        });
+      }
+    }
+    if ('contextCompaction' in agentBehavior && agentBehavior.contextCompaction !== undefined) {
+      assertObject(
+        channel,
+        'patch.ui.agentBehavior.contextCompaction',
+        agentBehavior.contextCompaction
+      );
+      const compaction = agentBehavior.contextCompaction as Record<string, unknown>;
+      if ('enabled' in compaction && compaction.enabled !== undefined) {
+        assertBoolean(
+          channel,
+          'patch.ui.agentBehavior.contextCompaction.enabled',
+          compaction.enabled
+        );
+      }
+      for (const key of Object.keys(compaction)) {
+        if (key !== 'enabled') {
+          throw new Error(
+            `${channel}: patch.ui.agentBehavior.contextCompaction.${key} is not a recognized field`
+          );
+        }
+      }
+    }
+    if ('contextManagement' in agentBehavior && agentBehavior.contextManagement !== undefined) {
+      assertObject(
+        channel,
+        'patch.ui.agentBehavior.contextManagement',
+        agentBehavior.contextManagement
+      );
+      const cm = agentBehavior.contextManagement as Record<string, unknown>;
+      for (const key of Object.keys(cm)) {
+        if (!(CONTEXT_MANAGEMENT_KEYS as readonly string[]).includes(key)) {
+          throw new Error(
+            `${channel}: patch.ui.agentBehavior.contextManagement.${key} is not a recognized field`
+          );
+        }
+      }
+      for (const k of CONTEXT_MANAGEMENT_BOOLEAN_KEYS) {
+        if (k in cm && cm[k] !== undefined) {
+          assertBoolean(channel, `patch.ui.agentBehavior.contextManagement.${k}`, cm[k]);
+        }
+      }
+      for (const k of CONTEXT_MANAGEMENT_FRACTION_KEYS) {
+        if (k in cm && cm[k] !== undefined) {
+          assertNumber(channel, `patch.ui.agentBehavior.contextManagement.${k}`, cm[k], {
+            min: 0,
+            max: 1
+          });
+        }
+      }
+      if ('keepLastToolResults' in cm && cm.keepLastToolResults !== undefined) {
+        assertNumber(channel, 'patch.ui.agentBehavior.contextManagement.keepLastToolResults', cm.keepLastToolResults, {
+          integer: true,
+          min: 0,
+          max: 20
+        });
+      }
+      if ('cooldownMs' in cm && cm.cooldownMs !== undefined) {
+        assertNumber(channel, 'patch.ui.agentBehavior.contextManagement.cooldownMs', cm.cooldownMs, {
+          integer: true,
+          min: 0,
+          max: 5 * 60 * 1000
+        });
+      }
+      if ('minSavingsTokens' in cm && cm.minSavingsTokens !== undefined) {
+        assertNumber(channel, 'patch.ui.agentBehavior.contextManagement.minSavingsTokens', cm.minSavingsTokens, {
+          integer: true,
+          min: 0,
+          max: 1_000_000
+        });
+      }
     }
   }
 }

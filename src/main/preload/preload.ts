@@ -111,6 +111,12 @@ const api: VyotiqApi = {
     open: (input) => ipcRenderer.invoke(IPC.REPORTS_OPEN, input)
   },
 
+  context: {
+    compactNow: (input) => ipcRenderer.invoke(IPC.CONTEXT_COMPACT_NOW, input),
+    reset: (input) => ipcRenderer.invoke(IPC.CONTEXT_RESET, input),
+    readArtifact: (input) => ipcRenderer.invoke(IPC.CONTEXT_READ_ARTIFACT, input)
+  },
+
   memory: {
     list: (scope, opts) => ipcRenderer.invoke(IPC.MEMORY_LIST, scope, opts),
     read: (scope, key) => ipcRenderer.invoke(IPC.MEMORY_READ, scope, key),

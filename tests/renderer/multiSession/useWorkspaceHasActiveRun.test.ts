@@ -79,6 +79,22 @@ describe('useWorkspaceHasActiveRun', () => {
     expect(b.current).toBe(true);
   });
 
+  it('returns true when a child is paused for ask_user', () => {
+    useChatStore.setState({
+      slices: {
+        'conv-A1': chatSliceFixture({
+          conversationId: 'conv-A1',
+          runId: 'run-A1',
+          isProcessing: false,
+          awaitingAskUser: true,
+          runStartedAt: 1
+        })
+      }
+    });
+    const { result } = renderHook(() => useWorkspaceHasActiveRun('ws-A'));
+    expect(result.current).toBe(true);
+  });
+
   it('flips back to false when the run finishes', () => {
     useChatStore.setState({
       slices: {

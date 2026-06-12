@@ -45,7 +45,8 @@ describe('buildContextLayers', () => {
         workspaceXml: wrapXml('workspace_context', 'ws-new'),
         sessionXml: '',
         priorConversationsXml: '',
-        memoryXml: ''
+        memoryXml: '',
+        runProgressXml: ''
       },
       runStateXml: wrapXml('run_state', 'run'),
       hostEnvironmentXml: wrapXml('host_environment', 'host')
@@ -75,7 +76,8 @@ describe('buildContextLayers', () => {
         workspaceXml: wrapXml('workspace_context', 'ws'),
         sessionXml: wrapXml('session_context', 'sess'),
         priorConversationsXml: wrapXml('prior_conversations', 'prior'),
-        memoryXml: wrapXml('recent_memory', 'mem')
+        memoryXml: wrapXml('recent_memory', 'mem'),
+        runProgressXml: ''
       },
       runStateXml: wrapXml('run_state', 'run'),
       hostEnvironmentXml: wrapXml('host_environment', 'host')
@@ -113,7 +115,8 @@ describe('buildContextLayers', () => {
         workspaceXml: wrapXml('workspace_context', 'ws'),
         sessionXml: '',
         priorConversationsXml: '',
-        memoryXml: ''
+        memoryXml: '',
+        runProgressXml: ''
       },
       runStateXml: '',
       hostEnvironmentXml: ''
@@ -137,7 +140,8 @@ describe('buildContextLayers', () => {
         workspaceXml: wrapXml('workspace_context', 'ws-v1'),
         sessionXml: '',
         priorConversationsXml: '',
-        memoryXml: ''
+        memoryXml: '',
+        runProgressXml: ''
       },
       runStateXml: wrapXml('run_state', 'iter-0'),
       hostEnvironmentXml: wrapXml('host_environment', 'host-v1')
@@ -167,7 +171,8 @@ describe('buildContextLayers', () => {
         workspaceXml: wrapXml('workspace_context', 'ws-v2'),
         sessionXml: '',
         priorConversationsXml: '',
-        memoryXml: ''
+        memoryXml: '',
+        runProgressXml: ''
       },
       runStateXml: wrapXml('run_state', 'iter-1'),
       hostEnvironmentXml: wrapXml('host_environment', 'host-v2')
@@ -185,7 +190,8 @@ describe('buildContextLayers', () => {
       {
         sessionXml: wrapXml('session_context', 's'),
         priorConversationsXml: wrapXml('prior_conversations', 'p'),
-        memoryXml: wrapXml('recent_memory', 'm')
+        memoryXml: wrapXml('recent_memory', 'm'),
+        runProgressXml: ''
       }
     );
     expect(out).toContain('<runtime_context>');

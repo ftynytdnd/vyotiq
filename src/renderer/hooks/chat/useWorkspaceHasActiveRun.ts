@@ -1,6 +1,6 @@
 /**
  * Returns `true` when at least one conversation in the given workspace
- * has an in-flight run (`slices[convId].isProcessing === true`).
+ * has an in-flight or paused-for-ask_user run.
  *
  * Folds `useChatStore.slices` against the `useConversationsStore.list`
  * (filtered by `workspaceId`). Both reads use a shallow comparator so
@@ -15,6 +15,7 @@
 
 import { useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
+import { isSliceRunActive } from '../../lib/isSliceRunActive.js';
 import { useChatStore } from '../../store/useChatStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 
@@ -35,7 +36,8 @@ export function useWorkspaceHasActiveRun(workspaceId: string | null): boolean {
     useShallow((s) => {
       if (idSet.size === 0) return false;
       for (const id of idSet) {
-        if (s.slices[id]?.isProcessing) return true;
+        const slice = s.slices[id];
+        if (slice && isSliceRunActive(slice)) return true;
       }
       return false;
     })

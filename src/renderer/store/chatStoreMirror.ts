@@ -19,6 +19,7 @@ export function mirrorOf(slice: ChatSlice): ActiveMirror {
     orchestratorUsage: slice.orchestratorUsage,
     lastPromptCacheMissReason: slice.lastPromptCacheMissReason,
     latestOrchestratorRunStatus: slice.latestOrchestratorRunStatus,
+    latestContextUsage: slice.latestContextUsage,
     lastUserPromptId: slice.lastUserPromptId,
     lastUserPromptContent: slice.lastUserPromptContent,
     runIdToFileEditCount: slice.runIdToFileEditCount,

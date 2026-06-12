@@ -16,10 +16,6 @@ export function hasActivePollSources(): boolean {
   return activePollSources.size > 0;
 }
 
-export function getActivePollSources(): readonly string[] {
-  return [...activePollSources];
-}
-
 export function clearProviderPollSources(): void {
   activePollSources.clear();
 }

@@ -124,6 +124,46 @@ export type ToolRerunReply =
 
   };
 
+/** Manual context-management control input (Compact now / Reset context). */
+export interface ContextManualInput {
+
+  conversationId: string;
+
+  /** Model to use for token counting + summarization (current composer model). */
+  selection: { providerId: string; modelId: string };
+
+}
+
+export type ContextManualReply =
+
+  | { ok: true; changed: boolean }
+
+  | {
+
+    ok: false;
+
+    reason: 'unknown-conversation' | 'busy' | 'failed';
+
+    message?: string;
+
+  };
+
+/** Read the full content of an offloaded reduction artifact (timeline restore/view). */
+export interface ContextArtifactReadInput {
+
+  conversationId: string;
+
+  /** Workspace-relative artifact path (from a `tool-compacted`/`context-summary` marker). */
+  relativePath: string;
+
+}
+
+export type ContextArtifactReadReply =
+
+  | { ok: true; content: string }
+
+  | { ok: false; reason: 'unknown-conversation' | 'not-found' | 'failed'; message?: string };
+
 
 
 export interface TokensEstimateInput {
@@ -337,15 +377,65 @@ export interface AppSettings {
       };
 
       /**
-       * Reversible context compaction (default off). When enabled, large
-       * tool outputs are offloaded to `.vyotiq/compaction/...` and replaced
-       * with `read`-restorable banners once the prompt nears the model
-       * window. See `docs/context-compaction-design.md`.
+       * @deprecated Legacy reversible-compaction toggle. Superseded by
+       * `contextManagement`. Still read for back-compat: when
+       * `contextManagement.enabled` is absent, this flag seeds the master
+       * switch. See `docs/context-management-design.md`.
        */
 
       contextCompaction?: {
 
         enabled?: boolean;
+
+      };
+
+      /**
+       * Unified context-window management (default on). Proactively keeps the
+       * prompt under a fraction of the model's effective window via reversible
+       * reduction, with optional lossy summarization as a last resort. See
+       * `docs/context-management-design.md`.
+       */
+
+      contextManagement?: {
+
+        enabled?: boolean;
+
+        triggerFraction?: number;
+
+        warnFraction?: number;
+
+        effectiveWindowFraction?: number;
+
+        keepLastToolResults?: number;
+
+        summarizationEnabled?: boolean;
+
+        cooldownMs?: number;
+
+        minSavingsTokens?: number;
+
+        /** Adaptive absolute ceiling on the usable window (tokens). 0 disables. */
+        absoluteCeilingTokens?: number;
+
+        /**
+         * Optional dedicated model for lossy summarization. When unset, the
+         * run's own model summarizes. Lets the user route compaction to a
+         * cheaper/faster model.
+         */
+        summaryModel?: {
+
+          providerId?: string;
+
+          modelId?: string;
+
+        };
+
+        /**
+         * Opt-in: use Anthropic's server-side `compact_20260112` compaction as
+         * the backstop for Anthropic-dialect runs. Off by default; host-side
+         * reduction stays primary.
+         */
+        serverSideCompaction?: boolean;
 
       };
 
@@ -929,6 +1019,21 @@ export interface VyotiqApi {
 
     /** Open a workspace HTML report in the dedicated report BrowserWindow. */
     open(input: ReportsOpenInput): Promise<ReportsOpenReply>;
+
+  };
+
+  // ---- Context window management (manual controls) ----
+
+  context: {
+
+    /** Force a reversible reduction pass on a conversation now. */
+    compactNow(input: ContextManualInput): Promise<ContextManualReply>;
+
+    /** Summarize the conversation so far and continue from a lean context. */
+    reset(input: ContextManualInput): Promise<ContextManualReply>;
+
+    /** Read the full content of an offloaded reduction artifact. */
+    readArtifact(input: ContextArtifactReadInput): Promise<ContextArtifactReadReply>;
 
   };
 

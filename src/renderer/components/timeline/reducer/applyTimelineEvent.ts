@@ -389,12 +389,19 @@ export function applyTimelineEvent(
     case 'checkpoint-revert':
     case 'checkpoint-bash-mutation':
     case 'tool-compacted':
+    case 'context-summary':
       // Audit-trail kinds persisted into the transcript so replay
       // reconstructs the same state the live run had (`tool-compacted`
-      // lets the main-process replay rebuild lean banners). The LIVE
-      // reducer appends them for replay; derived rows skip these event
-      // kinds (see `deriveRows.ts`).
+      // and `context-summary` let the main-process replay rebuild lean
+      // banners / collapsed history). The checkpoint kinds produce no
+      // derived row; `tool-compacted` / `context-summary` fold into a single
+      // `context-reduction` audit row (see `deriveRows.ts`).
       return { ...state, events: appendTimelineEvent(state.events, event, mutate) };
+
+    case 'context-usage':
+      // Live context-window meter telemetry — never persisted, never an
+      // inline row. Track only the latest for the composer meter selector.
+      return { ...state, latestContextUsage: event };
 
     case 'diff-stream': {
       // Phase 2 — main-process FS-aware live diff. Folds into the

@@ -125,6 +125,13 @@ export interface TimelineState {
   /** Report tool-results that settled via live IPC this session (not transcript replay). */
   liveReportResultIds: Record<string, true>;
   runIdToFileEditCount: Record<string, number>;
+  /**
+   * Latest live context-window usage telemetry (from `context-usage` events).
+   * Drives the composer context meter while a run is active. Not persisted —
+   * between runs / on replay the meter falls back to a `token-usage`-derived
+   * estimate.
+   */
+  latestContextUsage?: Extract<TimelineEvent, { kind: 'context-usage' }>;
 }
 
 export const INITIAL_TIMELINE_STATE: TimelineState = {

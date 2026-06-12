@@ -4,6 +4,7 @@ import {
   buildStaticFewShotXml
 } from '@main/harness/harnessLoader';
 import {
+  IMPLICIT_FINISH_MIN_CHARS,
   MAX_SELF_CORRECTION_ATTEMPTS,
   MAX_TOOL_OUTPUT_CHARS,
   MAX_TOTAL_ITERATIONS,
@@ -40,6 +41,8 @@ describe('buildOrchestratorSystemPrompt', () => {
     expect(prompt).toContain(`MAX_SELF_CORRECTION_ATTEMPTS=${MAX_SELF_CORRECTION_ATTEMPTS}`);
     expect(prompt).toContain(`STREAM_INACTIVITY_TIMEOUT_MS=${STREAM_INACTIVITY_TIMEOUT_MS}`);
     expect(prompt).toContain(`MAX_TOOL_OUTPUT_CHARS=${MAX_TOOL_OUTPUT_CHARS}`);
+    expect(prompt).toContain(`IMPLICIT_FINISH_MIN_CHARS=${IMPLICIT_FINISH_MIN_CHARS}`);
+    expect(prompt).toContain('RUN_TOKEN_BUDGET=optional');
   });
 
   it('does not expose delegate or sub-agent runtime limits', () => {
@@ -48,16 +51,17 @@ describe('buildOrchestratorSystemPrompt', () => {
     expect(prompt).not.toContain('MAX_DELEGATION');
   });
 
-  it('lists direct agent tools in the catalogue', () => {
-    expect(prompt).toContain('- `read` —');
-    expect(prompt).toContain('- `edit` —');
-    expect(prompt).toContain('- `finish` —');
+  it('lists direct agent tools via briefMarkdown briefs', () => {
+    expect(prompt).toContain('### Tool: `read`');
+    expect(prompt).toContain('### Tool: `edit`');
+    expect(prompt).toContain('### Tool: `finish`');
+    expect(prompt).toContain('Plain-English briefs');
   });
 
   it('includes deliverables guidance for markdown vs HTML reports', () => {
     expect(prompt).toContain('Deliverables — Timeline Markdown vs HTML Reports');
     expect(prompt).toContain('vy-severity-table');
     expect(prompt).toContain('≤80 lines');
-    expect(prompt).toContain('**MUST** call `report`');
+    expect(prompt).toContain('host injects an end-of-run `ask_user` gate');
   });
 });

@@ -436,7 +436,7 @@ export default function App() {
         createPortal(
           <button
             type="button"
-            className="fixed inset-0 z-(--z-overlay-backdrop) bg-black/40"
+            className="fixed inset-0 z-(--z-overlay-backdrop) bg-scrim"
             aria-label="Close panel"
             onClick={() => closePreview()}
           />,

@@ -53,7 +53,9 @@ export function TurnStickyFooter({
     runId ? (s.runIdToFileEditCount[runId] ?? 0) : 0
   );
 
-  const showLive = Boolean(live && isProcessing && promptTs !== null);
+  const showLive = Boolean(
+    live && (isProcessing || awaitingAskUser) && promptTs !== null
+  );
 
   useEffect(() => {
     if (!showLive) return;

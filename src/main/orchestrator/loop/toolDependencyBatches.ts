@@ -4,7 +4,6 @@
  */
 
 import { logger } from '../../logging/logger.js';
-import { tryParseArgumentsRecord } from './parseToolArgs.js';
 
 const log = logger.child('orch/toolDeps');
 
@@ -27,11 +26,6 @@ export function coerceStringList(raw: unknown): string[] {
 
 export function parseDependsOnIds(args: Record<string, unknown>): string[] {
   return coerceStringList(args['depends_on'] ?? args['dependsOn']);
-}
-
-/** Best-effort `depends_on` from a tool-call arguments JSON buffer. */
-export function dependsOnFromArgumentsBuf(buf: string): string[] {
-  return parseDependsOnIds(tryParseArgumentsRecord(buf));
 }
 
 export function batchIndicesByDependencies(

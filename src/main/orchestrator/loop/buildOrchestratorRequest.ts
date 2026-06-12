@@ -80,6 +80,19 @@ export function buildOrchestratorRequest(opts: {
   conversationId?: string;
   workspaceId?: string;
   previousAnthropicMessageId?: string | null;
+  /**
+   * Opportunistic Anthropic native context-editing backstop. Set by `runLoop`
+   * only when host context management is enabled and the provider speaks the
+   * Anthropic dialect. Ignored by every other dialect.
+   */
+  anthropicContextEditing?: {
+    keepToolUses: number;
+    triggerInputTokens: number;
+    clearAtLeastTokens?: number;
+    clearToolInputs?: boolean;
+    excludeTools?: readonly string[];
+    serverCompaction?: { triggerTokens: number };
+  };
 }): ChatStreamRequest {
   // Thinking models that reject a `tool_choice` field (DeepSeek V4):
   // omit the field on every turn, and on wrap-up drop the tools array
@@ -125,6 +138,9 @@ export function buildOrchestratorRequest(opts: {
     ...(opts.workspaceId !== undefined ? { workspaceId: opts.workspaceId } : {}),
     ...(opts.previousAnthropicMessageId !== undefined
       ? { previousAnthropicMessageId: opts.previousAnthropicMessageId }
+      : {}),
+    ...(opts.anthropicContextEditing !== undefined && !opts.wrapUp
+      ? { anthropicContextEditing: opts.anthropicContextEditing }
       : {})
   };
 }

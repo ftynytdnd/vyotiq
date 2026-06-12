@@ -45,3 +45,21 @@ export function formatToolStrikeError(
 }
 
 export const RUN_STOPPED_THOUGHT = 'Run stopped.';
+
+export function formatRunTokenBudgetError(cumulativeTotal: number, maxTotalTokens: number): string {
+  const fmt = (n: number) => n.toLocaleString('en-US');
+  return (
+    `This run exceeded the configured token budget (${fmt(cumulativeTotal)} / ` +
+    `${fmt(maxTotalTokens)} total tokens). Start a new message to continue.`
+  );
+}
+
+export function formatRunWallClockBudgetError(
+  settings: { runWallClockBudget: { maxDurationMs: number } }
+): string {
+  const minutes = Math.round(settings.runWallClockBudget.maxDurationMs / 60_000);
+  return (
+    `This run exceeded the configured wall-clock budget (${minutes} minute` +
+    `${minutes === 1 ? '' : 's'}). Start a new message to continue.`
+  );
+}

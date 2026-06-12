@@ -33,7 +33,10 @@ import {
 } from '../workspace/workspaceState.js';
 import { atomicWriteString } from '../checkpoints/atomicWrite.js';
 import { deleteAttachmentsForConversation } from '../attachments/gc.js';
-import { cleanupCompactionArtifactsForConversation } from '../orchestrator/context/compactionArtifacts.js';
+import {
+  cleanupCompactionArtifactsForConversation,
+  cleanupSummaryArtifactsForConversation
+} from '../orchestrator/context/compactionArtifacts.js';
 import { normalizeLegacyTranscript } from '@shared/transcript/normalizeLegacyTranscript.js';
 import { migrateConversationPending } from '../checkpoints/pendingChanges.js';
 
@@ -479,11 +482,12 @@ export async function removeConversation(id: string): Promise<void> {
     // its `tool-compacted` markers) is already gone, so these artifacts
     // can never be referenced again.
     void requireWorkspaceById(removedMeta.workspaceId)
-      .then((workspacePath) =>
-        cleanupCompactionArtifactsForConversation(workspacePath, id)
-      )
+      .then(async (workspacePath) => {
+        await cleanupCompactionArtifactsForConversation(workspacePath, id);
+        await cleanupSummaryArtifactsForConversation(workspacePath, id);
+      })
       .catch((err: unknown) => {
-        log.warn('failed to clean compaction artifacts on conversation remove', {
+        log.warn('failed to clean compaction/summary artifacts on conversation remove', {
           conversationId: id,
           err: err instanceof Error ? err.message : String(err)
         });

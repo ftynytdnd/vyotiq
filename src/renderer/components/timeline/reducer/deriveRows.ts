@@ -154,7 +154,31 @@ export type Row =
     editCount?: number;
     fileCount?: number;
     commandCount?: number;
+  }
+  | {
+    kind: 'context-reduction';
+    key: string;
+    /** Tool result/input bodies offloaded to disk in this fold. */
+    offloadCount: number;
+    /** History summarizations in this fold. */
+    summaryCount: number;
+    /** Total original chars across all items (reduction magnitude). */
+    originalChars: number;
+    /** Individual reduction items, expandable to view/restore the full body. */
+    items: ContextReductionItem[];
   };
+
+export interface ContextReductionItem {
+  id: string;
+  type: 'offload-result' | 'offload-input' | 'summary';
+  /** Workspace-relative artifact path holding the full original content. */
+  relativePath: string;
+  originalChars: number;
+  /** Short type label ('tool result' / 'tool input' / 'history summary'). */
+  label: string;
+  /** Present for summary items — the structured summary text inserted in-context. */
+  summary?: string;
+}
 
 export interface DeriveRowsOptions {
   /**
@@ -460,9 +484,56 @@ export function deriveRows(
         break;
 
       case 'tool-compacted':
-        // Reversible-compaction audit marker — replay-only data, no
-        // inline row (the one-time `agent-thought` notice covers the
-        // user-facing signal). Must NOT close the open tool group.
+      case 'context-summary': {
+        // Reversible-reduction markers fold into ONE collapsed card per
+        // contiguous pass (consecutive markers share a row). Close any open
+        // tool/file-edit group first so the card renders as its own activity
+        // row; the agent-thought notice still covers the one-line summary.
+        closeGroups();
+        const last = out[out.length - 1];
+        const row =
+          last && last.kind === 'context-reduction'
+            ? last
+            : ((): Extract<Row, { kind: 'context-reduction' }> => {
+              const fresh: Extract<Row, { kind: 'context-reduction' }> = {
+                kind: 'context-reduction',
+                key: `reduction:${e.id}`,
+                offloadCount: 0,
+                summaryCount: 0,
+                originalChars: 0,
+                items: []
+              };
+              out.push(fresh);
+              return fresh;
+            })();
+        if (e.kind === 'tool-compacted') {
+          row.offloadCount += 1;
+          row.originalChars += e.originalChars;
+          row.items.push({
+            id: e.id,
+            type: e.reason === 'input' ? 'offload-input' : 'offload-result',
+            relativePath: e.relativePath,
+            originalChars: e.originalChars,
+            label: e.reason === 'input' ? 'tool input' : 'tool result'
+          });
+        } else {
+          row.summaryCount += 1;
+          row.originalChars += e.originalChars;
+          row.items.push({
+            id: e.id,
+            type: 'summary',
+            relativePath: e.relativePath,
+            originalChars: e.originalChars,
+            label: 'history summary',
+            summary: e.summary
+          });
+        }
+        break;
+      }
+
+      case 'context-usage':
+        // Live context-window meter telemetry — surfaces only on the
+        // composer meter; no inline row, no group close.
         break;
 
       case 'synthetic-usage-update':

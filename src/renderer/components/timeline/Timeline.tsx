@@ -32,6 +32,7 @@ import { FileEditGroupRow } from './rows/FileEditGroupRow.js';
 import { RunCompleteRow } from './rows/RunCompleteRow.js';
 import type { RunCompleteMetaProps } from './rows/RunCompleteMeta.js';
 import { PhaseLogRow } from './rows/PhaseLogRow.js';
+import { ContextReductionRow } from './rows/ContextReductionRow.js';
 import type { DisplayRow } from './shared/displayRowTypes.js';
 import { RowAnchor } from './shared/RowAnchor.js';
 import { TimelineFindBar } from './shared/TimelineFindBar.js';
@@ -40,6 +41,7 @@ import { TurnBlock, groupRowsIntoTurns } from './shared/TurnBlock.js';
 import { partitionTurnSegment } from './shared/groupTurnSegment.js';
 import { timelineStackClassName } from './shared/rowStyles.js';
 import { cn } from '../../lib/cn.js';
+import { isSliceRunActive } from '../../lib/isSliceRunActive.js';
 import { suggestProvidersForError } from '../../lib/runRecovery.js';
 import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../lib/shellIcons.js';
 import {
@@ -92,6 +94,8 @@ export function Timeline({
   const conversationId = useChatStore((s) => s.conversationId);
   const events = useChatStore((s) => s.events);
   const isProcessing = useChatStore((s) => s.isProcessing);
+  const awaitingAskUser = useChatStore((s) => s.awaitingAskUser);
+  const isRunActive = isSliceRunActive({ isProcessing, awaitingAskUser });
   const partialToolCallArgs = useChatStore((s) => s.partialToolCallArgs);
   const settledCallIds = useChatStore((s) => s.settledCallIds);
   const liveDiffByCallId = useChatStore((s) => s.liveDiffByCallId);
@@ -201,10 +205,10 @@ export function Timeline({
   const baseRows = useMemo(
     () =>
       deriveRows(events, {
-        runActive: isProcessing,
+        runActive: isRunActive,
         settledCallIds
       }),
-    [events, isProcessing, settledCallIds]
+    [events, isRunActive, settledCallIds]
   );
 
   const rows = useMemo(
@@ -548,7 +552,7 @@ export function Timeline({
   const renderTurnBlock = useCallback(
     (segment: typeof rows, segmentIndex: number) => {
       const isLastTurn = segmentIndex === lastTurnIndex;
-      const liveTurn = isProcessing && isLastTurn;
+      const liveTurn = isRunActive && isLastTurn;
       const partitioned = partitionTurnSegment(segment);
       const segmentKey = partitioned.prompt?.key ?? `turn-${segmentIndex}`;
 
@@ -585,7 +589,7 @@ export function Timeline({
         />
       );
     },
-    [errorRowActions, isProcessing, lastTurnIndex, model, promptAnchorEnter]
+    [errorRowActions, isRunActive, lastTurnIndex, model, promptAnchorEnter]
   );
 
   return (
@@ -767,6 +771,17 @@ function renderRow(
           key={r.key}
           label={r.label}
           {...(r.tooltip ? { tooltip: r.tooltip } : {})}
+        />
+      );
+    case 'context-reduction':
+      return (
+        <ContextReductionRow
+          key={r.key}
+          rowKey={r.key}
+          offloadCount={r.offloadCount}
+          summaryCount={r.summaryCount}
+          originalChars={r.originalChars}
+          items={r.items}
         />
       );
     default: {

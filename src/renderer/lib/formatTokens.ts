@@ -8,9 +8,10 @@
 /**
  * Short form like `128k`, `1.5M`, `640`. One decimal only when needed
  * so `128k` stays `128k` rather than `128.0k`. Values below 1000 are
- * rendered as the raw integer.
+ * rendered as the raw integer. Unit-agnostic — use for any magnitude
+ * (tokens, characters, bytes); pair with a literal unit at the call site.
  */
-export function formatTokenCount(n: number): string {
+export function formatCompactCount(n: number): string {
   if (!Number.isFinite(n) || n < 0) return '—';
   if (n >= 1_000_000) {
     const m = n / 1_000_000;
@@ -21,6 +22,11 @@ export function formatTokenCount(n: number): string {
     return `${k % 1 === 0 ? k.toFixed(0) : k.toFixed(1)}k`;
   }
   return String(Math.round(n));
+}
+
+/** Compact token count (alias of {@link formatCompactCount} for token-domain call sites). */
+export function formatTokenCount(n: number): string {
+  return formatCompactCount(n);
 }
 
 /** Same as {@link formatTokenCount} with an optional unit suffix (`tok`). */
@@ -47,22 +53,4 @@ export function parseTokenCount(raw: string): number | null {
   const multiplier = suffix === 'm' ? 1_000_000 : suffix === 'k' ? 1_000 : 1;
   const value = Math.floor(base * multiplier);
   return value > 0 ? value : null;
-}
-
-/** Completion-token throughput for live status readouts (`83.5 tok/s`). */
-export function formatTokensPerSecond(
-  completionTokens: number | undefined,
-  startedAt: number | undefined,
-  endedAt: number | undefined
-): string | null {
-  if (typeof completionTokens !== 'number' || completionTokens <= 0) return null;
-  if (typeof startedAt !== 'number' || typeof endedAt !== 'number') return null;
-  const elapsedMs = endedAt - startedAt;
-  if (elapsedMs < 250) return null;
-  const rate = completionTokens / (elapsedMs / 1000);
-  if (!Number.isFinite(rate) || rate <= 0) return null;
-  if (rate < 100) {
-    return `${rate.toFixed(1)} tok/s`;
-  }
-  return `${Math.round(rate)} tok/s`;
 }

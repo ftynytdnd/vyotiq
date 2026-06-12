@@ -24,7 +24,8 @@ import { MAX_TOOL_OUTPUT_CHARS } from '@shared/constants.js';
 import { truncateUtf8Safe } from '@shared/text/truncateUtf8Safe.js';
 import { stableStringify } from '@shared/json/stableStringify.js';
 import { wrapXml } from '../envelope/index.js';
-import { buildCompactionBanner } from '../context/compactionArtifacts.js';
+import { buildCompactionBanner, buildToolInputBanner } from '../context/compactionArtifacts.js';
+import { buildContextSummaryMessage } from '../context/contextSummarize.js';
 
 export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
   const messages: ChatMessage[] = [];
@@ -37,9 +38,14 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
   // the same lean ceiling the live run reached; the model re-reads the
   // artifact on demand. See `docs/context-compaction-design.md`.
   const compactedByCallId = new Map<string, string>();
+  // Separately track tool-CALL *input* offloads (reason 'input'): these shrink
+  // the assistant tool_call arguments, not the tool result. Keyed apart so an
+  // input-only offload never makes the result row render a banner.
+  const inputCompactedByCallId = new Map<string, string>();
   for (const e of events) {
     if (e.kind === 'tool-compacted') {
-      compactedByCallId.set(e.toolCallId, e.relativePath);
+      if (e.reason === 'input') inputCompactedByCallId.set(e.toolCallId, e.relativePath);
+      else compactedByCallId.set(e.toolCallId, e.relativePath);
     }
   }
 
@@ -125,10 +131,20 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
           break;
         }
         if (curAssistantId === null) curAssistantId = `call-anchor-${e.id}`;
+        // If this call's arguments were offloaded (reason 'input'), rebuild the
+        // lean banner instead of the full arguments — mirrors the live run's
+        // reduced context so cross-turn memory stays at the same ceiling.
+        const inputCompactedPath = inputCompactedByCallId.get(e.call.id);
         const tc: NonNullable<ChatMessage['tool_calls']>[number] = {
           id: e.call.id,
           type: 'function',
-          function: { name: e.call.name, arguments: stableStringify(e.call.args ?? {}) }
+          function: {
+            name: e.call.name,
+            arguments:
+              inputCompactedPath !== undefined
+                ? buildToolInputBanner(inputCompactedPath)
+                : stableStringify(e.call.args ?? {})
+          }
         };
         if (typeof e.call.thoughtSignature === 'string' && e.call.thoughtSignature.length > 0) {
           tc.thoughtSignature = e.call.thoughtSignature;
@@ -173,11 +189,25 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
       case 'file-edit':
       case 'error':
       case 'token-usage':
+      case 'context-usage':
         break;
       case 'tool-compacted':
         // Resolved in the pre-pass above; the matching `tool-result`
         // emits the banner instead of the full output.
         break;
+      case 'context-summary': {
+        // Reversible summarization collapsed all prior history into one
+        // structured block. Discard everything accumulated so far and
+        // continue from the lean summary (later turns replay after it).
+        flushAssistant({ dropUnpairedToolCalls: true });
+        pendingCallIds = [];
+        messages.length = 0;
+        messages.push({
+          role: 'user',
+          content: buildContextSummaryMessage(e.summary, e.relativePath)
+        });
+        break;
+      }
       case 'ask-user-prompt': {
         flushAssistant({ dropUnpairedToolCalls: true });
         pendingCallIds = [];

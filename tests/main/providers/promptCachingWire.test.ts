@@ -33,7 +33,8 @@ describe('cache-layered topology invariants', () => {
         workspaceXml: wrapXml('workspace_context', 'ws'),
         sessionXml: wrapXml('session_context', 'sess'),
         priorConversationsXml: wrapXml('prior_conversations', 'prior'),
-        memoryXml: wrapXml('recent_memory', 'mem')
+        memoryXml: wrapXml('recent_memory', 'mem'),
+        runProgressXml: ''
       },
       runStateXml: wrapXml('run_state', 'run'),
       hostEnvironmentXml: wrapXml('host_environment', 'host')
@@ -58,7 +59,8 @@ describe('cache-layered topology invariants', () => {
         workspaceXml: wrapXml('workspace_context', 'ws'),
         sessionXml: '',
         priorConversationsXml: '',
-        memoryXml: ''
+        memoryXml: '',
+        runProgressXml: ''
       },
       runStateXml: wrapXml('run_state', 'run'),
       hostEnvironmentXml: hostXml
@@ -84,7 +86,8 @@ describe('Gemini wire snapshots', () => {
         workspaceXml: wrapXml('workspace_context', 'ws-body'),
         sessionXml: '',
         priorConversationsXml: '',
-        memoryXml: ''
+        memoryXml: '',
+        runProgressXml: ''
       },
       runStateXml: wrapXml('run_state', 'run'),
       hostEnvironmentXml: wrapXml('host_environment', 'host')
@@ -119,7 +122,8 @@ describe('Anthropic few-shot cache breakpoint', () => {
         workspaceXml: wrapXml('workspace_context', 'ws'),
         sessionXml: '',
         priorConversationsXml: '',
-        memoryXml: ''
+        memoryXml: '',
+        runProgressXml: ''
       },
       runStateXml: wrapXml('run_state', 'run'),
       hostEnvironmentXml: wrapXml('host_environment', 'host')
@@ -191,7 +195,8 @@ describe('wrap-up synthesis turn', () => {
         workspaceXml: wrapXml('workspace_context', 'ws'),
         sessionXml: '',
         priorConversationsXml: '',
-        memoryXml: ''
+        memoryXml: '',
+        runProgressXml: ''
       },
       runStateXml: wrapXml('run_state', 'run'),
       hostEnvironmentXml: wrapXml('host_environment', 'host')
@@ -230,7 +235,8 @@ describe('multi-turn prefix growth', () => {
         workspaceXml: workspace,
         sessionXml: '',
         priorConversationsXml: '',
-        memoryXml: ''
+        memoryXml: '',
+        runProgressXml: ''
       },
       runStateXml: wrapXml('run_state', 'run'),
       hostEnvironmentXml: wrapXml('host_environment', 'host-v1')
@@ -278,7 +284,8 @@ describe('OpenAI Responses input order', () => {
         workspaceXml: 'WS',
         sessionXml: '',
         priorConversationsXml: '',
-        memoryXml: ''
+        memoryXml: '',
+        runProgressXml: ''
       },
       runStateXml: 'RUN',
       hostEnvironmentXml: 'HOST'

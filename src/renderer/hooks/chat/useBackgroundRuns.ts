@@ -13,6 +13,7 @@
  */
 
 import { useShallow } from 'zustand/react/shallow';
+import { isSliceRunActive } from '../../lib/isSliceRunActive.js';
 import { useChatStore } from '../../store/useChatStore.js';
 
 interface BackgroundRunsSnapshot {
@@ -30,7 +31,7 @@ export function useBackgroundRuns(): BackgroundRunsSnapshot {
       let firstRunningId: string | null = null;
       for (const [id, slice] of Object.entries(s.slices)) {
         if (id === activeId) continue;
-        if (!slice.isProcessing) continue;
+        if (!isSliceRunActive(slice)) continue;
         count += 1;
         if (firstRunningId === null) firstRunningId = id;
       }

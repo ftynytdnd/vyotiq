@@ -47,11 +47,16 @@ The `body` argument is an HTML **fragment** only — not a full document.
 ## E. After large edit runs
 
 When you finish a run that edited **3+ files** (or **2+ distinct paths** with
-substantial changes) and did not already call `report`, you **MUST** call `report`
-(when the user accepts the host prompt) with a short timeline paragraph plus an
-HTML report titled like **"Run summary — {task}"** that lists every file, line
-deltas, and severity (`vy-severity-table`, `vy-pr-group`).
+substantial changes) and did not already call `report`:
 
-Vyotiq may inject a host `ask_user` gate at run end when settings allow — the
-timeline stays one paragraph; HTML only via `report`. The user may also generate a
-free template **Quick summary** from the run footer (no tokens).
+1. If the host injects an end-of-run `ask_user` gate (when
+   `settings.ui.reports.promptForReportAfterEdits` is enabled), wait for the
+   user's answer.
+2. When the user accepts, call `report` with a short timeline paragraph plus an
+   HTML report titled like **"Run summary — {task}"** that lists every file, line
+   deltas, and severity (`vy-severity-table`, `vy-pr-group`).
+3. When the user declines or the gate is disabled, skip `report` — one timeline
+   paragraph is enough.
+
+The timeline stays one paragraph; HTML only via `report`. The user may also
+generate a free template **Quick summary** from the run footer (no tokens).

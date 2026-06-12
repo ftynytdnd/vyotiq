@@ -22,7 +22,3 @@ export function normalizeRegisteredToolName(
   if (REGISTERED.has(base)) return base as RegisteredToolName;
   return null;
 }
-
-export function isRegisteredToolName(raw: string | undefined | null): boolean {
-  return normalizeRegisteredToolName(raw) !== null;
-}

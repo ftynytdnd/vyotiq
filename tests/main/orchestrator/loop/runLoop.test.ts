@@ -48,7 +48,8 @@ vi.mock('@main/orchestrator/contextManager', async () => {
       // as `undefined` in the prompt).
       priorConversationsXml: '<prior_conversations>stub</prior_conversations>',
       memoryXml: '<recent_memory>stub</recent_memory>',
-      metaRulesXml: '<meta_rules>stub</meta_rules>'
+      metaRulesXml: '<meta_rules>stub</meta_rules>',
+      runProgressXml: ''
     }))
   };
 });

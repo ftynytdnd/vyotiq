@@ -64,29 +64,3 @@ export function LeftSubnav<T extends string>({
     </nav>
   );
 }
-
-interface LeftSubnavLayoutProps {
-  nav: ReactNode;
-  children: ReactNode;
-  aside?: ReactNode;
-  className?: string;
-  contentClassName?: string;
-}
-
-export function LeftSubnavLayout({
-  nav,
-  children,
-  aside,
-  className,
-  contentClassName
-}: LeftSubnavLayoutProps) {
-  return (
-    <div className={cn('vx-left-subnav-layout min-h-0 flex-1', className)}>
-      <div className="vx-left-subnav-rail shrink-0">
-        {nav}
-        {aside}
-      </div>
-      <div className={cn('vx-left-subnav-content min-h-0 flex-1', contentClassName)}>{children}</div>
-    </div>
-  );
-}
