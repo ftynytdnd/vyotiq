@@ -17,6 +17,11 @@ import {
   setActiveWorkspace
 } from '../workspace/workspaceState.js';
 import { bulkRemoveOrReparentByWorkspace } from '../conversations/conversationStore.js';
+import {
+  disposeWorkspaceVectorIndex,
+  scheduleWorkspaceVectorIndex
+} from '../memory/vector/indexScheduler.js';
+import { killWorkspacePty } from '../terminal/ptyManager.js';
 import { WORKSPACE_TREE_IGNORE } from '../workspace/workspaceTreeIgnore.js';
 import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
@@ -77,12 +82,17 @@ export function registerWorkspaceIpc(): void {
       }
       resolved = result.filePaths[0]!;
     }
-    return addWorkspace(resolved);
+    const entry = await addWorkspace(resolved);
+    scheduleWorkspaceVectorIndex(entry.path);
+    return entry;
   });
 
   wrapIpcHandler(IPC.WORKSPACES_SET_ACTIVE, async (_event, id: string) => {
     assertString('workspaces:setActive', 'id', id);
-    return setActiveWorkspace(id);
+    const state = await setActiveWorkspace(id);
+    const active = state.workspaces.find((w) => w.id === state.activeId);
+    if (active) scheduleWorkspaceVectorIndex(active.path);
+    return state;
   });
 
   wrapIpcHandler(IPC.WORKSPACES_RETRY_REACHABILITY, async (_event, id: string) => {
@@ -120,6 +130,7 @@ export function registerWorkspaceIpc(): void {
       // remove, so the orphaned chats don't disappear from the dock
       // tree.
       const before = await listWorkspaces();
+      const doomed = before.workspaces.find((w) => w.id === id);
       const remaining = before.workspaces.filter((w) => w.id !== id);
       if (opts?.deleteConversations === true) {
         await bulkRemoveOrReparentByWorkspace(id, { type: 'delete' });
@@ -136,6 +147,9 @@ export function registerWorkspaceIpc(): void {
       // boot's migration, since `workspaceId` no longer matches any
       // registered entry). This is intentional — destroying the only
       // workspace SHOULD wipe the slate visually.
+      // tear down per-workspace vector db + in-flight indexer
+      if (doomed) disposeWorkspaceVectorIndex(doomed.path);
+      killWorkspacePty(id);
       return removeWorkspace(id);
     }
   );

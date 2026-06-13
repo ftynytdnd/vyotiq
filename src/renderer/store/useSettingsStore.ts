@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { AppSettings } from '@shared/types/ipc.js';
 import type { ModelSelection } from '@shared/types/provider.js';
 import type { ChatPermissions } from '@shared/types/chat.js';
+import type { TurnUsageStatsDelta } from '@shared/types/usageStats.js';
 import { DEFAULT_PERMISSIONS } from '@shared/constants.js';
 import { vyotiq } from '../lib/ipc.js';
 import { logger } from '../lib/logger.js';
@@ -34,6 +35,12 @@ interface SettingsStore {
   toggleFavoriteModel: (providerId: string, modelId: string) => Promise<void>;
   /** Accumulate estimated API spend for a workspace (USD). */
   addWorkspaceSpend: (workspaceId: string, usd: number) => Promise<void>;
+  /** Accumulate workspace usage stats for a completed turn. */
+  addWorkspaceUsage: (
+    workspaceId: string,
+    usd: number,
+    stats?: TurnUsageStatsDelta
+  ) => Promise<void>;
   /**
    * One-shot cascade triggered by `workspace.remove`. Strips the
    * given workspace id from every per-workspace UI map at once
@@ -194,9 +201,17 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
   },
 
   addWorkspaceSpend: async (workspaceId, usd) => {
+    await getState().addWorkspaceUsage(workspaceId, usd);
+  },
+
+  addWorkspaceUsage: async (workspaceId, usd, stats = {}) => {
     if (!Number.isFinite(usd) || usd <= 0) return;
     const updated = await vyotiq.settings.set({
-      ui: { workspaceSpendIncrement: { [workspaceId]: usd } }
+      ui: {
+        workspaceUsageIncrement: {
+          [workspaceId]: { spendUsd: usd, ...stats }
+        }
+      }
     });
     setState({ settings: { ...getState().settings, ...updated } });
   }

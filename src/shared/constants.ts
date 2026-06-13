@@ -376,12 +376,46 @@ export const IPC = {
   CONVERSATIONS_UNARCHIVE: 'conversations:unarchive',
   /** Increment Vyotiq-estimated spend for a conversation turn (idempotent per prompt). */
   CONVERSATIONS_INCREMENT_SPEND: 'conversations:increment-spend',
+  /** Load the newest N events for timeline hydration. */
+  CONVERSATIONS_READ_TAIL: 'conversations:read-tail',
+  /** Load events strictly before a given event id. */
+  CONVERSATIONS_READ_BEFORE: 'conversations:read-before',
+  /** Save transcript to disk as JSONL or Markdown. */
+  CONVERSATIONS_EXPORT: 'conversations:export',
 
-  // Checkpoints — renderer rewind (recording stays main-only)
-  /** Rewind impact preview (inline Revert modal). */
+  // Checkpoints — file-change review + rewind
   CHECKPOINTS_PREVIEW_REWIND: 'checkpoints:preview-rewind',
-  /** Atomic rewind to a user-prompt boundary. */
   CHECKPOINTS_REWIND_TO_PROMPT: 'checkpoints:rewind-to-prompt',
+  CHECKPOINTS_LIST_PENDING: 'checkpoints:list-pending',
+  CHECKPOINTS_ACCEPT: 'checkpoints:accept',
+  CHECKPOINTS_ACCEPT_ALL: 'checkpoints:accept-all',
+  CHECKPOINTS_REJECT: 'checkpoints:reject',
+  CHECKPOINTS_READ_BLOB: 'checkpoints:read-blob',
+  CHECKPOINTS_CHANGED: 'checkpoints:changed',
+
+  // In-app workspace editor
+  EDITOR_READ: 'editor:read',
+  EDITOR_WRITE: 'editor:write',
+
+  // Workspace PTY terminal
+  TERMINAL_ATTACH: 'terminal:attach',
+  TERMINAL_INPUT: 'terminal:input',
+  TERMINAL_RESIZE: 'terminal:resize',
+  TERMINAL_RESTART: 'terminal:restart',
+  TERMINAL_DETACH: 'terminal:detach',
+  TERMINAL_DATA: 'terminal:data',
+  TERMINAL_EXIT: 'terminal:exit',
+
+  // Inline completion (editor FIM + composer continuation)
+  COMPLETION_REQUEST: 'completion:request',
+  COMPLETION_CANCEL: 'completion:cancel',
+
+  // Harness overrides (natural-language OS sections)
+  HARNESS_LIST_SECTIONS: 'harness:list-sections',
+  HARNESS_READ_SECTION: 'harness:read-section',
+  HARNESS_WRITE_SECTION: 'harness:write-section',
+  HARNESS_RESET_SECTION: 'harness:reset-section',
+
   /**
    * main → renderer (broadcast). Emitted when a conversation's
    * transcript was rewritten in place (currently only from
@@ -408,6 +442,10 @@ export const IPC = {
   APP_REVEAL_PATH: 'app:reveal-path',
   APP_SET_THEME_SOURCE: 'app:set-theme-source',
   APP_CHECK_UPDATES: 'app:check-updates',
+  APP_DOWNLOAD_UPDATE: 'app:download-update',
+  APP_INSTALL_UPDATE: 'app:install-update',
+  /** main → renderer broadcast of electron-updater phase/progress. */
+  APP_UPDATE_STATUS: 'app:update-status',
   /** Play the OS warning / exclamation sound (destructive confirm UX). */
   APP_PLAY_WARNING_SOUND: 'app:play-warning-sound',
 
@@ -421,3 +459,6 @@ export const IPC = {
   // Renderer → main log relay (error boundary, etc.)
   RENDERER_LOG: 'renderer:log'
 } as const;
+
+/** Max timeline events loaded into the renderer per conversation slice. */
+export const TRANSCRIPT_PAGE_SIZE = 400;

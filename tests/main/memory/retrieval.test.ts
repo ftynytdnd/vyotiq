@@ -27,6 +27,10 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 vi.mock('@main/memory/workspaceNotes', () => ({
   listWorkspaceNotes: vi.fn()
 }));
+vi.mock('@main/memory/vector/vectorSearch', () => ({
+  searchVectorIndex: vi.fn()
+}));
+
 vi.mock('@main/memory/globalMeta', () => ({
   readGlobalMetaRules: vi.fn()
 }));
@@ -34,9 +38,11 @@ vi.mock('@main/memory/globalMeta', () => ({
 import { retrieveRelevantMemory } from '@main/memory/retrieval';
 import { listWorkspaceNotes } from '@main/memory/workspaceNotes';
 import { readGlobalMetaRules } from '@main/memory/globalMeta';
+import { searchVectorIndex } from '@main/memory/vector/vectorSearch';
 
 beforeEach(() => {
   vi.mocked(readGlobalMetaRules).mockResolvedValue('# meta');
+  vi.mocked(searchVectorIndex).mockResolvedValue([]);
 });
 
 describe('retrieveRelevantMemory', () => {
@@ -66,6 +72,27 @@ describe('retrieveRelevantMemory', () => {
       );
       const { notes } = await retrieveRelevantMemory('widget', 3);
       expect(notes).toHaveLength(3);
+    });
+
+    it('surfaces vector-only note hits when keywords miss', async () => {
+      vi.mocked(listWorkspaceNotes).mockResolvedValue([
+        { key: 'vec.md', content: 'tailwind v4 migration details', updatedAt: 300 }
+      ]);
+      vi.mocked(searchVectorIndex).mockResolvedValue([
+        {
+          sourceKind: 'note',
+          sourceKey: 'vec.md',
+          relPath: '.vyotiq/memory/vec.md',
+          chunkIndex: 0,
+          content: 'tailwind v4 migration details',
+          distance: 0.1,
+          similarity: 0.9
+        }
+      ]);
+      const { notes } = await retrieveRelevantMemory('proceed', 4, '/tmp/ws');
+      expect(notes).toHaveLength(1);
+      expect(notes[0]?.key).toBe('vec.md');
+      expect(notes[0]?.scope).toBe('workspace');
     });
   });
 

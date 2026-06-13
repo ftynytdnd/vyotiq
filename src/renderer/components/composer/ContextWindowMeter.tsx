@@ -11,6 +11,9 @@ import { cn } from '../../lib/cn.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { formatTokenCountWithUnit } from '../../lib/formatTokens.js';
+import { formatComposerCostUsd } from '@shared/providers/estimateRunCost.js';
+import { useProviderStore } from '../../store/useProviderStore.js';
+import { findProviderModel } from './modelPicker/modelPickerContext.js';
 import { useContextWindowUsage } from './useContextWindowUsage.js';
 import { ContextBreakdownPopover } from './ContextBreakdownPopover.js';
 import { CONTEXT_BREAKDOWN_LAYERS } from './contextBreakdownLayers.js';
@@ -85,6 +88,8 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
   );
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
+  const [compactionNote, setCompactionNote] = useState<string | null>(null);
+  const providers = useProviderStore((s) => s.providers);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelId = useId();
 
@@ -103,6 +108,21 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
             : await vyotiq.context.reset(input);
         const toast = useToastStore.getState().show;
         if (reply.ok) {
+          if (reply.changed && reply.tokensRemoved && reply.tokensRemoved > 0 && model) {
+            const provider = providers.find((p) => p.id === model.providerId);
+            const pricing = provider
+              ? findProviderModel(provider, model.modelId)?.pricing
+              : undefined;
+            const inputRate = pricing?.inputPerMillion ?? 0;
+            const avoided =
+              inputRate > 0
+                ? (reply.tokensRemoved / 1_000_000) * inputRate
+                : 0;
+            setCompactionNote(
+              `Compacted ${formatTokenCountWithUnit(reply.tokensRemoved)} tok` +
+                (avoided > 0 ? ` · ~${formatComposerCostUsd(avoided)} avoided/turn` : '')
+            );
+          }
           toast(
             mode === 'compact'
               ? reply.changed
@@ -127,7 +147,7 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
         setBusy(false);
       }
     },
-    [conversationId, model, busy]
+    [conversationId, model, busy, providers]
   );
 
   if (!usage || usage.effectiveWindow <= 0) return null;
@@ -140,6 +160,14 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
 
   return (
     <>
+      {compactionNote ? (
+        <span
+          className="vx-composer-token-pill shrink-0 font-mono text-meta tabular-nums text-text-faint"
+          title="Last context compaction in this composer session"
+        >
+          {compactionNote}
+        </span>
+      ) : null}
       <button
         ref={triggerRef}
         type="button"

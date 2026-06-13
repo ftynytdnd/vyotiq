@@ -14,6 +14,10 @@ import { providerDialectReportsPromptCache } from '@shared/providers/promptCache
 import { useProviderAccountStore } from '../../store/useProviderAccountStore.js';
 import { useProviderStore } from '../../store/useProviderStore.js';
 import { useChatStore } from '../../store/useChatStore.js';
+import { formatComposerCostUsd } from '@shared/providers/estimateRunCost.js';
+import { formatCacheSavingsUsd } from '@shared/providers/cacheSavings.js';
+import { classifyProviderHost } from '@shared/providers/providerHostKind.js';
+import { estimateRunCostBreakdown } from '../../lib/workspaceSpend.js';
 import { cn } from '../../lib/cn.js';
 
 interface ComposerStatusStripProps {
@@ -58,13 +62,32 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip({
 
   const latest = orchestratorUsage?.latest;
   const cached = latest?.cachedPromptTokens ?? 0;
+  const uncached = latest?.uncachedPromptTokens ?? 0;
   const prompt = latest?.promptTokens ?? 0;
+  const isDeepSeek =
+    provider !== undefined && classifyProviderHost(provider) === 'deepseek';
   const multiTurn = (orchestratorUsage?.samples ?? 0) > 1;
   const cacheWarn = reportsPromptCache && multiTurn && cached === 0 && prompt >= 1024;
   const cachePct = prompt > 0 && cached > 0 ? Math.round((cached / prompt) * 100) : null;
   const showCacheLine = (isProcessing || multiTurn) && (cached > 0 || cacheWarn);
+  const costBreakdown =
+    model && latest
+      ? estimateRunCostBreakdown(model, providers, latest)
+      : null;
+  const grossSavingsLabel =
+    costBreakdown && costBreakdown.grossCacheSavingsUsd > 0
+      ? formatCacheSavingsUsd(costBreakdown.grossCacheSavingsUsd)
+      : '';
+  const netSavingsUsd = costBreakdown?.netCacheSavingsUsd ?? 0;
 
   if (showCacheLine) {
+    const sessionHint =
+      'Conversation session — last LLM turn cache stats (cumulative usage in Settings → Usage)';
+    const savingsTitle =
+      netSavingsUsd > 0
+        ? `${sessionHint}\nNet cache savings this turn: ${formatComposerCostUsd(netSavingsUsd)} (after write surcharge)`
+        : sessionHint;
+
     return (
       <span
         className={cn(
@@ -73,11 +96,7 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip({
         )}
         role="status"
         aria-live="polite"
-        title={
-          cacheWarn
-            ? 'No prompt cache hits on this turn — prefix may have changed'
-            : undefined
-        }
+        title={cacheWarn ? 'No prompt cache hits on this turn — prefix may have changed' : savingsTitle}
       >
         {providerLabel ? (
           <>
@@ -95,6 +114,10 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip({
           <>
             {formatTokenCountWithUnit(cached)} cached
             {cachePct !== null ? ` · ${cachePct}% of prompt` : ''}
+            {grossSavingsLabel ? ` · ${grossSavingsLabel}` : ''}
+            {isDeepSeek && uncached > 0
+              ? ` · ${formatTokenCountWithUnit(uncached)} uncached`
+              : ''}
           </>
         )}
       </span>

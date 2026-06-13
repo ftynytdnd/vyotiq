@@ -16,12 +16,14 @@ import {
   createConversation,
   deriveTitleIfFresh,
   flushAll,
+  incrementConversationSpend,
   listConversations,
   readTranscript,
   readConversation,
   removeConversation,
   renameConversation,
-  setLastModel
+  setLastModel,
+  __test_resetRecordedConversationSpend
 } from '@main/conversations/conversationStore';
 import type { TimelineEvent } from '@shared/types/chat';
 
@@ -203,5 +205,34 @@ describe('conversationStore', () => {
     const events = await readTranscript(meta.id);
     // Two valid events; malformed line silently skipped.
     expect(events).toHaveLength(2);
+  });
+
+  it('incrementConversationSpend accumulates usage stats idempotently per prompt', async () => {
+    __test_resetRecordedConversationSpend();
+    const meta = await createConversation('ws-usage');
+    const updated = await incrementConversationSpend(meta.id, 'prompt-1', 0.05, {
+      cachedTokens: 1200,
+      reasoningTokens: 300,
+      netCacheSavingsUsd: 0.002,
+      lastCacheHitPct: 68
+    });
+    expect(updated?.estimatedSpendUsd).toBeCloseTo(0.05, 6);
+    expect(updated?.runCount).toBe(1);
+    expect(updated?.cumulativeCachedTokens).toBe(1200);
+    expect(updated?.cumulativeReasoningTokens).toBe(300);
+    expect(updated?.cumulativeCacheSavingsUsd).toBeCloseTo(0.002, 6);
+    expect(updated?.lastCacheHitPct).toBe(68);
+
+    const again = await incrementConversationSpend(meta.id, 'prompt-1', 0.05, {
+      cachedTokens: 9999
+    });
+    expect(again?.cumulativeCachedTokens).toBe(1200);
+
+    const second = await incrementConversationSpend(meta.id, 'prompt-2', 0.01, {
+      cachedTokens: 400
+    });
+    expect(second?.runCount).toBe(2);
+    expect(second?.cumulativeCachedTokens).toBe(1600);
+    expect(second?.estimatedSpendUsd).toBeCloseTo(0.06, 6);
   });
 });

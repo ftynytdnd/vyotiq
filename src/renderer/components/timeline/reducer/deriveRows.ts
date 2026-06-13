@@ -126,6 +126,7 @@ export type Row =
     usage?: TokenUsageAggregate;
     editCount?: number;
     fileCount?: number;
+    commandCount?: number;
   }
   | {
     kind: 'tool-group';

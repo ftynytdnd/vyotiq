@@ -11,7 +11,7 @@ import { app, BrowserWindow } from 'electron';
 import { createMainWindow } from './window/createMainWindow.js';
 import { registerIpc } from './ipc/registerIpc.js';
 import { logger, installCrashHandlers } from './logging/logger.js';
-import { assertHarnessBoot } from './harness/harnessLoader.js';
+import { assertHarnessBoot, warmHarnessOverrides } from './harness/harnessLoader.js';
 import { flushAll as flushConversations } from './conversations/conversationStore.js';
 import { flushAll as flushCheckpoints } from './checkpoints/index.js';
 import { flushWorkspaceState } from './workspace/workspaceState.js';
@@ -19,6 +19,20 @@ import { abortRun, listActiveRuns } from './orchestrator/AgentV.js';
 import { getSettings } from './settings/settingsStore.js';
 import { sweepOrphanAttachments } from './attachments/gc.js';
 import { sweepOrphanCompactionAllWorkspaces } from './orchestrator/context/compactionSweep.js';
+import { getActiveWorkspace } from './workspace/workspaceState.js';
+import {
+  disposeAllVectorIndexes,
+  scheduleWorkspaceVectorIndex
+} from './memory/vector/indexScheduler.js';
+import { closeAllVectorDbs } from './memory/vector/vectorDb.js';
+import {
+  checkForAppUpdates,
+  getAppUpdateStatus,
+  initAutoUpdaterService,
+  teardownAutoUpdaterService
+} from './updater/autoUpdaterService.js';
+import { IPC } from '@shared/constants.js';
+import { safeWebContentsSend } from './window/safeWebContentsSend.js';
 const log = logger.child('boot');
 
 // Single-instance lock. Vyotiq is an always-on desktop agent that owns
@@ -81,8 +95,23 @@ async function bootstrap() {
   await app.whenReady();
 
   registerIpc();
+  await warmHarnessOverrides().catch((err) =>
+    log.warn('harness override preload failed; using bundled defaults', { err })
+  );
   await getSettings().catch((err) => log.warn('settings preload failed; using defaults', { err }));
+  const activeWs = await getActiveWorkspace().catch(() => null);
+  if (activeWs?.path) scheduleWorkspaceVectorIndex(activeWs.path);
   log.info('app ready; ipc registered');
+
+  await createMainWindow();
+
+  void initAutoUpdaterService().then(() => {
+    if (!app.isPackaged) return;
+    safeWebContentsSend(IPC.APP_UPDATE_STATUS, getAppUpdateStatus());
+    void checkForAppUpdates().catch(() => {
+      /* silent on boot — About tab surfaces errors */
+    });
+  });
 
   // Attachment GC: conversation-delete hook is always active (see
   // `deleteAttachmentsForConversation`). The orphan sweeper runs once
@@ -97,8 +126,6 @@ async function bootstrap() {
     );
   }, 30_000);
   gcTimer.unref();
-
-  await createMainWindow();
 
   app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -131,13 +158,18 @@ app.on('before-quit', (event) => {
     import('./ipc/providers.ipc.js').then((m) => m.teardownProvidersIpc()),
     flushConversations(),
     flushCheckpoints(),
-    // Belt-and-suspenders re-write of the workspace registry. Public
-    // mutators already persist before flipping the cache, so the
-    // happy path is a no-op idempotent write; the explicit flush
-    // covers the loadOnce migration window where the on-disk shape
-    // could otherwise lag the in-memory snapshot if a crash lands
-    // mid-boot. Idempotent + cheap thanks to `updateBlob`'s debounce.
-    flushWorkspaceState()
+    flushWorkspaceState(),
+    Promise.resolve().then(() => {
+      disposeAllVectorIndexes();
+      closeAllVectorDbs();
+    }),
+    import('./ipc/terminal.ipc.js').then((m) => {
+      m.teardownTerminalIpc();
+    }),
+    import('./ipc/completion.ipc.js').then((m) => {
+      m.teardownCompletionIpc();
+    }),
+    Promise.resolve().then(() => teardownAutoUpdaterService())
   ])
     .catch((err) => log.error('shutdown flush failed', { err }))
     .finally(() => app.quit());

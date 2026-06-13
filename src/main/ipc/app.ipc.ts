@@ -21,6 +21,12 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { IPC, SETTINGS_FILE } from '@shared/constants.js';
 import type { AppInfo, AppRevealTarget } from '@shared/types/ipc.js';
+import type { AppCheckUpdatesResult, AppUpdateStatus } from '@shared/types/appUpdate.js';
+import {
+  checkForAppUpdates,
+  downloadAppUpdate,
+  installDownloadedUpdate
+} from '../updater/autoUpdaterService.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 import { assertEnum } from './validate.js';
 import { logger } from '../logging/logger.js';
@@ -141,24 +147,25 @@ export function registerAppIpc(): void {
     playWarningSound();
   });
 
-  wrapIpcHandler(IPC.APP_CHECK_UPDATES, async (): Promise<{ updateAvailable: boolean; version?: string }> => {
-    if (!app.isPackaged) {
-      return { updateAvailable: false };
-    }
+  wrapIpcHandler(IPC.APP_CHECK_UPDATES, async (): Promise<AppCheckUpdatesResult> => {
     try {
-      const mod = (await import('electron-updater')) as {
-        autoUpdater: {
-          autoDownload: boolean;
-          checkForUpdates: () => Promise<{ updateInfo?: { version?: string } } | null>;
-        };
-      };
-      mod.autoUpdater.autoDownload = false;
-      const result = await mod.autoUpdater.checkForUpdates();
-      const ver = result?.updateInfo?.version;
-      return { updateAvailable: Boolean(ver), version: ver };
+      return await checkForAppUpdates();
     } catch (err) {
       log.warn('checkForUpdates failed', { err });
       throw err instanceof Error ? err : new Error(String(err));
     }
+  });
+
+  wrapIpcHandler(IPC.APP_DOWNLOAD_UPDATE, async (): Promise<AppUpdateStatus> => {
+    try {
+      return await downloadAppUpdate();
+    } catch (err) {
+      log.warn('downloadUpdate failed', { err });
+      throw err instanceof Error ? err : new Error(String(err));
+    }
+  });
+
+  wrapIpcHandler(IPC.APP_INSTALL_UPDATE, async (): Promise<void> => {
+    installDownloadedUpdate();
   });
 }

@@ -28,6 +28,9 @@ export interface GlobalShortcutActions {
   openSettings: () => void;
   /** When true, chat/workspace shortcuts are ignored (e.g. settings is open). */
   blockChatActions?: () => boolean;
+  /** Toggle integrated terminal (Ctrl/Cmd+`). */
+  toggleTerminal?: () => void;
+  blockTerminal?: () => boolean;
   /**
    * Reload handler for `Ctrl/Cmd+R`. Optional so consumers (and the
    * existing test harness) can leave it undefined when they don't
@@ -82,6 +85,12 @@ export function useGlobalShortcuts(actions: GlobalShortcutActions): void {
         if (!ref.current.reload) return;
         e.preventDefault();
         ref.current.reload();
+        return;
+      }
+      if (key === '`') {
+        if (!ref.current.toggleTerminal || ref.current.blockTerminal?.()) return;
+        e.preventDefault();
+        ref.current.toggleTerminal();
         return;
       }
     };

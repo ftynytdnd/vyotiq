@@ -8,7 +8,10 @@ describe('renderPromptBodyContent', () => {
     ]);
     expect(nodes).toHaveLength(3);
     expect(nodes[1]).toMatchObject({
-      props: { className: 'vx-mention-highlight', children: '@src/a.ts' }
+      props: {
+        className: 'vx-mention-highlight vx-mention-highlight--open',
+        children: '@src/a.ts'
+      }
     });
   });
 });

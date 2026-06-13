@@ -5,12 +5,14 @@
 
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useRef,
   type ClipboardEvent,
   type KeyboardEvent,
   type RefObject
 } from 'react';
+import type { ModelSelection } from '@shared/types/provider.js';
 import { Popover } from '../../ui/Popover.js';
 import { AGENT_NAME } from '@shared/constants.js';
 import type { MentionRef } from '@shared/types/mention.js';
@@ -23,6 +25,7 @@ import {
   extractMentions,
   hasComposerContent,
   insertFileMentionAt,
+  insertPlainTextAtOffset,
   parseMentionDocument,
   replaceAtTokenWithMention,
   serializeMentionDocument,
@@ -31,6 +34,8 @@ import {
 import { getPlainCaretOffset, placeCaretAtPlainOffset } from './mentionCaret.js';
 import { MentionPicker } from './MentionPicker.js';
 import { useMentionPicker, type MentionPickerRow } from './useMentionPicker.js';
+import { removeComposerGhost, renderComposerGhost } from './composerGhost.js';
+import { useInlineCompletion } from '../../../lib/useInlineCompletion.js';
 
 const TEXTAREA_MAX_HEIGHT = 168;
 const TEXTAREA_MIN_HEIGHT = 28;
@@ -50,6 +55,13 @@ export interface MentionComposerProps {
   requestFocus?: boolean;
   /** Changes re-trigger focus (e.g. switching empty conversations). */
   focusSession?: string | null;
+  /** Inline prompt continuation (Tab to accept). */
+  inlineCompletion?: {
+    enabled: boolean;
+    debounceMs: number;
+    model: ModelSelection | null;
+    workspaceId?: string | null;
+  };
 }
 
 export function MentionComposer({
@@ -63,7 +75,8 @@ export function MentionComposer({
   onPaste,
   onKeyDown,
   requestFocus,
-  focusSession
+  focusSession,
+  inlineCompletion
 }: MentionComposerProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<MentionDocument>(emptyMentionDocument());
@@ -94,6 +107,61 @@ export function MentionComposer({
   });
 
   atTokenRef.current = atToken;
+
+  const completion = useInlineCompletion({
+    kind: 'composer',
+    enabled: inlineCompletion?.enabled === true && inlineCompletion.model !== null,
+    debounceMs: inlineCompletion?.debounceMs ?? 450,
+    model: inlineCompletion?.model ?? null,
+    workspaceId: inlineCompletion?.workspaceId
+  });
+
+  const {
+    schedule: scheduleCompletion,
+    clearGhost: clearCompletionGhost,
+    acceptGhost: acceptCompletionGhost,
+    setOnGhost: setCompletionOnGhost,
+    pendingContextRef: completionContextRef
+  } = completion;
+
+  useEffect(() => {
+    setCompletionOnGhost((ghost) => {
+      const pending = completionContextRef.current;
+      if (ghost && pending?.caretOffset !== undefined) {
+        const caret =
+          getPlainCaretOffset(editorRef.current, extractMentions(docRef.current)) ??
+          documentToPlainText(docRef.current).length;
+        if (caret !== pending.caretOffset) return;
+      }
+      renderComposerGhost(editorRef.current, ghost);
+    });
+    return () => {
+      removeComposerGhost(editorRef.current);
+      clearCompletionGhost();
+    };
+  }, [clearCompletionGhost, completionContextRef, setCompletionOnGhost]);
+
+  const scheduleComposerCompletion = useCallback(() => {
+    if (!inlineCompletion?.enabled || !inlineCompletion.model || pickerOpen) {
+      clearCompletionGhost();
+      return;
+    }
+    const plain = documentToPlainText(docRef.current);
+    const caretOffset =
+      getPlainCaretOffset(editorRef.current, extractMentions(docRef.current)) ?? plain.length;
+    const prefix = plain.slice(0, caretOffset);
+    if (prefix.trim().length < 3) {
+      clearCompletionGhost();
+      return;
+    }
+    scheduleCompletion(prefix, { caretOffset });
+  }, [clearCompletionGhost, inlineCompletion, pickerOpen, scheduleCompletion]);
+
+  useEffect(() => {
+    if (inlineCompletion?.enabled) return;
+    removeComposerGhost(editorRef.current);
+    clearCompletionGhost();
+  }, [clearCompletionGhost, inlineCompletion?.enabled]);
 
   useLayoutEffect(() => {
     if (!requestFocus || disabled) return;
@@ -166,10 +234,12 @@ export function MentionComposer({
 
   const updateFromDom = useCallback(() => {
     if (syncingRef.current) return;
+    removeComposerGhost(editorRef.current);
     const doc = readDocFromDom();
     docRef.current = doc;
     emitChange(doc);
-  }, [emitChange, readDocFromDom]);
+    scheduleComposerCompletion();
+  }, [emitChange, readDocFromDom, scheduleComposerCompletion]);
 
   useLayoutEffect(() => {
     const next = parseMentionDocument(value);
@@ -183,6 +253,7 @@ export function MentionComposer({
         (!value && domPlain.length > 0 && currentSerialized === value));
     if (currentSerialized === value && !domDrifted) return;
     docRef.current = next;
+    removeComposerGhost(editorRef.current);
     syncDomFromDoc(next);
   }, [value, syncDomFromDoc]);
 
@@ -227,6 +298,24 @@ export function MentionComposer({
       applyMentionPick(row.path);
     }
   };
+
+  const acceptComposerGhost = useCallback(() => {
+    const ghost = acceptCompletionGhost();
+    if (!ghost) return false;
+    removeComposerGhost(editorRef.current);
+    const caret =
+      getPlainCaretOffset(editorRef.current, extractMentions(docRef.current)) ??
+      documentToPlainText(docRef.current).length;
+    const next = insertPlainTextAtOffset(docRef.current, caret, ghost);
+    docRef.current = next;
+    syncDomFromDoc(next);
+    emitChange(next);
+    requestAnimationFrame(() => {
+      editorRef.current?.focus();
+      placeCaretAtPlainOffset(editorRef.current, caret + ghost.length, next);
+    });
+    return true;
+  }, [acceptCompletionGhost, emitChange, syncDomFromDoc]);
 
   const handlePickerKey = (e: KeyboardEvent<HTMLDivElement>): boolean => {
     if (!pickerOpen) return false;
@@ -310,6 +399,16 @@ export function MentionComposer({
         onKeyUp={updateFromDom}
         onClick={updateFromDom}
         onKeyDown={(e) => {
+          if (e.key === 'Tab' && !e.shiftKey && !pickerOpen) {
+            if (acceptComposerGhost()) {
+              e.preventDefault();
+              return;
+            }
+          }
+          if (e.key === 'Escape') {
+            clearCompletionGhost();
+            removeComposerGhost(editorRef.current);
+          }
           if (handlePickerKey(e)) return;
           onKeyDown?.(e);
         }}

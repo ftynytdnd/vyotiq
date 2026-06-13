@@ -6,7 +6,7 @@
  * tests and memo helpers without pulling the full store graph.
  */
 
-import type { TimelineEvent, ChatPermissions, PromptAttachmentMeta } from '@shared/types/chat.js';
+import type { TimelineEvent, ChatPermissions, PromptAttachmentMeta, TranscriptPaging } from '@shared/types/chat.js';
 import type { AskUserSubmitInput } from '@shared/types/askUser.js';
 import type { ActiveRunInfo } from '@shared/types/ipc.js';
 import type { ModelSelection } from '@shared/types/provider.js';
@@ -27,6 +27,8 @@ export interface ChatSlice extends TimelineState {
   runStartedAt: number | null;
   draft: string;
   attachmentDraft: PromptAttachmentMeta[];
+  /** Non-null when only a tail slice of the JSONL is loaded. */
+  transcriptPaging: TranscriptPaging | null;
 }
 
 export function emptySlice(conversationId: string): ChatSlice {
@@ -38,7 +40,8 @@ export function emptySlice(conversationId: string): ChatSlice {
     awaitingAskUser: false,
     runStartedAt: null,
     draft: '',
-    attachmentDraft: []
+    attachmentDraft: [],
+    transcriptPaging: null
   };
 }
 
@@ -52,6 +55,7 @@ export interface ActiveMirror extends TimelineState {
   draft: string;
   attachmentDraft: PromptAttachmentMeta[];
   totalRunUsage?: TokenUsageAggregate;
+  transcriptPaging: TranscriptPaging | null;
 }
 
 export const EMPTY_MIRROR: ActiveMirror = {
@@ -64,7 +68,8 @@ export const EMPTY_MIRROR: ActiveMirror = {
   awaitingAskUser: false,
   runStartedAt: null,
   draft: '',
-  attachmentDraft: []
+  attachmentDraft: [],
+  transcriptPaging: null
 };
 
 export interface ChatStore extends ActiveMirror {
@@ -76,7 +81,12 @@ export interface ChatStore extends ActiveMirror {
   applyConversationEvent: (conversationId: string, event: TimelineEvent) => void;
   finishRun: (runId: string) => void;
   errorRun: (runId: string, message: string) => void;
-  setTranscript: (conversationId: string | null, events: TimelineEvent[]) => void;
+  setTranscript: (conversationId: string | null, events: TimelineEvent[], paging?: TranscriptPaging | null) => void;
+  prependTranscript: (
+    conversationId: string,
+    olderEvents: TimelineEvent[],
+    paging: TranscriptPaging
+  ) => void;
   setActiveConversation: (conversationId: string | null) => void;
   dropConversation: (conversationId: string) => void;
   send: (
@@ -101,7 +111,7 @@ export interface ChatStore extends ActiveMirror {
   pauseForAskUser: (runId: string) => void;
   rehydrateActiveRuns: (infos: ActiveRunInfo[]) => void;
   beginSideRun: (runId: string, conversationId: string) => void;
-  prewarmSlice: (conversationId: string, events: TimelineEvent[]) => void;
+  prewarmSlice: (conversationId: string, events: TimelineEvent[], paging?: TranscriptPaging | null) => void;
   setDraft: (conversationId: string, text: string) => void;
   setAttachmentDraft: (conversationId: string, attachments: PromptAttachmentMeta[]) => void;
 }

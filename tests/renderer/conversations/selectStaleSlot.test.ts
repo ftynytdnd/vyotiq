@@ -23,7 +23,7 @@ beforeEach(() => {
     loading: false
   });
   window.vyotiq.settings.set = vi.fn(async (patch: object) => patch) as never;
-  window.vyotiq.conversations.read = vi.fn(async () => null) as never;
+  window.vyotiq.conversations.readTail = vi.fn(async () => null) as never;
 });
 
 describe('useConversationsStore.select — stale slot', () => {
@@ -38,7 +38,7 @@ describe('useConversationsStore.select — stale slot', () => {
 
     await useConversationsStore.getState().select('conv-deleted');
 
-    expect(window.vyotiq.conversations.read).not.toHaveBeenCalled();
+    expect(window.vyotiq.conversations.readTail).not.toHaveBeenCalled();
     expect(useConversationsStore.getState().activeIdByWorkspace['ws-test']).toBeNull();
     expect(window.vyotiq.settings.set).toHaveBeenCalled();
   });
@@ -54,6 +54,6 @@ describe('useConversationsStore.select — stale slot', () => {
 
     await useConversationsStore.getState().select('conv-pending');
 
-    expect(window.vyotiq.conversations.read).toHaveBeenCalledWith('conv-pending');
+    expect(window.vyotiq.conversations.readTail).toHaveBeenCalledWith('conv-pending');
   });
 });

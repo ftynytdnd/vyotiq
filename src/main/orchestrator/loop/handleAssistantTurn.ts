@@ -19,12 +19,35 @@
 import { randomUUID } from 'node:crypto';
 import type { TimelineEvent, TokenUsage } from '@shared/types/chat.js';
 import { tokenUsageCountsEqual } from '@shared/token/tokenUsageCountsEqual.js';
+import { estimateCacheSavings, OPENROUTER_PLATFORM_FEE_MULTIPLIER } from '@shared/providers/cacheSavings.js';
+import { classifyProviderHost } from '@shared/providers/providerHostKind.js';
 import type { ChatStreamRequest } from '../../providers/chatClient.js';
 import { streamChat } from '../../providers/chatClient.js';
+import { getProviderWithKey } from '../../providers/providerStore.js';
 import { consumeChatStream, type PartialToolCall } from './consumeChatStream.js';
 import { logger } from '../../logging/logger.js';
 
 const log = logger.child('orchestrator/assistant-turn');
+
+async function logCacheSavings(req: ChatStreamRequest, usage: TokenUsage): Promise<void> {
+  try {
+    const provider = await getProviderWithKey(req.providerId);
+    if (!provider) return;
+    const pricing = provider.models?.find((m) => m.id === req.model)?.pricing;
+    const fee =
+      classifyProviderHost(provider) === 'openrouter' ? OPENROUTER_PLATFORM_FEE_MULTIPLIER : 1;
+    const savings = estimateCacheSavings(usage, pricing, fee);
+    if (!savings || (savings.grossSavingsUsd <= 0 && savings.netSavingsUsd <= 0)) return;
+    log.info('llm turn cache savings', {
+      providerId: req.providerId,
+      model: req.model,
+      grossSavingsUsd: savings.grossSavingsUsd,
+      netSavingsUsd: savings.netSavingsUsd
+    });
+  } catch {
+    // best-effort telemetry
+  }
+}
 
 export type { PartialToolCall };
 
@@ -167,6 +190,7 @@ export async function handleAssistantTurn(
             ? { cacheMissReason: missReason }
             : {})
         });
+        void logCacheSavings(req, usage);
         emit({
           kind: 'token-usage',
           id: randomUUID(),

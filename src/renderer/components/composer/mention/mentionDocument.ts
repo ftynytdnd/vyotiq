@@ -140,3 +140,55 @@ function mentionDocumentFromPlainSplit(
   if (segments.length === 0) return emptyMentionDocument();
   return { segments };
 }
+
+/** Insert plain text at a plain-text caret offset, preserving mention chips. */
+export function insertPlainTextAtOffset(
+  doc: MentionDocument,
+  offset: number,
+  text: string
+): MentionDocument {
+  if (!text) return doc;
+  if (extractMentions(doc).length === 0) {
+    const plain = documentToPlainText(doc);
+    return mentionDocumentFromText(plain.slice(0, offset) + text + plain.slice(offset));
+  }
+
+  let cursor = 0;
+  const segments: MentionSegment[] = [];
+  let inserted = false;
+
+  for (const seg of doc.segments) {
+    if (seg.type === 'mention') {
+      const len = `@${seg.ref.label}`.length;
+      if (!inserted && offset <= cursor) {
+        segments.push({ type: 'text', value: text });
+        inserted = true;
+      }
+      segments.push(seg);
+      cursor += len;
+      continue;
+    }
+
+    const segStart = cursor;
+    const segEnd = cursor + seg.value.length;
+    if (!inserted && offset >= segStart && offset <= segEnd) {
+      const local = offset - segStart;
+      const value = seg.value.slice(0, local) + text + seg.value.slice(local);
+      if (value.length > 0) segments.push({ type: 'text', value });
+      inserted = true;
+      cursor = segEnd;
+      continue;
+    }
+
+    segments.push(seg);
+    cursor = segEnd;
+  }
+
+  if (!inserted) {
+    const last = segments[segments.length - 1];
+    if (last?.type === 'text') last.value += text;
+    else segments.push({ type: 'text', value: text });
+  }
+
+  return normalizeDocument({ segments });
+}

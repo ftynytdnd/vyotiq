@@ -39,7 +39,12 @@ import {
   watchSystemTheme
 } from './lib/theme.js';
 import { AttachmentPreviewPanel } from './components/composer/AttachmentPreviewPanel.js';
+import { EditorPanel } from './components/editor/EditorPanel.js';
+import { TerminalPanel } from './components/terminal/TerminalPanel.js';
 import { useAttachmentPreviewStore } from './store/useAttachmentPreviewStore.js';
+import { useEditorStore } from './store/useEditorStore.js';
+import { useTerminalStore } from './store/useTerminalStore.js';
+import { useEditorAgentSync } from './hooks/useEditorAgentSync.js';
 
 const log = logger.child('app');
 
@@ -95,8 +100,16 @@ export default function App() {
   const { previewAttachment, closePreview } = useAttachmentPreviewStore(
     useShallow((s) => ({ previewAttachment: s.attachment, closePreview: s.close }))
   );
+  const editorOpen = useEditorStore((s) => s.open);
+  const closeEditor = useEditorStore((s) => s.close);
+  const terminalOpen = useTerminalStore((s) => s.open);
+  const closeTerminal = useTerminalStore((s) => s.close);
+  const toggleTerminal = useTerminalStore((s) => s.toggle);
   const attachmentPreviewWidth = usePersistedPanelWidth('attachmentPreview');
-  const overlayOpen = previewAttachment !== null;
+  const editorPanelWidth = usePersistedPanelWidth('workspaceEditor');
+  const terminalPanelWidth = usePersistedPanelWidth('workspaceTerminal');
+  const overlayOpen = previewAttachment !== null || editorOpen || terminalOpen;
+  useEditorAgentSync();
   const settingsOpen = appView === 'settings';
   const showToast = useToastStore((s) => s.show);
   const updateCheckDone = useRef(false);
@@ -155,20 +168,16 @@ export default function App() {
     if (!settingsReady || updateCheckDone.current) return;
     updateCheckDone.current = true;
     let cancelled = false;
-    void vyotiq.app
-      .checkForUpdates()
-      .then((result) => {
-        if (cancelled || !result.updateAvailable) return;
-        showToast(
-          result.version ? `Update available: v${result.version}` : 'Update available',
-          'success'
-        );
-      })
-      .catch(() => {
-        /* silent on launch — About tab manual check surfaces errors */
-      });
+    const unsub = vyotiq.app.onUpdateStatus((status) => {
+      if (cancelled || status.phase !== 'downloaded') return;
+      showToast(
+        status.version ? `Update v${status.version} ready — install from Settings → About` : 'Update ready to install',
+        'success'
+      );
+    });
     return () => {
       cancelled = true;
+      unsub();
     };
   }, [settingsReady, showToast]);
 
@@ -386,7 +395,9 @@ export default function App() {
     newConversation: fileActions.newConversation,
     openWorkspace: fileActions.openWorkspace,
     openSettings: () => toggleSettings(),
+    toggleTerminal: () => toggleTerminal(activeWorkspaceId),
     blockChatActions: () => useAppViewStore.getState().view === 'settings',
+    blockTerminal: () => useAppViewStore.getState().view === 'settings',
     reload: () => void vyotiq.window.reload(),
     toggleDevTools: () => void vyotiq.window.toggleDevTools()
   });
@@ -443,7 +454,11 @@ export default function App() {
             type="button"
             className="fixed inset-0 z-(--z-overlay-backdrop) bg-scrim"
             aria-label="Close panel"
-            onClick={() => closePreview()}
+            onClick={() => {
+              closePreview();
+              closeEditor();
+              closeTerminal();
+            }}
           />,
           document.body
         )}
@@ -453,6 +468,14 @@ export default function App() {
         onClose={closePreview}
         initialWidth={attachmentPreviewWidth.initialWidth}
         onWidthChange={attachmentPreviewWidth.onWidthChange}
+      />
+      <EditorPanel
+        initialWidth={editorPanelWidth.initialWidth}
+        onWidthChange={editorPanelWidth.onWidthChange}
+      />
+      <TerminalPanel
+        initialWidth={terminalPanelWidth.initialWidth}
+        onWidthChange={terminalPanelWidth.onWidthChange}
       />
       <Suspense fallback={<LoadingHint className="py-4" />}>
         <PromptDialog

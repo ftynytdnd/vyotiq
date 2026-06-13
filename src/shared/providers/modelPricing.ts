@@ -76,6 +76,37 @@ export function parseModelPricingFromRow(row: unknown): ModelPricing | undefined
   return out;
 }
 
+/**
+ * Merge pricing with provider-first precedence: primary wins per field;
+ * fallback fills only missing or zero fields.
+ */
+export function mergeModelPricing(
+  primary: ModelPricing | undefined,
+  fallback: ModelPricing | undefined
+): ModelPricing | undefined {
+  if (!primary && !fallback) return undefined;
+  if (!primary) return fallback ? { ...fallback } : undefined;
+  if (!fallback) return { ...primary };
+
+  const out: ModelPricing = { ...primary };
+  const fields: (keyof ModelPricing)[] = [
+    'inputPerMillion',
+    'outputPerMillion',
+    'perRequest',
+    'cachedInputPerMillion',
+    'cacheWriteInputPerMillion',
+    'reasoningPerMillion'
+  ];
+  for (const field of fields) {
+    const current = out[field];
+    const fb = fallback[field];
+    if ((current === undefined || current <= 0) && fb !== undefined && fb > 0) {
+      out[field] = fb;
+    }
+  }
+  return out;
+}
+
 /** Compact badge label, e.g. `$2/$12` (input/output per M). */
 export function formatModelPricingBadge(pricing: ModelPricing | undefined): string | null {
   if (!pricing) return null;

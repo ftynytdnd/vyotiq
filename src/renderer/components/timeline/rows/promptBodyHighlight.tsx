@@ -4,8 +4,16 @@
 
 import type { ReactNode } from 'react';
 import type { MentionRef } from '@shared/types/mention.js';
+import { isEditableTextFile } from '@shared/text/isEditableTextFile.js';
+import { openWorkspaceFileInEditor } from '../../../lib/openWorkspaceFileInEditor.js';
+import { useWorkspaceStore } from '../../../store/useWorkspaceStore.js';
 
 const PATH_LIKE = /@[\w./\\-]+/g;
+
+function mentionForToken(mentions: MentionRef[], token: string): MentionRef | undefined {
+  const label = token.slice(1);
+  return mentions.find((m) => m.label === label || `@${m.label}` === token);
+}
 
 export function renderPromptBodyContent(
   content: string,
@@ -25,11 +33,34 @@ export function renderPromptBodyContent(
     const start = match.index;
     if (start > last) parts.push(content.slice(last, start));
     const emphasized = highlightSet.has(token) || token.length > 2;
+    const mention = mentionForToken(mentions, token);
+    const path = mention?.workspacePath ?? mention?.label;
+    const openable =
+      mention?.kind === 'file' &&
+      typeof path === 'string' &&
+      path.length > 0 &&
+      isEditableTextFile(path);
+
     parts.push(
       emphasized ? (
-        <span key={`${start}-${token}`} className="vx-mention-highlight">
-          {token}
-        </span>
+        openable ? (
+          <button
+            key={`${start}-${token}`}
+            type="button"
+            className="vx-mention-highlight vx-mention-highlight--open"
+            onClick={() => {
+              const workspaceId = useWorkspaceStore.getState().activeId ?? undefined;
+              void openWorkspaceFileInEditor(path, { workspaceId });
+            }}
+            title={`Open ${path}`}
+          >
+            {token}
+          </button>
+        ) : (
+          <span key={`${start}-${token}`} className="vx-mention-highlight">
+            {token}
+          </span>
+        )
       ) : (
         token
       )

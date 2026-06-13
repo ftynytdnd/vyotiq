@@ -2,8 +2,10 @@
  * Attachment open helpers — in-app preview first, OS default app fallback.
  */
 
+import { isEditableTextFile } from '@shared/text/isEditableTextFile.js';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import { vyotiq } from './ipc.js';
+import { openWorkspaceFileInEditor } from './openWorkspaceFileInEditor.js';
 import { openWorkspaceFile } from './openPath.js';
 import { useToastStore } from '../store/useToastStore.js';
 import { useAttachmentPreviewStore } from '../store/useAttachmentPreviewStore.js';
@@ -38,7 +40,8 @@ export async function openAttachmentExternal(
   if (attachment.workspacePath && workspaceId) {
     return openWorkspaceFile(attachment.workspacePath, {
       workspaceId,
-      context: 'attachment'
+      context: 'attachment',
+      forceExternal: true
     });
   }
   if (attachment.storedPath) {
@@ -60,6 +63,15 @@ export async function openAttachment(
   attachment: PromptAttachmentMeta,
   workspaceId: string | null
 ): Promise<void> {
+  if (
+    attachment.workspacePath &&
+    workspaceId &&
+    isEditableTextFile(attachment.workspacePath)
+  ) {
+    const opened = await openWorkspaceFileInEditor(attachment.workspacePath, { workspaceId });
+    if (opened) return;
+  }
+
   if (!canPreviewAttachmentInApp(attachment)) {
     await openAttachmentExternal(attachment, workspaceId);
     return;

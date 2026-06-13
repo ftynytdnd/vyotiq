@@ -9,6 +9,11 @@
 
 import type { AppSettings } from '@shared/types/ipc.js';
 import type { ChatPermissions } from '@shared/types/chat.js';
+import {
+  mergeWorkspaceSpendStats,
+  normalizeWorkspaceSpendEntry,
+  type TurnUsageStatsDelta
+} from '@shared/types/usageStats.js';
 import { DEFAULT_PERMISSIONS } from '@shared/constants.js';
 import { resolveSettingsSectionId } from '@shared/settings/settingsSection.js';
 import { readBlob, updateBlob, type SettingsBlob } from './blob.js';
@@ -287,9 +292,13 @@ export async function setSettings(patch: Partial<AppSettings>): Promise<AppSetti
     const spendIncrement = patchUi?.workspaceSpendIncrement as
       | Record<string, number>
       | undefined;
+    const usageIncrement = patchUi?.workspaceUsageIncrement as
+      | Record<string, { spendUsd: number } & TurnUsageStatsDelta>
+      | undefined;
     const patchUiSansIncrement = patchUi ? { ...patchUi } : undefined;
-    if (patchUiSansIncrement && spendIncrement !== undefined) {
-      delete patchUiSansIncrement.workspaceSpendIncrement;
+    if (patchUiSansIncrement) {
+      if (spendIncrement !== undefined) delete patchUiSansIncrement.workspaceSpendIncrement;
+      if (usageIncrement !== undefined) delete patchUiSansIncrement.workspaceUsageIncrement;
     }
 
     const mergedUi: Record<string, unknown> = {
@@ -297,12 +306,25 @@ export async function setSettings(patch: Partial<AppSettings>): Promise<AppSetti
       ...(patchUiSansIncrement ?? {})
     };
     if (spendIncrement && Object.keys(spendIncrement).length > 0) {
-      const prev = (currentUi.workspaceSpendUsd as Record<string, number> | undefined) ?? {};
+      const prev = (currentUi.workspaceSpendUsd as Record<string, unknown> | undefined) ?? {};
       const next = { ...prev };
       for (const [workspaceId, delta] of Object.entries(spendIncrement)) {
         if (typeof delta === 'number' && Number.isFinite(delta) && delta > 0) {
-          next[workspaceId] = (next[workspaceId] ?? 0) + delta;
+          const base = normalizeWorkspaceSpendEntry(next[workspaceId] as never);
+          next[workspaceId] = mergeWorkspaceSpendStats(base, delta);
         }
+      }
+      mergedUi.workspaceSpendUsd = next;
+    }
+    if (usageIncrement && Object.keys(usageIncrement).length > 0) {
+      const prev = (currentUi.workspaceSpendUsd as Record<string, unknown> | undefined) ?? {};
+      const next = { ...prev };
+      for (const [workspaceId, delta] of Object.entries(usageIncrement)) {
+        const spendUsd = delta.spendUsd;
+        if (!Number.isFinite(spendUsd) || spendUsd <= 0) continue;
+        const base = normalizeWorkspaceSpendEntry(next[workspaceId] as never);
+        const { spendUsd: _s, ...stats } = delta;
+        next[workspaceId] = mergeWorkspaceSpendStats(base, spendUsd, stats);
       }
       mergedUi.workspaceSpendUsd = next;
     }

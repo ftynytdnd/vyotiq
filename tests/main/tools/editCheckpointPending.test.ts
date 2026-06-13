@@ -85,10 +85,10 @@ describe('edit tool — checkpoint pending integration', () => {
     expect(await fs.readFile(abs, 'utf8')).toBe('const v = 2;\n');
 
     const pending = await listPending(ctxBase.conversationId, [ctxBase.workspaceId]);
-    expect(pending).toHaveLength(0);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.filePath).toBe(filePath);
 
     const manifest = await getRunManifest(ctxBase.workspaceId, ctxBase.runId);
-    expect(manifest?.entries.length ?? 0).toBe(0);
-    expect(events.some((e) => e.kind === 'checkpoint-entry')).toBe(false);
+    expect(manifest?.entries.length ?? 0).toBe(1);
   });
 });

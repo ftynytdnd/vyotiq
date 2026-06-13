@@ -2,11 +2,13 @@
  * Dock unified-search file actions — preview in-app or attach to composer.
  */
 
+import { isEditableTextFile } from '@shared/text/isEditableTextFile.js';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import { MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
 import { randomId } from '../../lib/ids.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { openAttachment } from '../../lib/openAttachment.js';
+import { openWorkspaceFileInEditor } from '../../lib/openWorkspaceFileInEditor.js';
 import { useChatStore } from '../../store/useChatStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
@@ -43,6 +45,10 @@ function mergeAttachmentDraft(
 /** Open preview panel when supported; otherwise OS default. */
 export async function previewDockWorkspaceFile(path: string): Promise<void> {
   const workspaceId = useWorkspaceStore.getState().activeId;
+  if (workspaceId && isEditableTextFile(path)) {
+    const opened = await openWorkspaceFileInEditor(path, { workspaceId });
+    if (opened) return;
+  }
   await openAttachment(workspaceFileMeta(path), workspaceId);
 }
 

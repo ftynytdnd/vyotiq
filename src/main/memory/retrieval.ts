@@ -1,59 +1,38 @@
 /**
- * Naive keyword retrieval over the markdown memory store. Used at the start of
- * every turn to seed the `<recent_memory>` envelope.
+ * Hybrid keyword + vector retrieval over workspace notes and indexed code
+ * chunks. Seeds the `<recent_memory>` envelope each turn.
  */
 
+import { tokenizeForMemory } from '@shared/memory/textTokens.js';
 import { listWorkspaceNotes } from './workspaceNotes.js';
 import { readGlobalMetaRules } from './globalMeta.js';
 import { isRunProgressKey } from './runProgressNote.js';
+import { searchVectorIndex } from './vector/vectorSearch.js';
 
-interface ScoredNote {
+export interface ScoredNote {
   /**
-   * `workspace-recent` is the recency-fallback flavour: same on-disk
-   * file as `workspace`, but surfaced because the keyword scorer
-   * returned zero matches (see `retrieveRelevantMemory`). Kept as a
-   * distinct scope value so the agent can tell "relevant by content"
-   * apart from "surfaced by mtime" when reading `<recent_memory>`.
-   *
-   * `'global'` used to be in this union too, but no code path ever
-   * produces it — global meta-rules are returned as the separate
-   * `metaRules` string and rendered as their own `<meta_rules>`
-   * envelope, never as a `ScoredNote`. Keeping a dead branch here
-   * implied a channel that will never actually appear in
-   * `<recent_memory>`, so it was removed.
+   * `workspace-recent` — recency fallback when keyword + vector return zero.
+   * `workspace-code` — vector hit from an indexed source file chunk.
    */
-  scope: 'workspace' | 'workspace-recent';
+  scope: 'workspace' | 'workspace-recent' | 'workspace-code';
   key: string;
   content: string;
   score: number;
 }
 
-/**
- * Cap on the number of notes returned by the recency fallback. Two is
- * enough to give the agent a foothold on "what was being worked on
- * recently" without flooding `<recent_memory>` when the user sends a
- * single-token continuation prompt that doesn't keyword-match any
- * stored note. Keeping this below the `topN = 4` default of the main
- * scored path ensures the fallback is never mistaken for a scored hit.
- */
 const RECENCY_FALLBACK_N = 2;
+const KEYWORD_WEIGHT = 0.45;
+const VECTOR_WEIGHT = 0.55;
 
-const STOP = new Set([
-  'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'and', 'or', 'of',
-  'to', 'in', 'on', 'for', 'with', 'as', 'by', 'at', 'this', 'that',
-  'it', 'its', 'i', 'you', 'we', 'they', 'do', 'does', 'did', 'have',
-  'has', 'had', 'not', 'no', 'so', 'if', 'then', 'than', 'but', 'from'
-]);
-
-function tokenize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9_./-]+/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 2 && !STOP.has(w));
+interface Candidate {
+  scope: ScoredNote['scope'];
+  key: string;
+  content: string;
+  keywordScore: number;
+  vectorScore: number;
 }
 
-function score(haystack: string, queryTokens: string[]): number {
+function keywordScore(haystack: string, queryTokens: string[]): number {
   if (queryTokens.length === 0) return 0;
   const hay = haystack.toLowerCase();
   let s = 0;
@@ -67,59 +46,110 @@ function score(haystack: string, queryTokens: string[]): number {
   return s;
 }
 
+function mergeCandidates(candidates: Map<string, Candidate>, next: Candidate): void {
+  const id = `${next.scope}\u0000${next.key}`;
+  const existing = candidates.get(id);
+  if (!existing) {
+    candidates.set(id, next);
+    return;
+  }
+  existing.keywordScore = Math.max(existing.keywordScore, next.keywordScore);
+  existing.vectorScore = Math.max(existing.vectorScore, next.vectorScore);
+  if (next.vectorScore > existing.vectorScore || next.content.length > existing.content.length) {
+    existing.content = next.content;
+  }
+}
+
+function finalizeCandidates(candidates: Iterable<Candidate>, topN: number): ScoredNote[] {
+  const list = [...candidates];
+  if (list.length === 0) return [];
+  const maxKeyword = Math.max(1, ...list.map((c) => c.keywordScore));
+  const scored = list.map((c) => {
+    const kw = c.keywordScore / maxKeyword;
+    const vec = c.vectorScore;
+    const hybrid =
+      c.keywordScore > 0 && vec > 0
+        ? KEYWORD_WEIGHT * kw + VECTOR_WEIGHT * vec
+        : c.keywordScore > 0
+          ? kw
+          : vec;
+    return {
+      scope: c.scope,
+      key: c.key,
+      content: c.content,
+      score: hybrid
+    } satisfies ScoredNote;
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored.filter((n) => n.score > 0).slice(0, topN);
+}
+
 /**
- * Returns the top-N most relevant notes for a query, plus the global meta-rules
- * (always included in full).
- *
- * Recency fallback (screenshots §4 regression): short continuation
- * prompts tokenize to one or two stop-word-stripped tokens that almost
- * never match any note body — so `<recent_memory>` always came back
- * empty, reinforcing the agent's false "this session is fresh"
- * conclusion. When the scored path returns zero matches AND any notes
- * exist on disk, we surface the
- * `RECENCY_FALLBACK_N` most-recently-updated notes (already sorted
- * by `listWorkspaceNotes()` via mtime desc) under a distinct
- * `scope: 'workspace-recent'` tag and with a short prefix so the
- * agent can distinguish this from a scored hit.
+ * Returns the top-N most relevant notes/chunks for a query, plus global meta-rules.
  */
 export async function retrieveRelevantMemory(
   query: string,
   topN = 4,
-  /**
-   * Pinned workspace path. Routes the note listing to the run's
-   * workspace rather than the globally-active one. Optional for
-   * backward compatibility with renderer-initiated callers (e.g. the
-   * Settings → Memory tab) that always reflect the active workspace.
-   */
   workspacePath?: string
 ): Promise<{ metaRules: string; notes: ScoredNote[] }> {
-  const tokens = tokenize(query);
+  const tokens = tokenizeForMemory(query);
   let rawNotes: Awaited<ReturnType<typeof listWorkspaceNotes>> = [];
   try {
     rawNotes = await listWorkspaceNotes(workspacePath);
   } catch {
     // No workspace yet — that's fine.
   }
-  const scored: ScoredNote[] = rawNotes
-    .filter((n) => !isRunProgressKey(n.key))
-    .map((n) => ({
-    scope: 'workspace' as const,
-    key: n.key,
-    content: n.content,
-    score: score(n.content + ' ' + n.key, tokens)
-  }));
-  scored.sort((a, b) => b.score - a.score);
-  const top = scored.filter((n) => n.score > 0).slice(0, topN);
+
+  const candidates = new Map<string, Candidate>();
+  for (const n of rawNotes) {
+    if (isRunProgressKey(n.key)) continue;
+    const kw = keywordScore(n.content + ' ' + n.key, tokens);
+    if (kw > 0) {
+      mergeCandidates(candidates, {
+        scope: 'workspace',
+        key: n.key,
+        content: n.content,
+        keywordScore: kw,
+        vectorScore: 0
+      });
+    }
+  }
+
+  if (workspacePath) {
+    try {
+      const hits = await searchVectorIndex(workspacePath, query);
+      for (const hit of hits) {
+        if (hit.similarity <= 0.05) continue;
+        if (hit.sourceKind === 'note') {
+          mergeCandidates(candidates, {
+            scope: 'workspace',
+            key: hit.sourceKey,
+            content: hit.content,
+            keywordScore: 0,
+            vectorScore: hit.similarity
+          });
+        } else {
+          mergeCandidates(candidates, {
+            scope: 'workspace-code',
+            key: hit.relPath,
+            content: `(vector match — \`${hit.relPath}\` chunk ${hit.chunkIndex + 1})\n\n${hit.content}`,
+            keywordScore: 0,
+            vectorScore: hit.similarity
+          });
+        }
+      }
+    } catch {
+      // Vector index is best-effort; keyword path still works.
+    }
+  }
+
+  const top = finalizeCandidates(candidates.values(), topN);
   const metaRules = await readGlobalMetaRules();
 
-  // Scored path hit something — return it unchanged.
   if (top.length > 0) {
     return { metaRules, notes: top };
   }
-  // Recency fallback. `rawNotes` is already mtime-desc (see
-  // `listWorkspaceNotes`), so taking the first N gives us the most-
-  // recent survivors for free. Prepend a one-line note so the agent
-  // treats these as "recent work" rather than "query-relevant".
+
   if (rawNotes.length > 0) {
     const fallback: ScoredNote[] = rawNotes
       .filter((n) => !isRunProgressKey(n.key))

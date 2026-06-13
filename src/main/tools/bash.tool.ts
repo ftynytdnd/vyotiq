@@ -18,6 +18,7 @@ import { promises as fs } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import type { Tool } from './types.js';
+import type { ToolContext } from './types.js';
 import type { ToolResult } from '@shared/types/tool.js';
 import type { CheckpointChangeKind } from '@shared/types/checkpoint.js';
 import {
@@ -35,6 +36,8 @@ import {
 } from '@shared/constants.js';
 import { recordChange } from '../checkpoints/index.js';
 import { computeDiffHunks } from '@shared/text/diff/computeDiffHunks.js';
+import { buildBashEnv } from '../terminal/bashEnv.js';
+import { hasWorkspacePty, runAgentCommandInPty } from '../terminal/ptyManager.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child('tools/bash');
@@ -571,6 +574,8 @@ const MAX_OUTPUT_CHARS = 64 * 1024;
 interface BashArgs {
   command: string;
   timeoutMs?: number;
+  /** When false, always spawn an isolated shell instead of the shared PTY. */
+  shared?: boolean;
 }
 
 function platformShell(): { cmd: string; args: (command: string) => string[] } {
@@ -613,96 +618,76 @@ export function killBashProcessTree(pid: number, signal: 'SIGTERM' | 'SIGKILL' =
   }
 }
 
-/**
- * Privacy-allowlisted env for the bash child. See the call-site comment
- * in `run()` for the full rationale (Audit fix H-01). The allowlist is
- * deliberately minimal: PATH (command resolution), Windows / *nix
- * location vars (so things like `$HOME` and `$USERPROFILE` resolve),
- * locale (so `git`, `python`, etc. produce expected text encoding),
- * and TERM (so commands that probe `isatty` get a sensible answer).
- *
- * Kept as an exported function with a per-process snapshot so a future
- * test can stub `process.env` and assert the projection. Never includes
- * any var whose name matches the secret-y patterns even if the var ends
- * up in the allowlist (defense in depth — `PATH` itself can technically
- * be a vector, but it's required for shells to function).
- */
-const BASH_ENV_ALLOWLIST = new Set<string>([
-  // Command resolution
-  'PATH',
-  'PATHEXT',
-  // Windows location / shell support
-  'SystemRoot',
-  'SystemDrive',
-  'WINDIR',
-  'COMSPEC',
-  'TEMP',
-  'TMP',
-  'PSModulePath',
-  // *nix location / shell support (HOME is intentionally allowed —
-  // many tools probe `~/.cache`, `~/.config`, etc.; the model can't
-  // exfiltrate $HOME's value without echoing it explicitly, and the
-  // value is not a secret on its own).
-  'HOME',
-  'USER',
-  'LOGNAME',
-  'SHELL',
-  'TMPDIR',
-  // Windows user identity (same rationale as HOME — surfaced in
-  // shell prompts and tool output already)
-  'USERPROFILE',
-  'USERNAME',
-  'APPDATA',
-  'LOCALAPPDATA',
-  // Locale + terminal — keeps `git log`, `python`, `ls --color`, etc.
-  // producing the user's expected output shape.
-  'LANG',
-  'LANGUAGE',
-  'LC_ALL',
-  'LC_CTYPE',
-  'LC_MESSAGES',
-  'TERM',
-  'COLORTERM',
-  // Time zone for date-aware commands
-  'TZ'
-]);
-
-/**
- * Patterns that mark a variable name as secret-shaped. Any allowlisted
- * var whose name matches is still dropped — defense in depth in case a
- * user / tool ever sets e.g. `PATH_API_KEY` (unusual but the regex is
- * permissive on purpose).
- */
-const SECRET_NAME_RE = /(?:^|_)(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|API|AUTH|CREDENTIAL|BEARER|COOKIE|SESSION)(?:_|$)/i;
-
-/** Credential-shaped env names never forwarded to the bash child. */
-const CREDENTIAL_ENV_DENYLIST: ReadonlyArray<RegExp> = [
-  /^STRIPE_/i,
-  /^AWS_/i,
-  /^GITHUB_/i,
-  /^DATABASE_URL$/i,
-  /^MONGO_URI$/i,
-  /^REDIS_URL$/i,
-  /^VYOTIQ_/i
-];
-
-function isDeniedBashEnvName(name: string): boolean {
-  if (SECRET_NAME_RE.test(name)) return true;
-  return CREDENTIAL_ENV_DENYLIST.some((re) => re.test(name));
-}
-
-function buildBashEnv(): NodeJS.ProcessEnv {
-  const out: NodeJS.ProcessEnv = {};
-  for (const name of BASH_ENV_ALLOWLIST) {
-    const v = process.env[name];
-    if (typeof v !== 'string' || v.length === 0) continue;
-    // Belt-and-suspenders: even allowlisted names get the secret-shape
-    // check. A user with `LANG_API_TOKEN=…` (unusual) is still safe.
-    if (isDeniedBashEnvName(name)) continue;
-    out[name] = v;
+async function runPostBashMutationScan(
+  command: string,
+  ctx: ToolContext,
+  preSnap: PreSnapshot
+): Promise<void> {
+  if (!bashCommandLikelyMutates(command)) {
+    log.debug('post-bash scan skipped: read-only command heuristic');
+    return;
   }
-  return out;
+  if (ctx.signal.aborted) {
+    log.debug('post-bash scan skipped: run aborted before scan started');
+    return;
+  }
+  try {
+    const postScan = await scanWorkspaceMtimesOnly(ctx.workspacePath, ctx.signal);
+    if (ctx.signal.aborted) return;
+    const { mutations, auditOnlyPaths } = await computeMutations(
+      ctx.workspacePath,
+      preSnap,
+      postScan.mtimes,
+      postScan.truncated
+    );
+    if (ctx.signal.aborted) return;
+    for (const m of mutations) {
+      if (ctx.signal.aborted) return;
+      try {
+        const preContent = m.preBody ?? '';
+        const postContent = m.postBody ?? '';
+        const stats = diffStats(preContent, postContent);
+        const hunks =
+          m.kind === 'modify' ? computeDiffHunks(preContent, postContent) : undefined;
+        await recordChange({
+          runId: ctx.runId,
+          conversationId: ctx.conversationId,
+          workspaceId: ctx.workspaceId,
+          filePath: m.relPath,
+          kind: m.kind,
+          ...(m.kind !== 'create' ? { preContent } : {}),
+          ...(m.kind !== 'delete' ? { postContent } : {}),
+          additions: stats.additions,
+          deletions: stats.deletions,
+          ...(hunks ? { hunks } : {}),
+          source: 'bash'
+        });
+      } catch (err) {
+        log.debug('bash recordChange failed; continuing', {
+          path: m.relPath,
+          err: err instanceof Error ? err.message : String(err)
+        });
+      }
+    }
+    if (auditOnlyPaths.length > 0 && !ctx.signal.aborted) {
+      ctx.emit({
+        kind: 'checkpoint-bash-mutation',
+        id: randomUUID(),
+        ts: Date.now(),
+        command,
+        paths: auditOnlyPaths
+      });
+    }
+  } catch (err) {
+    log.debug('post-bash mutation scan failed', {
+      err: err instanceof Error ? err.message : String(err)
+    });
+  }
 }
+
+/**
+ * Privacy-allowlisted env — see `src/main/terminal/bashEnv.ts`.
+ */
 
 export const bashTool: Tool = {
   name: 'bash',
@@ -748,6 +733,11 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
           timeoutMs: {
             type: 'number',
             description: 'Optional timeout in milliseconds. Default 30000.'
+          },
+          shared: {
+            type: 'boolean',
+            description:
+              'When true (default), run in the shared workspace PTY when the terminal panel is open; false spawns an isolated shell.'
           }
         },
         required: ['command']
@@ -818,6 +808,7 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
     const requested =
       typeof a.timeoutMs === 'number' && a.timeoutMs > 0 ? a.timeoutMs : BASH_TIMEOUT_MS;
     const timeoutMs = Math.min(requested, BASH_MAX_TIMEOUT_MS);
+    const isWin = process.platform === 'win32';
 
     // Pre-snapshot BEFORE the spawn so we can recover (or audit) file
     // mutations bash performed (rm / mv / `> file` / sed -i / etc.).
@@ -832,6 +823,54 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
       });
       return { entries: new Map<string, PreSnapshotEntry>(), truncated: false, capturedBytes: 0 };
     });
+
+    const useSharedPty = a.shared !== false && hasWorkspacePty(ctx.workspaceId);
+    if (useSharedPty) {
+      const ptyRun = await runAgentCommandInPty(
+        ctx.workspaceId,
+        command,
+        timeoutMs,
+        ctx.signal
+      );
+      if (ptyRun) {
+        const shellRuntime = isWin ? ('powershell' as const) : ('bash' as const);
+        const stdout = ptyRun.output;
+        const stdoutTruncated = ptyRun.truncated;
+        const exitLine = ptyRun.timedOut
+          ? '--- exit: TIMEOUT ---'
+          : `--- exit: ${ptyRun.exitCode} ---`;
+        const stdoutTail = stdoutTruncated ? '\n…[truncated]' : '';
+        const merged =
+          (stdout ? `--- stdout ---\n${stdout}${stdoutTail}\n` : '') + exitLine;
+        const ok = !ptyRun.timedOut && ptyRun.exitCode === 0;
+        const errorField = ptyRun.timedOut
+          ? `timed out after ${timeoutMs}ms`
+          : ptyRun.exitCode !== 0
+            ? `exited with code ${ptyRun.exitCode}`
+            : null;
+        await runPostBashMutationScan(command, ctx, preSnap);
+        return {
+          id,
+          name: 'bash',
+          ok,
+          output: merged.trim(),
+          data: {
+            tool: 'bash',
+            command,
+            runtime: shellRuntime,
+            stdout,
+            stderr: '',
+            exitCode: ptyRun.exitCode,
+            signal: null,
+            timedOut: ptyRun.timedOut,
+            stdoutTruncated,
+            stderrTruncated: false
+          },
+          ...(errorField ? { error: errorField } : {}),
+          durationMs: Date.now() - started
+        };
+      }
+    }
 
     return await new Promise<ToolResult>((resolveResult) => {
       let stdout = '';
@@ -864,7 +903,6 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
         resolveResult(result);
       };
 
-      const isWin = process.platform === 'win32';
       const shellRuntime = isWin ? ('powershell' as const) : ('bash' as const);
       const child = spawn(cmd, argsFor(command), {
         cwd: ctx.workspacePath,
@@ -1053,88 +1091,6 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
         //   4. Emit one `checkpoint-bash-mutation` if any audit-only
         //      paths exist. A flurry of these implies the agent is
         //      bypassing the `edit` / `delete` tools with bash.
-        const runPostBashScan = async (): Promise<void> => {
-          if (!bashCommandLikelyMutates(command)) {
-            log.debug('post-bash scan skipped: read-only command heuristic');
-            return;
-          }
-          // The post-bash mutation scan no longer emits a "Scanning
-          // workspace for mutations…" timeline row — it fired on every
-          // mutating bash call and added noise. Any actual mutations it
-          // finds still surface as checkpoint / audit rows below.
-          // Audit fix H-03: post-bash scan must respect the run-scoped
-          // signal. Without these checks the scan walks the entire
-          // workspace tree after bash settles, and every
-          // `recordChange` / `checkpoint-bash-mutation` emit pushes
-          // through `ctx.emit` even after the orchestrator loop's
-          // `disposeStreaming` ran for an aborted/finalised run.
-          // The renderer reducer drops events for runIds it no
-          // longer recognises, but the JSONL `appendEvent` chain
-          // still persists them — observable as ghost checkpoint
-          // rows on transcript reload after a Stop.
-          if (ctx.signal.aborted) {
-            log.debug('post-bash scan skipped: run aborted before scan started');
-            return;
-          }
-          try {
-            const postScan = await scanWorkspaceMtimesOnly(ctx.workspacePath, ctx.signal);
-            if (ctx.signal.aborted) return;
-            const { mutations, auditOnlyPaths } = await computeMutations(
-              ctx.workspacePath,
-              preSnap,
-              postScan.mtimes,
-              postScan.truncated
-            );
-            if (ctx.signal.aborted) return;
-            for (const m of mutations) {
-              if (ctx.signal.aborted) return;
-              try {
-                const preContent = m.preBody ?? '';
-                const postContent = m.postBody ?? '';
-                const stats = diffStats(preContent, postContent);
-                // Hunks are only useful for `modify`; `create` /
-                // `delete` are rendered by the pending panel as
-                // full-body previews.
-                const hunks =
-                  m.kind === 'modify'
-                    ? computeDiffHunks(preContent, postContent)
-                    : undefined;
-                await recordChange({
-                  runId: ctx.runId,
-                  conversationId: ctx.conversationId,
-                  workspaceId: ctx.workspaceId,
-                  filePath: m.relPath,
-                  kind: m.kind,
-                  ...(m.kind !== 'create' ? { preContent } : {}),
-                  ...(m.kind !== 'delete' ? { postContent } : {}),
-                  additions: stats.additions,
-                  deletions: stats.deletions,
-                  ...(hunks ? { hunks } : {}),
-                  source: 'bash',
-                });
-              } catch (err) {
-                log.debug('bash recordChange failed; continuing', {
-                  path: m.relPath,
-                  err: err instanceof Error ? err.message : String(err)
-                });
-              }
-            }
-            if (auditOnlyPaths.length > 0 && !ctx.signal.aborted) {
-              ctx.emit({
-                kind: 'checkpoint-bash-mutation',
-                id: randomUUID(),
-                ts: Date.now(),
-                command,
-                paths: auditOnlyPaths,
-              });
-            }
-          } catch (err) {
-            log.debug('post-bash mutation scan failed', {
-              err: err instanceof Error ? err.message : String(err)
-            });
-          }
-        };
-
         const exitLine = timedOut
           ? '--- exit: TIMEOUT ---'
           : code === null
@@ -1161,7 +1117,7 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
         // never lost to a scan failure. The `durationMs` field is
         // recomputed inside `settle` to include the scan time so
         // downstream telemetry is honest about the wait.
-        runPostBashScan().finally(() => {
+        runPostBashMutationScan(command, ctx, preSnap).finally(() => {
           settle({
             id,
             name: 'bash',

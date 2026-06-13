@@ -2,6 +2,7 @@
  * Top-level error row — terminal run failures (provider errors, etc.).
  */
 
+import { useEffect, useRef } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { formatTokenCountWithUnit } from '../../../lib/formatTokens.js';
 import type { TokenUsageAggregate } from '../reducer/types.js';
@@ -10,7 +11,7 @@ import { cn } from '../../../lib/cn.js';
 import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../../lib/shellIcons.js';
 import { Button } from '../../ui/Button.js';
 import { formatDuration, formatWallClock } from './RunCompleteRow.js';
-import { estimateCostForUsage, resolveModelForPrompt } from '../../../lib/workspaceSpend.js';
+import { estimateCostForUsage, estimateRunCostBreakdown, estimateRunCostUsd, buildTurnUsageStatsDelta, recordRunSpendForPrompt, resolveModelForPrompt } from '../../../lib/workspaceSpend.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import { useConversationsStore } from '../../../store/useConversationsStore.js';
 import { useProviderStore } from '../../../store/useProviderStore.js';
@@ -23,6 +24,7 @@ interface ErrorRowProps {
   usage?: TokenUsageAggregate;
   editCount?: number;
   fileCount?: number;
+  commandCount?: number;
   onRetry?: () => void;
   onOpenProviders?: () => void;
   showProviders?: boolean;
@@ -34,10 +36,11 @@ function ErrorRunMeta({
   completedAt,
   usage,
   editCount,
-  fileCount
+  fileCount,
+  commandCount
 }: Pick<
   ErrorRowProps,
-  'promptId' | 'durationMs' | 'completedAt' | 'usage' | 'editCount' | 'fileCount'
+  'promptId' | 'durationMs' | 'completedAt' | 'usage' | 'editCount' | 'fileCount' | 'commandCount'
 >) {
   const conversationId = useChatStore((s) => s.conversationId);
   const events = useChatStore((s) => s.events);
@@ -77,6 +80,20 @@ function ErrorRunMeta({
   if (typeof fileCount === 'number' && fileCount > 0) {
     stats.push(`${fileCount} file${fileCount === 1 ? '' : 's'}`);
   }
+  if (typeof commandCount === 'number' && commandCount > 0) {
+    stats.push(`${commandCount} command${commandCount === 1 ? '' : 's'}`);
+  }
+
+  const cachedTokens = usage?.cumulative.cachedPromptTokens ?? 0;
+  const uncachedTokens = usage?.cumulative.uncachedPromptTokens ?? 0;
+  const cacheParts: string[] = [];
+  if (cachedTokens > 0) {
+    cacheParts.push(`${formatTokenCountWithUnit(cachedTokens)} cached`);
+  }
+  if (uncachedTokens > 0) {
+    cacheParts.push(`${formatTokenCountWithUnit(uncachedTokens)} uncached`);
+  }
+  const cacheLabel = cacheParts.length > 0 ? cacheParts.join(' · ') : null;
 
   const timeLabel = formatWallClock(completedAt);
 
@@ -91,6 +108,7 @@ function ErrorRunMeta({
         `done in ${formatDuration(durationMs)}`,
         costLabel ? `~${costLabel}` : null,
         tokenLabel,
+        cacheLabel,
         timeLabel
       ]
         .filter(Boolean)
@@ -121,6 +139,14 @@ function ErrorRunMeta({
           <span className="font-mono tabular-nums">{tokenLabel}</span>
         </>
       ) : null}
+      {cacheLabel !== null ? (
+        <>
+          <span aria-hidden className="text-text-faint/70">
+            {' · '}
+          </span>
+          <span className="font-mono tabular-nums text-text-faint">{cacheLabel}</span>
+        </>
+      ) : null}
       <span aria-hidden className="text-text-faint/70">
         {' · '}
       </span>
@@ -139,10 +165,50 @@ export function ErrorRow({
   usage,
   editCount,
   fileCount,
+  commandCount,
   onRetry,
   onOpenProviders,
   showProviders = false
 }: ErrorRowProps) {
+  const conversationId = useChatStore((s) => s.conversationId);
+  const events = useChatStore((s) => s.events);
+  const providers = useProviderStore((s) => s.providers);
+  const conversationMeta = useConversationsStore((s) =>
+    conversationId ? (s.list.find((m) => m.id === conversationId) ?? null) : null
+  );
+  const workspaceId = conversationMeta?.workspaceId ?? null;
+
+  const modelForCost =
+    promptId !== undefined
+      ? resolveModelForPrompt(
+          events,
+          promptId,
+          conversationMeta?.lastProviderId && conversationMeta?.lastModelId
+            ? {
+                providerId: conversationMeta.lastProviderId,
+                modelId: conversationMeta.lastModelId
+              }
+            : null
+        )
+      : null;
+  const costUsd =
+    usage && modelForCost && usage.cumulative.totalTokens > 0
+      ? estimateRunCostUsd(modelForCost, providers, usage.cumulative)
+      : null;
+  const costBreakdown =
+    usage && modelForCost
+      ? estimateRunCostBreakdown(modelForCost, providers, usage.cumulative)
+      : null;
+
+  const spendRecordedRef = useRef(false);
+  useEffect(() => {
+    if (spendRecordedRef.current || costUsd === null || !promptId) return;
+    if (!workspaceId && !conversationId) return;
+    spendRecordedRef.current = true;
+    const stats = buildTurnUsageStatsDelta(usage!.cumulative, costBreakdown);
+    void recordRunSpendForPrompt(workspaceId, conversationId, promptId, costUsd, stats);
+  }, [workspaceId, conversationId, costUsd, costBreakdown, promptId, usage]);
+
   return (
     <div
       className={cn(
@@ -168,6 +234,7 @@ export function ErrorRow({
         usage={usage}
         editCount={editCount}
         fileCount={fileCount}
+        commandCount={commandCount}
       />
       {(onRetry || (showProviders && onOpenProviders)) && (
         <div className="flex flex-wrap items-center gap-2 pl-6">

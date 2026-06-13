@@ -25,7 +25,7 @@
  */
 
 import { create } from 'zustand';
-import type { ConversationMeta, TimelineEvent } from '@shared/types/chat.js';
+import type { ConversationMeta, TimelineEvent, TranscriptPaging } from '@shared/types/chat.js';
 import { vyotiq } from '../lib/ipc.js';
 import { logger } from '../lib/logger.js';
 import { useChatStore } from './useChatStore.js';
@@ -416,14 +416,16 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
 
     let events: TimelineEvent[] = [];
     let peakPromptTokens: number | undefined;
+    let paging: TranscriptPaging | null = null;
     try {
-      const conv = await vyotiq.conversations.read(id);
+      const conv = await vyotiq.conversations.readTail(id);
       if (conv) {
         events = conv.events;
         peakPromptTokens = conv.peakPromptTokens;
+        paging = conv.paging;
       }
     } catch (err) {
-      log.error('conversations.read failed', { err });
+      log.error('conversations.readTail failed', { err });
     } finally {
       selectReadInFlight = Math.max(0, selectReadInFlight - 1);
       syncSelecting(set);
@@ -444,21 +446,23 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
         list: patchListPeak(s.list, id, peakPromptTokens)
       };
     });
-    useChatStore.getState().setTranscript(id, events);
+    useChatStore.getState().setTranscript(id, events, paging);
   },
 
   prewarm: async (id) => {
     if (get().hydratedIds.has(id)) return;
     let events: TimelineEvent[] = [];
     let peakPromptTokens: number | undefined;
+    let paging: TranscriptPaging | null = null;
     try {
-      const conv = await vyotiq.conversations.read(id);
+      const conv = await vyotiq.conversations.readTail(id);
       if (conv) {
         events = conv.events;
         peakPromptTokens = conv.peakPromptTokens;
+        paging = conv.paging;
       }
     } catch (err) {
-      log.warn('prewarm: conversations.read failed', { err, id });
+      log.warn('prewarm: conversations.readTail failed', { err, id });
       return;
     }
     // Re-check after the await — `select(id)` may have hydrated this
@@ -473,7 +477,7 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
         list: patchListPeak(s.list, id, peakPromptTokens)
       };
     });
-    useChatStore.getState().prewarmSlice(id, events);
+    useChatStore.getState().prewarmSlice(id, events, paging);
   },
 
   markSliceUnloaded: (id) => {

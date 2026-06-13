@@ -34,6 +34,10 @@ import { useRevertPrompt } from '../timeline/revert/RevertPromptContext.js';
 import { useComposerTokenEstimate } from './useComposerTokenEstimate.js';
 import { resolveComposerPlaceholder } from './composerPlaceholder.js';
 import { useProviderAccountPollSource } from '../../lib/useProviderAccountPollSource.js';
+import {
+  resolveCompletionModelSelection,
+  resolveInlineCompletionSettings
+} from '@shared/settings/inlineCompletionSettings.js';
 
 const TEXTAREA_MAX_HEIGHT = 168;
 
@@ -176,6 +180,30 @@ export function Composer({
     'composer',
     composerFocused || isProcessing || Boolean(pendingAskUser)
   );
+
+  const composerInlineCompletion = useMemo(() => {
+    const ic = resolveInlineCompletionSettings(settings.ui);
+    const completionModel = resolveCompletionModelSelection(ic, model);
+    const enabled =
+      ic.enabled &&
+      ic.composerEnabled &&
+      composerFocused &&
+      !isProcessing &&
+      !awaitingAskUser;
+    return {
+      enabled,
+      debounceMs: ic.debounceMs,
+      model: enabled ? completionModel : null,
+      workspaceId: activeWorkspaceIdForAttach
+    };
+  }, [
+    activeWorkspaceIdForAttach,
+    awaitingAskUser,
+    composerFocused,
+    isProcessing,
+    model,
+    settings.ui
+  ]);
 
   const handleSend = async () => {
     if (isProcessing && !awaitingAskUser) {
@@ -353,7 +381,8 @@ export function Composer({
               onPaste={onPaste}
               requestFocus={requestFocus}
               focusSession={focusSession}
-              ariaKeyshortcuts="Enter Shift+Enter ArrowUp ArrowDown Escape"
+              inlineCompletion={composerInlineCompletion}
+              ariaKeyshortcuts="Enter Shift+Enter ArrowUp ArrowDown Escape Tab"
               placeholder={placeholder}
               className={cn(
                 'min-w-0 flex-1',

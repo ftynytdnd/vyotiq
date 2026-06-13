@@ -30,7 +30,7 @@ const UI_RECORD_KEYS = [
   'pinnedConversationIds'
 ] as const;
 
-const UI_NESTED_OBJECT_KEYS = ['reports', 'promptCaching', 'agentBehavior'] as const;
+const UI_NESTED_OBJECT_KEYS = ['reports', 'promptCaching', 'inlineCompletion', 'agentBehavior'] as const;
 
 const REPORTS_BOOLEAN_KEYS = [
   'autoOpenReports',
@@ -95,7 +95,8 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
       (UI_NESTED_OBJECT_KEYS as readonly string[]).includes(key) ||
       key === 'favoriteModels' ||
       key === 'workspaceSpendUsd' ||
-      key === 'workspaceSpendIncrement';
+      key === 'workspaceSpendIncrement' ||
+      key === 'workspaceUsageIncrement';
     if (!allowed) {
       throw new Error(`${channel}: patch.ui.${key} is not a recognized ui field`);
     }
@@ -183,7 +184,19 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
     assertRecordKeyCount(channel, 'patch.ui.workspaceSpendUsd', map, UI_RECORD_MAX_KEYS);
     for (const [wsId, spend] of Object.entries(map)) {
       assertString(channel, 'patch.ui.workspaceSpendUsd key', wsId);
-      assertNumber(channel, `patch.ui.workspaceSpendUsd[${wsId}]`, spend, { min: 0, max: 1_000_000 });
+      if (typeof spend === 'number') {
+        assertNumber(channel, `patch.ui.workspaceSpendUsd[${wsId}]`, spend, {
+          min: 0,
+          max: 1_000_000
+        });
+      } else {
+        assertObject(channel, `patch.ui.workspaceSpendUsd[${wsId}]`, spend);
+        const stats = spend as Record<string, unknown>;
+        assertNumber(channel, `patch.ui.workspaceSpendUsd[${wsId}].spendUsd`, stats.spendUsd, {
+          min: 0,
+          max: 1_000_000
+        });
+      }
     }
   }
   if ('workspaceSpendIncrement' in ui && ui.workspaceSpendIncrement !== undefined) {
@@ -193,6 +206,20 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
     for (const [wsId, delta] of Object.entries(map)) {
       assertString(channel, 'patch.ui.workspaceSpendIncrement key', wsId);
       assertNumber(channel, `patch.ui.workspaceSpendIncrement[${wsId}]`, delta, {
+        min: 0,
+        max: 1_000_000
+      });
+    }
+  }
+  if ('workspaceUsageIncrement' in ui && ui.workspaceUsageIncrement !== undefined) {
+    assertObject(channel, 'patch.ui.workspaceUsageIncrement', ui.workspaceUsageIncrement);
+    const map = ui.workspaceUsageIncrement as Record<string, unknown>;
+    assertRecordKeyCount(channel, 'patch.ui.workspaceUsageIncrement', map, UI_RECORD_MAX_KEYS);
+    for (const [wsId, delta] of Object.entries(map)) {
+      assertString(channel, 'patch.ui.workspaceUsageIncrement key', wsId);
+      assertObject(channel, `patch.ui.workspaceUsageIncrement[${wsId}]`, delta);
+      const d = delta as Record<string, unknown>;
+      assertNumber(channel, `patch.ui.workspaceUsageIncrement[${wsId}].spendUsd`, d.spendUsd, {
         min: 0,
         max: 1_000_000
       });
@@ -242,6 +269,40 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
         promptCaching.anthropicCacheTtl,
         PROMPT_CACHING_TTL_VALUES
       );
+    }
+  }
+  if ('inlineCompletion' in ui && ui.inlineCompletion !== undefined) {
+    assertObject(channel, 'patch.ui.inlineCompletion', ui.inlineCompletion);
+    const inlineCompletion = ui.inlineCompletion as Record<string, unknown>;
+    const INLINE_COMPLETION_BOOLEAN_KEYS = ['enabled', 'editorEnabled', 'composerEnabled'] as const;
+    for (const key of Object.keys(inlineCompletion)) {
+      const allowed =
+        (INLINE_COMPLETION_BOOLEAN_KEYS as readonly string[]).includes(key) ||
+        key === 'providerId' ||
+        key === 'modelId' ||
+        key === 'debounceMs';
+      if (!allowed) {
+        throw new Error(
+          `${channel}: patch.ui.inlineCompletion.${key} is not a recognized inlineCompletion field`
+        );
+      }
+    }
+    for (const k of INLINE_COMPLETION_BOOLEAN_KEYS) {
+      if (k in inlineCompletion && inlineCompletion[k] !== undefined) {
+        assertBoolean(channel, `patch.ui.inlineCompletion.${k}`, inlineCompletion[k]);
+      }
+    }
+    if ('providerId' in inlineCompletion && inlineCompletion.providerId !== undefined) {
+      assertString(channel, 'patch.ui.inlineCompletion.providerId', inlineCompletion.providerId);
+    }
+    if ('modelId' in inlineCompletion && inlineCompletion.modelId !== undefined) {
+      assertString(channel, 'patch.ui.inlineCompletion.modelId', inlineCompletion.modelId);
+    }
+    if ('debounceMs' in inlineCompletion && inlineCompletion.debounceMs !== undefined) {
+      assertNumber(channel, 'patch.ui.inlineCompletion.debounceMs', inlineCompletion.debounceMs, {
+        min: 150,
+        max: 2000
+      });
     }
   }
   if ('agentBehavior' in ui && ui.agentBehavior !== undefined) {

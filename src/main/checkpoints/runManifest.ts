@@ -170,3 +170,48 @@ export async function listRunHeads(workspaceId: string): Promise<
   out.sort((a, b) => b.startedAt - a.startedAt);
   return out;
 }
+
+/** Append one entry to an open run manifest. */
+export async function appendEntry(entry: import('@shared/types/checkpoint.js').CheckpointEntry): Promise<void> {
+  let manifest = cache.get(entry.runId);
+  if (!manifest) {
+    const loaded = await readRun(entry.workspaceId, entry.runId);
+    if (!loaded) {
+      log.warn('appendEntry: run manifest missing', { runId: entry.runId });
+      return;
+    }
+    manifest = loaded;
+    cache.set(entry.runId, manifest);
+  }
+  manifest.entries.push(entry);
+  await serialize(entry.runId, () => persist(manifest!));
+}
+
+/** Mark one manifest entry as reverted. */
+export async function markEntryReverted(
+  workspaceId: string,
+  runId: string,
+  entryId: string
+): Promise<void> {
+  const manifest = await readRun(workspaceId, runId);
+  if (!manifest) return;
+  const entry = manifest.entries.find((e) => e.id === entryId);
+  if (!entry || entry.reverted) return;
+  entry.reverted = true;
+  cache.set(runId, manifest);
+  await serialize(runId, () => persist(manifest));
+}
+
+/** Delete a run manifest from disk and drop its cache. */
+export async function deleteRun(workspaceId: string, runId: string): Promise<void> {
+  cache.delete(runId);
+  writeChains.delete(runId);
+  const path = runManifestPath(workspaceId, runId);
+  try {
+    await fs.unlink(path);
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+      log.warn('deleteRun failed', { workspaceId, runId, err });
+    }
+  }
+}

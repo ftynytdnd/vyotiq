@@ -48,7 +48,7 @@ describe('useConversationsStore.select — optimistic mirror flip', () => {
   it('flips the chat mirror BEFORE the transcript read resolves', async () => {
     // Make the read hang until we manually resolve it.
     let resolveRead: ((v: { id: string; events: never[] } | null) => void) | null = null;
-    window.vyotiq.conversations.read = vi.fn(
+    window.vyotiq.conversations.readTail = vi.fn(
       () =>
         new Promise((resolve) => {
           resolveRead = resolve;
@@ -64,7 +64,16 @@ describe('useConversationsStore.select — optimistic mirror flip', () => {
     expect(useConversationsStore.getState().hydratedIds.has('conv-B')).toBe(false);
 
     // Now resolve the read with empty events.
-    resolveRead!({ id: 'conv-B', events: [] });
+    resolveRead!({
+      id: 'conv-B',
+      title: 'B',
+      createdAt: 0,
+      updatedAt: 0,
+      eventCount: 0,
+      workspaceId: 'ws-test',
+      events: [],
+      paging: { totalCount: 0, hasOlder: false, partial: false }
+    });
     await pending;
 
     // Post-hydration, the slice is marked hydrated.
@@ -82,7 +91,7 @@ describe('useConversationsStore.select — optimistic mirror flip', () => {
       }
     });
     const readSpy = vi.fn(async () => null);
-    window.vyotiq.conversations.read = readSpy as never;
+    window.vyotiq.conversations.readTail = readSpy as never;
 
     await useConversationsStore.getState().select('conv-B');
 
@@ -92,7 +101,7 @@ describe('useConversationsStore.select — optimistic mirror flip', () => {
 
   it('clears selecting when prewarm lets a superseding select short-circuit', async () => {
     let resolveRead: ((v: { id: string; events: never[] } | null) => void) | null = null;
-    window.vyotiq.conversations.read = vi.fn(
+    window.vyotiq.conversations.readTail = vi.fn(
       () =>
         new Promise((resolve) => {
           resolveRead = resolve;
@@ -110,7 +119,16 @@ describe('useConversationsStore.select — optimistic mirror flip', () => {
     // App boot effect re-selects the same id once the slice is hydrated.
     await useConversationsStore.getState().select('conv-A');
 
-    resolveRead!({ id: 'conv-A', events: [] });
+    resolveRead!({
+      id: 'conv-A',
+      title: 'A',
+      createdAt: 0,
+      updatedAt: 0,
+      eventCount: 0,
+      workspaceId: 'ws-test',
+      events: [],
+      paging: { totalCount: 0, hasOlder: false, partial: false }
+    });
     await pending;
 
     expect(useConversationsStore.getState().selecting).toBe(false);
@@ -125,9 +143,15 @@ describe('useConversationsStore.prewarm', () => {
         'conv-A': chatSliceFixture({ conversationId: 'conv-A' })
       }
     });
-    window.vyotiq.conversations.read = vi.fn(async () => ({
+    window.vyotiq.conversations.readTail = vi.fn(async () => ({
       id: 'conv-B',
-      events: []
+      title: 'B',
+      createdAt: 0,
+      updatedAt: 0,
+      eventCount: 0,
+      workspaceId: 'ws-test',
+      events: [],
+      paging: { totalCount: 0, hasOlder: false, partial: false }
     })) as never;
 
     await useConversationsStore.getState().prewarm('conv-B');
@@ -141,8 +165,17 @@ describe('useConversationsStore.prewarm', () => {
 
   it('is a no-op when the slice is already hydrated', async () => {
     useConversationsStore.setState({ hydratedIds: new Set<string>(['conv-B']) });
-    const readSpy = vi.fn(async () => ({ id: 'conv-B', events: [] }));
-    window.vyotiq.conversations.read = readSpy as never;
+    const readSpy = vi.fn(async () => ({
+      id: 'conv-B',
+      title: 'B',
+      createdAt: 0,
+      updatedAt: 0,
+      eventCount: 0,
+      workspaceId: 'ws-test',
+      events: [],
+      paging: { totalCount: 0, hasOlder: false, partial: false }
+    }));
+    window.vyotiq.conversations.readTail = readSpy as never;
 
     await useConversationsStore.getState().prewarm('conv-B');
 

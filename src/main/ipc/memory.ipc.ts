@@ -28,6 +28,7 @@ import {
   touchGlobalMemoryLastReference,
   touchMemoryLastReference
 } from '../memory/lastReferenced.js';
+import { scheduleWorkspaceVectorIndex } from '../memory/vector/indexScheduler.js';
 import { getActiveWorkspace } from '../workspace/workspaceState.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 // Audit fix 2026-06-P2-1 — shape gates so `memory:write` can't be
@@ -195,6 +196,8 @@ export function registerMemoryIpc(): void {
         return entry;
       }
       const note = await writeWorkspaceNote(key, content);
+      const ws = await getActiveWorkspace();
+      if (ws) scheduleWorkspaceVectorIndex(ws.path);
       let entry: MemoryEntry = {
         scope,
         key: note.key,

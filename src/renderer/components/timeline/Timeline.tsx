@@ -67,6 +67,7 @@ import {
   VirtualizedTurnList,
   type TimelinePinHandle
 } from './VirtualizedTurnList.js';
+import { TranscriptLoadEarlier } from './TranscriptLoadEarlier.js';
 
 interface TimelineProps {
   model?: ModelSelection | null;
@@ -102,6 +103,7 @@ export function Timeline({
   const assistantTexts = useChatStore((s) => s.assistantTexts);
   const reasoningTexts = useChatStore((s) => s.reasoningTexts);
   const lastUserPromptContent = useChatStore((s) => s.lastUserPromptContent);
+  const transcriptPaging = useChatStore((s) => s.transcriptPaging);
   const send = useChatStore((s) => s.send);
 
   const showToast = useToastStore((s) => s.show);
@@ -605,6 +607,9 @@ export function Timeline({
         ref={containerRef}
         className={cn(timelineStackClassName, 'flex flex-col')}
       >
+        {transcriptPaging?.hasOlder ? (
+          <TranscriptLoadEarlier containerRef={containerRef} paging={transcriptPaging} />
+        ) : null}
         {useVirtualizedList ? (
           <VirtualizedTurnList
             ref={pinHandleRef}
@@ -738,6 +743,7 @@ function renderRow(
           {...(r.usage !== undefined ? { usage: r.usage } : {})}
           {...(r.editCount !== undefined ? { editCount: r.editCount } : {})}
           {...(r.fileCount !== undefined ? { fileCount: r.fileCount } : {})}
+          {...(r.commandCount !== undefined ? { commandCount: r.commandCount } : {})}
           onRetry={errorRowActions?.onRetry}
           {...(errorRowActions?.onOpenProviders
             ? { onOpenProviders: errorRowActions.onOpenProviders }

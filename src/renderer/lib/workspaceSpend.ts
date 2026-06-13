@@ -8,12 +8,17 @@ import {
   formatRunCostUsd,
   type RunCostEstimate
 } from '@shared/providers/estimateRunCost.js';
+import { OPENROUTER_PLATFORM_FEE_MULTIPLIER } from '@shared/providers/cacheSavings.js';
+import { classifyProviderHost } from '@shared/providers/providerHostKind.js';
 import type { TimelineEvent } from '@shared/types/chat.js';
 import type { ModelSelection, ProviderConfig } from '@shared/types/provider.js';
 import { findProviderModel } from '../components/composer/modelPicker/modelPickerContext.js';
 import { useConversationsStore } from '../store/useConversationsStore.js';
 import { useSettingsStore } from '../store/useSettingsStore.js';
 import { vyotiq } from './ipc.js';
+import type { TurnUsageStatsDelta, WorkspaceSpendEntry, WorkspaceSpendStats } from '@shared/types/usageStats.js';
+import { normalizeWorkspaceSpendEntry } from '@shared/types/usageStats.js';
+import { useSessionStatsStore } from '../store/useSessionStatsStore.js';
 import type { TokenUsageAggregate } from '../components/timeline/reducer/types.js';
 
 type TokenUsageSlice = {
@@ -22,6 +27,7 @@ type TokenUsageSlice = {
   reasoningTokens?: number;
   cachedPromptTokens?: number;
   cacheCreationTokens?: number;
+  uncachedPromptTokens?: number;
 };
 
 /** Model selection persisted on the `user-prompt` row for this turn. */
@@ -54,12 +60,26 @@ function resolveModelPricing(
   return provider ? findProviderModel(provider, model.modelId)?.pricing : undefined;
 }
 
+function resolvePlatformFeeMultiplier(
+  model: ModelSelection | null,
+  providers: ProviderConfig[]
+): number {
+  if (!model) return 1;
+  const provider = providers.find((p) => p.id === model.providerId);
+  if (!provider) return 1;
+  return classifyProviderHost(provider) === 'openrouter'
+    ? OPENROUTER_PLATFORM_FEE_MULTIPLIER
+    : 1;
+}
+
 export function estimateRunCostBreakdown(
   model: ModelSelection | null,
   providers: ProviderConfig[],
   usage: TokenUsageSlice
 ): RunCostEstimate | null {
-  const est = estimateRunCost(usage, resolveModelPricing(model, providers));
+  const est = estimateRunCost(usage, resolveModelPricing(model, providers), 1, {
+    platformFeeMultiplier: resolvePlatformFeeMultiplier(model, providers)
+  });
   if (!est || est.totalUsd <= 0) return null;
   return est;
 }
@@ -98,15 +118,36 @@ export function resolveLiveTurnCost(
   model: ModelSelection | null,
   providers: ProviderConfig[],
   orchestratorUsage: TokenUsageAggregate | undefined
-): { usd: number; label: string; breakdown: RunCostEstimate } | null {
+): { usd: number; label: string; breakdown: RunCostEstimate; partial: boolean } | null {
   if (!orchestratorUsage) return null;
+  const partial = orchestratorUsage.inFlight !== undefined;
   const usage = orchestratorUsage.inFlight ?? orchestratorUsage.latest;
   const est = estimateRunCostBreakdown(model, providers, usage);
   if (!est) return null;
+  const baseLabel = formatComposerCostUsd(est.totalUsd);
   return {
     usd: est.totalUsd,
-    label: formatComposerCostUsd(est.totalUsd),
-    breakdown: est
+    label: partial ? `${baseLabel} (partial)` : baseLabel,
+    breakdown: est,
+    partial
+  };
+}
+
+/** Build per-turn stats delta from usage and cost breakdown. */
+export function buildTurnUsageStatsDelta(
+  usage: TokenUsageSlice,
+  breakdown: RunCostEstimate | null
+): TurnUsageStatsDelta {
+  const cached = usage.cachedPromptTokens ?? 0;
+  const prompt = usage.promptTokens;
+  return {
+    netCacheSavingsUsd:
+      breakdown && breakdown.netCacheSavingsUsd > 0 ? breakdown.netCacheSavingsUsd : undefined,
+    cachedTokens: cached > 0 ? cached : undefined,
+    reasoningTokens:
+      usage.reasoningTokens && usage.reasoningTokens > 0 ? usage.reasoningTokens : undefined,
+    lastCacheHitPct:
+      prompt > 0 && cached > 0 ? Math.round((cached / prompt) * 100) : undefined
   };
 }
 
@@ -117,7 +158,8 @@ export async function recordRunSpendForPrompt(
   workspaceId: string | null | undefined,
   conversationId: string | null | undefined,
   promptId: string,
-  usd: number
+  usd: number,
+  stats: TurnUsageStatsDelta = {}
 ): Promise<void> {
   if (!promptId || !Number.isFinite(usd) || usd <= 0) return;
 
@@ -125,7 +167,7 @@ export async function recordRunSpendForPrompt(
     const wsKey = `ws::${workspaceId}::${promptId}`;
     if (!recordedPromptSpend.has(wsKey)) {
       recordedPromptSpend.add(wsKey);
-      await useSettingsStore.getState().addWorkspaceSpend(workspaceId, usd);
+      await useSettingsStore.getState().addWorkspaceUsage(workspaceId, usd, stats);
     }
   }
 
@@ -133,11 +175,22 @@ export async function recordRunSpendForPrompt(
     const convKey = `conv::${conversationId}::${promptId}`;
     if (!recordedPromptSpend.has(convKey)) {
       recordedPromptSpend.add(convKey);
-      const meta = await vyotiq.conversations.incrementSpend(conversationId, promptId, usd);
+      const meta = await vyotiq.conversations.incrementSpend(
+        conversationId,
+        promptId,
+        usd,
+        stats
+      );
       if (meta) {
         useConversationsStore.getState().patchMeta(meta);
       }
     }
+  }
+
+  const sessionKey = `session::${promptId}`;
+  if (!recordedPromptSpend.has(sessionKey)) {
+    recordedPromptSpend.add(sessionKey);
+    useSessionStatsStore.getState().recordTurn(usd, stats);
   }
 }
 
@@ -155,9 +208,12 @@ export function __test_resetRecordedPromptSpend(): void {
   recordedPromptSpend.clear();
 }
 
-export function formatWorkspaceSpend(usd: number | undefined): string | null {
-  if (usd === undefined || !Number.isFinite(usd) || usd <= 0) return null;
-  return `${formatComposerCostUsd(usd)} spent`;
+export function formatWorkspaceSpend(
+  entry: WorkspaceSpendEntry | WorkspaceSpendStats | undefined
+): string | null {
+  const stats = normalizeWorkspaceSpendEntry(entry);
+  if (stats.spendUsd <= 0) return null;
+  return `${formatComposerCostUsd(stats.spendUsd)} spent`;
 }
 
 export function formatConversationSpend(usd: number | undefined): string | null {

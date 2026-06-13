@@ -240,7 +240,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
   },
 
-  setTranscript: (conversationId, events) => {
+  setTranscript: (conversationId, events, paging = null) => {
     if (conversationId === null) {
       // Explicit "no active conversation" — used during a workspace
       // remove cascade. Clears the mirror but leaves `slices` alone so
@@ -287,12 +287,46 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         awaitingAskUser: prior?.awaitingAskUser ?? false,
         runStartedAt: prior?.runStartedAt ?? null,
         draft: prior?.draft ?? '',
-        attachmentDraft: prior?.attachmentDraft ?? []
+        attachmentDraft: prior?.attachmentDraft ?? [],
+        transcriptPaging: paging
       };
       const nextSlices = { ...s.slices, [conversationId]: nextSlice };
       // Only flip the active mirror when this transcript IS the one
       // the user is viewing. Background reads (checkpoint rewind,
       // prewarm for a sibling tab) must not clobber the visible timeline.
+      if (s.conversationId === conversationId) {
+        return { ...s, slices: nextSlices, ...mirrorOf(nextSlice) };
+      }
+      return { ...s, slices: nextSlices };
+    });
+  },
+
+  prependTranscript: (conversationId, olderEvents, paging) => {
+    if (olderEvents.length === 0) return;
+    set((s) => {
+      const prior = s.slices[conversationId];
+      if (!prior) return s;
+      const merged = [...olderEvents, ...prior.events];
+      const prepared = prepareTranscriptEventsForLoad(merged);
+      const rebuilt = rebuildTimelineState(prepared);
+      const nextSlice: ChatSlice = {
+        ...prior,
+        events: rebuilt.events,
+        assistantTexts: rebuilt.assistantTexts,
+        reasoningTexts: rebuilt.reasoningTexts,
+        ...(rebuilt.orchestratorUsage !== undefined
+          ? { orchestratorUsage: rebuilt.orchestratorUsage }
+          : {}),
+        ...(rebuilt.lastUserPromptId !== undefined
+          ? { lastUserPromptId: rebuilt.lastUserPromptId }
+          : {}),
+        ...(rebuilt.lastUserPromptContent !== undefined
+          ? { lastUserPromptContent: rebuilt.lastUserPromptContent }
+          : {}),
+        runIdToFileEditCount: rebuilt.runIdToFileEditCount,
+        transcriptPaging: paging
+      };
+      const nextSlices = { ...s.slices, [conversationId]: nextSlice };
       if (s.conversationId === conversationId) {
         return { ...s, slices: nextSlices, ...mirrorOf(nextSlice) };
       }
@@ -879,7 +913,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
   },
 
-  prewarmSlice: (conversationId, events) => {
+  prewarmSlice: (conversationId, events, paging = null) => {
     if (!conversationId) return;
     set((s) => {
       // Idempotent. If a slice is already populated (in-flight run, or
@@ -912,7 +946,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         awaitingAskUser: existing?.awaitingAskUser ?? false,
         runStartedAt: existing?.runStartedAt ?? null,
         draft: existing?.draft ?? '',
-        attachmentDraft: existing?.attachmentDraft ?? []
+        attachmentDraft: existing?.attachmentDraft ?? [],
+        transcriptPaging: paging
       };
       const nextSlices = { ...s.slices, [conversationId]: fresh };
       // Pre-warm must NOT flip the active mirror; only refresh when

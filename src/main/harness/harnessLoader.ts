@@ -22,22 +22,63 @@ import orchestratorCore from './00-orchestrator-core.md?raw';
 import contextLearning from './01-context-learning.md?raw';
 import deliverables from './02-deliverables.md?raw';
 import staticExamples from './03-static-examples.md?raw';
+import type { HarnessSectionId } from './harnessOverrides.js';
+import { readHarnessOverride } from './harnessOverrides.js';
 
-const AGENT_SECTIONS: ReadonlyArray<{ title: string; body: string }> = [
-  { title: 'Agent Core', body: orchestratorCore },
-  { title: 'Context, Memory & Continuous Learning', body: contextLearning },
-  { title: 'Deliverables — Markdown vs HTML Reports', body: deliverables }
+const BUNDLED_BODIES: Record<HarnessSectionId, string> = {
+  'orchestrator-core': orchestratorCore,
+  'context-learning': contextLearning,
+  deliverables: deliverables,
+  'static-examples': staticExamples
+};
+
+export function readBundledHarnessSection(sectionId: HarnessSectionId): string {
+  return BUNDLED_BODIES[sectionId];
+}
+
+async function resolveSectionBody(sectionId: HarnessSectionId): Promise<string> {
+  const override = await readHarnessOverride(sectionId);
+  if (override !== null && override.trim().length > 0) {
+    return override;
+  }
+  return BUNDLED_BODIES[sectionId];
+}
+
+let sectionBodiesCache: Record<HarnessSectionId, string> | null = null;
+
+async function loadSectionBodies(): Promise<Record<HarnessSectionId, string>> {
+  if (sectionBodiesCache) return sectionBodiesCache;
+  const entries = await Promise.all(
+    (Object.keys(BUNDLED_BODIES) as HarnessSectionId[]).map(async (id) => [
+      id,
+      await resolveSectionBody(id)
+    ] as const)
+  );
+  sectionBodiesCache = Object.fromEntries(entries) as Record<HarnessSectionId, string>;
+  return sectionBodiesCache;
+}
+
+export function invalidateHarnessPromptCache(): void {
+  agentPromptCache = null;
+  sectionBodiesCache = null;
+}
+
+const AGENT_SECTIONS: ReadonlyArray<{ title: string; id: HarnessSectionId }> = [
+  { title: 'Agent Core', id: 'orchestrator-core' },
+  { title: 'Context, Memory & Continuous Learning', id: 'context-learning' },
+  { title: 'Deliverables — Markdown vs HTML Reports', id: 'deliverables' }
 ];
 
-const BOOTSTRAP_HARNESS_MARKDOWN: ReadonlyArray<{ file: string; body: string }> = [
-  { file: '00-orchestrator-core.md', body: orchestratorCore },
-  { file: '01-context-learning.md', body: contextLearning },
-  { file: '03-static-examples.md', body: staticExamples },
-  { file: '02-deliverables.md', body: deliverables }
+const BOOTSTRAP_HARNESS_MARKDOWN: ReadonlyArray<{ file: string; id: HarnessSectionId }> = [
+  { file: '00-orchestrator-core.md', id: 'orchestrator-core' },
+  { file: '01-context-learning.md', id: 'context-learning' },
+  { file: '03-static-examples.md', id: 'static-examples' },
+  { file: '02-deliverables.md', id: 'deliverables' }
 ];
 
 function assertHarnessMarkdownPresent(): void {
-  for (const { file, body } of BOOTSTRAP_HARNESS_MARKDOWN) {
+  for (const { file, id } of BOOTSTRAP_HARNESS_MARKDOWN) {
+    const body = BUNDLED_BODIES[id];
     if (typeof body !== 'string' || body.trim().length === 0) {
       throw new Error(
         `harness boot: ${file} missing or empty (Vite ?raw import failed or file unparseable)`
@@ -102,7 +143,8 @@ export function assertHarnessBoot(): void {
 /** System prompt for Agent V (single dynamic agent). */
 export function buildOrchestratorSystemPrompt(): string {
   if (agentPromptCache !== null) return agentPromptCache;
-  const sections = AGENT_SECTIONS.map((s) => s.body).join('\n\n---\n\n');
+  const bodies = sectionBodiesCache ?? BUNDLED_BODIES;
+  const sections = AGENT_SECTIONS.map((s) => bodies[s.id]).join('\n\n---\n\n');
   const built = wrapXml(
     'system_instructions',
     `${sections}\n\n---\n\n${buildRuntimeLimitsBlock()}\n\n---\n\n${buildAgentToolCatalogue()}`
@@ -112,10 +154,18 @@ export function buildOrchestratorSystemPrompt(): string {
 }
 
 export function __resetOrchestratorPromptCacheForTests(): void {
+  invalidateHarnessPromptCache();
+}
+
+/** Load user overrides into memory. Call at app boot and after harness edits. */
+export async function warmHarnessOverrides(): Promise<void> {
+  sectionBodiesCache = null;
   agentPromptCache = null;
+  await loadSectionBodies();
 }
 
 /** Cache-layer slot `[1]` — static few-shot patterns (not in harness system prefix). */
 export function buildStaticFewShotXml(): string {
-  return wrapXml('static_examples', staticExamples.trim());
+  const bodies = sectionBodiesCache ?? BUNDLED_BODIES;
+  return wrapXml('static_examples', bodies['static-examples'].trim());
 }

@@ -39,6 +39,9 @@ function usageLine(label: string, u: TokenUsage | undefined): string[] {
   if ((u.cacheCreationTokens ?? 0) > 0) {
     lines.push(`  Cache write: ${formatTokenCountWithUnit(u.cacheCreationTokens ?? 0)}`);
   }
+  if ((u.uncachedPromptTokens ?? 0) > 0) {
+    lines.push(`  Uncached: ${formatTokenCountWithUnit(u.uncachedPromptTokens ?? 0)}`);
+  }
   return lines;
 }
 
@@ -69,9 +72,18 @@ function buildTitle(
       if (b.reasoningUsd > 0) {
         lines.push(`  Reasoning: ${formatComposerCostUsd(b.reasoningUsd)}`);
       }
+      if (b.grossCacheSavingsUsd > 0) {
+        lines.push(`  Cache saved (gross): ${formatComposerCostUsd(b.grossCacheSavingsUsd)}`);
+      }
+      if (b.netCacheSavingsUsd > 0 && b.netCacheSavingsUsd !== b.grossCacheSavingsUsd) {
+        lines.push(`  Cache saved (net): ${formatComposerCostUsd(b.netCacheSavingsUsd)}`);
+      }
+      if (costBreakdown?.partial) {
+        lines.push('  (Partial — prompt/cache pending authoritative usage)');
+      }
     }
   }
-  lines.push('', 'By role:');
+  lines.push('', 'Conversation session — last turn frame', '', 'By role:');
   lines.push(...usageLine('Orchestrator', orchestrator?.latest));
   return lines.join('\n');
 }

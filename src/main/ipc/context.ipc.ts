@@ -109,10 +109,14 @@ async function runManualReduction(
   );
   const runId = `${MANUAL_PREFIX}${randomUUID()}`;
   let changed = false;
+  let tokensRemoved = 0;
 
   const emit = (event: TimelineEvent): void => {
     if (event.kind === 'tool-compacted' || event.kind === 'context-summary') {
       changed = true;
+      if (event.tokensRemoved && event.tokensRemoved > 0) {
+        tokensRemoved += event.tokensRemoved;
+      }
     }
     // All emitted kinds here (tool-compacted, context-summary, agent-thought)
     // are persistent; append to the transcript and mirror to the renderer.
@@ -143,7 +147,14 @@ async function runManualReduction(
 
   try {
     if (mode === 'compact') {
-      await reduceContextIfNeeded(seeded, { ...opts, force: true }, createContextReductionState());
+      const result = await reduceContextIfNeeded(
+        seeded,
+        { ...opts, force: true },
+        createContextReductionState()
+      );
+      if (result.tokensRemoved && result.tokensRemoved > tokensRemoved) {
+        tokensRemoved = result.tokensRemoved;
+      }
     } else {
       await resetContextToSummary(seeded, opts, createContextReductionState());
     }
@@ -160,8 +171,12 @@ async function runManualReduction(
     };
   }
 
-  log.info('manual context reduction done', { conversationId, mode, changed });
-  return { ok: true, changed };
+  log.info('manual context reduction done', { conversationId, mode, changed, tokensRemoved });
+  return {
+    ok: true,
+    changed,
+    ...(tokensRemoved > 0 ? { tokensRemoved } : {})
+  };
 }
 
 /** Upper bound on artifact content returned to the renderer (memory safety). */

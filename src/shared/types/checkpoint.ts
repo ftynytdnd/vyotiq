@@ -176,6 +176,19 @@ type RewindError =
 
 export type RewindPreviewResult = RewindPreview | { ok: false; error: RewindError };
 
+/** Result of accept/reject/revert operations on a single entry or run. */
+export type CheckpointRevertResult =
+  | { ok: true; reverted: number }
+  | {
+      ok: false;
+      error:
+        | { kind: 'unknown-entry'; entryId: string }
+        | { kind: 'unknown-run'; runId: string }
+        | { kind: 'fs'; message: string }
+        | { kind: 'sandbox'; message: string }
+        | { kind: 'blob-missing'; hash: string };
+    };
+
 /**
  * Result of a successful or failed `rewindToPrompt` operation. The
  * success shape mirrors `RewindPreview` plus the actually-applied

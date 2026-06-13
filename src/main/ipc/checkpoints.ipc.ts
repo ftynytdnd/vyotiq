@@ -1,19 +1,82 @@
 /**
- * Checkpoints IPC — renderer surface for transcript rewind.
- *
- * File-change recording, pending rows, and entry/run revert stay on the
- * main process (tools + `rewindToPrompt`). The deleted Checkpoints panel
- * no longer calls accept/reject/summary/history channels from the renderer.
+ * Checkpoints IPC — pending review, accept/reject, rewind.
  */
 
 import { IPC } from '@shared/constants.js';
-import type { RewindPreviewResult, RewindResult } from '@shared/types/checkpoint.js';
+import type {
+  CheckpointRevertResult,
+  PendingChange,
+  RewindPreviewResult,
+  RewindResult
+} from '@shared/types/checkpoint.js';
 import { previewRewind, rewindToPrompt } from '../checkpoints/rewindToPrompt.js';
+import {
+  acceptEntry,
+  acceptAll,
+  rejectEntry,
+  listPending,
+  readBlobBody,
+  setCheckpointsBroadcaster
+} from '../checkpoints/index.js';
+import { listWorkspaces } from '../workspace/workspaceState.js';
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 import { assertString, assertObject } from './validate.js';
 
+function wireBroadcaster(): void {
+  setCheckpointsBroadcaster((workspaceId: string) => {
+    safeWebContentsSend(IPC.CHECKPOINTS_CHANGED, workspaceId);
+  });
+}
+
+async function knownWorkspaceIds(): Promise<string[]> {
+  const state = await listWorkspaces();
+  return state.workspaces.map((w) => w.id);
+}
+
 export function registerCheckpointsIpc(): void {
+  wireBroadcaster();
+
+  wrapIpcHandler(
+    IPC.CHECKPOINTS_LIST_PENDING,
+    async (_event, conversationId: string): Promise<PendingChange[]> => {
+      assertString('checkpoints:listPending', 'conversationId', conversationId);
+      const ids = await knownWorkspaceIds();
+      return listPending(conversationId, ids);
+    }
+  );
+
+  wrapIpcHandler(IPC.CHECKPOINTS_ACCEPT, async (_event, entryId: string) => {
+    assertString('checkpoints:accept', 'entryId', entryId);
+    await acceptEntry(entryId);
+  });
+
+  wrapIpcHandler(
+    IPC.CHECKPOINTS_ACCEPT_ALL,
+    async (_event, conversationId: string) => {
+      assertString('checkpoints:acceptAll', 'conversationId', conversationId);
+      const ids = await knownWorkspaceIds();
+      await acceptAll(conversationId, ids);
+    }
+  );
+
+  wrapIpcHandler(
+    IPC.CHECKPOINTS_REJECT,
+    async (_event, entryId: string): Promise<CheckpointRevertResult> => {
+      assertString('checkpoints:reject', 'entryId', entryId);
+      return rejectEntry(entryId);
+    }
+  );
+
+  wrapIpcHandler(
+    IPC.CHECKPOINTS_READ_BLOB,
+    async (_event, workspaceId: string, hash: string): Promise<string | null> => {
+      assertString('checkpoints:readBlob', 'workspaceId', workspaceId);
+      assertString('checkpoints:readBlob', 'hash', hash);
+      return readBlobBody(workspaceId, hash);
+    }
+  );
+
   wrapIpcHandler(
     IPC.CHECKPOINTS_PREVIEW_REWIND,
     async (
@@ -41,8 +104,8 @@ export function registerCheckpointsIpc(): void {
       return rewindToPrompt({
         ...input,
         broadcasters: {
-          checkpointsChanged: () => {
-            /* No renderer checkpoints panel — rewind refreshes via transcriptRewound. */
+          checkpointsChanged: (workspaceId: string) => {
+            safeWebContentsSend(IPC.CHECKPOINTS_CHANGED, workspaceId);
           },
           transcriptRewound: (conversationId: string) => {
             safeWebContentsSend(IPC.CONVERSATION_TRANSCRIPT_REWOUND, conversationId);

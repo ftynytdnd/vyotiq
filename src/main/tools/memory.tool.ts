@@ -26,6 +26,7 @@ import {
   touchGlobalMemoryLastReference,
   touchMemoryLastReference
 } from '../memory/lastReferenced.js';
+import { scheduleWorkspaceVectorIndex } from '../memory/vector/indexScheduler.js';
 
 interface MemoryArgs {
   action: 'list' | 'read' | 'write' | 'append';
@@ -194,6 +195,7 @@ async function runWorkspace(
       if (typeof a.content !== 'string') return fail(id, started, 'Error: `content` required.', 'missing content');
       const storageKey = resolveRunProgressKey(a.key, ctx.conversationId);
       await writeWorkspaceNote(storageKey, a.content, workspacePath);
+      scheduleWorkspaceVectorIndex(workspacePath);
       void touchMemoryLastReference(ctx.workspaceId, a.key, ctx.conversationId).catch(
         () => undefined
       );
@@ -210,6 +212,7 @@ async function runWorkspace(
       if (typeof a.content !== 'string') return fail(id, started, 'Error: `content` required.', 'missing content');
       const storageKey = resolveRunProgressKey(a.key, ctx.conversationId);
       await appendWorkspaceNote(storageKey, a.content, workspacePath);
+      scheduleWorkspaceVectorIndex(workspacePath);
       void touchMemoryLastReference(ctx.workspaceId, a.key, ctx.conversationId).catch(
         () => undefined
       );

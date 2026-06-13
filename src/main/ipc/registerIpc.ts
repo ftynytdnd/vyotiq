@@ -11,12 +11,16 @@ import { registerMemoryIpc } from './memory.ipc.js';
 import { registerSettingsIpc } from './settings.ipc.js';
 import { registerConversationsIpc } from './conversations.ipc.js';
 import { registerCheckpointsIpc } from './checkpoints.ipc.js';
+import { registerHarnessIpc } from './harness.ipc.js';
 import { registerAppIpc } from './app.ipc.js';
 import { registerAttachmentsIpc } from './attachments.ipc.js';
 import { registerRendererLogRelay } from './rendererLogRelay.js';
 import { registerTokensIpc } from './tokens.ipc.js';
 import { registerReportsIpc } from './reports.ipc.js';
 import { registerContextIpc } from './context.ipc.js';
+import { registerEditorIpc } from './editor.ipc.js';
+import { registerTerminalIpc } from './terminal.ipc.js';
+import { registerCompletionIpc } from './completion.ipc.js';
 import {
   abortRunsForConversation,
   abortRunsForProvider,
@@ -40,10 +44,14 @@ export function registerIpc(): void {
   registerToolsIpc();
   registerReportsIpc();
   registerContextIpc();
+  registerEditorIpc();
+  registerTerminalIpc();
+  registerCompletionIpc();
   registerMemoryIpc();
   registerSettingsIpc();
   registerConversationsIpc();
   registerCheckpointsIpc();
+  registerHarnessIpc();
   registerAppIpc();
   registerAttachmentsIpc();
   registerRendererLogRelay();

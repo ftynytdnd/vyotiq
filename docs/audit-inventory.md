@@ -8,21 +8,28 @@ Ledger of remediation items closed in the 2026-06 full-app pass. Do not resurrec
 - **Token estimation IPC** — `tokens:estimate` exposes main `tokenCounter`; composer draft estimate via `useComposerTokenEstimate` + `TokenUsagePill`.
 - **Inline revert model picker** — `InlinePromptSession` includes `ModelPicker`.
 - **Clickable Latest** — `ComposerStatusStrip` calls `requestScrollToTail`; `Timeline` listens via `useTimelineUiStore`.
+- **Checkpoint file restore** — `blobStore` + `recordChange` persist pre/post bodies; pending accept/reject UI; `previewRewind` / `rewindToPrompt` restore on-disk files and truncate JSONL.
+- **Transcript export** — `conversations:export` → JSONL or Markdown via native save dialog (dock chat strip).
+- **Transcript pagination** — tail slice on load + `readBefore` / `TranscriptLoadEarlier` for long chats.
+- **Harness lab** — Settings → Agent behavior harness viewer/editor with userData overrides merged at boot.
+- **Vector memory** — sqlite-vec hybrid index under `.vyotiq/`; upgraded `retrieval.ts`.
+- **ast-grep search** — structural mode on `search` tool via `@ast-grep/napi`.
+- **Secondary-zone editor + PTY** — CodeMirror 6 editor; shared `node-pty` terminal bridged to agent `bash`.
+- **Inline completion** — editor ghost text + composer prompt continuation via completion IPC.
+- **Distribution** — electron-builder packaging, fuse hardening, electron-updater with About-panel install path.
 
 ## Removed / purged
 
 - Web search UI and `mode: 'web'` on `search` tool data (local-only).
 - Legacy workspace IPC: `workspace:get`, `workspace:pick`, `workspace:set`.
-- Orphans: `AttachmentPicker`, `AboutOverlay`, `useMentionComputerPick`, `synthesizeReportPreview`, `emitToolValidationFailure`, `endpointWarning`, `blobStore`, `settingsGroups`, `parseUnifiedPatch`, unused barrel indexes.
+- Orphans: `AttachmentPicker`, `AboutOverlay`, `useMentionComputerPick`, `synthesizeReportPreview`, `emitToolValidationFailure`, `endpointWarning`, `settingsGroups`, `parseUnifiedPatch`, unused barrel indexes.
 - Mention picker "Coming soon" stub rows.
 - `ModelPickerProviderLabel` (unused).
 
 ## Intentional survivors (not removals)
 
-- Transcript-only rewind / `previewRewind` / `rewindToPrompt` / `InlinePromptSession`.
 - `TokenUsagePill` run usage display.
-- `recordChange` stub for tool card `entryId` metadata (no blob persistence).
-- Checkpoint event kinds in shared types for legacy transcript load (no new emissions).
+- Checkpoint event kinds in shared types for legacy transcript load (older transcripts without blobs still rewind transcript-only).
 
 ## Refactor landed
 
@@ -35,9 +42,8 @@ Ledger of remediation items closed in the 2026-06 full-app pass. Do not resurrec
 - `TimelineAutoScroll.test.tsx` — one case skipped: happy-dom does not model scroll metrics reliably for off-tail auto-scroll.
 - `timelineAlignment.test.tsx` — jump-chip backdrop case skipped: portal layout differs from production Electron shell.
 
-## Verification (2026-06 pass)
+## Verification (2026-06 gap-analysis pass)
 
 - `npm run typecheck` — pass
-- `npm test` — 1867+ passed, 2 skipped (happy-dom limits above)
-- `npm run knip` — 0 unused files under `src/`
-- `npm run build
+- `npm test` — 2217 passed, 2 skipped (happy-dom limits above)
+- `npm run build` — pass

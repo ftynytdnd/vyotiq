@@ -52,6 +52,15 @@ describe('estimateRunCost', () => {
     expect(est?.outputUsd).toBeCloseTo(0.15, 4);
     expect(est?.totalUsd).toBeCloseTo(0.7575, 4);
   });
+
+  it('includes gross and net cache savings on the estimate', () => {
+    const est = estimateRunCost(
+      { promptTokens: 1_000_000, completionTokens: 0, cachedPromptTokens: 500_000 },
+      { inputPerMillion: 2, outputPerMillion: 10, cachedInputPerMillion: 0.2 }
+    );
+    expect(est?.grossCacheSavingsUsd).toBeCloseTo(0.9, 4);
+    expect(est?.netCacheSavingsUsd).toBeCloseTo(0.9, 4);
+  });
 });
 
 describe('formatComposerCostUsd', () => {

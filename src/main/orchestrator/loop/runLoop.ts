@@ -255,6 +255,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     const spin: SpinSignatureBuffer = resume?.spin ?? createSpinSignatureBuffer();
     let injectedStubsHighWater = resume?.injectedStubsHighWater ?? 0;
     let consecutiveErrors = resume?.consecutiveErrors ?? 0;
+    const allowlistRefusalCounts = new Map<string, number>();
     let consecutiveBadToolRounds = resume?.consecutiveBadToolRounds ?? 0;
     let transportFailuresThisRun = 0;
     let runHadLlmProgress = false;
@@ -967,6 +968,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             permissions: opts.permissions,
             signal: opts.signal,
             allowlist: AGENT_TOOLS,
+            allowlistRefusalCounts,
             onToolCallSettled
           });
           const abortedAfterTools = exitIfAborted(opts, emit, runHadLlmProgress);

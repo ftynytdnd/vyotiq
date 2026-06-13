@@ -11,7 +11,6 @@
 
 
 import type {
-
   ProviderConfig,
 
   AddProviderInput,
@@ -44,16 +43,17 @@ import type {
 
 } from './chat.js';
 
+import type { WorkspaceSpendEntry, TurnUsageStatsDelta } from './usageStats.js';
+
 import type { AskUserSubmitInput, AskUserSubmitReply } from './askUser.js';
 
 import type { RegisteredToolName } from './tool.js';
 
 import type {
-
   RewindPreviewResult,
-
-  RewindResult
-
+  RewindResult,
+  PendingChange,
+  CheckpointRevertResult
 } from './checkpoint.js';
 
 
@@ -151,7 +151,7 @@ export interface ContextManualInput {
 
 export type ContextManualReply =
 
-  | { ok: true; changed: boolean }
+  | { ok: true; changed: boolean; tokensRemoved?: number }
 
   | {
 
@@ -332,7 +332,7 @@ export interface AppSettings {
      * Cumulative estimated API spend (USD) per workspace id.
      * Updated when runs complete and model pricing is available.
      */
-    workspaceSpendUsd?: Record<string, number>;
+    workspaceSpendUsd?: Record<string, WorkspaceSpendEntry>;
 
     /** Last floating panel widths by panel id. */
 
@@ -387,6 +387,24 @@ export interface AppSettings {
       /** Force Gemini explicit `cachedContents` (large prefixes also auto-enable). */
 
       geminiExplicitCache?: boolean;
+
+    };
+
+    /** Tab/ghost inline completion for editor + composer. */
+
+    inlineCompletion?: {
+
+      enabled?: boolean;
+
+      editorEnabled?: boolean;
+
+      composerEnabled?: boolean;
+
+      providerId?: string;
+
+      modelId?: string;
+
+      debounceMs?: number;
 
     };
 
@@ -482,6 +500,12 @@ export interface AppSettings {
     /** Atomic workspace spend increments (USD) — merged server-side. */
 
     workspaceSpendIncrement?: Record<string, number>;
+
+    /** Atomic workspace usage increments — merged server-side. */
+    workspaceUsageIncrement?: Record<
+      string,
+      { spendUsd: number } & import('./usageStats.js').TurnUsageStatsDelta
+    >;
 
   };
 
@@ -960,6 +984,19 @@ export interface VyotiqApi {
 
     read(id: string): Promise<Conversation | null>;
 
+    readTail(id: string, limit?: number): Promise<import('./chat.js').ConversationTailRead | null>;
+
+    readBefore(
+      id: string,
+      beforeEventId: string,
+      limit?: number
+    ): Promise<import('./chat.js').TranscriptBeforeRead>;
+
+    export(
+      id: string,
+      format: import('./chat.js').ConversationExportFormat
+    ): Promise<import('./chat.js').ConversationExportResult>;
+
     /**
 
      * Create a new conversation under a specific workspace. The
@@ -1003,7 +1040,8 @@ export interface VyotiqApi {
     incrementSpend(
       id: string,
       promptId: string,
-      usd: number
+      usd: number,
+      stats?: TurnUsageStatsDelta
     ): Promise<ConversationMeta | null>;
 
   };
@@ -1232,6 +1270,80 @@ export interface VyotiqApi {
 
     onTranscriptRewound(cb: (conversationId: string) => void): () => void;
 
+    listPending(conversationId: string): Promise<PendingChange[]>;
+
+    accept(entryId: string): Promise<void>;
+
+    acceptAll(conversationId: string): Promise<void>;
+
+    reject(entryId: string): Promise<CheckpointRevertResult>;
+
+    readBlob(workspaceId: string, hash: string): Promise<string | null>;
+
+    onChanged(cb: (workspaceId: string) => void): () => void;
+
+  };
+
+
+
+  // ---- Harness overrides (Settings → Agent behavior) ----
+
+  harness: {
+
+    listSections(): Promise<import('./harness.js').HarnessSectionInfo[]>;
+
+    readSection(sectionId: string): Promise<import('./harness.js').HarnessSectionReadResult>;
+
+    writeSection(sectionId: string, body: string): Promise<{ ok: true }>;
+
+    resetSection(sectionId: string): Promise<{ ok: true }>;
+
+  };
+
+
+
+  // ---- In-app workspace editor ----
+
+  editor: {
+
+    read(input: import('./editor.js').EditorReadInput): Promise<import('./editor.js').EditorReadResult>;
+
+    write(input: import('./editor.js').EditorWriteInput): Promise<import('./editor.js').EditorWriteReply>;
+
+  };
+
+
+
+  // ---- Workspace PTY terminal ----
+
+  terminal: {
+
+    attach(input: import('./terminal.js').TerminalAttachInput): Promise<import('./terminal.js').TerminalAttachResult>;
+
+    input(payload: import('./terminal.js').TerminalInputPayload): Promise<void>;
+
+    resize(payload: import('./terminal.js').TerminalResizePayload): Promise<void>;
+
+    restart(workspaceId?: string): Promise<void>;
+
+    detach(workspaceId?: string): Promise<void>;
+
+    onData(cb: (event: import('./terminal.js').TerminalDataEvent) => void): () => void;
+
+    onExit(cb: (event: import('./terminal.js').TerminalExitEvent) => void): () => void;
+
+  };
+
+
+
+  // ---- Inline completion (editor + composer) ----
+
+  completion: {
+
+    request(input: import('./completion.js').CompletionInput): Promise<import('./completion.js').CompletionReply>;
+
+    cancel(kind: import('./completion.js').CompletionKind, workspaceId?: string): Promise<void>;
+
   };
 
 
@@ -1266,7 +1378,19 @@ export interface VyotiqApi {
 
     /** Check for app updates (electron-updater when packaged). */
 
-    checkForUpdates(): Promise<{ updateAvailable: boolean; version?: string }>;
+    checkForUpdates(): Promise<import('./appUpdate.js').AppCheckUpdatesResult>;
+
+    /** Force-download the available update (no-op when none pending). */
+
+    downloadUpdate(): Promise<import('./appUpdate.js').AppUpdateStatus>;
+
+    /** Quit and install a downloaded update. */
+
+    installUpdate(): Promise<void>;
+
+    /** Subscribe to updater phase/progress pushes from main. */
+
+    onUpdateStatus(cb: (status: import('./appUpdate.js').AppUpdateStatus) => void): () => void;
 
     /** Play the OS warning / exclamation sound (destructive confirm UX). */
 

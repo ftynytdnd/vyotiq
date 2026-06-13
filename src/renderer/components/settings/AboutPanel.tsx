@@ -12,6 +12,7 @@ import {
   ShellSection
 } from '../ui/ShellSection.js';
 import type { AppInfo, AppRevealTarget } from '@shared/types/ipc.js';
+import type { AppUpdateStatus } from '@shared/types/appUpdate.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { logger } from '../../lib/logger.js';
@@ -22,6 +23,33 @@ import {
 import { cn } from '../../lib/cn.js';
 
 const settingsLog = logger.child('about-panel');
+
+function updateStatusLabel(status: AppUpdateStatus): string | null {
+  switch (status.phase) {
+    case 'idle':
+      return null;
+    case 'checking':
+      return 'Checking for updates…';
+    case 'available':
+      return status.version ? `Update available: v${status.version}` : 'Update available';
+    case 'not-available':
+      return 'You are on the latest version';
+    case 'downloading':
+      return status.percent !== undefined
+        ? `Downloading update… ${status.percent}%`
+        : 'Downloading update…';
+    case 'downloaded':
+      return status.version
+        ? `Update v${status.version} ready to install`
+        : 'Update ready to install';
+    case 'error':
+      return status.error ? `Update error: ${status.error}` : 'Update check failed';
+    default: {
+      const _exhaustive: never = status.phase;
+      return String(_exhaustive);
+    }
+  }
+}
 
 function PathRow({
   label,
@@ -52,7 +80,8 @@ function PathRow({
 export function AboutPanel() {
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus>({ phase: 'idle' });
+  const [updateBusy, setUpdateBusy] = useState(false);
   const showToast = useToastStore((s) => s.show);
 
   useEffect(() => {
@@ -75,6 +104,12 @@ export function AboutPanel() {
     };
   }, []);
 
+  useEffect(() => {
+    return vyotiq.app.onUpdateStatus((status) => {
+      setUpdateStatus(status);
+    });
+  }, []);
+
   const onReveal = async (target: AppRevealTarget) => {
     try {
       await vyotiq.app.revealPath(target);
@@ -85,24 +120,39 @@ export function AboutPanel() {
   };
 
   const onCheckUpdates = async () => {
-    setUpdateChecking(true);
+    setUpdateBusy(true);
     try {
       const result = await vyotiq.app.checkForUpdates();
+      setUpdateStatus(result.status);
       if (result.updateAvailable) {
         showToast(
           result.version ? `Update available: v${result.version}` : 'Update available',
           'success'
         );
-      } else {
+      } else if (result.status.phase === 'not-available') {
         showToast('You are on the latest version', 'success');
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       showToast(`Update check failed: ${msg}`, 'danger');
     } finally {
-      setUpdateChecking(false);
+      setUpdateBusy(false);
     }
   };
+
+  const onInstallUpdate = async () => {
+    setUpdateBusy(true);
+    try {
+      await vyotiq.app.installUpdate();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(`Could not install update: ${msg}`, 'danger');
+      setUpdateBusy(false);
+    }
+  };
+
+  const statusLine = updateStatusLabel(updateStatus);
+  const canInstall = updateStatus.phase === 'downloaded';
 
   return (
     <section id="settings-about" className="vx-settings-section-anchor px-3 py-2">
@@ -126,15 +176,30 @@ export function AboutPanel() {
                 <ShellMetaRow label="Node" value={info.node} mono />
               </ShellMetaGrid>
             </div>
+            {statusLine ? (
+              <ShellCaption className="mt-2">{statusLine}</ShellCaption>
+            ) : null}
             <ShellActionRow className="mt-2">
               <Button
                 size="sm"
                 variant="secondary"
-                disabled={updateChecking}
+                disabled={updateBusy || updateStatus.phase === 'downloading'}
                 onClick={() => void onCheckUpdates()}
               >
-                {updateChecking ? 'Checking…' : 'Check for updates'}
+                {updateBusy && updateStatus.phase !== 'downloaded'
+                  ? 'Checking…'
+                  : 'Check for updates'}
               </Button>
+              {canInstall ? (
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={updateBusy}
+                  onClick={() => void onInstallUpdate()}
+                >
+                  Install & restart
+                </Button>
+              ) : null}
             </ShellActionRow>
           </>
         ) : loadError ? (

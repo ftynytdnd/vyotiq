@@ -16,6 +16,8 @@ import {
   timelineContentWidthClass
 } from '../lib/timelineContentWidth.js';
 import { useAttachmentPreviewStore } from '../store/useAttachmentPreviewStore.js';
+import { useEditorStore } from '../store/useEditorStore.js';
+import { useTerminalStore } from '../store/useTerminalStore.js';
 import { LoadingHint } from '../components/ui/LoadingHint.js';
 import { useProviderAccountPollSource } from '../lib/useProviderAccountPollSource.js';
 
@@ -35,7 +37,10 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
   const activeConversationId = useActiveConversationId();
   const conversationList = useConversationsStore((s) => s.list);
   const selecting = useConversationsStore((s) => s.selecting);
-  const zoneOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
+  const zoneOpen =
+    useAttachmentPreviewStore((s) => s.attachment !== null) ||
+    useEditorStore((s) => s.open) ||
+    useTerminalStore((s) => s.open);
   const isProcessing = useChatStore((s) => s.isProcessing);
 
   useProviderAccountPollSource('agent-run', isProcessing);

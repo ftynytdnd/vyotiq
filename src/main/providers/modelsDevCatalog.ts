@@ -6,6 +6,7 @@
 import { MODEL_DISCOVERY_TIMEOUT_MS } from '@shared/constants.js';
 import { modelsDevProviderId } from '@shared/providers/providerHostname.js';
 import type { ModelPricing } from '@shared/providers/modelPricing.js';
+import { mergeModelPricing } from '@shared/providers/modelPricing.js';
 import type { ModelInfo, ModelThinkingCapabilities, ProviderWithKey, ThinkingEffort } from '@shared/types/provider.js';
 import { readPlainJson, writePlainJson } from '../secrets/safeStore.js';
 import { logger } from '../logging/logger.js';
@@ -71,6 +72,18 @@ function positiveTokenCount(value: unknown): number | undefined {
   if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
   const n = Math.floor(value);
   return n > 0 ? n : undefined;
+}
+
+function pricingNeedsFallback(pricing: ModelPricing | undefined): boolean {
+  if (!pricing) return true;
+  return (
+    pricing.inputPerMillion === undefined ||
+    pricing.inputPerMillion <= 0 ||
+    pricing.outputPerMillion === undefined ||
+    pricing.outputPerMillion <= 0 ||
+    pricing.cachedInputPerMillion === undefined ||
+    pricing.cachedInputPerMillion <= 0
+  );
 }
 
 function pricingFromCost(cost: ModelsDevCost | undefined): ModelPricing | undefined {
@@ -266,6 +279,7 @@ export async function enrichModelsFromModelsDev(
     (m) =>
       m.contextWindow === undefined ||
       m.pricing === undefined ||
+      pricingNeedsFallback(m.pricing) ||
       !m.thinking?.supported ||
       !m.supportedParameters?.length
   );
@@ -291,9 +305,12 @@ export async function enrichModelsFromModelsDev(
       contextWindow = hit.context;
       changed = true;
     }
-    if (!pricing && hit.pricing) {
-      pricing = hit.pricing;
-      changed = true;
+    if (hit.pricing) {
+      const merged = mergeModelPricing(pricing, hit.pricing);
+      if (merged !== pricing) {
+        pricing = merged;
+        changed = true;
+      }
     }
     if (!thinking?.supported && hit.thinking?.supported) {
       thinking = hit.thinking;
@@ -314,4 +331,13 @@ export async function enrichModelsFromModelsDev(
   }
 
   return next;
+}
+
+const HOURLY_REFRESH_MS = 60 * 60 * 1000;
+
+/** Refresh models.dev catalog at most once per hour during active UI polling. */
+export async function refreshModelsDevCatalogIfStale(): Promise<void> {
+  const fetchedAt = memoryCache?.fetchedAt;
+  if (fetchedAt !== undefined && Date.now() - fetchedAt < HOURLY_REFRESH_MS) return;
+  await loadCatalog(true);
 }

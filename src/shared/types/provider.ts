@@ -295,11 +295,6 @@ export interface ModelInfo {
   thinking?: ModelThinkingCapabilities;
 }
 
-/** Provider record with API key — only used in main process. */
-export interface ProviderWithKey extends ProviderConfig {
-  apiKey: string;
-}
-
 /** Add-provider payload from the renderer. */
 export interface AddProviderInput {
   name: string;

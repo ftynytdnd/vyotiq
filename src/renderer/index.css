@@ -3387,6 +3387,22 @@ mark.vyotiq-timeline-find-mark-active {
   padding: 0 0.15em;
 }
 
+button.vx-mention-highlight--open {
+  cursor: pointer;
+  border: none;
+  font: inherit;
+  line-height: inherit;
+}
+
+button.vx-mention-highlight--open:hover {
+  background: color-mix(in oklch, var(--color-accent) 22%, transparent);
+}
+
+button.vx-mention-highlight--open:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
 .vx-composer-input-zone {
   display: grid;
   min-width: 0;
@@ -4291,6 +4307,95 @@ mark.vyotiq-timeline-find-mark-active {
 
 .vx-floating-panel {
   pointer-events: auto;
+}
+
+/* In-app workspace editor (secondary zone) */
+.vx-editor-panel .vx-floating-panel-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.vx-editor-panel-body {
+  min-height: min(70dvh, 32rem);
+}
+
+.vx-editor-path {
+  border-bottom: 1px solid color-mix(in oklch, var(--color-border-subtle) 55%, transparent);
+}
+
+.vx-editor-stale-banner {
+  border-bottom: 1px solid color-mix(in oklch, var(--color-warning) 35%, transparent);
+  background: color-mix(in oklch, var(--color-warning) 12%, transparent);
+  color: var(--color-text-secondary);
+}
+
+.vx-code-editor {
+  min-height: 12rem;
+}
+
+.vx-code-editor .cm-editor {
+  height: 100%;
+  outline: none;
+}
+
+.vx-code-editor .cm-scroller {
+  max-height: min(70dvh, 32rem);
+}
+
+.vx-inline-completion-ghost {
+  color: var(--color-text-faint);
+  opacity: 0.72;
+  pointer-events: none;
+  white-space: pre-wrap;
+}
+
+.vx-composer-inline-ghost {
+  color: var(--color-text-faint);
+  opacity: 0.72;
+  pointer-events: none;
+  white-space: pre-wrap;
+}
+
+/* Workspace terminal (xterm.js) */
+.vx-terminal-panel .vx-floating-panel-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.vx-terminal-panel-body {
+  min-height: min(60dvh, 24rem);
+}
+
+.vx-xterm-host {
+  padding: 0.5rem 0.75rem 0.75rem;
+}
+
+.vx-xterm-host .xterm {
+  height: 100%;
+}
+
+.vx-xterm-host .xterm-viewport {
+  scrollbar-width: thin;
+}
+
+.vx-xterm-host .xterm {
+  --color-text-primary: var(--color-text-primary);
+}
+
+.vx-xterm-host .xterm-screen {
+  color: var(--color-text-primary);
+}
+
+.vx-xterm-host .xterm-cursor {
+  background-color: var(--color-accent) !important;
+}
+
+.vx-xterm-host .xterm-selection {
+  background-color: color-mix(in oklch, var(--color-accent) 35%, transparent) !important;
 }
 
 /* ComposerDialog — mini FloatingPanel anchored above the chat

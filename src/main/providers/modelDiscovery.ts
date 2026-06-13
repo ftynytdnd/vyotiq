@@ -38,6 +38,8 @@ import {
   thinkingFromSupportedParameters
 } from '@shared/providers/modelCapabilities.js';
 import { attachModelPricing } from '@shared/providers/attachModelPricing.js';
+import { mergeModelPricing } from '@shared/providers/modelPricing.js';
+import { modelsFingerprint } from '@shared/providers/modelsFingerprint.js';
 import { attachModelContext } from '@shared/providers/attachModelContext.js';
 import { contextWindowFromModelId } from '@shared/providers/contextFromModelId.js';
 import { dialectHintFromHostname } from '@shared/providers/providerHostname.js';
@@ -46,7 +48,7 @@ import { isLocalProvider } from '@shared/providers/isLocalProvider.js';
 import { isNvidiaIntegrateHost } from '@shared/providers/isNvidiaIntegrateHost.js';
 import { classifyProviderHost } from '@shared/providers/providerHostKind.js';
 import { enrichNvidiaModelsContext } from './nvidiaNgcCatalog.js';
-import { enrichModelsFromModelsDev } from './modelsDevCatalog.js';
+import { enrichModelsFromModelsDev, refreshModelsDevCatalogIfStale } from './modelsDevCatalog.js';
 import { normalizeBaseUrl } from '@shared/providers/normalizeBaseUrl.js';
 import { getProviderWithKey, updateProvider } from './providerStore.js';
 import {
@@ -1009,6 +1011,9 @@ async function enrichModelsMetadata(
     }
     if (!pricing) {
       pricing = attachModelPricing(provider, model.id, undefined);
+    } else {
+      const hostPricing = attachModelPricing(provider, model.id, undefined);
+      pricing = mergeModelPricing(pricing, hostPricing);
     }
 
     if (
@@ -1480,4 +1485,25 @@ export async function testProvider(providerId: string): Promise<{ ok: boolean; m
     if (isProviderError(err)) return { ok: false, message: err.friendlyMessage };
     return { ok: false, message: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/**
+ * Lightweight metadata refresh for active UI polling — re-enriches cached
+ * models from models.dev / host tables without a full upstream fetch.
+ */
+export async function refreshProviderModelsMetadata(
+  providerId: string
+): Promise<ModelInfo[] | null> {
+  const provider = await getProviderWithKey(providerId);
+  if (!provider?.models?.length) return null;
+
+  await refreshModelsDevCatalogIfStale();
+  const enriched = await enrichModelsMetadata(provider, provider.models);
+  const priorFp = modelsFingerprint(provider.models);
+  const nextFp = modelsFingerprint(enriched);
+  if (nextFp === priorFp) return null;
+
+  await updateProvider(providerId, { models: enriched });
+  log.debug('provider metadata refreshed from catalog', { providerId });
+  return enriched;
 }

@@ -1,35 +1,6 @@
 /**
- * Rewind a conversation to the moment just before a specific
- * `user-prompt` event was sent.
- *
- * Two operations live here:
- *
- *   1. `previewRewind(conversationId, workspaceId, promptEventId)` —
- *      compute impact for the confirmation modal: checkpoint-recorded
- *      file edits (informational — on-disk files are **not** reverted),
- *      affected run ids, and how many transcript events would be removed.
- *      Does not mutate disk.
- *
- *   2. `rewindToPrompt(...)` — perform a **transcript-only** rewind:
- *        a. Abort every in-flight run pinned to this conversation
- *           (mirrors `removeConversation` / `moveConversationToWorkspace`
- *           — re-using the orchestrator's abort hook so we never trim
- *           JSONL while a live run is still streaming).
- *        b. Drain the append chain so late tail events cannot resurrect
- *           after truncate.
- *        c. Truncate the JSONL transcript from the prompt event onward.
- *        d. Broadcast `checkpointsChanged` (pending cache refresh) and
- *           `CONVERSATION_TRANSCRIPT_REWOUND` so renderer stores reload.
- *
- *      Checkpoint file restore (`revertRun`, pending drops, manifest
- *      deletion) is intentionally disabled — workspace files stay as-is.
- *      `RewindResult.revertedFiles` / `revertedRunIds` remain empty arrays
- *      for API compatibility.
- *
- * The `runId` link comes from the `user-prompt` event's optional
- * `runId` field (see `src/shared/types/chat.ts`). Older transcripts
- * fall back to a `(conversationId, startedAt ≈ promptEvent.ts)`
- * heuristic against the workspace's run heads.
+ * Rewind a conversation to before a user-prompt: revert file changes,
+ * drop pending rows, delete run manifests, trim transcript.
  */
 
 import type {
@@ -40,28 +11,25 @@ import type {
   RewindResult
 } from '@shared/types/checkpoint.js';
 import type { TimelineEvent } from '@shared/types/chat.js';
-import { readTranscript, truncateTranscriptFrom, drainAppendChain } from '../conversations/conversationStore.js';
+import {
+  readTranscript,
+  truncateTranscriptFrom,
+  drainAppendChain
+} from '../conversations/conversationStore.js';
 import { abortRunsForConversation } from '../orchestrator/AgentV.js';
-import { getRunManifest } from './index.js';
+import {
+  deleteRun,
+  dropPendingForRunsExport,
+  getRunManifest,
+  revertRun
+} from './index.js';
 import { listRunHeads } from './runManifest.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child('checkpoints/rewindToPrompt');
 
-/** Window (ms) inside which a manifest's `startedAt` is allowed to lag behind a prompt's `ts` for the heuristic match. */
 const HEURISTIC_WINDOW_MS = 5_000;
 
-/**
- * Resolve which run a `user-prompt` event opened. Prefers the
- * authoritative `event.runId` (added in the schema migration) and
- * falls back to a `startedAt`-window heuristic for transcripts
- * persisted before the field was introduced.
- *
- * Returns `null` when no manifest matches (very old transcripts where
- * the run produced no FS edits, hence no manifest was opened — those
- * runs are safely "nothing to revert" and the caller renders the
- * Revert affordance disabled).
- */
 async function resolveRunIdForPrompt(
   promptEvent: Extract<TimelineEvent, { kind: 'user-prompt' }>,
   workspaceId: string,
@@ -70,16 +38,12 @@ async function resolveRunIdForPrompt(
   if (typeof promptEvent.runId === 'string' && promptEvent.runId.length > 0) {
     return promptEvent.runId;
   }
-  // Heuristic fallback. Walk the workspace's run heads and pick the
-  // one whose `startedAt` is closest to (and >=) the prompt's ts,
-  // bounded by `HEURISTIC_WINDOW_MS`.
   const heads = await listRunHeads(workspaceId);
   let best: { runId: string; delta: number } | null = null;
   for (const head of heads) {
     if (head.conversationId !== conversationId) continue;
     const delta = head.startedAt - promptEvent.ts;
-    if (delta < -HEURISTIC_WINDOW_MS) continue;
-    if (delta > HEURISTIC_WINDOW_MS) continue;
+    if (delta < -HEURISTIC_WINDOW_MS || delta > HEURISTIC_WINDOW_MS) continue;
     const absDelta = Math.abs(delta);
     if (!best || absDelta < best.delta) {
       best = { runId: head.runId, delta: absDelta };
@@ -88,18 +52,14 @@ async function resolveRunIdForPrompt(
   return best ? best.runId : null;
 }
 
-/**
- * Find the prompt event in a transcript (by `id`) and return it
- * alongside the count of trailing events the rewind would remove.
- */
 function locatePrompt(
   events: TimelineEvent[],
   promptEventId: string
 ):
   | {
-    prompt: Extract<TimelineEvent, { kind: 'user-prompt' }>;
-    transcriptEventsAffected: number;
-  }
+      prompt: Extract<TimelineEvent, { kind: 'user-prompt' }>;
+      transcriptEventsAffected: number;
+    }
   | null {
   const idx = events.findIndex((e) => e.id === promptEventId);
   if (idx < 0) return null;
@@ -107,17 +67,10 @@ function locatePrompt(
   if (candidate.kind !== 'user-prompt') return null;
   return {
     prompt: candidate,
-    // The boundary event itself is also removed, so the trim count
-    // includes it.
     transcriptEventsAffected: events.length - idx
   };
 }
 
-/**
- * Build a preview row from a manifest entry. Stable shape — both
- * preview and rewind paths use this so the user sees the exact same
- * file list before and after.
- */
 function entryToFileChange(entry: CheckpointEntry): RewindFileChange {
   return {
     filePath: entry.filePath,
@@ -133,14 +86,6 @@ function entryToFileChange(entry: CheckpointEntry): RewindFileChange {
   };
 }
 
-/**
- * Internal: compute the set of runs whose start time lands at or
- * after `boundaryStartedAt` AND whose `conversationId` matches.
- * Newest-first by `startedAt` so the caller can revert in the right
- * order. The boundary's own run is always included (the user clicks
- * Revert ON its prompt — the run that prompt opened must be rolled
- * back too).
- */
 async function selectAffectedRuns(opts: {
   workspaceId: string;
   conversationId: string;
@@ -160,16 +105,10 @@ async function selectAffectedRuns(opts: {
     const manifest = await getRunManifest(opts.workspaceId, runId);
     if (manifest) manifests.push(manifest);
   }
-  // Newest-first.
   manifests.sort((a, b) => b.startedAt - a.startedAt);
   return manifests;
 }
 
-/**
- * Compute everything the rewind would do, without touching disk. The
- * renderer paints this in its confirmation modal so the user can
- * inspect the impact before confirming.
- */
 export async function previewRewind(opts: {
   conversationId: string;
   workspaceId: string;
@@ -192,9 +131,7 @@ export async function previewRewind(opts: {
   if (!located) {
     return { ok: false, error: { kind: 'unknown-prompt', promptEventId } };
   }
-  // Transcript-only rewind: file manifests are informational when present
-  // (legacy runs) but never required to confirm. Workspace files are not
-  // restored on rewind.
+
   const runId = await resolveRunIdForPrompt(located.prompt, workspaceId, conversationId);
   const files: RewindFileChange[] = [];
   const runIds: string[] = [];
@@ -217,10 +154,11 @@ export async function previewRewind(opts: {
           files.push(entryToFileChange(entry));
         }
       }
-    } else if (runId) {
+    } else {
       runIds.push(runId);
     }
   }
+
   return {
     ok: true,
     conversationId,
@@ -234,17 +172,6 @@ export async function previewRewind(opts: {
   };
 }
 
-/**
- * Atomically execute the rewind. Builds a fresh preview internally
- * (so the renderer's preview can be slightly stale and we still
- * revert against the live disk state) and then walks the steps
- * described at the top of this file.
- *
- * `broadcasters` is passed in by the IPC handler so we don't import
- * `electron`'s `BrowserWindow` here. Both broadcasts MUST fire even
- * on partial failure — the renderer needs to refresh whatever did
- * land.
- */
 export async function rewindToPrompt(opts: {
   conversationId: string;
   workspaceId: string;
@@ -256,63 +183,65 @@ export async function rewindToPrompt(opts: {
 }): Promise<RewindResult> {
   const { conversationId, workspaceId, promptEventId, broadcasters } = opts;
 
-  // Abort any in-flight run pinned to this conversation BEFORE we
-  // start mutating manifests / transcript. Identical contract to
-  // `removeConversation` / `moveConversationToWorkspace`.
   const aborted = abortRunsForConversation(conversationId);
   if (aborted > 0) {
-    log.info('rewindToPrompt: aborted in-flight runs', {
-      conversationId,
-      aborted
-    });
-    // Mirror `chat.ipc.ts` supersede: `abortRun` only flips the signal;
-    // tail `appendEvent` calls from the winding-down run may still be
-    // flushing. Drain before we revert files or trim JSONL so a late
-    // tail cannot resurrect events truncate just removed.
+    log.info('rewindToPrompt: aborted in-flight runs', { conversationId, aborted });
     await drainAppendChain(conversationId);
   }
 
-  // Recompute the preview against live disk state so a slightly
-  // stale renderer-side preview never causes us to revert the wrong
-  // run set.
   const preview = await previewRewind({ conversationId, workspaceId, promptEventId });
   if (!preview.ok) {
     return preview;
   }
 
-  // Checkpoint file restore is disabled — rewind trims the transcript
-  // only. On-disk files are left unchanged.
   const revertedRunIds: string[] = [];
   const revertedFiles: RewindFileChange[] = [];
   const failedFiles: Array<RewindFileChange & { reason: string }> = [];
-  const droppedPending = 0;
-  const deletedRunManifests = 0;
+  let droppedPending = 0;
+  let deletedRunManifests = 0;
 
-  // Truncate the transcript JSONL from the prompt event onward.
+  for (const runId of preview.runIds) {
+    const result = await revertRun(workspaceId, runId);
+    if (result.ok && result.reverted > 0) {
+      revertedRunIds.push(runId);
+      const manifest = await getRunManifest(workspaceId, runId);
+      if (manifest) {
+        for (const entry of manifest.entries) {
+          if (!entry.reverted) continue;
+          revertedFiles.push(entryToFileChange(entry));
+        }
+      }
+    } else if (!result.ok) {
+      const reason =
+        result.error.kind === 'fs' || result.error.kind === 'sandbox'
+          ? result.error.message
+          : result.error.kind;
+      for (const file of preview.files.filter((f) => f.runId === runId)) {
+        failedFiles.push({ ...file, reason });
+      }
+    }
+    droppedPending += await dropPendingForRunsExport(workspaceId, new Set([runId]));
+    await deleteRun(workspaceId, runId);
+    deletedRunManifests++;
+  }
+
   let removedTranscriptEvents = 0;
   try {
     const trimmed = await truncateTranscriptFrom(conversationId, promptEventId);
     removedTranscriptEvents = trimmed.removedCount;
   } catch (err) {
-    log.error('rewindToPrompt: truncate failed', {
-      conversationId,
-      promptEventId,
-      err
-    });
+    log.error('rewindToPrompt: truncate failed', { conversationId, promptEventId, err });
   }
 
-  // Broadcasts. Always fire — even on partial failure, every
-  // renderer cache that COULD have been affected must refresh so the
-  // UI doesn't show stale rows.
   try {
     broadcasters.checkpointsChanged(workspaceId);
   } catch (err) {
-    log.debug('rewindToPrompt: checkpointsChanged broadcast threw', { err });
+    log.debug('checkpointsChanged broadcast threw', { err });
   }
   try {
     broadcasters.transcriptRewound(conversationId);
   } catch (err) {
-    log.debug('rewindToPrompt: transcriptRewound broadcast threw', { err });
+    log.debug('transcriptRewound broadcast threw', { err });
   }
 
   return {

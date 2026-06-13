@@ -12,6 +12,7 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { openWorkspaceFile } from '@renderer/lib/openPath';
 import { useToastStore } from '@renderer/store/useToastStore';
 import { useSettingsStore } from '@renderer/store/useSettingsStore';
+import { useEditorStore } from '@renderer/store/useEditorStore';
 
 const PRISTINE_TOASTS = useToastStore.getState();
 function resetToasts() {
@@ -21,6 +22,7 @@ function resetToasts() {
 describe('openWorkspaceFile', () => {
   beforeEach(() => {
     resetToasts();
+    useEditorStore.getState().close();
     vi.restoreAllMocks();
     useSettingsStore.setState({
       settings: { ui: { reports: { openInAppBrowser: false } } }
@@ -73,7 +75,9 @@ describe('openWorkspaceFile', () => {
     vi.spyOn(window.vyotiq.tools, 'openPath').mockRejectedValueOnce(
       new Error('boom')
     );
-    await expect(openWorkspaceFile('x.html')).resolves.toBe(false);
+    await expect(
+      openWorkspaceFile('x.html', { forceExternal: true })
+    ).resolves.toBe(false);
   });
 
   it('routes report opens through vyotiq.reports.open when in-app browser is on', async () => {

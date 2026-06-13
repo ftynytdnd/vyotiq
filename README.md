@@ -4,7 +4,7 @@ A local-first **asynchronous AI orchestrator** that lives on your device. Vyotiq
 
 ## What's different
 
-- **Plain-English harness, not a code-based one.** Agent V reads its rules, loop, memory protocol, and tool catalogue from markdown files in [`src/main/harness/`](src/main/harness/). You can read them, change them, and the agent's behavior changes accordingly. **Note:** the harness is bundled into the **main process** at build time via `harnessLoader.ts` (Vite `?raw` imports), not the renderer — editing the `.md` files in a packaged build has no effect until the next rebuild. In a dev build (`npm run dev`) Vite's HMR picks up edits live.
+- **Plain-English harness, not a code-based one.** Agent V reads its rules, loop, memory protocol, and tool catalogue from markdown files in [`src/main/harness/`](src/main/harness/). **Settings → Agent behavior → Harness** lets you override sections at runtime (persisted under userData); bundled defaults still ship in the main process via `harnessLoader.ts`.
 - **Single dynamic agent.** Agent V is one agent with a full tool surface (`bash`, `read`, `edit`, `search`, `ls`, `memory`, `recall`, …). It plans, acts directly, and synthesizes answers in one context — no worker or delegation layer.
 - **Memory across turns.** Every turn appends typed events to a JSONL transcript. Each new send replays prior events into the OpenAI message shape so the agent remembers earlier user prompts and tool results. Older transcripts are normalized on load when needed.
 - **Provider-agnostic, no SDKs.** Vyotiq talks raw OpenAI-compatible HTTP. It works with OpenAI, Anthropic-compat shims, Ollama, LM Studio, vLLM, Groq, Together, or any service that exposes `/v1/models` and `/v1/chat/completions`.
@@ -13,7 +13,21 @@ A local-first **asynchronous AI orchestrator** that lives on your device. Vyotiq
 - **Flexible turn endings.** The agent may call `finish` or `ask_user`, or end with substantive prose when that fully answers the user (including short greetings and questions ending in `?`). Empty filler turns get one retry, then a visible error.
 - **Structured logging.** All main-process activity flows through a leveled logger with a rotating file at `<userData>/vyotiq/logs/vyotiq.log` (1 MB / 3 backups). Renderer logs relay through the same file via `vyotiq.log`; crashes are caught by an error boundary and forwarded at `error` level.
 - **Tailwind v4 CSS-first.** No `tailwind.config.js`. All design tokens live in [`src/renderer/index.css`](src/renderer/index.css) under `@theme` and surface as utilities (`bg-surface-base`, `text-text-muted`, etc.).
-- **Private by default.** API keys are encrypted via your OS keychain (Electron `safeStorage`). Web search is off by default and refuses non-HTTPS endpoints (except localhost). File operations are sandboxed to your active workspace.
+- **Private by default.** API keys are encrypted via your OS keychain (Electron `safeStorage`). File operations are sandboxed to your active workspace. No outbound web search — retrieval is local (`search`, `grep`, vector index, workspace memory).
+
+## Orchestrator surfaces
+
+Vyotiq is an orchestrator first, not a full IDE — but selective surfaces support the agent loop:
+
+| Surface | Where | Notes |
+|---------|--------|--------|
+| **Workspace editor** | Secondary-zone floating panel | CodeMirror 6; open from dock search, `@` mentions, timeline file cards; syncs with agent edits |
+| **Shared terminal** | Secondary-zone PTY (`Ctrl+\``) | User + agent share one shell session; agent `bash` can run in the PTY when open |
+| **Inline completion** | Editor + composer | Tab/ghost suggestions via a dedicated or chat model (Settings → Agent behavior) |
+| **Checkpoints** | Settings + timeline | Accept/reject pending file edits; revert restores on-disk blobs |
+| **Harness lab** | Settings → Agent behavior | View/edit harness markdown sections with userData overrides |
+| **Transcript export** | Dock chat tab | JSONL or Markdown via native save dialog |
+| **Load earlier** | Timeline top | Paginated transcript hydration for long chats |
 
 ## Tech stack
 
@@ -22,7 +36,8 @@ A local-first **asynchronous AI orchestrator** that lives on your device. Vyotiq
 - **Tailwind CSS v4** (CSS-first via `@theme`)
 - **Zustand** (modular store slices)
 - **lucide-react** (icons)
-- **fast-glob** (local search + workspace listing)
+- **fast-glob** + **@ast-grep/napi** (local line + structural search)
+- **sqlite-vec** (local hybrid vector index under `.vyotiq/`)
 
 ## Getting started
 
@@ -39,6 +54,14 @@ To produce a production build:
 npm run build
 npm run preview
 ```
+
+To package installers (current OS):
+
+```bash
+npm run dist
+```
+
+See [`docs/distribution.md`](docs/distribution.md) for code signing, notarization, fuse hardening, and auto-update feed setup.
 
 ## First run
 
@@ -67,12 +90,13 @@ src/
 │   ├── tools/                     One file per tool
 │   │   └── policy/                AGENT_TOOLS allowlist
 │   ├── providers/                 Raw HTTP chat client + /v1/models discovery
+│   ├── memory/                    Global meta-rules + vector index + hybrid retrieval
 │   ├── conversations/             Persistent JSONL transcript store + index
-│   ├── memory/                    Global meta-rules + per-workspace notes
 │   ├── settings/                  Shared settings blob (single writer)
 │   ├── secrets/                   safeStorage wrapper
 │   ├── logging/                   Centralized leveled + rotating-file logger
 │   ├── ipc/                       Typed IPC handlers (one per concern)
+│   ├── updater/                   electron-updater (packaged builds)
 │   ├── window/                    Frameless window factory
 │   └── preload/                   contextBridge → window.vyotiq
 ├── shared/                        Types + constants used by both processes
@@ -104,11 +128,11 @@ Per-tool briefs (WHAT/HOW/WHY/WHEN) are pulled directly from each tool's `briefM
 
 Each tool is in its own file (`src/main/tools/<name>.tool.ts`) and registered via `registry.ts`:
 
-- **`bash`** — cross-platform shell (PowerShell on Windows, `/bin/bash` elsewhere). Sandboxed cwd, destructive-pattern detection, timeout.
+- **`bash`** — cross-platform shell (PowerShell on Windows, `/bin/bash` elsewhere). Sandboxed cwd, destructive-pattern detection, timeout. Can share the integrated PTY when open.
 - **`ls`** — recursive directory listing. Default-ignores `node_modules`, `.git`, `dist`, `out`, `.next`.
 - **`read`** — UTF-8 file reader with line range, 512 KB cap, binary refusal.
-- **`edit`** — surgical exact-match edits + file creation. Returns diff stats for the FileEditCard.
-- **`search`** — local grep across the workspace.
+- **`edit`** — surgical exact-match edits + file creation. Returns diff stats for the FileChangeCard.
+- **`search`** — local line grep **and** structural AST search (`@ast-grep/napi`) across the workspace.
 - **`memory`** — read/write/append global meta-rules or workspace notes.
 - **`recall`** — read-only lookup against other conversations in the active workspace (orchestrator-only).
 
@@ -116,25 +140,37 @@ Each tool is in its own file (`src/main/tools/<name>.tool.ts`) and registered vi
 
 Agent V's allowlist is `AGENT_TOOLS` in [`src/main/tools/policy/agentTools.ts`](src/main/tools/policy/agentTools.ts): `bash`, `ls`, `read`, `edit`, `delete`, `search`, `memory`, `recall`, `finish`, `ask_user`. The `toolSchemasFor()` helper filters schemas before each model request.
 
+## Transcripts & checkpoints
+
+- Conversations persist as JSONL under `<userData>/vyotiq/conversations/`. The timeline loads the newest slice by default; **Load earlier** paginates backward without hydrating the full file into memory.
+- **Export** from the dock chat tab (Markdown or JSONL) via a native save dialog.
+- **Checkpoints** (Settings → Agent behavior) let you accept or reject pending file edits; **Revert** on a user prompt restores on-disk files and trims the transcript.
+
 ## Memory
 
 - **Global meta-rules** live in `<userData>/vyotiq/meta-rules.md`. Loaded into `<meta_rules>` on every boot.
-- **Workspace notes** live in `<workspace>/.vyotiq/memory/*.md`. Top-N relevant notes are injected into `<recent_memory>` at the start of each turn via keyword retrieval.
+- **Workspace notes** live in `<workspace>/.vyotiq/memory/*.md`.
+- **Vector index** (`<workspace>/.vyotiq/vector/index.db`) embeds notes + source files for hybrid keyword + vector retrieval (`recall`, `memory`, orchestrator context).
 
 ## Security
 
 - API keys are encrypted via Electron `safeStorage` (DPAPI on Windows, Keychain on macOS, libsecret/kwallet on Linux). Never written in plaintext.
 - All tool paths funnel through `src/main/tools/sandbox.ts`. Path-escape attempts throw before reaching the filesystem.
 - A regex list of catastrophic patterns (`rm -rf /`, `format c:`, `git reset --hard`, fork bombs, `shutdown`, `mkfs`, `dd of=/dev/`, write-redirection to absolute paths, `tee` to absolute paths, recursive `chmod` rooted at `/`) is checked in `src/main/tools/sandbox.ts` before `bash` runs; matches return a `destructive blocked` tool result (no confirmation modal).
-- Web search sends only the user's query string. Never file contents, paths, or environment variables. Response bodies are stream-read with a 1 MB hard cap to prevent hostile / mis-configured endpoints from exhausting memory.
 - The Chromium renderer runs in the OS sandbox (`webPreferences.sandbox: true`) with `contextIsolation`, `nodeIntegration: false`, and `will-navigate` / `will-attach-webview` guards. The CSP pins `script-src 'self'`, blocks `object-src`, `frame-ancestors`, `form-action`, and forbids `<base>` rewriting.
-- Production binaries should be hardened with `@electron/fuses` via the bundled script: after your packaging pipeline produces the binary, run `npm run flip-fuses -- path/to/Vyotiq.exe` to disable `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS`, and the V8 inspector args; enable ASAR integrity validation; and require the app to load only from the integrity-checked archive.
+- Production binaries are hardened with `@electron/fuses` via the packaging pipeline (`scripts/afterPackFlipFuses.cjs` runs automatically before signing). Manual hardening: `npm run flip-fuses -- path/to/Vyotiq.exe`.
+
+## Distribution & updates
+
+- **Package:** `npm run dist` (electron-builder → `release/`). Platform targets: `dist:win`, `dist:mac`, `dist:linux`.
+- **Signing / notarization:** env-driven — see [`docs/distribution.md`](docs/distribution.md).
+- **Auto-update:** packaged builds use `electron-updater` with `autoDownload: true`. Set `UPDATE_BASE_URL` (build + runtime) and run `npm run dist:publish`. For unsigned smoke tests set `VYOTIQ_ALLOW_UNSIGNED_UPDATES=1`. Users get a toast when an update is ready; **Settings → About → Install & restart**.
 
 ## Out of scope (v1)
 
 - **Voice mic** — no transcription engine bundled.
-- **Vector DB / semantic memory** — keyword retrieval is sufficient for v1; documented as a swap point.
-- **Auto-update / code-signing pipeline** — bring your own.
+- **Outbound web search** — local retrieval only (privacy-first).
+- **MCP / sub-agents / approval gates** — solo Agent V with immediate tool apply.
 
 ## License
 

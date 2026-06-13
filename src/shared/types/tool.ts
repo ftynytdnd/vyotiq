@@ -185,7 +185,7 @@ export type ToolData =
   }
   | {
     tool: 'search';
-    mode: 'local';
+    mode: 'local' | 'structural';
     query: string;
     matches?: SearchMatch[];
     truncated: boolean;

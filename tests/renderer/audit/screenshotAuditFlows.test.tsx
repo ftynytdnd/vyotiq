@@ -32,6 +32,28 @@ vi.mock('@renderer/lib/ipc.js', () => ({
     },
     providers: {
       setAccountPollSource: vi.fn(async () => undefined)
+    },
+    checkpoints: {
+      previewRewind: vi.fn(async () => ({ ok: true })),
+      rewindToPrompt: vi.fn(async () => ({ ok: true })),
+      listPending: vi.fn(async () => []),
+      accept: vi.fn(async () => undefined),
+      acceptAll: vi.fn(async () => undefined),
+      reject: vi.fn(async () => ({ ok: true })),
+      readBlob: vi.fn(async () => null),
+      onTranscriptRewound: vi.fn(() => () => {}),
+      onChanged: vi.fn(() => () => {})
+    },
+    harness: {
+      listSections: vi.fn(async () => []),
+      readSection: vi.fn(async () => ({
+        sectionId: 'orchestrator-core',
+        bundled: '',
+        override: null,
+        effective: ''
+      })),
+      writeSection: vi.fn(async () => undefined),
+      resetSection: vi.fn(async () => undefined)
     }
   }
 }));

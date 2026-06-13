@@ -68,10 +68,14 @@ export function RunCompleteMeta({
       : null;
 
   const cachedTokens = usage?.cumulative.cachedPromptTokens ?? 0;
+  const uncachedTokens = usage?.cumulative.uncachedPromptTokens ?? 0;
   const cacheWriteTokens = usage?.cumulative.cacheCreationTokens ?? 0;
   const cacheParts: string[] = [];
   if (cachedTokens > 0) {
     cacheParts.push(`${formatTokenCountWithUnit(cachedTokens)} cached`);
+  }
+  if (uncachedTokens > 0) {
+    cacheParts.push(`${formatTokenCountWithUnit(uncachedTokens)} uncached`);
   }
   if (cacheWriteTokens > 0) {
     cacheParts.push(`${formatTokenCountWithUnit(cacheWriteTokens)} cache write`);

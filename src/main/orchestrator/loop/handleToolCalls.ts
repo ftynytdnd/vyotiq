@@ -73,6 +73,8 @@ export interface HandleToolCallsOpts {
   signal: AbortSignal;
   /** When set, calls outside this list get a synthetic tool failure. */
   allowlist?: readonly string[];
+  /** Per-run refusal counts for repeated allowlist violations. */
+  allowlistRefusalCounts?: Map<string, number>;
   skipDependencyBatching?: boolean;
   onToolCallSettled?: (callId: string, owner?: string, index?: number) => void;
 }
@@ -144,6 +146,20 @@ async function dispatchOneToolCall(
       tool: tc.name,
       allowlist: opts.allowlist
     });
+    if (opts.allowlistRefusalCounts) {
+      const prev = opts.allowlistRefusalCounts.get(tc.name) ?? 0;
+      const next = prev + 1;
+      opts.allowlistRefusalCounts.set(tc.name, next);
+      if (next >= 2) {
+        emit({
+          kind: 'agent-thought',
+          id: randomUUID(),
+          ts: Date.now(),
+          content: `Policy: "${tc.name}" is not available to Agent V. Choose another tool or approach.`,
+          severity: 'warn'
+        });
+      }
+    }
     const refusalMessage =
       `Tool "${tc.name}" is not in the agent allowlist (${opts.allowlist.join(', ')}).`;
     insertHistoryBeforeTail(messages, {

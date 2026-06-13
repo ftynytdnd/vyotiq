@@ -105,3 +105,96 @@ export async function migrateConversationPending(
   });
 }
 
+/** Append a pending row for a conversation. */
+export async function addPending(change: PendingChange): Promise<void> {
+  const bucket = await loadBucket(change.workspaceId);
+  const list = bucket[change.conversationId] ?? [];
+  list.push(change);
+  bucket[change.conversationId] = list;
+  cache.set(change.workspaceId, bucket);
+  await serialize(change.workspaceId, () => persistBucket(change.workspaceId, bucket));
+}
+
+/** Drop one pending row by entry id across workspace buckets. */
+export async function dropByEntryId(
+  entryId: string,
+  knownWorkspaceIds?: readonly string[]
+): Promise<{ workspaceId: string; change: PendingChange } | null> {
+  const ids = knownWorkspaceIds ?? Array.from(cache.keys());
+  for (const wsId of ids) {
+    const bucket = await loadBucket(wsId);
+    for (const [conversationId, list] of Object.entries(bucket)) {
+      const idx = list.findIndex((p) => p.entryId === entryId);
+      if (idx >= 0) {
+        const [removed] = list.splice(idx, 1);
+        if (list.length === 0) delete bucket[conversationId];
+        cache.set(wsId, bucket);
+        await serialize(wsId, () => persistBucket(wsId, bucket));
+        return { workspaceId: wsId, change: removed! };
+      }
+    }
+  }
+  return null;
+}
+
+/** Drop one pending row when workspace + conversation + entry are known. */
+export async function dropOne(
+  workspaceId: string,
+  conversationId: string,
+  entryId: string
+): Promise<boolean> {
+  const bucket = await loadBucket(workspaceId);
+  const list = bucket[conversationId];
+  if (!list) return false;
+  const idx = list.findIndex((p) => p.entryId === entryId);
+  if (idx < 0) return false;
+  list.splice(idx, 1);
+  if (list.length === 0) delete bucket[conversationId];
+  await serialize(workspaceId, () => persistBucket(workspaceId, bucket));
+  return true;
+}
+
+/** Drop every pending row for a conversation across known workspace buckets. */
+export async function dropAllForConversation(
+  conversationId: string,
+  knownWorkspaceIds?: readonly string[]
+): Promise<number> {
+  const ids =
+    knownWorkspaceIds ??
+    Array.from(cache.keys());
+  let count = 0;
+  for (const wsId of ids) {
+    const bucket = await loadBucket(wsId);
+    const list = bucket[conversationId];
+    if (!list || list.length === 0) continue;
+    count += list.length;
+    delete bucket[conversationId];
+    await serialize(wsId, () => persistBucket(wsId, bucket));
+  }
+  return count;
+}
+
+/** Drop pending rows whose runId is in the given set. */
+export async function dropPendingForRuns(
+  workspaceId: string,
+  runIds: ReadonlySet<string>
+): Promise<number> {
+  const bucket = await loadBucket(workspaceId);
+  let dropped = 0;
+  for (const [conversationId, list] of Object.entries(bucket)) {
+    const kept = list.filter((p) => {
+      if (runIds.has(p.runId)) {
+        dropped++;
+        return false;
+      }
+      return true;
+    });
+    if (kept.length === 0) delete bucket[conversationId];
+    else bucket[conversationId] = kept;
+  }
+  if (dropped > 0) {
+    await serialize(workspaceId, () => persistBucket(workspaceId, bucket));
+  }
+  return dropped;
+}
+

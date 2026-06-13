@@ -290,6 +290,8 @@ export type TimelineEvent =
      * reduction engine; absent ⇒ treat as `'size'` (a tool-result offload).
      */
     reason?: 'size' | 'clear' | 'input';
+    /** Estimated prompt tokens removed by this offload. */
+    tokensRemoved?: number;
   }
   /**
    * Reversible context summarization marker (last-resort lossy reduction).
@@ -318,6 +320,8 @@ export type TimelineEvent =
     originalChars: number;
     /** How many history messages were collapsed (audit/metrics). */
     originalMessages: number;
+    /** Estimated prompt tokens removed by summarization. */
+    tokensRemoved?: number;
   }
   /**
    * Live context-window usage telemetry (Phase: context-management 2026).
@@ -723,6 +727,16 @@ export interface ConversationMeta {
    * Incremented once per completed turn from discovered model pricing.
    */
   estimatedSpendUsd?: number;
+  /** Completed agent turns (user-prompt boundaries). */
+  runCount?: number;
+  /** Cumulative cache-read tokens across turns. */
+  cumulativeCachedTokens?: number;
+  /** Cumulative reasoning tokens across turns. */
+  cumulativeReasoningTokens?: number;
+  /** Cumulative net cache savings (USD) across turns. */
+  cumulativeCacheSavingsUsd?: number;
+  /** Last turn cache hit percentage (0–100). */
+  lastCacheHitPct?: number;
   /**
    * Provider-billed ÷ local-estimate calibration per model selection.
    * Key: `${providerId}\0${modelId}` — see `calibrationSelectionKey`.
@@ -745,4 +759,27 @@ export interface ConversationMeta {
 /** Full transcript shape (events streamed from disk). */
 export interface Conversation extends ConversationMeta {
   events: TimelineEvent[];
+}
+
+/** Paging metadata when only a tail slice is hydrated in the renderer. */
+export interface TranscriptPaging {
+  totalCount: number;
+  hasOlder: boolean;
+  partial: boolean;
+}
+
+export interface ConversationTailRead extends Conversation {
+  paging: TranscriptPaging;
+}
+
+export interface TranscriptBeforeRead {
+  events: TimelineEvent[];
+  hasOlder: boolean;
+}
+
+export type ConversationExportFormat = 'jsonl' | 'markdown';
+
+export interface ConversationExportResult {
+  canceled: boolean;
+  filePath?: string;
 }

@@ -4,13 +4,20 @@
  * in-app report BrowserWindow.
  */
 
+import { isEditableTextFile } from '@shared/text/isEditableTextFile.js';
 import { vyotiq } from './ipc.js';
 import { logger } from './logger.js';
+import { openWorkspaceFileInEditor } from './openWorkspaceFileInEditor.js';
 import { useToastStore } from '../store/useToastStore.js';
 import { useSettingsStore } from '../store/useSettingsStore.js';
 import { resolveReportsSettings } from '@shared/report/reportsSettings.js';
 
 const log = logger.child('lib/openPath');
+
+function isReportArtifactPath(filePath: string): boolean {
+  const norm = filePath.replace(/\\/g, '/').replace(/^\.\//, '');
+  return norm.includes('.vyotiq/reports/');
+}
 
 export interface OpenWorkspaceFileOpts {
   workspaceId?: string;
@@ -20,6 +27,8 @@ export interface OpenWorkspaceFileOpts {
   kind?: 'report' | 'default';
   /** Optional title for the in-app report window. */
   title?: string;
+  /** When true, skip the in-app editor even for text files. */
+  forceExternal?: boolean;
 }
 
 /**
@@ -34,6 +43,18 @@ export async function openWorkspaceFile(
   const reports = resolveReportsSettings(useSettingsStore.getState().settings.ui);
   const useInApp =
     opts.kind === 'report' && reports.openInAppBrowser !== false;
+
+  if (
+    !useInApp &&
+    !opts.forceExternal &&
+    !isReportArtifactPath(filePath) &&
+    isEditableTextFile(filePath)
+  ) {
+    const opened = await openWorkspaceFileInEditor(filePath, {
+      ...(opts.workspaceId ? { workspaceId: opts.workspaceId } : {})
+    });
+    if (opened) return true;
+  }
 
   try {
     if (useInApp) {

@@ -24,6 +24,7 @@ import type {
   ConversationMeta,
   TimelineEvent
 } from '@shared/types/chat.js';
+import type { TurnUsageStatsDelta } from '@shared/types/usageStats.js';
 import { logger } from '../logging/logger.js';
 import { sanitizeTitle } from './titleSanitizer.js';
 import {
@@ -38,6 +39,8 @@ import {
   cleanupSummaryArtifactsForConversation
 } from '../orchestrator/context/compactionArtifacts.js';
 import { normalizeLegacyTranscript } from '@shared/transcript/normalizeLegacyTranscript.js';
+import { TRANSCRIPT_PAGE_SIZE } from '@shared/constants.js';
+import type { TranscriptBeforeRead, TranscriptPaging } from '@shared/types/chat.js';
 import { migrateConversationPending } from '../checkpoints/pendingChanges.js';
 
 const log = logger.child('conversations');
@@ -624,7 +627,8 @@ export async function setLastModel(
 export async function incrementConversationSpend(
   id: string,
   promptId: string,
-  usd: number
+  usd: number,
+  stats: TurnUsageStatsDelta = {}
 ): Promise<ConversationMeta | null> {
   if (!id || !promptId || !Number.isFinite(usd) || usd <= 0) return null;
   const key = `${id}::${promptId}`;
@@ -637,6 +641,21 @@ export async function incrementConversationSpend(
   const meta = findMeta(id);
   if (!meta) return null;
   meta.estimatedSpendUsd = (meta.estimatedSpendUsd ?? 0) + usd;
+  meta.runCount = (meta.runCount ?? 0) + 1;
+  if (stats.cachedTokens && stats.cachedTokens > 0) {
+    meta.cumulativeCachedTokens = (meta.cumulativeCachedTokens ?? 0) + stats.cachedTokens;
+  }
+  if (stats.reasoningTokens && stats.reasoningTokens > 0) {
+    meta.cumulativeReasoningTokens =
+      (meta.cumulativeReasoningTokens ?? 0) + stats.reasoningTokens;
+  }
+  if (stats.netCacheSavingsUsd && stats.netCacheSavingsUsd > 0) {
+    meta.cumulativeCacheSavingsUsd =
+      (meta.cumulativeCacheSavingsUsd ?? 0) + stats.netCacheSavingsUsd;
+  }
+  if (stats.lastCacheHitPct !== undefined && Number.isFinite(stats.lastCacheHitPct)) {
+    meta.lastCacheHitPct = stats.lastCacheHitPct;
+  }
   bumpMeta(meta);
   scheduleIndexFlush();
   return meta;
@@ -826,6 +845,95 @@ export async function truncateTranscriptFrom(
 }
 
 /**
+ * Stream parsed events from disk. Return `false` from the handler to stop early.
+ * Malformed lines are logged and skipped.
+ */
+async function forEachTranscriptEvent(
+  id: string,
+  onEvent: (event: TimelineEvent) => boolean | void
+): Promise<void> {
+  await loadIndex();
+  await drainAppendChain(id);
+  const file = transcriptPath(id);
+  if (!existsSync(file)) return;
+  await new Promise<void>((resolve, reject) => {
+    const rl = createInterface({ input: createReadStream(file, { encoding: 'utf8' }) });
+    let lineNo = 0;
+    let stopped = false;
+    rl.on('line', (line) => {
+      if (stopped) return;
+      lineNo += 1;
+      if (line.length === 0) return;
+      try {
+        const event = JSON.parse(line) as TimelineEvent;
+        const cont = onEvent(event);
+        if (cont === false) {
+          stopped = true;
+          rl.close();
+        }
+      } catch (err) {
+        log.warn('skipping malformed transcript line', { id, lineNo, err });
+      }
+    });
+    rl.on('close', () => resolve());
+    rl.on('error', (err) => reject(err));
+  });
+}
+
+/**
+ * Return the newest `limit` events plus total on-disk count.
+ * Single-pass O(n) with bounded memory.
+ */
+export async function readTranscriptTail(
+  id: string,
+  limit: number = TRANSCRIPT_PAGE_SIZE
+): Promise<{ events: TimelineEvent[]; totalCount: number; hasOlder: boolean }> {
+  const tail: TimelineEvent[] = [];
+  let totalCount = 0;
+  await forEachTranscriptEvent(id, (event) => {
+    totalCount += 1;
+    tail.push(event);
+    if (tail.length > limit) tail.shift();
+    return true;
+  });
+  const events = stripLegacySummaryTimelineEvents(tail);
+  return {
+    events,
+    totalCount,
+    hasOlder: totalCount > limit
+  };
+}
+
+/**
+ * Load up to `limit` events strictly before `beforeEventId`.
+ */
+export async function readTranscriptBefore(
+  id: string,
+  beforeEventId: string,
+  limit: number = TRANSCRIPT_PAGE_SIZE
+): Promise<TranscriptBeforeRead> {
+  const before: TimelineEvent[] = [];
+  let found = false;
+  await forEachTranscriptEvent(id, (event) => {
+    if (event.id === beforeEventId) {
+      found = true;
+      return false;
+    }
+    before.push(event);
+    return true;
+  });
+  if (!found) {
+    throw new Error(`readTranscriptBefore: event not found (${beforeEventId})`);
+  }
+  const filtered = stripLegacySummaryTimelineEvents(before);
+  const sliceStart = Math.max(0, filtered.length - limit);
+  return {
+    events: filtered.slice(sliceStart),
+    hasOlder: sliceStart > 0
+  };
+}
+
+/**
  * Streams events line-by-line. Malformed lines are logged and skipped so a
  * crash-truncated tail doesn't poison the rest of the transcript.
  *
@@ -842,25 +950,10 @@ export async function truncateTranscriptFrom(
  * cost on the happy path (no chain → early return).
  */
 export async function readTranscript(id: string): Promise<TimelineEvent[]> {
-  await loadIndex();
-  await drainAppendChain(id);
-  const file = transcriptPath(id);
-  if (!existsSync(file)) return [];
   const out: TimelineEvent[] = [];
-  await new Promise<void>((resolve, reject) => {
-    const rl = createInterface({ input: createReadStream(file, { encoding: 'utf8' }) });
-    let lineNo = 0;
-    rl.on('line', (line) => {
-      lineNo += 1;
-      if (line.length === 0) return;
-      try {
-        out.push(JSON.parse(line) as TimelineEvent);
-      } catch (err) {
-        log.warn('skipping malformed transcript line', { id, lineNo, err });
-      }
-    });
-    rl.on('close', () => resolve());
-    rl.on('error', (err) => reject(err));
+  await forEachTranscriptEvent(id, (event) => {
+    out.push(event);
+    return true;
   });
   const migrated = stripLegacySummaryTimelineEvents(out);
   if (migrated.length !== out.length) {
@@ -924,6 +1017,32 @@ export async function readConversation(id: string): Promise<Conversation | null>
     scheduleIndexFlush();
   }
   return { ...meta, events };
+}
+
+/** Tail slice for renderer hydration — avoids loading huge JSONL into memory. */
+export async function readConversationTail(
+  id: string,
+  limit: number = TRANSCRIPT_PAGE_SIZE
+): Promise<(Conversation & { paging: TranscriptPaging }) | null> {
+  await loadIndex();
+  const meta = findMeta(id);
+  if (!meta) return null;
+  const { events: rawEvents, totalCount, hasOlder } = await readTranscriptTail(id, limit);
+  const events = normalizeLegacyTranscript(rawEvents);
+  const peak = peakOrchestratorPromptTokens(events);
+  if (peak > (meta.peakPromptTokens ?? 0)) {
+    meta.peakPromptTokens = peak;
+    scheduleIndexFlush();
+  }
+  return {
+    ...meta,
+    events,
+    paging: {
+      totalCount,
+      hasOlder,
+      partial: hasOlder
+    }
+  };
 }
 
 /**

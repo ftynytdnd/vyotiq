@@ -79,6 +79,9 @@ function makeStubApi() {
     conversations: {
       list: vi.fn(async () => []),
       read: vi.fn(async () => null),
+      readTail: vi.fn(async () => null),
+      readBefore: vi.fn(async () => ({ events: [], hasOlder: false })),
+      export: vi.fn(async () => ({ canceled: true })),
       create: vi.fn(async () => ({ id: 'new', title: 'Untitled', updatedAt: 0 })),
       rename: asyncNoop,
       remove: asyncNoop,
@@ -124,7 +127,13 @@ function makeStubApi() {
       revealPath: asyncNoop,
       playWarningSound: vi.fn(async () => undefined),
       setThemeSource: asyncNoop,
-      checkForUpdates: vi.fn(async () => ({ updateAvailable: false }))
+      checkForUpdates: vi.fn(async () => ({
+        updateAvailable: false,
+        status: { phase: 'idle' as const }
+      })),
+      downloadUpdate: vi.fn(async () => ({ phase: 'idle' as const })),
+      installUpdate: asyncNoop,
+      onUpdateStatus: subscribe,
     },
     checkpoints: {
       previewRewind: vi.fn(async (input: unknown) => ({ ok: true, ...(input as object) })),
@@ -140,7 +149,46 @@ function makeStubApi() {
         droppedPending: 0,
         deletedRunManifests: 0
       })),
-      onTranscriptRewound: subscribe
+      listPending: vi.fn(async () => []),
+      accept: asyncNoop,
+      acceptAll: asyncNoop,
+      reject: vi.fn(async () => ({ ok: true as const, reverted: 1 })),
+      readBlob: vi.fn(async () => null),
+      onTranscriptRewound: subscribe,
+      onChanged: subscribe
+    },
+    harness: {
+      listSections: vi.fn(async () => [
+        { id: 'orchestrator-core', file: '00-orchestrator-core.md', hasOverride: false },
+        { id: 'context-learning', file: '01-context-learning.md', hasOverride: false },
+        { id: 'deliverables', file: '02-deliverables.md', hasOverride: false },
+        { id: 'static-examples', file: '03-static-examples.md', hasOverride: false }
+      ]),
+      readSection: vi.fn(async (sectionId: string) => ({
+        sectionId,
+        bundled: `# ${sectionId}\n`,
+        override: null,
+        effective: `# ${sectionId}\n`
+      })),
+      writeSection: asyncNoop,
+      resetSection: asyncNoop
+    },
+    editor: {
+      read: vi.fn(async () => ({ content: '', mtimeMs: 0, truncated: false })),
+      write: vi.fn(async () => ({ ok: true as const, mtimeMs: 0 }))
+    },
+    terminal: {
+      attach: vi.fn(async () => ({ ok: true as const, shell: 'bash', cols: 80, rows: 24 })),
+      input: asyncNoop,
+      resize: asyncNoop,
+      restart: asyncNoop,
+      detach: asyncNoop,
+      onData: subscribe,
+      onExit: subscribe
+    },
+    completion: {
+      request: vi.fn(async (input: { requestId: number }) => ({ requestId: input.requestId, text: '' })),
+      cancel: asyncNoop
     },
     log: noop
   };

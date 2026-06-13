@@ -8,7 +8,7 @@ import type { ProviderDiscoveryPollHint, ProviderModelsUpdate } from '@shared/ty
 import { isLocalProvider } from '@shared/providers/isLocalProvider.js';
 import { modelsFingerprint } from '@shared/providers/modelsFingerprint.js';
 import { listProviders, getProviderWithKey } from './providerStore.js';
-import { discoverModels } from './modelDiscovery.js';
+import { discoverModels, refreshProviderModelsMetadata } from './modelDiscovery.js';
 import { hasActivePollSources } from './providerPollSources.js';
 import {
   recordDiscoveryPollFailure,
@@ -76,6 +76,24 @@ async function pollOnce(): Promise<void> {
       try {
         const prior = p.models ?? [];
         const priorFp = modelsFingerprint(prior);
+
+        const metadataRefresh = await refreshProviderModelsMetadata(p.id);
+        if (metadataRefresh) {
+          publishDiscoveryPollCleared(p.id);
+          const nextFp = modelsFingerprint(metadataRefresh);
+          const cachedFp = lastFingerprintByProvider.get(p.id);
+          if (nextFp !== priorFp && cachedFp !== nextFp) {
+            lastFingerprintByProvider.set(p.id, nextFp);
+            const refreshed = (await listProviders()).find((x) => x.id === p.id);
+            broadcastModelsUpdate({
+              providerId: p.id,
+              models: metadataRefresh,
+              lastDiscoveredAt: refreshed?.lastDiscoveredAt ?? Date.now()
+            });
+          }
+          continue;
+        }
+
         const models = await discoverModels(p.id, false);
         publishDiscoveryPollCleared(p.id);
         const nextFp = modelsFingerprint(models);

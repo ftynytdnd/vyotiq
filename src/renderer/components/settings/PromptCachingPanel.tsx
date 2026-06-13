@@ -169,6 +169,12 @@ export function PromptCachingPanel() {
             Gemini explicit: {formatGeminiCacheState(runtimeStatus.geminiExplicitCache)}
           </p>
         ) : null}
+        {runtimeStatus?.geminiExplicitCache.state === 'active' ? (
+          <p className="text-meta text-warning">
+            Gemini explicit cache is active — hourly storage fees are not included in Vyotiq cost
+            estimates ($1–$4.50/MTok/hr depending on model).
+          </p>
+        ) : null}
         <button
           type="button"
           className="mt-2 text-meta text-accent hover:underline"

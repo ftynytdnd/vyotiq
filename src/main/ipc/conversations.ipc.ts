@@ -6,13 +6,25 @@
  * per token.
  */
 
-import { IPC } from '@shared/constants.js';
+import { dialog } from 'electron';
+import { promises as fs } from 'node:fs';
+import { IPC, TRANSCRIPT_PAGE_SIZE } from '@shared/constants.js';
+import type {
+  ConversationExportFormat,
+  ConversationExportResult,
+  TranscriptBeforeRead
+} from '@shared/types/chat.js';
+import type { TurnUsageStatsDelta } from '@shared/types/usageStats.js';
+import { renderTranscriptMarkdown } from '@shared/transcript/exportMarkdown.js';
+import { normalizeLegacyTranscript } from '@shared/transcript/normalizeLegacyTranscript.js';
 import {
   createConversation,
   incrementConversationSpend,
   listConversations,
   moveConversationToWorkspace,
   readConversation,
+  readConversationTail,
+  readTranscriptBefore,
   removeConversation,
   renameConversation,
   setConversationArchived
@@ -90,11 +102,79 @@ export function registerConversationsIpc(): void {
   );
   wrapIpcHandler(
     IPC.CONVERSATIONS_INCREMENT_SPEND,
-    async (_e, id: string, promptId: string, usd: number) => {
+    async (
+      _e,
+      id: string,
+      promptId: string,
+      usd: number,
+      stats?: TurnUsageStatsDelta
+    ) => {
       assertString('conversations:increment-spend', 'id', id);
       assertString('conversations:increment-spend', 'promptId', promptId);
       assertNumber('conversations:increment-spend', 'usd', usd, { min: 0, max: 1_000_000 });
-      return incrementConversationSpend(id, promptId, usd);
+      return incrementConversationSpend(id, promptId, usd, stats ?? {});
+    }
+  );
+
+  wrapIpcHandler(
+    IPC.CONVERSATIONS_READ_TAIL,
+    async (_e, id: string, limit?: number) => {
+      assertString('conversations:readTail', 'id', id);
+      if (limit !== undefined) {
+        assertNumber('conversations:readTail', 'limit', limit, { min: 1, max: 10_000 });
+      }
+      return readConversationTail(id, limit ?? TRANSCRIPT_PAGE_SIZE);
+    }
+  );
+
+  wrapIpcHandler(
+    IPC.CONVERSATIONS_READ_BEFORE,
+    async (_e, id: string, beforeEventId: string, limit?: number): Promise<TranscriptBeforeRead> => {
+      assertString('conversations:readBefore', 'id', id);
+      assertString('conversations:readBefore', 'beforeEventId', beforeEventId);
+      if (limit !== undefined) {
+        assertNumber('conversations:readBefore', 'limit', limit, { min: 1, max: 10_000 });
+      }
+      const page = await readTranscriptBefore(id, beforeEventId, limit ?? TRANSCRIPT_PAGE_SIZE);
+      return {
+        events: normalizeLegacyTranscript(page.events),
+        hasOlder: page.hasOlder
+      };
+    }
+  );
+
+  wrapIpcHandler(
+    IPC.CONVERSATIONS_EXPORT,
+    async (_e, id: string, format: ConversationExportFormat): Promise<ConversationExportResult> => {
+      assertString('conversations:export', 'id', id);
+      if (format !== 'jsonl' && format !== 'markdown') {
+        throw new Error(`conversations:export: invalid format "${String(format)}"`);
+      }
+      const conv = await readConversation(id);
+      if (!conv) {
+        throw new Error(`conversations:export: conversation not found (${id})`);
+      }
+      const safeTitle = conv.title.replace(/[<>:"/\\|?*]/g, '_').trim() || 'transcript';
+      const defaultName =
+        format === 'jsonl' ? `${safeTitle}.jsonl` : `${safeTitle}.md`;
+      const filters =
+        format === 'jsonl'
+          ? [{ name: 'JSON Lines', extensions: ['jsonl'] }]
+          : [{ name: 'Markdown', extensions: ['md'] }];
+      const result = await dialog.showSaveDialog({
+        title: 'Export conversation transcript',
+        defaultPath: defaultName,
+        filters
+      });
+      if (result.canceled || !result.filePath) {
+        return { canceled: true };
+      }
+      const body =
+        format === 'jsonl'
+          ? conv.events.map((e) => JSON.stringify(e)).join('\n') + '\n'
+          : renderTranscriptMarkdown(conv.events, conv.title);
+      await fs.writeFile(result.filePath, body, 'utf8');
+      return { canceled: false, filePath: result.filePath };
     }
   );
 }

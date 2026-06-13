@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, ArchiveRestore, ChevronDown, ChevronRight, Trash2, MessageSquare } from 'lucide-react';
+import { Archive, ArchiveRestore, ChevronDown, ChevronRight, Download, Trash2, MessageSquare } from 'lucide-react';
 import type { ConversationMeta } from '@shared/types/chat.js';
 import { Button } from '../ui/Button.js';
 import { DestructiveConfirm } from '../ui/DestructiveConfirm.js';
@@ -40,6 +40,8 @@ import { useChatStore } from '../../store/useChatStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
 import { useUiStore } from '../../store/useUiStore.js';
+import { vyotiq } from '../../lib/ipc.js';
+import { useToastStore } from '../../store/useToastStore.js';
 import { formatConversationSpend } from '../../lib/workspaceSpend.js';
 import { buildDisplayChatTitles } from './displayChatTitles.js';
 import { handleDockVerticalTablistKeyDown } from './dockVerticalTablistKeyboard.js';
@@ -295,11 +297,24 @@ function ChatTab({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(entry.title);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const deleteOpenRef = useRef(false);
   const lastTrashClickRef = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const { isRunActive, runId } = useConversationProcessing(entry.id);
   const registerRowRef = useChatRowFocus(entry.id);
+  const showToast = useToastStore((s) => s.show);
+
+  const onExport = async (format: 'jsonl' | 'markdown') => {
+    setExportOpen(false);
+    try {
+      const result = await vyotiq.conversations.export(entry.id, format);
+      if (result.canceled) return;
+      showToast('Transcript exported', 'success');
+    } catch {
+      showToast('Export failed', 'danger');
+    }
+  };
 
   useEffect(() => {
     if (editing) inputRef.current?.select();
@@ -419,6 +434,47 @@ function ChatTab({
                       currentWorkspaceId={entry.workspaceId}
                     />
                   )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label="Export transcript"
+                    aria-expanded={exportOpen}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExportOpen((open) => !open);
+                    }}
+                    className="h-4 w-4 px-0 text-text-faint hover:text-text-secondary"
+                  >
+                    <Download className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+                  </Button>
+                  {exportOpen ? (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label="Export as Markdown"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void onExport('markdown');
+                        }}
+                        className="h-4 px-1 text-meta text-text-faint hover:text-text-secondary"
+                      >
+                        MD
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label="Export as JSONL"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void onExport('jsonl');
+                        }}
+                        className="h-4 px-1 text-meta text-text-faint hover:text-text-secondary"
+                      >
+                        JL
+                      </Button>
+                    </>
+                  ) : null}
                   <Button
                     size="sm"
                     variant="ghost"

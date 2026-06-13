@@ -95,6 +95,10 @@ const api: VyotiqApi = {
   conversations: {
     list: (workspaceId?: string) => ipcRenderer.invoke(IPC.CONVERSATIONS_LIST, workspaceId),
     read: (id) => ipcRenderer.invoke(IPC.CONVERSATIONS_READ, id),
+    readTail: (id, limit) => ipcRenderer.invoke(IPC.CONVERSATIONS_READ_TAIL, id, limit),
+    readBefore: (id, beforeEventId, limit) =>
+      ipcRenderer.invoke(IPC.CONVERSATIONS_READ_BEFORE, id, beforeEventId, limit),
+    export: (id, format) => ipcRenderer.invoke(IPC.CONVERSATIONS_EXPORT, id, format),
     create: (workspaceId: string) => ipcRenderer.invoke(IPC.CONVERSATIONS_CREATE, workspaceId),
     rename: (id, title) => ipcRenderer.invoke(IPC.CONVERSATIONS_RENAME, id, title),
     remove: (id) => ipcRenderer.invoke(IPC.CONVERSATIONS_REMOVE, id),
@@ -102,8 +106,8 @@ const api: VyotiqApi = {
       ipcRenderer.invoke(IPC.CONVERSATIONS_MOVE, id, targetWorkspaceId),
     archive: (id) => ipcRenderer.invoke(IPC.CONVERSATIONS_ARCHIVE, id),
     unarchive: (id) => ipcRenderer.invoke(IPC.CONVERSATIONS_UNARCHIVE, id),
-    incrementSpend: (id, promptId, usd) =>
-      ipcRenderer.invoke(IPC.CONVERSATIONS_INCREMENT_SPEND, id, promptId, usd)
+    incrementSpend: (id, promptId, usd, stats) =>
+      ipcRenderer.invoke(IPC.CONVERSATIONS_INCREMENT_SPEND, id, promptId, usd, stats)
   },
 
   tools: {
@@ -147,8 +151,52 @@ const api: VyotiqApi = {
       ipcRenderer.invoke(IPC.CHECKPOINTS_PREVIEW_REWIND, input),
     rewindToPrompt: (input) =>
       ipcRenderer.invoke(IPC.CHECKPOINTS_REWIND_TO_PROMPT, input),
+    listPending: (conversationId) =>
+      ipcRenderer.invoke(IPC.CHECKPOINTS_LIST_PENDING, conversationId),
+    accept: (entryId) => ipcRenderer.invoke(IPC.CHECKPOINTS_ACCEPT, entryId),
+    acceptAll: (conversationId) =>
+      ipcRenderer.invoke(IPC.CHECKPOINTS_ACCEPT_ALL, conversationId),
+    reject: (entryId) => ipcRenderer.invoke(IPC.CHECKPOINTS_REJECT, entryId),
+    readBlob: (workspaceId, hash) =>
+      ipcRenderer.invoke(IPC.CHECKPOINTS_READ_BLOB, workspaceId, hash),
     onTranscriptRewound: (cb) =>
-      on<[string]>(IPC.CONVERSATION_TRANSCRIPT_REWOUND, (conversationId) => cb(conversationId))
+      on<[string]>(IPC.CONVERSATION_TRANSCRIPT_REWOUND, (conversationId) => cb(conversationId)),
+    onChanged: (cb) =>
+      on<[string]>(IPC.CHECKPOINTS_CHANGED, (workspaceId) => cb(workspaceId))
+  },
+
+  harness: {
+    listSections: () => ipcRenderer.invoke(IPC.HARNESS_LIST_SECTIONS),
+    readSection: (sectionId) => ipcRenderer.invoke(IPC.HARNESS_READ_SECTION, sectionId),
+    writeSection: (sectionId, body) =>
+      ipcRenderer.invoke(IPC.HARNESS_WRITE_SECTION, sectionId, body),
+    resetSection: (sectionId) => ipcRenderer.invoke(IPC.HARNESS_RESET_SECTION, sectionId)
+  },
+
+  editor: {
+    read: (input) => ipcRenderer.invoke(IPC.EDITOR_READ, input),
+    write: (input) => ipcRenderer.invoke(IPC.EDITOR_WRITE, input)
+  },
+
+  terminal: {
+    attach: (input) => ipcRenderer.invoke(IPC.TERMINAL_ATTACH, input),
+    input: (payload) => ipcRenderer.invoke(IPC.TERMINAL_INPUT, payload),
+    resize: (payload) => ipcRenderer.invoke(IPC.TERMINAL_RESIZE, payload),
+    restart: (workspaceId) => ipcRenderer.invoke(IPC.TERMINAL_RESTART, workspaceId),
+    detach: (workspaceId) => ipcRenderer.invoke(IPC.TERMINAL_DETACH, workspaceId),
+    onData: (cb) =>
+      on<[import('@shared/types/terminal.js').TerminalDataEvent]>(IPC.TERMINAL_DATA, (event) =>
+        cb(event)
+      ),
+    onExit: (cb) =>
+      on<[import('@shared/types/terminal.js').TerminalExitEvent]>(IPC.TERMINAL_EXIT, (event) =>
+        cb(event)
+      )
+  },
+
+  completion: {
+    request: (input) => ipcRenderer.invoke(IPC.COMPLETION_REQUEST, input),
+    cancel: (kind, workspaceId) => ipcRenderer.invoke(IPC.COMPLETION_CANCEL, kind, workspaceId)
   },
 
   app: {
@@ -157,6 +205,12 @@ const api: VyotiqApi = {
     revealPath: (target) => ipcRenderer.invoke(IPC.APP_REVEAL_PATH, target),
     setThemeSource: (mode) => ipcRenderer.invoke(IPC.APP_SET_THEME_SOURCE, mode),
     checkForUpdates: () => ipcRenderer.invoke(IPC.APP_CHECK_UPDATES),
+    downloadUpdate: () => ipcRenderer.invoke(IPC.APP_DOWNLOAD_UPDATE),
+    installUpdate: () => ipcRenderer.invoke(IPC.APP_INSTALL_UPDATE),
+    onUpdateStatus: (cb) =>
+      on<[import('@shared/types/appUpdate.js').AppUpdateStatus]>(IPC.APP_UPDATE_STATUS, (status) =>
+        cb(status)
+      ),
     playWarningSound: () => ipcRenderer.invoke(IPC.APP_PLAY_WARNING_SOUND)
   },
 

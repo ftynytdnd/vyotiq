@@ -2,12 +2,18 @@
  * Approximate run cost from token usage + per-model pricing.
  */
 
+import { estimateCacheSavings } from './cacheSavings.js';
 import {
   ANTHROPIC_CACHE_WRITE_MULTIPLIER,
   CACHE_READ_INPUT_MULTIPLIER
 } from './cachePricingDefaults.js';
 import type { ModelPricing } from './modelPricing.js';
 import type { TokenUsage } from '../types/chat.js';
+
+export interface EstimateRunCostOptions {
+  /** Platform fee multiplier (e.g. OpenRouter 1.055). Default 1. */
+  platformFeeMultiplier?: number;
+}
 
 export interface RunCostEstimate {
   /** Total estimated USD for the usage slice. */
@@ -19,6 +25,10 @@ export interface RunCostEstimate {
   /** Anthropic-only: USD for cache-write tokens this turn. */
   cacheWriteUsd: number;
   perRequestUsd: number;
+  /** USD saved vs full input rate on cached tokens (before write surcharge). */
+  grossCacheSavingsUsd: number;
+  /** Gross savings minus cache-write USD on the same turn. */
+  netCacheSavingsUsd: number;
 }
 
 type UsageSlice = Pick<
@@ -50,13 +60,30 @@ function billInputBuckets(usage: UsageSlice): {
   };
 }
 
+function applyPlatformFee(est: RunCostEstimate, multiplier: number): RunCostEstimate {
+  if (multiplier === 1) return est;
+  return {
+    totalUsd: est.totalUsd * multiplier,
+    inputUsd: est.inputUsd * multiplier,
+    outputUsd: est.outputUsd * multiplier,
+    reasoningUsd: est.reasoningUsd * multiplier,
+    cachedInputUsd: est.cachedInputUsd * multiplier,
+    cacheWriteUsd: est.cacheWriteUsd * multiplier,
+    perRequestUsd: est.perRequestUsd * multiplier,
+    grossCacheSavingsUsd: est.grossCacheSavingsUsd * multiplier,
+    netCacheSavingsUsd: est.netCacheSavingsUsd * multiplier
+  };
+}
+
 /** Estimate USD cost for a token usage record and model pricing. */
 export function estimateRunCost(
   usage: UsageSlice,
   pricing: ModelPricing | undefined,
-  requestCount = 1
+  requestCount = 1,
+  options: EstimateRunCostOptions = {}
 ): RunCostEstimate | null {
   if (!pricing) return null;
+  const platformFeeMultiplier = options.platformFeeMultiplier ?? 1;
 
   const inputRate = pricing.inputPerMillion ?? 0;
   const outputRate = pricing.outputPerMillion ?? 0;
@@ -92,15 +119,23 @@ export function estimateRunCost(
     if (perRequestUsd <= 0 && inputRate === 0 && outputRate === 0) return null;
   }
 
-  return {
-    totalUsd,
-    inputUsd: tailUsd + cachedInputUsd + cacheWriteUsd,
-    outputUsd,
-    reasoningUsd,
-    cachedInputUsd,
-    cacheWriteUsd,
-    perRequestUsd
-  };
+  const savings =
+    estimateCacheSavings(usage, pricing, 1) ?? { grossSavingsUsd: 0, netSavingsUsd: 0 };
+
+  return applyPlatformFee(
+    {
+      totalUsd,
+      inputUsd: tailUsd + cachedInputUsd + cacheWriteUsd,
+      outputUsd,
+      reasoningUsd,
+      cachedInputUsd,
+      cacheWriteUsd,
+      perRequestUsd,
+      grossCacheSavingsUsd: savings.grossSavingsUsd,
+      netCacheSavingsUsd: savings.netSavingsUsd
+    },
+    platformFeeMultiplier
+  );
 }
 
 /** Compact USD label for timeline run-complete rows, e.g. `$0.042` or `$1.23`. */

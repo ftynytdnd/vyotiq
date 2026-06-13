@@ -102,8 +102,7 @@ describe('checkpoints/rewindToPrompt', () => {
       postContent: 'after\n',
       additions: 1,
       deletions: 1,
-      source: 'edit',
-      emit: () => {}
+      source: 'edit'
     });
     await fs.writeFile(abs, 'after\n', 'utf8');
 
@@ -120,9 +119,9 @@ describe('checkpoints/rewindToPrompt', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.revertedRunIds).toEqual([]);
+    expect(result.revertedRunIds.length).toBeGreaterThan(0);
     expect(result.removedTranscriptEvents).toBeGreaterThan(0);
-    expect(await fs.readFile(abs, 'utf8')).toBe('after\n');
+    expect(await fs.readFile(abs, 'utf8')).toBe('before\n');
 
     const events = await readTranscript(meta.id);
     expect(events.some((e) => e.id === promptKeep.id)).toBe(true);

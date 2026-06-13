@@ -15,7 +15,9 @@ import { useToastStore } from '../../../store/useToastStore.js';
 import { selectEffectivePermissions, useSettingsStore } from '../../../store/useSettingsStore.js';
 import { useProviderStore } from '../../../store/useProviderStore.js';
 import {
+  estimateRunCostBreakdown,
   estimateRunCostUsd,
+  buildTurnUsageStatsDelta,
   recordRunSpendForPrompt,
   resolveModelForPrompt
 } from '../../../lib/workspaceSpend.js';
@@ -176,14 +178,21 @@ export function RunCompleteRow({
   );
   const costUsd =
     usage && modelForCost ? estimateRunCostUsd(modelForCost, providers, usage.cumulative) : null;
+  const costBreakdown =
+    usage && modelForCost
+      ? estimateRunCostBreakdown(modelForCost, providers, usage.cumulative)
+      : null;
 
   const spendRecordedRef = useRef(false);
   useEffect(() => {
     if (spendRecordedRef.current || costUsd === null) return;
     if (!workspaceId && !conversationId) return;
     spendRecordedRef.current = true;
-    void recordRunSpendForPrompt(workspaceId, conversationId, promptId, costUsd);
-  }, [workspaceId, conversationId, costUsd, promptId]);
+    const stats = usage
+      ? buildTurnUsageStatsDelta(usage.cumulative, costBreakdown)
+      : {};
+    void recordRunSpendForPrompt(workspaceId, conversationId, promptId, costUsd, stats);
+  }, [workspaceId, conversationId, costUsd, costBreakdown, promptId, usage]);
 
   if (hideMeta && !offerSummary) return null;
 

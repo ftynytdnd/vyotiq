@@ -34,7 +34,7 @@ export function ensureTranscriptRewoundSubscription(): void {
       try {
         const conv = await vyotiq.conversations.read(conversationId);
         const events: TimelineEvent[] = conv?.events ?? [];
-        useChatStore.getState().setTranscript(conversationId, events);
+        useChatStore.getState().setTranscript(conversationId, events, null);
       } catch (err) {
         log.warn('onTranscriptRewound: re-read failed', { conversationId, err });
       }
@@ -105,7 +105,7 @@ export const useCheckpointsStore = create<CheckpointsStore>((_setState, getState
           const events: TimelineEvent[] = conv?.events ?? [];
           useChatStore
             .getState()
-            .setTranscript(input.conversationId, events);
+            .setTranscript(input.conversationId, events, null);
         } catch (err) {
           log.warn('rewindToPrompt: explicit transcript refresh failed', {
             conversationId: input.conversationId,

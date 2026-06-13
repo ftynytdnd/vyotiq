@@ -12,7 +12,16 @@ vi.mock('@renderer/lib/ipc.js', () => ({
   vyotiq: {
     settings: { set: vi.fn(async () => {}) },
     memory: { list: vi.fn(async () => []), get: vi.fn(async () => ({ content: '', key: 'x' })) },
-    app: { info: vi.fn(async () => ({ version: '0.1.0', name: 'Vyotiq' })) }
+    app: {
+      info: vi.fn(async () => ({ version: '0.1.0', name: 'Vyotiq' })),
+      checkForUpdates: vi.fn(async () => ({
+        updateAvailable: false,
+        status: { phase: 'idle' as const }
+      })),
+      downloadUpdate: vi.fn(async () => ({ phase: 'idle' as const })),
+      installUpdate: vi.fn(async () => undefined),
+      onUpdateStatus: () => () => {}
+    }
   }
 }));
 

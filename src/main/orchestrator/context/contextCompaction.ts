@@ -290,7 +290,8 @@ export async function reduceContextIfNeeded(
       toolCallId: msg.tool_call_id,
       relativePath,
       originalChars: content.length,
-      reason: isProtected ? 'size' : 'clear'
+      reason: isProtected ? 'size' : 'clear',
+      tokensRemoved: rowSaved
     });
   }
 
@@ -392,6 +393,12 @@ export async function reduceContextIfNeeded(
         state.lastSummaryAt = now;
         state.summaryCount += 1;
         changed = true;
+        const summaryTokensRemoved = Math.max(
+          0,
+          estimatePromptTokensSync(opts.modelId, histSlice).tokens -
+            estimatePromptTokensSync(opts.modelId, [summaryMsg]).tokens
+        );
+        saved += summaryTokensRemoved;
         opts.emit({
           kind: 'context-summary',
           id: randomUUID(),
@@ -400,7 +407,8 @@ export async function reduceContextIfNeeded(
           summary: result.summary,
           relativePath: result.relativePath,
           originalChars: result.originalChars,
-          originalMessages: result.originalMessages
+          originalMessages: result.originalMessages,
+          ...(summaryTokensRemoved > 0 ? { tokensRemoved: summaryTokensRemoved } : {})
         });
         log.info('context summarized', {
           runId: opts.runId,
@@ -431,7 +439,8 @@ export async function reduceContextIfNeeded(
   }
   return {
     messages: next,
-    usage: buildPostReductionUsage(next, opts, usage.advertisedWindow, anchorRatio)
+    usage: buildPostReductionUsage(next, opts, usage.advertisedWindow, anchorRatio),
+    tokensRemoved: saved > 0 ? saved : undefined
   };
 }
 
@@ -465,6 +474,8 @@ function buildPostReductionUsage(
 export interface ReduceContextResult {
   messages: ChatMessage[];
   usage: ContextUsageSummary;
+  /** Tokens removed from the prompt when reduction ran. */
+  tokensRemoved?: number;
 }
 
 export { isCompactedToolContent, buildCompactionBanner };
@@ -510,6 +521,11 @@ export async function resetContextToSummary(
   state.lastSummaryAt = nowTs;
   state.summaryCount += 1;
   state.lastReductionAt = nowTs;
+  const summaryTokensRemoved = Math.max(
+    0,
+    estimatePromptTokensSync(opts.modelId, histSlice).tokens -
+      estimatePromptTokensSync(opts.modelId, [summaryMsg]).tokens
+  );
   opts.emit({
     kind: 'context-summary',
     id: randomUUID(),
@@ -518,7 +534,8 @@ export async function resetContextToSummary(
     summary: result.summary,
     relativePath: result.relativePath,
     originalChars: result.originalChars,
-    originalMessages: result.originalMessages
+    originalMessages: result.originalMessages,
+    ...(summaryTokensRemoved > 0 ? { tokensRemoved: summaryTokensRemoved } : {})
   });
   log.info('context reset via summary', {
     runId: opts.runId,
