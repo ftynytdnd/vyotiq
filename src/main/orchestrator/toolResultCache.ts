@@ -95,6 +95,61 @@ interface CacheEntry {
 /** Run-scoped cache: `WeakMap<AbortSignal, Map<entryKey, CacheEntry>>`. */
 const caches = new WeakMap<AbortSignal, Map<string, CacheEntry>>();
 
+/** Cross-run cache within one conversation (survives user-message boundaries). */
+const conversationCaches = new Map<string, Map<string, CacheEntry>>();
+const CONVERSATION_CACHE_MAX = 48;
+
+function getConversationCache(conversationId: string): Map<string, CacheEntry> {
+  let map = conversationCaches.get(conversationId);
+  if (!map) {
+    map = new Map();
+    conversationCaches.set(conversationId, map);
+    if (conversationCaches.size > CONVERSATION_CACHE_MAX) {
+      const oldest = conversationCaches.keys().next().value;
+      if (oldest !== undefined) conversationCaches.delete(oldest);
+    }
+  }
+  return map;
+}
+
+function clearConversationCache(conversationId: string | undefined): void {
+  if (!conversationId) return;
+  const map = conversationCaches.get(conversationId);
+  if (map && map.size > 0) {
+    log.debug('tool-result conversation cache invalidated by write', {
+      conversationId,
+      entriesEvicted: map.size
+    });
+    map.clear();
+  }
+}
+
+function replayCachedEntry(entry: CacheEntry, name: ToolName, scope: 'run' | 'conversation'): ToolResult {
+  entry.hits += 1;
+  if (entry.seeded) {
+    log.info('tool-result cache hit (seeded)', {
+      tool: name,
+      hits: entry.hits,
+      scope
+    });
+    return { ...entry.result };
+  }
+  const banner =
+    `[cache] This exact \`${name}\` call has already been issued ` +
+    `${entry.hits} time${entry.hits === 1 ? '' : 's'} earlier in this ${scope === 'conversation' ? 'conversation' : 'run'}. ` +
+    `The output has not changed. If you keep seeing this, move to a ` +
+    `planning or edit step instead of re-reading.\n\n`;
+  log.info('tool-result cache hit', {
+    tool: name,
+    hits: entry.hits,
+    scope
+  });
+  return {
+    ...entry.result,
+    output: banner + entry.result.output
+  };
+}
+
 function getCache(signal: AbortSignal): Map<string, CacheEntry> {
   let map = caches.get(signal);
   if (!map) {
@@ -125,48 +180,25 @@ function getCache(signal: AbortSignal): Map<string, CacheEntry> {
 export function lookupCachedResult(
   signal: AbortSignal,
   name: ToolName,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  conversationId?: string
 ): ToolResult | null {
   const key = cacheableKey(name, args);
   if (key === null) return null;
-  const entry = getCache(signal).get(key);
-  if (!entry) return null;
-  // Only replay successful results. A failure that reproduced would
-  // re-trigger failure handling and we'd rather let the real tool run
-  // in case the underlying condition has changed (e.g. a transient
-  // permission error on the first call that has since cleared).
-  if (!entry.result.ok) return null;
 
-  entry.hits += 1;
-  const sincePrev = Date.now() - entry.firstTs;
-
-  // Seeded entries (audit fix A4) carry the authoritative explanation
-  // in their own `output`; the "you already issued this" banner would
-  // lie to the model on the FIRST read of a pre-seeded file.
-  if (entry.seeded) {
-    log.info('tool-result cache hit (seeded)', {
-      tool: name,
-      hits: entry.hits
-    });
-    return { ...entry.result };
+  const runEntry = getCache(signal).get(key);
+  if (runEntry?.result.ok) {
+    return replayCachedEntry(runEntry, name, 'run');
   }
 
-  const banner =
-    `[cache] This exact \`${name}\` call has already been issued ` +
-    `${entry.hits} time${entry.hits === 1 ? '' : 's'} earlier in this run. ` +
-    `The output has not changed. If you keep seeing this, move to a ` +
-    `planning or edit step instead of re-reading.\n\n`;
+  if (conversationId) {
+    const convEntry = getConversationCache(conversationId).get(key);
+    if (convEntry?.result.ok) {
+      return replayCachedEntry(convEntry, name, 'conversation');
+    }
+  }
 
-  log.info('tool-result cache hit', {
-    tool: name,
-    hits: entry.hits,
-    ageMs: sincePrev
-  });
-
-  return {
-    ...entry.result,
-    output: banner + entry.result.output
-  };
+  return null;
 }
 
 /**
@@ -211,7 +243,8 @@ export function recordToolResult(
   signal: AbortSignal,
   name: ToolName,
   args: Record<string, unknown>,
-  result: ToolResult
+  result: ToolResult,
+  conversationId?: string
 ): void {
   if (isWriteShaped(name, args)) {
     const map = caches.get(signal);
@@ -222,19 +255,23 @@ export function recordToolResult(
       });
       map.clear();
     }
+    clearConversationCache(conversationId);
     return;
   }
   const key = cacheableKey(name, args);
   if (key === null) return;
-  if (!result.ok) return; // never cache failures
-  const map = getCache(signal);
-  if (!map.has(key)) {
-    map.set(key, { result, hits: 0, firstTs: Date.now() });
+  if (!result.ok) return;
+
+  const storeEntry = (target: Map<string, CacheEntry>): void => {
+    if (!target.has(key)) {
+      target.set(key, { result, hits: 0, firstTs: Date.now() });
+    }
+  };
+
+  storeEntry(getCache(signal));
+  if (conversationId) {
+    storeEntry(getConversationCache(conversationId));
   }
-  // If the key already exists, lookupCachedResult should have
-  // short-circuited the real call and we shouldn't be here. Overwriting
-  // would hide that invariant violation; leave the original entry alone
-  // so stale hit counters remain audit-friendly.
 }
 
 /**

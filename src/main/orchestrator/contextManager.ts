@@ -14,6 +14,10 @@ import { promises as fs } from 'node:fs';
 import { escapeXmlAttr, wrapXml } from './envelope/index.js';
 import { retrieveRelevantMemory } from '../memory/retrieval.js';
 import { readWorkspaceNote } from '../memory/workspaceNotes.js';
+import {
+  RUN_PROGRESS_AGENT_KEY,
+  runProgressStorageKey
+} from '../memory/runProgressNote.js';
 import { getWorkspace } from '../workspace/workspaceState.js';
 import { listConversations } from '../conversations/conversationStore.js';
 import type { ConversationMeta } from '@shared/types/chat';
@@ -24,8 +28,9 @@ import { realpathInsideWorkspace } from '../tools/sandbox.js';
  * run-progress scratchpad. Surfaced read-only in `<run_progress>` near the
  * turn so it survives reversible reduction / summarization. The harness
  * instructs the agent to keep it current via the `memory` tool.
+ * @deprecated Use `RUN_PROGRESS_AGENT_KEY` from `runProgressNote.ts`.
  */
-export const RUN_PROGRESS_NOTE_KEY = 'run-progress';
+export const RUN_PROGRESS_NOTE_KEY = RUN_PROGRESS_AGENT_KEY;
 /** Cap on the run-progress body folded into the runtime tail. */
 const RUN_PROGRESS_MAX_CHARS = 2_000;
 
@@ -232,9 +237,12 @@ export async function buildContextEnvelope(
   // `sessionContextBody` and `priorConversationsBody`. A transient failure
   // resolves to `undefined` so each helper falls back to its own catch path.
   const sharedListPromise = listConversations().catch(() => undefined);
-  const runProgressPromise = workspacePath
-    ? readWorkspaceNote(RUN_PROGRESS_NOTE_KEY, workspacePath).catch(() => null)
-    : Promise.resolve(null);
+  const runProgressPromise =
+    workspacePath && conversationId
+      ? readWorkspaceNote(runProgressStorageKey(conversationId), workspacePath).catch(
+          () => null
+        )
+      : Promise.resolve(null);
   const [topLevel, mem, conversationsList, runProgressNote] = await Promise.all([
     workspaceTopLevel(workspacePath),
     retrieveRelevantMemory(userPrompt, undefined, workspacePath),

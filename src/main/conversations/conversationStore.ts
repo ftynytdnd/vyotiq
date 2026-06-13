@@ -628,6 +628,7 @@ export async function setContextCalibrationOnMeta(
   }
   meta.contextCalibrationByModel[selectionKey] = ratio;
   scheduleIndexFlush();
+  await flushIndex();
 }
 
 /**

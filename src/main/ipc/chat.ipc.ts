@@ -123,15 +123,11 @@ function isPersistentEvent(event: TimelineEvent): boolean {
   //     in the renderer process), but we list it here defensively
   //     in case the main process ever produces one via a future
   //     emit path.
-  //   - `context-usage` — live context-window meter telemetry. The
-  //     renderer also derives an at-rest estimate from persisted
-  //     `token-usage`, so this stream is meaningless after the fact.
   return (
     event.kind !== 'run-status' &&
     event.kind !== 'tool-call-args-delta' &&
     event.kind !== 'diff-stream' &&
-    event.kind !== 'synthetic-usage-update' &&
-    event.kind !== 'context-usage'
+    event.kind !== 'synthetic-usage-update'
   );
 }
 

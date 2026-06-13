@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   activeBreakdownLayers,
   emptyBreakdownLabels,
+  formatLayerWindowPct,
+  formatOmittedLayerNote,
+  layerCompositionBarWidth,
   layerCompositionShare,
   layerShare,
   layerWindowShare
@@ -43,16 +46,30 @@ describe('contextBreakdownLayers', () => {
     ]);
   });
 
-  it('emptyBreakdownLabels lists only zero layers', () => {
+  it('formatLayerWindowPct shows <1% for sub-half-percent layers', () => {
+    expect(formatLayerWindowPct(468, 200_000)).toBe('<1%');
+    expect(formatLayerWindowPct(1_000, 200_000)).toBe('1%');
+    expect(formatLayerWindowPct(0, 200_000)).toBe('0%');
+  });
+
+  it('layerCompositionBarWidth uses fractional share without a display floor', () => {
+    expect(layerCompositionBarWidth(13, 13_100)).toBeCloseTo(0.099, 2);
+    expect(layerCompositionBarWidth(9_800, 13_100)).toBeCloseTo(74.81, 1);
+  });
+
+  it('formatOmittedLayerNote clarifies static prefix when history is empty', () => {
     const breakdown = {
-      system: 1,
+      system: 10_000,
       fewShot: 0,
       workspace: 0,
       history: 0,
-      runtime: 1,
+      runtime: 500,
       turn: 0,
-      tools: 1
+      tools: 2_000
     };
-    expect(emptyBreakdownLabels(breakdown)).toEqual(['Few-shot', 'Workspace', 'History', 'Turn']);
+    expect(formatOmittedLayerNote(['History'], breakdown)).toMatch(/harness, tools/);
+    expect(formatOmittedLayerNote(['Few-shot', 'History'], breakdown)).toBe(
+      'Few-shot, History empty'
+    );
   });
 });

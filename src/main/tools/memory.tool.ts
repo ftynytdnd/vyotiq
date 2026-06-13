@@ -18,6 +18,11 @@ import {
   writeWorkspaceNote
 } from '../memory/workspaceNotes.js';
 import {
+  isPerConversationRunProgressKey,
+  resolveRunProgressKey,
+  RUN_PROGRESS_AGENT_KEY
+} from '../memory/runProgressNote.js';
+import {
   touchGlobalMemoryLastReference,
   touchMemoryLastReference
 } from '../memory/lastReferenced.js';
@@ -148,19 +153,23 @@ async function runWorkspace(
   switch (a.action) {
     case 'list': {
       const notes = await listWorkspaceNotes(workspacePath);
-      const lines = notes.map((n) => `- ${n.key} (${new Date(n.updatedAt).toISOString()})`);
-      const body = notes.length ? `# Workspace Notes\n${lines.join('\n')}` : '# No workspace notes yet.';
+      const visible = notes.filter((n) => !isPerConversationRunProgressKey(n.key));
+      const lines = visible.map((n) => `- ${n.key} (${new Date(n.updatedAt).toISOString()})`);
+      const body = visible.length
+        ? `# Workspace Notes\n${lines.join('\n')}\n\n(Per-conversation \`${RUN_PROGRESS_AGENT_KEY}\` notes are managed automatically — use key \`${RUN_PROGRESS_AGENT_KEY}\` to read/write yours.)`
+        : '# No workspace notes yet.';
       return ok(id, started, body, {
         tool: 'memory',
         action: 'list',
         scope: 'workspace',
-        count: notes.length,
+        count: visible.length,
         preview: body
       });
     }
     case 'read': {
       if (!a.key) return fail(id, started, 'Error: `key` required.', 'missing key');
-      const note = await readWorkspaceNote(a.key, workspacePath);
+      const storageKey = resolveRunProgressKey(a.key, ctx.conversationId);
+      const note = await readWorkspaceNote(storageKey, workspacePath);
       if (!note) {
         return ok(id, started, `# Note "${a.key}" does not exist.`, {
           tool: 'memory',
@@ -169,44 +178,46 @@ async function runWorkspace(
           key: a.key
         });
       }
-      void touchMemoryLastReference(ctx.workspaceId, note.key, ctx.conversationId).catch(
+      void touchMemoryLastReference(ctx.workspaceId, a.key, ctx.conversationId).catch(
         () => undefined
       );
-      return ok(id, started, `# ${note.key}\n${note.content}`, {
+      return ok(id, started, `# ${note.key === storageKey && a.key === RUN_PROGRESS_AGENT_KEY ? RUN_PROGRESS_AGENT_KEY : note.key}\n${note.content}`, {
         tool: 'memory',
         action: 'read',
         scope: 'workspace',
-        key: note.key,
+        key: a.key,
         preview: note.content
       });
     }
     case 'write': {
       if (!a.key) return fail(id, started, 'Error: `key` required.', 'missing key');
       if (typeof a.content !== 'string') return fail(id, started, 'Error: `content` required.', 'missing content');
-      const note = await writeWorkspaceNote(a.key, a.content, workspacePath);
-      void touchMemoryLastReference(ctx.workspaceId, note.key, ctx.conversationId).catch(
+      const storageKey = resolveRunProgressKey(a.key, ctx.conversationId);
+      await writeWorkspaceNote(storageKey, a.content, workspacePath);
+      void touchMemoryLastReference(ctx.workspaceId, a.key, ctx.conversationId).catch(
         () => undefined
       );
-      return ok(id, started, `Wrote note: ${note.key}`, {
+      return ok(id, started, `Wrote note: ${a.key}`, {
         tool: 'memory',
         action: 'write',
         scope: 'workspace',
-        key: note.key,
+        key: a.key,
         preview: a.content
       });
     }
     case 'append': {
       if (!a.key) return fail(id, started, 'Error: `key` required.', 'missing key');
       if (typeof a.content !== 'string') return fail(id, started, 'Error: `content` required.', 'missing content');
-      const note = await appendWorkspaceNote(a.key, a.content, workspacePath);
-      void touchMemoryLastReference(ctx.workspaceId, note.key, ctx.conversationId).catch(
+      const storageKey = resolveRunProgressKey(a.key, ctx.conversationId);
+      await appendWorkspaceNote(storageKey, a.content, workspacePath);
+      void touchMemoryLastReference(ctx.workspaceId, a.key, ctx.conversationId).catch(
         () => undefined
       );
-      return ok(id, started, `Appended to note: ${note.key}`, {
+      return ok(id, started, `Appended to note: ${a.key}`, {
         tool: 'memory',
         action: 'append',
         scope: 'workspace',
-        key: note.key,
+        key: a.key,
         preview: a.content
       });
     }

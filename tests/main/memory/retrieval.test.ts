@@ -130,5 +130,19 @@ describe('retrieveRelevantMemory', () => {
       // must still come back.
       expect(metaRules).toBe('# meta');
     });
+
+    it('excludes run-progress notes from scored and recency paths', async () => {
+      vi.mocked(listWorkspaceNotes).mockResolvedValue([
+        {
+          key: 'run-progress-conv-id',
+          content: 'stale audit plan from another chat',
+          updatedAt: 500
+        },
+        { key: 'recent.md', content: 'tailwind v4 migration details', updatedAt: 300 }
+      ]);
+      const { notes } = await retrieveRelevantMemory('proceed');
+      expect(notes).toHaveLength(1);
+      expect(notes[0]?.key).toBe('recent.md');
+    });
   });
 });

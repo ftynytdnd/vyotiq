@@ -115,6 +115,7 @@ import {
 import { estimatePromptTokensSync } from '../context/contextBudget.js';
 import {
   clampCalibrationRatio,
+  loadContextCalibration,
   rememberContextCalibration
 } from '../context/contextCalibration.js';
 import { toolSchemasFor } from '../../tools/registry.js';
@@ -304,6 +305,13 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     // Calibration: provider-reported prompt tokens ÷ our estimate, carried turn
     // to turn so the budget/meter anchor to what the provider actually bills.
     let calibrationRatio: number | undefined;
+    if (opts.input.conversationId) {
+      calibrationRatio = await loadContextCalibration(
+        opts.input.conversationId,
+        opts.input.selection.providerId,
+        opts.input.selection.modelId
+      );
+    }
     // Post-reduction usage level from the previous iteration drives the
     // proactive `<context_pressure>` note on the next turn (one-turn lag is
     // fine: it reflects the lean prompt the model just saw).

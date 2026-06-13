@@ -326,9 +326,8 @@ export type TimelineEvent =
    * and the warn/trigger color states.
    *
    * IMPORTANT: pure live telemetry — intentionally NOT persisted to the JSONL
-   * transcript (see `isPersistentEvent` in `chat.ipc.ts`). The renderer also
-   * derives an at-rest estimate from persisted `token-usage` so the meter is
-   * still meaningful between runs and on replay.
+   * Persisted per iteration for replay-accurate composer meter breakdown.
+   * The renderer also keeps `latestContextUsage` as the live selector.
    */
   | {
     kind: 'context-usage';

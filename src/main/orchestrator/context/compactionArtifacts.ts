@@ -2,6 +2,7 @@ import { mkdir, writeFile, rm, readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { CONTEXT_SUMMARY_SUBDIR, WORKSPACE_DOTDIR } from '@shared/constants.js';
+import { sanitizePathSegment } from '@shared/path/sanitizePathSegment.js';
 import { logger } from '../../logging/logger.js';
 
 const log = logger.child('orch/compactionArtifacts');
@@ -62,8 +63,8 @@ export async function writeCompactionArtifact(
   const relativePath = path.posix.join(
     WORKSPACE_DOTDIR,
     COMPACTION_SUBDIR,
-    conversationId,
-    runId,
+    sanitizePathSegment(conversationId),
+    sanitizePathSegment(runId),
     fileName
   );
   const absolutePath = path.join(workspacePath, ...relativePath.split('/'));
@@ -170,8 +171,8 @@ export async function writeSummaryArtifact(
   const relativePath = path.posix.join(
     WORKSPACE_DOTDIR,
     CONTEXT_SUMMARY_SUBDIR,
-    conversationId,
-    runId,
+    sanitizePathSegment(conversationId),
+    sanitizePathSegment(runId),
     fileName
   );
   const absolutePath = path.join(workspacePath, ...relativePath.split('/'));

@@ -14,6 +14,7 @@ import { formatTokenCountWithUnit } from '../../lib/formatTokens.js';
 import { useContextWindowUsage } from './useContextWindowUsage.js';
 import { ContextBreakdownPopover } from './ContextBreakdownPopover.js';
 import { CONTEXT_BREAKDOWN_LAYERS } from './contextBreakdownLayers.js';
+import { useChatStore } from '../../store/useChatStore.js';
 import {
   contextPercent,
   isContextReducing,
@@ -77,6 +78,11 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
     attachmentDraft,
     isRunActive
   });
+  const billedPromptTokens = useChatStore((s) =>
+    isRunActive && s.orchestratorUsage?.latest?.promptTokens
+      ? s.orchestratorUsage.latest.promptTokens
+      : undefined
+  );
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -164,6 +170,7 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
         triggerRef={triggerRef}
         usage={usage}
         evaluating={evaluating}
+        billedPromptTokens={billedPromptTokens}
         controlsEnabled={controlsEnabled}
         hasConversation={Boolean(conversationId)}
         onCompact={() => void run('compact')}

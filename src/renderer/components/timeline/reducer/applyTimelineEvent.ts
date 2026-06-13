@@ -399,9 +399,13 @@ export function applyTimelineEvent(
       return { ...state, events: appendTimelineEvent(state.events, event, mutate) };
 
     case 'context-usage':
-      // Live context-window meter telemetry — never persisted, never an
-      // inline row. Track only the latest for the composer meter selector.
-      return { ...state, latestContextUsage: event };
+      // Context-window meter telemetry — persisted for replay-accurate
+      // breakdown; no inline timeline row.
+      return {
+        ...state,
+        events: appendTimelineEvent(state.events, event, mutate),
+        latestContextUsage: event
+      };
 
     case 'diff-stream': {
       // Phase 2 — main-process FS-aware live diff. Folds into the

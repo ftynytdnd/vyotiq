@@ -31,6 +31,35 @@ export function layerCompositionShare(tokens: number, usedTokens: number): numbe
   return layerShare(tokens, usedTokens);
 }
 
+/** Fractional composition width (0–100) for row bars — no rounding floor. */
+export function layerCompositionBarWidth(tokens: number, usedTokens: number): number {
+  if (usedTokens <= 0 || tokens <= 0) return 0;
+  return Math.min(100, (tokens / usedTokens) * 100);
+}
+
+/** Display percent of usable window; sub-0.5% layers show as `<1%`. */
+export function formatLayerWindowPct(tokens: number, effectiveWindow: number): string {
+  if (tokens <= 0 || effectiveWindow <= 0) return '0%';
+  const pct = (tokens / effectiveWindow) * 100;
+  if (pct > 0 && pct < 0.5) return '<1%';
+  return `${Math.min(100, Math.round(pct))}%`;
+}
+
+/** Footnote when some layers are empty — clarifies static prefix vs history. */
+export function formatOmittedLayerNote(
+  emptyLabels: string[],
+  breakdown: ContextUsageBreakdown
+): string | null {
+  if (emptyLabels.length === 0) return null;
+  const onlyHistory = emptyLabels.length === 1 && emptyLabels[0] === 'History';
+  const hasStaticPrefix =
+    breakdown.system > 0 || breakdown.tools > 0 || breakdown.runtime > 0;
+  if (onlyHistory && hasStaticPrefix) {
+    return 'History empty — harness, tools, and runtime count before your first message';
+  }
+  return `${emptyLabels.join(', ')} empty`;
+}
+
 /** Layers with tokens, largest first — for dense breakdown tables. */
 export function activeBreakdownLayers(
   breakdown: ContextUsageBreakdown

@@ -5,6 +5,7 @@
 
 import { listWorkspaceNotes } from './workspaceNotes.js';
 import { readGlobalMetaRules } from './globalMeta.js';
+import { isRunProgressKey } from './runProgressNote.js';
 
 interface ScoredNote {
   /**
@@ -99,7 +100,9 @@ export async function retrieveRelevantMemory(
   } catch {
     // No workspace yet — that's fine.
   }
-  const scored: ScoredNote[] = rawNotes.map((n) => ({
+  const scored: ScoredNote[] = rawNotes
+    .filter((n) => !isRunProgressKey(n.key))
+    .map((n) => ({
     scope: 'workspace' as const,
     key: n.key,
     content: n.content,
@@ -119,6 +122,7 @@ export async function retrieveRelevantMemory(
   // treats these as "recent work" rather than "query-relevant".
   if (rawNotes.length > 0) {
     const fallback: ScoredNote[] = rawNotes
+      .filter((n) => !isRunProgressKey(n.key))
       .slice(0, RECENCY_FALLBACK_N)
       .map((n) => ({
         scope: 'workspace-recent' as const,

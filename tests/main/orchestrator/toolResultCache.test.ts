@@ -266,4 +266,12 @@ describe('toolResultCache', () => {
     expect(hit2.output).toMatch(/2 times\b/);
   });
 
+  it('shares read hits across runs in the same conversation', () => {
+    const sigA = new AbortController().signal;
+    const sigB = new AbortController().signal;
+    const conv = 'conv-1';
+    recordToolResult(sigA, 'read', { path: 'a.ts' }, okResult('shared'), conv);
+    expect(lookupCachedResult(sigB, 'read', { path: 'a.ts' }, conv)).not.toBeNull();
+    expect(lookupCachedResult(sigB, 'read', { path: 'a.ts' })).toBeNull();
+  });
 });

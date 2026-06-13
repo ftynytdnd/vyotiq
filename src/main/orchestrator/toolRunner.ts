@@ -72,7 +72,7 @@ export async function runToolByName(
   // production can never burn tokens re-running `read` on a file whose
   // contents are already in the model's context.
   // Cache is scoped per run `AbortSignal`. See `toolResultCache.ts`.
-  const cached = lookupCachedResult(opts.signal, tool.name, args);
+  const cached = lookupCachedResult(opts.signal, tool.name, args, opts.conversationId);
   if (cached) return cached;
 
   try {
@@ -89,7 +89,7 @@ export async function runToolByName(
     // Record-after-run: writes invalidate the cache, reads are memoized.
     // Runs before `return` so even a caller that awaits+discards still
     // participates in the cache for the next call.
-    recordToolResult(opts.signal, tool.name, args, result);
+    recordToolResult(opts.signal, tool.name, args, result, opts.conversationId);
     return result;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

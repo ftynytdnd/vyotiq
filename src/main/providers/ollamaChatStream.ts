@@ -268,6 +268,10 @@ export async function* streamOllama(
       // keep-alive comments on long-polling connections.
       return false;
     }
+    // Ollama Cloud can be slow to emit the first NDJSON line while the
+    // HTTP connection is open. Poke on every parsed frame (not only raw
+    // byte reads) so thinking-only gaps still reset the inactivity timer.
+    watch.poke();
     // Mid-stream error envelope (`{"error":"..."}`). Before this branch
     // existed, such a line produced zero deltas and the caller saw a
     // clean EOF with no content — the user stared at a stuck spinner

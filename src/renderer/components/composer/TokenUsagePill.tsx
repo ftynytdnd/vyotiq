@@ -1,5 +1,5 @@
 /**
- * Compact run token usage — prompt / completion split; hover shows
+ * Compact run token usage — separate in/out micro-pills; hover shows
  * orchestrator breakdown.
  */
 
@@ -35,8 +35,8 @@ function buildTitle(
   orchestrator: TokenUsageAggregate | undefined
 ): string {
   const lines: string[] = [
-    `Prompt: ${formatTokenCountWithUnit(latest.promptTokens)}`,
-    `Completion: ${formatTokenCountWithUnit(latest.completionTokens)}`,
+    `Last turn — in: ${formatTokenCountWithUnit(latest.promptTokens)}`,
+    `Last turn — out: ${formatTokenCountWithUnit(latest.completionTokens)}`,
     '',
     'By role:'
   ];
@@ -66,7 +66,7 @@ export const TokenUsagePill = memo(function TokenUsagePill({
   return (
     <span
       className={cn(
-        'vx-composer-token-pill shrink-0 font-mono text-meta text-text-secondary tabular-nums'
+        'vx-composer-token-pill vx-composer-turn-usage shrink-0 font-mono text-meta text-text-secondary tabular-nums'
       )}
       title={title}
     >
@@ -75,24 +75,25 @@ export const TokenUsagePill = memo(function TokenUsagePill({
         strokeWidth={SHELL_ROW_ICON_STROKE}
         aria-hidden
       />
-      <span className="ml-1" aria-label={hasUsage ? 'Last turn prompt and completion tokens' : undefined}>
-        {hasUsage ? (
-          <>
-            <span className="text-text-faint" aria-hidden>
-              turn{' '}
-            </span>
+      {hasUsage ? (
+        <span
+          className="vx-composer-turn-usage__cluster"
+          aria-label={`Last turn input ${formatTokenCount(latest.promptTokens)} tokens, output ${formatTokenCount(latest.completionTokens)} tokens`}
+        >
+          <span className="vx-composer-turn-usage__pill">
+            <span className="vx-composer-turn-usage__dir">in</span>
             {formatTokenCount(latest.promptTokens)}
-            <span className="mx-0.5 text-text-faint" aria-hidden>
-              /
-            </span>
-            {formatTokenCount(latest.completionTokens)}
-          </>
-        ) : (
-          <span className={cn(!draftEstimate?.exact && 'italic text-text-faint')}>
-            ~{formatTokenCount(draftEstimate!.tokens)}
           </span>
-        )}
-      </span>
+          <span className="vx-composer-turn-usage__pill">
+            <span className="vx-composer-turn-usage__dir">out</span>
+            {formatTokenCount(latest.completionTokens)}
+          </span>
+        </span>
+      ) : (
+        <span className={cn('ml-1', !draftEstimate?.exact && 'italic text-text-faint')}>
+          ~{formatTokenCount(draftEstimate!.tokens)}
+        </span>
+      )}
     </span>
   );
 });

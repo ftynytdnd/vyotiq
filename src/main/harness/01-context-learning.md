@@ -127,16 +127,23 @@ summary's "Next steps" and "Open questions" to keep momentum.
 
 For multi-step tasks, maintain a compact running scratchpad so your own
 state survives compaction and summarization. Write it as the reserved
-workspace note `run-progress`:
+workspace note `run-progress` (one scratchpad **per conversation** — it
+does not carry over when the user starts a new chat in the same workspace):
 
 ```json
 { "name": "memory", "arguments": { "action": "write", "scope": "workspace", "key": "run-progress", "content": "## Goal\n…\n## Done\n…\n## Next\n…\n## Watch-outs\n…" } }
 ```
 
 The host surfaces its latest content in `<run_progress>` near the turn
-every iteration, so a concise, current note keeps you oriented even after
-older detail is offloaded. Update it when you finish a meaningful step or
-change plan — keep it short (a few lines per heading), not a transcript.
+every iteration for **this conversation only**, so a concise, current note
+keeps you oriented even after older detail is offloaded. Update it when
+you finish a meaningful step or change plan — keep it short (a few lines
+per heading), not a transcript.
+
+**Do not re-read files you already fetched.** Identical `read` / `search`
+calls in the same conversation return cached output — if you see a
+`[cache]` banner, use the prior result instead of issuing the same call
+with a different line range unless you genuinely need new bytes.
 
 ---
 

@@ -19,6 +19,7 @@ import {
   workspaceNotePath,
   writeWorkspaceNote
 } from '../memory/workspaceNotes.js';
+import { isPerConversationRunProgressKey } from '../memory/runProgressNote.js';
 import {
   getGlobalMemoryLastReference,
   getMemoryLastReference,
@@ -93,7 +94,9 @@ export function registerMemoryIpc(): void {
       const notes = await listWorkspaceNotes(undefined, keysOnly);
       const wsId = await activeWorkspaceId();
       const refs = wsId ? await listMemoryLastReferences(wsId) : {};
-      return notes.map<MemoryEntry>((n) =>
+      return notes
+        .filter((n) => !isPerConversationRunProgressKey(n.key))
+        .map<MemoryEntry>((n) =>
         withLastReference(
           {
             scope: 'workspace',
