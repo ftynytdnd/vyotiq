@@ -4,7 +4,7 @@
  * stays literal in the serialized prompt.
  */
 
-export type MentionKind = 'file' | 'symbol' | 'doc' | 'web';
+export type MentionKind = 'file' | 'symbol' | 'doc' | 'conversation' | 'web';
 
 /** Resolved mention carried on user-prompt events and the chat send wire. */
 export interface MentionRef {
@@ -20,4 +20,8 @@ export interface MentionRef {
   mimeType?: string;
   sizeBytes?: number;
   external?: boolean;
+  /** 1-based line for symbol mentions. */
+  line?: number;
+  /** Conversation id for conversation mentions. */
+  conversationId?: string;
 }

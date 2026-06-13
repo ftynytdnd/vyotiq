@@ -20,6 +20,7 @@ import { readBlob, updateBlob, type SettingsBlob } from './blob.js';
 import { normalizeDockWidthInUi } from '@shared/dock/dockWidth.js';
 import { migrateLegacyDockUi, normalizeSettingsPatch } from './migrateUiFields.js';
 import { syncPromptCachingFromSettings } from './promptCachingRuntime.js';
+import { syncVectorEmbedFromSettings } from './vectorEmbedRuntime.js';
 
 export { normalizeSettingsPatch };
 
@@ -244,6 +245,7 @@ export async function getSettings(): Promise<AppSettings> {
   const persisted = changed ? await updateBlob(() => normalized) : raw;
   const settings = publicShape(persisted);
   syncPromptCachingFromSettings(settings);
+  syncVectorEmbedFromSettings(settings);
   return settings;
 }
 
@@ -386,5 +388,6 @@ export async function setSettings(patch: Partial<AppSettings>): Promise<AppSetti
   });
   const settings = publicShape(next);
   syncPromptCachingFromSettings(settings);
+  syncVectorEmbedFromSettings(settings);
   return settings;
 }

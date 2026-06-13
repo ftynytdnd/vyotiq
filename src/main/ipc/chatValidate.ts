@@ -76,7 +76,7 @@ export function assertAttachmentMetaArray(channel: string, value: unknown): void
   });
 }
 
-const MENTION_KINDS = new Set<MentionKind>(['file', 'symbol', 'doc', 'web']);
+const MENTION_KINDS = new Set<MentionKind>(['file', 'symbol', 'doc', 'conversation', 'web']);
 
 function assertMentionRef(channel: string, index: number, value: unknown): void {
   assertObject(channel, `mentions[${index}]`, value);

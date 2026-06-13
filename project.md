@@ -145,7 +145,7 @@ Instead of strict JSON schemas, the tools must be defined and explained within t
 
 ## Security & Bounded Autonomy (The Prime Directives)
 Agent V is powerful but must operate strictly within predefined safety boundaries:
-- **Destructive Actions:** The agent must *never* execute commands that format drives, delete root directories, or wipe out uncommitted git branches without explicit, multi-step user confirmation.
+- **Destructive Actions:** The host blocks catastrophic shell patterns before execution (`destructive blocked` tool result — no confirmation modal). Agent V must not attempt commands that format drives, delete root directories, or wipe uncommitted git state without the user explicitly directing recovery via chat.
 - **Privacy:** The agent must never transmit local file contents, API keys, or environment variables to external servers or web-searches. It is a strictly private entity.
 - **Containment:** By default, all file operations and bash commands must be contained strictly within the current active workspace directory unless the user explicitly requests otherwise.
 

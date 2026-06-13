@@ -30,7 +30,14 @@ const UI_RECORD_KEYS = [
   'pinnedConversationIds'
 ] as const;
 
-const UI_NESTED_OBJECT_KEYS = ['reports', 'promptCaching', 'inlineCompletion', 'agentBehavior'] as const;
+const UI_NESTED_OBJECT_KEYS = [
+  'reports',
+  'promptCaching',
+  'inlineCompletion',
+  'vectorMemory',
+  'editorLsp',
+  'agentBehavior'
+] as const;
 
 const REPORTS_BOOLEAN_KEYS = [
   'autoOpenReports',
@@ -303,6 +310,49 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
         min: 150,
         max: 2000
       });
+    }
+  }
+  if ('vectorMemory' in ui && ui.vectorMemory !== undefined) {
+    assertObject(channel, 'patch.ui.vectorMemory', ui.vectorMemory);
+    const vectorMemory = ui.vectorMemory as Record<string, unknown>;
+    for (const key of Object.keys(vectorMemory)) {
+      if (key !== 'embedder' && key !== 'ollamaBaseUrl' && key !== 'ollamaModel') {
+        throw new Error(
+          `${channel}: patch.ui.vectorMemory.${key} is not a recognized vectorMemory field`
+        );
+      }
+    }
+    if ('embedder' in vectorMemory && vectorMemory.embedder !== undefined) {
+      assertEnum(channel, 'patch.ui.vectorMemory.embedder', vectorMemory.embedder, [
+        'hash',
+        'ollama'
+      ]);
+    }
+    if ('ollamaBaseUrl' in vectorMemory && vectorMemory.ollamaBaseUrl !== undefined) {
+      assertString(channel, 'patch.ui.vectorMemory.ollamaBaseUrl', vectorMemory.ollamaBaseUrl);
+    }
+    if ('ollamaModel' in vectorMemory && vectorMemory.ollamaModel !== undefined) {
+      assertString(channel, 'patch.ui.vectorMemory.ollamaModel', vectorMemory.ollamaModel);
+    }
+  }
+  if ('editorLsp' in ui && ui.editorLsp !== undefined) {
+    assertObject(channel, 'patch.ui.editorLsp', ui.editorLsp);
+    const editorLsp = ui.editorLsp as Record<string, unknown>;
+    for (const key of Object.keys(editorLsp)) {
+      if (key !== 'enabled' && key !== 'command' && key !== 'args') {
+        throw new Error(
+          `${channel}: patch.ui.editorLsp.${key} is not a recognized editorLsp field`
+        );
+      }
+    }
+    if ('enabled' in editorLsp && editorLsp.enabled !== undefined) {
+      assertBoolean(channel, 'patch.ui.editorLsp.enabled', editorLsp.enabled);
+    }
+    if ('command' in editorLsp && editorLsp.command !== undefined) {
+      assertString(channel, 'patch.ui.editorLsp.command', editorLsp.command, { nonEmpty: false });
+    }
+    if ('args' in editorLsp && editorLsp.args !== undefined) {
+      assertStringArray(channel, 'patch.ui.editorLsp.args', editorLsp.args);
     }
   }
   if ('agentBehavior' in ui && ui.agentBehavior !== undefined) {

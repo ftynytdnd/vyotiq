@@ -1,4 +1,6 @@
 import { MemoryPanel } from './MemoryPanel.js';
+import { VectorMemoryPanel } from './VectorMemoryPanel.js';
+import { EditorLspPanel } from './EditorLspPanel.js';
 import { PromptCachingPanel } from './PromptCachingPanel.js';
 import { ReportsPanel } from './ReportsPanel.js';
 import { RunLimitsPanel } from './RunLimitsPanel.js';
@@ -12,6 +14,8 @@ export function AgentBehaviorPanel() {
   return (
     <>
       <MemoryPanel />
+      <VectorMemoryPanel />
+      <EditorLspPanel />
       <InlineCompletionPanel />
       <RunLimitsPanel />
       <ContextManagementPanel />

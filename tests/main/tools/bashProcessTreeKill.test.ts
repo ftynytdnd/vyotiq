@@ -6,9 +6,13 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const spawnMock = vi.fn(() => ({ unref: vi.fn() }));
 
-vi.mock('node:child_process', () => ({
-  spawn: (...args: unknown[]) => spawnMock(...args)
-}));
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return {
+    ...actual,
+    spawn: (...args: unknown[]) => spawnMock(...args)
+  };
+});
 
 import { killBashProcessTree } from '@main/tools/bash.tool';
 

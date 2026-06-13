@@ -92,6 +92,48 @@ export function createFileMentionRef(path: string, partial?: Partial<MentionRef>
   };
 }
 
+export function createSymbolMentionRef(
+  name: string,
+  filePath: string,
+  line: number,
+  partial?: Partial<MentionRef>
+): MentionRef {
+  return {
+    kind: 'symbol',
+    id: partial?.id ?? randomId(),
+    label: `${name} · ${filePath}:${line}`,
+    workspacePath: filePath,
+    line,
+    ...partial
+  };
+}
+
+export function createConversationMentionRef(
+  conversationId: string,
+  label: string,
+  partial?: Partial<MentionRef>
+): MentionRef {
+  return {
+    kind: 'conversation',
+    id: partial?.id ?? randomId(),
+    label,
+    conversationId,
+    ...partial
+  };
+}
+
+export function insertMentionAt(
+  doc: MentionDocument,
+  caretPlainOffset: number,
+  ref: MentionRef
+): MentionDocument {
+  const plain = documentToPlainText(doc);
+  const before = plain.slice(0, caretPlainOffset);
+  const after = plain.slice(caretPlainOffset);
+  const mention: MentionSegment = { type: 'mention', ref };
+  return mentionDocumentFromPlainSplit(before, mention, after);
+}
+
 /** Insert a file mention chip at `caretPlainOffset` in the plain-text coordinate space. */
 export function insertFileMentionAt(
   doc: MentionDocument,
@@ -107,6 +149,21 @@ export function insertFileMentionAt(
     ref: createFileMentionRef(path, ref)
   };
   return mentionDocumentFromPlainSplit(before, mention, after);
+}
+
+/** Replace the active `@token` (if any) ending at `caretPlainOffset`. */
+export function replaceAtTokenWithMentionRef(
+  doc: MentionDocument,
+  tokenStart: number,
+  caretPlainOffset: number,
+  ref: MentionRef
+): MentionDocument {
+  const plain = documentToPlainText(doc);
+  const before = plain.slice(0, tokenStart);
+  const after = plain.slice(caretPlainOffset);
+  const mention: MentionSegment = { type: 'mention', ref };
+  const mergedBefore = before.endsWith('@') ? before.slice(0, -1) : before;
+  return mentionDocumentFromPlainSplit(mergedBefore, mention, after);
 }
 
 /** Replace the active `@token` (if any) ending at `caretPlainOffset`. */

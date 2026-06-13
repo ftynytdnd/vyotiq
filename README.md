@@ -132,13 +132,15 @@ Each tool is in its own file (`src/main/tools/<name>.tool.ts`) and registered vi
 - **`ls`** — recursive directory listing. Default-ignores `node_modules`, `.git`, `dist`, `out`, `.next`.
 - **`read`** — UTF-8 file reader with line range, 512 KB cap, binary refusal.
 - **`edit`** — surgical exact-match edits + file creation. Returns diff stats for the FileChangeCard.
+- **`delete`** — remove workspace files (sandboxed).
 - **`search`** — local line grep **and** structural AST search (`@ast-grep/napi`) across the workspace.
 - **`memory`** — read/write/append global meta-rules or workspace notes.
-- **`recall`** — read-only lookup against other conversations in the active workspace (orchestrator-only).
+- **`recall`** — read-only lookup against other conversations in the active workspace.
+- **`report`** — HTML deliverables under `.vyotiq/reports/` (Settings → Reports controls UX).
 
 ### Tool policy
 
-Agent V's allowlist is `AGENT_TOOLS` in [`src/main/tools/policy/agentTools.ts`](src/main/tools/policy/agentTools.ts): `bash`, `ls`, `read`, `edit`, `delete`, `search`, `memory`, `recall`, `finish`, `ask_user`. The `toolSchemasFor()` helper filters schemas before each model request.
+Agent V's allowlist is `AGENT_TOOLS` in [`src/main/tools/policy/agentTools.ts`](src/main/tools/policy/agentTools.ts): `bash`, `ls`, `read`, `edit`, `delete`, `search`, `memory`, `recall`, `report`, `finish`, `ask_user`. The `toolSchemasFor()` helper filters schemas before each model request.
 
 ## Transcripts & checkpoints
 

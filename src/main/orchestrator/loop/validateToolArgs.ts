@@ -77,18 +77,35 @@ export function validateToolArgs(
           error: 'missing query'
         };
       }
-      if (args['mode'] !== 'local') {
+      const mode = args['mode'];
+      if (mode !== 'local' && mode !== 'structural') {
         log.warn('invalid tool argument value', {
           tool: toolName,
           field: 'mode',
-          value: args['mode'],
+          value: mode,
           argKeys: Object.keys(args)
         });
         return {
           ok: false,
-          output: `Error: unknown search mode "${String(args['mode'])}" — use "local". Web search is not available.`,
+          output: `Error: unknown search mode "${String(mode)}" — use "local" or "structural". Web search is not available.`,
           error: 'invalid mode'
         };
+      }
+      if (mode === 'structural') {
+        const language = args['language'];
+        if (typeof language !== 'string' || !language.trim()) {
+          log.warn('required tool argument missing', {
+            tool: toolName,
+            field: 'language',
+            argKeys: Object.keys(args)
+          });
+          return {
+            ok: false,
+            output:
+              'Error: structural search requires `language` (e.g. typescript, javascript, tsx).',
+            error: 'missing language'
+          };
+        }
       }
       return { ok: true };
     }

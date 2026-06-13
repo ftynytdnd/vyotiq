@@ -1,13 +1,14 @@
 /**
- * Embedding facade — local feature hashing by default; optional Ollama when
- * `VYOTIQ_VECTOR_EMBED=ollama`.
+ * Embedding facade — local feature hashing by default; optional Ollama via
+ * settings or `VYOTIQ_VECTOR_EMBED=ollama`.
  */
 
+import { getVectorEmbedder } from '../../settings/vectorEmbedRuntime.js';
 import { embedLocal, embedLocalBatch } from './localEmbedder.js';
 import { embedOllamaOrLocal, embedOllamaOrLocalBatch } from './ollamaEmbedder.js';
 
 function useOllama(): boolean {
-  return process.env.VYOTIQ_VECTOR_EMBED?.trim().toLowerCase() === 'ollama';
+  return getVectorEmbedder() === 'ollama';
 }
 
 export async function embedQuery(text: string): Promise<Float32Array> {

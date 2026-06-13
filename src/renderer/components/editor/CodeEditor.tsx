@@ -13,6 +13,8 @@ import {
   inlineCompletionExtension,
   type InlineCompletionFetchContext
 } from './codemirrorInlineCompletion.js';
+import { lspDiagnosticsExtension, setLspDiagnostics } from './codemirrorDiagnostics.js';
+import type { LspDiagnostic } from '@shared/types/lsp.js';
 import { vyotiq } from '../../lib/ipc.js';
 
 export interface CodeEditorInlineCompletionConfig {
@@ -32,6 +34,8 @@ export interface CodeEditorProps {
   onChange?: (value: string) => void;
   onSave?: () => void;
   inlineCompletion?: CodeEditorInlineCompletionConfig | null;
+  diagnostics?: LspDiagnostic[];
+  onGoToDefinition?: (line: number, character: number) => void;
 }
 
 const inlineCompletionCompartment = new Compartment();
@@ -83,13 +87,18 @@ export function CodeEditor({
   className,
   onChange,
   onSave,
-  inlineCompletion
+  inlineCompletion,
+  diagnostics = [],
+  onGoToDefinition
 }: CodeEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
   const inlineCompletionRef = useRef(inlineCompletion);
+
+  const onGoToDefRef = useRef(onGoToDefinition);
+  onGoToDefRef.current = onGoToDefinition;
 
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
@@ -116,6 +125,9 @@ export function CodeEditor({
       saveBinding,
       ...codemirrorLanguageForPath(filePath),
       inlineCompletionCompartment.of(inlineCompletionExtensions(inlineCompletionRef.current)),
+      ...lspDiagnosticsExtension((line, character) => {
+        onGoToDefRef.current?.(line, character);
+      }),
       EditorView.updateListener.of((update) => {
         if (!update.docChanged) return;
         onChangeRef.current?.(update.state.doc.toString());
@@ -155,6 +167,12 @@ export function CodeEditor({
       changes: { from: 0, to: current.length, insert: value }
     });
   }, [value]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: setLspDiagnostics.of(diagnostics) });
+  }, [diagnostics]);
 
   return (
     <div

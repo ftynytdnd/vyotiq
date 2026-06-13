@@ -11,6 +11,7 @@ import {
 } from '../tools/sandbox.js';
 import { requireWorkspaceById } from '../workspace/workspaceState.js';
 import { readBlob } from './blobStore.js';
+import { tryGitRestoreFile } from './legacyRestore.js';
 import { markEntryReverted as markRunEntryReverted, readRun } from './runManifest.js';
 import { logger } from '../logging/logger.js';
 
@@ -57,10 +58,18 @@ async function applyEntryReversal(
     }
 
     if (!entry.preHash) {
+      if (entry.kind === 'modify' || entry.kind === 'delete') {
+        const gitOk = await tryGitRestoreFile(workspacePath, entry.filePath);
+        if (gitOk) return { ok: true, reverted: 1 };
+      }
       return { ok: false, error: { kind: 'blob-missing', hash: '' } };
     }
     const body = await readBlob(entry.workspaceId, entry.preHash);
     if (body === null) {
+      if (entry.kind === 'modify' || entry.kind === 'delete') {
+        const gitOk = await tryGitRestoreFile(workspacePath, entry.filePath);
+        if (gitOk) return { ok: true, reverted: 1 };
+      }
       return { ok: false, error: { kind: 'blob-missing', hash: entry.preHash } };
     }
     await atomicWriteFile(abs, body);

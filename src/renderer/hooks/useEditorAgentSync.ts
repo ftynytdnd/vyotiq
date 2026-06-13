@@ -25,8 +25,10 @@ function eventTouchesPath(event: TimelineEvent, filePath: string): boolean {
 async function refreshEditorFromDisk(filePath: string, workspaceId: string | null): Promise<void> {
   const store = useEditorStore.getState();
   if (!editorMatchesPath(store, filePath)) return;
-  if (store.content !== store.savedContent) {
-    store.markStaleOnDisk();
+  const tab = store.tabs.find((t) => normalizePath(t.filePath) === normalizePath(filePath));
+  if (!tab) return;
+  if (tab.content !== tab.savedContent) {
+    store.markStaleOnDisk(filePath);
     return;
   }
   try {
@@ -34,24 +36,22 @@ async function refreshEditorFromDisk(filePath: string, workspaceId: string | nul
       path: filePath,
       ...(workspaceId ? { workspaceId } : {})
     });
-    store.applyExternalContent(result.content, result.mtimeMs);
+    store.applyExternalContent(filePath, result.content, result.mtimeMs);
   } catch {
-    store.markStaleOnDisk();
+    store.markStaleOnDisk(filePath);
   }
 }
 
 export function useEditorAgentSync(): void {
   useEffect(() => {
     const unsub = vyotiq.chat.onEvent((_runId, event) => {
-      const { open, filePath, workspaceId } = useEditorStore.getState();
-      if (!open || !filePath) return;
-      if (!eventTouchesPath(event, filePath)) return;
-
-      if (event.kind === 'diff-stream' && !event.settled) {
-        return;
+      const { open, tabs, workspaceId } = useEditorStore.getState();
+      if (!open || tabs.length === 0) return;
+      for (const tab of tabs) {
+        if (!eventTouchesPath(event, tab.filePath)) continue;
+        if (event.kind === 'diff-stream' && !event.settled) continue;
+        void refreshEditorFromDisk(tab.filePath, tab.workspaceId ?? workspaceId);
       }
-
-      void refreshEditorFromDisk(filePath, workspaceId);
     });
     return unsub;
   }, []);

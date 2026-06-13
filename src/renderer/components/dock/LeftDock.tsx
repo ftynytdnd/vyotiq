@@ -9,6 +9,7 @@ import { DockExpandBackdrop } from './DockExpandBackdrop.js';
 import { DockSearchPopover } from './DockSearchPopover.js';
 import { DockToolbar } from './DockToolbar.js';
 import { DockWorkspaceTabs } from './DockWorkspaceTabs.js';
+import { DockFileTree } from './DockFileTree.js';
 import { DockSectionHeader } from './DockSectionHeader.js';
 import {
   clampDockWidth,
@@ -199,6 +200,11 @@ export function LeftDock({
             </button>
           </div>
           <DockWorkspaceTabs />
+        </div>
+        <div className={DOCK_DIVIDER_H_CLASS} aria-hidden />
+        <div className="flex min-h-0 max-h-[40%] flex-col overflow-hidden">
+          <DockSectionHeader label="Files" />
+          <DockFileTree workspaceId={activeWorkspaceId} />
         </div>
         <div className={DOCK_DIVIDER_H_CLASS} aria-hidden />
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">

@@ -132,6 +132,8 @@ export interface RewindFileChange {
   deletions: number;
   /** Already reverted before the rewind started; the row stays visible but the action is a no-op. */
   alreadyReverted: boolean;
+  /** No checkpoint blob on disk — rewind may use git fallback for legacy runs. */
+  blobMissing?: boolean;
 }
 
 /**

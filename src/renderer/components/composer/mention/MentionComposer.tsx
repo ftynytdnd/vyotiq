@@ -24,10 +24,13 @@ import {
   emptyMentionDocument,
   extractMentions,
   hasComposerContent,
-  insertFileMentionAt,
+  createFileMentionRef,
+  createSymbolMentionRef,
+  createConversationMentionRef,
+  insertMentionAt,
+  replaceAtTokenWithMentionRef,
   insertPlainTextAtOffset,
   parseMentionDocument,
-  replaceAtTokenWithMention,
   serializeMentionDocument,
   type MentionDocument
 } from './mentionDocument.js';
@@ -265,8 +268,8 @@ export function MentionComposer({
     el.style.height = `${next}px`;
   }, [value, pickerOpen]);
 
-  const applyMentionPick = useCallback(
-    (path: string, ref?: Partial<MentionRef>) => {
+  const applyMentionRef = useCallback(
+    (ref: MentionRef) => {
       const plain = documentToPlainText(docRef.current);
       const caretOffset =
         getPlainCaretOffset(editorRef.current, extractMentions(docRef.current)) ??
@@ -274,9 +277,9 @@ export function MentionComposer({
       const token = atTokenRef.current;
       let next: MentionDocument;
       if (token) {
-        next = replaceAtTokenWithMention(docRef.current, token.start, caretOffset, path, ref);
+        next = replaceAtTokenWithMentionRef(docRef.current, token.start, caretOffset, ref);
       } else {
-        next = insertFileMentionAt(docRef.current, caretOffset, path, ref);
+        next = insertMentionAt(docRef.current, caretOffset, ref);
       }
       docRef.current = next;
       syncDomFromDoc(next);
@@ -295,7 +298,15 @@ export function MentionComposer({
 
   const handlePickerPick = (row: MentionPickerRow) => {
     if (row.kind === 'workspace-file' && row.path) {
-      applyMentionPick(row.path);
+      applyMentionRef(createFileMentionRef(row.path));
+      return;
+    }
+    if (row.kind === 'symbol' && row.path && row.line != null) {
+      applyMentionRef(createSymbolMentionRef(row.label, row.path, row.line));
+      return;
+    }
+    if (row.kind === 'conversation' && row.conversationId) {
+      applyMentionRef(createConversationMentionRef(row.conversationId, row.label));
     }
   };
 

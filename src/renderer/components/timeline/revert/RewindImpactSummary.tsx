@@ -1,6 +1,7 @@
 /**
  * Compact rewind impact line for inline prompt edit / revert.
- * Rewind is transcript-only — workspace files on disk are unchanged.
+ * Rewind trims the transcript and restores on-disk files from checkpoint blobs
+ * (best-effort git/disk fallback when blobs are missing).
  */
 
 import { History, MessageSquare } from 'lucide-react';
@@ -13,20 +14,28 @@ export interface RewindImpactTotals {
   fileCount: number;
   runCount: number;
   everyAlreadyReverted: boolean;
+  legacyBlobCount: number;
 }
 
-/** @deprecated Legacy manifest rows; rewind no longer restores files. */
+/** Aggregate per-file stats from a rewind preview manifest. */
 export function computeRewindImpactTotals(
-  files: ReadonlyArray<{ additions: number; deletions: number; alreadyReverted: boolean }>,
+  files: ReadonlyArray<{
+    additions: number;
+    deletions: number;
+    alreadyReverted: boolean;
+    blobMissing?: boolean;
+  }>,
   runCount: number
 ): RewindImpactTotals {
   let additions = 0;
   let deletions = 0;
   let alreadyReverted = 0;
+  let legacyBlobCount = 0;
   for (const f of files) {
     additions += f.additions;
     deletions += f.deletions;
     if (f.alreadyReverted) alreadyReverted += 1;
+    if (f.blobMissing) legacyBlobCount += 1;
   }
   return {
     additions,
@@ -34,7 +43,8 @@ export function computeRewindImpactTotals(
     fileCount: files.length,
     runCount,
     everyAlreadyReverted:
-      files.length > 0 && alreadyReverted === files.length
+      files.length > 0 && alreadyReverted === files.length,
+    legacyBlobCount
   };
 }
 
@@ -44,6 +54,7 @@ export function RewindImpactSummary({
   additions,
   deletions,
   runCount,
+  legacyBlobCount,
   className
 }: RewindImpactTotals & {
   transcriptEventsAffected: number;
@@ -54,7 +65,8 @@ export function RewindImpactSummary({
   return (
     <div className={cn('flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-text-muted', className)}>
       <span className="text-text-secondary">
-        Trims the chat transcript from this message onward. Files on disk are not changed.
+        Trims the chat transcript from this message onward and restores workspace files from
+        checkpoints when available.
       </span>
       <span className="inline-flex items-center gap-1">
         <MessageSquare className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
@@ -72,8 +84,14 @@ export function RewindImpactSummary({
       )}
       {hasLegacyFileStats && (
         <span className="text-text-muted/80">
-          (Legacy checkpoint log: {fileCount} file{fileCount === 1 ? '' : 's'} recorded
-          {fileCount > 0 ? ` +${additions} −${deletions}` : ''} — not reverted on disk.)
+          {fileCount} file{fileCount === 1 ? '' : 's'} to restore
+          {fileCount > 0 ? ` (+${additions} −${deletions} lines)` : ''}
+        </span>
+      )}
+      {legacyBlobCount > 0 && (
+        <span className="text-warning/90">
+          {legacyBlobCount} legacy snapshot{legacyBlobCount === 1 ? '' : 's'} missing — git
+          fallback may apply
         </span>
       )}
     </div>

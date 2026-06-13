@@ -72,6 +72,11 @@ export function languageFromPath(filePath: string): string | undefined {
   return EXT_TO_LANG[ext];
 }
 
+/** LSP `languageId` — defaults to plaintext when unknown. */
+export function languageIdForPath(filePath: string): string {
+  return languageFromPath(filePath) ?? 'plaintext';
+}
+
 export function basenameFromPath(filePath: string): string {
   const parts = filePath.split(/[/\\]/);
   return parts[parts.length - 1] || filePath;

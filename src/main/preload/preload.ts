@@ -199,6 +199,21 @@ const api: VyotiqApi = {
     cancel: (kind, workspaceId) => ipcRenderer.invoke(IPC.COMPLETION_CANCEL, kind, workspaceId)
   },
 
+  lsp: {
+    open: (input) => ipcRenderer.invoke(IPC.LSP_OPEN, input),
+    change: (input) => ipcRenderer.invoke(IPC.LSP_CHANGE, input),
+    close: (input) => ipcRenderer.invoke(IPC.LSP_CLOSE, input),
+    definition: (input) => ipcRenderer.invoke(IPC.LSP_DEFINITION, input),
+    onDiagnostics: (cb) =>
+      on<[import('@shared/types/lsp.js').LspDiagnosticsEvent]>(IPC.LSP_DIAGNOSTICS, (event) =>
+        cb(event)
+      )
+  },
+
+  mentions: {
+    searchSymbols: (input) => ipcRenderer.invoke(IPC.MENTIONS_SEARCH_SYMBOLS, input)
+  },
+
   app: {
     platform: process.platform,
     info: () => ipcRenderer.invoke(IPC.APP_INFO_GET),

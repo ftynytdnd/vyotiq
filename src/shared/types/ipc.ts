@@ -408,6 +408,30 @@ export interface AppSettings {
 
     };
 
+    /** Local vector index embedder selection. */
+
+    vectorMemory?: {
+
+      embedder?: 'hash' | 'ollama';
+
+      ollamaBaseUrl?: string;
+
+      ollamaModel?: string;
+
+    };
+
+    /** Optional language-server bridge for the in-app editor. */
+
+    editorLsp?: {
+
+      enabled?: boolean;
+
+      command?: string;
+
+      args?: string[];
+
+    };
+
     /** Run limits and long-task context options. */
 
     agentBehavior?: {
@@ -1343,6 +1367,38 @@ export interface VyotiqApi {
     request(input: import('./completion.js').CompletionInput): Promise<import('./completion.js').CompletionReply>;
 
     cancel(kind: import('./completion.js').CompletionKind, workspaceId?: string): Promise<void>;
+
+  };
+
+
+
+  lsp: {
+
+    open(input: { workspaceId: string; path: string; text: string }): Promise<{ ok: true }>;
+
+    change(input: { workspaceId: string; path: string; text: string }): Promise<{ ok: true }>;
+
+    close(input: { workspaceId: string; path: string }): Promise<{ ok: true }>;
+
+    definition(input: {
+      workspaceId: string;
+      path: string;
+      line: number;
+      character: number;
+    }): Promise<import('./lsp.js').LspLocation | null>;
+
+    onDiagnostics(cb: (event: import('./lsp.js').LspDiagnosticsEvent) => void): () => void;
+
+  };
+
+
+
+  mentions: {
+
+    searchSymbols(input: {
+      workspaceId: string;
+      query: string;
+    }): Promise<{ hits: Array<{ name: string; filePath: string; line: number }> }>;
 
   };
 

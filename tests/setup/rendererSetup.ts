@@ -190,6 +190,16 @@ function makeStubApi() {
       request: vi.fn(async (input: { requestId: number }) => ({ requestId: input.requestId, text: '' })),
       cancel: asyncNoop
     },
+    lsp: {
+      open: asyncNoop,
+      change: asyncNoop,
+      close: asyncNoop,
+      definition: vi.fn(async () => null),
+      onDiagnostics: subscribe
+    },
+    mentions: {
+      searchSymbols: vi.fn(async () => ({ hits: [] }))
+    },
     log: noop
   };
 }

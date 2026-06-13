@@ -21,6 +21,8 @@ import { registerContextIpc } from './context.ipc.js';
 import { registerEditorIpc } from './editor.ipc.js';
 import { registerTerminalIpc } from './terminal.ipc.js';
 import { registerCompletionIpc } from './completion.ipc.js';
+import { registerLspIpc } from './lsp.ipc.js';
+import { registerMentionsIpc } from './mentions.ipc.js';
 import {
   abortRunsForConversation,
   abortRunsForProvider,
@@ -47,6 +49,8 @@ export function registerIpc(): void {
   registerEditorIpc();
   registerTerminalIpc();
   registerCompletionIpc();
+  registerLspIpc();
+  registerMentionsIpc();
   registerMemoryIpc();
   registerSettingsIpc();
   registerConversationsIpc();

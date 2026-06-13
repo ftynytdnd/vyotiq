@@ -131,8 +131,13 @@ export function useRewindPromptSession({
         'danger'
       );
     } else if (result.removedTranscriptEvents > 0) {
+      const restored = result.revertedFiles?.length ?? 0;
+      const restoredNote =
+        restored > 0
+          ? `; restored ${restored} file${restored === 1 ? '' : 's'} from checkpoints`
+          : '';
       showToast(
-        `Removed ${result.removedTranscriptEvents} transcript event${result.removedTranscriptEvents === 1 ? '' : 's'} (files on disk unchanged).`,
+        `Removed ${result.removedTranscriptEvents} transcript event${result.removedTranscriptEvents === 1 ? '' : 's'}${restoredNote}.`,
         isEdit ? 'info' : 'success'
       );
     } else if (!isEdit) {

@@ -82,7 +82,8 @@ function entryToFileChange(entry: CheckpointEntry): RewindFileChange {
     ...(entry.postHash ? { postHash: entry.postHash } : {}),
     additions: entry.additions,
     deletions: entry.deletions,
-    alreadyReverted: entry.reverted === true
+    alreadyReverted: entry.reverted === true,
+    blobMissing: entry.kind !== 'create' && !entry.preHash
   };
 }
 

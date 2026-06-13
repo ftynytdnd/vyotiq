@@ -3,7 +3,7 @@
  */
 
 import { useCallback, useMemo } from 'react';
-import { ExternalLink, RotateCcw, Save } from 'lucide-react';
+import { ExternalLink, RotateCcw, Save, X } from 'lucide-react';
 import { basenameFromPath } from '@shared/text/languageFromPath.js';
 import {
   resolveCompletionModelSelection,
@@ -15,6 +15,7 @@ import { LoadingHint } from '../ui/LoadingHint.js';
 import { Button } from '../ui/Button.js';
 import { CodeEditor } from './CodeEditor.js';
 import {
+  selectActiveEditorTab,
   selectEditorDirty,
   useEditorStore
 } from '../../store/useEditorStore.js';
@@ -23,6 +24,8 @@ import { useToastStore } from '../../store/useToastStore.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../lib/shellIcons.js';
+import { cn } from '../../lib/cn.js';
+import { useEditorLsp } from '../../hooks/useEditorLsp.js';
 
 export interface EditorPanelProps {
   initialWidth?: number;
@@ -31,20 +34,32 @@ export interface EditorPanelProps {
 
 export function EditorPanel({ initialWidth, onWidthChange }: EditorPanelProps) {
   const open = useEditorStore((s) => s.open);
-  const filePath = useEditorStore((s) => s.filePath);
-  const workspaceId = useEditorStore((s) => s.workspaceId);
-  const content = useEditorStore((s) => s.content);
-  const loading = useEditorStore((s) => s.loading);
-  const saving = useEditorStore((s) => s.saving);
-  const truncated = useEditorStore((s) => s.truncated);
-  const staleOnDisk = useEditorStore((s) => s.staleOnDisk);
+  const tabs = useEditorStore((s) => s.tabs);
+  const activeFilePath = useEditorStore((s) => s.activeFilePath);
+  const activeTab = useEditorStore(selectActiveEditorTab);
+  const filePath = activeTab?.filePath ?? null;
+  const workspaceId = activeTab?.workspaceId ?? null;
+  const content = activeTab?.content ?? '';
+  const loading = activeTab?.loading ?? false;
+  const saving = activeTab?.saving ?? false;
+  const truncated = activeTab?.truncated ?? false;
+  const staleOnDisk = activeTab?.staleOnDisk ?? false;
   const dirty = useEditorStore(selectEditorDirty);
   const close = useEditorStore((s) => s.close);
+  const closeTab = useEditorStore((s) => s.closeTab);
+  const setActiveTab = useEditorStore((s) => s.setActiveTab);
   const setContent = useEditorStore((s) => s.setContent);
   const save = useEditorStore((s) => s.save);
   const reloadFromDisk = useEditorStore((s) => s.reloadFromDisk);
   const settings = useSettingsStore((s) => s.settings);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
+
+  const lsp = useEditorLsp({
+    enabled: settings.ui?.editorLsp?.enabled === true,
+    filePath,
+    workspaceId: workspaceId ?? activeWorkspaceId,
+    content
+  });
 
   const inlineCompletion = useMemo(() => {
     const ic = resolveInlineCompletionSettings(settings.ui);
@@ -124,6 +139,44 @@ export function EditorPanel({ initialWidth, onWidthChange }: EditorPanelProps) {
       headerActions={headerActions}
     >
       <div className="vx-editor-panel-body flex h-full min-h-0 flex-col">
+        {tabs.length > 0 ? (
+          <div className="vx-editor-tabs flex shrink-0 gap-0.5 overflow-x-auto border-b border-border-subtle/30 px-2 py-1">
+            {tabs.map((tab) => {
+              const active = tab.filePath === activeFilePath;
+              const tabDirty = tab.content !== tab.savedContent;
+              return (
+                <div
+                  key={tab.filePath}
+                  className={cn(
+                    'flex max-w-[10rem] items-center gap-0.5 rounded-md px-2 py-1 text-meta',
+                    active ? 'bg-chrome-hover text-text-primary' : 'text-text-muted chrome-hover-soft'
+                  )}
+                >
+                  <button
+                    type="button"
+                    className="min-w-0 truncate font-mono"
+                    onClick={() => setActiveTab(tab.filePath)}
+                    title={tab.filePath}
+                  >
+                    {basenameFromPath(tab.filePath)}
+                    {tabDirty ? ' •' : ''}
+                  </button>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded p-0.5 chrome-hover-soft"
+                    aria-label={`Close ${basenameFromPath(tab.filePath)}`}
+                    onClick={() => {
+                      closeTab(tab.filePath);
+                      if (tabs.length <= 1) close();
+                    }}
+                  >
+                    <X className="h-3 w-3" strokeWidth={SHELL_ACTION_ICON_STROKE} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
         {filePath ? (
           <p className="vx-editor-path shrink-0 truncate px-3 py-1.5 font-mono text-meta text-text-faint" title={filePath}>
             {filePath}
@@ -151,6 +204,8 @@ export function EditorPanel({ initialWidth, onWidthChange }: EditorPanelProps) {
             onChange={setContent}
             onSave={() => void save()}
             inlineCompletion={inlineCompletion}
+            diagnostics={lsp.diagnostics}
+            onGoToDefinition={lsp.goToDefinition}
           />
         ) : null}
       </div>

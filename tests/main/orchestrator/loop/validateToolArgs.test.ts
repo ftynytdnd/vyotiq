@@ -24,6 +24,16 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('search', { query: 'foo' }).ok).toBe(false);
     expect(validateToolArgs('search', { query: 'foo', mode: 'local' }).ok).toBe(true);
     expect(validateToolArgs('search', { query: 'foo', mode: 'web' }).ok).toBe(false);
+    expect(
+      validateToolArgs('search', { query: 'export function $NAME', mode: 'structural' }).ok
+    ).toBe(false);
+    expect(
+      validateToolArgs('search', {
+        query: 'export function $NAME',
+        mode: 'structural',
+        language: 'typescript'
+      }).ok
+    ).toBe(true);
   });
 
   it('requires action and scope for memory', () => {

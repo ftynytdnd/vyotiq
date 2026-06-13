@@ -410,6 +410,16 @@ export const IPC = {
   COMPLETION_REQUEST: 'completion:request',
   COMPLETION_CANCEL: 'completion:cancel',
 
+  // Language server (editor diagnostics / go-to-def)
+  LSP_OPEN: 'lsp:open',
+  LSP_CHANGE: 'lsp:change',
+  LSP_CLOSE: 'lsp:close',
+  LSP_DEFINITION: 'lsp:definition',
+  LSP_DIAGNOSTICS: 'lsp:diagnostics',
+
+  // Composer mention search helpers
+  MENTIONS_SEARCH_SYMBOLS: 'mentions:search-symbols',
+
   // Harness overrides (natural-language OS sections)
   HARNESS_LIST_SECTIONS: 'harness:list-sections',
   HARNESS_READ_SECTION: 'harness:read-section',
