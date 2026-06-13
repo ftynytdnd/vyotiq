@@ -11,10 +11,7 @@
 
 import { create } from 'zustand';
 import { vyotiq } from '../lib/ipc.js';
-import {
-  clampDockWidth,
-  DOCK_WIDTH_DEFAULT
-} from '@shared/dock/dockWidth.js';
+import { clampDockWidth, DOCK_WIDTH_DEFAULT } from '@shared/dock/dockWidth.js';
 
 const PERSIST_DEBOUNCE_MS = 200;
 

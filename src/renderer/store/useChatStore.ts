@@ -378,7 +378,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
   },
 
-  send: async (prompt, selection, permissions, options) => {
+  send: async (prompt, selection, options) => {
     // Only the active slice's `isProcessing` gates new sends.
     if (get().isProcessing || get().awaitingAskUser) return;
     const runId = randomId();
@@ -497,7 +497,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         runId,
         prompt,
         selection,
-        permissions,
         conversationId: boundId,
         ...(workspaceId ? { workspaceId } : {}),
         ...(options?.attachmentMeta && options.attachmentMeta.length > 0

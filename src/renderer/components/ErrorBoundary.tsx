@@ -20,12 +20,13 @@ interface ErrorBoundaryProps {
 
 interface ErrorBoundaryState {
   error: Error | null;
+  resetKey: number;
 }
 
 export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  state: ErrorBoundaryState = { error: null };
+  state: ErrorBoundaryState = { error: null, resetKey: 0 };
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
     return { error };
   }
 
@@ -47,10 +48,12 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     }
   }
 
-  reset = (): void => this.setState({ error: null });
+  reset = (): void => this.setState((s) => ({ error: null, resetKey: s.resetKey + 1 }));
 
   override render(): React.ReactNode {
-    if (!this.state.error) return this.props.children;
+    if (!this.state.error) {
+      return <React.Fragment key={this.state.resetKey}>{this.props.children}</React.Fragment>;
+    }
 
     const staleChunk =
       this.state.error.message.includes('Failed to fetch dynamically imported module') ||

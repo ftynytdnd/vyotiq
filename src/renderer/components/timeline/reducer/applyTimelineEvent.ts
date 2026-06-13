@@ -260,6 +260,7 @@ export function applyTimelineEvent(
         ...state,
         events: appendTimelineEvent(state.events, event, mutate),
         settledCallIds,
+        toolCacheHint: null,
         ...(nextPartial !== state.partialToolCallArgs
           ? { partialToolCallArgs: nextPartial }
           : {})
@@ -279,12 +280,23 @@ export function applyTimelineEvent(
         event.result.ok
           ? { ...state.liveReportResultIds, [resultId]: true as const }
           : state.liveReportResultIds;
+      const toolCacheHint =
+        !opts.replay && event.result.output.includes('[cache]')
+          ? `Cached ${event.result.name} — no disk I/O`
+          : state.toolCacheHint;
       return {
         ...state,
         events: appendTimelineEvent(state.events, event, mutate),
         liveDiffByCallId: nextLiveDiff,
         toolResultSettledIds,
-        liveReportResultIds
+        liveReportResultIds,
+        toolCacheHint
+      };
+    }
+    case 'attachment-pre-read': {
+      return {
+        ...state,
+        events: appendTimelineEvent(state.events, event, mutate)
       };
     }
     case 'file-edit': {

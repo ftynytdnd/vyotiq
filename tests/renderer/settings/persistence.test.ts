@@ -33,7 +33,6 @@ import {
   useTimelineUiStore,
   flushTimelineUiPersistence
 } from '@renderer/store/useTimelineUiStore';
-import { DEFAULT_PERMISSIONS } from '@shared/constants';
 import type { AppSettings } from '@shared/types/ipc';
 
 function setSpy(): ReturnType<typeof vi.fn> {
@@ -42,7 +41,7 @@ function setSpy(): ReturnType<typeof vi.fn> {
 
 beforeEach(() => {
   useSettingsStore.setState({
-    settings: { permissions: { ...DEFAULT_PERMISSIONS } },
+    settings: {},
     loading: false
   });
   useUiStore.setState({
@@ -76,16 +75,6 @@ describe('AppSettings — top-level fields persist via useSettingsStore', () => 
       providerId: 'p1',
       modelId: 'm1'
     });
-  });
-
-  it('permissions: single IPC, cache merge, default-merged value reflected', async () => {
-    await useSettingsStore.getState().setPermissions({ allowAuto: true });
-
-    expect(setSpy()).toHaveBeenCalledTimes(1);
-    expect(setSpy()).toHaveBeenCalledWith({
-      permissions: { ...DEFAULT_PERMISSIONS, allowAuto: true }
-    });
-    expect(useSettingsStore.getState().settings.permissions?.allowAuto).toBe(true);
   });
 
 });
@@ -175,7 +164,6 @@ describe('purgeWorkspaceFromUi: single IPC sweeps every per-workspace map', () =
   it('strips ws-A from every per-workspace map and the collapsed array in one round-trip', async () => {
     useSettingsStore.setState({
       settings: {
-        permissions: { ...DEFAULT_PERMISSIONS },
         ui: {
           activeConversationByWorkspace: { 'ws-A': 'c1' },
           lastModelByWorkspace: { 'ws-A': { providerId: 'p', modelId: 'm' } },

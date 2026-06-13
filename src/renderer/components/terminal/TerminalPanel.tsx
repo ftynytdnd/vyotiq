@@ -39,15 +39,17 @@ export function TerminalPanel({ initialWidth, onWidthChange }: TerminalPanelProp
   }, [workspaceId]);
 
   const headerActions = (
-    <Button
-      variant="ghost"
-      size="sm"
-      onClick={() => void onRestart()}
-      disabled={!workspaceId || attaching}
-      title="Restart shell"
-    >
-      <RotateCcw className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
-    </Button>
+    <div className="flex items-center gap-1">
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => void onRestart()}
+        disabled={!workspaceId || attaching}
+        title="Restart shell"
+      >
+        <RotateCcw className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+      </Button>
+    </div>
   );
 
   return (
@@ -58,7 +60,6 @@ export function TerminalPanel({ initialWidth, onWidthChange }: TerminalPanelProp
       widthKey="workspaceTerminal"
       {...(initialWidth !== undefined ? { initialWidth } : {})}
       {...(onWidthChange ? { onWidthChange } : {})}
-      showBackdrop={false}
       className="vx-terminal-panel"
       headerActions={headerActions}
     >

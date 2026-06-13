@@ -6,7 +6,7 @@
  * tests and memo helpers without pulling the full store graph.
  */
 
-import type { TimelineEvent, ChatPermissions, PromptAttachmentMeta, TranscriptPaging } from '@shared/types/chat.js';
+import type { TimelineEvent, PromptAttachmentMeta, TranscriptPaging } from '@shared/types/chat.js';
 import type { AskUserSubmitInput } from '@shared/types/askUser.js';
 import type { ActiveRunInfo } from '@shared/types/ipc.js';
 import type { ModelSelection } from '@shared/types/provider.js';
@@ -92,7 +92,6 @@ export interface ChatStore extends ActiveMirror {
   send: (
     prompt: string,
     selection: ModelSelection,
-    permissions: ChatPermissions,
     options?: {
       attachments?: string[];
       attachmentMeta?: PromptAttachmentMeta[];

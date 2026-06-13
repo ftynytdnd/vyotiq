@@ -41,14 +41,12 @@ import { TurnBlock, groupRowsIntoTurns } from './shared/TurnBlock.js';
 import { partitionTurnSegment } from './shared/groupTurnSegment.js';
 import { timelineStackClassName } from './shared/rowStyles.js';
 import { cn } from '../../lib/cn.js';
+import { eventMatchesCombo } from '@shared/keybindings/defaultKeybindings.js';
+import { isMacPlatform, resolveKeybindings } from '../../lib/resolveKeybindings.js';
+import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { isSliceRunActive } from '../../lib/isSliceRunActive.js';
 import { suggestProvidersForError } from '../../lib/runRecovery.js';
 import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../lib/shellIcons.js';
-import {
-  useSettingsStore,
-  selectEffectivePermissions
-} from '../../store/useSettingsStore.js';
-import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { useTimelineUiStore } from '../../store/useTimelineUiStore.js';
 import { computeTailScrollKey } from './shared/computeTailScrollKey.js';
@@ -107,9 +105,6 @@ export function Timeline({
   const send = useChatStore((s) => s.send);
 
   const showToast = useToastStore((s) => s.show);
-  const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
-  const settings = useSettingsStore((s) => s.settings);
-  const permissions = selectEffectivePermissions(activeWorkspaceId, settings);
   const setTimelineAtTail = useTimelineUiStore((s) => s.setTimelineAtTail);
   const scrollToTailRequest = useTimelineUiStore((s) => s.scrollToTailRequest);
   // --- Refs (all before any effect) ---
@@ -139,8 +134,8 @@ export function Timeline({
       showToast('Select a model before retrying.', 'danger');
       return;
     }
-    void send(prompt, model, permissions);
-  }, [lastUserPromptContent, model, permissions, send, showToast]);
+    void send(prompt, model);
+  }, [lastUserPromptContent, model, send, showToast]);
 
   const errorRowActions: ErrorRowActions = useMemo(
     () => ({
@@ -541,7 +536,9 @@ export function Timeline({
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'f') return;
+      const overrides = useSettingsStore.getState().settings.ui?.keybindings;
+      const bindings = resolveKeybindings(overrides, isMacPlatform());
+      if (!eventMatchesCombo(e, bindings.timelineFind)) return;
       if (isEditable(e.target)) return;
       e.preventDefault();
       setFindOpen(true);

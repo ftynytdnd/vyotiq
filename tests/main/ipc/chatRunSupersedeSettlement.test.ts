@@ -125,7 +125,6 @@ describe('registerChatIpc — run supersede settlement', () => {
       workspaceId: 'ws-1',
       prompt: 'next',
       selection: { providerId: 'p1', modelId: 'm1' },
-      permissions: { allowAuto: true }
     });
 
     expect(abortRun).toHaveBeenCalledWith('prior-run');

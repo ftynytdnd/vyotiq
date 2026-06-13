@@ -39,7 +39,6 @@ function makeToolCtx(
     workspaceId: base.workspaceId,
     runId: base.runId,
     conversationId: base.conversationId,
-    permissions: { allowAuto: true },
     strictApprovals: false,
     signal: new AbortController().signal,
     emit: () => {},

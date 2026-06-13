@@ -54,8 +54,6 @@ export function SearchInvocation({ call, result, dense, rowKey }: SearchInvocati
       {...(detail !== undefined ? { detail } : {})}
       {...(dense ? { dense } : {})}
       {...(rowKey ? { rowKey } : {})}
-      call={call}
-      result={result}
     />
   );
 }

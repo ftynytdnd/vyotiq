@@ -77,7 +77,6 @@ const baseInput = {
   runId: 'run-pe',
   prompt: 'hi',
   selection: { providerId: 'p', modelId: 'm' },
-  permissions: { allowAuto: false }
 } as const;
 
 describe('runOrchestratorLoop — ProviderError handling', () => {
@@ -112,7 +111,6 @@ describe('runOrchestratorLoop — ProviderError handling', () => {
       emit: (e) => events.push(e),
       initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
       initialQuery: 'hi',
-      permissions: baseInput.permissions,
       strictApprovals: false
     });
 
@@ -157,7 +155,6 @@ describe('runOrchestratorLoop — ProviderError handling', () => {
       emit: () => {},
       initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
       initialQuery: 'hi',
-      permissions: baseInput.permissions,
       strictApprovals: false
     });
 
@@ -195,7 +192,6 @@ describe('runOrchestratorLoop — ProviderError handling', () => {
       emit: (e) => events.push(e),
       initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
       initialQuery: 'hi',
-      permissions: baseInput.permissions,
       strictApprovals: false
     });
 
@@ -238,7 +234,6 @@ describe('runOrchestratorLoop — ProviderError handling', () => {
       emit: (e) => events.push(e),
       initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
       initialQuery: 'hi',
-      permissions: baseInput.permissions,
       strictApprovals: false
     });
 
@@ -273,7 +268,6 @@ describe('runOrchestratorLoop — ProviderError handling', () => {
       emit: (e) => events.push(e),
       initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
       initialQuery: 'hi',
-      permissions: baseInput.permissions,
       strictApprovals: false
     });
 

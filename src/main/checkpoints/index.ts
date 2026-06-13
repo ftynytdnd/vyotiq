@@ -10,7 +10,7 @@ import type {
   PendingChange
 } from '@shared/types/checkpoint.js';
 import type { DiffHunk as ToolDiffHunk } from '@shared/types/tool.js';
-import { writeBlob, readBlob, hashContent } from './blobStore.js';
+import { writeBlob, readBlob } from './blobStore.js';
 import {
   openRun as openRunInternal,
   finalizeRun as finalizeRunInternal,
@@ -143,11 +143,7 @@ export async function recordChange(opts: RecordChangeOpts): Promise<CheckpointEn
 export async function acceptEntry(entryId: string): Promise<boolean> {
   const loc = lookupEntryLocation(entryId);
   if (loc) {
-    const dropped = await dropOne(loc.workspaceId, loc.conversationId, entryId);
-    if (dropped) {
-      broadcast(loc.workspaceId);
-      return true;
-    }
+    return acceptEntryStrict(loc.workspaceId, loc.conversationId, entryId);
   }
   const removed = await dropByEntryId(entryId);
   if (!removed) return false;
@@ -191,14 +187,10 @@ export async function rejectEntry(entryId: string): Promise<CheckpointRevertResu
     workspaceId = removed.workspaceId;
     runId = removed.change.runId;
   }
-  const manifest = await readRun(workspaceId!, runId!);
-  const entry = manifest?.entries.find((e) => e.id === entryId);
-  if (!entry) {
-    return { ok: false, error: { kind: 'unknown-entry', entryId } };
+  if (workspaceId && runId) {
+    return revertEntryById(workspaceId, runId, entryId);
   }
-  const result = await revertEntryDirect(entry);
-  broadcast(workspaceId!);
-  return result;
+  return { ok: false, error: { kind: 'unknown-entry', entryId } };
 }
 
 export async function revertEntryById(
@@ -242,7 +234,6 @@ export const listPending = listForConversation;
 export const dropPendingForRunsExport = dropPendingForRuns;
 export const deleteRun = deleteRunManifest;
 export const readBlobBody = readBlob;
-export const computeContentHash = hashContent;
 
 export async function flushAll(): Promise<void> {
   await Promise.all([flushRunManifests(), flushPending()]);

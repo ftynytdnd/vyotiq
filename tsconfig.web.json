@@ -18,6 +18,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
+    "types": [],
     "allowSyntheticDefaultImports": true,
     "useDefineForClassFields": true,
     "paths": {

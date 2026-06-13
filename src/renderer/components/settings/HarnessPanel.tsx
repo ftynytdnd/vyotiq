@@ -8,6 +8,7 @@ import { HARNESS_SECTION_IDS } from '@shared/types/harness.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { ShellCaption, ShellRow, ShellSection, ShellStack } from '../ui/ShellSection.js';
 import { Button } from '../ui/Button.js';
+import { LoadingHint } from '../ui/LoadingHint.js';
 
 const SECTION_LABELS: Record<HarnessSectionId, string> = {
   'orchestrator-core': 'Agent core',
@@ -116,7 +117,7 @@ export function HarnessPanel() {
         )}
 
         {loading ? (
-          <p className="text-meta text-text-faint py-2">Loading…</p>
+          <LoadingHint message="Loading harness…" className="py-2" />
         ) : (
           <textarea
             value={draft}

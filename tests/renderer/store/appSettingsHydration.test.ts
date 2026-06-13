@@ -7,20 +7,18 @@ import { useSettingsStore, selectSettingsReady } from '@renderer/store/useSettin
 import { useUiStore } from '@renderer/store/useUiStore';
 
 let resolveGet!: (value: {
-  permissions: Record<string, unknown>;
   ui: { dockExpanded: boolean; collapsedWorkspaces: string[] };
 }) => void;
 
 beforeEach(() => {
   useSettingsStore.setState({
-    settings: { permissions: { allowAuto: false } },
+    settings: {},
     loading: false,
     initialLoadDone: false
   });
   useUiStore.setState({ hydrated: false, dockExpanded: false, collapsedWorkspaces: new Set() });
 
   const getPromise = new Promise<{
-    permissions: Record<string, unknown>;
     ui: { dockExpanded: boolean; collapsedWorkspaces: string[] };
   }>((resolve) => {
     resolveGet = resolve;
@@ -43,7 +41,6 @@ describe('selectSettingsReady', () => {
     expect(selectSettingsReady(useSettingsStore.getState())).toBe(false);
 
     resolveGet({
-      permissions: { allowAuto: true },
       ui: { dockExpanded: true, collapsedWorkspaces: ['ws-a'] }
     });
     await vi.waitFor(() =>

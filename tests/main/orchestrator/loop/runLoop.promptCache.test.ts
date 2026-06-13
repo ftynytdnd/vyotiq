@@ -81,7 +81,6 @@ const baseInput = {
   runId: 'run-pc',
   prompt: 'list files',
   selection: { providerId: 'p', modelId: 'm' },
-  permissions: { allowAuto: true }
 } as const;
 
 const listDirTurn = {
@@ -133,7 +132,6 @@ async function runTwoTurnLoop(dialect: ProviderDialect): Promise<void> {
     emit: (e) => events.push(e),
     initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'list files' }],
     initialQuery: 'list files',
-    permissions: baseInput.permissions,
     strictApprovals: false
   });
 

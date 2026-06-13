@@ -25,6 +25,8 @@ export interface FloatingPanelProps {
   onWidthChange?: (width: number) => void;
   /** When false, omit the dim backdrop (use a shared app-level backdrop). */
   showBackdrop?: boolean;
+  /** When `embedded`, render inline (right dock) instead of a body portal. */
+  embedded?: boolean;
   className?: string;
   headerActions?: ReactNode;
 }
@@ -42,6 +44,7 @@ export function FloatingPanel({
   initialWidth = WIDTH_DEFAULT,
   onWidthChange,
   showBackdrop = true,
+  embedded = false,
   className,
   headerActions
 }: FloatingPanelProps) {
@@ -151,6 +154,45 @@ export function FloatingPanel({
 
   if (!open) return null;
 
+  const panel = (
+    <div
+      ref={panelRef}
+      role="dialog"
+      aria-modal={embedded ? undefined : true}
+      aria-labelledby={titleId}
+      data-panel-width-key={widthKey}
+      style={
+        embedded
+          ? { width: '100%', height: '100%' }
+          : narrow
+            ? undefined
+            : { width: `min(${widthRef.current}px, 92vw)` }
+      }
+      className={cn(
+        'vx-floating-panel relative flex flex-col bg-surface-raised',
+        embedded
+          ? 'h-full min-h-0 border-0 shadow-none'
+          : cn(
+              'max-h-[100dvh] border-l border-border-subtle/25 shadow-modal',
+              narrow ? 'w-full max-w-none' : 'max-w-[min(720px,92vw)]'
+            ),
+        className
+      )}
+    >
+      {!narrow && !embedded ? (
+        <div
+          className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize"
+          onPointerDown={onResizePointerDown}
+          aria-hidden
+        />
+      ) : null}
+      <PanelHeader title={title} titleId={titleId} actions={headerActions} onClose={onClose} />
+      <div className="vx-floating-panel-body min-h-0 flex-1 overflow-y-auto">{children}</div>
+    </div>
+  );
+
+  if (embedded) return panel;
+
   return createPortal(
     <div className="vx-floating-panel-root fixed inset-0 z-(--z-overlay-panel) flex justify-end pointer-events-none">
       {showBackdrop ? (
@@ -161,34 +203,7 @@ export function FloatingPanel({
           onClick={onClose}
         />
       ) : null}
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        data-panel-width-key={widthKey}
-        style={narrow ? undefined : { width: `min(${widthRef.current}px, 92vw)` }}
-        className={cn(
-          'vx-floating-panel relative flex max-h-[100dvh] flex-col border-l border-border-subtle/25 bg-surface-raised shadow-2xl pointer-events-auto',
-          narrow ? 'w-full max-w-none' : 'max-w-[min(720px,92vw)]',
-          className
-        )}
-      >
-        {!narrow ? (
-          <div
-            className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize"
-            onPointerDown={onResizePointerDown}
-            aria-hidden
-          />
-        ) : null}
-        <PanelHeader
-          title={title}
-          titleId={titleId}
-          actions={headerActions}
-          onClose={onClose}
-        />
-        <div className="vx-floating-panel-body min-h-0 flex-1 overflow-y-auto">{children}</div>
-      </div>
+      <div className="pointer-events-auto">{panel}</div>
     </div>,
     document.body
   );

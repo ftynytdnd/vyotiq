@@ -1,16 +1,7 @@
 /**
- * `settingsStore.ts` permissions migration tests.
+ * `settingsStore.ts` migration tests.
  *
- * Locks legacy permission migration:
- *   - `publicShape` reads pre-2026 settings.json blobs and collapses
- *     legacy flags to `{}`.
- *   - The first subsequent `setSettings` write strips the deprecated
- *     keys so the on-disk shape converges to the new model over normal
- *     usage — no special migration step required.
- *
- * `blob` is mocked through `safeStore` (the same fixture pattern
- * `blob.test.ts` uses) so each test fully controls the on-disk
- * starting state.
+ * Locks legacy settings.json cleanup on read/write.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -50,61 +41,16 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('publicShape — legacy permission migration', () => {
-  it('collapses legacy allowFileWrites + allowBash to empty permissions', async () => {
+describe('publicShape — legacy settings cleanup', () => {
+  it('strips legacy top-level permissions on read', async () => {
     vi.doMock('@main/secrets/safeStore', () => safeStore);
     (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed(
       SETTINGS_FILE,
-      {
-        permissions: {
-          allowFileWrites: true,
-          allowBash: true,
-          allowWebSearch: false
-        }
-      }
+      { permissions: { allowAuto: true, allowFileWrites: true } }
     );
     const { getSettings } = await import('@main/settings/settingsStore');
     const got = await getSettings();
-    expect(got.permissions).toEqual({});
-  });
-
-  it('collapses mixed legacy flags to empty permissions', async () => {
-    vi.doMock('@main/secrets/safeStore', () => safeStore);
-    (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed(
-      SETTINGS_FILE,
-      {
-        permissions: {
-          allowFileWrites: true,
-          allowBash: false,
-          allowWebSearch: true
-        }
-      }
-    );
-    const { getSettings } = await import('@main/settings/settingsStore');
-    const got = await getSettings();
-    expect(got.permissions).toEqual({});
-  });
-
-  it('strips legacy allowAuto on disk to empty permissions', async () => {
-    vi.doMock('@main/secrets/safeStore', () => safeStore);
-    (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed(
-      SETTINGS_FILE,
-      { permissions: { allowAuto: true } }
-    );
-    const { getSettings } = await import('@main/settings/settingsStore');
-    const got = await getSettings();
-    expect(got.permissions).toEqual({});
-  });
-
-  it('falls back to DEFAULT_PERMISSIONS when permissions is missing', async () => {
-    vi.doMock('@main/secrets/safeStore', () => safeStore);
-    (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed(
-      SETTINGS_FILE,
-      {}
-    );
-    const { getSettings } = await import('@main/settings/settingsStore');
-    const got = await getSettings();
-    expect(got.permissions).toEqual({});
+    expect(got).not.toHaveProperty('permissions');
   });
 
   it('strips permissionsByWorkspace and gate maps on read', async () => {
@@ -185,31 +131,18 @@ describe('getSettings — eager on-disk migration', () => {
 });
 
 describe('setSettings — legacy keys are stripped on first write', () => {
-  it('drops allowFileWrites/allowBash/allowWebSearch from the persisted blob', async () => {
+  it('drops top-level permissions from the persisted blob', async () => {
     vi.doMock('@main/secrets/safeStore', () => safeStore);
     const seed = (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed;
     const peek = (safeStore as unknown as { __peek: (f: string) => unknown }).__peek;
     seed(SETTINGS_FILE, {
-      permissions: {
-        allowFileWrites: true,
-        allowBash: true,
-        allowWebSearch: false
-      }
+      permissions: { allowFileWrites: true, allowBash: true, allowWebSearch: true }
     });
     const { setSettings } = await import('@main/settings/settingsStore');
-    // Touch an unrelated field so the patch fires WITHOUT changing
-    // permissions; the migration must still strip the legacy keys.
     await setSettings({ defaultModel: { providerId: 'p', modelId: 'm' } });
 
-    const onDisk = peek(SETTINGS_FILE) as {
-      permissions?: Record<string, unknown>;
-    } | null;
-    expect(onDisk?.permissions).toBeDefined();
-    // Legacy keys gone …
-    expect(onDisk?.permissions).not.toHaveProperty('allowFileWrites');
-    expect(onDisk?.permissions).not.toHaveProperty('allowBash');
-    expect(onDisk?.permissions).not.toHaveProperty('allowWebSearch');
-    expect(onDisk?.permissions).toEqual({});
+    const onDisk = peek(SETTINGS_FILE) as Record<string, unknown> | null;
+    expect(onDisk).not.toHaveProperty('permissions');
   });
 
   it('drops permissionsByWorkspace from disk on first write', async () => {
@@ -230,7 +163,7 @@ describe('setSettings — legacy keys are stripped on first write', () => {
     expect(onDisk?.ui).not.toHaveProperty('permissionsByWorkspace');
   });
 
-  it('preserves sibling ui fields when the patch only touches permissions', async () => {
+  it('preserves sibling ui fields when the patch only touches defaultModel', async () => {
     vi.doMock('@main/secrets/safeStore', () => safeStore);
     const seed = (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed;
     const peek = (safeStore as unknown as { __peek: (f: string) => unknown }).__peek;
@@ -241,13 +174,11 @@ describe('setSettings — legacy keys are stripped on first write', () => {
       }
     });
     const { setSettings } = await import('@main/settings/settingsStore');
-    await setSettings({ permissions: {} });
+    await setSettings({ defaultModel: { providerId: 'p', modelId: 'm' } });
 
     const onDisk = peek(SETTINGS_FILE) as {
       ui?: { sidebarOpen?: boolean; collapsedWorkspaces?: string[] };
-      permissions?: Record<string, unknown>;
     } | null;
-    expect(onDisk?.permissions).toEqual({});
     // Unrelated ui fields are preserved; legacy `sidebarOpen` migrates to `dockExpanded`.
     expect(onDisk?.ui?.dockExpanded).toBe(true);
     expect(onDisk?.ui).not.toHaveProperty('sidebarOpen');

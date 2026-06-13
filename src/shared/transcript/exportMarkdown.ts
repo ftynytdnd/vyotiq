@@ -132,6 +132,7 @@ export function renderTranscriptMarkdown(
       case 'checkpoint-revert':
       case 'checkpoint-bash-mutation':
       case 'synthetic-usage-update':
+      case 'attachment-pre-read':
         break;
       default: {
         const _exhaustive: never = e;

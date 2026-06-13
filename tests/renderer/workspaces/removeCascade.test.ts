@@ -14,7 +14,6 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { useWorkspaceStore } from '@renderer/store/useWorkspaceStore';
 import { useSettingsStore } from '@renderer/store/useSettingsStore';
-import { DEFAULT_PERMISSIONS } from '@shared/constants';
 import type { AppSettings } from '@shared/types/ipc';
 
 beforeEach(async () => {
@@ -29,7 +28,6 @@ beforeEach(async () => {
   });
   useSettingsStore.setState({
     settings: {
-      permissions: { ...DEFAULT_PERMISSIONS },
       ui: {
         activeConversationByWorkspace: { 'ws-A': 'c1', 'ws-B': 'c2' },
         lastModelByWorkspace: {
@@ -52,7 +50,6 @@ beforeEach(async () => {
     return {
       ...current,
       ...patch,
-      permissions: { ...(current.permissions ?? {}), ...(patch.permissions ?? {}) },
       ui: { ...(current.ui ?? {}), ...(patch.ui ?? {}) }
     } as AppSettings;
   }) as never;

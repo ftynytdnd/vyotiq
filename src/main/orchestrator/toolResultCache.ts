@@ -27,102 +27,20 @@
  */
 
 import type { ToolName, ToolResult } from '@shared/types/tool.js';
-import { stableStringify } from '@shared/json/stableStringify.js';
 import { logger } from '../logging/logger.js';
+import {
+  cacheableKey,
+  clearConversationCache,
+  clearRunCacheEntries,
+  deleteRunCache,
+  getConversationCache,
+  getRunCacheEntryCount,
+  getRunCacheMap,
+  isWriteShaped,
+  type CacheEntry
+} from './toolResultCacheInternals.js';
 
 const log = logger.child('orchestrator/toolResultCache');
-
-/**
- * Tool names whose (args → result) relationship is pure with respect to
- * workspace state: calling them twice in a row with no intervening
- * write produces byte-identical output. Only these are cached.
- *
- * Notably excluded:
- *   - `edit`, `delete`, `bash`, `report` — write-shaped.
- *   - `memory` — action-dependent (cached inside the key, see
- *     `cacheableKey` below; write actions invalidate).
- */
-const PURE_READ_TOOLS = new Set<ToolName>(['ls', 'read', 'search', 'recall']);
-
-/**
- * For `memory` calls, only `list` / `read` are cacheable. `write` /
- * `append` mutate and must invalidate. Returns null when the call
- * should not be cached at all (e.g. memory.write, edit, bash).
- */
-function cacheableKey(name: ToolName, args: Record<string, unknown>): string | null {
-  if (PURE_READ_TOOLS.has(name)) {
-    return `${name}|${stableStringify(args)}`;
-  }
-  if (name === 'memory') {
-    const action = typeof args.action === 'string' ? args.action : '';
-    if (action === 'list' || action === 'read') {
-      return `${name}|${stableStringify(args)}`;
-    }
-  }
-  return null;
-}
-
-/**
- * Predicate: does this tool call mutate workspace or memory state?
- * Returning true causes the entire run-scoped cache to be cleared so
- * subsequent reads see fresh data.
- */
-function isWriteShaped(name: ToolName, args: Record<string, unknown>): boolean {
-  if (name === 'edit' || name === 'delete' || name === 'bash' || name === 'report') return true;
-  if (name === 'memory') {
-    const action = typeof args.action === 'string' ? args.action : '';
-    return action === 'write' || action === 'append';
-  }
-  return false;
-}
-
-interface CacheEntry {
-  result: ToolResult;
-  hits: number;
-  firstTs: number;
-  /**
-   * Audit fix A4 — entry was pre-seeded by `seedCachedRead` rather than
-   * recorded by an actual tool run. The lookup
-   * path skips the "you already issued this N times" banner for
-   * seeded entries because the seed's own `output` is the
-   * authoritative explanation ("this file is already in your
-   * <attached_files> block, re-read suppressed"). Without this flag the banner would
-   * lie to the model on the FIRST `read` of a pre-seeded file.
-   */
-  seeded?: boolean;
-}
-
-/** Run-scoped cache: `WeakMap<AbortSignal, Map<entryKey, CacheEntry>>`. */
-const caches = new WeakMap<AbortSignal, Map<string, CacheEntry>>();
-
-/** Cross-run cache within one conversation (survives user-message boundaries). */
-const conversationCaches = new Map<string, Map<string, CacheEntry>>();
-const CONVERSATION_CACHE_MAX = 48;
-
-function getConversationCache(conversationId: string): Map<string, CacheEntry> {
-  let map = conversationCaches.get(conversationId);
-  if (!map) {
-    map = new Map();
-    conversationCaches.set(conversationId, map);
-    if (conversationCaches.size > CONVERSATION_CACHE_MAX) {
-      const oldest = conversationCaches.keys().next().value;
-      if (oldest !== undefined) conversationCaches.delete(oldest);
-    }
-  }
-  return map;
-}
-
-function clearConversationCache(conversationId: string | undefined): void {
-  if (!conversationId) return;
-  const map = conversationCaches.get(conversationId);
-  if (map && map.size > 0) {
-    log.debug('tool-result conversation cache invalidated by write', {
-      conversationId,
-      entriesEvicted: map.size
-    });
-    map.clear();
-  }
-}
 
 function replayCachedEntry(entry: CacheEntry, name: ToolName, scope: 'run' | 'conversation'): ToolResult {
   entry.hits += 1;
@@ -148,15 +66,6 @@ function replayCachedEntry(entry: CacheEntry, name: ToolName, scope: 'run' | 'co
     ...entry.result,
     output: banner + entry.result.output
   };
-}
-
-function getCache(signal: AbortSignal): Map<string, CacheEntry> {
-  let map = caches.get(signal);
-  if (!map) {
-    map = new Map();
-    caches.set(signal, map);
-  }
-  return map;
 }
 
 /**
@@ -186,7 +95,7 @@ export function lookupCachedResult(
   const key = cacheableKey(name, args);
   if (key === null) return null;
 
-  const runEntry = getCache(signal).get(key);
+  const runEntry = getRunCacheMap(signal).get(key);
   if (runEntry?.result.ok) {
     return replayCachedEntry(runEntry, name, 'run');
   }
@@ -202,39 +111,6 @@ export function lookupCachedResult(
 }
 
 /**
- * Pre-seed a synthetic cache hit for an inlined file path (host-only;
- * no live caller today — kept for tests and future inline-file hints).
- * Bare `read({ path })` short-circuits with no "[cache]" banner.
- * Idempotent per `(signal, rel)`. Audit fix A4.
- */
-export function seedCachedRead(signal: AbortSignal, rel: string): void {
-  const key = cacheableKey('read', { path: rel });
-  if (key === null) return; // defensive — `read` is in PURE_READ_TOOLS
-  const map = getCache(signal);
-  if (map.has(key)) return;
-  const seedResult: ToolResult = {
-    id: 'seeded',
-    name: 'read',
-    ok: true,
-    output:
-      `[host] The file "${rel}" was already inlined into the <attached_files> block ` +
-      `at the top of your conversation. The host has short-circuited this ` +
-      `\`read\` to save you a round-trip. Use the inlined content directly. ` +
-      `If you need a specific line range that exceeds the inline cap, ` +
-      `re-issue \`read\` with explicit \`startLine\` / \`endLine\` — that ` +
-      `call will bypass this seed and fetch fresh content.`,
-    durationMs: 0
-  };
-  map.set(key, {
-    result: seedResult,
-    hits: 0,
-    firstTs: Date.now(),
-    seeded: true
-  });
-  log.debug('seeded read-cache hit', { rel });
-}
-
-/**
  * Record a fresh tool result in the cache, OR invalidate the cache
  * wholesale when the call was a write. Callers invoke this after the
  * real tool has run (never on a cache-hit replay).
@@ -247,13 +123,12 @@ export function recordToolResult(
   conversationId?: string
 ): void {
   if (isWriteShaped(name, args)) {
-    const map = caches.get(signal);
-    if (map && map.size > 0) {
+    if (getRunCacheEntryCount(signal) > 0) {
       log.debug('tool-result cache invalidated by write', {
         tool: name,
-        entriesEvicted: map.size
+        entriesEvicted: getRunCacheEntryCount(signal)
       });
-      map.clear();
+      clearRunCacheEntries(signal);
     }
     clearConversationCache(conversationId);
     return;
@@ -268,7 +143,7 @@ export function recordToolResult(
     }
   };
 
-  storeEntry(getCache(signal));
+  storeEntry(getRunCacheMap(signal));
   if (conversationId) {
     storeEntry(getConversationCache(conversationId));
   }
@@ -279,5 +154,5 @@ export function recordToolResult(
  * relies on the WeakMap to GC entries with their signal.
  */
 export function clearRunCache(signal: AbortSignal): void {
-  caches.delete(signal);
+  deleteRunCache(signal);
 }

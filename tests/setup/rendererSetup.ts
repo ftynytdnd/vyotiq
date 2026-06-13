@@ -87,9 +87,13 @@ function makeStubApi() {
       remove: asyncNoop,
       move: vi.fn(async () => ({ id: 'new', title: 'Untitled', updatedAt: 0 }))
     },
+    scheduledRuns: {
+      list: vi.fn(async () => []),
+      upsert: vi.fn(async (input) => ({ ...input, id: 'sched-1', createdAt: 0, updatedAt: 0 })),
+      delete: vi.fn(async () => ({ ok: true }))
+    },
     tools: {
       openPath: asyncNoop,
-      rerun: asyncNoop,
       generateRunSummary: vi.fn(async () => ({
         ok: true as const,
         title: 'Stub',
@@ -131,7 +135,6 @@ function makeStubApi() {
         updateAvailable: false,
         status: { phase: 'idle' as const }
       })),
-      downloadUpdate: vi.fn(async () => ({ phase: 'idle' as const })),
       installUpdate: asyncNoop,
       onUpdateStatus: subscribe,
     },

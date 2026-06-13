@@ -82,9 +82,6 @@ export function DeleteInvocation({
       {...(dense ? { dense } : {})}
       {...(rowKey ? { rowKey } : {})}
       {...(liveAutoExpand ? { liveAutoExpand } : {})}
-      call={call}
-      result={result}
-      partial={partial}
     />
   );
 }

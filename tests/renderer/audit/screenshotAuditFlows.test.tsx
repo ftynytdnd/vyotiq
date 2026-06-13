@@ -10,7 +10,6 @@ import { SettingsFullView } from '@renderer/components/settings/SettingsFullView
 import { useChatStore } from '@renderer/store/useChatStore';
 import { useSettingsStore } from '@renderer/store/useSettingsStore';
 import { useWorkspaceStore } from '@renderer/store/useWorkspaceStore';
-import { DEFAULT_PERMISSIONS } from '@shared/constants';
 
 vi.mock('@renderer/lib/ipc.js', () => ({
   vyotiq: {

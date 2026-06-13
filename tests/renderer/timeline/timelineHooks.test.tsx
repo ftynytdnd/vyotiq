@@ -42,8 +42,7 @@ vi.mock('@renderer/store/useWorkspaceStore.js', () => ({
 
 vi.mock('@renderer/store/useSettingsStore.js', () => ({
   useSettingsStore: (selector: (s: { settings: object }) => unknown) =>
-    selector({ settings: {} }),
-  selectEffectivePermissions: () => ({})
+    selector({ settings: {} })
 }));
 
 vi.mock('@renderer/store/useTimelineUiStore.js', () => ({

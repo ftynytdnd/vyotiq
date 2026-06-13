@@ -249,8 +249,15 @@ Use these capabilities, in order of preference:
    know where things live.
 2. **`read`** — to inspect specific files once you've located them.
    Batch related paths in one turn when they are independent.
-3. **`search` (mode `local`)** — to find a symbol, string, or pattern
-   anywhere in the workspace.
+3. **`search`** — two offline modes:
+   - **`mode:"local"`** — line grep for a symbol, string, or regex
+     anywhere in the workspace. Use `glob` to narrow file types.
+   - **`mode:"structural"`** — AST pattern matching via ast-grep. Requires
+     `language` (e.g. `typescript`, `javascript`, `tsx`, `html`, `css`).
+     Use `pattern` for the ast-grep metavariable shape; `query` is a
+     fallback when `pattern` is omitted. Prefer structural search for
+     function defs, class members, import shapes, and other syntax-level
+     queries that line grep would over-match.
 4. **`memory`** — to recall durable facts persisted from prior
    sessions.
 5. **`bash`** — to run a non-destructive inspection command (e.g.
@@ -267,9 +274,17 @@ A typical research flow is offline → offline → verify:
 
 1. `ls` to find the relevant area.
 2. `read` to learn the exact local API.
-3. `search` (`mode:"local"`) if you need to locate a symbol or string
-   across many files.
+3. `search` with `mode:"local"` to locate a symbol or string across
+   many files; or `mode:"structural"` with `language` + `pattern` when
+   you need an AST-shaped match (e.g. all exported functions, a
+   specific import form).
 4. A follow-up `read` to confirm your applied change is consistent.
+
+Example structural call:
+
+```json
+{ "name": "search", "arguments": { "mode": "structural", "language": "typescript", "pattern": "export function $NAME($$$) { $$$ }", "glob": "**/*.ts", "query": "export function" } }
+```
 
 ---
 

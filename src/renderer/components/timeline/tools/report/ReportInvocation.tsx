@@ -125,9 +125,6 @@ export function ReportInvocation({
         {...(detail !== undefined ? { detail } : {})}
         {...(dense ? { dense } : {})}
         {...(rowKey ? { rowKey } : {})}
-        call={call}
-        result={result}
-        partial={partial}
       />
       {result?.ok && relPath && (
         <button

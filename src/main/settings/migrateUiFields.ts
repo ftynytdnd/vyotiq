@@ -53,14 +53,28 @@ export function migrateLegacyDockUi<T extends UiRecord>(ui: T): { ui: T; changed
   return { ui: next as T, changed };
 }
 
+/** Strip removed right-dock fields from persisted settings. */
+export function stripRemovedUiFields<T extends UiRecord>(ui: T): { ui: T; changed: boolean } {
+  let changed = false;
+  let next: UiRecord = { ...ui };
+  for (const key of ['secondaryZoneMode', 'rightDockWidth'] as const) {
+    if (key in next) {
+      const { [key]: _removed, ...rest } = next;
+      void _removed;
+      next = rest;
+      changed = true;
+    }
+  }
+  return { ui: next as T, changed };
+}
+
 /** Normalize a `settings:set` patch before runtime validation (stale renderer bundles). */
 export function normalizeSettingsPatch(patch: Partial<AppSettings>): Partial<AppSettings> {
-  // Pass non-object / null / array patches through untouched so the
-  // downstream `assertSettingsPatch` gate emits the canonical
-  // "patch must be a non-null object" rejection instead of this
-  // function throwing a raw TypeError on `patch.ui`.
   if (!patch || typeof patch !== 'object' || !patch.ui) return patch;
   let { ui, changed } = migrateLegacyDockUi({ ...patch.ui } as UiRecord);
+  const stripped = stripRemovedUiFields(ui);
+  ui = stripped.ui;
+  changed = changed || stripped.changed;
   const dock = normalizeDockWidthInUi(ui);
   ui = dock.ui;
   changed = changed || dock.changed;

@@ -1,8 +1,7 @@
 /**
  * Pending-change registry. One JSON file per workspace (`pending.json`)
- * keyed by conversation id. Legacy rows may remain on disk; new edits no
- * longer append pending entries (`recordChange` is stubbed). Still used
- * for workspace migration and `listPending` in tests.
+ * keyed by conversation id. `recordChange` appends rows here for the
+ * Settings → Checkpoints accept/reject UI.
  */
 
 import { promises as fs, existsSync } from 'node:fs';

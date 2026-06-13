@@ -76,13 +76,10 @@ export function registerTerminalIpc(): void {
     ensureWorkspacePty(ws.id, ws.path);
   });
 
+  /** Closing the terminal panel detaches the renderer only — PTY stays alive for agent bash reuse. */
   wrapIpcHandler(IPC.TERMINAL_DETACH, async (_event, workspaceId?: string) => {
     assertOptionalString('terminal:detach', 'workspaceId', workspaceId);
-    if (workspaceId) {
-      killWorkspacePty(workspaceId);
-      return;
-    }
-    disposeAllPtySessions();
+    void workspaceId;
   });
 }
 

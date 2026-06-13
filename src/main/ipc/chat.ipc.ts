@@ -133,8 +133,19 @@ function isPersistentEvent(event: TimelineEvent): boolean {
 
 const safeSend = safeWebContentsSend;
 
+let chatSendDispatcher: ((input: ChatSendInput) => Promise<ChatSendReply>) | null = null;
+
+/** Programmatic chat send (scheduled runs, tests). Requires IPC registration first. */
+export async function dispatchChatSend(input: ChatSendInput): Promise<ChatSendReply> {
+  if (!chatSendDispatcher) throw new Error('chat IPC not registered');
+  return chatSendDispatcher(input);
+}
+
 export function registerChatIpc(): void {
-  wrapIpcHandler(IPC.CHAT_SEND, async (_event, input: ChatSendInput): Promise<ChatSendReply> => {
+  const handleChatSend = async (
+    _event: unknown,
+    input: ChatSendInput
+  ): Promise<ChatSendReply> => {
     assertChatSendInput(input);
 
     // Resolve the workspace for this run. Priority:
@@ -541,7 +552,10 @@ export function registerChatIpc(): void {
     }
 
     return { ok: true as const, conversationId: cid };
-  });
+  };
+
+  chatSendDispatcher = (input) => handleChatSend(undefined, input);
+  wrapIpcHandler(IPC.CHAT_SEND, handleChatSend);
 
   wrapIpcHandler(IPC.CHAT_ABORT, async (_event, runId: string) => {
     assertString('chat:abort', 'runId', runId);

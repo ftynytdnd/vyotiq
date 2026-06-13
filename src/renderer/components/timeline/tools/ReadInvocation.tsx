@@ -98,8 +98,6 @@ export function ReadInvocation({ call, result, dense, rowKey }: ReadInvocationPr
       {...(detail !== undefined ? { detail } : {})}
       {...(dense ? { dense } : {})}
       {...(rowKey ? { rowKey } : {})}
-      call={call}
-      result={result}
     />
   );
 }

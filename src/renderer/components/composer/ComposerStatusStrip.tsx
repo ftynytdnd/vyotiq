@@ -42,6 +42,7 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip({
   const lowBalance = isProviderAccountLow(account);
   const orchestratorUsage = useChatStore((s) => s.orchestratorUsage);
   const isProcessing = useChatStore((s) => s.isProcessing);
+  const toolCacheHint = useChatStore((s) => s.toolCacheHint);
 
   if (pendingAskUser) {
     const title =
@@ -79,6 +80,18 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip({
       ? formatCacheSavingsUsd(costBreakdown.grossCacheSavingsUsd)
       : '';
   const netSavingsUsd = costBreakdown?.netCacheSavingsUsd ?? 0;
+
+  if (toolCacheHint) {
+    return (
+      <span
+        className="vx-composer-status-strip min-w-0 flex-1 truncate px-0.5 font-mono text-meta text-text-faint"
+        role="status"
+        aria-live="polite"
+      >
+        {toolCacheHint}
+      </span>
+    );
+  }
 
   if (showCacheLine) {
     const sessionHint =

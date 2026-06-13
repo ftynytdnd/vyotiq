@@ -59,8 +59,6 @@ export function UnknownInvocation({ call, result, dense, rowKey }: UnknownInvoca
       detail={detail}
       {...(dense ? { dense } : {})}
       {...(rowKey ? { rowKey } : {})}
-      call={call}
-      result={result}
     />
   );
 }

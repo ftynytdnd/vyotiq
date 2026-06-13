@@ -1,0 +1,80 @@
+# Build signed distributables and publish the electron-updater feed.
+# Triggers on version tags (e.g. v0.1.0) or manual dispatch from Actions.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+          - os: macos-latest
+            platform: mac
+          - os: ubuntu-latest
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
+
+    env:
+      # electron-builder publish URL (generic provider in electron-builder.yml)
+      UPDATE_BASE_URL: ${{ secrets.UPDATE_BASE_URL }}
+      # Windows + macOS code signing (PFX / P12 — path or base64)
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      # macOS notarization (electron-builder notarize: true)
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and publish distributables
+        run: npm run build && electron-builder --publish always --config.forceCodeSigning=true
+        env:
+          FORCE_CODE_SIGNING: 'true'
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vyotiq-${{ matrix.platform }}-${{ github.sha }}
+          path: |
+            release/*
+          if-no-files-found: error
+
+      # --- Upload update feed to static host (placeholder) ---
+      # After artifacts are built, copy `release/*` (installers + latest*.yml)
+      # to the HTTPS origin behind UPDATE_BASE_URL so electron-updater can
+      # resolve `latest.yml` / `latest-mac.yml` / `latest-linux.yml`.
+      #
+      # Example (rsync over SSH):
+      #   rsync -avz --delete release/ deploy@updates.example.com:/var/www/vyotiq/
+      #
+      # Example (scp):
+      #   scp -r release/* deploy@updates.example.com:/var/www/vyotiq/
+      #
+      # Wire credentials via repository secrets (e.g. DEPLOY_HOST, DEPLOY_USER,
+      # DEPLOY_SSH_KEY) and run the upload in a dedicated deploy job that
+      # downloads all matrix artifacts first.

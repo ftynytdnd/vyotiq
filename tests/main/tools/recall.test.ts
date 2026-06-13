@@ -30,7 +30,6 @@ const baseCtx: ToolContext = {
   workspaceId: 'test-ws',
   runId: 'test-run',
   conversationId: 'test-conv',
-  permissions: { allowAuto: false },
   strictApprovals: false,
   signal: new AbortController().signal,
   // Audit fix H-04: ConfirmOutcome shape.

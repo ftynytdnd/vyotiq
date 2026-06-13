@@ -1,5 +1,5 @@
 /**
- * memory:write IPC — workspace append rejection and global append path.
+ * memory:write IPC — workspace append and global append paths.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -21,6 +21,11 @@ const writeWorkspaceNote = vi.fn(async (key: string, content: string) => ({
   content,
   updatedAt: Date.now()
 }));
+const appendWorkspaceNote = vi.fn(async (key: string, content: string) => ({
+  key,
+  content: `existing\n${content}`,
+  updatedAt: Date.now()
+}));
 
 vi.mock('@main/memory/globalMeta.js', () => ({
   appendGlobalMetaRule: (...args: unknown[]) => appendGlobalMetaRule(...args),
@@ -33,7 +38,8 @@ vi.mock('@main/memory/workspaceNotes.js', () => ({
   listWorkspaceNotes: vi.fn(async () => []),
   readWorkspaceNote: vi.fn(async () => null),
   workspaceNotePath: () => '/tmp/note.md',
-  writeWorkspaceNote: (...args: unknown[]) => writeWorkspaceNote(...args)
+  writeWorkspaceNote: (...args: unknown[]) => writeWorkspaceNote(...args),
+  appendWorkspaceNote: (...args: unknown[]) => appendWorkspaceNote(...args)
 }));
 
 const touchGlobalMemoryLastReference = vi.fn(async () => ({
@@ -67,29 +73,30 @@ beforeEach(async () => {
   writeGlobalMetaRules.mockClear();
   readGlobalMetaRules.mockClear();
   writeWorkspaceNote.mockClear();
+  appendWorkspaceNote.mockClear();
   mockIpc.__handlers.clear();
   const { registerMemoryIpc } = await import('@main/ipc/memory.ipc.js');
   registerMemoryIpc();
 });
 
 describe('memory:write', () => {
-  it('rejects append mode for workspace notes', async () => {
-    await expect(
-      mockIpc.__invoke(
-        IPC.MEMORY_WRITE,
-        'workspace',
-        'notes.md',
-        'new line',
-        'append'
-      )
-    ).rejects.toThrow(/not supported for workspace notes/i);
+  it('appends to workspace notes when mode is append', async () => {
+    const entry = await mockIpc.__invoke(
+      IPC.MEMORY_WRITE,
+      'workspace',
+      'notes.md',
+      'new line',
+      'append'
+    );
+    expect(appendWorkspaceNote).toHaveBeenCalledWith('notes.md', 'new line');
     expect(writeWorkspaceNote).not.toHaveBeenCalled();
+    expect(entry).toMatchObject({ scope: 'workspace', key: 'notes.md' });
   });
 
-  it('rejects legacy append key sentinel for workspace scope', async () => {
-    await expect(
-      mockIpc.__invoke(IPC.MEMORY_WRITE, 'workspace', 'append', 'new line')
-    ).rejects.toThrow(/not supported for workspace notes/i);
+  it('honors legacy append key sentinel for workspace scope', async () => {
+    const entry = await mockIpc.__invoke(IPC.MEMORY_WRITE, 'workspace', 'append', 'new line');
+    expect(appendWorkspaceNote).toHaveBeenCalledWith('append', 'new line');
+    expect(entry).toMatchObject({ scope: 'workspace', key: 'append' });
   });
 
   it('appends to global meta-rules when mode is append', async () => {

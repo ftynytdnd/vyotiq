@@ -106,7 +106,6 @@ const baseInput = {
   runId: 'run-1',
   prompt: 'hi',
   selection: { providerId: 'p', modelId: 'm' },
-  permissions: { allowAuto: false }
 } as const;
 
 describe('runOrchestratorLoop — abort vs retriable error', () => {
@@ -140,7 +139,6 @@ describe('runOrchestratorLoop — abort vs retriable error', () => {
       emit: (e) => events.push(e),
       initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
       initialQuery: 'hi',
-      permissions: baseInput.permissions,
       strictApprovals: false
     });
 
@@ -189,7 +187,6 @@ describe('runOrchestratorLoop — abort vs retriable error', () => {
       emit: (e) => events.push(e),
       initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
       initialQuery: 'hi',
-      permissions: baseInput.permissions,
       strictApprovals: false
     });
 
@@ -238,7 +235,6 @@ describe('runOrchestratorLoop — abort vs retriable error', () => {
       emit: (e) => events.push(e),
       initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
       initialQuery: 'hi',
-      permissions: baseInput.permissions,
       strictApprovals: false
     });
 
@@ -296,7 +292,6 @@ describe('runOrchestratorLoop — abort vs retriable error', () => {
       emit: (e) => events.push(e),
       initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
       initialQuery: 'hi',
-      permissions: baseInput.permissions
     });
 
     const connecting = events.filter(
@@ -375,7 +370,6 @@ describe('runOrchestratorLoop — implicit finish and empty-turn retry', () => {
         { role: 'user', content: 'what is your name?' }
       ],
       initialQuery: 'what is your name?',
-      permissions: baseInput.permissions
     });
 
     expect(events.filter((e) => e.kind === 'error')).toHaveLength(0);
@@ -404,7 +398,6 @@ describe('runOrchestratorLoop — implicit finish and empty-turn retry', () => {
       emit: (e) => events.push(e),
       initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hihi' }],
       initialQuery: 'hihi',
-      permissions: baseInput.permissions
     });
 
     expect(events.filter((e) => e.kind === 'error')).toHaveLength(0);
@@ -443,7 +436,6 @@ describe('runOrchestratorLoop — implicit finish and empty-turn retry', () => {
       emit: (e) => events.push(e),
       initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
       initialQuery: 'hi',
-      permissions: baseInput.permissions
     });
 
     expect(handleAssistantTurn).toHaveBeenCalledTimes(2);
@@ -481,7 +473,6 @@ describe('runOrchestratorLoop — implicit finish and empty-turn retry', () => {
       emit: (e) => events.push(e),
       initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
       initialQuery: 'hi',
-      permissions: baseInput.permissions
     });
 
     const errors = events.filter((e) => e.kind === 'error');
@@ -532,7 +523,6 @@ describe('runOrchestratorLoop — implicit finish and empty-turn retry', () => {
       emit: (e) => events.push(e),
       initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
       initialQuery: 'hi',
-      permissions: baseInput.permissions
     });
 
     expect(handleAssistantTurn).toHaveBeenCalledTimes(3);

@@ -27,7 +27,6 @@ import { randomUUID } from 'node:crypto';
 import { getProviderAccountSnapshot } from '../../providers/providerAccountStore.js';
 import type {
   ChatMessage,
-  ChatPermissions,
   ChatSendInput,
   TimelineEvent
 } from '@shared/types/chat.js';
@@ -185,7 +184,6 @@ interface RunLoopOpts {
   /** The rolling-query string used to refresh memory retrieval each iteration.
    *  Defaults to the original user prompt; updated when tool results land. */
   initialQuery: string;
-  permissions: ChatPermissions;
   /** Resume a run paused on `ask_user` — skips re-seeding the user envelope. */
   resumeCheckpoint?: LoopCheckpoint;
   /** Snapshot of `settings.ui.reports` at run start. */
@@ -965,7 +963,6 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             workspaceId: opts.workspaceId,
             runId: opts.input.runId,
             conversationId: opts.input.conversationId ?? '',
-            permissions: opts.permissions,
             signal: opts.signal,
             allowlist: AGENT_TOOLS,
             allowlistRefusalCounts,

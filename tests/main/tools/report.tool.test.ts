@@ -17,7 +17,6 @@ function makeCtx(workspacePath: string): ToolContext {
     workspaceId: 'ws-test',
     runId: 'run-test',
     conversationId: 'conv-test',
-    permissions: {},
     signal: new AbortController().signal,
     emit: () => {}
   };

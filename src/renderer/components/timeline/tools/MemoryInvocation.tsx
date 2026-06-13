@@ -20,7 +20,7 @@ interface MemoryInvocationProps {
   partial?: boolean;
 }
 
-export function MemoryInvocation({ call, result, dense, rowKey, partial }: MemoryInvocationProps) {
+export function MemoryInvocation({ call, result, dense, rowKey }: MemoryInvocationProps) {
   const openMemorySettings = useAppViewStore((s) => s.openSettings);
   const data = result?.data?.tool === 'memory' ? result.data : null;
   const action =
@@ -70,9 +70,6 @@ export function MemoryInvocation({ call, result, dense, rowKey, partial }: Memor
         {...(detail !== undefined ? { detail } : {})}
         {...(dense ? { dense } : {})}
         {...(rowKey ? { rowKey } : {})}
-        call={call}
-        result={result}
-        partial={partial}
       />
       {result?.ok && (
         <button

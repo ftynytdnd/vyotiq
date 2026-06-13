@@ -25,9 +25,9 @@ import {
   suggestSimilarLines
 } from './editHelpers.js';
 import {
-  composeOnDiskText,
-  decodeFileForEdit,
-  type DecodedFileText
+  composeOnDiskTextFromEdit,
+  decodeFileBufferForEdit,
+  type EditFilePayload
 } from './editFileEncoding.js';
 import { recordChange } from '../checkpoints/index.js';
 
@@ -268,11 +268,11 @@ Create a new file:
       return failure(id, started, 'Error: `oldString` and `newString` are identical (no-op).', 'no-op');
     }
 
-    let rawOriginal: string;
-    let decoded: DecodedFileText;
+    let rawOriginal: Buffer;
+    let decoded: EditFilePayload;
     try {
-      rawOriginal = await fs.readFile(abs, 'utf8');
-      decoded = decodeFileForEdit(rawOriginal);
+      rawOriginal = await fs.readFile(abs);
+      decoded = decodeFileBufferForEdit(rawOriginal);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return failure(id, started, `Cannot read ${a.path}: ${msg}`, msg);
@@ -337,9 +337,9 @@ Create a new file:
       updated = original.slice(0, m.index) + newString + original.slice(m.index + m.length);
     }
 
-    const rawUpdated = composeOnDiskText(updated, decoded.encoding);
+    const rawUpdated = composeOnDiskTextFromEdit(updated, decoded.disk);
     try {
-      await fs.writeFile(abs, rawUpdated, 'utf8');
+      await fs.writeFile(abs, rawUpdated);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return failure(id, started, `Write failed: ${msg}`, msg);
@@ -356,8 +356,8 @@ Create a new file:
         workspaceId: ctx.workspaceId,
         filePath: rel,
         kind: 'modify',
-        preContent: rawOriginal,
-        postContent: rawUpdated,
+        preContent: decoded.body,
+        postContent: updated,
         additions: stats.additions,
         deletions: stats.deletions,
         hunks,

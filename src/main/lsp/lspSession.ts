@@ -24,6 +24,12 @@ export interface LspLocation {
   character: number;
 }
 
+export interface LspCompletionItem {
+  label: string;
+  insertText: string;
+  detail?: string;
+}
+
 interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (err: Error) => void;
@@ -130,6 +136,26 @@ export class LspSession {
       position: { line, character }
     });
     return parseLocation(result, this.workspaceRoot);
+  }
+
+  async hover(relPath: string, line: number, character: number): Promise<string | null> {
+    const result = await this.request('textDocument/hover', {
+      textDocument: { uri: this.uriFor(relPath) },
+      position: { line, character }
+    });
+    return parseHover(result);
+  }
+
+  async completion(
+    relPath: string,
+    line: number,
+    character: number
+  ): Promise<LspCompletionItem[]> {
+    const result = await this.request('textDocument/completion', {
+      textDocument: { uri: this.uriFor(relPath) },
+      position: { line, character }
+    });
+    return parseCompletions(result);
   }
 
   private uriFor(relPath: string): string {
@@ -253,4 +279,61 @@ function parseLocation(result: unknown, workspaceRoot: string): LspLocation | nu
     line: range.start.line ?? 0,
     character: range.start.character ?? 0
   };
+}
+
+function parseHover(result: unknown): string | null {
+  if (!result || typeof result !== 'object') return null;
+  const contents = (result as { contents?: unknown }).contents;
+  if (typeof contents === 'string') return contents.trim() || null;
+  if (Array.isArray(contents)) {
+    const parts = contents
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (part && typeof part === 'object' && typeof (part as { value?: string }).value === 'string') {
+          return (part as { value: string }).value;
+        }
+        return '';
+      })
+      .filter(Boolean);
+    const joined = parts.join('\n').trim();
+    return joined.length > 0 ? joined : null;
+  }
+  if (contents && typeof contents === 'object' && typeof (contents as { value?: string }).value === 'string') {
+    const v = (contents as { value: string }).value.trim();
+    return v.length > 0 ? v : null;
+  }
+  return null;
+}
+
+function parseCompletions(result: unknown): LspCompletionItem[] {
+  const items = Array.isArray(result)
+    ? result
+    : result && typeof result === 'object' && Array.isArray((result as { items?: unknown[] }).items)
+      ? (result as { items: unknown[] }).items
+      : [];
+  const out: LspCompletionItem[] = [];
+  for (const raw of items) {
+    if (!raw || typeof raw !== 'object') continue;
+    const item = raw as {
+      label?: string | { label?: string };
+      insertText?: string;
+      textEdit?: { newText?: string };
+      detail?: string;
+    };
+    const label =
+      typeof item.label === 'string'
+        ? item.label
+        : typeof item.label?.label === 'string'
+          ? item.label.label
+          : null;
+    if (!label) continue;
+    const insertText = item.insertText ?? item.textEdit?.newText ?? label;
+    out.push({
+      label,
+      insertText,
+      ...(item.detail ? { detail: item.detail } : {})
+    });
+    if (out.length >= 50) break;
+  }
+  return out;
 }

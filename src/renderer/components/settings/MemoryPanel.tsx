@@ -1,6 +1,6 @@
 /**
  * MemoryPanel — surface for browsing and editing Agent V's persistent
- * memory. Renders inside Settings → Agent → Memory.
+ * memory. Renders inside Settings → Agent behavior → Memory.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -178,6 +178,27 @@ export function MemoryPanel() {
       setAppendDraft('');
       await refresh('meta-rules.md');
       showToast('Appended to meta-rules.md', 'success');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(`Append failed: ${msg}`, 'danger');
+    }
+  };
+
+  const onAppendWorkspace = async () => {
+    if (!draft) return;
+    const line = appendDraft.trim();
+    if (!line) return;
+    try {
+      await vyotiq.memory.write(
+        'workspace',
+        draft.key,
+        line,
+        'append',
+        conversationId ?? undefined
+      );
+      setAppendDraft('');
+      await refresh(draft.key);
+      showToast(`Appended to ${draft.key}`, 'success');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       showToast(`Append failed: ${msg}`, 'danger');
@@ -382,6 +403,7 @@ export function MemoryPanel() {
                       </div>
                       {viewMode === 'edit' ? (
                         <textarea
+                          aria-label="Note content"
                           value={draft.content}
                           onChange={(e) =>
                             setDraft((d) =>
@@ -403,31 +425,55 @@ export function MemoryPanel() {
                           )}
                         </div>
                       )}
+                      {scope === 'workspace' && (
+                        <ShellRow className="border-t border-panel-edge/40 pt-3">
+                          <ShellFieldLabel>Append to note</ShellFieldLabel>
+                          <div className="vx-settings-append-row mt-1">
+                            <TextField
+                              value={appendDraft}
+                              onChange={(e) => setAppendDraft(e.target.value)}
+                              placeholder='e.g. "User prefers pnpm over npm."'
+                            />
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              disabled={appendDraft.trim().length === 0}
+                              onClick={() => void onAppendWorkspace()}
+                            >
+                              <Plus
+                                className={SHELL_ROW_ICON_CLASS}
+                                strokeWidth={SHELL_ROW_ICON_STROKE}
+                              />
+                              Append
+                            </Button>
+                          </div>
+                        </ShellRow>
+                      )}
+                      {scope === 'global' && (
+                        <ShellRow className="border-t border-panel-edge/40 pt-3">
+                          <ShellFieldLabel>Append rule</ShellFieldLabel>
+                          <div className="vx-settings-append-row mt-1">
+                            <TextField
+                              value={appendDraft}
+                              onChange={(e) => setAppendDraft(e.target.value)}
+                              placeholder='e.g. "Prefer TypeScript over JavaScript."'
+                            />
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              disabled={appendDraft.trim().length === 0}
+                              onClick={() => void onAppendGlobal()}
+                            >
+                              <Plus
+                                className={SHELL_ROW_ICON_CLASS}
+                                strokeWidth={SHELL_ROW_ICON_STROKE}
+                              />
+                              Append
+                            </Button>
+                          </div>
+                        </ShellRow>
+                      )}
                     </>
-                  )}
-                  {scope === 'global' && (
-                    <ShellRow className="border-t border-panel-edge/40 pt-3">
-                      <ShellFieldLabel>Append rule</ShellFieldLabel>
-                      <div className="vx-settings-append-row mt-1">
-                        <TextField
-                          value={appendDraft}
-                          onChange={(e) => setAppendDraft(e.target.value)}
-                          placeholder='e.g. "Prefer TypeScript over JavaScript."'
-                        />
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          disabled={appendDraft.trim().length === 0}
-                          onClick={() => void onAppendGlobal()}
-                        >
-                          <Plus
-                            className={SHELL_ROW_ICON_CLASS}
-                            strokeWidth={SHELL_ROW_ICON_STROKE}
-                          />
-                          Append
-                        </Button>
-                      </div>
-                    </ShellRow>
                   )}
                 </>
               ) : (

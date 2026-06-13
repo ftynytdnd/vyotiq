@@ -6,11 +6,13 @@ import {
   resolveVectorMemorySettings,
   type VectorEmbedderId
 } from '@shared/settings/vectorMemorySettings.js';
-import { useSettingsStore } from '../../store/useSettingsStore.js';
+import { useSettingsPatch } from '../../hooks/useSettingsPatch.js';
 import { useToastStore } from '../../store/useToastStore.js';
+import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { ShellCaption, ShellFieldLabel, ShellRow, ShellSection } from '../ui/ShellSection.js';
 import { TextField } from '../ui/TextField.js';
+import { Button } from '../ui/Button.js';
 
 const EMBEDDER_OPTIONS: { id: VectorEmbedderId; label: string }[] = [
   { id: 'hash', label: 'Local hash (default, zero deps)' },
@@ -18,25 +20,31 @@ const EMBEDDER_OPTIONS: { id: VectorEmbedderId; label: string }[] = [
 ];
 
 export function VectorMemoryPanel() {
-  const settings = useSettingsStore((s) => s.settings);
-  const refresh = useSettingsStore((s) => s.refresh);
+  const { settings, apply: applySettings } = useSettingsPatch('vector memory settings');
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
   const resolved = resolveVectorMemorySettings(settings.ui);
 
   const apply = (patch: Partial<NonNullable<typeof settings.ui>['vectorMemory']>) => {
-    void vyotiq.settings
-      .set({ ui: { vectorMemory: { ...settings.ui?.vectorMemory, ...patch } } })
-      .then(() => refresh())
-      .catch((err) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        useToastStore.getState().show(`Could not save vector memory settings: ${msg}`, 'danger');
-      });
+    applySettings({ ui: { vectorMemory: { ...settings.ui?.vectorMemory, ...patch } } });
+  };
+
+  const reindexNow = async () => {
+    try {
+      await vyotiq.memory.reindex(
+        activeWorkspaceId ? { workspaceId: activeWorkspaceId } : undefined
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      useToastStore.getState().show(`Re-index failed: ${msg}`, 'danger');
+    }
   };
 
   return (
     <ShellSection title="Vector memory" className="vx-vector-memory-panel">
       <ShellCaption>
         Embedding strategy for the local hybrid index under <code>.vyotiq/vector/</code>. Hash
-        embedder is the default; Ollama uses your local server when selected.
+        embedder is the default; Ollama uses your local server when selected. Changing embedder
+        triggers an automatic full re-index for all workspaces.
       </ShellCaption>
       <ShellRow>
         <ShellFieldLabel htmlFor="vector-embedder">Embedder</ShellFieldLabel>
@@ -73,9 +81,19 @@ export function VectorMemoryPanel() {
           </ShellRow>
         </>
       ) : null}
+      <ShellRow>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={!activeWorkspaceId}
+          onClick={() => void reindexNow()}
+        >
+          Re-index now
+        </Button>
+      </ShellRow>
       <p className="text-meta text-text-faint">
         Env override <code className="font-mono">VYOTIQ_VECTOR_EMBED=ollama</code> still wins at
-        runtime. Re-index after changing embedder.
+        runtime.
       </p>
     </ShellSection>
   );

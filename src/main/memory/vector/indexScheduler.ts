@@ -3,7 +3,7 @@
  */
 
 import { indexWorkspaceVectors, type VectorIndexStats } from './indexWorkspace.js';
-import { closeVectorDb } from './vectorDb.js';
+import { closeVectorDb, resetVectorIndex } from './vectorDb.js';
 import { logger } from '../../logging/logger.js';
 
 const log = logger.child('vector-scheduler');
@@ -63,4 +63,13 @@ export function disposeAllVectorIndexes(): void {
   debounceTimers.clear();
   for (const ac of running.values()) ac.abort();
   running.clear();
+}
+
+/** Clear stored vectors and rebuild immediately (no debounce). */
+export async function forceReindexWorkspace(
+  workspacePath: string
+): Promise<VectorIndexStats | null> {
+  cancelWorkspaceVectorIndex(workspacePath);
+  await resetVectorIndex(workspacePath);
+  return runWorkspaceVectorIndex(workspacePath);
 }

@@ -21,6 +21,7 @@ interface AttachmentPreviewPanelProps {
   attachment: PromptAttachmentMeta | null;
   initialWidth?: number;
   onWidthChange?: (w: number) => void;
+  embedded?: boolean;
 }
 
 export function AttachmentPreviewPanel({
@@ -28,7 +29,8 @@ export function AttachmentPreviewPanel({
   onClose,
   attachment,
   initialWidth,
-  onWidthChange
+  onWidthChange,
+  embedded = false
 }: AttachmentPreviewPanelProps) {
   const workspaceId = useWorkspaceStore((s) => s.activeId);
   const [text, setText] = useState<string | null>(null);
@@ -159,9 +161,10 @@ export function AttachmentPreviewPanel({
       onClose={onClose}
       title={attachment.name}
       widthKey="attachmentPreview"
-      initialWidth={initialWidth}
-      onWidthChange={onWidthChange}
-      showBackdrop={false}
+      embedded={embedded}
+      {...(initialWidth !== undefined ? { initialWidth } : {})}
+      {...(onWidthChange ? { onWidthChange } : {})}
+      showBackdrop={!embedded}
       className="vx-attachment-preview"
     >
       {loading && <LoadingHint message="Loading preview…" />}

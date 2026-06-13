@@ -2,7 +2,10 @@
  * Runtime shape gates for `settings:set` patches.
  */
 
-import { DOCK_WIDTH_MAX, DOCK_WIDTH_MIN } from '@shared/dock/dockWidth.js';
+import {
+  DOCK_WIDTH_MAX,
+  DOCK_WIDTH_MIN
+} from '@shared/dock/dockWidth.js';
 import type { AppSettings } from '@shared/types/ipc.js';
 import {
   assertBoolean,
@@ -13,7 +16,7 @@ import {
   assertStringArray
 } from './validate.js';
 
-const SETTINGS_TOP_KEYS = new Set(['defaultModel', 'permissions', 'ui']);
+const SETTINGS_TOP_KEYS = new Set(['defaultModel', 'ui']);
 
 const UI_BOOLEAN_KEYS = ['sidebarOpen', 'dockExpanded', 'reducedMotion', 'firstLaunch'] as const;
 
@@ -27,7 +30,8 @@ const UI_RECORD_KEYS = [
   'collapsedWorkspaces',
   'lastModelByWorkspace',
   'panelWidths',
-  'pinnedConversationIds'
+  'pinnedConversationIds',
+  'keybindings'
 ] as const;
 
 const UI_NESTED_OBJECT_KEYS = [
@@ -236,6 +240,15 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
     assertStringArray(channel, 'patch.ui.pinnedConversationIds', ui.pinnedConversationIds, {
       maxItems: UI_RECORD_MAX_KEYS
     });
+  }
+  if ('keybindings' in ui && ui.keybindings !== undefined) {
+    assertObject(channel, 'patch.ui.keybindings', ui.keybindings);
+    const map = ui.keybindings as Record<string, unknown>;
+    assertRecordKeyCount(channel, 'patch.ui.keybindings', map, 32);
+    for (const [id, combo] of Object.entries(map)) {
+      assertString(channel, 'patch.ui.keybindings key', id, { maxBytes: 64 });
+      assertString(channel, `patch.ui.keybindings[${id}]`, combo, { maxBytes: 64 });
+    }
   }
   if ('reports' in ui && ui.reports !== undefined) {
     assertObject(channel, 'patch.ui.reports', ui.reports);
@@ -503,13 +516,6 @@ export function assertSettingsPatch(
     const dm = patch.defaultModel as Record<string, unknown>;
     assertString(channel, 'patch.defaultModel.providerId', dm.providerId);
     assertString(channel, 'patch.defaultModel.modelId', dm.modelId);
-  }
-  if ('permissions' in patch && patch.permissions !== undefined) {
-    assertObject(channel, 'patch.permissions', patch.permissions);
-    const p = patch.permissions as Record<string, unknown>;
-    if ('allowAuto' in p && p.allowAuto !== undefined) {
-      assertBoolean(channel, 'patch.permissions.allowAuto', p.allowAuto);
-    }
   }
   if ('ui' in patch && patch.ui !== undefined) {
     assertObject(channel, 'patch.ui', patch.ui);

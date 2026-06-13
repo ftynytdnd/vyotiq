@@ -57,7 +57,6 @@ function makeInput(over: Partial<ChatSendInput> = {}): ChatSendInput {
     conversationId: 'conv-1',
     workspaceId: 'ws-1',
     selection: { providerId: 'p1', modelId: 'm1' },
-    permissions: { allowAuto: false },
     ...over
   };
 }

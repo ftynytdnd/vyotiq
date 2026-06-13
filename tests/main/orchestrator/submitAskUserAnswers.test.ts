@@ -131,7 +131,6 @@ describe('submitAskUserAnswers', () => {
         conversationId: 'conv-1',
         workspaceId: 'ws-1',
         selection: { providerId: 'p', modelId: 'm' },
-        permissions: { allowAuto: false }
       },
       {
         emit: (e) => events.push(e),

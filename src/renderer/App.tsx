@@ -45,6 +45,8 @@ import { useAttachmentPreviewStore } from './store/useAttachmentPreviewStore.js'
 import { useEditorStore } from './store/useEditorStore.js';
 import { useTerminalStore } from './store/useTerminalStore.js';
 import { useEditorAgentSync } from './hooks/useEditorAgentSync.js';
+import { resolveKeybindings, isMacPlatform } from './lib/resolveKeybindings.js';
+import { eventMatchesCombo } from '@shared/keybindings/defaultKeybindings.js';
 
 const log = logger.child('app');
 
@@ -382,6 +384,11 @@ export default function App() {
     chatActionsEnabled: !settingsOpen
   };
 
+  const keybindings = useMemo(
+    () => resolveKeybindings(settings.ui?.keybindings, isMacPlatform()),
+    [settings.ui?.keybindings]
+  );
+
   // Bind window-level accelerators that match the labels in
   // `FileMenu`. Without this hook the menu's `Ctrl+N`
   // / `Ctrl+O` / `Ctrl+,` / `Ctrl+R` / `Ctrl+Shift+I` hints would be
@@ -400,12 +407,13 @@ export default function App() {
     blockTerminal: () => useAppViewStore.getState().view === 'settings',
     reload: () => void vyotiq.window.reload(),
     toggleDevTools: () => void vyotiq.window.toggleDevTools()
-  });
+  }, keybindings);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (e.defaultPrevented) return;
       if (!settingsOpen) return;
+      if (!eventMatchesCombo(e, keybindings.closeSettings)) return;
       const target = e.target;
       if (
         target instanceof HTMLElement &&
@@ -418,7 +426,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [settingsOpen, closeSettings]);
+  }, [settingsOpen, closeSettings, keybindings]);
 
   return (
     <div className="relative flex h-full flex-col bg-surface-base">

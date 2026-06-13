@@ -132,7 +132,6 @@ async function startFreshRun() {
     runId: 'run-coalesce-1',
     prompt: 'hello',
     selection: { providerId: 'p', modelId: 'm' },
-    permissions: { allowAuto: false },
     conversationId: 'conv-1'
   };
   await (ipcMain as unknown as MockIpcMain).__invoke(IPC.CHAT_SEND, input);

@@ -2,10 +2,11 @@
  * Attachment lifecycle GC — delete copied files when a conversation is
  * removed.
  *
- * Orphan sweeps (`sweepOrphanAttachments`) are **disabled at boot** per
- * remediation Phase 3 — attachment dirs are removed only when the user
- * deletes the owning conversation. The sweeper remains exported for manual
- * maintenance or future opt-in tooling, not periodic background deletion.
+ * Orphan sweeps (`sweepOrphanAttachments`) run once after a 30 s idle
+ * delay at boot (see `src/main/index.ts`) to reclaim dirs from crashed
+ * or partial deletes without impacting startup. Conversation delete is
+ * the primary lifecycle hook; the sweeper is also exported for manual
+ * maintenance.
  */
 
 import { readdir, rm, stat } from 'node:fs/promises';
@@ -35,8 +36,9 @@ export async function deleteAttachmentsForConversation(
  * Delete attachment folders whose conversation id is absent from the
  * conversations index (crash mid-ingest, partial deletes, etc.).
  *
- * **Not scheduled at app boot** — conversation delete is the supported
- * lifecycle hook. Call manually if you need to reclaim stale dirs.
+ * **Scheduled at boot** after a 30 s idle delay — conversation delete
+ * is the primary lifecycle hook. Call manually if you need to reclaim
+ * stale dirs sooner.
  */
 export async function sweepOrphanAttachments(): Promise<number> {
   const root = attachmentsRoot();

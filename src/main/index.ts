@@ -33,6 +33,7 @@ import {
 } from './updater/autoUpdaterService.js';
 import { IPC } from '@shared/constants.js';
 import { safeWebContentsSend } from './window/safeWebContentsSend.js';
+import { startScheduledRunsService, stopScheduledRunsService } from './scheduler/scheduledRunsService.js';
 const log = logger.child('boot');
 
 // Single-instance lock. Vyotiq is an always-on desktop agent that owns
@@ -102,6 +103,7 @@ async function bootstrap() {
   const activeWs = await getActiveWorkspace().catch(() => null);
   if (activeWs?.path) scheduleWorkspaceVectorIndex(activeWs.path);
   log.info('app ready; ipc registered');
+  startScheduledRunsService();
 
   await createMainWindow();
 
@@ -151,6 +153,7 @@ app.on('before-quit', (event) => {
   for (const info of listActiveRuns()) {
     abortRun(info.runId);
   }
+  stopScheduledRunsService();
   if (isShuttingDown) return;
   isShuttingDown = true;
   event.preventDefault();

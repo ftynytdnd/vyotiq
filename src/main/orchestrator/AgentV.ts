@@ -20,6 +20,7 @@ import { formatAskUserReplyBubble, formatAskUserToolResult } from '@shared/text/
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import { wrapXml } from './envelope/index.js';
 import { resolveAttachmentsForInline } from '../attachments/resolveAttachmentsForInline.js';
+import { seedCachedRead } from './seedCachedRead.js';
 import { resolveMentionsForInline } from '../attachments/resolveMentionsForInline.js';
 import { replayTranscript } from './replay/index.js';
 import {
@@ -239,7 +240,7 @@ export function abortRunsForProvider(providerId: string): number {
  * Starts a new orchestration run.
  *
  * @param input            The send request (prompt, model selection,
- *                         permissions, attachments).
+ *                         attachments).
  * @param deps             Event emitter + lifecycle callbacks.
  * @param priorTranscript  Optional persisted timeline events from earlier
  *                         turns of this conversation. Replayed into the
@@ -337,6 +338,20 @@ export async function startRun(
     setActiveWorkspaceForRun(abort.signal, input.workspaceId);
   }
 
+  if (input.attachmentMeta) {
+    for (const meta of input.attachmentMeta) {
+      if (!meta.workspacePath) continue;
+      seedCachedRead(abort.signal, meta.workspacePath);
+      emit({
+        kind: 'attachment-pre-read',
+        id: randomUUID(),
+        ts: Date.now(),
+        path: meta.workspacePath,
+        runId: input.runId
+      });
+    }
+  }
+
   let resolvedWorkspaceId = input.workspaceId ?? '';
 
   // Open the run's checkpoint manifest BEFORE the loop body so any
@@ -411,7 +426,6 @@ export async function startRun(
       deps,
       initialMessages,
       initialQuery: input.prompt,
-      permissions: input.permissions,
       reportsSettings,
       agentBehaviorSettings,
       runStartedAt: activeRuns.get(input.runId)?.startedAt ?? Date.now()
@@ -445,7 +459,6 @@ interface RunLoopBodyOpts {
   deps: AgentVDeps;
   initialMessages: ChatMessage[];
   initialQuery: string;
-  permissions: ChatSendInput['permissions'];
   resumeCheckpoint?: LoopCheckpoint;
   reportsSettings: ResolvedReportsSettings;
   agentBehaviorSettings: ResolvedAgentBehaviorSettings;
@@ -461,7 +474,6 @@ async function runLoopBody(opts: RunLoopBodyOpts): Promise<void> {
     emit: opts.emit,
     initialMessages: opts.initialMessages,
     initialQuery: opts.initialQuery,
-    permissions: opts.permissions,
     reportsSettings: opts.reportsSettings,
     agentBehaviorSettings: opts.agentBehaviorSettings,
     ...(opts.runStartedAt !== undefined ? { runStartedAt: opts.runStartedAt } : {}),
@@ -619,7 +631,6 @@ export async function submitAskUserAnswers(input: AskUserSubmitInput): Promise<b
       deps: { emit, onDone, onError, onAwaitingUser },
       initialMessages: messages,
       initialQuery: entry.checkpoint.query,
-      permissions: entry.input.permissions,
       resumeCheckpoint: entry.checkpoint,
       reportsSettings: entry.reportsSettings,
       agentBehaviorSettings: entry.agentBehaviorSettings,

@@ -18,7 +18,6 @@ vi.mock('@renderer/lib/ipc.js', () => ({
         updateAvailable: false,
         status: { phase: 'idle' as const }
       })),
-      downloadUpdate: vi.fn(async () => ({ phase: 'idle' as const })),
       installUpdate: vi.fn(async () => undefined),
       onUpdateStatus: () => () => {}
     }

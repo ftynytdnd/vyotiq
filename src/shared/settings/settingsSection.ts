@@ -33,7 +33,6 @@ export function resolveSettingsSectionId(
   if (isSettingsSectionId(persisted)) return persisted;
   switch (persisted) {
     case 'providers':
-    case 'permissions':
     case 'context':
     case 'checkpoints':
     case 'setup':

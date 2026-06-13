@@ -15,10 +15,6 @@ import {
 import { useCheckpointsStore } from '../../../store/useCheckpointsStore.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import { useToastStore } from '../../../store/useToastStore.js';
-import {
-  useSettingsStore,
-  selectEffectivePermissions
-} from '../../../store/useSettingsStore.js';
 import { useConversationProcessing } from '../../../hooks/chat/index.js';
 import type { RevertIntent } from './RevertPromptContext.js';
 import { explainPreviewError } from './rewindPreviewErrors.js';
@@ -53,7 +49,6 @@ export function useRewindPromptSession({
   const previewRewind = useCheckpointsStore((s) => s.previewRewind);
   const rewindToPrompt = useCheckpointsStore((s) => s.rewindToPrompt);
   const send = useChatStore((s) => s.send);
-  const settings = useSettingsStore((s) => s.settings);
   const showToast = useToastStore((s) => s.show);
   const { isProcessing } = useConversationProcessing(conversationId);
 
@@ -151,7 +146,6 @@ export function useRewindPromptSession({
 
     setPhase({ kind: 'sending' });
     try {
-      const permissions = selectEffectivePermissions(workspaceId, settings);
       const meta = hasAttachments ? attachmentMeta : undefined;
       const hasMentions = (mentions?.length ?? 0) > 0;
       const prompt =
@@ -160,13 +154,13 @@ export function useRewindPromptSession({
           : hasAttachments || hasMentions
             ? 'See attached files.'
             : trimmedEdit;
-      const sendOpts: Parameters<typeof send>[3] = {};
+      const sendOpts: Parameters<typeof send>[2] = {};
       if (meta?.length) {
         sendOpts.attachmentMeta = meta;
         if (attachmentPromptEventId) sendOpts.promptEventId = attachmentPromptEventId;
       }
       if (hasMentions && mentions) sendOpts.mentions = mentions;
-      await send(prompt, model!, permissions, Object.keys(sendOpts).length > 0 ? sendOpts : undefined);
+      await send(prompt, model!, Object.keys(sendOpts).length > 0 ? sendOpts : undefined);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       showToast(`Could not resend the edited message: ${msg}`, 'danger');

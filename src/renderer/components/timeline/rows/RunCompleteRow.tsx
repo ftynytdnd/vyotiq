@@ -12,7 +12,7 @@ import { RunCompleteMeta, type RunCompleteMetaProps } from './RunCompleteMeta.js
 import { useChatStore } from '../../../store/useChatStore.js';
 import { useConversationsStore } from '../../../store/useConversationsStore.js';
 import { useToastStore } from '../../../store/useToastStore.js';
-import { selectEffectivePermissions, useSettingsStore } from '../../../store/useSettingsStore.js';
+import { useSettingsStore } from '../../../store/useSettingsStore.js';
 import { useProviderStore } from '../../../store/useProviderStore.js';
 import {
   estimateRunCostBreakdown,
@@ -151,8 +151,7 @@ export function RunCompleteRow({
       showToast('Select a model before requesting an AI report.', 'danger');
       return;
     }
-    const permissions = selectEffectivePermissions(workspaceId, settings);
-    void send(AI_RUN_SUMMARY_USER_PROMPT, model, permissions);
+    void send(AI_RUN_SUMMARY_USER_PROMPT, model);
   }, [
     conversationMeta?.lastModelId,
     conversationMeta?.lastProviderId,

@@ -195,7 +195,7 @@ export function AskUserForm({ pending, variant = 'inline' }: AskUserFormProps) {
           className={cn(
             'rounded-inner px-3 py-1.5 font-mono text-meta font-medium transition-colors',
             canSubmit && !isProcessing
-              ? 'bg-accent text-accent-foreground hover:bg-accent/90'
+              ? 'bg-accent text-text-primary hover:bg-chrome-hover'
               : 'cursor-not-allowed bg-surface-raised text-text-faint'
           )}
         >

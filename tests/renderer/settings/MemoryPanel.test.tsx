@@ -55,7 +55,7 @@ async function openWorkspaceScopeAndDirty() {
   await userEvent.click(screen.getByRole('tab', { name: /^Workspace$/i }));
   await userEvent.click(await screen.findByRole('button', { name: /Open editor/i }));
   const textarea = await waitFor(() =>
-    screen.getByRole<HTMLTextAreaElement>('textbox')
+    screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Note content' })
   );
   await waitFor(() => expect(textarea.value).toBe('# alpha\n'));
   // `fireEvent.change` is more reliable than `userEvent.type` for
@@ -90,7 +90,7 @@ describe('MemoryPanel inline discard confirm', () => {
       (window.vyotiq.memory.read as unknown as { mock: { calls: unknown[] } }).mock.calls.length
     ).toBe(beforeReads);
     // Draft content is preserved.
-    const textarea = screen.getByRole<HTMLTextAreaElement>('textbox');
+    const textarea = screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Note content' });
     expect(textarea.value).toBe('# alpha\nedited');
   });
 
@@ -101,7 +101,7 @@ describe('MemoryPanel inline discard confirm', () => {
     await userEvent.click(await screen.findByRole('button', { name: /Open editor/i }));
 
     const textarea = await waitFor(() =>
-      screen.getByRole<HTMLTextAreaElement>('textbox')
+      screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Note content' })
     );
     await waitFor(() => expect(textarea.value).toBe('# beta\n'));
     expect(screen.queryByText('Discard unsaved edits?')).toBeNull();

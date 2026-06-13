@@ -4,7 +4,7 @@
  * | Concern              | `read`                         | `edit`                    |
  * |----------------------|--------------------------------|---------------------------|
  * | UTF-8 BOM            | Strip for display; detect wide | Strip for match; re-apply |
- * | UTF-16/32 BOM        | Decode to UTF-8 string         | Not supported (UTF-8 path)|
+ * | UTF-16/32 BOM        | Decode to UTF-8 string         | Preserve via decodeDiskText |
  * | CRLF vs LF           | Normalized in returned slice   | Preserved on write        |
  * | Binary refusal       | NUL / control-byte heuristics  | N/A (text path only)      |
  */

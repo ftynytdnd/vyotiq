@@ -33,6 +33,7 @@ interface AppViewStore {
   view: AppView;
   settingsSection: SettingsSectionId;
   aboutOpen: boolean;
+  settingsSectionBeforeAbout: SettingsSectionId | null;
   openSettings: (section?: LegacySettingsTabArg) => void;
   closeSettings: () => void;
   toggleSettings: () => void;
@@ -73,6 +74,7 @@ export const useAppViewStore = create<AppViewStore>((set, get) => ({
   view: 'chat',
   settingsSection: 'models-api',
   aboutOpen: false,
+  settingsSectionBeforeAbout: null,
   openSettings: (section?: LegacySettingsTabArg) => {
     clearCompanionOverlays();
     collapseDockForSettings();
@@ -100,10 +102,21 @@ export const useAppViewStore = create<AppViewStore>((set, get) => ({
     }
   },
   openAbout: () => {
-    set({ view: 'settings', settingsSection: 'about', aboutOpen: true });
+    const { settingsSection, aboutOpen } = get();
+    set({
+      view: 'settings',
+      settingsSectionBeforeAbout: aboutOpen ? get().settingsSectionBeforeAbout : settingsSection,
+      settingsSection: 'about',
+      aboutOpen: true
+    });
   },
   closeAbout: () => {
-    set({ aboutOpen: false, settingsSection: 'models-api' });
+    const { settingsSectionBeforeAbout } = get();
+    set({
+      aboutOpen: false,
+      settingsSection: settingsSectionBeforeAbout ?? 'models-api',
+      settingsSectionBeforeAbout: null
+    });
   }
 }));
 

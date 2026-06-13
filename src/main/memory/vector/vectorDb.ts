@@ -2,7 +2,7 @@
  * Per-workspace sqlite-vec database for chunked embeddings.
  */
 
-import { mkdir } from 'node:fs/promises';
+import { mkdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import * as sqliteVec from '@photostructure/sqlite-vec';
@@ -219,6 +219,16 @@ export function pruneMissingSources(
 export function chunkCount(db: DatabaseSync): number {
   const row = db.prepare('SELECT COUNT(*) AS n FROM chunk_index').get() as { n: number };
   return row.n ?? 0;
+}
+
+/** Drop on-disk index and close any open handle (e.g. embedder change). */
+export async function resetVectorIndex(workspacePath: string): Promise<void> {
+  closeVectorDb(workspacePath);
+  try {
+    await unlink(indexDbPath(workspacePath));
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') throw err;
+  }
 }
 
 // Re-export dim for callers that import from vectorDb

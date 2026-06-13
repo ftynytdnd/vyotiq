@@ -24,7 +24,7 @@ interface GhostState {
   deco: DecorationSet;
 }
 
-const ghostStateField = StateField.define<GhostState>({
+export const ghostStateField = StateField.define<GhostState>({
   create: () => ({ text: null, deco: Decoration.none }),
   update(state, tr) {
     let text = state.text;

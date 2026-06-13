@@ -3,16 +3,12 @@
  * log line. Expanded: flat or nested detail via `DetailShell`.
  */
 
-import { type MouseEvent, type ReactNode } from 'react';
-import { RotateCcw } from 'lucide-react';
-import type { ToolCall, ToolResult } from '@shared/types/tool.js';
+import type { ReactNode } from 'react';
 import { cn } from '../../../../lib/cn.js';
-import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../../lib/shellIcons.js';
 import { DetailShell } from '../../shared/DetailShell.js';
 import { TimelineRowHeader } from '../../shared/TimelineRowHeader.js';
 import { useTimelineRowExpand } from '../../shared/useTimelineRowExpand.js';
-import { timelineActionPillClassName, toolTitleClassName } from '../../shared/rowStyles.js';
-import { canRerunToolCall, useToolRerun } from './useToolRerun.js';
+import { toolTitleClassName } from '../../shared/rowStyles.js';
 
 interface InvocationShellProps {
   /** Leftmost label, e.g. "bash", "read", "edit". */
@@ -34,9 +30,6 @@ interface InvocationShellProps {
   actions?: ReactNode;
   /** Detail shell variant when expanded. Defaults to `flat` in dense mode. */
   detailVariant?: 'nested' | 'flat';
-  call?: ToolCall;
-  result?: ToolResult;
-  partial?: boolean;
 }
 
 export function InvocationShell({
@@ -51,12 +44,8 @@ export function InvocationShell({
   liveAutoExpand = false,
   groupExpanded = false,
   actions,
-  detailVariant,
-  call,
-  result,
-  partial
+  detailVariant
 }: InvocationShellProps) {
-  const { rerun, busyCallId, canRerun } = useToolRerun();
   const canExpand = detail !== undefined && detail !== null;
 
   const failed = ok === false;
@@ -74,32 +63,6 @@ export function InvocationShell({
   const summaryText = 'text-row';
   const running = ok === null;
   const showDetailsToggle = failed && canExpand;
-  const settled = Boolean(result && partial !== true);
-  const rerunnable = canRerun && settled && call && canRerunToolCall(call);
-  const rerunBusy = Boolean(call && busyCallId === call.id);
-
-  const onContextMenu = (e: MouseEvent<HTMLDivElement>) => {
-    if (!rerunnable || !call) return;
-    e.preventDefault();
-    void rerun(call);
-  };
-
-  const rerunAction =
-    rerunnable && call ? (
-      <button
-        type="button"
-        disabled={rerunBusy}
-        onClick={() => void rerun(call)}
-        className={cn(timelineActionPillClassName, 'text-meta')}
-        title="Re-run this tool"
-      >
-        <RotateCcw
-          className={cn(SHELL_ROW_ICON_CLASS, rerunBusy && 'animate-spin')}
-          strokeWidth={SHELL_ACTION_ICON_STROKE}
-        />
-        Re-run
-      </button>
-    ) : null;
 
   const label = (
     <span
@@ -122,7 +85,7 @@ export function InvocationShell({
   const shellVariant = detailVariant ?? (dense ? 'flat' : 'flat');
 
   return (
-    <div className="vyotiq-stepfade-once flex flex-col" onContextMenu={onContextMenu}>
+    <div className="vyotiq-stepfade-once flex flex-col">
       <div
         className={cn(
           'flex w-full items-center gap-1',
@@ -154,7 +117,6 @@ export function InvocationShell({
             {open ? 'Hide details' : 'Show details'}
           </button>
         ) : null}
-        {rerunAction}
         {actions}
       </div>
 

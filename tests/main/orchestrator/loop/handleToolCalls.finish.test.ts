@@ -20,7 +20,6 @@ describe('handleToolCalls finish intercept', () => {
     workspaceId: 'ws-1',
     runId: 'run-1',
     conversationId: 'conv-1',
-    permissions: {},
     signal: new AbortController().signal
   };
 

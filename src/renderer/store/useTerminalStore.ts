@@ -53,6 +53,12 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
   },
 
   close: () => {
+    const { workspaceId } = get();
+    if (workspaceId) {
+      void vyotiq.terminal.detach(workspaceId).catch(() => {
+        /* detach is best-effort when panel closes */
+      });
+    }
     set({ open: false, workspaceId: null, shellLabel: null, attaching: false, error: null });
   },
 

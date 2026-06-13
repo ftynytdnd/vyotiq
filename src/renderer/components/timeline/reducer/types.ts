@@ -124,6 +124,8 @@ export interface TimelineState {
   toolResultSettledIds: Record<string, true>;
   /** Report tool-results that settled via live IPC this session (not transcript replay). */
   liveReportResultIds: Record<string, true>;
+  /** Latest tool-result cache replay hint for the composer status strip. */
+  toolCacheHint?: string | null;
   runIdToFileEditCount: Record<string, number>;
   /**
    * Latest live context-window usage telemetry (from `context-usage` events).

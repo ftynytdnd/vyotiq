@@ -221,6 +221,9 @@ export const BASH_TIMEOUT_MS = 30_000;
 export const BASH_MAX_TIMEOUT_MS = 30 * 60 * 1000;
 export const READ_MAX_BYTES = 512 * 1024; // 512 KB
 
+/** Max editor document body over LSP IPC (open/change). Matches read cap. */
+export const LSP_MAX_DOCUMENT_BYTES = READ_MAX_BYTES;
+
 /**
  * Bash mutation snapshotting caps.
  *
@@ -340,8 +343,6 @@ export const IPC = {
   // Tools (mixed direction — see per-channel comments below)
   /** renderer → main: open a workspace-relative path in the OS default opener. */
   TOOLS_OPEN_PATH: 'tools:open-path',
-  /** renderer → main: re-execute a settled read / ls / search / memory tool call. */
-  TOOLS_RERUN: 'tools:rerun',
   /** renderer → main: write an auto-generated HTML run summary report. */
   REPORTS_GENERATE_RUN_SUMMARY: 'reports:generate-run-summary',
   /** renderer → main: open a workspace HTML report in the in-app browser window. */
@@ -352,6 +353,9 @@ export const IPC = {
   MEMORY_READ: 'memory:read',
   MEMORY_WRITE: 'memory:write',
   MEMORY_REVEAL: 'memory:reveal',
+  /** renderer → main: wipe and rebuild the workspace vector index. */
+  MEMORY_REINDEX: 'memory:reindex',
+  MEMORY_REINDEX_PROGRESS: 'memory:reindex-progress',
 
   // Settings
   SETTINGS_GET: 'settings:get',
@@ -382,6 +386,11 @@ export const IPC = {
   CONVERSATIONS_READ_BEFORE: 'conversations:read-before',
   /** Save transcript to disk as JSONL or Markdown. */
   CONVERSATIONS_EXPORT: 'conversations:export',
+
+  /** renderer ↔ main: local scheduled agent runs. */
+  SCHEDULED_RUNS_LIST: 'scheduled-runs:list',
+  SCHEDULED_RUNS_UPSERT: 'scheduled-runs:upsert',
+  SCHEDULED_RUNS_DELETE: 'scheduled-runs:delete',
 
   // Checkpoints — file-change review + rewind
   CHECKPOINTS_PREVIEW_REWIND: 'checkpoints:preview-rewind',
@@ -415,7 +424,13 @@ export const IPC = {
   LSP_CHANGE: 'lsp:change',
   LSP_CLOSE: 'lsp:close',
   LSP_DEFINITION: 'lsp:definition',
+  LSP_HOVER: 'lsp:hover',
+  LSP_COMPLETION: 'lsp:completion',
   LSP_DIAGNOSTICS: 'lsp:diagnostics',
+  LSP_CONNECT: 'lsp:connect',
+  LSP_SEND: 'lsp:send',
+  LSP_MESSAGE: 'lsp:message',
+  LSP_STATUS: 'lsp:status',
 
   // Composer mention search helpers
   MENTIONS_SEARCH_SYMBOLS: 'mentions:search-symbols',

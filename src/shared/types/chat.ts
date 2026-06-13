@@ -253,6 +253,13 @@ export type TimelineEvent =
   }
   | { kind: 'tool-call'; id: string; ts: number; call: ToolCall }
   | { kind: 'tool-result'; id: string; ts: number; result: ToolResult }
+  | {
+    kind: 'attachment-pre-read';
+    id: string;
+    ts: number;
+    path: string;
+    runId?: string;
+  }
   /**
    * Reversible context compaction marker. Emitted by the orchestrator
    * (`src/main/orchestrator/context/contextCompaction.ts`) when a large
@@ -655,8 +662,6 @@ export interface ChatSendInput {
   prompt: string;
   /** Selected model (provider + model id). */
   selection: ModelSelection;
-  /** Whether destructive ops are pre-approved for this run. */
-  permissions: ChatPermissions;
   /**
    * The conversation this run belongs to. If omitted, the main process will
    * auto-create one and return its id via the `chat:send` reply.

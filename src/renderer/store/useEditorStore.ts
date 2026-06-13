@@ -4,6 +4,7 @@
 
 import { create } from 'zustand';
 import { basenameFromPath } from '@shared/text/languageFromPath.js';
+import { normalizePath } from '../lib/normalizePath.js';
 import { vyotiq } from '../lib/ipc.js';
 import { closeSettingsForCompanionOpen } from './useAppViewStore.js';
 import { useAttachmentPreviewStore } from './useAttachmentPreviewStore.js';
@@ -55,10 +56,9 @@ interface EditorStore {
   save: () => Promise<boolean>;
   markStaleOnDisk: (filePath?: string) => void;
   applyExternalContent: (filePath: string, content: string, mtimeMs?: number) => void;
-}
-
-function normalizePath(p: string): string {
-  return p.replace(/\\/g, '/');
+  /** Scroll active editor to LSP go-to-definition target after tab switch. */
+  requestReveal: (filePath: string, line: number, character: number) => void;
+  consumeReveal: (filePath: string) => { line: number; character: number } | null;
 }
 
 function emptyTabFields(): Pick<
@@ -105,6 +105,8 @@ function updateTab(
   const id = normalizePath(filePath);
   return tabs.map((t) => (normalizePath(t.filePath) === id ? { ...t, ...patch } : t));
 }
+
+const pendingReveal = new Map<string, { line: number; character: number }>();
 
 export const useEditorStore = create<EditorStore>((set, get) => ({
   open: false,
@@ -387,6 +389,17 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         })
       })
     );
+  },
+
+  requestReveal: (filePath, line, character) => {
+    pendingReveal.set(normalizePath(filePath), { line, character });
+  },
+
+  consumeReveal: (filePath) => {
+    const id = normalizePath(filePath);
+    const value = pendingReveal.get(id) ?? null;
+    if (value) pendingReveal.delete(id);
+    return value;
   }
 }));
 

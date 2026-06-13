@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { Timeline } from '../components/timeline/Timeline.js';
 import { RevertPromptProvider } from '../components/timeline/revert/RevertPromptContext.js';
 import { ChatFooter } from './ChatFooter.js';
@@ -19,6 +20,7 @@ import { useAttachmentPreviewStore } from '../store/useAttachmentPreviewStore.js
 import { useEditorStore } from '../store/useEditorStore.js';
 import { useTerminalStore } from '../store/useTerminalStore.js';
 import { LoadingHint } from '../components/ui/LoadingHint.js';
+import { RegionErrorBoundary } from '../components/RegionErrorBoundary.js';
 import { useProviderAccountPollSource } from '../lib/useProviderAccountPollSource.js';
 
 interface ChatPageProps {
@@ -35,12 +37,13 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
   const settings = useSettingsStore((s) => s.settings);
   const setLastModelByWorkspace = useSettingsStore((s) => s.setLastModelByWorkspace);
   const activeConversationId = useActiveConversationId();
-  const conversationList = useConversationsStore((s) => s.list);
-  const selecting = useConversationsStore((s) => s.selecting);
-  const zoneOpen =
-    useAttachmentPreviewStore((s) => s.attachment !== null) ||
-    useEditorStore((s) => s.open) ||
-    useTerminalStore((s) => s.open);
+  const { conversationList, selecting } = useConversationsStore(
+    useShallow((s) => ({ conversationList: s.list, selecting: s.selecting }))
+  );
+  const attachmentZoneOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
+  const editorZoneOpen = useEditorStore((s) => s.open);
+  const terminalZoneOpen = useTerminalStore((s) => s.open);
+  const zoneOpen = attachmentZoneOpen || editorZoneOpen || terminalZoneOpen;
   const isProcessing = useChatStore((s) => s.isProcessing);
 
   useProviderAccountPollSource('agent-run', isProcessing);
@@ -199,7 +202,8 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
             </div>
           )}
           {centerComposer ? (
-            <ChatFooter
+            <RegionErrorBoundary label="Composer">
+              <ChatFooter
               centered
               landing
               setupLead={setupLead}
@@ -211,6 +215,7 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
               requestFocus={!selecting && !needsSetup}
               focusSession={focusSession}
             />
+            </RegionErrorBoundary>
           ) : (
             <>
               <div
@@ -227,22 +232,26 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
                     contentWidth
                   )}
                 >
-                  <Timeline
-                    model={model}
-                    onOpenProviders={onOpenProviders}
-                    jumpOverlayHost={jumpOverlayHost}
-                    promptAnchorEnter={dockingFromCenter}
-                  />
+                  <RegionErrorBoundary label="Timeline">
+                    <Timeline
+                      model={model}
+                      onOpenProviders={onOpenProviders}
+                      jumpOverlayHost={jumpOverlayHost}
+                      promptAnchorEnter={dockingFromCenter}
+                    />
+                  </RegionErrorBoundary>
                 </div>
               </div>
-              <ChatFooter
-                contentWidth={contentWidth}
-                model={model}
-                onModelChange={handleModelChange}
-                onOpenProviders={onOpenProviders}
-                jumpOverlayHostRef={setJumpOverlayHost}
-                dockingFromCenter={dockingFromCenter}
-              />
+              <RegionErrorBoundary label="Composer">
+                <ChatFooter
+                  contentWidth={contentWidth}
+                  model={model}
+                  onModelChange={handleModelChange}
+                  onOpenProviders={onOpenProviders}
+                  jumpOverlayHostRef={setJumpOverlayHost}
+                  dockingFromCenter={dockingFromCenter}
+                />
+              </RegionErrorBoundary>
             </>
           )}
         </div>

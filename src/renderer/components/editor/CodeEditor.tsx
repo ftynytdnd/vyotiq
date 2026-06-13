@@ -13,9 +13,10 @@ import {
   inlineCompletionExtension,
   type InlineCompletionFetchContext
 } from './codemirrorInlineCompletion.js';
-import { lspDiagnosticsExtension, setLspDiagnostics } from './codemirrorDiagnostics.js';
-import type { LspDiagnostic } from '@shared/types/lsp.js';
+import { lspDiagnosticsExtension } from './codemirrorDiagnostics.js';
+import { lspClientExtensions, type LspEditorBridge } from './codemirrorLsp.js';
 import { vyotiq } from '../../lib/ipc.js';
+import { useEditorStore } from '../../store/useEditorStore.js';
 
 export interface CodeEditorInlineCompletionConfig {
   enabled: boolean;
@@ -34,11 +35,12 @@ export interface CodeEditorProps {
   onChange?: (value: string) => void;
   onSave?: () => void;
   inlineCompletion?: CodeEditorInlineCompletionConfig | null;
-  diagnostics?: LspDiagnostic[];
   onGoToDefinition?: (line: number, character: number) => void;
+  lspBridge?: LspEditorBridge | null;
 }
 
 const inlineCompletionCompartment = new Compartment();
+const lspCompartment = new Compartment();
 
 function buildInlineCompletionFetch(
   config: CodeEditorInlineCompletionConfig
@@ -80,6 +82,15 @@ function inlineCompletionExtensions(
   });
 }
 
+function scrollToReveal(view: EditorView, line: number, character: number): void {
+  const docLine = view.state.doc.line(Math.min(line + 1, view.state.doc.lines));
+  const pos = Math.min(docLine.from + character, docLine.to);
+  view.dispatch({
+    selection: { anchor: pos },
+    effects: EditorView.scrollIntoView(pos, { y: 'center' })
+  });
+}
+
 export function CodeEditor({
   value,
   filePath,
@@ -88,14 +99,15 @@ export function CodeEditor({
   onChange,
   onSave,
   inlineCompletion,
-  diagnostics = [],
-  onGoToDefinition
+  onGoToDefinition,
+  lspBridge = null
 }: CodeEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
   const inlineCompletionRef = useRef(inlineCompletion);
+  const lspBridgeRef = useRef(lspBridge);
 
   const onGoToDefRef = useRef(onGoToDefinition);
   onGoToDefRef.current = onGoToDefinition;
@@ -103,6 +115,7 @@ export function CodeEditor({
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
   inlineCompletionRef.current = inlineCompletion;
+  lspBridgeRef.current = lspBridge;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -125,6 +138,7 @@ export function CodeEditor({
       saveBinding,
       ...codemirrorLanguageForPath(filePath),
       inlineCompletionCompartment.of(inlineCompletionExtensions(inlineCompletionRef.current)),
+      lspCompartment.of(lspClientExtensions(lspBridgeRef.current)),
       ...lspDiagnosticsExtension((line, character) => {
         onGoToDefRef.current?.(line, character);
       }),
@@ -139,6 +153,9 @@ export function CodeEditor({
     const state = EditorState.create({ doc: value, extensions });
     const view = new EditorView({ state, parent: host });
     viewRef.current = view;
+
+    const reveal = useEditorStore.getState().consumeReveal(filePath);
+    if (reveal) scrollToReveal(view, reveal.line, reveal.character);
 
     return () => {
       void vyotiq.completion.cancel('editor', inlineCompletionRef.current?.workspaceId);
@@ -161,6 +178,14 @@ export function CodeEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
+    view.dispatch({
+      effects: lspCompartment.reconfigure(lspClientExtensions(lspBridge))
+    });
+  }, [lspBridge]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
     const current = view.state.doc.toString();
     if (current === value) return;
     view.dispatch({
@@ -171,8 +196,9 @@ export function CodeEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    view.dispatch({ effects: setLspDiagnostics.of(diagnostics) });
-  }, [diagnostics]);
+    const reveal = useEditorStore.getState().consumeReveal(filePath);
+    if (reveal) scrollToReveal(view, reveal.line, reveal.character);
+  }, [filePath, lspBridge]);
 
   return (
     <div

@@ -57,8 +57,7 @@ export function EditorPanel({ initialWidth, onWidthChange }: EditorPanelProps) {
   const lsp = useEditorLsp({
     enabled: settings.ui?.editorLsp?.enabled === true,
     filePath,
-    workspaceId: workspaceId ?? activeWorkspaceId,
-    content
+    workspaceId: workspaceId ?? activeWorkspaceId
   });
 
   const inlineCompletion = useMemo(() => {
@@ -134,7 +133,6 @@ export function EditorPanel({ initialWidth, onWidthChange }: EditorPanelProps) {
       widthKey="workspaceEditor"
       {...(initialWidth !== undefined ? { initialWidth } : {})}
       {...(onWidthChange ? { onWidthChange } : {})}
-      showBackdrop={false}
       className="vx-editor-panel"
       headerActions={headerActions}
     >
@@ -204,8 +202,8 @@ export function EditorPanel({ initialWidth, onWidthChange }: EditorPanelProps) {
             onChange={setContent}
             onSave={() => void save()}
             inlineCompletion={inlineCompletion}
-            diagnostics={lsp.diagnostics}
             onGoToDefinition={lsp.goToDefinition}
+            lspBridge={lsp.bridge}
           />
         ) : null}
       </div>

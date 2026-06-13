@@ -10,6 +10,7 @@
 
 
 
+import type { ScheduledRun, ScheduledRunInput } from './scheduledRun.js';
 import type {
   ProviderConfig,
 
@@ -31,8 +32,6 @@ import type {
 
   ChatSendReply,
 
-  ChatPermissions,
-
   Conversation,
 
   ConversationMeta,
@@ -47,8 +46,6 @@ import type { WorkspaceSpendEntry, TurnUsageStatsDelta } from './usageStats.js';
 
 import type { AskUserSubmitInput, AskUserSubmitReply } from './askUser.js';
 
-import type { RegisteredToolName } from './tool.js';
-
 import type {
   RewindPreviewResult,
   RewindResult,
@@ -59,18 +56,6 @@ import type {
 
 
 
-
-export interface ToolRerunInput {
-
-  conversationId: string;
-
-  toolName: RegisteredToolName;
-
-  args: Record<string, unknown>;
-
-  permissions: ChatPermissions;
-
-}
 
 export interface GenerateRunSummaryInput {
 
@@ -122,22 +107,6 @@ export interface ReportsOpenInput {
 }
 
 export type ReportsOpenReply = { ok: true } | { ok: false; error: string };
-
-
-
-export type ToolRerunReply =
-
-  | { ok: true; callId: string }
-
-  | {
-
-    ok: false;
-
-    reason: 'tool-not-rerunnable' | 'unknown-conversation' | 'execution-failed';
-
-    message?: string;
-
-  };
 
 /** Manual context-management control input (Compact now / Reset context). */
 export interface ContextManualInput {
@@ -224,8 +193,6 @@ export interface AppSettings {
 
   defaultModel?: { providerId: string; modelId: string };
 
-  permissions?: ChatPermissions;
-
   /**
 
    * Persisted UI state. Kept under a sub-object so future renderer-level
@@ -259,6 +226,10 @@ export interface AppSettings {
      */
 
     dockWidth?: number;
+
+    /** Secondary zone layout: floating overlay (default) or persistent right dock. */
+    /** Custom keyboard binding overrides (binding id → combo string). */
+    keybindings?: Record<string, string>;
 
     /**
 
@@ -1108,13 +1079,15 @@ export interface VyotiqApi {
 
     openPath(path: string, workspaceId?: string): Promise<void>;
 
-    /** Re-run a settled read/ls/search/memory tool against the workspace. */
-
-    rerun(input: ToolRerunInput): Promise<ToolRerunReply>;
-
     /** Auto-generate an HTML run summary from edit events (no LLM round-trip). */
     generateRunSummary(input: GenerateRunSummaryInput): Promise<GenerateRunSummaryReply>;
 
+  };
+
+  scheduledRuns: {
+    list(): Promise<ScheduledRun[]>;
+    upsert(input: ScheduledRunInput): Promise<ScheduledRun>;
+    delete(id: string): Promise<{ ok: boolean }>;
   };
 
   // ---- Reports (in-app browser) ----
@@ -1207,6 +1180,13 @@ export interface VyotiqApi {
     /** Open the OS file manager focused on the entry's underlying file. */
 
     reveal(scope: 'global' | 'workspace', key: string): Promise<void>;
+
+    /** Wipe and rebuild the workspace vector index (active workspace when omitted). */
+    reindex(input?: { workspaceId?: string }): Promise<{ ok: true; workspacePath: string }>;
+
+    onReindexProgress(
+      cb: (event: import('./memory.js').VectorReindexProgressEvent) => void
+    ): () => void;
 
   };
 
@@ -1374,6 +1354,14 @@ export interface VyotiqApi {
 
   lsp: {
 
+    connect(input: { workspaceId: string }): Promise<import('./lsp.js').LspConnectResult>;
+
+    send(input: { workspaceId: string; message: string }): Promise<{ ok: true }>;
+
+    status(input: { workspaceId: string }): Promise<import('./lsp.js').LspConnectResult>;
+
+    onMessage(cb: (event: import('./lsp.js').LspMessageEvent) => void): () => void;
+
     open(input: { workspaceId: string; path: string; text: string }): Promise<{ ok: true }>;
 
     change(input: { workspaceId: string; path: string; text: string }): Promise<{ ok: true }>;
@@ -1386,6 +1374,20 @@ export interface VyotiqApi {
       line: number;
       character: number;
     }): Promise<import('./lsp.js').LspLocation | null>;
+
+    hover(input: {
+      workspaceId: string;
+      path: string;
+      line: number;
+      character: number;
+    }): Promise<{ contents: string | null }>;
+
+    completion(input: {
+      workspaceId: string;
+      path: string;
+      line: number;
+      character: number;
+    }): Promise<{ items: import('./lsp.js').LspCompletionItem[] }>;
 
     onDiagnostics(cb: (event: import('./lsp.js').LspDiagnosticsEvent) => void): () => void;
 
@@ -1435,10 +1437,6 @@ export interface VyotiqApi {
     /** Check for app updates (electron-updater when packaged). */
 
     checkForUpdates(): Promise<import('./appUpdate.js').AppCheckUpdatesResult>;
-
-    /** Force-download the available update (no-op when none pending). */
-
-    downloadUpdate(): Promise<import('./appUpdate.js').AppUpdateStatus>;
 
     /** Quit and install a downloaded update. */
 

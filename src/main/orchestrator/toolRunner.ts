@@ -12,7 +12,7 @@
  *      rule and timeline emission stay uniform.
  */
 
-import type { ChatPermissions, TimelineEvent } from '@shared/types/chat.js';
+import type { TimelineEvent } from '@shared/types/chat.js';
 import type { ToolResult } from '@shared/types/tool.js';
 import { getTool, isKnownToolName } from '../tools/registry.js';
 import { lookupCachedResult, recordToolResult } from './toolResultCache.js';
@@ -26,7 +26,6 @@ export interface ToolRunOpts {
   workspaceId: string;
   runId: string;
   conversationId: string;
-  permissions: ChatPermissions;
   emit: (event: TimelineEvent) => void;
   signal: AbortSignal;
   onProgress?: (message: string) => void;
@@ -81,7 +80,6 @@ export async function runToolByName(
       workspaceId: opts.workspaceId,
       runId: opts.runId,
       conversationId: opts.conversationId,
-      permissions: opts.permissions,
       emit: opts.emit,
       signal: opts.signal,
       progress: opts.onProgress

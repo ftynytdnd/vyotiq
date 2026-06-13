@@ -1,105 +1,108 @@
-import type { ReactNode } from 'react';
+/**
+ * Settings → Shortcuts reference + customizable bindings.
+ */
+
+import { useMemo, useState } from 'react';
+import {
+  KEYBINDING_DEFINITIONS,
+  type KeybindingId
+} from '@shared/keybindings/defaultKeybindings.js';
 import { cn } from '../../lib/cn.js';
+import { vyotiq } from '../../lib/ipc.js';
+import { isMacPlatform, resolveKeybindings } from '../../lib/resolveKeybindings.js';
+import { useSettingsStore } from '../../store/useSettingsStore.js';
+import { TextField } from '../ui/TextField.js';
+import { Button } from '../ui/Button.js';
+import { ShellCaption } from '../ui/ShellSection.js';
 
-function isMacPlatform(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  const p = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform
-    ?? navigator.platform
-    ?? '';
-  return /mac/i.test(p);
-}
-
-function platformModKey(): string {
-  return isMacPlatform() ? '\u2318' : 'Ctrl';
-}
-
-function platformAltKey(): string {
-  return isMacPlatform() ? '\u2325' : 'Alt';
-}
-
-/** Render a Windows-style shortcut label with the platform modifier. */
 export function formatPlatformShortcut(shortcut: string): string {
-  const mod = platformModKey();
+  const mod = isMacPlatform() ? '\u2318' : 'Ctrl';
   return shortcut
-    .replace(/^Ctrl\+Shift\+/i, `${mod}+Shift+`)
-    .replace(/^Ctrl\+/i, `${mod}+`);
+    .replace(/^Mod\+Shift\+/i, `${mod}+Shift+`)
+    .replace(/^Mod\+/i, `${mod}+`);
 }
 
 interface ShortcutsPanelProps {
-  mod?: string;
-  alt?: string;
-  /** `dialog` in title-bar popover; `region` elsewhere. */
   presentation?: 'dialog' | 'region';
 }
 
-/**
- * Keyboard shortcut reference card. Title bar help popover only.
- */
-export function ShortcutsPanel({
-  mod = platformModKey(),
-  alt = platformAltKey(),
-  presentation = 'region'
-}: ShortcutsPanelProps) {
+export function ShortcutsPanel({ presentation = 'region' }: ShortcutsPanelProps) {
+  const settings = useSettingsStore((s) => s.settings);
+  const refresh = useSettingsStore((s) => s.refresh);
+  const isMac = isMacPlatform();
+  const resolved = useMemo(
+    () => resolveKeybindings(settings.ui?.keybindings, isMac),
+    [settings.ui?.keybindings, isMac]
+  );
+  const [draft, setDraft] = useState<Partial<Record<KeybindingId, string>>>({});
+
   const role = presentation === 'dialog' ? 'dialog' : 'region';
-  return (
-    <div role={role} aria-label="Keyboard shortcuts" className="vx-stack gap-3">
-      <ShortcutGroup title="Settings">
-        <ShortcutRow combo="Esc" label="Close settings" />
-      </ShortcutGroup>
-      <ShortcutGroup title="Navigation">
-        <ShortcutRow combo={`${mod}+B`} label="Toggle navigation dock" />
-        <ShortcutRow combo={`${mod}+K`} label="Search chats and workspace files" />
-        <ShortcutRow combo={`${alt}+\u2191 / ${alt}+\u2193`} label="Prev / next chat" />
-        <ShortcutRow combo="Esc" label="Close chat search, then collapse dock" />
-      </ShortcutGroup>
-      <ShortcutGroup title="Workspace">
-        <ShortcutRow combo={`${mod}+Tab`} label="Next workspace" />
-        <ShortcutRow combo={`${mod}+Shift+Tab`} label="Previous workspace" />
-        <ShortcutRow combo={`${mod}+N`} label="New conversation" />
-        <ShortcutRow combo={`${mod}+O`} label="Open workspace" />
-        <ShortcutRow combo={`${mod}+,`} label="Settings" />
-      </ShortcutGroup>
-      <ShortcutGroup title="Timeline">
-        <ShortcutRow combo={`${mod}+F`} label="Find in timeline" />
-        <ShortcutRow combo="g j" label="Next user prompt" />
-        <ShortcutRow combo="g k" label="Previous user prompt" />
-        <ShortcutRow combo="Esc" label="Drop sticky scroll" />
-      </ShortcutGroup>
-      <ShortcutGroup title="Window">
-        <ShortcutRow combo={`${mod}+R`} label="Reload" />
-        <ShortcutRow combo={`${mod}+Shift+I`} label="Toggle DevTools" />
-      </ShortcutGroup>
-    </div>
-  );
-}
+  const groups = ['Navigation', 'Workspace', 'Window', 'Timeline', 'Settings'] as const;
 
-function ShortcutGroup({
-  title,
-  children
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="vx-section">
-      <h3 className="vx-section-head mb-1">{title}</h3>
-      <div className="flex flex-col">{children}</div>
-    </section>
-  );
-}
+  const saveBinding = (id: KeybindingId) => {
+    const value = draft[id]?.trim();
+    const next = { ...(settings.ui?.keybindings ?? {}) };
+    if (!value) delete next[id];
+    else next[id] = value;
+    void vyotiq.settings.set({ ui: { keybindings: next } }).then(() => refresh());
+    setDraft((d) => {
+      const copy = { ...d };
+      delete copy[id];
+      return copy;
+    });
+  };
 
-function ShortcutRow({ combo, label }: { combo: string; label: string }) {
+  const resetAll = () => {
+    void vyotiq.settings.set({ ui: { keybindings: {} } }).then(() => refresh());
+    setDraft({});
+  };
+
   return (
-    <div className="vx-row flex items-center justify-between gap-3 py-1.5 first:pt-0 last:pb-0">
-      <span className="min-w-0 truncate text-row text-text-muted">{label}</span>
-      <kbd
-        className={cn(
-          'shrink-0 rounded-inner border border-border-subtle/25 bg-surface-overlay/40',
-          'px-1.5 py-0.5 font-mono text-meta tracking-tight text-text-secondary'
-        )}
-      >
-        {combo}
-      </kbd>
+    <div role={role} aria-label="Keyboard shortcuts" className="vx-stack gap-4">
+      <ShellCaption>
+        Timeline navigation: <kbd className="font-mono">g j</kbd> / <kbd className="font-mono">g k</kbd>{' '}
+        for prev/next user prompt; <kbd className="font-mono">Esc</kbd> drops sticky scroll.
+      </ShellCaption>
+      {groups.map((group) => (
+        <section key={group} className="vx-section">
+          <h3 className="vx-section-head mb-1">{group}</h3>
+          <div className="flex flex-col">
+            {KEYBINDING_DEFINITIONS.filter((d) => d.group === group).map((def) => {
+              const active = draft[def.id] ?? resolved[def.id];
+              return (
+                <div
+                  key={def.id}
+                  className="vx-row flex flex-wrap items-center justify-between gap-3 py-1.5 first:pt-0 last:pb-0"
+                >
+                  <span className="min-w-0 truncate text-row text-text-muted">{def.label}</span>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <TextField
+                      value={active}
+                      onChange={(e) => setDraft((d) => ({ ...d, [def.id]: e.target.value }))}
+                      onBlur={() => {
+                        if (draft[def.id] !== undefined) saveBinding(def.id);
+                      }}
+                      className="w-36 font-mono text-meta"
+                      aria-label={`Shortcut for ${def.label}`}
+                    />
+                    <kbd
+                      className={cn(
+                        'hidden rounded-inner border border-border-subtle/25 bg-surface-overlay/40',
+                        'px-1.5 py-0.5 font-mono text-meta tracking-tight text-text-secondary sm:inline'
+                      )}
+                    >
+                      {formatPlatformShortcut(active)}
+                    </kbd>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+      <Button variant="secondary" size="sm" onClick={resetAll}>
+        Reset to defaults
+      </Button>
     </div>
   );
 }

@@ -3,18 +3,15 @@
  * through `settings/blob.ts` so the workspace state never silently overwrites
  * settings (and vice versa).
  *
- * Permissions migration (May 2026): legacy permission flags on disk are
- * stripped on read — mutating tools no longer gate on user approval.
+ * Legacy `permissions` on disk are stripped on read/write (May 2026).
  */
 
 import type { AppSettings } from '@shared/types/ipc.js';
-import type { ChatPermissions } from '@shared/types/chat.js';
 import {
   mergeWorkspaceSpendStats,
   normalizeWorkspaceSpendEntry,
   type TurnUsageStatsDelta
 } from '@shared/types/usageStats.js';
-import { DEFAULT_PERMISSIONS } from '@shared/constants.js';
 import { resolveSettingsSectionId } from '@shared/settings/settingsSection.js';
 import { readBlob, updateBlob, type SettingsBlob } from './blob.js';
 import { normalizeDockWidthInUi } from '@shared/dock/dockWidth.js';
@@ -24,24 +21,7 @@ import { syncVectorEmbedFromSettings } from './vectorEmbedRuntime.js';
 
 export { normalizeSettingsPatch };
 
-const DEFAULTS: AppSettings = { permissions: DEFAULT_PERMISSIONS };
-
-/**
- * Legacy permissions shape carried by pre-2026 settings.json files. The
- * fields are optional individually because partial workspace-override
- * entries (e.g. `{ allowBash: false }`) are valid too.
- */
-interface LegacyPermissions {
-  allowFileWrites?: boolean;
-  allowBash?: boolean;
-  allowWebSearch?: boolean;
-}
-
-function derivePermissions(
-  _raw: (LegacyPermissions & Partial<{ allowAuto: boolean }>) | undefined
-): ChatPermissions {
-  return { ...DEFAULT_PERMISSIONS };
-}
+const DEFAULTS: AppSettings = {};
 
 /**
  * One-time on-disk cleanup for deprecated top-level / ui fields.
@@ -132,6 +112,15 @@ function normalizeBlobForPersistence(blob: SettingsBlob): { blob: SettingsBlob; 
     changed = true;
   }
 
+  if ('permissions' in next) {
+    const { permissions: _legacyPerms, ...rest } = next as SettingsBlob & {
+      permissions?: unknown;
+    };
+    void _legacyPerms;
+    next = rest;
+    changed = true;
+  }
+
   const tab = next.ui?.lastSettingsTab;
   if (tab !== undefined) {
     const migrated = resolveSettingsSectionId(tab, 'models-api');
@@ -181,21 +170,14 @@ function publicShape(blob: SettingsBlob): AppSettings {
     workspaces: _wsList,
     activeWorkspaceId: _activeWs,
     webSearchEndpoint: _legacyWebSearch,
+    permissions: _legacyPermissions,
     ...rest
-  } = blob as SettingsBlob & { webSearchEndpoint?: string };
+  } = blob as SettingsBlob & { webSearchEndpoint?: string; permissions?: unknown };
   void _ws;
   void _wsList;
   void _activeWs;
   void _legacyWebSearch;
-
-  // Derive the new-shape `permissions` block from whichever shape the
-  // on-disk blob carries. The raw read may still have the legacy
-  // three booleans; `derivePermissions` collapses them.
-  const permissions = derivePermissions(
-    rest.permissions as
-    | (LegacyPermissions & Partial<{ allowAuto: boolean }>)
-    | undefined
-  );
+  void _legacyPermissions;
 
   let ui = rest.ui ? { ...rest.ui } : rest.ui;
   if (ui) {
@@ -234,7 +216,6 @@ function publicShape(blob: SettingsBlob): AppSettings {
   return {
     ...DEFAULTS,
     ...rest,
-    permissions,
     ...(ui !== undefined ? { ui } : {})
   };
 }
@@ -265,21 +246,16 @@ export async function setSettings(patch: Partial<AppSettings>): Promise<AppSetti
     const {
       webSearchEndpoint: _dropWeb,
       contextSummary: _dropCs,
+      permissions: _dropPerms,
       ...cleaned
     } = current as SettingsBlob & {
       webSearchEndpoint?: string;
       contextSummary?: unknown;
+      permissions?: unknown;
     };
     void _dropWeb;
     void _dropCs;
-    // so legacy keys (`allowFileWrites` etc.) don't leak into the
-    // post-write shape. The patch is already new-shape per the
-    // updated `AppSettings.permissions` type.
-    const migratedPermissions = derivePermissions(
-      cleaned.permissions as
-      | (LegacyPermissions & Partial<{ allowAuto: boolean }>)
-      | undefined
-    );
+    void _dropPerms;
 
     const currentUi = stripDeprecatedUiFields(
       migrateLegacyDockUi({ ...(cleaned.ui ?? {}) } as Record<string, unknown>).ui
@@ -309,26 +285,26 @@ export async function setSettings(patch: Partial<AppSettings>): Promise<AppSetti
     };
     if (spendIncrement && Object.keys(spendIncrement).length > 0) {
       const prev = (currentUi.workspaceSpendUsd as Record<string, unknown> | undefined) ?? {};
-      const next = { ...prev };
+      const nextSpend = { ...prev };
       for (const [workspaceId, delta] of Object.entries(spendIncrement)) {
         if (typeof delta === 'number' && Number.isFinite(delta) && delta > 0) {
-          const base = normalizeWorkspaceSpendEntry(next[workspaceId] as never);
-          next[workspaceId] = mergeWorkspaceSpendStats(base, delta);
+          const base = normalizeWorkspaceSpendEntry(nextSpend[workspaceId] as never);
+          nextSpend[workspaceId] = mergeWorkspaceSpendStats(base, delta);
         }
       }
-      mergedUi.workspaceSpendUsd = next;
+      mergedUi.workspaceSpendUsd = nextSpend;
     }
     if (usageIncrement && Object.keys(usageIncrement).length > 0) {
       const prev = (currentUi.workspaceSpendUsd as Record<string, unknown> | undefined) ?? {};
-      const next = { ...prev };
+      const nextUsage = { ...prev };
       for (const [workspaceId, delta] of Object.entries(usageIncrement)) {
         const spendUsd = delta.spendUsd;
         if (!Number.isFinite(spendUsd) || spendUsd <= 0) continue;
-        const base = normalizeWorkspaceSpendEntry(next[workspaceId] as never);
+        const base = normalizeWorkspaceSpendEntry(nextUsage[workspaceId] as never);
         const { spendUsd: _s, ...stats } = delta;
-        next[workspaceId] = mergeWorkspaceSpendStats(base, spendUsd, stats);
+        nextUsage[workspaceId] = mergeWorkspaceSpendStats(base, spendUsd, stats);
       }
-      mergedUi.workspaceSpendUsd = next;
+      mergedUi.workspaceSpendUsd = nextUsage;
     }
     if (patchUi?.reports) {
       mergedUi.reports = {
@@ -345,42 +321,42 @@ export async function setSettings(patch: Partial<AppSettings>): Promise<AppSetti
     if (patchUi?.agentBehavior) {
       const agentPatch = patchUi.agentBehavior as NonNullable<AppSettings['ui']>['agentBehavior'];
       const prev = (currentUi.agentBehavior as Record<string, unknown> | undefined) ?? {};
-      const next = { ...prev, ...agentPatch } as Record<string, unknown>;
+      const nextAgent = { ...prev, ...agentPatch } as Record<string, unknown>;
       if (agentPatch?.runTokenBudget) {
-        next.runTokenBudget = {
+        nextAgent.runTokenBudget = {
           ...(prev.runTokenBudget as Record<string, unknown> | undefined),
           ...agentPatch.runTokenBudget
         };
       }
       if (agentPatch?.runWallClockBudget) {
-        next.runWallClockBudget = {
+        nextAgent.runWallClockBudget = {
           ...(prev.runWallClockBudget as Record<string, unknown> | undefined),
           ...agentPatch.runWallClockBudget
         };
       }
       if (agentPatch?.contextCompaction) {
-        next.contextCompaction = {
+        nextAgent.contextCompaction = {
           ...(prev.contextCompaction as Record<string, unknown> | undefined),
           ...agentPatch.contextCompaction
         };
       }
       if (agentPatch?.contextManagement) {
-        next.contextManagement = {
+        nextAgent.contextManagement = {
           ...(prev.contextManagement as Record<string, unknown> | undefined),
           ...agentPatch.contextManagement
         };
       }
-      mergedUi.agentBehavior = next;
+      mergedUi.agentBehavior = nextAgent;
     }
+
+    const { permissions: _patchPerms, ...normalizedSansPerms } = normalized as Partial<AppSettings> & {
+      permissions?: unknown;
+    };
+    void _patchPerms;
 
     return {
       ...cleaned,
-      ...normalized,
-      permissions: {
-        ...DEFAULT_PERMISSIONS,
-        ...migratedPermissions,
-        ...(normalized.permissions ?? {})
-      },
+      ...normalizedSansPerms,
       // Deep-merge `ui` so a partial patch (e.g. just `dockExpanded` or legacy `sidebarOpen`)
       // doesn't clobber sibling fields written by other features.
       ui: mergedUi

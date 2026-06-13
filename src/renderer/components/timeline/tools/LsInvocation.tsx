@@ -78,8 +78,6 @@ export function LsInvocation({ call, result, dense, rowKey }: LsInvocationProps)
       {...(detail !== undefined ? { detail } : {})}
       {...(dense ? { dense } : {})}
       {...(rowKey ? { rowKey } : {})}
-      call={call}
-      result={result}
     />
   );
 }

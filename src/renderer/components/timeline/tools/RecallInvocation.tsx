@@ -67,8 +67,6 @@ export function RecallInvocation({ call, result, dense, rowKey }: RecallInvocati
       {...(detail !== undefined ? { detail } : {})}
       {...(dense ? { dense } : {})}
       {...(rowKey ? { rowKey } : {})}
-      call={call}
-      result={result}
     />
   );
 }

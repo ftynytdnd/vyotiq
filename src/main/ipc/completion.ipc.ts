@@ -37,7 +37,10 @@ export function registerCompletionIpc(): void {
       assertString('completion:request', 'providerId', input.providerId);
       assertString('completion:request', 'model', input.model);
       assertString('completion:request', 'prefix', input.prefix, { maxBytes: 64_000 });
-      assertOptionalString('completion:request', 'suffix', input.suffix, { maxBytes: 32_000 });
+      assertOptionalString('completion:request', 'suffix', input.suffix, {
+        nonEmpty: false,
+        maxBytes: 32_000
+      });
       assertOptionalString('completion:request', 'filePath', input.filePath, { maxBytes: 4096 });
       assertOptionalString('completion:request', 'workspaceId', input.workspaceId);
 

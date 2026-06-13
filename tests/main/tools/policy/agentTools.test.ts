@@ -13,6 +13,12 @@ describe('AGENT_TOOLS', () => {
     expect(AGENT_TOOLS).not.toContain('delegate' as never);
     expect(AGENT_TOOLS).toContain('report');
   });
+
+  it('equals the registered tool set bidirectionally', () => {
+    const registry = new Set(listTools().map((t) => t.name));
+    const agent = new Set(AGENT_TOOLS);
+    expect(agent).toEqual(registry);
+  });
 });
 
 describe('tool-name single source consistency', () => {

@@ -9,8 +9,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   composeOnDiskText,
-  decodeFileForEdit,
-  encodeFileForWrite
+  decodeFileForEdit
 } from '@main/tools/editFileEncoding';
 
 vi.mock('@main/checkpoints/index', () => ({
@@ -49,7 +48,6 @@ function makeCtx(): ToolContext {
     workspaceId: 'ws-1',
     runId: 'run-1',
     conversationId: 'conv-1',
-    permissions: { allowAuto: true },
     strictApprovals: false,
     signal: new AbortController().signal,
     emit: () => {
@@ -65,7 +63,7 @@ describe('editFileEncoding helpers', () => {
     expect(decoded.body).toBe('line\r\n');
     expect(decoded.encoding.utf8Bom).toBe(true);
     expect(decoded.encoding.eol).toBe('crlf');
-    expect(encodeFileForWrite('line\r\n', decoded.encoding)).toBe('\uFEFFline\r\n');
+    expect(composeOnDiskText('line\r\n', decoded.encoding)).toBe('\uFEFFline\r\n');
   });
 });
 

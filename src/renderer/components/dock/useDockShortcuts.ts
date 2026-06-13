@@ -1,16 +1,11 @@
 /**
- * Left dock keyboard shortcuts.
- *
- * Bound at the window level on mount of `LeftDock`:
- *
- *   - Ctrl+B / Cmd+B : toggle dock expand/collapse
- *   - Ctrl+K / Cmd+K  : open inline chat search
- *   - Escape          : close search, else collapse expanded dock
- *   - Alt+ArrowUp/Down : prev/next conversation in active workspace
- *   - Ctrl+Tab / Ctrl+Shift+Tab : cycle workspaces
+ * Left dock keyboard shortcuts — reads customizable bindings from settings.
  */
 
 import { useEffect } from 'react';
+import {
+  eventMatchesCombo
+} from '@shared/keybindings/defaultKeybindings.js';
 import { filterDockChats } from './filterDockChats.js';
 import { collectRunningChatIds } from './collectRunningChatIds.js';
 import { useUiStore } from '../../store/useUiStore.js';
@@ -18,6 +13,8 @@ import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useAppViewStore } from '../../store/useAppViewStore.js';
+import { useSettingsStore } from '../../store/useSettingsStore.js';
+import { isMacPlatform, resolveKeybindings } from '../../lib/resolveKeybindings.js';
 
 function isTextInputTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -33,20 +30,25 @@ function isDockSearchInputTarget(target: EventTarget | null): boolean {
   return target.closest('[role="search"][aria-label="Search workspace"]') !== null;
 }
 
+function currentBindings() {
+  const overrides = useSettingsStore.getState().settings.ui?.keybindings;
+  return resolveKeybindings(overrides, isMacPlatform());
+}
+
 export function useDockShortcuts(): void {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      const mod = e.ctrlKey || e.metaKey;
+      const b = currentBindings();
       const settingsOpen = useAppViewStore.getState().view === 'settings';
 
-      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') {
+      if (eventMatchesCombo(e, b.toggleDock)) {
         if (settingsOpen) return;
         e.preventDefault();
         useUiStore.getState().toggleDock();
         return;
       }
 
-      if (mod && !e.altKey && e.key.toLowerCase() === 'k') {
+      if (eventMatchesCombo(e, b.openSearch)) {
         if (settingsOpen) return;
         e.preventDefault();
         useUiStore.getState().setDockExpanded(true);
@@ -54,10 +56,10 @@ export function useDockShortcuts(): void {
         return;
       }
 
-      if (mod && !e.altKey && e.key === 'Tab') {
+      if (eventMatchesCombo(e, b.nextWorkspace) || eventMatchesCombo(e, b.prevWorkspace)) {
         if (isTextInputTarget(e.target)) return;
         e.preventDefault();
-        cycleWorkspace(e.shiftKey ? -1 : 1);
+        cycleWorkspace(eventMatchesCombo(e, b.prevWorkspace) ? -1 : 1);
         return;
       }
 
@@ -76,15 +78,10 @@ export function useDockShortcuts(): void {
         return;
       }
 
-      if (
-        e.altKey &&
-        !mod &&
-        !e.shiftKey &&
-        (e.key === 'ArrowUp' || e.key === 'ArrowDown')
-      ) {
+      if (eventMatchesCombo(e, b.prevChat) || eventMatchesCombo(e, b.nextChat)) {
         if (isTextInputTarget(e.target)) return;
         e.preventDefault();
-        navigateConversation(e.key === 'ArrowDown' ? 1 : -1);
+        navigateConversation(eventMatchesCombo(e, b.nextChat) ? 1 : -1);
       }
     };
 

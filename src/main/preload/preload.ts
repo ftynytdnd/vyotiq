@@ -110,10 +110,15 @@ const api: VyotiqApi = {
       ipcRenderer.invoke(IPC.CONVERSATIONS_INCREMENT_SPEND, id, promptId, usd, stats)
   },
 
+  scheduledRuns: {
+    list: () => ipcRenderer.invoke(IPC.SCHEDULED_RUNS_LIST),
+    upsert: (input) => ipcRenderer.invoke(IPC.SCHEDULED_RUNS_UPSERT, input),
+    delete: (id) => ipcRenderer.invoke(IPC.SCHEDULED_RUNS_DELETE, id)
+  },
+
   tools: {
     openPath: (path, workspaceId) =>
       ipcRenderer.invoke(IPC.TOOLS_OPEN_PATH, path, workspaceId),
-    rerun: (input) => ipcRenderer.invoke(IPC.TOOLS_RERUN, input),
     generateRunSummary: (input) =>
       ipcRenderer.invoke(IPC.REPORTS_GENERATE_RUN_SUMMARY, input)
   },
@@ -134,7 +139,13 @@ const api: VyotiqApi = {
     read: (scope, key) => ipcRenderer.invoke(IPC.MEMORY_READ, scope, key),
     write: (scope, key, content, mode, conversationId) =>
       ipcRenderer.invoke(IPC.MEMORY_WRITE, scope, key, content, mode, conversationId),
-    reveal: (scope, key) => ipcRenderer.invoke(IPC.MEMORY_REVEAL, scope, key)
+    reveal: (scope, key) => ipcRenderer.invoke(IPC.MEMORY_REVEAL, scope, key),
+    reindex: (input) => ipcRenderer.invoke(IPC.MEMORY_REINDEX, input),
+    onReindexProgress: (cb) =>
+      on<[import('@shared/types/memory.js').VectorReindexProgressEvent]>(
+        IPC.MEMORY_REINDEX_PROGRESS,
+        (event) => cb(event)
+      )
   },
 
   settings: {
@@ -200,10 +211,17 @@ const api: VyotiqApi = {
   },
 
   lsp: {
+    connect: (input) => ipcRenderer.invoke(IPC.LSP_CONNECT, input),
+    send: (input) => ipcRenderer.invoke(IPC.LSP_SEND, input),
+    status: (input) => ipcRenderer.invoke(IPC.LSP_STATUS, input),
+    onMessage: (cb) =>
+      on<[import('@shared/types/lsp.js').LspMessageEvent]>(IPC.LSP_MESSAGE, (event) => cb(event)),
     open: (input) => ipcRenderer.invoke(IPC.LSP_OPEN, input),
     change: (input) => ipcRenderer.invoke(IPC.LSP_CHANGE, input),
     close: (input) => ipcRenderer.invoke(IPC.LSP_CLOSE, input),
     definition: (input) => ipcRenderer.invoke(IPC.LSP_DEFINITION, input),
+    hover: (input) => ipcRenderer.invoke(IPC.LSP_HOVER, input),
+    completion: (input) => ipcRenderer.invoke(IPC.LSP_COMPLETION, input),
     onDiagnostics: (cb) =>
       on<[import('@shared/types/lsp.js').LspDiagnosticsEvent]>(IPC.LSP_DIAGNOSTICS, (event) =>
         cb(event)
@@ -220,7 +238,6 @@ const api: VyotiqApi = {
     revealPath: (target) => ipcRenderer.invoke(IPC.APP_REVEAL_PATH, target),
     setThemeSource: (mode) => ipcRenderer.invoke(IPC.APP_SET_THEME_SOURCE, mode),
     checkForUpdates: () => ipcRenderer.invoke(IPC.APP_CHECK_UPDATES),
-    downloadUpdate: () => ipcRenderer.invoke(IPC.APP_DOWNLOAD_UPDATE),
     installUpdate: () => ipcRenderer.invoke(IPC.APP_INSTALL_UPDATE),
     onUpdateStatus: (cb) =>
       on<[import('@shared/types/appUpdate.js').AppUpdateStatus]>(IPC.APP_UPDATE_STATUS, (status) =>

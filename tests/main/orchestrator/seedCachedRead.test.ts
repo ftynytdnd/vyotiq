@@ -14,9 +14,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   clearRunCache,
-  lookupCachedResult,
-  seedCachedRead
+  lookupCachedResult
 } from '@main/orchestrator/toolResultCache';
+import { seedCachedRead } from '@main/orchestrator/seedCachedRead';
 
 describe('seedCachedRead', () => {
   it('short-circuits a bare read({ path }) with the host-authored output', () => {

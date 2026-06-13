@@ -132,9 +132,6 @@ export function BashInvocation({ call, result, dense, rowKey, partial, diffStrea
       {...(dense ? { dense } : {})}
       {...(rowKey ? { rowKey } : {})}
       {...(liveAutoExpand ? { liveAutoExpand } : {})}
-      call={call}
-      result={result}
-      partial={partial}
     />
   );
 }

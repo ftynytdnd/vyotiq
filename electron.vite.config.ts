@@ -1,4 +1,4 @@
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
+import { defineConfig } from 'electron-vite';
 import { resolve } from 'node:path';
 import { builtinModules, createRequire } from 'node:module';
 import react from '@vitejs/plugin-react';
@@ -28,7 +28,6 @@ const SOURCEMAP: 'hidden' = 'hidden';
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
     resolve: {
       alias: {
         '@shared': resolve(__dirname, 'src/shared'),
@@ -42,14 +41,13 @@ export default defineConfig({
         entry: resolve(__dirname, 'src/main/index.ts'),
         formats: ['cjs']
       },
-      rollupOptions: {
+      rolldownOptions: {
         external: nodeExternals,
         output: { entryFileNames: 'index.js' }
       }
     }
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
     resolve: {
       alias: { '@shared': resolve(__dirname, 'src/shared') }
     },
@@ -60,7 +58,7 @@ export default defineConfig({
         entry: resolve(__dirname, 'src/main/preload/preload.ts'),
         formats: ['cjs']
       },
-      rollupOptions: {
+      rolldownOptions: {
         external: nodeExternals,
         output: { entryFileNames: 'index.js' }
       }
@@ -80,7 +78,7 @@ export default defineConfig({
       // Drop stale hashed chunks so preview/production never load an old bundle
       // (e.g. pre–dock-rename `sidebarVisible` persist paths).
       emptyOutDir: true,
-      rollupOptions: {
+      rolldownOptions: {
         input: { index: resolve(__dirname, 'src/renderer/index.html') }
       }
     }

@@ -51,7 +51,7 @@ beforeEach(() => {
     loading: false
   } as never);
   useSettingsStore.setState({
-    settings: { permissions: { mode: 'ask' } }
+    settings: {}
   } as never);
   useProviderStore.setState({
     providers: [

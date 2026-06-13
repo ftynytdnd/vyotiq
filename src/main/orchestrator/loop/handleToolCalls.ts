@@ -3,7 +3,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import type { ChatMessage, ChatPermissions, TimelineEvent } from '@shared/types/chat.js';
+import type { ChatMessage, TimelineEvent } from '@shared/types/chat.js';
 import type { ToolName } from '@shared/types/tool.js';
 import { normalizeRegisteredToolName } from '@shared/tools/normalizeToolName.js';
 import { runToolByName } from '../toolRunner.js';
@@ -69,7 +69,6 @@ export interface HandleToolCallsOpts {
   workspaceId: string;
   runId: string;
   conversationId: string;
-  permissions: ChatPermissions;
   signal: AbortSignal;
   /** When set, calls outside this list get a synthetic tool failure. */
   allowlist?: readonly string[];
@@ -262,7 +261,6 @@ async function dispatchOneToolCall(
     workspaceId: opts.workspaceId,
     runId: opts.runId,
     conversationId: opts.conversationId,
-    permissions: opts.permissions,
     emit,
     signal: opts.signal
   });

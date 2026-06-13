@@ -15,7 +15,7 @@ import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useProviderAccountStore } from '../../store/useProviderAccountStore.js';
 import { useProviderStore } from '../../store/useProviderStore.js';
 import { useSessionStatsStore } from '../../store/useSessionStatsStore.js';
-import { useSettingsStore } from '../../store/useSettingsStore.js';
+import { useSettingsStore, EMPTY_WORKSPACE_SPEND_USD } from '../../store/useSettingsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { normalizeWorkspaceSpendEntry } from '@shared/types/usageStats.js';
 import { ShellCaption, ShellRow, ShellRowSplit, ShellSection, ShellStack } from '../ui/ShellSection.js';
@@ -48,7 +48,7 @@ function providerReconcileDelta(
 }
 
 export function UsagePanel() {
-  useProviderAccountPollSource('settings-providers', true);
+  useProviderAccountPollSource('settings-usage', true);
 
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
   const workspaces = useWorkspaceStore((s) => s.list);
@@ -56,7 +56,9 @@ export function UsagePanel() {
   const providers = useProviderStore((s) => s.providers);
   const discoveryPollHints = useProviderStore((s) => s.discoveryPollHints);
   const accounts = useProviderAccountStore((s) => s.snapshots);
-  const workspaceSpend = useSettingsStore((s) => s.settings.ui?.workspaceSpendUsd ?? {});
+  const workspaceSpend = useSettingsStore(
+    (s) => s.settings.ui?.workspaceSpendUsd ?? EMPTY_WORKSPACE_SPEND_USD
+  );
   const sessionStats = useSessionStatsStore((s) => s.stats);
 
   const activeWorkspaceStats = normalizeWorkspaceSpendEntry(

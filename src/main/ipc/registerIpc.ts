@@ -23,6 +23,7 @@ import { registerTerminalIpc } from './terminal.ipc.js';
 import { registerCompletionIpc } from './completion.ipc.js';
 import { registerLspIpc } from './lsp.ipc.js';
 import { registerMentionsIpc } from './mentions.ipc.js';
+import { registerScheduledRunsIpc } from './scheduledRuns.ipc.js';
 import {
   abortRunsForConversation,
   abortRunsForProvider,
@@ -59,4 +60,5 @@ export function registerIpc(): void {
   registerAppIpc();
   registerAttachmentsIpc();
   registerRendererLogRelay();
+  registerScheduledRunsIpc();
 }

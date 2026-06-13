@@ -3,24 +3,17 @@
  * settings reference the same bindings).
  *
  * Bound at the App root via `useGlobalShortcuts(actions)`. It uses
- * the latest `actions` snapshot through a ref so the handler doesn't
- * re-bind on every render (and never fires a stale closure).
- *
- * Bindings:
- *   - Ctrl/Cmd+N        : new conversation
- *   - Ctrl/Cmd+O        : pick workspace folder (OS dialog)
- *   - Ctrl/Cmd+,        : open Settings (last-used tab)
- *   - Ctrl/Cmd+R        : reload the renderer (View → Reload)
- *   - Ctrl/Cmd+Shift+I  : toggle DevTools (View → Toggle DevTools)
- *
- * `reload` and `toggleDevTools` are optional — when undefined, the
- * hook silently skips the keystroke and lets Electron's defaults (if
- * any) handle it. Wired ones run irrespective of focus target so the
- * shortcut works even when the composer textarea has focus, mirroring
- * how every Electron desktop app behaves.
+ * the latest `actions` and resolved keybinding snapshot through refs
+ * so the handler doesn't re-bind on every render.
  */
 
 import { useEffect, useRef } from 'react';
+import {
+  defaultKeybindingsRecord,
+  eventMatchesCombo,
+  type KeybindingId
+} from '@shared/keybindings/defaultKeybindings.js';
+import { isMacPlatform } from '../lib/resolveKeybindings.js';
 
 export interface GlobalShortcutActions {
   newConversation: () => void;
@@ -31,67 +24,60 @@ export interface GlobalShortcutActions {
   /** Toggle integrated terminal (Ctrl/Cmd+`). */
   toggleTerminal?: () => void;
   blockTerminal?: () => boolean;
-  /**
-   * Reload handler for `Ctrl/Cmd+R`. Optional so consumers (and the
-   * existing test harness) can leave it undefined when they don't
-   * care about the View-menu shortcuts.
-   */
   reload?: () => void;
-  /**
-   * DevTools toggle for `Ctrl/Cmd+Shift+I`. Optional for the same
-   * reason as `reload`.
-   */
   toggleDevTools?: () => void;
 }
 
-export function useGlobalShortcuts(actions: GlobalShortcutActions): void {
-  const ref = useRef(actions);
-  ref.current = actions;
+export function useGlobalShortcuts(
+  actions: GlobalShortcutActions,
+  keybindings?: Record<KeybindingId, string>
+): void {
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
+  const bindingsRef = useRef(keybindings);
+  bindingsRef.current = keybindings;
 
   useEffect(() => {
+    const bindings = (): Record<KeybindingId, string> =>
+      bindingsRef.current ?? defaultKeybindingsRecord(isMacPlatform());
+
     const onKeyDown = (e: KeyboardEvent) => {
-      const mod = e.ctrlKey || e.metaKey;
-      if (!mod) return;
+      const b = bindings();
 
-      const key = e.key.toLowerCase();
-
-      if (e.shiftKey && !e.altKey && key === 'i') {
-        if (!ref.current.toggleDevTools) return;
+      if (eventMatchesCombo(e, b.toggleDevTools)) {
+        if (!actionsRef.current.toggleDevTools) return;
         e.preventDefault();
-        ref.current.toggleDevTools();
+        actionsRef.current.toggleDevTools();
         return;
       }
 
-      if (e.altKey || e.shiftKey) return;
-
-      if (key === 'n') {
-        if (ref.current.blockChatActions?.()) return;
+      if (eventMatchesCombo(e, b.newConversation)) {
+        if (actionsRef.current.blockChatActions?.()) return;
         e.preventDefault();
-        ref.current.newConversation();
+        actionsRef.current.newConversation();
         return;
       }
-      if (key === 'o') {
-        if (ref.current.blockChatActions?.()) return;
+      if (eventMatchesCombo(e, b.openWorkspace)) {
+        if (actionsRef.current.blockChatActions?.()) return;
         e.preventDefault();
-        ref.current.openWorkspace();
+        actionsRef.current.openWorkspace();
         return;
       }
-      if (key === ',') {
+      if (eventMatchesCombo(e, b.openSettings)) {
         e.preventDefault();
-        ref.current.openSettings();
+        actionsRef.current.openSettings();
         return;
       }
-      if (key === 'r') {
-        if (!ref.current.reload) return;
+      if (eventMatchesCombo(e, b.reload)) {
+        if (!actionsRef.current.reload) return;
         e.preventDefault();
-        ref.current.reload();
+        actionsRef.current.reload();
         return;
       }
-      if (key === '`') {
-        if (!ref.current.toggleTerminal || ref.current.blockTerminal?.()) return;
+      if (eventMatchesCombo(e, b.toggleTerminal)) {
+        if (!actionsRef.current.toggleTerminal || actionsRef.current.blockTerminal?.()) return;
         e.preventDefault();
-        ref.current.toggleTerminal();
-        return;
+        actionsRef.current.toggleTerminal();
       }
     };
 

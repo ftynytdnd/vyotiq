@@ -84,7 +84,6 @@ const baseInput: ChatSendInput = {
   runId: 'run-1',
   prompt: 'hello',
   selection: { providerId: 'p', modelId: 'm' },
-  permissions: { allowAuto: false },
   conversationId: 'conv-stale',
   workspaceId: 'ws-test'
 };

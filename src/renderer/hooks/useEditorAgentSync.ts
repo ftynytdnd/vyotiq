@@ -4,12 +4,9 @@
 
 import { useEffect } from 'react';
 import type { TimelineEvent } from '@shared/types/chat.js';
+import { normalizePath } from '../lib/normalizePath.js';
 import { vyotiq } from '../lib/ipc.js';
 import { editorMatchesPath, useEditorStore } from '../store/useEditorStore.js';
-
-function normalizePath(p: string): string {
-  return p.replace(/\\/g, '/');
-}
 
 function eventTouchesPath(event: TimelineEvent, filePath: string): boolean {
   const target = normalizePath(filePath);

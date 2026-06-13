@@ -15,7 +15,6 @@ const VALID: ChatSendInput = {
   runId: 'run-1',
   prompt: 'hello',
   selection: { providerId: 'openai', modelId: 'gpt-4o' },
-  permissions: {},
   conversationId: 'conv-1',
   workspaceId: 'ws-1',
   attachments: ['src/index.ts']
@@ -50,22 +49,10 @@ describe('assertChatSendInput', () => {
     expect(() => assertChatSendInput({ ...VALID, prompt: over })).toThrow(/prompt exceeds/);
   });
 
-  it('rejects null selection / permissions', () => {
+  it('rejects null selection', () => {
     expect(() => assertChatSendInput({ ...VALID, selection: null })).toThrow(
       /selection must be a non-null object/
     );
-    expect(() => assertChatSendInput({ ...VALID, permissions: null })).toThrow(
-      /permissions must be a non-null object/
-    );
-  });
-
-  it('accepts an empty permissions object', () => {
-    expect(() =>
-      assertChatSendInput({
-        ...VALID,
-        permissions: {}
-      })
-    ).not.toThrow();
   });
 
   it('rejects null optional ids', () => {

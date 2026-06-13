@@ -322,6 +322,16 @@ export function deriveRows(
         });
         break;
 
+      case 'attachment-pre-read':
+        closeGroups();
+        out.push({
+          kind: 'agent-thought',
+          key: e.id,
+          content: `Attachment inlined — \`${e.path}\` pre-read for this run`,
+          severity: 'info'
+        });
+        break;
+
       case 'ask-user-prompt':
         closeGroups();
         // Answers land on the user-prompt row — no post-submit status bar.

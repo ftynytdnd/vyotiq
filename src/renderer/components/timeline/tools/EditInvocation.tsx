@@ -265,9 +265,6 @@ export function EditInvocation({
       {...(rowKey ? { rowKey } : {})}
       liveAutoExpand={liveAutoExpand}
       {...(groupExpanded ? { groupExpanded } : {})}
-      call={call}
-      result={result}
-      partial={partial}
     />
   );
 }

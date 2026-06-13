@@ -312,6 +312,11 @@ function extractPrimary(name: ToolName, child: ToolGroupChild): string {
       return raw;
     }
     case 'search': {
+      const mode =
+        args['mode'] === 'structural' || (data?.tool === 'search' && data.mode === 'structural')
+          ? 'structural'
+          : 'local';
+      if (mode === 'structural') return 'Structural search';
       const q =
         typeof args['query'] === 'string'
           ? (args['query'] as string)

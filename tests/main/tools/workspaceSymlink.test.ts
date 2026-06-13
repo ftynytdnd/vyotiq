@@ -8,10 +8,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ChatPermissions } from '@shared/types/chat';
 import { lsTool } from '@main/tools/ls.tool';
 import { searchTool } from '@main/tools/search.tool';
-const PERM: ChatPermissions = { allowAuto: true };
 
 function makeCtx(workspacePath: string) {
   return {
@@ -19,7 +17,6 @@ function makeCtx(workspacePath: string) {
     workspaceId: 'test-ws',
     runId: 'test-run',
     conversationId: 'test-conv',
-    permissions: PERM,
     strictApprovals: false,
     signal: new AbortController().signal,
     emit: () => {}

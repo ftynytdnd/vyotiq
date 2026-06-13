@@ -1,11 +1,11 @@
 /**
  * Internal tool interface. Each tool exports a `Tool` object that the
  * registry pulls in. Tools never see plaintext API keys, only the workspace
- * sandbox + a permissions object.
+ * workspace sandbox.
  */
 
 import type { ToolName, ToolResult } from '@shared/types/tool.js';
-import type { ChatPermissions, TimelineEvent } from '@shared/types/chat.js';
+import type { TimelineEvent } from '@shared/types/chat.js';
 
 /** Per-call execution context handed to every tool. */
 export interface ToolContext {
@@ -21,8 +21,6 @@ export interface ToolContext {
   runId: string;
   /** Conversation id that owns the run. Used by the pending-change registry. */
   conversationId: string;
-  /** Permissions for this run (reserved — no approval gating). */
-  permissions: ChatPermissions;
   /** Abort signal for the entire run — tools should respect this. */
   signal: AbortSignal;
   /** Emit a `TimelineEvent` for the renderer. Used by checkpoint integration. */

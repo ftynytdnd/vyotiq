@@ -6,19 +6,15 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ChatPermissions } from '@shared/types/chat';
 
 import { searchTool } from '@main/tools/search.tool';
 
-const PERM_PROMPT: ChatPermissions = { allowAuto: false };
-
-function makeCtx(workspacePath: string, perms: ChatPermissions) {
+function makeCtx(workspacePath: string) {
   return {
     workspacePath,
     workspaceId: 'test-ws',
     runId: 'test-run',
     conversationId: 'test-conv',
-    permissions: perms,
     strictApprovals: false,
     signal: new AbortController().signal,
     emit: () => {}
@@ -29,7 +25,7 @@ describe('search tool — mode guards', () => {
   it('rejects web mode', async () => {
     const result = await searchTool.run(
       { mode: 'web', query: 'hello' },
-      makeCtx('/tmp/ws', PERM_PROMPT)
+      makeCtx('/tmp/ws')
     );
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/invalid mode/);
@@ -61,7 +57,7 @@ describe('search tool — local mode', () => {
   it('returns matches across files', async () => {
     const result = await searchTool.run(
       { mode: 'local', query: 'hello' },
-      makeCtx(workspace, PERM_PROMPT)
+      makeCtx(workspace)
     );
     expect(result.ok).toBe(true);
     expect(result.data?.tool).toBe('search');
@@ -73,7 +69,7 @@ describe('search tool — local mode', () => {
   it('rejects a path that escapes the workspace', async () => {
     const result = await searchTool.run(
       { mode: 'local', query: 'hello', path: '../../etc' },
-      makeCtx(workspace, PERM_PROMPT)
+      makeCtx(workspace)
     );
     expect(result.ok).toBe(false);
     expect(result.output).toMatch(/Sandbox error/);
@@ -82,7 +78,7 @@ describe('search tool — local mode', () => {
   it('returns ok=false with empty query', async () => {
     const result = await searchTool.run(
       { mode: 'local', query: '' },
-      makeCtx(workspace, PERM_PROMPT)
+      makeCtx(workspace)
     );
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/missing query/);
@@ -91,7 +87,7 @@ describe('search tool — local mode', () => {
   it('honors signal.aborted and surfaces an aborted result', async () => {
     const ctrl = new AbortController();
     ctrl.abort();
-    const ctx = makeCtx(workspace, PERM_PROMPT);
+    const ctx = makeCtx(workspace);
     const result = await searchTool.run(
       { mode: 'local', query: 'hello' },
       { ...ctx, signal: ctrl.signal }

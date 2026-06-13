@@ -16,6 +16,7 @@ import {
 import {
   listWorkspaceNotes,
   readWorkspaceNote,
+  appendWorkspaceNote,
   workspaceNotePath,
   writeWorkspaceNote
 } from '../memory/workspaceNotes.js';
@@ -28,8 +29,9 @@ import {
   touchGlobalMemoryLastReference,
   touchMemoryLastReference
 } from '../memory/lastReferenced.js';
-import { scheduleWorkspaceVectorIndex } from '../memory/vector/indexScheduler.js';
-import { getActiveWorkspace } from '../workspace/workspaceState.js';
+import { scheduleWorkspaceVectorIndex, forceReindexWorkspace } from '../memory/vector/indexScheduler.js';
+import { pushVectorReindexProgress } from '../settings/vectorReindexOnSettings.js';
+import { getActiveWorkspace, requireWorkspaceById } from '../workspace/workspaceState.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 // Audit fix 2026-06-P2-1 — shape gates so `memory:write` can't be
 // fed a non-string `content` (would corrupt the persisted markdown)
@@ -170,9 +172,23 @@ export function registerMemoryIpc(): void {
       }
       const isAppend = mode === 'append' || (mode === undefined && key === 'append');
       if (scope === 'workspace' && isAppend) {
-        throw new Error(
-          'memory:write append mode is not supported for workspace notes — use set (overwrite) instead.'
-        );
+        const note = await appendWorkspaceNote(key, content);
+        const ws = await getActiveWorkspace();
+        if (ws) scheduleWorkspaceVectorIndex(ws.path);
+        let entry: MemoryEntry = {
+          scope,
+          key: note.key,
+          content: note.content,
+          updatedAt: note.updatedAt
+        };
+        const wsId = await activeWorkspaceId();
+        if (wsId && conversationId) {
+          const ref = await touchMemoryLastReference(wsId, note.key, conversationId);
+          entry = withLastReference(entry, ref);
+        } else if (wsId) {
+          entry = withLastReference(entry, await getMemoryLastReference(wsId, note.key));
+        }
+        return entry;
       }
       if (scope === 'global') {
         if (isAppend) {
@@ -244,6 +260,48 @@ export function registerMemoryIpc(): void {
         throw new Error(`Memory file not found on disk: ${file}`);
       }
       shell.showItemInFolder(file);
+    }
+  );
+
+  wrapIpcHandler(
+    IPC.MEMORY_REINDEX,
+    async (
+      _event,
+      input?: { workspaceId?: string }
+    ): Promise<{ ok: true; workspacePath: string }> => {
+      if (input !== undefined) {
+        assertObject('memory:reindex', 'input', input);
+        if (input.workspaceId !== undefined) {
+          assertString('memory:reindex', 'input.workspaceId', input.workspaceId);
+        }
+      }
+      let workspacePath: string;
+      let workspaceLabel: string | undefined;
+      if (input?.workspaceId) {
+        workspacePath = await requireWorkspaceById(input.workspaceId);
+        workspaceLabel = input.workspaceId;
+      } else {
+        const ws = await getActiveWorkspace();
+        if (!ws) throw new Error('No active workspace — cannot re-index vector memory.');
+        workspacePath = ws.path;
+        workspaceLabel = ws.label ?? ws.path;
+      }
+      pushVectorReindexProgress({ phase: 'start', total: 1 });
+      pushVectorReindexProgress({
+        phase: 'workspace',
+        workspaceLabel,
+        index: 1,
+        total: 1
+      });
+      try {
+        await forceReindexWorkspace(workspacePath);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        pushVectorReindexProgress({ phase: 'error', workspaceLabel, message });
+        throw err;
+      }
+      pushVectorReindexProgress({ phase: 'done', total: 1 });
+      return { ok: true, workspacePath };
     }
   );
 }

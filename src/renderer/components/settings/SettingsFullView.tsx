@@ -11,6 +11,9 @@ import { ShortcutsPanel } from '../shortcuts/ShortcutsPanel.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { useAppViewStore, type SettingsSectionId } from '../../store/useAppViewStore.js';
 import { LoadingHint } from '../ui/LoadingHint.js';
+import { Notice } from '../ui/Notice.js';
+import { Button } from '../ui/Button.js';
+import { RegionErrorBoundary } from '../RegionErrorBoundary.js';
 import { LeftSubnav, type LeftSubnavItem } from '../ui/LeftSubnav.js';
 import { ShellStack } from '../ui/ShellSection.js';
 import {
@@ -60,6 +63,8 @@ interface SettingsFullViewProps {
 export function SettingsFullView({ initialSection = 'models-api' }: SettingsFullViewProps) {
   const [section, setSection] = useState<SettingsSectionId>(initialSection);
   const loading = useSettingsStore((s) => s.loading);
+  const loadError = useSettingsStore((s) => s.loadError);
+  const refreshSettings = useSettingsStore((s) => s.refresh);
   const persistSection = useAppViewStore((s) => s.setSettingsSection);
   const aboutOpen = useAppViewStore((s) => s.aboutOpen);
   const openAbout = useAppViewStore((s) => s.openAbout);
@@ -134,20 +139,34 @@ export function SettingsFullView({ initialSection = 'models-api' }: SettingsFull
           aria-labelledby={`settings-tab-${panelId}`}
           className="vx-settings-inpane-content scrollbar-stealth min-h-0 min-w-0 flex-1 overflow-y-auto py-3 pb-3"
         >
-          {aboutOpen ? (
-            <ShellStack>
-              <AboutPanel />
-            </ShellStack>
-          ) : (
-            <ShellStack>
-              {section === 'models-api' && <ProvidersPanel />}
-              {section === 'usage' && <UsagePanel />}
-              {section === 'agent-behavior' && <AgentBehaviorPanel />}
-              {section === 'workspace-data' && <WorkspaceDataPanel />}
-              {section === 'appearance' && <AppearancePanel />}
-              {section === 'shortcuts' && <ShortcutsPanel />}
-            </ShellStack>
-          )}
+          <RegionErrorBoundary label="Settings">
+            {loadError ? (
+              <Notice
+                tone="danger"
+                title="Failed to load settings."
+                actions={
+                  <Button variant="secondary" onClick={() => void refreshSettings()}>
+                    Retry
+                  </Button>
+                }
+              >
+                <span className="break-words">{loadError}</span>
+              </Notice>
+            ) : aboutOpen ? (
+              <ShellStack>
+                <AboutPanel />
+              </ShellStack>
+            ) : (
+              <ShellStack>
+                {section === 'models-api' && <ProvidersPanel />}
+                {section === 'usage' && <UsagePanel />}
+                {section === 'agent-behavior' && <AgentBehaviorPanel />}
+                {section === 'workspace-data' && <WorkspaceDataPanel />}
+                {section === 'appearance' && <AppearancePanel />}
+                {section === 'shortcuts' && <ShortcutsPanel />}
+              </ShellStack>
+            )}
+          </RegionErrorBoundary>
         </div>
       </div>
     </div>

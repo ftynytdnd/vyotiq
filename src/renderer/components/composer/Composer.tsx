@@ -21,10 +21,7 @@ import {
 } from './mention/mentionDocument.js';
 import { appComposerShellClassName } from '../ui/SurfaceShell.js';
 import { useChatStore } from '../../store/useChatStore.js';
-import {
-  useSettingsStore,
-  selectEffectivePermissions
-} from '../../store/useSettingsStore.js';
+import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { cn } from '../../lib/cn.js';
 import { useToastStore } from '../../store/useToastStore.js';
@@ -127,7 +124,6 @@ export function Composer({
     onAttachmentsChange: persistAttachmentDraft
   });
   const settings = useSettingsStore((s) => s.settings);
-  const permissions = selectEffectivePermissions(activeWorkspaceIdForAttach, settings);
 
   const history = useComposerHistory(events);
 
@@ -260,13 +256,13 @@ export function Composer({
       setDraft(conversationId, '');
       setAttachmentDraft(conversationId, []);
     }
-    const sendOpts: Parameters<typeof send>[3] = {};
+    const sendOpts: Parameters<typeof send>[2] = {};
     if (toSendMeta.length > 0) {
       sendOpts.attachmentMeta = toSendMeta;
       if (promptEventId) sendOpts.promptEventId = promptEventId;
     }
     if (mentions.length > 0) sendOpts.mentions = mentions;
-    await send(trimmed || 'See attached files.', model, permissions, sendOpts);
+    await send(trimmed || 'See attached files.', model, sendOpts);
   };
 
   const onTextChange = (next: string) => {

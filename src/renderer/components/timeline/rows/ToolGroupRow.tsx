@@ -185,7 +185,7 @@ export const ToolGroupRow = memo(function ToolGroupRow({ rowKey, toolName, items
 
       {showScrub && (
         <div
-          className="vx-tool-scrub-preview pointer-events-none absolute left-0 right-0 top-full z-20 mt-0.5 max-h-28 overflow-hidden rounded-inner border border-border-subtle/40 bg-surface-elevated/95 px-2 py-1 shadow-md"
+          className="vx-tool-scrub-preview pointer-events-none absolute left-0 right-0 top-full z-20 mt-0.5 max-h-28 overflow-hidden rounded-inner border border-border-subtle/40 bg-surface-sidebar/95 px-2 py-1 shadow-md"
           aria-hidden
         >
           <CodeBlock body={scrubPreview} tone="muted" maxHeight={104} />

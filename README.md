@@ -32,7 +32,7 @@ Vyotiq is an orchestrator first, not a full IDE — but selective surfaces suppo
 ## Tech stack
 
 - **Electron** (frameless, custom title bar, `contextBridge`, sandboxed renderer)
-- **React 19** + **TypeScript 6** + **Vite 7** (via `electron-vite 5`)
+- **React 19** + **TypeScript 6** + **Vite 8** (via `electron-vite 6`)
 - **Tailwind CSS v4** (CSS-first via `@theme`)
 - **Zustand** (modular store slices)
 - **lucide-react** (icons)
@@ -91,11 +91,14 @@ src/
 │   │   └── policy/                AGENT_TOOLS allowlist
 │   ├── providers/                 Raw HTTP chat client + /v1/models discovery
 │   ├── memory/                    Global meta-rules + vector index + hybrid retrieval
+│   ├── checkpoints/               Pending edit blobs + accept/reject/rewind
 │   ├── conversations/             Persistent JSONL transcript store + index
 │   ├── settings/                  Shared settings blob (single writer)
 │   ├── secrets/                   safeStorage wrapper
 │   ├── logging/                   Centralized leveled + rotating-file logger
 │   ├── ipc/                       Typed IPC handlers (one per concern)
+│   ├── lsp/                       Optional stdio LSP bridge for the editor
+│   ├── terminal/                  Shared PTY (node-pty) for user + agent bash
 │   ├── updater/                   electron-updater (packaged builds)
 │   ├── window/                    Frameless window factory
 │   └── preload/                   contextBridge → window.vyotiq

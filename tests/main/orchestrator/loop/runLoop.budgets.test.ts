@@ -65,7 +65,6 @@ const baseInput = {
   runId: 'run-budget',
   prompt: 'hi',
   selection: { providerId: 'p', modelId: 'm' },
-  permissions: { allowAuto: false }
 } as const;
 
 const okTurn = (totalTokens: number) => ({
@@ -92,7 +91,6 @@ describe('runOrchestratorLoop — run budgets', () => {
       emit: (e) => events.push(e),
       initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
       initialQuery: 'hi',
-      permissions: baseInput.permissions,
       strictApprovals: false,
       agentBehaviorSettings: resolveAgentBehaviorSettings({
         agentBehavior: { runTokenBudget: { enabled: true, maxTotalTokens: 50_000 } }
@@ -123,7 +121,6 @@ describe('runOrchestratorLoop — run budgets', () => {
       emit: (e) => events.push(e),
       initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
       initialQuery: 'hi',
-      permissions: baseInput.permissions,
       strictApprovals: false,
       agentBehaviorSettings: resolveAgentBehaviorSettings({
         agentBehavior: { runTokenBudget: { enabled: true, maxTotalTokens: 50_000 } }
@@ -147,7 +144,6 @@ describe('runOrchestratorLoop — run budgets', () => {
       emit: (e) => events.push(e),
       initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
       initialQuery: 'hi',
-      permissions: baseInput.permissions,
       strictApprovals: false,
       // Anchor the run start far in the past so the very first iteration
       // is already past the 1-minute budget ceiling.

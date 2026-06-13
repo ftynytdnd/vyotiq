@@ -1,9 +1,7 @@
 import { create } from 'zustand';
 import type { AppSettings } from '@shared/types/ipc.js';
 import type { ModelSelection } from '@shared/types/provider.js';
-import type { ChatPermissions } from '@shared/types/chat.js';
-import type { TurnUsageStatsDelta } from '@shared/types/usageStats.js';
-import { DEFAULT_PERMISSIONS } from '@shared/constants.js';
+import type { TurnUsageStatsDelta, WorkspaceSpendEntry } from '@shared/types/usageStats.js';
 import { vyotiq } from '../lib/ipc.js';
 import { logger } from '../lib/logger.js';
 
@@ -12,12 +10,12 @@ const log = logger.child('settings-store');
 interface SettingsStore {
   settings: AppSettings;
   loading: boolean;
+  /** Non-null when the last `refresh()` IPC call failed. */
+  loadError: string | null;
   /** True after the first `refresh()` attempt completes (success or failure). */
   initialLoadDone: boolean;
   refresh: () => Promise<void>;
   setDefaultModel: (sel: ModelSelection) => Promise<void>;
-  /** Persist global permission overrides (no settings UI yet; tests + future editor). */
-  setPermissions: (patch: Partial<ChatPermissions>) => Promise<void>;
   /**
    * Persist the per-workspace last-active conversation map. Called by
    * `useConversationsStore` after every `select` / `bindActive` /
@@ -51,18 +49,6 @@ interface SettingsStore {
   purgeWorkspaceFromUi: (workspaceId: string) => Promise<void>;
 }
 
-/**
- * Resolve effective permissions for a run. Post-approval-removal this is
- * always `DEFAULT_PERMISSIONS` merged with optional global overrides.
- */
-export function selectEffectivePermissions(
-  _workspaceId: string | null,
-  settings: AppSettings
-): ChatPermissions {
-  const global = settings.permissions ?? {};
-  return { ...DEFAULT_PERMISSIONS, ...global };
-}
-
 /** Gate UI hydration until disk settings have been read at least once. */
 export function selectSettingsReady(state: Pick<SettingsStore, 'loading' | 'initialLoadDone'>): boolean {
   return state.initialLoadDone && !state.loading;
@@ -77,10 +63,13 @@ export function selectSettingsReady(state: Pick<SettingsStore, 'loading' | 'init
 export const EMPTY_FAVORITE_MODELS: readonly string[] = Object.freeze([]);
 export const EMPTY_LAST_MODEL_BY_WORKSPACE: Readonly<Record<string, ModelSelection>> =
   Object.freeze({});
+export const EMPTY_WORKSPACE_SPEND_USD: Readonly<Record<string, WorkspaceSpendEntry>> =
+  Object.freeze({});
 
 export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
-  settings: { permissions: DEFAULT_PERMISSIONS },
+  settings: {},
   loading: false,
+  loadError: null,
   initialLoadDone: false,
 
   refresh: async () => {
@@ -88,11 +77,9 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     try {
       const settings = await vyotiq.settings.get();
       setState({
-        settings: {
-          ...settings,
-          permissions: { ...DEFAULT_PERMISSIONS, ...(settings.permissions ?? {}) }
-        },
+        settings,
         loading: false,
+        loadError: null,
         initialLoadDone: true
       });
     } catch (err) {
@@ -101,23 +88,17 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
       // malformed settings.json, encrypted-store unlock failure). All
       // other stores in this folder try/catch their `refresh`; align.
       // Settings are optional — the pre-existing defaults in
-      // `settings` state (DEFAULT_PERMISSIONS) remain usable so the UI
-      // renders normally; the next successful `refresh` (e.g. user hits
-      // Settings again) repopulates.
+      // `settings` state remain usable so the UI renders normally;
+      // the next successful `refresh` (e.g. user hits Settings again)
+      // repopulates.
+      const message = err instanceof Error ? err.message : String(err);
       log.error('settings.get failed; keeping defaults', { err });
-      setState({ loading: false, initialLoadDone: true });
+      setState({ loading: false, loadError: message, initialLoadDone: true });
     }
   },
 
   setDefaultModel: async (sel) => {
     const updated = await vyotiq.settings.set({ defaultModel: sel });
-    setState({ settings: { ...getState().settings, ...updated } });
-  },
-
-  setPermissions: async (patch) => {
-    const current = getState().settings.permissions ?? DEFAULT_PERMISSIONS;
-    const merged = { ...current, ...patch };
-    const updated = await vyotiq.settings.set({ permissions: merged });
     setState({ settings: { ...getState().settings, ...updated } });
   },
 

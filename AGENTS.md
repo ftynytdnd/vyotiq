@@ -1,6 +1,6 @@
 ## Learned User Preferences
 
-- Never assume, guess, or speculate — verify, confirm, and validate with codebase evidence, logs, screenshots, or terminal output before reporting or fixing issues.
+- Never assume, guess, or speculate — verify, confirm, and validate with codebase evidence, logs, screenshots, root  or terminal output before reporting or fixing issues.
 - When implementing attached plans: do not edit the plan file; use existing todos (do not recreate); mark items in progress; finish all todos before stopping.
 - Before large features or refactors: analyze the full codebase and ask brief, concise clarifying questions first.
 - Preserve existing Shell Mono styling, layout, and UX patterns when fixing bugs or adding features — do not redesign unrelated surfaces.
@@ -16,7 +16,7 @@
 ## Learned Workspace Facts
 
 - Vyotiq is the product; Agent V is a single solo agent with direct tool access — no sub-agent or delegation architecture.
-- Stack: Electron (main/renderer IPC), React, TypeScript, Vite (electron-vite), Zustand; Tailwind CSS v4 CSS-first tokens in `src/renderer/index.css` (`@theme`, no `tailwind.config.js`).
+- Stack: Electron (main/renderer IPC), React, TypeScript, Vite 8 (electron-vite 6), Zustand; Tailwind CSS v4 CSS-first tokens in `src/renderer/index.css` (`@theme`, no `tailwind.config.js`).
 - Shell Mono design system: stealth-dark oklch palette, Geist Sans/Mono, chromeless timeline (no chat bubbles), frameless three-column shell.
 - Agent behavior is governed by natural-language harness markdown in `src/main/harness/` — not hardcoded orchestration scripts.
 - AI providers use raw HTTP only (no vendor SDKs); models are discovered via `GET /v1/models` on each provider base URL.
@@ -31,3 +31,13 @@
 - Timeline edit diffs: per-file change cards (`FileChangeCard` + `SnippetDiffBody`) with syntax-highlighted snippets; unified `DiffViewer` remains for review line-pick only.
 - Timeline hidden tools: `finish` and `ask_user` settle in the event log but do not render activity-lane rows — `finish` summary via `assistant-text`; `ask_user` uses dedicated `ask-user-prompt` rows only (`isTimelineHiddenTool` in `timelineHiddenTools.ts`). Submitted answers appear as a compact user bubble (`formatAskUserReplyBubble`); full Q&A with option ids stays in the tool result for the agent.
 - Prompt/context caching: cache-layered topology in `buildContextLayers.ts` (static system → `<static_examples>` few-shot → workspace → history → `<runtime_context>` → turn); few-shot from `03-static-examples.md` via `buildStaticFewShotXml()`; provider hints in `src/main/providers/cacheHints/` (Anthropic explicit breakpoints on system/few-shot/workspace/tools + automatic rolling, OpenAI `prompt_cache_key` + tiered cache-read pricing in `cachePricingDefaults.ts`, Gemini hoists system+few-shot+workspace to `systemInstruction`); metrics in `TokenUsage.cachedPromptTokens` / `cacheCreationTokens` / `uncachedPromptTokens` (DeepSeek); Settings → Agent behavior → Prompt caching (`settings.ui.promptCaching`) + composer status strip; audit in `docs/prompt-caching-audit.md`; env overrides `VYOTIQ_CACHE_DIAGNOSTICS`, `VYOTIQ_GEMINI_EXPLICIT_CACHE`.
+- Vector re-index: manual re-index in Settings → Agent behavior → Vector memory; changing embedder/Ollama model settings triggers `reindexAllWorkspacesIfVectorMemoryChanged` (`src/main/settings/vectorReindexOnSettings.ts`).
+- Editor LSP: optional stdio language-server bridge for the in-app CodeMirror editor only (diagnostics, hover, completion, F2 rename, Shift+F12 find references, Mod+. code actions, F12 / Alt+click go-to-definition) — Settings → Agent behavior → Editor LSP; not wired into agent `search`/`read` tools.
+- Secondary zone: editor and terminal use overlay `FloatingPanel` only — RightDock removed; closing the terminal panel detaches the renderer (`terminal:detach` no-op) while the PTY stays alive for agent `bash` reuse.
+- Custom keybindings: `settings.ui.keybindings` overrides defaults; Settings → Shortcuts panel + `useGlobalShortcuts` / `useDockShortcuts` / timeline find respect resolved combos.
+- Scheduled runs: Settings → Agent behavior → Scheduled runs — local interval agent prompts while Vyotiq is open; skips dispatch when the target conversation already has an active run (`src/main/scheduler/`).
+- Memory workspace append: `memory:write` with `mode: 'append'` appends workspace notes; Settings → Memory exposes append UI for global meta-rules and workspace notes.
+- Edit encoding: `read`/`edit`/editor preserve UTF-8/16/32 BOM and EOL via `src/main/text/decodeDiskText.ts`.
+- Tool re-run removed entirely (no IPC, timeline UI, or shared helpers).
+- Provider account poll registry: `useProviderAccountPollSource` uses mount-only layout effect + deduped snapshot sync (error-boundary safe).
+- Tool permissions removed: legacy `permissionsByWorkspace` approval gates purged from settings on read/write; agent tools run immediately subject to `sandbox.ts` checks only.

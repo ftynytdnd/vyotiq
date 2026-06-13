@@ -35,4 +35,9 @@ describe('normalizeSettingsPatch', () => {
     const patch = normalizeSettingsPatch({ ui: { dockWidth: 200, theme: 'dark' } });
     expect(patch.ui).toEqual({ dockWidth: 220, theme: 'dark' });
   });
+
+  it('strips removed right-dock fields before IPC validation', () => {
+    const patch = normalizeSettingsPatch({ ui: { rightDockWidth: 200, secondaryZoneMode: 'docked' } });
+    expect(patch.ui).toEqual({});
+  });
 });

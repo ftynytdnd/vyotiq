@@ -1,25 +1,105 @@
 /**
- * Per-workspace LSP session manager.
+ * Per-workspace LSP session manager — relay mode for @codemirror/lsp-client.
  */
 
-import { LspSession, type LspDiagnostic } from './lspSession.js';
+import { pathToFileURL } from 'node:url';
+import { BrowserWindow } from 'electron';
+import { IPC } from '@shared/constants.js';
+import { languageIdForPath } from '@shared/text/languageFromPath.js';
+import { LspSession, type LspDiagnostic, type LspCompletionItem } from './lspSession.js';
+import { LspRelaySession, type LspRelayStatus } from './lspRelaySession.js';
+import { mergeLspConfig, readWorkspaceLspOverride } from './lspWorkspaceConfig.js';
 import { requireWorkspaceById } from '../workspace/workspaceState.js';
 import { getSettings } from '../settings/settingsStore.js';
-import { languageIdForPath } from '@shared/text/languageFromPath.js';
 
-const sessions = new Map<string, LspSession>();
+const legacySessions = new Map<string, LspSession>();
+const relaySessions = new Map<string, LspRelaySession>();
+const relayUnsubs = new Map<string, () => void>();
 const pendingDiagListeners = new Map<string, Set<(path: string, diags: LspDiagnostic[]) => void>>();
 
-async function ensureSession(workspaceId: string): Promise<LspSession | null> {
-  const settings = await getSettings();
-  const lsp = settings.ui?.editorLsp;
-  if (!lsp?.enabled || !lsp.command?.trim()) return null;
+export interface LspConnectResult {
+  ok: boolean;
+  rootUri: string;
+  status: LspRelayStatus;
+  configSource: 'global' | 'workspace' | 'disabled';
+  reason?: string;
+}
 
-  let session = sessions.get(workspaceId);
+async function resolveLspConfig(workspaceId: string) {
+  const settings = await getSettings();
+  const workspacePath = await requireWorkspaceById(workspaceId);
+  const override = await readWorkspaceLspOverride(workspacePath);
+  const merged = mergeLspConfig(settings.ui?.editorLsp, override);
+  return { workspacePath, merged };
+}
+
+function pushRelayMessage(workspaceId: string, message: string): void {
+  const payload = { workspaceId, message };
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send(IPC.LSP_MESSAGE, payload);
+  }
+}
+
+export async function lspConnect(workspaceId: string): Promise<LspConnectResult> {
+  const { workspacePath, merged } = await resolveLspConfig(workspaceId);
+  const rootUri = pathToFileURL(workspacePath).href;
+
+  if (!merged.enabled || !merged.command) {
+    return {
+      ok: false,
+      rootUri,
+      status: { connected: false, pid: null, lastError: 'LSP disabled or command not set' },
+      configSource: merged.source,
+      reason: 'LSP disabled or command not set'
+    };
+  }
+
+  let relay = relaySessions.get(workspaceId);
+  if (!relay) {
+    relay = new LspRelaySession(merged.command, merged.args, workspacePath);
+    relaySessions.set(workspaceId, relay);
+    const unsub = relay.onMessage((message) => pushRelayMessage(workspaceId, message));
+    relayUnsubs.set(workspaceId, unsub);
+    await relay.start();
+  }
+
+  return {
+    ok: true,
+    rootUri,
+    status: relay.getStatus(),
+    configSource: merged.source
+  };
+}
+
+export function lspSendMessage(workspaceId: string, message: string): void {
+  const relay = relaySessions.get(workspaceId);
+  relay?.send(message);
+}
+
+export async function lspGetStatus(workspaceId: string): Promise<LspConnectResult> {
+  const { workspacePath, merged } = await resolveLspConfig(workspaceId);
+  const rootUri = pathToFileURL(workspacePath).href;
+  const relay = relaySessions.get(workspaceId);
+  return {
+    ok: relay != null && relay.getStatus().connected,
+    rootUri,
+    status: relay?.getStatus() ?? {
+      connected: false,
+      pid: null,
+      lastError: merged.enabled ? null : 'LSP disabled'
+    },
+    configSource: merged.source
+  };
+}
+
+async function ensureLegacySession(workspaceId: string): Promise<LspSession | null> {
+  const { merged, workspacePath } = await resolveLspConfig(workspaceId);
+  if (!merged.enabled || !merged.command) return null;
+
+  let session = legacySessions.get(workspaceId);
   if (session) return session;
 
-  const workspacePath = await requireWorkspaceById(workspaceId);
-  session = new LspSession(lsp.command.trim(), Array.isArray(lsp.args) ? lsp.args : ['--stdio']);
+  session = new LspSession(merged.command, merged.args);
   const listeners = pendingDiagListeners.get(workspaceId);
   if (listeners) {
     for (const listener of listeners) {
@@ -27,7 +107,7 @@ async function ensureSession(workspaceId: string): Promise<LspSession | null> {
     }
   }
   await session.start(workspacePath);
-  sessions.set(workspaceId, session);
+  legacySessions.set(workspaceId, session);
   return session;
 }
 
@@ -36,7 +116,7 @@ export async function lspOpenDocument(
   relPath: string,
   text: string
 ): Promise<void> {
-  const session = await ensureSession(workspaceId);
+  const session = await ensureLegacySession(workspaceId);
   if (!session) return;
   await session.openDocument(relPath, languageIdForPath(relPath), text);
 }
@@ -46,13 +126,13 @@ export async function lspChangeDocument(
   relPath: string,
   text: string
 ): Promise<void> {
-  const session = await ensureSession(workspaceId);
+  const session = legacySessions.get(workspaceId);
   if (!session) return;
   await session.changeDocument(relPath, text);
 }
 
 export async function lspCloseDocument(workspaceId: string, relPath: string): Promise<void> {
-  const session = sessions.get(workspaceId);
+  const session = legacySessions.get(workspaceId);
   if (!session) return;
   await session.closeDocument(relPath);
 }
@@ -63,9 +143,31 @@ export async function lspDefinition(
   line: number,
   character: number
 ) {
-  const session = sessions.get(workspaceId);
+  const session = legacySessions.get(workspaceId);
   if (!session) return null;
   return session.definition(relPath, line, character);
+}
+
+export async function lspHover(
+  workspaceId: string,
+  relPath: string,
+  line: number,
+  character: number
+): Promise<string | null> {
+  const session = legacySessions.get(workspaceId);
+  if (!session) return null;
+  return session.hover(relPath, line, character);
+}
+
+export async function lspCompletion(
+  workspaceId: string,
+  relPath: string,
+  line: number,
+  character: number
+): Promise<LspCompletionItem[]> {
+  const session = legacySessions.get(workspaceId);
+  if (!session) return [];
+  return session.completion(relPath, line, character);
 }
 
 export function subscribeLspDiagnostics(
@@ -78,7 +180,7 @@ export function subscribeLspDiagnostics(
     pendingDiagListeners.set(workspaceId, set);
   }
   set.add(listener);
-  const session = sessions.get(workspaceId);
+  const session = legacySessions.get(workspaceId);
   if (session) {
     const unsub = session.onDiagnostics(listener);
     return () => {
@@ -92,9 +194,17 @@ export function subscribeLspDiagnostics(
 }
 
 export async function disposeLspSession(workspaceId: string): Promise<void> {
-  const session = sessions.get(workspaceId);
-  if (!session) return;
-  await session.stop();
-  sessions.delete(workspaceId);
+  const legacy = legacySessions.get(workspaceId);
+  if (legacy) {
+    await legacy.stop();
+    legacySessions.delete(workspaceId);
+  }
+  const relay = relaySessions.get(workspaceId);
+  if (relay) {
+    relayUnsubs.get(workspaceId)?.();
+    relayUnsubs.delete(workspaceId);
+    await relay.stop();
+    relaySessions.delete(workspaceId);
+  }
   pendingDiagListeners.delete(workspaceId);
 }

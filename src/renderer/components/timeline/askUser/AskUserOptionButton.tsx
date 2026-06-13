@@ -38,7 +38,7 @@ export function AskUserOptionButton({
         'mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center border font-mono text-[10px]',
         allowMultiple ? 'rounded-sm' : 'rounded-full',
         selected
-          ? 'border-accent bg-accent text-accent-foreground'
+          ? 'border-accent bg-accent text-text-primary'
           : 'border-border-subtle text-transparent'
       )}
       aria-hidden

@@ -10,13 +10,13 @@ import type {
   EditorWriteInput,
   EditorWriteReply
 } from '@shared/types/editor.js';
-import { atomicWriteString } from '../checkpoints/atomicWrite.js';
 import { scheduleWorkspaceVectorIndex } from '../memory/vector/indexScheduler.js';
 import { realpathInsideWorkspace } from '../tools/sandbox.js';
 import {
   requireWorkspace,
   requireWorkspaceById
 } from '../workspace/workspaceState.js';
+import { decodeDiskTextBuffer, encodeDiskTextBody, probeBinaryText } from '../text/decodeDiskText.js';
 import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 import {
@@ -55,7 +55,12 @@ export function registerEditorIpc(): void {
     const truncated = st.size > READ_MAX_BYTES;
     const buf = await fs.readFile(abs);
     const slice = truncated ? buf.subarray(0, READ_MAX_BYTES) : buf;
-    const content = slice.toString('utf8');
+    const binary = probeBinaryText(slice);
+    if (!binary.ok) {
+      throw new Error(`Refusing to open binary file: ${input.path} (${binary.detail})`);
+    }
+    const decoded = decodeDiskTextBuffer(slice);
+    const content = decoded.body;
 
     return {
       content,
@@ -88,7 +93,25 @@ export function registerEditorIpc(): void {
       }
     }
 
-    await atomicWriteString(abs, input.content);
+    let diskMeta;
+    try {
+      const existing = await fs.readFile(abs);
+      const binary = probeBinaryText(existing);
+      if (!binary.ok) {
+        throw new Error(`Refusing to write binary file: ${input.path}`);
+      }
+      diskMeta = decodeDiskTextBuffer(existing);
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException | null)?.code;
+      if (code === 'ENOENT') {
+        diskMeta = decodeDiskTextBuffer(Buffer.from(input.content, 'utf8'));
+      } else {
+        throw err;
+      }
+    }
+
+    const out = encodeDiskTextBody(input.content, diskMeta);
+    await fs.writeFile(abs, out);
     const st = await fs.stat(abs);
     scheduleWorkspaceVectorIndex(ws);
     log.debug('editor write', { path: input.path, bytes: Buffer.byteLength(input.content, 'utf8') });

@@ -101,7 +101,7 @@ function buildRuntimeLimitsBlock(): string {
       `IMPLICIT_FINISH_MIN_SENTENCE_CHARS=${IMPLICIT_FINISH_MIN_SENTENCE_CHARS}`,
       'RUN_TOKEN_BUDGET=optional (Settings → Agent behavior → Run limits)',
       'RUN_WALL_CLOCK_BUDGET=optional (Settings → Agent behavior → Run limits)',
-      'CONTEXT_COMPACTION=optional (Settings → Agent behavior → Run limits)'
+      'CONTEXT_COMPACTION=optional (Settings → Agent behavior → Context management)'
     ].join('\n')
   );
 }

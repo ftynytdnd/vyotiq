@@ -1,12 +1,11 @@
 /**
- * Tools IPC. Small renderer helpers (open file in OS, tool rerun).
+ * Tools IPC. Small renderer helpers (open file in OS).
  */
 
 import { shell } from 'electron';
 import { IPC } from '@shared/constants.js';
 import { clipRunSummaryPromptPreview } from '@shared/report/deliverables.js';
-import type { GenerateRunSummaryInput, ToolRerunInput } from '@shared/types/ipc.js';
-import { executeToolRerun } from './toolRerun.js';
+import type { GenerateRunSummaryInput } from '@shared/types/ipc.js';
 import { generateRunSummaryReport } from '../tools/runSummaryReport.js';
 import { realpathInsideWorkspace } from '../tools/sandbox.js';
 import {
@@ -24,23 +23,6 @@ import {
 const log = logger.child('ipc/tools');
 
 const MAX_RELATIVE_PATH_BYTES = 4096;
-/** Cap serialized tool args on rerun IPC (renderer-supplied JSON). */
-const MAX_TOOL_RERUN_ARGS_BYTES = 256 * 1024;
-
-function assertJsonObjectMaxBytes(
-  channel: string,
-  field: string,
-  value: Record<string, unknown>,
-  maxBytes: number
-): void {
-  const bytes = Buffer.byteLength(JSON.stringify(value), 'utf8');
-  if (bytes > maxBytes) {
-    throw new Error(
-      `${channel}: ${field} exceeds the ${maxBytes.toLocaleString()}-byte cap ` +
-      `(received ${bytes.toLocaleString()} bytes)`
-    );
-  }
-}
 
 export function registerToolsIpc(): void {
   // `workspaceId` is optional; when supplied, the path is resolved
@@ -78,15 +60,6 @@ export function registerToolsIpc(): void {
       log.warn('shell.openPath failed', { path: abs, message: result });
       throw new Error(result);
     }
-  });
-
-  wrapIpcHandler(IPC.TOOLS_RERUN, async (_event, input: ToolRerunInput) => {
-    assertObject('tools:rerun', 'input', input);
-    assertString('tools:rerun', 'conversationId', input.conversationId);
-    assertString('tools:rerun', 'toolName', input.toolName);
-    assertObject('tools:rerun', 'args', input.args);
-    assertJsonObjectMaxBytes('tools:rerun', 'args', input.args, MAX_TOOL_RERUN_ARGS_BYTES);
-    return executeToolRerun(input);
   });
 
   wrapIpcHandler(

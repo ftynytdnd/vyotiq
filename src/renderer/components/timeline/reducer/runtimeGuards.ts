@@ -126,6 +126,8 @@ export function isTimelineEvent(value: unknown): value is TimelineEvent {
       // `completionTokens` carries the running total; the reducer
       // replaces `inFlight.completionTokens` with this number.
       return hasNumberField(o, 'completionTokens');
+    case 'attachment-pre-read':
+      return hasNonEmptyStringField(o, 'path');
     default:
       // Unknown kind — the reducer's `never`-branch will route it to
       // the no-op default. Don't reject so future event kinds added
