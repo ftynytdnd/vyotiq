@@ -1,115 +1,234 @@
 /**
- * Per-layer context breakdown popover for the composer meter.
+ * Dense per-layer context breakdown panel (popover content).
  */
 
-import { memo, useRef, useState } from 'react';
-import type { ContextUsageBreakdown, ContextUsageSummary } from '@shared/context/contextLevel.js';
-import { sumContextBreakdown } from '@shared/context/contextLevel.js';
+import { memo, useId, type RefObject } from 'react';
+import type { ContextUsageSummary } from '@shared/context/contextLevel.js';
 import { cn } from '../../lib/cn.js';
-import { formatTokenCountWithUnit } from '../../lib/formatTokens.js';
+import { formatTokenCount } from '../../lib/formatTokens.js';
 import { Popover } from '../ui/Popover.js';
-
-const LAYER_ROWS: ReadonlyArray<{
-  key: keyof ContextUsageBreakdown;
-  label: string;
-  hint: string;
-}> = [
-  { key: 'system', label: 'System prompt', hint: 'Harness + agent meta-rules' },
-  { key: 'fewShot', label: 'Few-shot examples', hint: 'Static instruction examples' },
-  { key: 'workspace', label: 'Workspace', hint: 'Project listing + workspace envelope' },
-  { key: 'history', label: 'History', hint: 'Prior turns, tool calls, and results' },
-  { key: 'runtime', label: 'Runtime', hint: 'Host env, session, run state, memory' },
-  { key: 'turn', label: 'Turn', hint: 'Current user message + attachments' },
-  { key: 'tools', label: 'Tools', hint: 'Tool schema catalogue on the wire' }
-];
+import {
+  activeBreakdownLayers,
+  CONTEXT_BREAKDOWN_LAYERS,
+  emptyBreakdownLabels,
+  layerCompositionShare,
+  layerWindowShare
+} from './contextBreakdownLayers.js';
+import { contextPercent, levelClasses, levelLabel } from './contextMeterLevel.js';
 
 interface ContextBreakdownPopoverProps {
+  id: string;
+  open: boolean;
+  onClose: () => void;
+  triggerRef: RefObject<HTMLElement | null>;
   usage: ContextUsageSummary;
+  evaluating: boolean;
+  onCompact: () => void;
+  onReset: () => void;
+  controlsEnabled: boolean;
+  hasConversation: boolean;
 }
 
-function layerPercent(tokens: number, total: number): number {
-  if (total <= 0) return 0;
-  return Math.round((tokens / total) * 100);
+function StackedBar({
+  breakdown,
+  usedTokens
+}: {
+  breakdown: NonNullable<ContextUsageSummary['breakdown']>;
+  usedTokens: number;
+}) {
+  const segments = CONTEXT_BREAKDOWN_LAYERS.map(({ key }) => ({
+    key,
+    share: layerCompositionShare(breakdown[key], usedTokens)
+  })).filter((s) => s.share > 0);
+
+  if (segments.length === 0) return null;
+
+  return (
+    <div className="vx-context-breakdown__stack" role="img" aria-label="Context usage by layer">
+      {segments.map(({ key, share }) => (
+        <span
+          key={key}
+          className={cn('vx-context-breakdown__stack-seg', `vx-context-breakdown__stack-seg--${key}`)}
+          style={{ width: `${share}%` }}
+        />
+      ))}
+    </div>
+  );
 }
 
 export const ContextBreakdownPopover = memo(function ContextBreakdownPopover({
-  usage
+  id,
+  open,
+  onClose,
+  triggerRef,
+  usage,
+  evaluating,
+  onCompact,
+  onReset,
+  controlsEnabled,
+  hasConversation
 }: ContextBreakdownPopoverProps) {
-  const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
   const breakdown = usage.breakdown;
-  const breakdownTotal = breakdown ? sumContextBreakdown(breakdown) : usage.usedTokens;
+  const usedTokens = usage.usedTokens > 0 ? usage.usedTokens : 0;
+  const effectiveWindow = usage.effectiveWindow;
+  const showModelWindow =
+    usage.advertisedWindow > 0 && usage.advertisedWindow !== effectiveWindow;
+  const percent = contextPercent(usage);
+  const tierLabel = levelLabel(usage.level);
+  const tierClass = levelClasses(usage.level).text;
+  const activeLayers = breakdown ? activeBreakdownLayers(breakdown) : [];
+  const emptyLabels = breakdown ? emptyBreakdownLabels(breakdown) : [];
 
   return (
-    <>
-      <button
-        ref={triggerRef}
-        type="button"
-        className="vx-context-meter__action text-text-faint transition-colors hover:text-text-secondary"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        aria-label="Show context window breakdown"
-        title="Show what is using the context window"
+    <Popover
+      open={open}
+      onClose={onClose}
+      triggerRef={triggerRef}
+      preferSide="top"
+      align="end"
+      collisionPadding={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      fitMaxWidth={288}
+      className="vx-context-breakdown-popover"
+    >
+      <div
+        id={id}
+        role="dialog"
+        aria-labelledby={titleId}
+        className="vx-context-breakdown-popover__inner"
       >
-        Breakdown
-      </button>
-      <Popover
-        open={open}
-        onClose={() => setOpen(false)}
-        triggerRef={triggerRef}
-        preferSide="top"
-        align="end"
-        collisionPadding={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        className="vx-context-breakdown-popover overflow-hidden rounded-md border border-border-subtle bg-surface-raised shadow-lg"
-      >
-        <div className="vx-context-breakdown-popover__header border-b border-border-subtle px-3 py-2">
-          <div className="font-mono text-meta text-text-secondary">Context breakdown</div>
-          <div className="mt-0.5 font-mono text-caption text-text-faint tabular-nums">
-            {formatTokenCountWithUnit(usage.usedTokens)}
-            <span className="mx-1" aria-hidden>
+        <div className="vx-context-breakdown-popover__head">
+          <span id={titleId} className="vx-context-breakdown-popover__title">
+            Context
+            {tierLabel ? (
+              <span className={cn('vx-context-breakdown-popover__tier', tierClass)}>
+                {tierLabel}
+              </span>
+            ) : null}
+          </span>
+          <span
+            className="vx-context-breakdown-popover__summary tabular-nums"
+            title={
+              showModelWindow
+                ? `Usable window ${formatTokenCount(effectiveWindow)} (model advertises ${formatTokenCount(usage.advertisedWindow)})`
+                : undefined
+            }
+          >
+            {formatTokenCount(usage.usedTokens)}
+            <span className="text-text-faint" aria-hidden>
               /
             </span>
-            {formatTokenCountWithUnit(usage.effectiveWindow)} usable
-            {!usage.exact ? ' (approx.)' : ''}
-          </div>
+            {formatTokenCount(effectiveWindow)}
+            <span className="text-text-faint" aria-hidden>
+              {' '}
+              ·{' '}
+            </span>
+            {percent}%
+            {showModelWindow ? (
+              <>
+                <span className="text-text-faint" aria-hidden>
+                  {' '}
+                  ·{' '}
+                </span>
+                <span className="vx-context-breakdown-popover__model-window">
+                  {formatTokenCount(usage.advertisedWindow)} model
+                </span>
+              </>
+            ) : null}
+            {!usage.exact ? (
+              <span className="text-text-faint" title="Heuristic estimate">
+                {' '}
+                ~
+              </span>
+            ) : null}
+          </span>
         </div>
-        <ul className="vx-context-breakdown-popover__list max-h-72 overflow-y-auto px-2 py-2">
-          {breakdown ? (
-            LAYER_ROWS.map(({ key, label, hint }) => {
-              const tokens = breakdown[key];
-              const pct = layerPercent(tokens, breakdownTotal);
+
+        {breakdown && usedTokens > 0 ? (
+          <StackedBar breakdown={breakdown} usedTokens={usedTokens} />
+        ) : null}
+
+        <ul
+          className="vx-context-breakdown-popover__rows"
+          aria-busy={evaluating}
+          aria-label="Context usage by layer, percent of usable window"
+        >
+          {evaluating && !breakdown ? (
+            <li className="vx-context-breakdown-popover__empty">Measuring…</li>
+          ) : breakdown && activeLayers.length > 0 ? (
+            activeLayers.map(({ key, label, title, tokens }) => {
+              const composition = layerCompositionShare(tokens, usedTokens);
+              const windowPct = layerWindowShare(tokens, effectiveWindow);
+              const rowTitle =
+                usedTokens > 0
+                  ? `${title} — ${windowPct}% of usable window`
+                  : title;
               return (
                 <li
                   key={key}
-                  className="vx-context-breakdown-popover__row grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 rounded px-1 py-1.5"
+                  className="vx-context-breakdown-popover__row"
+                  title={rowTitle}
                 >
-                  <div className="min-w-0">
-                    <div className="font-mono text-meta text-text-secondary">{label}</div>
-                    <div className="truncate font-mono text-caption text-text-faint">{hint}</div>
-                  </div>
-                  <div className="text-right font-mono text-meta tabular-nums text-text-secondary">
-                    {formatTokenCountWithUnit(tokens)}
-                    <span className="ml-1 text-text-faint">{pct}%</span>
-                  </div>
-                  <div className="col-span-2">
-                    <div className="vx-composer-token-pill__track h-1" aria-hidden>
-                      <span
-                        className={cn('vx-composer-token-pill__bar bg-accent/70 h-full')}
-                        style={{ width: `${Math.min(100, pct)}%` }}
-                      />
-                    </div>
-                  </div>
+                  <span className="vx-context-breakdown-popover__label">{label}</span>
+                  <span className="vx-context-breakdown-popover__bar" aria-hidden>
+                    <span
+                      className={cn(
+                        'vx-context-breakdown-popover__bar-fill',
+                        `vx-context-breakdown-popover__bar-fill--${key}`
+                      )}
+                      style={{ width: `${Math.max(composition, 4)}%` }}
+                    />
+                  </span>
+                  <span className="vx-context-breakdown-popover__tokens tabular-nums">
+                    {formatTokenCount(tokens)}
+                  </span>
+                  <span className="vx-context-breakdown-popover__pct tabular-nums">
+                    {windowPct}%
+                  </span>
                 </li>
               );
             })
+          ) : breakdown ? (
+            <li className="vx-context-breakdown-popover__empty">No measured usage yet.</li>
           ) : (
-            <li className="px-1 py-2 font-mono text-caption text-text-faint">
-              Layer breakdown unavailable — waiting for evaluation.
-            </li>
+            <li className="vx-context-breakdown-popover__empty">Measuring…</li>
           )}
         </ul>
-      </Popover>
-    </>
+
+        {emptyLabels.length > 0 ? (
+          <p className="vx-context-breakdown-popover__omitted">
+            {emptyLabels.join(', ')} empty
+          </p>
+        ) : null}
+
+        <div className="vx-context-breakdown-popover__foot">
+          {hasConversation ? (
+            <>
+              <button
+                type="button"
+                className="vx-context-breakdown-popover__action"
+                disabled={!controlsEnabled}
+                onClick={onCompact}
+              >
+                Compact
+              </button>
+              <span className="text-text-faint" aria-hidden>
+                ·
+              </span>
+              <button
+                type="button"
+                className="vx-context-breakdown-popover__action"
+                disabled={!controlsEnabled}
+                onClick={onReset}
+              >
+                Reset
+              </button>
+            </>
+          ) : (
+            <span className="vx-context-breakdown-popover__hint">Start a chat to manage context</span>
+          )}
+        </div>
+      </div>
+    </Popover>
   );
 });

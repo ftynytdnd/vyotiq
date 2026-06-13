@@ -614,6 +614,22 @@ export async function setLastModel(
   scheduleIndexFlush();
 }
 
+/** Persist a provider-billed ÷ estimate calibration ratio for a model selection. */
+export async function setContextCalibrationOnMeta(
+  id: string,
+  selectionKey: string,
+  ratio: number
+): Promise<void> {
+  await loadIndex();
+  const meta = findMeta(id);
+  if (!meta) return;
+  if (!meta.contextCalibrationByModel) {
+    meta.contextCalibrationByModel = {};
+  }
+  meta.contextCalibrationByModel[selectionKey] = ratio;
+  scheduleIndexFlush();
+}
+
 /**
  * Awaits any in-flight append chain for the given conversation id. Exported
  * so call sites that MUST observe a durable transcript before doing

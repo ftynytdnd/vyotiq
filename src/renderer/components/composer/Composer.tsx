@@ -393,7 +393,8 @@ export function Composer({
             />
           </div>
           <div className="vx-composer-token-slot">
-            <ContextWindowMeter
+            <div className="vx-composer-token-cluster">
+              <ContextWindowMeter
               model={model}
               conversationId={conversationId}
               workspaceId={activeWorkspaceIdForAttach}
@@ -407,6 +408,7 @@ export function Composer({
               orchestrator={orchestratorUsage}
               draftEstimate={draftTokenEstimate}
             />
+            </div>
           </div>
           <SendButton {...sendButtonProps} className="vx-composer-send-slot" />
         </div>

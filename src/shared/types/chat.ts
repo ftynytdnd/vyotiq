@@ -344,6 +344,14 @@ export type TimelineEvent =
     level: 'ok' | 'warn' | 'trigger' | 'critical';
     /** True when `usedTokens` came from an exact tokenizer / provider count. */
     exact: boolean;
+    /** Model the usage was computed for (live runs only). */
+    providerId?: string;
+    modelId?: string;
+    /**
+     * Calibration ratio applied to the estimate (provider billed ÷ raw heuristic).
+     * Omitted when 1 / unknown.
+     */
+    calibrationRatio?: number;
     /**
      * Per-layer token breakdown for the composer meter. Mirrors the cache-layered
      * prompt topology (system, few-shot, workspace, history, runtime, turn, tools).
@@ -711,6 +719,11 @@ export interface ConversationMeta {
    * full transcript slice.
    */
   peakPromptTokens?: number;
+  /**
+   * Provider-billed ÷ local-estimate calibration per model selection.
+   * Key: `${providerId}\0${modelId}` — see `calibrationSelectionKey`.
+   */
+  contextCalibrationByModel?: Record<string, number>;
   /**
    * Id of the workspace this conversation belongs to. Optional on the
    * wire for backward compatibility with pre-multi-workspace

@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyContextLevel,
   computeEffectiveWindow,
+  reconcileContextBreakdown,
+  scaleContextBreakdown,
+  sumContextBreakdown,
   summarizeContextUsage
 } from '@shared/context/contextLevel';
 
@@ -79,5 +82,35 @@ describe('contextLevel', () => {
     });
     expect(s.effectiveWindow).toBe(0);
     expect(s.level).toBe('ok');
+  });
+
+  it('scaleContextBreakdown reconciles layer sum to the target total', () => {
+    const base = {
+      system: 333,
+      fewShot: 333,
+      workspace: 334,
+      history: 0,
+      runtime: 0,
+      turn: 0,
+      tools: 0
+    };
+    const scaled = scaleContextBreakdown(base, 1000, 333);
+    expect(sumContextBreakdown(scaled)).toBe(333);
+  });
+
+  it('reconcileContextBreakdown absorbs rounding drift into the largest layer', () => {
+    const drifted = {
+      system: 10,
+      fewShot: 5,
+      workspace: 0,
+      history: 100,
+      runtime: 0,
+      turn: 0,
+      tools: 2
+    };
+    expect(sumContextBreakdown(drifted)).toBe(117);
+    const fixed = reconcileContextBreakdown(drifted, 120);
+    expect(sumContextBreakdown(fixed)).toBe(120);
+    expect(fixed.history).toBe(103);
   });
 });

@@ -125,7 +125,7 @@ export function scaleContextBreakdown(
 ): ContextUsageBreakdown {
   if (baseTotal <= 0 || targetTotal <= 0) return breakdown;
   const f = targetTotal / baseTotal;
-  return {
+  const scaled: ContextUsageBreakdown = {
     system: Math.round(breakdown.system * f),
     fewShot: Math.round(breakdown.fewShot * f),
     workspace: Math.round(breakdown.workspace * f),
@@ -133,6 +133,44 @@ export function scaleContextBreakdown(
     runtime: Math.round(breakdown.runtime * f),
     turn: Math.round(breakdown.turn * f),
     tools: Math.round(breakdown.tools * f)
+  };
+  return reconcileContextBreakdown(scaled, targetTotal);
+}
+
+const BREAKDOWN_KEYS: (keyof ContextUsageBreakdown)[] = [
+  'system',
+  'fewShot',
+  'workspace',
+  'history',
+  'runtime',
+  'turn',
+  'tools'
+];
+
+/**
+ * Fix per-layer rounding drift so `sumContextBreakdown` equals `targetTotal`.
+ * Adjusts the largest non-zero layer (or `system` when all are zero).
+ */
+export function reconcileContextBreakdown(
+  breakdown: ContextUsageBreakdown,
+  targetTotal: number
+): ContextUsageBreakdown {
+  const sum = sumContextBreakdown(breakdown);
+  const delta = targetTotal - sum;
+  if (delta === 0) return breakdown;
+
+  let absorbKey: keyof ContextUsageBreakdown = 'system';
+  let absorbVal = breakdown.system;
+  for (const key of BREAKDOWN_KEYS) {
+    if (breakdown[key] > absorbVal) {
+      absorbVal = breakdown[key];
+      absorbKey = key;
+    }
+  }
+
+  return {
+    ...breakdown,
+    [absorbKey]: Math.max(0, breakdown[absorbKey] + delta)
   };
 }
 

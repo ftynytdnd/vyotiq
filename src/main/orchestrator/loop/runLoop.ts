@@ -113,6 +113,10 @@ import {
   reduceContextIfNeeded
 } from '../context/contextCompaction.js';
 import { estimatePromptTokensSync } from '../context/contextBudget.js';
+import {
+  clampCalibrationRatio,
+  rememberContextCalibration
+} from '../context/contextCalibration.js';
 import { toolSchemasFor } from '../../tools/registry.js';
 import { maybeInterceptHostReportGate } from './hostReportGate.js';
 import {
@@ -442,6 +446,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               advertisedWindow: usage.advertisedWindow,
               level: usage.level,
               exact: usage.exact,
+              providerId: opts.input.selection.providerId,
+              modelId: opts.input.selection.modelId,
+              ...(calibrationRatio !== undefined ? { calibrationRatio } : {}),
               ...(usage.breakdown ? { breakdown: usage.breakdown } : {})
             });
           }
@@ -719,7 +726,20 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           rawEstimateThisTurn > 0
         ) {
           const ratio = turn.usage.promptTokens / rawEstimateThisTurn;
-          calibrationRatio = Math.min(2, Math.max(0.5, ratio));
+          calibrationRatio = clampCalibrationRatio(ratio);
+          if (opts.input.conversationId) {
+            void rememberContextCalibration(
+              opts.input.conversationId,
+              opts.input.selection.providerId,
+              opts.input.selection.modelId,
+              calibrationRatio
+            ).catch((err) => {
+              log.debug('failed to persist context calibration', {
+                conversationId: opts.input.conversationId,
+                err: err instanceof Error ? err.message : String(err)
+              });
+            });
+          }
         }
 
         if (turn.usage) {

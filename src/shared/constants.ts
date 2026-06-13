@@ -66,6 +66,9 @@ export const CONTEXT_DEFAULT_KEEP_LAST_TOOL_RESULTS = 3;
 export const CONTEXT_DEFAULT_MIN_SAVINGS_TOKENS = 2_000;
 /** Cooldown between automatic reduction passes for one run (anti-thrash). */
 export const CONTEXT_DEFAULT_COOLDOWN_MS = 15_000;
+/** Clamp band for provider-vs-estimate calibration (real ÷ heuristic). */
+export const CONTEXT_CALIBRATION_MIN = 0.5;
+export const CONTEXT_CALIBRATION_MAX = 2;
 /** Subfolder under WORKSPACE_DOTDIR for reversible pre-summary transcripts. */
 export const CONTEXT_SUMMARY_SUBDIR = 'context-summaries';
 

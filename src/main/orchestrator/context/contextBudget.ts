@@ -22,7 +22,11 @@ import {
   type ContextUsageBreakdown,
   type ContextUsageSummary
 } from '@shared/context/contextLevel.js';
-import { COMPACT_DEFAULT_CONTEXT_WINDOW } from '@shared/constants.js';
+import {
+  COMPACT_DEFAULT_CONTEXT_WINDOW,
+  CONTEXT_CALIBRATION_MAX,
+  CONTEXT_CALIBRATION_MIN
+} from '@shared/constants.js';
 import { findProviderModel } from '@shared/providers/modelId.js';
 import type { ProviderWithKey } from '@shared/types/provider.js';
 import {
@@ -95,12 +99,9 @@ export interface EvaluateContextBudgetInput {
 }
 
 /** Clamp the calibration ratio to a sane band so one anomalous turn can't skew the meter. */
-const CALIBRATION_MIN = 0.5;
-const CALIBRATION_MAX = 2;
-
-function normalizeCalibration(ratio: number | undefined): number {
+export function normalizeCalibration(ratio: number | undefined): number {
   if (typeof ratio !== 'number' || !Number.isFinite(ratio) || ratio <= 0) return 1;
-  return Math.min(CALIBRATION_MAX, Math.max(CALIBRATION_MIN, ratio));
+  return Math.min(CONTEXT_CALIBRATION_MAX, Math.max(CONTEXT_CALIBRATION_MIN, ratio));
 }
 
 /**

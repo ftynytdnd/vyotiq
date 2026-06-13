@@ -1,20 +1,25 @@
 /**
- * Always-visible context-window meter for the composer. Shows how full the
- * prompt is relative to the model's *effective* window, color-coded at the
- * warn / trigger thresholds, with manual "Compact now" / "Reset context"
- * controls. Matches the Shell Mono composer chrome (mono meta, tabular nums,
- * the existing `vx-composer-token-pill__track/__bar` meter CSS).
+ * Compact context-window meter for the composer. Opens a dense layer
+ * breakdown popover; Compact / Reset live in the popover footer.
  */
 
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback, useId, useRef, useState } from 'react';
 import type { ModelSelection } from '@shared/types/provider.js';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
+import type { ContextUsageSummary } from '@shared/context/contextLevel.js';
 import { cn } from '../../lib/cn.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { formatTokenCountWithUnit } from '../../lib/formatTokens.js';
 import { useContextWindowUsage } from './useContextWindowUsage.js';
 import { ContextBreakdownPopover } from './ContextBreakdownPopover.js';
+import { CONTEXT_BREAKDOWN_LAYERS } from './contextBreakdownLayers.js';
+import {
+  contextPercent,
+  isContextReducing,
+  levelClasses,
+  levelLabel
+} from './contextMeterLevel.js';
 
 interface ContextWindowMeterProps {
   model: ModelSelection | null;
@@ -22,51 +27,37 @@ interface ContextWindowMeterProps {
   workspaceId: string | null;
   draftPrompt: string;
   attachmentDraft: PromptAttachmentMeta[];
-  /** Disable manual controls while a run is active. */
   disabled?: boolean;
   isRunActive: boolean;
 }
 
-type ContextMeterLevel = 'ok' | 'warn' | 'trigger' | 'critical';
-
-function levelClasses(level: ContextMeterLevel): {
-  text: string;
-  bar: string;
-} {
-  switch (level) {
-    case 'critical':
-      return { text: 'text-danger', bar: 'bg-danger' };
-    case 'trigger':
-      return { text: 'text-warning', bar: 'bg-warning' };
-    case 'warn':
-      return { text: 'text-warning', bar: 'bg-warning' };
-    case 'ok':
-      return { text: 'text-text-faint', bar: 'bg-accent' };
-    default: {
-      const _exhaustive: never = level;
-      void _exhaustive;
-      return { text: 'text-text-faint', bar: 'bg-accent' };
+function breakdownTitle(
+  usage: ContextUsageSummary,
+  percent: number,
+  tierLabel: string | null
+): string {
+  const modelNote =
+    usage.advertisedWindow > 0 && usage.advertisedWindow !== usage.effectiveWindow
+      ? ` (model advertises ${formatTokenCountWithUnit(usage.advertisedWindow)})`
+      : '';
+  const lines = [
+    `Context: ${formatTokenCountWithUnit(usage.usedTokens)} of ${formatTokenCountWithUnit(usage.effectiveWindow)} usable${modelNote}`,
+    `${percent}%${tierLabel ? ` (${tierLabel})` : ''}${usage.exact ? '' : ' — approximate'}`
+  ];
+  if (usage.breakdown) {
+    lines.push('');
+    for (const { key, label } of CONTEXT_BREAKDOWN_LAYERS) {
+      const n = usage.breakdown[key];
+      if (n > 0) {
+        const layerPct =
+          usage.effectiveWindow > 0
+            ? Math.round((n / usage.effectiveWindow) * 100)
+            : 0;
+        lines.push(`${label}: ${formatTokenCountWithUnit(n)} (${layerPct}% of window)`);
+      }
     }
   }
-}
-
-/** Short tier word shown next to the % once usage leaves the safe zone. */
-function levelLabel(level: ContextMeterLevel): string | null {
-  switch (level) {
-    case 'critical':
-      return 'critical';
-    case 'trigger':
-      return 'reducing';
-    case 'warn':
-      return 'filling';
-    case 'ok':
-      return null;
-    default: {
-      const _exhaustive: never = level;
-      void _exhaustive;
-      return null;
-    }
-  }
+  return lines.join('\n');
 }
 
 export const ContextWindowMeter = memo(function ContextWindowMeter({
@@ -78,7 +69,7 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
   disabled = false,
   isRunActive
 }: ContextWindowMeterProps) {
-  const usage = useContextWindowUsage({
+  const { usage, evaluating } = useContextWindowUsage({
     model,
     conversationId,
     workspaceId,
@@ -87,6 +78,9 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
     isRunActive
   });
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
 
   const run = useCallback(
     async (mode: 'compact' | 'reset') => {
@@ -113,6 +107,7 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
                 : 'Nothing to summarize yet.',
             reply.changed ? 'success' : 'info'
           );
+          if (reply.changed) setOpen(false);
         } else if (reply.reason === 'busy') {
           toast('Finish or stop the active run before managing context.', 'info');
         } else {
@@ -131,66 +126,49 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
 
   if (!usage || usage.effectiveWindow <= 0) return null;
 
-  const percent = Math.min(100, Math.max(0, Math.round(usage.fractionUsed * 100)));
+  const percent = contextPercent(usage);
   const { text, bar } = levelClasses(usage.level);
   const tierLabel = levelLabel(usage.level);
-  const reducing = usage.level === 'trigger' || usage.level === 'critical';
-  const title =
-    `Context: ${formatTokenCountWithUnit(usage.usedTokens)} of ` +
-    `${formatTokenCountWithUnit(usage.effectiveWindow)} usable` +
-    `${usage.exact ? '' : ' (approx.)'} — ${percent}%` +
-    `${tierLabel ? ` (${tierLabel})` : ''}`;
-
+  const reducing = isContextReducing(usage.level);
   const controlsEnabled = !disabled && !busy && Boolean(conversationId) && Boolean(model);
 
   return (
-    <span
-      className="vx-context-meter inline-flex items-center gap-1.5 font-mono text-meta tabular-nums text-text-faint"
-      title={title}
-    >
-      <span className="vx-composer-token-pill__track" aria-hidden>
-        <span
-          className={cn('vx-composer-token-pill__bar', bar, reducing && 'vx-context-meter__bar--active')}
-          style={{ width: `${percent}%` }}
-        />
-      </span>
-      <span className={cn('tabular-nums', text)}>
-        {formatTokenCountWithUnit(usage.usedTokens)}
-        <span className="text-text-faint/70" aria-hidden>
-          /
-        </span>
-        {formatTokenCountWithUnit(usage.effectiveWindow)}
-      </span>
-      <span className={cn('tabular-nums', text)}>{percent}%</span>
-      {tierLabel && (
-        <span className={cn('vx-caption', text)} aria-hidden>
-          {tierLabel}
-        </span>
-      )}
-      <ContextBreakdownPopover usage={usage} />
-      <span className="text-text-faint/70" aria-hidden>
-        ·
-      </span>
+    <>
       <button
+        ref={triggerRef}
         type="button"
-        className="vx-context-meter__action text-text-faint transition-colors hover:text-text-secondary disabled:opacity-40"
-        onClick={() => void run('compact')}
-        disabled={!controlsEnabled}
-        title="Compact now — offload older detail reversibly"
-        aria-label="Compact context now"
+        className={cn(
+          'vx-composer-token-pill vx-context-meter-pill shrink-0',
+          open && 'vx-context-meter-pill--open',
+          evaluating && 'vx-context-meter-pill--evaluating'
+        )}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-controls={panelId}
+        aria-label={`Context window ${percent}% full. Show breakdown.`}
+        title={breakdownTitle(usage, percent, tierLabel)}
       >
-        Compact
+        <span className="vx-composer-token-pill__track" aria-hidden>
+          <span
+            className={cn('vx-composer-token-pill__bar', bar, reducing && 'vx-context-meter__bar--active')}
+            style={{ width: `${percent}%` }}
+          />
+        </span>
+        <span className={cn('vx-composer-token-pill__pct tabular-nums', text)}>{percent}%</span>
       </button>
-      <button
-        type="button"
-        className="vx-context-meter__action text-text-faint transition-colors hover:text-text-secondary disabled:opacity-40"
-        onClick={() => void run('reset')}
-        disabled={!controlsEnabled}
-        title="Reset context — summarize history and continue lean"
-        aria-label="Reset context"
-      >
-        Reset
-      </button>
-    </span>
+      <ContextBreakdownPopover
+        id={panelId}
+        open={open}
+        onClose={() => setOpen(false)}
+        triggerRef={triggerRef}
+        usage={usage}
+        evaluating={evaluating}
+        controlsEnabled={controlsEnabled}
+        hasConversation={Boolean(conversationId)}
+        onCompact={() => void run('compact')}
+        onReset={() => void run('reset')}
+      />
+    </>
   );
 });

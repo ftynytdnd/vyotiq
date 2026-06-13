@@ -127,9 +127,8 @@ export interface TimelineState {
   runIdToFileEditCount: Record<string, number>;
   /**
    * Latest live context-window usage telemetry (from `context-usage` events).
-   * Drives the composer context meter while a run is active. Not persisted —
-   * between runs / on replay the meter falls back to a `token-usage`-derived
-   * estimate.
+   * Drives the composer meter while a run is active. Between runs the meter
+   * uses `context:evaluate` (with persisted per-model calibration).
    */
   latestContextUsage?: Extract<TimelineEvent, { kind: 'context-usage' }>;
 }

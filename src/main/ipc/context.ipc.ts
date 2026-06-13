@@ -47,6 +47,7 @@ import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 import { assertObject, assertString } from './validate.js';
 import { evaluateConversationContext } from '../orchestrator/context/contextEvaluate.js';
+import { loadContextCalibration } from '../orchestrator/context/contextCalibration.js';
 
 const log = logger.child('ipc/context');
 
@@ -101,6 +102,11 @@ async function runManualReduction(
   const seeded = seedCacheLayeredMessages(history, '');
 
   const settings = resolveAgentBehaviorSettings((await getSettings()).ui).contextManagement;
+  const calibrationRatio = await loadContextCalibration(
+    conversationId,
+    input.selection.providerId,
+    input.selection.modelId
+  );
   const runId = `${MANUAL_PREFIX}${randomUUID()}`;
   let changed = false;
 
@@ -131,6 +137,7 @@ async function runManualReduction(
     // few thousand prompt tokens, so omitting them would make the manual
     // budget under-count and pick a slightly-off offload target.
     tools: toolSchemasFor(AGENT_TOOLS),
+    ...(calibrationRatio !== undefined ? { calibrationRatio } : {}),
     emit
   };
 
@@ -226,6 +233,11 @@ async function evaluateContext(
 
   const settings = resolveAgentBehaviorSettings((await getSettings()).ui).contextManagement;
   try {
+    const calibrationRatio = await loadContextCalibration(
+      input.conversationId,
+      input.selection.providerId,
+      input.selection.modelId
+    );
     const usage = await evaluateConversationContext({
       ...(input.conversationId !== undefined ? { conversationId: input.conversationId } : {}),
       workspaceId: input.workspaceId,
@@ -235,7 +247,8 @@ async function evaluateContext(
       ...(input.draftPrompt !== undefined ? { draftPrompt: input.draftPrompt } : {}),
       ...(input.draftAttachmentMeta !== undefined
         ? { draftAttachmentMeta: input.draftAttachmentMeta }
-        : {})
+        : {}),
+      ...(calibrationRatio !== undefined ? { calibrationRatio } : {})
     });
     return { ok: true, usage };
   } catch (err) {
