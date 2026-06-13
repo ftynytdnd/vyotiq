@@ -114,7 +114,8 @@ const api: VyotiqApi = {
   context: {
     compactNow: (input) => ipcRenderer.invoke(IPC.CONTEXT_COMPACT_NOW, input),
     reset: (input) => ipcRenderer.invoke(IPC.CONTEXT_RESET, input),
-    readArtifact: (input) => ipcRenderer.invoke(IPC.CONTEXT_READ_ARTIFACT, input)
+    readArtifact: (input) => ipcRenderer.invoke(IPC.CONTEXT_READ_ARTIFACT, input),
+    evaluate: (input) => ipcRenderer.invoke(IPC.CONTEXT_EVALUATE, input)
   },
 
   memory: {

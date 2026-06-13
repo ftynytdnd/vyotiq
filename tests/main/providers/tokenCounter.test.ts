@@ -108,7 +108,15 @@ describe('tokenCounter.tokenizeMessages (Phase 1)', () => {
   it('returns all zeros for empty inputs', () => {
     const r = tokenizeMessages('gpt-5', []);
     expect(r.total).toBe(0);
-    expect(r.byPart).toEqual({ systemPrompt: 0, history: 0, tools: 0 });
+    expect(r.breakdown).toEqual({
+      system: 0,
+      fewShot: 0,
+      workspace: 0,
+      history: 0,
+      runtime: 0,
+      turn: 0,
+      tools: 0
+    });
     expect(r.exact).toBe(true);
   });
 
@@ -130,12 +138,17 @@ describe('tokenCounter.tokenizeMessages (Phase 1)', () => {
     ];
     const r = tokenizeMessages('gpt-5', messages, tools);
     expect(r.exact).toBe(true);
-    expect(r.byPart.systemPrompt).toBeGreaterThan(0);
-    expect(r.byPart.history).toBeGreaterThan(0);
-    expect(r.byPart.tools).toBeGreaterThan(0);
-    // Total is at least the sum of the three parts (it equals it by construction).
+    expect(r.breakdown.system).toBeGreaterThan(0);
+    expect(r.breakdown.history).toBeGreaterThan(0);
+    expect(r.breakdown.tools).toBeGreaterThan(0);
     expect(r.total).toBe(
-      r.byPart.systemPrompt + r.byPart.history + r.byPart.tools
+      r.breakdown.system +
+        r.breakdown.fewShot +
+        r.breakdown.workspace +
+        r.breakdown.history +
+        r.breakdown.runtime +
+        r.breakdown.turn +
+        r.breakdown.tools
     );
   });
 
@@ -154,8 +167,8 @@ describe('tokenCounter.tokenizeMessages (Phase 1)', () => {
       }
     ];
     const r = tokenizeMessages('gpt-5', messages);
-    expect(r.byPart.history).toBeGreaterThan(0);
-    expect(r.byPart.systemPrompt).toBe(0);
+    expect(r.breakdown.history).toBeGreaterThan(0);
+    expect(r.breakdown.system).toBe(0);
   });
 
   it('counts reasoning_content echo under history', () => {
@@ -173,7 +186,7 @@ describe('tokenCounter.tokenizeMessages (Phase 1)', () => {
     const withoutR = tokenizeMessages('claude-sonnet-4.6', withoutReasoning);
     // Reasoning echo must increase the history count; for the heuristic
     // tokenizer the delta is approximately the reasoning string size / 3.8.
-    expect(withR.byPart.history).toBeGreaterThan(withoutR.byPart.history);
+    expect(withR.breakdown.history).toBeGreaterThan(withoutR.breakdown.history);
   });
 
   it('marks exact=false when ANY part falls back to the heuristic', () => {
@@ -193,11 +206,11 @@ describe('tokenCounter.tokenizeMessages (Phase 1)', () => {
     ];
     const r = tokenizeMessages('gpt-5', messages);
     expect(r.total).toBe(0);
-    expect(r.byPart.systemPrompt).toBe(0);
-    expect(r.byPart.history).toBe(0);
+    expect(r.breakdown.system).toBe(0);
+    expect(r.breakdown.history).toBe(0);
   });
 
-  it('concatenates multiple system messages into one byPart.systemPrompt slot', () => {
+  it('concatenates multiple system messages into one breakdown.system slot', () => {
     const single: ChatMessage[] = [{ role: 'system', content: 'Part A. Part B.' }];
     const split: ChatMessage[] = [
       { role: 'system', content: 'Part A.' },
@@ -209,9 +222,9 @@ describe('tokenCounter.tokenizeMessages (Phase 1)', () => {
     // can differ by a few tokens because of per-message framing
     // overhead in encodeChat, but the split form should land within
     // 20% of the single form.
-    expect(rSingle.byPart.systemPrompt).toBeGreaterThan(0);
-    expect(rSplit.byPart.systemPrompt).toBeGreaterThan(0);
-    const diff = Math.abs(rSplit.byPart.systemPrompt - rSingle.byPart.systemPrompt);
-    expect(diff).toBeLessThanOrEqual(Math.ceil(rSingle.byPart.systemPrompt * 0.3) + 5);
+    expect(rSingle.breakdown.system).toBeGreaterThan(0);
+    expect(rSplit.breakdown.system).toBeGreaterThan(0);
+    const diff = Math.abs(rSplit.breakdown.system - rSingle.breakdown.system);
+    expect(diff).toBeLessThanOrEqual(Math.ceil(rSingle.breakdown.system * 0.3) + 5);
   });
 });

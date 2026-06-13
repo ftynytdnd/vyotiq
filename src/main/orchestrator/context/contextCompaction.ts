@@ -28,7 +28,7 @@ import { randomUUID } from 'node:crypto';
 import type { ChatMessage, TimelineEvent } from '@shared/types/chat.js';
 import type { ContextManagementSettings } from '@shared/settings/agentBehaviorSettings.js';
 import { COMPACT_MIN_TOOL_INPUT_CHARS, COMPACT_MIN_TOOL_OUTPUT_CHARS } from '@shared/constants.js';
-import type { ContextUsageSummary } from '@shared/context/contextLevel.js';
+import { scaleContextBreakdown, type ContextUsageSummary } from '@shared/context/contextLevel.js';
 import { logger } from '../../logging/logger.js';
 import {
   type TokenizableToolSchema
@@ -171,12 +171,18 @@ export async function reduceContextIfNeeded(
 
   const effectiveWindow = usage.effectiveWindow;
   if (effectiveWindow <= 0) return { messages: [...messages], usage };
-  // `triggerThreshold` gates escalation to lossy summarization; the offload
-  // loop targets it in auto mode, or roughly halves the prompt in force mode.
+  const warnThreshold = Math.floor(effectiveWindow * settings.warnFraction);
   const triggerThreshold = Math.floor(effectiveWindow * settings.triggerFraction);
+  // Reversible offload stops once `est` drops below `offloadThreshold`. When
+  // already in trigger/critical, aim for the warn band — not the trigger line —
+  // so one new tool round doesn't immediately re-trip reduction. (Stopping at
+  // the trigger line left est ~148k while trigger was 150k, which blocked
+  // summarization AND let the prompt refill on the next iteration.)
   const offloadThreshold = force
     ? Math.min(triggerThreshold, Math.floor(usage.usedTokens * 0.5))
-    : triggerThreshold;
+    : critical || usage.level === 'trigger'
+      ? warnThreshold
+      : triggerThreshold;
 
   const next = messages.map((m) => ({ ...m }));
   const historyEnd = next.length - 2;
@@ -347,7 +353,17 @@ export async function reduceContextIfNeeded(
   }
 
   // Tier C — last-resort lossy summarization of the whole history slice.
-  if (est >= triggerThreshold && summaryAllowed && opts.conversationId) {
+  // Fire when we entered hot and reversible tiers did not get us back to a safe
+  // band (warn). The old gate (`est >= triggerThreshold` after offloads) was
+  // unreachable whenever offloads worked — they stop once `est < trigger`.
+  const enteredHot =
+    force || usage.level === 'trigger' || usage.level === 'critical';
+  const shouldSummarize =
+    summaryAllowed &&
+    Boolean(opts.conversationId) &&
+    enteredHot &&
+    est >= warnThreshold;
+  if (shouldSummarize) {
     const histSlice = next.slice(CACHE_LAYER_HISTORY_START, next.length - 2);
     const summarizable = histSlice.some(
       (m) => !isContextSummaryContent(m.content)
@@ -441,11 +457,7 @@ function buildPostReductionUsage(
     exact: est.exact || ratio !== 1,
     advertisedWindow,
     settings: opts.settings,
-    byPart: {
-      systemPrompt: Math.round(est.byPart.systemPrompt * ratio),
-      history: Math.round(est.byPart.history * ratio),
-      tools: Math.round(est.byPart.tools * ratio)
-    }
+    breakdown: scaleContextBreakdown(est.breakdown, est.tokens, used)
   });
 }
 

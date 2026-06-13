@@ -72,6 +72,70 @@ export function classifyContextLevel(
   return 'ok';
 }
 
+/**
+ * Per-layer token breakdown for the cache-layered prompt topology. Matches the
+ * slots built by `buildContextLayers` / `seedCacheLayeredMessages` plus the
+ * tool-schema catalogue sent on the wire.
+ */
+export interface ContextUsageBreakdown {
+  /** Harness + meta-rules (`messages[0]` system slot). */
+  system: number;
+  /** Static few-shot examples (`messages[1]`). */
+  fewShot: number;
+  /** Workspace listing envelope (`messages[2]`). */
+  workspace: number;
+  /** Replayed transcript rows between workspace and the runtime tail. */
+  history: number;
+  /** Runtime tail — host env, session, run state, memory, pressure, goal. */
+  runtime: number;
+  /** Current turn envelope — user message, mentions, attachments. */
+  turn: number;
+  /** Serialized tool schemas attached to the request. */
+  tools: number;
+}
+
+export const EMPTY_CONTEXT_BREAKDOWN: ContextUsageBreakdown = {
+  system: 0,
+  fewShot: 0,
+  workspace: 0,
+  history: 0,
+  runtime: 0,
+  turn: 0,
+  tools: 0
+};
+
+/** Sum every layer in a breakdown (equals total prompt tokens when complete). */
+export function sumContextBreakdown(b: ContextUsageBreakdown): number {
+  return (
+    b.system +
+    b.fewShot +
+    b.workspace +
+    b.history +
+    b.runtime +
+    b.turn +
+    b.tools
+  );
+}
+
+/** Scale each breakdown layer so the sum matches `target` tokens. */
+export function scaleContextBreakdown(
+  breakdown: ContextUsageBreakdown,
+  baseTotal: number,
+  targetTotal: number
+): ContextUsageBreakdown {
+  if (baseTotal <= 0 || targetTotal <= 0) return breakdown;
+  const f = targetTotal / baseTotal;
+  return {
+    system: Math.round(breakdown.system * f),
+    fewShot: Math.round(breakdown.fewShot * f),
+    workspace: Math.round(breakdown.workspace * f),
+    history: Math.round(breakdown.history * f),
+    runtime: Math.round(breakdown.runtime * f),
+    turn: Math.round(breakdown.turn * f),
+    tools: Math.round(breakdown.tools * f)
+  };
+}
+
 export interface ContextUsageSummary {
   usedTokens: number;
   advertisedWindow: number;
@@ -82,11 +146,10 @@ export interface ContextUsageSummary {
   /** True when usedTokens came from an exact tokenizer (not the heuristic). */
   exact: boolean;
   /**
-   * Optional per-segment token breakdown (system prefix / history / tool
-   * schemas) for the composer meter tooltip. Absent on derived/at-rest paths
-   * that only know the total.
+   * Per-layer token breakdown for the composer meter. Absent only when the
+   * caller truly has no layer visibility (should be rare).
    */
-  byPart?: { systemPrompt: number; history: number; tools: number };
+  breakdown?: ContextUsageBreakdown;
 }
 
 /** Build a full usage summary from raw inputs. */
@@ -98,7 +161,7 @@ export function summarizeContextUsage(opts: {
   exact: boolean;
   /** Adaptive absolute cap on the usable window (tokens); 0/omitted disables it. */
   absoluteCeilingTokens?: number;
-  byPart?: { systemPrompt: number; history: number; tools: number };
+  breakdown?: ContextUsageBreakdown;
 }): ContextUsageSummary {
   const effectiveWindow = computeEffectiveWindow(
     opts.advertisedWindow,
@@ -117,6 +180,6 @@ export function summarizeContextUsage(opts: {
         ? classifyContextLevel(fractionUsed, opts.thresholds)
         : 'ok',
     exact: opts.exact,
-    ...(opts.byPart ? { byPart: opts.byPart } : {})
+    ...(opts.breakdown ? { breakdown: opts.breakdown } : {})
   };
 }

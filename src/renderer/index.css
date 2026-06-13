@@ -3466,6 +3466,16 @@ mark.vyotiq-timeline-find-mark-active {
   }
 }
 
+.vx-context-breakdown-popover {
+  width: min(22rem, calc(100vw - 1.5rem));
+}
+
+.vx-context-breakdown-popover__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
 .vx-composer-send-slot {
   grid-area: send;
   align-self: end;

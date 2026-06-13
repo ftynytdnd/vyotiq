@@ -75,9 +75,12 @@ export const TokenUsagePill = memo(function TokenUsagePill({
         strokeWidth={SHELL_ROW_ICON_STROKE}
         aria-hidden
       />
-      <span className="ml-1">
+      <span className="ml-1" aria-label={hasUsage ? 'Last turn prompt and completion tokens' : undefined}>
         {hasUsage ? (
           <>
+            <span className="text-text-faint" aria-hidden>
+              turn{' '}
+            </span>
             {formatTokenCount(latest.promptTokens)}
             <span className="mx-0.5 text-text-faint" aria-hidden>
               /

@@ -22,7 +22,16 @@ describe('contextLevel', () => {
     expect(computeEffectiveWindow(1_000_000, 0.9, 0)).toBe(900_000);
   });
 
-  it('summarizeContextUsage honors the absolute ceiling and byPart passthrough', () => {
+  it('summarizeContextUsage honors the absolute ceiling and breakdown passthrough', () => {
+    const breakdown = {
+      system: 500,
+      fewShot: 100,
+      workspace: 200,
+      history: 147_000,
+      runtime: 100,
+      turn: 100,
+      tools: 1_000
+    };
     const s = summarizeContextUsage({
       usedTokens: 150_000,
       advertisedWindow: 1_000_000,
@@ -30,12 +39,12 @@ describe('contextLevel', () => {
       thresholds: { warnFraction: 0.7, triggerFraction: 0.75 },
       exact: true,
       absoluteCeilingTokens: 200_000,
-      byPart: { systemPrompt: 1_000, history: 148_000, tools: 1_000 }
+      breakdown
     });
     expect(s.effectiveWindow).toBe(200_000);
     expect(s.fractionUsed).toBeCloseTo(0.75, 5);
     expect(s.level).toBe('trigger');
-    expect(s.byPart).toEqual({ systemPrompt: 1_000, history: 148_000, tools: 1_000 });
+    expect(s.breakdown).toEqual(breakdown);
   });
 
   it('classifyContextLevel honors warn / trigger / critical bands', () => {

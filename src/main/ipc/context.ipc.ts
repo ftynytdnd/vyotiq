@@ -18,6 +18,8 @@ import type { TimelineEvent } from '@shared/types/chat.js';
 import type {
   ContextArtifactReadInput,
   ContextArtifactReadReply,
+  ContextEvaluateInput,
+  ContextEvaluateReply,
   ContextManualInput,
   ContextManualReply
 } from '@shared/types/ipc.js';
@@ -44,6 +46,7 @@ import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 import { assertObject, assertString } from './validate.js';
+import { evaluateConversationContext } from '../orchestrator/context/contextEvaluate.js';
 
 const log = logger.child('ipc/context');
 
@@ -198,6 +201,55 @@ async function readContextArtifact(
   }
 }
 
+async function evaluateContext(
+  channel: string,
+  input: ContextEvaluateInput
+): Promise<ContextEvaluateReply> {
+  assertObject(channel, 'input', input);
+  assertString(channel, 'workspaceId', input.workspaceId);
+  assertObject(channel, 'selection', input.selection);
+  assertString(channel, 'selection.providerId', input.selection.providerId);
+  assertString(channel, 'selection.modelId', input.selection.modelId);
+  if (input.conversationId !== undefined) {
+    assertString(channel, 'conversationId', input.conversationId);
+  }
+
+  try {
+    await requireWorkspaceById(input.workspaceId);
+  } catch (err) {
+    return {
+      ok: false,
+      reason: 'no-workspace',
+      message: err instanceof Error ? err.message : String(err)
+    };
+  }
+
+  const settings = resolveAgentBehaviorSettings((await getSettings()).ui).contextManagement;
+  try {
+    const usage = await evaluateConversationContext({
+      ...(input.conversationId !== undefined ? { conversationId: input.conversationId } : {}),
+      workspaceId: input.workspaceId,
+      modelId: input.selection.modelId,
+      providerId: input.selection.providerId,
+      settings,
+      ...(input.draftPrompt !== undefined ? { draftPrompt: input.draftPrompt } : {}),
+      ...(input.draftAttachmentMeta !== undefined
+        ? { draftAttachmentMeta: input.draftAttachmentMeta }
+        : {})
+    });
+    return { ok: true, usage };
+  } catch (err) {
+    log.warn('context evaluate failed', {
+      err: err instanceof Error ? err.message : String(err)
+    });
+    return {
+      ok: false,
+      reason: 'failed',
+      message: err instanceof Error ? err.message : String(err)
+    };
+  }
+}
+
 export function registerContextIpc(): void {
   wrapIpcHandler(IPC.CONTEXT_COMPACT_NOW, (_e, input: ContextManualInput) =>
     runManualReduction('context:compact-now', input, 'compact')
@@ -207,5 +259,8 @@ export function registerContextIpc(): void {
   );
   wrapIpcHandler(IPC.CONTEXT_READ_ARTIFACT, (_e, input: ContextArtifactReadInput) =>
     readContextArtifact('context:read-artifact', input)
+  );
+  wrapIpcHandler(IPC.CONTEXT_EVALUATE, (_e, input: ContextEvaluateInput) =>
+    evaluateContext('context:evaluate', input)
   );
 }

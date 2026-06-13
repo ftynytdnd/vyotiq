@@ -330,6 +330,8 @@ export const IPC = {
   CONTEXT_RESET: 'context:reset',
   /** renderer → main: read the full content of an offloaded reduction artifact. */
   CONTEXT_READ_ARTIFACT: 'context:read-artifact',
+  /** renderer → main: evaluate prospective context usage + layer breakdown. */
+  CONTEXT_EVALUATE: 'context:evaluate',
 
   // Tools (mixed direction — see per-channel comments below)
   /** renderer → main: open a workspace-relative path in the OS default opener. */

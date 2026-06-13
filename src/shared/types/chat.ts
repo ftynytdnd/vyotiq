@@ -7,6 +7,7 @@ import type { ModelSelection, ThinkingEffort } from './provider.js';
 import type { CheckpointChangeKind } from './checkpoint.js';
 import type { AskUserStructuredPayload } from './askUser.js';
 import type { MentionRef } from './mention.js';
+import type { ContextUsageBreakdown } from '../context/contextLevel.js';
 
 /**
  * Internal role union for `ChatMessage`. Not exported because the only
@@ -344,11 +345,10 @@ export type TimelineEvent =
     /** True when `usedTokens` came from an exact tokenizer / provider count. */
     exact: boolean;
     /**
-     * Optional per-segment token breakdown (static prefix / history / tool
-     * schemas) surfaced in the composer meter tooltip. Absent on derived /
-     * at-rest paths that only know the total.
+     * Per-layer token breakdown for the composer meter. Mirrors the cache-layered
+     * prompt topology (system, few-shot, workspace, history, runtime, turn, tools).
      */
-    byPart?: { systemPrompt: number; history: number; tools: number };
+    breakdown?: ContextUsageBreakdown;
   }
   /**
    * Live partial-args snapshot for a streaming tool call. Emitted by

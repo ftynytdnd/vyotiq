@@ -442,7 +442,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               advertisedWindow: usage.advertisedWindow,
               level: usage.level,
               exact: usage.exact,
-              ...(usage.byPart ? { byPart: usage.byPart } : {})
+              ...(usage.breakdown ? { breakdown: usage.breakdown } : {})
             });
           }
         } catch (err) {

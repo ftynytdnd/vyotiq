@@ -34,8 +34,18 @@ import {
   encodeChat as encodeChatCl100k
 } from 'gpt-tokenizer/model/gpt-4';
 import type { ChatMessage, PromptAttachmentMeta } from '@shared/types/chat.js';
+import {
+  sumContextBreakdown,
+  type ContextUsageBreakdown
+} from '@shared/context/contextLevel.js';
 import { logger } from '../logging/logger.js';
 import { escapeXmlAttr } from '../orchestrator/envelope/index.js';
+import {
+  CACHE_LAYER_FEW_SHOT_INDEX,
+  CACHE_LAYER_HISTORY_START,
+  CACHE_LAYER_WORKSPACE_INDEX,
+  isCacheLayeredTopology
+} from '../orchestrator/context/buildContextLayers.js';
 import { realpathInsideWorkspace } from '../tools/sandbox.js';
 import { resolveAttachmentsForInline } from '../attachments/resolveAttachmentsForInline.js';
 
@@ -250,22 +260,10 @@ export interface MessagesEstimateResult {
   /** True when every part used a real BPE tokenizer (no heuristic fallback). */
   exact: boolean;
   /**
-   * Per-part breakdown. Surfaced so the composer token pill hover
-   * tooltip can render the same
-   * authoritative numbers without re-tokenizing.
-   *
-   *   - `systemPrompt`: every `role:'system'` message's content concatenated
-   *     and tokenized as a chat block.
-   *   - `history`: all non-system messages (user / assistant / tool) plus
-   *     their `tool_calls` arguments JSON and `reasoning_content` echoes.
-   *   - `tools`: the serialized tool catalogue (compact JSON, no whitespace
-   *     — closely approximates the wire form OpenAI-compat providers ship).
+   * Per-layer breakdown aligned with the cache-layered prompt topology.
+   * See `ContextUsageBreakdown` in `@shared/context/contextLevel`.
    */
-  byPart: {
-    systemPrompt: number;
-    history: number;
-    tools: number;
-  };
+  breakdown: ContextUsageBreakdown;
 }
 
 /**
@@ -295,8 +293,66 @@ export function tokenizeMessages(
   tools: ReadonlyArray<TokenizableToolSchema> = []
 ): MessagesEstimateResult {
   const enc = resolveEncoding(modelId);
+  const toolJson =
+    tools.length > 0 ? tools.map((t) => JSON.stringify(t)).join('\n') : '';
+  const toolsTokens = tokenizeText(modelId, toolJson);
+  let exact = toolsTokens.exact;
 
-  // ── Split into system vs non-system slices ──
+  if (isCacheLayeredTopology(messages)) {
+    const runtimeIdx = messages.length - 2;
+    const turnIdx = messages.length - 1;
+
+    const systemBody = stringifyMessageBody(messages[0] ?? { role: 'system', content: '' });
+    const fewShotBody =
+      typeof messages[CACHE_LAYER_FEW_SHOT_INDEX]?.content === 'string'
+        ? messages[CACHE_LAYER_FEW_SHOT_INDEX].content
+        : '';
+    const workspaceBody =
+      typeof messages[CACHE_LAYER_WORKSPACE_INDEX]?.content === 'string'
+        ? messages[CACHE_LAYER_WORKSPACE_INDEX].content
+        : '';
+    const runtimeBody = stringifyMessageBody(messages[runtimeIdx] ?? { role: 'user', content: '' });
+    const turnBody = stringifyMessageBody(messages[turnIdx] ?? { role: 'user', content: '' });
+
+    const systemTokens = countChatBlock(enc, [{ role: 'system', content: systemBody }]);
+    if (!systemTokens.exact) exact = false;
+    const fewShotTokens = countChatBlock(enc, [{ role: 'user', content: fewShotBody }]);
+    if (!fewShotTokens.exact) exact = false;
+    const workspaceTokens = countChatBlock(enc, [{ role: 'user', content: workspaceBody }]);
+    if (!workspaceTokens.exact) exact = false;
+    const runtimeTokens = countChatBlock(enc, [{ role: 'user', content: runtimeBody }]);
+    if (!runtimeTokens.exact) exact = false;
+    const turnTokens = countChatBlock(enc, [{ role: 'user', content: turnBody }]);
+    if (!turnTokens.exact) exact = false;
+
+    const historyChunks: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    for (const m of messages.slice(CACHE_LAYER_HISTORY_START, runtimeIdx)) {
+      const body = stringifyMessageBody(m);
+      if (body.length === 0) continue;
+      const collapsedRole: 'user' | 'assistant' =
+        m.role === 'assistant' ? 'assistant' : 'user';
+      historyChunks.push({ role: collapsedRole, content: body });
+    }
+    const historyTokens = countChatBlock(enc, historyChunks);
+    if (!historyTokens.exact) exact = false;
+
+    const breakdown: ContextUsageBreakdown = {
+      system: systemTokens.tokens,
+      fewShot: fewShotTokens.tokens,
+      workspace: workspaceTokens.tokens,
+      history: historyTokens.tokens,
+      runtime: runtimeTokens.tokens,
+      turn: turnTokens.tokens,
+      tools: toolsTokens.tokens
+    };
+    return {
+      total: sumContextBreakdown(breakdown),
+      exact,
+      breakdown
+    };
+  }
+
+  // Legacy / non-layered topology — fold into system + history buckets.
   const systemChunks: string[] = [];
   const historyChunks: Array<{ role: 'user' | 'assistant'; content: string }> = [];
   for (const m of messages) {
@@ -304,21 +360,12 @@ export function tokenizeMessages(
     if (m.role === 'system') {
       if (body.length > 0) systemChunks.push(body);
     } else {
-      // Collapse tool messages and assistant tool_calls into the
-      // history token bucket. Role normalized to 'user' / 'assistant'
-      // for `encodeChat` compatibility — the BPE bytes inside the body
-      // already encode tool_call / tool_result framing.
       const collapsedRole: 'user' | 'assistant' =
         m.role === 'assistant' ? 'assistant' : 'user';
       if (body.length > 0) historyChunks.push({ role: collapsedRole, content: body });
     }
   }
 
-  const toolJson =
-    tools.length > 0 ? tools.map((t) => JSON.stringify(t)).join('\n') : '';
-
-  // ── Tokenize each part ──
-  let exact = true;
   const systemTokens = countChatBlock(enc, [
     ...systemChunks.map((c) => ({ role: 'system' as const, content: c }))
   ]);
@@ -327,17 +374,19 @@ export function tokenizeMessages(
   const historyTokens = countChatBlock(enc, historyChunks);
   if (!historyTokens.exact) exact = false;
 
-  const toolsTokens = tokenizeText(modelId, toolJson);
-  if (!toolsTokens.exact) exact = false;
-
+  const breakdown: ContextUsageBreakdown = {
+    system: systemTokens.tokens,
+    fewShot: 0,
+    workspace: 0,
+    history: historyTokens.tokens,
+    runtime: 0,
+    turn: 0,
+    tools: toolsTokens.tokens
+  };
   return {
-    total: systemTokens.tokens + historyTokens.tokens + toolsTokens.tokens,
+    total: sumContextBreakdown(breakdown),
     exact,
-    byPart: {
-      systemPrompt: systemTokens.tokens,
-      history: historyTokens.tokens,
-      tools: toolsTokens.tokens
-    }
+    breakdown
   };
 }
 

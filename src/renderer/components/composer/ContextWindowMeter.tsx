@@ -8,17 +8,23 @@
 
 import { memo, useCallback, useState } from 'react';
 import type { ModelSelection } from '@shared/types/provider.js';
+import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import { cn } from '../../lib/cn.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { formatTokenCountWithUnit } from '../../lib/formatTokens.js';
 import { useContextWindowUsage } from './useContextWindowUsage.js';
+import { ContextBreakdownPopover } from './ContextBreakdownPopover.js';
 
 interface ContextWindowMeterProps {
   model: ModelSelection | null;
   conversationId: string | null;
+  workspaceId: string | null;
+  draftPrompt: string;
+  attachmentDraft: PromptAttachmentMeta[];
   /** Disable manual controls while a run is active. */
   disabled?: boolean;
+  isRunActive: boolean;
 }
 
 type ContextMeterLevel = 'ok' | 'warn' | 'trigger' | 'critical';
@@ -66,9 +72,20 @@ function levelLabel(level: ContextMeterLevel): string | null {
 export const ContextWindowMeter = memo(function ContextWindowMeter({
   model,
   conversationId,
-  disabled = false
+  workspaceId,
+  draftPrompt,
+  attachmentDraft,
+  disabled = false,
+  isRunActive
 }: ContextWindowMeterProps) {
-  const usage = useContextWindowUsage(model);
+  const usage = useContextWindowUsage({
+    model,
+    conversationId,
+    workspaceId,
+    draftPrompt,
+    attachmentDraft,
+    isRunActive
+  });
   const [busy, setBusy] = useState(false);
 
   const run = useCallback(
@@ -117,19 +134,12 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
   const percent = Math.min(100, Math.max(0, Math.round(usage.fractionUsed * 100)));
   const { text, bar } = levelClasses(usage.level);
   const tierLabel = levelLabel(usage.level);
-  // The host actively reduces in the trigger/critical zone — pulse the bar so
-  // the user can see management is in progress.
   const reducing = usage.level === 'trigger' || usage.level === 'critical';
-  const breakdown = usage.byPart
-    ? ` · prefix ${formatTokenCountWithUnit(usage.byPart.systemPrompt)}` +
-      ` · history ${formatTokenCountWithUnit(usage.byPart.history)}` +
-      ` · tools ${formatTokenCountWithUnit(usage.byPart.tools)}`
-    : '';
   const title =
     `Context: ${formatTokenCountWithUnit(usage.usedTokens)} of ` +
     `${formatTokenCountWithUnit(usage.effectiveWindow)} usable` +
     `${usage.exact ? '' : ' (approx.)'} — ${percent}%` +
-    `${tierLabel ? ` (${tierLabel})` : ''}${breakdown}`;
+    `${tierLabel ? ` (${tierLabel})` : ''}`;
 
   const controlsEnabled = !disabled && !busy && Boolean(conversationId) && Boolean(model);
 
@@ -144,12 +154,20 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
           style={{ width: `${percent}%` }}
         />
       </span>
+      <span className={cn('tabular-nums', text)}>
+        {formatTokenCountWithUnit(usage.usedTokens)}
+        <span className="text-text-faint/70" aria-hidden>
+          /
+        </span>
+        {formatTokenCountWithUnit(usage.effectiveWindow)}
+      </span>
       <span className={cn('tabular-nums', text)}>{percent}%</span>
       {tierLabel && (
         <span className={cn('vx-caption', text)} aria-hidden>
           {tierLabel}
         </span>
       )}
+      <ContextBreakdownPopover usage={usage} />
       <span className="text-text-faint/70" aria-hidden>
         ·
       </span>

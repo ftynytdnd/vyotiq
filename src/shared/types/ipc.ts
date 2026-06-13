@@ -164,6 +164,19 @@ export type ContextArtifactReadReply =
 
   | { ok: false; reason: 'unknown-conversation' | 'not-found' | 'failed'; message?: string };
 
+/** Prospective context-window evaluation for the composer meter (idle / between runs). */
+export interface ContextEvaluateInput {
+  conversationId?: string;
+  workspaceId: string;
+  selection: { providerId: string; modelId: string };
+  draftPrompt?: string;
+  draftAttachmentMeta?: PromptAttachmentMeta[];
+}
+
+export type ContextEvaluateReply =
+  | { ok: true; usage: import('../context/contextLevel.js').ContextUsageSummary }
+  | { ok: false; reason: 'no-workspace' | 'failed'; message?: string };
+
 
 
 export interface TokensEstimateInput {
@@ -1034,6 +1047,9 @@ export interface VyotiqApi {
 
     /** Read the full content of an offloaded reduction artifact. */
     readArtifact(input: ContextArtifactReadInput): Promise<ContextArtifactReadReply>;
+
+    /** Evaluate prospective prompt usage + per-layer breakdown for the composer meter. */
+    evaluate(input: ContextEvaluateInput): Promise<ContextEvaluateReply>;
 
   };
 

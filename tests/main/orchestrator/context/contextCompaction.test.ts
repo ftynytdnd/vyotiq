@@ -40,7 +40,15 @@ vi.mock('@main/providers/tokenCounter', () => ({
   tokenizeMessages: vi.fn(() => ({
     total: 200_000,
     exact: true,
-    byPart: { systemPrompt: 0, history: 200_000, tools: 0 }
+    breakdown: {
+      system: 0,
+      fewShot: 0,
+      workspace: 0,
+      history: 200_000,
+      runtime: 0,
+      turn: 0,
+      tools: 0
+    }
   }))
 }));
 
@@ -49,6 +57,21 @@ vi.mock('@main/providers/tokenCounter', () => ({
 vi.mock('@main/providers/providerStore', () => ({
   getProviderWithKey: vi.fn(async () => null)
 }));
+
+const summarizeHistoryMock = vi.fn(async () => ({
+  summary: '## Task intent\ncompacted',
+  relativePath: '.vyotiq/context-summaries/conv-sum/run-sum/s.txt',
+  originalChars: 12_000,
+  originalMessages: 8
+}));
+
+vi.mock('@main/orchestrator/context/contextSummarize', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@main/orchestrator/context/contextSummarize')>();
+  return {
+    ...actual,
+    summarizeHistory: (...args: unknown[]) => summarizeHistoryMock(...args)
+  };
+});
 
 describe('contextCompaction', () => {
   let workspacePath: string;
@@ -228,6 +251,37 @@ describe('contextCompaction', () => {
     expect(rel).toContain('context-summaries');
     const abs = path.join(workspacePath, ...rel.split('/'));
     await expect(readFile(abs, 'utf8')).resolves.toBe(transcript);
+  });
+
+  it('escalates to summarization when offloads leave usage in the warn band', async () => {
+    summarizeHistoryMock.mockClear();
+    const largeOutput = 'x'.repeat(5_000);
+    const toolRows = Array.from({ length: 8 }, (_, i) => ({
+      role: 'tool' as const,
+      tool_call_id: `tc-sum-${i}`,
+      name: 'read',
+      content: largeOutput
+    }));
+    const messages = seedCacheLayeredMessages(toolRows, '<turn/>');
+    messages[0] = { role: 'system', content: '<system_instructions>x</system_instructions>' };
+
+    const emitted: Array<{ kind: string }> = [];
+    await reduceContextIfNeeded(
+      messages,
+      {
+        conversationId: 'conv-sum',
+        runId: 'run-sum',
+        workspacePath,
+        modelId: 'gpt-4o',
+        providerId: 'openai',
+        settings: cmSettings({ enabled: true, summarizationEnabled: true }),
+        emit: (e) => emitted.push(e)
+      },
+      createContextReductionState()
+    );
+
+    expect(summarizeHistoryMock).toHaveBeenCalled();
+    expect(emitted.some((e) => e.kind === 'context-summary')).toBe(true);
   });
 
   it('cleanup + sweep reclaim summary artifacts like compaction artifacts', async () => {

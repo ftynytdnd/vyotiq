@@ -396,7 +396,11 @@ export function Composer({
             <ContextWindowMeter
               model={model}
               conversationId={conversationId}
+              workspaceId={activeWorkspaceIdForAttach}
+              draftPrompt={documentToPlainText(composerDoc)}
+              attachmentDraft={attachments}
               disabled={isProcessing || awaitingAskUser}
+              isRunActive={isProcessing}
             />
             <TokenUsagePill
               total={totalRunUsage}
