@@ -21,6 +21,9 @@ import {
 
 const XAI_MANAGEMENT_API_BASE = 'https://management-api.x.ai';
 import { safeText } from './errorBody.js';
+import { logger } from '../logging/logger.js';
+
+const log = logger.child('providers/account-fetch');
 
 /** Concurrent account fetches per provider share one in-flight promise. */
 const inFlight = new Map<string, Promise<ProviderAccountSnapshot>>();
@@ -73,6 +76,7 @@ async function fetchProviderAccountInner(
       case 'gemini':
       case 'groq':
       case 'mistral':
+      case 'nvidia':
       case 'ollama-cloud':
       case 'generic':
         return finalize(await fetchRateLimitFallback(provider, base, kind, signal));
@@ -89,6 +93,13 @@ async function fetchProviderAccountInner(
 }
 
 function finalize(snapshot: ProviderAccountSnapshot): ProviderAccountSnapshot {
+  if (snapshot.status === 'error' && snapshot.message) {
+    log.warn('provider account snapshot error', {
+      providerId: snapshot.providerId,
+      hostKind: snapshot.hostKind,
+      message: snapshot.message
+    });
+  }
   const resetAt = snapshot.limits?.resetAt;
   if (resetAt !== undefined && !snapshot.resetsAt?.length) {
     return { ...snapshot, resetsAt: [resetAt] };
@@ -649,6 +660,7 @@ async function fetchRateLimitFallback(
     groq: 'Groq Cloud',
     mistral: 'Mistral API',
     xai: 'xAI API',
+    nvidia: 'NVIDIA API',
     'ollama-cloud': 'Ollama Cloud subscription',
     generic: 'Cloud API'
   };

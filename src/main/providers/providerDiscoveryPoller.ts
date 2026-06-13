@@ -4,11 +4,18 @@
  */
 
 import { IPC, PROVIDER_ACCOUNT_POLL_ACTIVE_MS, PROVIDER_ACCOUNT_POLL_IDLE_MS } from '@shared/constants.js';
-import type { ProviderModelsUpdate } from '@shared/types/provider.js';
+import type { ProviderDiscoveryPollHint, ProviderModelsUpdate } from '@shared/types/provider.js';
+import { isLocalProvider } from '@shared/providers/isLocalProvider.js';
 import { modelsFingerprint } from '@shared/providers/modelsFingerprint.js';
 import { listProviders, getProviderWithKey } from './providerStore.js';
 import { discoverModels } from './modelDiscovery.js';
 import { hasActivePollSources } from './providerPollSources.js';
+import {
+  recordDiscoveryPollFailure,
+  recordDiscoveryPollSuccess,
+  getDiscoveryPollHint
+} from './providerDiscoveryPollStatus.js';
+import { isProviderError } from './providerError.js';
 import { logger } from '../logging/logger.js';
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 
@@ -26,6 +33,16 @@ function effectiveIntervalMs(): number {
 
 function broadcastModelsUpdate(update: ProviderModelsUpdate): void {
   safeWebContentsSend(IPC.PROVIDERS_MODELS_UPDATED, update);
+}
+
+function broadcastDiscoveryPollHint(hint: ProviderDiscoveryPollHint): void {
+  safeWebContentsSend(IPC.PROVIDERS_DISCOVERY_POLL_HINT, hint);
+}
+
+/** Clear poll-failure hint after a successful manual or background discovery. */
+export function publishDiscoveryPollCleared(providerId: string): void {
+  recordDiscoveryPollSuccess(providerId);
+  broadcastDiscoveryPollHint({ providerId });
 }
 
 function rescheduleTimer(): void {
@@ -53,11 +70,14 @@ async function pollOnce(): Promise<void> {
     const providers = await listProviders();
     for (const p of providers.filter((x) => x.enabled)) {
       const withKey = await getProviderWithKey(p.id);
-      if (!withKey?.apiKey?.trim()) continue;
+      if (!withKey) continue;
+      const canPoll = Boolean(withKey.apiKey?.trim()) || isLocalProvider(withKey);
+      if (!canPoll) continue;
       try {
         const prior = p.models ?? [];
         const priorFp = modelsFingerprint(prior);
         const models = await discoverModels(p.id, false);
+        publishDiscoveryPollCleared(p.id);
         const nextFp = modelsFingerprint(models);
         if (nextFp === priorFp) continue;
         const cachedFp = lastFingerprintByProvider.get(p.id);
@@ -71,7 +91,23 @@ async function pollOnce(): Promise<void> {
         };
         broadcastModelsUpdate(update);
       } catch (err) {
-        log.debug('discovery poll failed', { providerId: p.id, err });
+        const message = isProviderError(err)
+          ? err.friendlyMessage
+          : err instanceof Error
+            ? err.message
+            : String(err);
+        const failures = recordDiscoveryPollFailure(p.id, message);
+        if (failures >= 3) {
+          log.warn('discovery poll failed repeatedly', {
+            providerId: p.id,
+            failures,
+            err: message
+          });
+          const hint = getDiscoveryPollHint(p.id);
+          if (hint) broadcastDiscoveryPollHint({ providerId: p.id, hint });
+        } else {
+          log.debug('discovery poll failed', { providerId: p.id, failures, err: message });
+        }
       }
     }
   } finally {

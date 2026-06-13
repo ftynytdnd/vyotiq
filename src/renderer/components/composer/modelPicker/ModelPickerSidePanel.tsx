@@ -181,6 +181,7 @@ export function ModelPickerSidePanel({
       <ContextOverrideEditor
         modelId={modelId}
         discovered={model?.contextWindow}
+        discoveredEstimated={model?.contextEstimated}
         override={provider.contextOverrides?.[modelId]}
         mode="auto"
         compact

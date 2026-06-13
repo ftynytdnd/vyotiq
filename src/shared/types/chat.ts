@@ -719,6 +719,11 @@ export interface ConversationMeta {
    */
   peakPromptTokens?: number;
   /**
+   * Vyotiq-estimated cumulative API spend for this conversation (USD).
+   * Incremented once per completed turn from discovered model pricing.
+   */
+  estimatedSpendUsd?: number;
+  /**
    * Provider-billed ÷ local-estimate calibration per model selection.
    * Key: `${providerId}\0${modelId}` — see `calibrationSelectionKey`.
    */

@@ -18,6 +18,8 @@ import { defaultMaxConcurrentStreamsForDialect } from '@shared/providers/provide
 import { DEFAULT_ANTHROPIC_BETAS, normalizeModelThinkingMap } from '@shared/providers/thinkingEffort.js';
 import { readEncryptedJson, writeEncryptedJson } from '../secrets/safeStore.js';
 import { evictProviderCaches } from './evictProviderCaches.js';
+import { clearDiscoveryPollStatus } from './providerDiscoveryPollStatus.js';
+import { evictDiscoverInFlight } from './discoverInFlight.js';
 
 interface PersistedProvider extends ProviderConfig {
   apiKey: string;
@@ -180,7 +182,7 @@ export async function updateProvider(
     openaiTransport?: ProviderConfig['openaiTransport'];
     billingApiKey?: string | null;
   }
-): Promise<ProviderConfig> {
+): Promise<{ provider: ProviderConfig; urlOrDialectChanged: boolean }> {
   const list = await load();
   const idx = list.findIndex((p) => p.id === id);
   if (idx === -1) throw new Error(`Provider not found: ${id}`);
@@ -191,18 +193,22 @@ export async function updateProvider(
   // post-patch dialect so the strip rule matches what the chat client
   // will actually append next.
   const nextDialect: ProviderDialect = patch.dialect ?? current.dialect ?? 'openai';
+  const nextBaseUrl = patch.baseUrl
+    ? normalizeBaseUrlShared(patch.baseUrl, nextDialect)
+    : current.baseUrl;
+  const urlOrDialectChanged =
+    nextBaseUrl !== current.baseUrl ||
+    nextDialect !== (current.dialect ?? 'openai');
   const next: PersistedProvider = {
     ...current,
     name: patch.name?.trim() || current.name,
-    baseUrl: patch.baseUrl
-      ? normalizeBaseUrlShared(patch.baseUrl, nextDialect)
-      : current.baseUrl,
+    baseUrl: nextBaseUrl,
     dialect: nextDialect,
     apiKey: patch.apiKey ?? current.apiKey,
     notes: patch.notes ?? current.notes,
     enabled: patch.enabled ?? current.enabled,
-    models: patch.models ?? current.models,
-    lastDiscoveredAt: patch.lastDiscoveredAt ?? current.lastDiscoveredAt,
+    models: urlOrDialectChanged ? [] : (patch.models ?? current.models),
+    lastDiscoveredAt: urlOrDialectChanged ? undefined : (patch.lastDiscoveredAt ?? current.lastDiscoveredAt),
     // `attribution` is intentionally a full-replace patch (not a deep
     // merge): callers either send the new shape verbatim or omit the
     // field to preserve the existing one. Passing an explicit object
@@ -252,7 +258,11 @@ export async function updateProvider(
   if (patch.enabled === false && current.enabled !== false) {
     evictProviderCaches(id);
   }
-  return redact(next);
+  if (urlOrDialectChanged) {
+    clearDiscoveryPollStatus(id);
+    evictDiscoverInFlight(id);
+  }
+  return { provider: redact(next), urlOrDialectChanged };
 }
 
 export async function removeProvider(id: string): Promise<void> {

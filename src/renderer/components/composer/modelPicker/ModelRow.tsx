@@ -69,7 +69,9 @@ export const ModelRow = memo(function ModelRow({
 
   const ctx = rowContextTokens(model, provider);
   const ctxLabel =
-    typeof ctx === 'number' && ctx > 0 ? rowContextBadgeLabel(ctx) : null;
+    typeof ctx === 'number' && ctx > 0
+      ? rowContextBadgeLabel(ctx, model.contextEstimated === true)
+      : null;
 
   const priceLabel = formatModelPricingBadge(model.pricing);
 

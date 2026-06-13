@@ -43,6 +43,7 @@
  */
 
 import type { ProviderWithKey } from '@shared/types/provider.js';
+import { parseProviderHostname } from '@shared/providers/providerHostname.js';
 
 const DEFAULT_REFERER = 'https://vyotiq.app';
 const DEFAULT_TITLE = 'Vyotiq';
@@ -63,14 +64,10 @@ const DEFAULT_TITLE = 'Vyotiq';
 type AttributionHost = 'openrouter' | 'xai' | 'other';
 
 function classifyHost(baseUrl: string): AttributionHost {
-  try {
-    const host = new URL(baseUrl).hostname.toLowerCase();
-    if (host === 'openrouter.ai' || host === 'www.openrouter.ai') return 'openrouter';
-    if (host === 'api.x.ai' || host === 'x.ai') return 'xai';
-    return 'other';
-  } catch {
-    return 'other';
-  }
+  const flags = parseProviderHostname(baseUrl);
+  if (flags.openrouter) return 'openrouter';
+  if (flags.xai) return 'xai';
+  return 'other';
 }
 
 /** True for OpenRouter hosts (`openrouter.ai`). */

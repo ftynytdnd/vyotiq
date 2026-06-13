@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { estimateRunCost, formatRunCostUsd } from '@shared/providers/estimateRunCost.js';
+import { estimateRunCost, formatComposerCostUsd, formatRunCostUsd } from '@shared/providers/estimateRunCost.js';
 
 describe('estimateRunCost', () => {
   it('estimates input + output cost from per-million pricing', () => {
@@ -51,5 +51,17 @@ describe('estimateRunCost', () => {
     expect(est?.inputUsd).toBeCloseTo(0.6075, 4);
     expect(est?.outputUsd).toBeCloseTo(0.15, 4);
     expect(est?.totalUsd).toBeCloseTo(0.7575, 4);
+  });
+});
+
+describe('formatComposerCostUsd', () => {
+  it('uses higher precision for sub-cent amounts', () => {
+    expect(formatComposerCostUsd(0.0012)).toBe('$0.0012');
+    expect(formatComposerCostUsd(0.00005)).toBe('$0.00005');
+  });
+
+  it('matches timeline formatter for dollar-scale amounts', () => {
+    expect(formatComposerCostUsd(1.23)).toBe('$1.23');
+    expect(formatComposerCostUsd(0.042)).toBe('$0.0420');
   });
 });

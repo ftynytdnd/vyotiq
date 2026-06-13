@@ -40,6 +40,7 @@ import { useChatStore } from '../../store/useChatStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
 import { useUiStore } from '../../store/useUiStore.js';
+import { formatConversationSpend } from '../../lib/workspaceSpend.js';
 import { buildDisplayChatTitles } from './displayChatTitles.js';
 import { handleDockVerticalTablistKeyDown } from './dockVerticalTablistKeyboard.js';
 import { useShallow } from 'zustand/react/shallow';
@@ -319,6 +320,9 @@ function ChatTab({
     else setDraft(entry.title);
   };
 
+  const spendLabel = formatConversationSpend(entry.estimatedSpendUsd);
+  const tabTitle = spendLabel ? `${displayTitle} · ${spendLabel} est.` : displayTitle;
+
   return (
     <>
       <div
@@ -386,12 +390,19 @@ function ChatTab({
                   setEditing(true);
                 }}
                 className={DOCK_TAB_TRIGGER_CLASS}
-                title={displayTitle}
+                title={tabTitle}
               >
                 {isRunActive ? (
                   <RunningTitle id={entry.id} title={displayTitle} className={DOCK_TAB_LABEL_CLASS} />
                 ) : (
-                  <span className={DOCK_TAB_LABEL_CLASS}>{displayTitle}</span>
+                  <span className={cn(DOCK_TAB_LABEL_CLASS, 'inline-flex min-w-0 items-baseline gap-1')}>
+                    <span className="min-w-0 truncate">{displayTitle}</span>
+                    {spendLabel ? (
+                      <span className="shrink-0 font-mono text-meta tabular-nums text-text-faint">
+                        {spendLabel}
+                      </span>
+                    ) : null}
+                  </span>
                 )}
               </button>
             </>

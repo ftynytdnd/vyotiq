@@ -732,6 +732,7 @@ function renderRow(
         <ErrorRow
           key={r.key}
           message={r.message}
+          {...(r.promptId !== undefined ? { promptId: r.promptId } : {})}
           {...(r.durationMs !== undefined ? { durationMs: r.durationMs } : {})}
           {...(r.completedAt !== undefined ? { completedAt: r.completedAt } : {})}
           {...(r.usage !== undefined ? { usage: r.usage } : {})}

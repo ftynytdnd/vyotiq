@@ -6,12 +6,14 @@ import type {
   OpenAiTransport,
   ProviderAttribution,
   ProviderModelsUpdate,
-  ThinkingEffort
+  ThinkingEffort,
+  ProviderDiscoveryPollHint
 } from '@shared/types/provider.js';
 import { vyotiq } from '../lib/ipc.js';
 
 interface ProviderStore {
   providers: ProviderConfig[];
+  discoveryPollHints: Record<string, string>;
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
@@ -37,6 +39,7 @@ interface ProviderStore {
   /** Cache-respecting discovery (used at app boot). */
   discoverCached: (id: string) => Promise<ModelInfo[]>;
   applyModelsUpdate: (update: ProviderModelsUpdate) => void;
+  applyDiscoveryPollHint: (hint: ProviderDiscoveryPollHint) => void;
   test: (id: string) => Promise<{ ok: boolean; message: string }>;
 }
 
@@ -51,6 +54,7 @@ export function selectEnabledProviderIds(providers: ReadonlyArray<ProviderConfig
 
 export const useProviderStore = create<ProviderStore>((set, get) => ({
   providers: [],
+  discoveryPollHints: {},
   loading: false,
   error: null,
 
@@ -72,8 +76,18 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
 
   update: async (id, patch) => {
     const updated = await vyotiq.providers.update(id, patch);
+    const clearPollHint = patch.baseUrl !== undefined || patch.dialect !== undefined;
     set({
-      providers: get().providers.map((p) => (p.id === id ? updated : p))
+      providers: get().providers.map((p) => (p.id === id ? updated : p)),
+      ...(clearPollHint
+        ? {
+            discoveryPollHints: (() => {
+              const next = { ...get().discoveryPollHints };
+              delete next[id];
+              return next;
+            })()
+          }
+        : {})
     });
   },
 
@@ -87,7 +101,12 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
     set({
       providers: get().providers.map((p) =>
         p.id === id ? { ...p, models, lastDiscoveredAt: Date.now() } : p
-      )
+      ),
+      discoveryPollHints: (() => {
+        const next = { ...get().discoveryPollHints };
+        delete next[id];
+        return next;
+      })()
     });
     return models;
   },
@@ -109,6 +128,17 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
           ? { ...p, models: update.models, lastDiscoveredAt: update.lastDiscoveredAt }
           : p
       )
+    });
+  },
+
+  applyDiscoveryPollHint: (hint) => {
+    set({
+      discoveryPollHints: (() => {
+        const next = { ...get().discoveryPollHints };
+        if (!hint.hint) delete next[hint.providerId];
+        else next[hint.providerId] = hint.hint;
+        return next;
+      })()
     });
   },
 

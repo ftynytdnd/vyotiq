@@ -51,9 +51,17 @@ const PRESETS: Preset[] = [
   { label: 'Ollama (local)', baseUrl: 'http://localhost:11434', dialect: 'openai' },
   { label: 'Ollama Cloud', baseUrl: 'https://ollama.com', dialect: 'ollama-native' },
   { label: 'LM Studio (local)', baseUrl: 'http://localhost:1234', dialect: 'openai' },
+  { label: 'LocalAI (local)', baseUrl: 'http://localhost:8080', dialect: 'openai' },
   { label: 'Groq', baseUrl: 'https://api.groq.com/openai', dialect: 'openai' },
   { label: 'Together', baseUrl: 'https://api.together.xyz', dialect: 'openai' },
-  { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com', dialect: 'openai' }
+  { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com', dialect: 'openai' },
+  { label: 'Mistral', baseUrl: 'https://api.mistral.ai', dialect: 'openai' },
+  { label: 'xAI', baseUrl: 'https://api.x.ai', dialect: 'openai' },
+  {
+    label: 'NVIDIA NIM',
+    baseUrl: 'https://integrate.api.nvidia.com',
+    dialect: 'openai'
+  }
 ];
 
 function isOpenRouterUrl(rawUrl: string): boolean {

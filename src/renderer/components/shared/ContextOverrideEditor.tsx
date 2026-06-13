@@ -11,6 +11,8 @@ import { cn } from '../../lib/cn.js';
 export interface ContextOverrideEditorProps {
   modelId: string;
   discovered?: number;
+  /** When true, discovered value was inferred from the model id. */
+  discoveredEstimated?: boolean;
   override?: number;
   onSave: (tokens: number) => void;
   onClear: () => void;
@@ -24,6 +26,7 @@ export interface ContextOverrideEditorProps {
 export function ContextOverrideEditor({
   modelId,
   discovered,
+  discoveredEstimated = false,
   override,
   onSave,
   onClear,
@@ -66,6 +69,9 @@ export function ContextOverrideEditor({
     }
   };
 
+  const discoveredPrefix = discoveredEstimated ? '~' : '';
+  const formatDiscovered = (n: number) => `${discoveredPrefix}${formatTokenCount(n)}`;
+
   const effectiveLabel =
     typeof effective === 'number' && effective > 0
       ? formatTokenCount(effective)
@@ -91,7 +97,7 @@ export function ContextOverrideEditor({
               <span className="font-mono text-meta tabular-nums text-text-secondary">
                 {effectiveLabel}
                 {override !== undefined && discovered !== undefined && override !== discovered
-                  ? ` · ${formatTokenCount(discovered)}`
+                  ? ` · ${formatDiscovered(discovered)}`
                   : null}
               </span>
             ) : (
@@ -125,8 +131,10 @@ export function ContextOverrideEditor({
             <p className="text-meta leading-snug text-text-faint">
               Effective: {effectiveLabel}
               {override !== undefined && discovered !== undefined && override !== discovered
-                ? ` (discovered ${formatTokenCount(discovered)})`
-                : null}
+                ? ` (discovered ${formatDiscovered(discovered)})`
+                : discoveredEstimated && discovered !== undefined
+                  ? ' (estimated from model id)'
+                  : null}
             </p>
           ) : (
             <p className="text-meta leading-snug text-text-faint">No context size discovered.</p>

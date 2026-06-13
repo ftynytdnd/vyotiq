@@ -320,6 +320,7 @@ export default function App() {
   const hydrateAccounts = useProviderAccountStore((s) => s.hydrate);
   const applyAccountMap = useProviderAccountStore((s) => s.applyMap);
   const applyModelsUpdate = useProviderStore((s) => s.applyModelsUpdate);
+  const applyDiscoveryPollHint = useProviderStore((s) => s.applyDiscoveryPollHint);
   useEffect(() => {
     void hydrateAccounts();
     const off = vyotiq.providers.onAccountsUpdated(applyAccountMap);
@@ -327,9 +328,13 @@ export default function App() {
   }, [hydrateAccounts, applyAccountMap]);
 
   useEffect(() => {
-    const off = vyotiq.providers.onModelsUpdated(applyModelsUpdate);
-    return off;
-  }, [applyModelsUpdate]);
+    const offModels = vyotiq.providers.onModelsUpdated(applyModelsUpdate);
+    const offHints = vyotiq.providers.onDiscoveryPollHint(applyDiscoveryPollHint);
+    return () => {
+      offModels();
+      offHints();
+    };
+  }, [applyModelsUpdate, applyDiscoveryPollHint]);
 
   const openSettingsSection = (section?: SettingsSectionId | 'providers' | 'memory') => {
     openSettings(section);

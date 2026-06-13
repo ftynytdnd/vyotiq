@@ -404,6 +404,7 @@ export function Composer({
               isRunActive={isProcessing}
             />
             <TokenUsagePill
+              model={model}
               total={totalRunUsage}
               orchestrator={orchestratorUsage}
               draftEstimate={draftTokenEstimate}

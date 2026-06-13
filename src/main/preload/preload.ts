@@ -72,6 +72,11 @@ const api: VyotiqApi = {
       on<[import('@shared/types/provider.js').ProviderModelsUpdate]>(
         IPC.PROVIDERS_MODELS_UPDATED,
         (update) => cb(update)
+      ),
+    onDiscoveryPollHint: (cb) =>
+      on<[import('@shared/types/provider.js').ProviderDiscoveryPollHint]>(
+        IPC.PROVIDERS_DISCOVERY_POLL_HINT,
+        (hint) => cb(hint)
       )
   },
 
@@ -96,7 +101,9 @@ const api: VyotiqApi = {
     move: (id, targetWorkspaceId) =>
       ipcRenderer.invoke(IPC.CONVERSATIONS_MOVE, id, targetWorkspaceId),
     archive: (id) => ipcRenderer.invoke(IPC.CONVERSATIONS_ARCHIVE, id),
-    unarchive: (id) => ipcRenderer.invoke(IPC.CONVERSATIONS_UNARCHIVE, id)
+    unarchive: (id) => ipcRenderer.invoke(IPC.CONVERSATIONS_UNARCHIVE, id),
+    incrementSpend: (id, promptId, usd) =>
+      ipcRenderer.invoke(IPC.CONVERSATIONS_INCREMENT_SPEND, id, promptId, usd)
   },
 
   tools: {

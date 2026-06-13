@@ -10,4 +10,12 @@ describe('modelsFingerprint', () => {
     ];
     expect(modelsFingerprint(base)).not.toBe(modelsFingerprint(withPricing));
   });
+
+  it('changes when contextEstimated flips', () => {
+    const authoritative: ModelInfo[] = [{ id: 'qwen-128k', contextWindow: 128_000 }];
+    const estimated: ModelInfo[] = [
+      { id: 'qwen-128k', contextWindow: 128_000, contextEstimated: true }
+    ];
+    expect(modelsFingerprint(authoritative)).not.toBe(modelsFingerprint(estimated));
+  });
 });

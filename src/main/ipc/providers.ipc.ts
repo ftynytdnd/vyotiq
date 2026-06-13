@@ -30,7 +30,8 @@ import {
 } from '../providers/providerAccountPoller.js';
 import {
   startProviderDiscoveryPoller,
-  stopProviderDiscoveryPoller
+  stopProviderDiscoveryPoller,
+  publishDiscoveryPollCleared
 } from '../providers/providerDiscoveryPoller.js';
 import { getAllProviderAccountSnapshots } from '../providers/providerAccountStore.js';
 import { logger } from '../logging/logger.js';
@@ -207,7 +208,18 @@ export function registerProvidersIpc(): void {
           });
         }
       }
-      return updateProvider(id, patch);
+      return updateProvider(id, patch).then(async ({ provider, urlOrDialectChanged }) => {
+        if (urlOrDialectChanged) {
+          try {
+            const models = await discoverModels(id, true);
+            publishDiscoveryPollCleared(id);
+            return { ...provider, models };
+          } catch (err) {
+            log.warn('discovery failed after provider url/dialect change', { providerId: id, err });
+          }
+        }
+        return provider;
+      });
     }
   );
 
@@ -225,7 +237,10 @@ export function registerProvidersIpc(): void {
       if (force !== undefined) {
         assertBoolean('providers:discoverModels', 'force', force);
       }
-      return discoverModels(id, force ?? true);
+      return discoverModels(id, force ?? true).then((models) => {
+        publishDiscoveryPollCleared(id);
+        return models;
+      });
     }
   );
 

@@ -4137,6 +4137,10 @@ mark.vyotiq-timeline-find-mark-active {
   color: var(--color-text-faint);
 }
 
+.vx-composer-turn-usage__pill--cost {
+  color: var(--color-text-faint);
+}
+
 .vx-composer-token-pill__label {
   display: inline-flex;
   min-width: 0;

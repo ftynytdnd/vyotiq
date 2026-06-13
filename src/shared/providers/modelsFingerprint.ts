@@ -9,6 +9,7 @@ export function modelsFingerprint(models: ModelInfo[]): string {
     models.map((m) => ({
       id: m.id,
       contextWindow: m.contextWindow,
+      contextEstimated: m.contextEstimated,
       pricing: m.pricing,
       thinking: m.thinking
     }))

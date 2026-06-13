@@ -25,9 +25,11 @@ import type { ModelInfo, ProviderDialect, ProviderWithKey } from '@shared/types/
 import { MODEL_DISCOVERY_TIMEOUT_MS, MODEL_DISCOVERY_TTL_MS } from '@shared/constants.js';
 import {
   contextWindowFromOllamaModelInfo,
+  contextWindowFromOpenAiModelRow,
   isDeepSeekApiHost,
   mergeContextWindows,
   mergeThinkingCapabilities,
+  positiveTokenCount,
   thinkingForDeepSeekApiModel,
   thinkingFromAnthropicCapabilities,
   thinkingFromGeminiModel,
@@ -36,13 +38,29 @@ import {
   thinkingFromSupportedParameters
 } from '@shared/providers/modelCapabilities.js';
 import { attachModelPricing } from '@shared/providers/attachModelPricing.js';
+import { attachModelContext } from '@shared/providers/attachModelContext.js';
+import { contextWindowFromModelId } from '@shared/providers/contextFromModelId.js';
+import { dialectHintFromHostname } from '@shared/providers/providerHostname.js';
 import { DEFAULT_ANTHROPIC_BETAS } from '@shared/providers/thinkingEffort.js';
+import { isLocalProvider } from '@shared/providers/isLocalProvider.js';
+import { isNvidiaIntegrateHost } from '@shared/providers/isNvidiaIntegrateHost.js';
+import { classifyProviderHost } from '@shared/providers/providerHostKind.js';
+import { enrichNvidiaModelsContext } from './nvidiaNgcCatalog.js';
+import { enrichModelsFromModelsDev } from './modelsDevCatalog.js';
 import { normalizeBaseUrl } from '@shared/providers/normalizeBaseUrl.js';
 import { getProviderWithKey, updateProvider } from './providerStore.js';
+import {
+  evictDiscoverInFlight,
+  getDiscoverInFlight,
+  setDiscoverInFlight
+} from './discoverInFlight.js';
 import { classifyProviderError, isProviderError, ProviderError } from './providerError.js';
 import { buildAttributionHeaders, isOpenRouterHost } from './attributionHeaders.js';
 import { recordProviderRateLimits } from './providerRateLimitCapture.js';
 import { safeText as safeTextShared } from './errorBody.js';
+import { logger } from '../logging/logger.js';
+
+const log = logger.child('providers/discovery');
 
 /**
  * GET wrapper that bounds the fetch at `MODEL_DISCOVERY_TIMEOUT_MS`.
@@ -93,8 +111,18 @@ function describeNetworkError(err: unknown, url: string): string {
 function throwDiscoveryNetworkError(
   err: unknown,
   url: string,
-  provider: { id: string; name: string }
+  provider: { id: string; name: string; baseUrl?: string }
 ): never {
+  const hostKind =
+    typeof provider.baseUrl === 'string' && provider.baseUrl.length > 0
+      ? classifyProviderHost(provider as Pick<ProviderWithKey, 'baseUrl' | 'dialect'>)
+      : undefined;
+  log.warn('discovery network error', {
+    providerId: provider.id,
+    hostKind,
+    url,
+    err: err instanceof Error ? err.message : String(err)
+  });
   throw new ProviderError({
     kind: 'unknown',
     status: 0,
@@ -103,6 +131,29 @@ function throwDiscoveryNetworkError(
     friendlyMessage: `${provider.name}: ${describeNetworkError(err, url)}`,
     surface: 'discovery',
     rawBody: ''
+  });
+}
+
+function throwDiscoveryHttpError(
+  res: Response,
+  body: string,
+  url: string,
+  provider: ProviderWithKey
+): never {
+  log.warn('discovery HTTP error', {
+    providerId: provider.id,
+    hostKind: classifyProviderHost(provider),
+    status: res.status,
+    url
+  });
+  throw classifyProviderError({
+    status: res.status,
+    statusText: res.statusText,
+    url,
+    body,
+    surface: 'discovery',
+    providerId: provider.id,
+    providerName: provider.name
   });
 }
 
@@ -151,8 +202,6 @@ function effectiveDialect(provider: ProviderWithKey): ProviderDialect {
   return provider.dialect ?? 'openai';
 }
 
-/** Concurrent `discoverModels` calls per provider share one in-flight fetch. */
-const discoverInFlight = new Map<string, Promise<ModelInfo[]>>();
 
 export async function discoverModels(providerId: string, force = false): Promise<ModelInfo[]> {
   const provider = await getProviderWithKey(providerId);
@@ -182,15 +231,15 @@ export async function discoverModels(providerId: string, force = false): Promise
     return provider.models!;
   }
 
-  const inflight = discoverInFlight.get(providerId);
+  const inflight = getDiscoverInFlight<ModelInfo[]>(providerId);
   if (inflight) return inflight;
 
   const flight = fetchAndPersistModels(provider, providerId).finally(() => {
-    if (discoverInFlight.get(providerId) === flight) {
-      discoverInFlight.delete(providerId);
+    if (getDiscoverInFlight(providerId) === flight) {
+      evictDiscoverInFlight(providerId);
     }
   });
-  discoverInFlight.set(providerId, flight);
+  setDiscoverInFlight(providerId, flight);
   return flight;
 }
 
@@ -212,6 +261,12 @@ async function fetchAndPersistModels(
       break;
     default: {
       models = await fetchOpenAiModels(provider);
+      if (isNvidiaIntegrateHost(provider.baseUrl) && models.some((m) => m.contextWindow === undefined)) {
+        models = await enrichNvidiaModelsContext(models);
+      }
+      if (isLocalProvider(provider) && models.some((m) => m.contextWindow === undefined)) {
+        models = await enrichLocalModelsContext(provider, models);
+      }
       // Local Ollama is often added as OpenAI dialect (`/v1/models` shim)
       // which omits context sizes. When `/api/version` responds, probe
       // `/api/show` for `num_ctx` the same way the native dialect does.
@@ -223,6 +278,7 @@ async function fetchAndPersistModels(
       break;
     }
   }
+  models = await enrichModelsMetadata(provider, models);
   const patch: {
     models: ModelInfo[];
     lastDiscoveredAt: number;
@@ -254,16 +310,7 @@ async function fetchAndPersistModels(
  * Pure / synchronous; no I/O. Exported for testability.
  */
 function classifyKnownHost(baseUrl: string): ProviderDialect | null {
-  let host: string;
-  try {
-    host = new URL(baseUrl).hostname.toLowerCase();
-  } catch {
-    return null;
-  }
-  if (host === 'api.anthropic.com') return 'anthropic-native';
-  if (host === 'generativelanguage.googleapis.com') return 'gemini-native';
-  if (host === 'ollama.com' || host === 'www.ollama.com') return 'ollama-native';
-  return null;
+  return dialectHintFromHostname(baseUrl);
 }
 
 /**
@@ -272,8 +319,10 @@ function classifyKnownHost(baseUrl: string): ProviderDialect | null {
  *   1. If the host is a well-known provider (Anthropic / Gemini /
  *      Ollama Cloud) → short-circuit to its canonical dialect (no
  *      network probe required).
- *   2. Otherwise, race `GET /v1/models` (OpenAI dialect) and
- *      `GET /api/tags` (Ollama-native dialect). First 200 wins.
+ *   2. Otherwise, race all four dialect endpoints in parallel:
+ *      `GET /v1/models` (OpenAI), `GET /api/tags` (Ollama-native),
+ *      `GET /v1/models` (Anthropic-native), `GET /v1beta/models` (Gemini).
+ *      First 200 wins.
  *   3. Neither reachable → throw (IPC caller logs a warn; the
  *      provider is persisted with the user-supplied hint anyway).
  *
@@ -302,6 +351,8 @@ export async function detectDialect(
   // then any persisted record had the wrong base URL too.
   const openaiBase = normalizeBaseUrl(baseUrl, 'openai');
   const ollamaBase = normalizeBaseUrl(baseUrl, 'ollama-native');
+  const anthropicBase = normalizeBaseUrl(baseUrl, 'anthropic-native');
+  const geminiBase = normalizeBaseUrl(baseUrl, 'gemini-native');
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
@@ -336,16 +387,33 @@ export async function detectDialect(
     if (!res.ok) throw new Error(`ollama-native probe non-OK status ${res.status}`);
     return 'ollama-native';
   };
+  const probeAnthropic = async (): Promise<ProviderDialect> => {
+    const anthropicHeaders: Record<string, string> = {
+      Accept: 'application/json',
+      'anthropic-version': '2023-06-01',
+      'x-api-key': apiKey || 'dialect-probe'
+    };
+    const res = await fetchWithTimeout(`${anthropicBase}/v1/models`, anthropicHeaders);
+    if (!res.ok) throw new Error(`anthropic-native probe non-OK status ${res.status}`);
+    return 'anthropic-native';
+  };
+  const probeGemini = async (): Promise<ProviderDialect> => {
+    const geminiHeaders: Record<string, string> = { Accept: 'application/json' };
+    if (apiKey) geminiHeaders['x-goog-api-key'] = apiKey;
+    const res = await fetchWithTimeout(`${geminiBase}/v1beta/models`, geminiHeaders);
+    if (!res.ok) throw new Error(`gemini-native probe non-OK status ${res.status}`);
+    return 'gemini-native';
+  };
 
   try {
-    return await Promise.any([probeOpenAi(), probeNative()]);
+    return await Promise.any([probeOpenAi(), probeNative(), probeAnthropic(), probeGemini()]);
   } catch {
     // Both probes rejected (Promise.any throws AggregateError). Fall
     // through to the combined-error throw below.
   }
 
   throw new Error(
-    `Could not detect dialect: neither GET ${openaiBase}/v1/models nor GET ${ollamaBase}/api/tags responded OK within ${Math.round(MODEL_DISCOVERY_TIMEOUT_MS / 1000)}s.`
+    `Could not detect dialect: none of GET ${openaiBase}/v1/models, GET ${ollamaBase}/api/tags, GET ${anthropicBase}/v1/models, or GET ${geminiBase}/v1beta/models responded OK within ${Math.round(MODEL_DISCOVERY_TIMEOUT_MS / 1000)}s.`
   );
 }
 
@@ -385,16 +453,6 @@ const NON_CHAT_PATTERNS: ReadonlyArray<RegExp> = [
   /\btranscri(pt|be)\b/i      // transcription endpoints
 ];
 
-function positiveTokenCount(value: unknown): number | undefined {
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return positiveTokenCount(parsed);
-  }
-  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
-  const n = Math.floor(value);
-  return n > 0 ? n : undefined;
-}
-
 const REASONING_DISCOVERY_PARAMETERS = new Set([
   'reasoning',
   'include_reasoning',
@@ -426,6 +484,10 @@ function cachedModelsLackExpectedContext(
   if (dialect === 'anthropic-native' || dialect === 'gemini-native') return true;
   if (dialect === 'ollama-native') return true;
   if (isOpenRouterHost(provider.baseUrl)) return true;
+  if (isDeepSeekApiHost(provider.baseUrl)) return true;
+  if (isNvidiaIntegrateHost(provider.baseUrl)) return true;
+  if (classifyProviderHost(provider) === 'openai') return true;
+  if (dialect === 'openai') return true;
   return false;
 }
 
@@ -481,15 +543,7 @@ async function fetchOpenAiModels(provider: ProviderWithKey): Promise<ModelInfo[]
     // ("…: Endpoint not found. Verify the Base URL and dialect…")
     // instead of dumping the raw response body at the user.
     const body = await safeText(res);
-    throw classifyProviderError({
-      status: res.status,
-      statusText: res.statusText,
-      url,
-      body,
-      surface: 'discovery',
-      providerId: provider.id,
-      providerName: provider.name
-    });
+    throwDiscoveryHttpError(res, body, url, provider);
   }
 
   recordProviderRateLimits(provider.id, res.headers);
@@ -521,16 +575,18 @@ async function fetchOpenAiModels(provider: ProviderWithKey): Promise<ModelInfo[]
       const entry = m as {
         context_window?: number | null;
         context_length?: number | null;
+        max_model_len?: number | null;
+        max_input_tokens?: number | null;
+        inputTokenLimit?: number | null;
+        max_context_length?: number | null;
         supported_parameters?: string[];
         top_provider?: { context_length?: number | null };
         features?: string[];
         groups?: string[];
+        meta?: { context_size?: number | null; n_ctx_train?: number | null; context_length?: number | null };
       };
-      const ctx = mergeContextWindows(
-        positiveTokenCount(entry.context_window),
-        positiveTokenCount(entry.context_length),
-        positiveTokenCount(entry.top_provider?.context_length)
-      );
+      const fromApi = contextWindowFromOpenAiModelRow(entry);
+      const ctx = mergeContextWindows(fromApi, attachModelContext(provider, id, fromApi));
       const info: ModelInfo = { id };
       if (
         typeof nameCandidate === 'string' &&
@@ -576,15 +632,7 @@ async function fetchOllamaTags(provider: ProviderWithKey): Promise<ModelInfo[]> 
     // Same `ProviderError(surface:'discovery')` treatment as the OpenAI
     // fetcher — see the comment above `fetchOpenAiModels` for the why.
     const body = await safeText(res);
-    throw classifyProviderError({
-      status: res.status,
-      statusText: res.statusText,
-      url,
-      body,
-      surface: 'discovery',
-      providerId: provider.id,
-      providerName: provider.name
-    });
+    throwDiscoveryHttpError(res, body, url, provider);
   }
 
   const json = (await res.json()) as RawOllamaTagsResponse;
@@ -704,6 +752,479 @@ async function probeOllamaModelShow(
   }
 }
 
+type LocalServerKind =
+  | 'lmstudio'
+  | 'llamacpp'
+  | 'sglang'
+  | 'litellm'
+  | 'tgi'
+  | 'koboldcpp'
+  | 'localai'
+  | 'unknown';
+
+/**
+ * Probe local OpenAI-compatible daemons for native context metadata when
+ * `/v1/models` omits it. LM Studio is checked before Ollama because some
+ * LM Studio builds respond 200 to `/api/tags` with a non-Ollama body.
+ */
+async function enrichLocalModelsContext(
+  provider: ProviderWithKey,
+  models: ModelInfo[]
+): Promise<ModelInfo[]> {
+  if (models.length === 0) return models;
+
+  let next = models;
+  if (next.some((m) => m.contextWindow === undefined)) {
+    next = await enrichLlamaSwapModelsContext(provider, next);
+  }
+
+  const kind = await detectLocalServerKind(provider);
+  switch (kind) {
+    case 'lmstudio':
+      return enrichLmStudioModelsContext(provider, next);
+    case 'llamacpp':
+      return enrichLlamaCppModelsContext(provider, next);
+    case 'sglang':
+      return enrichSGLangModelsContext(provider, next);
+    case 'litellm':
+      return enrichLiteLlmModelsContext(provider, next);
+    case 'tgi':
+      return enrichTgiModelsContext(provider, next);
+    case 'koboldcpp':
+      return enrichKoboldCppModelsContext(provider, next);
+    case 'localai':
+      return enrichLocalAiModelsContext(provider, next);
+    default:
+      return next;
+  }
+}
+
+async function detectLocalServerKind(provider: ProviderWithKey): Promise<LocalServerKind> {
+  if (await lmStudioApiAvailable(provider)) return 'lmstudio';
+  if (await localAiApiAvailable(provider)) return 'localai';
+  if (await litellmApiAvailable(provider)) return 'litellm';
+  if (await tgiApiAvailable(provider)) return 'tgi';
+  if (await koboldCppApiAvailable(provider)) return 'koboldcpp';
+  if (await llamaCppApiAvailable(provider)) return 'llamacpp';
+  if (await sglangApiAvailable(provider)) return 'sglang';
+  return 'unknown';
+}
+
+async function lmStudioApiAvailable(provider: ProviderWithKey): Promise<boolean> {
+  for (const path of ['/api/v1/models', '/api/v0/models']) {
+    const url = `${provider.baseUrl}${path}`;
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    if (provider.apiKey) headers['Authorization'] = `Bearer ${provider.apiKey}`;
+    try {
+      const res = await fetchWithTimeout(url, headers);
+      if (!res.ok) continue;
+      const json = (await res.json()) as { data?: unknown[] };
+      if (!Array.isArray(json.data)) continue;
+      if (json.data.some((row) => row && typeof row === 'object' && 'max_context_length' in row)) {
+        return true;
+      }
+    } catch {
+      // try next path
+    }
+  }
+  return false;
+}
+
+async function llamaCppApiAvailable(provider: ProviderWithKey): Promise<boolean> {
+  const url = `${provider.baseUrl}/props`;
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (provider.apiKey) headers['Authorization'] = `Bearer ${provider.apiKey}`;
+  try {
+    const res = await fetchWithTimeout(url, headers);
+    if (!res.ok) return false;
+    const json = (await res.json()) as {
+      default_generation_settings?: { n_ctx?: number };
+    };
+    return positiveTokenCount(json.default_generation_settings?.n_ctx) !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+async function sglangApiAvailable(provider: ProviderWithKey): Promise<boolean> {
+  const url = `${provider.baseUrl}/get_model_info`;
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (provider.apiKey) headers['Authorization'] = `Bearer ${provider.apiKey}`;
+  try {
+    const res = await fetchWithTimeout(url, headers);
+    if (!res.ok) return false;
+    const json = (await res.json()) as { context_length?: number };
+    return positiveTokenCount(json.context_length) !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+type LmStudioCatalogEntry = { id: string; contextWindow: number };
+
+async function fetchLmStudioCatalog(
+  provider: ProviderWithKey
+): Promise<LmStudioCatalogEntry[] | undefined> {
+  for (const path of ['/api/v1/models', '/api/v0/models']) {
+    const url = `${provider.baseUrl}${path}`;
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    if (provider.apiKey) headers['Authorization'] = `Bearer ${provider.apiKey}`;
+    try {
+      const res = await fetchWithTimeout(url, headers);
+      if (!res.ok) continue;
+      const json = (await res.json()) as {
+        data?: Array<{
+          id?: string;
+          max_context_length?: number;
+          loaded_instances?: Array<{ config?: { context_length?: number } }>;
+        }>;
+      };
+      if (!Array.isArray(json.data)) continue;
+      const entries: LmStudioCatalogEntry[] = [];
+      for (const row of json.data) {
+        const id = row.id;
+        if (!id) continue;
+        const loaded = row.loaded_instances
+          ?.map((inst) => positiveTokenCount(inst.config?.context_length))
+          .find((n) => n !== undefined);
+        const ctx = mergeContextWindows(
+          loaded,
+          positiveTokenCount(row.max_context_length)
+        );
+        if (ctx !== undefined) entries.push({ id, contextWindow: ctx });
+      }
+      if (entries.length > 0) return entries;
+    } catch {
+      // try next path
+    }
+  }
+  return undefined;
+}
+
+function lmStudioModelIdVariants(modelId: string): string[] {
+  const variants = new Set<string>([modelId]);
+  const colon = modelId.indexOf(':');
+  if (colon >= 0) variants.add(modelId.slice(0, colon));
+  const slash = modelId.lastIndexOf('/');
+  if (slash >= 0) variants.add(modelId.slice(slash + 1));
+  return [...variants];
+}
+
+async function enrichLmStudioModelsContext(
+  provider: ProviderWithKey,
+  models: ModelInfo[]
+): Promise<ModelInfo[]> {
+  const catalog = await fetchLmStudioCatalog(provider);
+  if (!catalog?.length) return models;
+  const byId = new Map<string, number>();
+  for (const entry of catalog) {
+    byId.set(entry.id, entry.contextWindow);
+    for (const variant of lmStudioModelIdVariants(entry.id)) {
+      if (!byId.has(variant)) byId.set(variant, entry.contextWindow);
+    }
+  }
+  return models.map((model) => {
+    if (model.contextWindow !== undefined) return model;
+    for (const variant of lmStudioModelIdVariants(model.id)) {
+      const ctx = byId.get(variant);
+      if (ctx !== undefined) return { ...model, contextWindow: ctx };
+    }
+    return model;
+  });
+}
+
+async function enrichLlamaCppModelsContext(
+  provider: ProviderWithKey,
+  models: ModelInfo[]
+): Promise<ModelInfo[]> {
+  if (models.length > 1) {
+    const perUpstream = await enrichLlamaSwapModelsContext(provider, models);
+    if (perUpstream.some((m) => m.contextWindow !== undefined)) {
+      return perUpstream;
+    }
+  }
+
+  const url = `${provider.baseUrl}/props`;
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (provider.apiKey) headers['Authorization'] = `Bearer ${provider.apiKey}`;
+  try {
+    const res = await fetchWithTimeout(url, headers);
+    if (!res.ok) return models;
+    const json = (await res.json()) as {
+      default_generation_settings?: { n_ctx?: number };
+    };
+    const ctx = positiveTokenCount(json.default_generation_settings?.n_ctx);
+    if (ctx === undefined) return models;
+    return models.map((model) =>
+      model.contextWindow === undefined ? { ...model, contextWindow: ctx } : model
+    );
+  } catch {
+    return models;
+  }
+}
+
+async function enrichSGLangModelsContext(
+  provider: ProviderWithKey,
+  models: ModelInfo[]
+): Promise<ModelInfo[]> {
+  const url = `${provider.baseUrl}/get_model_info`;
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (provider.apiKey) headers['Authorization'] = `Bearer ${provider.apiKey}`;
+  try {
+    const res = await fetchWithTimeout(url, headers);
+    if (!res.ok) return models;
+    const json = (await res.json()) as { context_length?: number };
+    const ctx = positiveTokenCount(json.context_length);
+    if (ctx === undefined) return models;
+    return models.map((model) =>
+      model.contextWindow === undefined ? { ...model, contextWindow: ctx } : model
+    );
+  } catch {
+    return models;
+  }
+}
+
+async function enrichModelsMetadata(
+  provider: ProviderWithKey,
+  models: ModelInfo[]
+): Promise<ModelInfo[]> {
+  let next = models;
+  if (next.some((m) => m.contextWindow === undefined || m.pricing === undefined)) {
+    next = await enrichModelsFromModelsDev(provider, next);
+  }
+  return next.map((model) => {
+    let contextWindow = model.contextWindow;
+    let contextEstimated = model.contextEstimated;
+    let pricing = model.pricing;
+
+    if (contextWindow === undefined) {
+      contextWindow = attachModelContext(provider, model.id, undefined);
+    }
+    if (contextWindow === undefined) {
+      const inferred = contextWindowFromModelId(model.id);
+      if (inferred !== undefined) {
+        contextWindow = inferred;
+        contextEstimated = true;
+      }
+    }
+    if (!pricing) {
+      pricing = attachModelPricing(provider, model.id, undefined);
+    }
+
+    if (
+      contextWindow === model.contextWindow &&
+      pricing === model.pricing &&
+      contextEstimated === model.contextEstimated
+    ) {
+      return model;
+    }
+    return { ...model, contextWindow, pricing, contextEstimated };
+  });
+}
+
+async function probeUpstreamProps(
+  provider: ProviderWithKey,
+  modelId: string
+): Promise<number | undefined> {
+  const url = `${provider.baseUrl}/upstream/${encodeURIComponent(modelId)}/props`;
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (provider.apiKey) headers['Authorization'] = `Bearer ${provider.apiKey}`;
+  try {
+    const res = await fetchWithTimeout(url, headers);
+    if (!res.ok) return undefined;
+    const json = (await res.json()) as {
+      default_generation_settings?: { n_ctx?: number };
+      n_ctx?: number;
+    };
+    return mergeContextWindows(
+      positiveTokenCount(json.default_generation_settings?.n_ctx),
+      positiveTokenCount(json.n_ctx)
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+async function enrichLlamaSwapModelsContext(
+  provider: ProviderWithKey,
+  models: ModelInfo[]
+): Promise<ModelInfo[]> {
+  const needs = models.filter((m) => m.contextWindow === undefined);
+  if (needs.length === 0) return models;
+
+  const ctxById = new Map<string, number>();
+  for (const model of needs) {
+    const ctx = await probeUpstreamProps(provider, model.id);
+    if (ctx !== undefined) ctxById.set(model.id, ctx);
+  }
+  if (ctxById.size === 0) return models;
+
+  return models.map((model) => {
+    const ctx = ctxById.get(model.id);
+    return ctx !== undefined ? { ...model, contextWindow: ctx } : model;
+  });
+}
+
+async function litellmApiAvailable(provider: ProviderWithKey): Promise<boolean> {
+  const url = `${provider.baseUrl}/model/info`;
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'Content-Type': 'application/json'
+  };
+  if (provider.apiKey) headers['Authorization'] = `Bearer ${provider.apiKey}`;
+  try {
+    const res = await fetchWithTimeout(url, headers, {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+    if (!res.ok) return false;
+    const json = (await res.json()) as { model_info?: { max_input_tokens?: number } };
+    return positiveTokenCount(json.model_info?.max_input_tokens) !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+async function enrichLiteLlmModelsContext(
+  provider: ProviderWithKey,
+  models: ModelInfo[]
+): Promise<ModelInfo[]> {
+  const url = `${provider.baseUrl}/model/info`;
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'Content-Type': 'application/json'
+  };
+  if (provider.apiKey) headers['Authorization'] = `Bearer ${provider.apiKey}`;
+
+  const enriched: ModelInfo[] = [];
+  for (const model of models) {
+    if (model.contextWindow !== undefined) {
+      enriched.push(model);
+      continue;
+    }
+    try {
+      const res = await fetchWithTimeout(url, headers, {
+        method: 'POST',
+        body: JSON.stringify({ model: model.id })
+      });
+      if (!res.ok) {
+        enriched.push(model);
+        continue;
+      }
+      const json = (await res.json()) as {
+        model_info?: { max_input_tokens?: number; max_tokens?: number };
+      };
+      const ctx = mergeContextWindows(
+        positiveTokenCount(json.model_info?.max_input_tokens),
+        positiveTokenCount(json.model_info?.max_tokens)
+      );
+      enriched.push(ctx !== undefined ? { ...model, contextWindow: ctx } : model);
+    } catch {
+      enriched.push(model);
+    }
+  }
+  return enriched;
+}
+
+async function tgiApiAvailable(provider: ProviderWithKey): Promise<boolean> {
+  const url = `${provider.baseUrl}/info`;
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (provider.apiKey) headers['Authorization'] = `Bearer ${provider.apiKey}`;
+  try {
+    const res = await fetchWithTimeout(url, headers);
+    if (!res.ok) return false;
+    const json = (await res.json()) as { max_input_length?: number; max_total_tokens?: number };
+    return (
+      positiveTokenCount(json.max_input_length) !== undefined ||
+      positiveTokenCount(json.max_total_tokens) !== undefined
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function enrichTgiModelsContext(
+  provider: ProviderWithKey,
+  models: ModelInfo[]
+): Promise<ModelInfo[]> {
+  const url = `${provider.baseUrl}/info`;
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (provider.apiKey) headers['Authorization'] = `Bearer ${provider.apiKey}`;
+  try {
+    const res = await fetchWithTimeout(url, headers);
+    if (!res.ok) return models;
+    const json = (await res.json()) as { max_input_length?: number; max_total_tokens?: number };
+    const ctx = mergeContextWindows(
+      positiveTokenCount(json.max_input_length),
+      positiveTokenCount(json.max_total_tokens)
+    );
+    if (ctx === undefined) return models;
+    return models.map((model) =>
+      model.contextWindow === undefined ? { ...model, contextWindow: ctx } : model
+    );
+  } catch {
+    return models;
+  }
+}
+
+async function koboldCppApiAvailable(provider: ProviderWithKey): Promise<boolean> {
+  const url = `${provider.baseUrl}/api/v1/model`;
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (provider.apiKey) headers['Authorization'] = `Bearer ${provider.apiKey}`;
+  try {
+    const res = await fetchWithTimeout(url, headers);
+    if (!res.ok) return false;
+    const json = (await res.json()) as { result?: string; max_context_length?: number };
+    return positiveTokenCount(json.max_context_length) !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+async function enrichKoboldCppModelsContext(
+  provider: ProviderWithKey,
+  models: ModelInfo[]
+): Promise<ModelInfo[]> {
+  const url = `${provider.baseUrl}/api/v1/model`;
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (provider.apiKey) headers['Authorization'] = `Bearer ${provider.apiKey}`;
+  try {
+    const res = await fetchWithTimeout(url, headers);
+    if (!res.ok) return models;
+    const json = (await res.json()) as { max_context_length?: number };
+    const ctx = positiveTokenCount(json.max_context_length);
+    if (ctx === undefined) return models;
+    return models.map((model) =>
+      model.contextWindow === undefined ? { ...model, contextWindow: ctx } : model
+    );
+  } catch {
+    return models;
+  }
+}
+
+async function localAiApiAvailable(provider: ProviderWithKey): Promise<boolean> {
+  const url = `${provider.baseUrl}/readyz`;
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (provider.apiKey) headers['Authorization'] = `Bearer ${provider.apiKey}`;
+  try {
+    const res = await fetchWithTimeout(url, headers);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** LocalAI omits context on `/v1/models`; fall back to Ollama-compatible `/api/show`. */
+async function enrichLocalAiModelsContext(
+  provider: ProviderWithKey,
+  models: ModelInfo[]
+): Promise<ModelInfo[]> {
+  if (await ollamaShowApiAvailable(provider)) {
+    return enrichOllamaModelsFromShow(provider, models);
+  }
+  return models;
+}
+
 /**
  * Phase 8 (2026) — Anthropic Models API.
  *
@@ -775,15 +1296,7 @@ async function fetchAnthropicModels(provider: ProviderWithKey): Promise<ModelInf
 
     if (!res.ok) {
       const body = await safeText(res);
-      throw classifyProviderError({
-        status: res.status,
-        statusText: res.statusText,
-        url,
-        body,
-        surface: 'discovery',
-        providerId: provider.id,
-        providerName: provider.name
-      });
+      throwDiscoveryHttpError(res, body, url, provider);
     }
 
     const json = (await res.json()) as RawAnthropicModelsResponse;
@@ -891,15 +1404,7 @@ async function fetchGeminiModels(provider: ProviderWithKey): Promise<ModelInfo[]
 
     if (!res.ok) {
       const body = await safeText(res);
-      throw classifyProviderError({
-        status: res.status,
-        statusText: res.statusText,
-        url,
-        body,
-        surface: 'discovery',
-        providerId: provider.id,
-        providerName: provider.name
-      });
+      throwDiscoveryHttpError(res, body, url, provider);
     }
 
     recordProviderRateLimits(provider.id, res.headers);

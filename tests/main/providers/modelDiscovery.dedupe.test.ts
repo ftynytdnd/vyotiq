@@ -17,6 +17,10 @@ vi.mock('@main/providers/providerStore.js', () => ({
   updateProvider: vi.fn(async () => ({}))
 }));
 
+vi.mock('@main/providers/modelsDevCatalog.js', () => ({
+  enrichModelsFromModelsDev: vi.fn(async (_provider: unknown, models: unknown[]) => models)
+}));
+
 import { discoverModels } from '@main/providers/modelDiscovery';
 
 describe('discoverModels in-flight dedupe', () => {

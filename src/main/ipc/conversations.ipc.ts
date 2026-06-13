@@ -9,6 +9,7 @@
 import { IPC } from '@shared/constants.js';
 import {
   createConversation,
+  incrementConversationSpend,
   listConversations,
   moveConversationToWorkspace,
   readConversation,
@@ -22,7 +23,7 @@ import { wrapIpcHandler } from './wrapIpcHandler.js';
 // (sanitized at the store layer to 200 chars; the IPC gate accepts
 // up to 2 KB to cover unicode + safety margin before the sanitizer
 // trims it).
-import { assertString, assertOptionalString } from './validate.js';
+import { assertString, assertOptionalString, assertNumber } from './validate.js';
 
 export function registerConversationsIpc(): void {
   // Optional `workspaceId` filter on `list` — used by the orchestrator's
@@ -85,6 +86,15 @@ export function registerConversationsIpc(): void {
       assertString('conversations:move', 'id', id);
       assertString('conversations:move', 'targetWorkspaceId', targetWorkspaceId);
       return moveConversationToWorkspace(id, targetWorkspaceId);
+    }
+  );
+  wrapIpcHandler(
+    IPC.CONVERSATIONS_INCREMENT_SPEND,
+    async (_e, id: string, promptId: string, usd: number) => {
+      assertString('conversations:increment-spend', 'id', id);
+      assertString('conversations:increment-spend', 'promptId', promptId);
+      assertNumber('conversations:increment-spend', 'usd', usd, { min: 0, max: 1_000_000 });
+      return incrementConversationSpend(id, promptId, usd);
     }
   );
 }

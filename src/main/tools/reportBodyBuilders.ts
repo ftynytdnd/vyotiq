@@ -31,6 +31,15 @@ export interface EditRunSummaryInput {
   durationMs: number;
   completedAt: number;
   edits: Array<{ filePath: string; additions: number; deletions: number }>;
+  usageSummary?: {
+    promptTokens: number;
+    completionTokens: number;
+    cachedPromptTokens?: number;
+    cacheCreationTokens?: number;
+    reasoningTokens?: number;
+  };
+  costUsd?: number;
+  modelLabel?: string;
 }
 
 function severityClass(level: SeverityLevel): string {
@@ -151,6 +160,44 @@ function groupEditsByDirectory(
     }));
 }
 
+function formatTokenCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function buildUsageFooter(input: EditRunSummaryInput): string {
+  const u = input.usageSummary;
+  if (!u && input.costUsd === undefined && !input.modelLabel) {
+    return (
+      `<footer class="vy-run-summary-footer">` +
+      `<p><em>Template summary — no tokens used. For a full AI-authored review, enable AI report in Settings.</em></p>` +
+      `</footer>`
+    );
+  }
+  const parts: string[] = [];
+  if (input.modelLabel) parts.push(`Model: ${escapeHtmlText(input.modelLabel)}`);
+  if (u) {
+    parts.push(`Tokens in: ${formatTokenCount(u.promptTokens)}`);
+    parts.push(`Tokens out: ${formatTokenCount(u.completionTokens)}`);
+    if ((u.cachedPromptTokens ?? 0) > 0) {
+      parts.push(`Cache read: ${formatTokenCount(u.cachedPromptTokens ?? 0)}`);
+    }
+    if ((u.cacheCreationTokens ?? 0) > 0) {
+      parts.push(`Cache write: ${formatTokenCount(u.cacheCreationTokens ?? 0)}`);
+    }
+  }
+  if (input.costUsd !== undefined && input.costUsd > 0) {
+    parts.push(`Estimated cost: ~$${input.costUsd.toFixed(4)}`);
+  }
+  return (
+    `<footer class="vy-run-summary-footer">` +
+    (parts.length > 0 ? `<p>${parts.join(' · ')}</p>` : '') +
+    `<p><em>Template summary — no LLM tokens used for this report.</em></p>` +
+    `</footer>`
+  );
+}
+
 /** Auto-generated body for post-edit run summaries. */
 export function buildEditRunSummaryBody(input: EditRunSummaryInput): string {
   const rows: SeverityTableRow[] = input.edits.map((e) => ({
@@ -181,8 +228,6 @@ export function buildEditRunSummaryBody(input: EditRunSummaryInput): string {
     buildSeverityTable(rows) +
     `<h2>Files by directory</h2>` +
     buildPrChangeGroups(groupEditsByDirectory(input.edits)) +
-    `<footer class="vy-run-summary-footer">` +
-    `<p><em>Template summary — no tokens used. For a full AI-authored review, enable AI report in Settings.</em></p>` +
-    `</footer>`
+    buildUsageFooter(input)
   );
 }

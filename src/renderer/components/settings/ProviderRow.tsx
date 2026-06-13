@@ -29,6 +29,7 @@ import {
 } from '@shared/types/provider.js';
 import { isLocalProvider } from '@shared/providers/isLocalProvider.js';
 import { classifyProviderHost } from '@shared/providers/providerHostKind.js';
+import { MODEL_DISCOVERY_TTL_MS } from '@shared/constants.js';
 import { Button } from '../ui/Button.js';
 import { DestructiveConfirm } from '../ui/DestructiveConfirm.js';
 import { Switch } from '../ui/Switch.js';
@@ -60,6 +61,10 @@ export function ProviderRow({ provider }: ProviderRowProps) {
   const discover = useProviderStore((s) => s.discover);
   const test = useProviderStore((s) => s.test);
   const update = useProviderStore((s) => s.update);
+  const discoveryPollHint = useProviderStore((s) => s.discoveryPollHints[provider.id]);
+  const discoveryStale =
+    provider.lastDiscoveredAt !== undefined &&
+    Date.now() - provider.lastDiscoveredAt > MODEL_DISCOVERY_TTL_MS;
 
   const [busy, setBusy] = useState<'idle' | 'discovering' | 'testing'>('idle');
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -117,6 +122,15 @@ export function ProviderRow({ provider }: ProviderRowProps) {
                 {PROVIDER_DIALECT_LABELS[provider.dialect ?? 'openai']}
               </ShellCaption>
               <ProviderAccountSummary provider={provider} />
+              {discoveryPollHint ? (
+                <ShellCaption className="mt-1 text-warning">{discoveryPollHint}</ShellCaption>
+              ) : null}
+              {discoveryStale && discoveryPollHint ? (
+                <ShellCaption className="mt-1 text-warning">
+                  Model metadata is older than {Math.round(MODEL_DISCOVERY_TTL_MS / 60_000)} min —
+                  refresh models when the provider is reachable.
+                </ShellCaption>
+              ) : null}
             </>
           }
           control={

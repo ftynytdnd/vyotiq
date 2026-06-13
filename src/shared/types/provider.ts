@@ -276,6 +276,11 @@ export interface ModelInfo {
   /** Optional context window in tokens, if the provider exposes it. */
   contextWindow?: number;
   /**
+   * True when `contextWindow` was inferred from the model id (e.g. `128k`
+   * suffix) rather than an authoritative API/catalog source.
+   */
+  contextEstimated?: boolean;
+  /**
    * Per-model pricing when the upstream model list exposes it (OpenRouter,
    * some routers). Normalized to USD per million tokens.
    */
@@ -335,4 +340,11 @@ export interface ProviderModelsUpdate {
   providerId: string;
   models: ModelInfo[];
   lastDiscoveredAt: number;
+}
+
+/** Push payload when background discovery poll failures warrant a Settings hint. */
+export interface ProviderDiscoveryPollHint {
+  providerId: string;
+  /** Omitted when failures cleared after a successful poll. */
+  hint?: string;
 }

@@ -303,6 +303,7 @@ export const IPC = {
   PROVIDERS_SET_ACCOUNT_POLL_SOURCE: 'providers:set-account-poll-source',
   /** Push: refreshed model list for one provider (main → renderer). */
   PROVIDERS_MODELS_UPDATED: 'providers:models-updated',
+  PROVIDERS_DISCOVERY_POLL_HINT: 'providers:discovery-poll-hint',
 
   // Token estimation (main-process BPE / heuristic)
   TOKENS_ESTIMATE: 'tokens:estimate',
@@ -373,6 +374,8 @@ export const IPC = {
   CONVERSATIONS_MOVE: 'conversations:move',
   CONVERSATIONS_ARCHIVE: 'conversations:archive',
   CONVERSATIONS_UNARCHIVE: 'conversations:unarchive',
+  /** Increment Vyotiq-estimated spend for a conversation turn (idempotent per prompt). */
+  CONVERSATIONS_INCREMENT_SPEND: 'conversations:increment-spend',
 
   // Checkpoints — renderer rewind (recording stays main-only)
   /** Rewind impact preview (inline Revert modal). */

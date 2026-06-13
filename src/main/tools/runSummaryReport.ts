@@ -55,7 +55,10 @@ export async function generateRunSummaryReport(
     promptPreview: input.promptPreview,
     durationMs: input.durationMs,
     completedAt: input.completedAt,
-    edits: input.edits
+    edits: input.edits,
+    ...(input.usageSummary ? { usageSummary: input.usageSummary } : {}),
+    ...(input.costUsd !== undefined ? { costUsd: input.costUsd } : {}),
+    ...(input.modelLabel ? { modelLabel: input.modelLabel } : {})
   });
 
   const html = buildReportHtml({

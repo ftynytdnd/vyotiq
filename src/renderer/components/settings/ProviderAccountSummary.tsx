@@ -21,19 +21,26 @@ export function ProviderAccountSummary({ provider }: ProviderAccountSummaryProps
   const snapshot = useProviderAccountStore((s) => s.snapshotFor(provider.id));
   const rows = formatProviderAccountDetailRows(snapshot);
   const low = isProviderAccountLow(snapshot);
+  const accountError =
+    snapshot?.status === 'error' && snapshot.message?.trim().length
+      ? snapshot.message.trim()
+      : null;
   const needsMgmtKey = providerNeedsManagementKey(snapshot);
   const mgmtDocs = managementKeyDocsUrl(snapshot?.hostKind);
 
-  if (rows.length === 0 && !snapshot?.dashboardUrl && !needsMgmtKey) return null;
+  if (rows.length === 0 && !snapshot?.dashboardUrl && !needsMgmtKey && !accountError) return null;
 
   return (
     <div
       className={cn(
         'mt-2 flex flex-col gap-1 rounded-md border border-border-subtle/40 px-2 py-1.5',
-        low && 'border-warning/40'
+        (low || accountError) && 'border-warning/40'
       )}
       aria-label="Provider account"
     >
+      {accountError ? (
+        <ShellCaption className="text-warning">{accountError}</ShellCaption>
+      ) : null}
       {low ? (
         <ShellCaption className="text-warning">Low balance — top up or switch providers</ShellCaption>
       ) : null}

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   contextWindowForDeepSeekApiModel,
   contextWindowFromOllamaModelInfo,
+  contextWindowFromOpenAiModelRow,
   thinkingForDeepSeekApiModel,
   thinkingFromAnthropicCapabilities,
   thinkingFromGeminiModel,
@@ -114,5 +115,41 @@ describe('contextWindowFromOllamaModelInfo', () => {
         'general.architecture': 'llama'
       })
     ).toBe(131072);
+  });
+});
+
+describe('contextWindowFromOpenAiModelRow', () => {
+  it('reads canonical OpenRouter fields', () => {
+    expect(
+      contextWindowFromOpenAiModelRow({
+        context_length: 128000,
+        top_provider: { context_length: 65536 }
+      })
+    ).toBe(128000);
+  });
+
+  it('reads vLLM max_model_len', () => {
+    expect(contextWindowFromOpenAiModelRow({ max_model_len: 32768 })).toBe(32768);
+  });
+
+  it('reads gateway max_input_tokens and inputTokenLimit', () => {
+    expect(contextWindowFromOpenAiModelRow({ max_input_tokens: 200000 })).toBe(200000);
+    expect(contextWindowFromOpenAiModelRow({ inputTokenLimit: 131072 })).toBe(131072);
+  });
+
+  it('reads LM Studio max_context_length', () => {
+    expect(contextWindowFromOpenAiModelRow({ max_context_length: 131072 })).toBe(131072);
+  });
+
+  it('reads meta.context_size from LocalAI-style rows', () => {
+    expect(
+      contextWindowFromOpenAiModelRow({
+        meta: { context_size: 8192, n_ctx_train: 32768 }
+      })
+    ).toBe(8192);
+  });
+
+  it('coerces string numbers', () => {
+    expect(contextWindowFromOpenAiModelRow({ context_length: '8192' })).toBe(8192);
   });
 });

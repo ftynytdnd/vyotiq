@@ -89,8 +89,15 @@ async function pollOnce(): Promise<void> {
       try {
         const snap = await fetchProviderAccount(withKey, signal);
         setProviderAccountSnapshot(snap);
+        if (snap.status === 'error') {
+          log.warn('account poll returned error status', {
+            providerId: p.id,
+            hostKind: snap.hostKind,
+            message: snap.message
+          });
+        }
       } catch (err) {
-        log.debug('account fetch failed', { providerId: p.id, err });
+        log.warn('account fetch threw', { providerId: p.id, err });
       }
     }
 

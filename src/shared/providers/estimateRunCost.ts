@@ -103,11 +103,20 @@ export function estimateRunCost(
   };
 }
 
-/** Compact USD label for UI, e.g. `$0.042` or `$1.23`. */
+/** Compact USD label for timeline run-complete rows, e.g. `$0.042` or `$1.23`. */
 export function formatRunCostUsd(usd: number): string {
   if (usd >= 1) return `$${usd.toFixed(2)}`;
   if (usd >= 0.01) return `$${usd.toFixed(3)}`;
   if (usd >= 0.0001) return `$${usd.toFixed(4)}`;
   if (usd > 0) return '<$0.0001';
+  return '$0.00';
+}
+
+/** Higher-precision USD label for composer/dock surfaces, e.g. `$0.0012`. */
+export function formatComposerCostUsd(usd: number): string {
+  if (usd >= 1) return `$${usd.toFixed(2)}`;
+  if (usd >= 0.01) return `$${usd.toFixed(4)}`;
+  if (usd >= 0.0001) return `$${usd.toFixed(4)}`;
+  if (usd > 0) return `$${usd.toFixed(5)}`;
   return '$0.00';
 }

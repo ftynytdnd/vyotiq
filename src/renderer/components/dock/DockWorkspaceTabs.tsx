@@ -122,9 +122,10 @@ export function DockWorkspaceTabs() {
       {activeSpendLabel ? (
         <div
           className="px-2 py-0.5 font-mono text-meta tabular-nums text-text-faint"
-          title="Estimated API spend for this workspace"
+          title="Vyotiq-estimated API spend for this workspace"
         >
           {activeSpendLabel}
+          <span className="text-text-faint/80"> est.</span>
         </div>
       ) : null}
       <button

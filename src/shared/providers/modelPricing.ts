@@ -81,6 +81,14 @@ export function formatModelPricingBadge(pricing: ModelPricing | undefined): stri
   if (!pricing) return null;
   const inP = pricing.inputPerMillion;
   const outP = pricing.outputPerMillion;
+  if (
+    (inP === undefined || inP === 0) &&
+    (outP === undefined || outP === 0) &&
+    (pricing.perRequest === undefined || pricing.perRequest === 0)
+  ) {
+    if (inP === 0 && outP === 0) return 'Free';
+    return null;
+  }
   if (inP === undefined && outP === undefined) {
     if (pricing.perRequest !== undefined && pricing.perRequest > 0) {
       return `$${formatUsdCompact(pricing.perRequest)}/req`;

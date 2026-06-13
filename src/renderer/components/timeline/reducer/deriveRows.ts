@@ -120,6 +120,7 @@ export type Row =
     kind: 'error';
     key: string;
     message: string;
+    promptId?: string;
     durationMs?: number;
     completedAt?: number;
     usage?: TokenUsageAggregate;

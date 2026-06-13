@@ -10,9 +10,14 @@ import { cn } from '../../../lib/cn.js';
 import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../../lib/shellIcons.js';
 import { Button } from '../../ui/Button.js';
 import { formatDuration, formatWallClock } from './RunCompleteRow.js';
+import { estimateCostForUsage, resolveModelForPrompt } from '../../../lib/workspaceSpend.js';
+import { useChatStore } from '../../../store/useChatStore.js';
+import { useConversationsStore } from '../../../store/useConversationsStore.js';
+import { useProviderStore } from '../../../store/useProviderStore.js';
 
 interface ErrorRowProps {
   message: string;
+  promptId?: string;
   durationMs?: number;
   completedAt?: number;
   usage?: TokenUsageAggregate;
@@ -24,18 +29,46 @@ interface ErrorRowProps {
 }
 
 function ErrorRunMeta({
+  promptId,
   durationMs,
   completedAt,
   usage,
   editCount,
   fileCount
-}: Pick<ErrorRowProps, 'durationMs' | 'completedAt' | 'usage' | 'editCount' | 'fileCount'>) {
+}: Pick<
+  ErrorRowProps,
+  'promptId' | 'durationMs' | 'completedAt' | 'usage' | 'editCount' | 'fileCount'
+>) {
+  const conversationId = useChatStore((s) => s.conversationId);
+  const events = useChatStore((s) => s.events);
+  const providers = useProviderStore((s) => s.providers);
+  const conversationMeta = useConversationsStore((s) =>
+    conversationId ? (s.list.find((m) => m.id === conversationId) ?? null) : null
+  );
+
   if (durationMs === undefined || completedAt === undefined) return null;
+
+  const modelForCost =
+    promptId !== undefined
+      ? resolveModelForPrompt(
+          events,
+          promptId,
+          conversationMeta?.lastProviderId && conversationMeta?.lastModelId
+            ? {
+                providerId: conversationMeta.lastProviderId,
+                modelId: conversationMeta.lastModelId
+              }
+            : null
+        )
+      : null;
 
   const tokenLabel =
     usage && usage.cumulative.totalTokens > 0
       ? formatTokenCountWithUnit(usage.cumulative.totalTokens)
       : null;
+
+  const costLabel =
+    usage && modelForCost ? estimateCostForUsage(modelForCost, providers, usage.cumulative) : null;
 
   const stats: string[] = [];
   if (typeof editCount === 'number' && editCount > 0) {
@@ -56,6 +89,7 @@ function ErrorRunMeta({
       aria-label={[
         stats.length > 0 ? stats.join(' · ') : null,
         `done in ${formatDuration(durationMs)}`,
+        costLabel ? `~${costLabel}` : null,
         tokenLabel,
         timeLabel
       ]
@@ -71,6 +105,14 @@ function ErrorRunMeta({
         </>
       ) : null}
       <span>done in {formatDuration(durationMs)}</span>
+      {costLabel !== null ? (
+        <>
+          <span aria-hidden className="text-text-faint/70">
+            {' · '}
+          </span>
+          <span className="font-mono tabular-nums">~{costLabel}</span>
+        </>
+      ) : null}
       {tokenLabel !== null ? (
         <>
           <span aria-hidden className="text-text-faint/70">
@@ -91,6 +133,7 @@ function ErrorRunMeta({
 
 export function ErrorRow({
   message,
+  promptId,
   durationMs,
   completedAt,
   usage,
@@ -119,6 +162,7 @@ export function ErrorRow({
         <div className="min-w-0 flex-1 whitespace-pre-wrap text-row text-danger">{message}</div>
       </div>
       <ErrorRunMeta
+        promptId={promptId}
         durationMs={durationMs}
         completedAt={completedAt}
         usage={usage}

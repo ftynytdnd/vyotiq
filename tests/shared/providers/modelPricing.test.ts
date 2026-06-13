@@ -20,4 +20,10 @@ describe('modelPricing', () => {
     expect(pricing?.outputPerMillion).toBeCloseTo(10, 4);
     expect(formatModelPricingBadge(pricing)).toBe('$2.50/$10.0');
   });
+
+  it('shows Free for zero input/output pricing', () => {
+    expect(
+      formatModelPricingBadge({ inputPerMillion: 0, outputPerMillion: 0 })
+    ).toBe('Free');
+  });
 });

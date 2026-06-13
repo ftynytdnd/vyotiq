@@ -16,7 +16,7 @@ import { selectEffectivePermissions, useSettingsStore } from '../../../store/use
 import { useProviderStore } from '../../../store/useProviderStore.js';
 import {
   estimateRunCostUsd,
-  recordWorkspaceSpendForPrompt,
+  recordRunSpendForPrompt,
   resolveModelForPrompt
 } from '../../../lib/workspaceSpend.js';
 import { vyotiq } from '../../../lib/ipc.js';
@@ -71,16 +71,25 @@ export function RunCompleteRow({
 
   const onGenerateSummary = useCallback(async () => {
     if (!conversationId || !workspaceId || generating) return;
-    const input = buildRunSummaryInput({
-      conversationId,
-      workspaceId,
-      promptId,
-      durationMs,
-      completedAt,
-      editCount,
-      fileCount,
-      events
-    });
+    const input = buildRunSummaryInput(
+      {
+        conversationId,
+        workspaceId,
+        promptId,
+        durationMs,
+        completedAt,
+        editCount,
+        fileCount,
+        events
+      },
+      providers,
+      conversationMeta?.lastProviderId && conversationMeta?.lastModelId
+        ? {
+            providerId: conversationMeta.lastProviderId,
+            modelId: conversationMeta.lastModelId
+          }
+        : null
+    );
     if (!input) return;
     setGenerating(true);
     try {
@@ -107,12 +116,15 @@ export function RunCompleteRow({
   }, [
     completedAt,
     conversationId,
+    conversationMeta?.lastModelId,
+    conversationMeta?.lastProviderId,
     durationMs,
     editCount,
     events,
     fileCount,
     generating,
     promptId,
+    providers,
     reports.autoOpenReports,
     showToast,
     workspaceId
@@ -167,10 +179,11 @@ export function RunCompleteRow({
 
   const spendRecordedRef = useRef(false);
   useEffect(() => {
-    if (spendRecordedRef.current || !workspaceId || costUsd === null) return;
+    if (spendRecordedRef.current || costUsd === null) return;
+    if (!workspaceId && !conversationId) return;
     spendRecordedRef.current = true;
-    void recordWorkspaceSpendForPrompt(workspaceId, promptId, costUsd);
-  }, [workspaceId, costUsd, promptId]);
+    void recordRunSpendForPrompt(workspaceId, conversationId, promptId, costUsd);
+  }, [workspaceId, conversationId, costUsd, promptId]);
 
   if (hideMeta && !offerSummary) return null;
 

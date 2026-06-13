@@ -600,6 +600,9 @@ export async function appendEvent(id: string, event: TimelineEvent): Promise<voi
   await next;
 }
 
+/** Idempotent per conversation + prompt — mirrors renderer workspace spend dedupe. */
+const recordedConversationPromptSpend = new Set<string>();
+
 /** Update best-effort meta about the last model used. */
 export async function setLastModel(
   id: string,
@@ -612,6 +615,36 @@ export async function setLastModel(
   meta.lastProviderId = providerId;
   meta.lastModelId = modelId;
   scheduleIndexFlush();
+}
+
+/**
+ * Increment Vyotiq-estimated API spend for a conversation turn.
+ * Idempotent per `(conversationId, promptId)` pair.
+ */
+export async function incrementConversationSpend(
+  id: string,
+  promptId: string,
+  usd: number
+): Promise<ConversationMeta | null> {
+  if (!id || !promptId || !Number.isFinite(usd) || usd <= 0) return null;
+  const key = `${id}::${promptId}`;
+  if (recordedConversationPromptSpend.has(key)) {
+    await loadIndex();
+    return findMeta(id) ?? null;
+  }
+  recordedConversationPromptSpend.add(key);
+  await loadIndex();
+  const meta = findMeta(id);
+  if (!meta) return null;
+  meta.estimatedSpendUsd = (meta.estimatedSpendUsd ?? 0) + usd;
+  bumpMeta(meta);
+  scheduleIndexFlush();
+  return meta;
+}
+
+/** Test-only reset. */
+export function __test_resetRecordedConversationSpend(): void {
+  recordedConversationPromptSpend.clear();
 }
 
 /** Persist a provider-billed ÷ estimate calibration ratio for a model selection. */

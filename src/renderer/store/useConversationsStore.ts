@@ -144,6 +144,8 @@ interface ConversationsStore {
    * list so the auto-derived title shows up in the dock.
    */
   bindActive: (id: string, workspaceId?: string) => void;
+  /** Merge a refreshed meta row from main (e.g. spend increment). */
+  patchMeta: (meta: ConversationMeta) => void;
   /**
    * Hydrate the per-workspace active-id map from persisted settings.
    * Called once on app boot from `App.tsx` after `settings.load()`.
@@ -663,6 +665,12 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
         hydratedIds: nextHydrated
       };
     });
+  },
+
+  patchMeta: (meta) => {
+    set((s) => ({
+      list: s.list.map((m) => (m.id === meta.id ? { ...m, ...meta } : m))
+    }));
   },
 
   bindActive: (id, workspaceId) => {

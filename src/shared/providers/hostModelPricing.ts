@@ -78,6 +78,21 @@ const HOST_PRICING: Partial<Record<ProviderHostKind, PricingRow[]>> = {
     row(2, 10, /^grok-3$/i),
     row(0.2, 0.5, /^grok-3-mini$/i),
     row(0.2, 0.5, /^grok-2-mini$/i)
+  ],
+  nvidia: [
+    row(0, 0, /^meta\/llama-3\.1-8b-instruct$/i),
+    row(0, 0, /^z-ai\/glm-5/i),
+    row(0, 0, /^google\/gemma-/i),
+    row(0, 0, /^moonshotai\/kimi-/i),
+    row(0, 0, /^nvidia\/nemotron-/i),
+    row(0, 0, /^deepseek-ai\/deepseek-/i),
+    row(0.3, 0.6, /^meta\/llama-3\.3-70b-instruct$/i),
+    row(0.3, 0.6, /^meta\/llama-3\.1-405b-instruct$/i),
+    row(0.2, 0.2, /^meta\/llama-3\.1-70b-instruct$/i),
+    row(0.1, 0.1, /^mistralai\/mistral-large/i),
+    row(0.05, 0.05, /^mistralai\/mistral-small/i),
+    row(0.2, 0.2, /^nvidia\/llama-3\.1-nemotron/i),
+    row(0.4, 0.4, /^qwen\/qwen2\.5-72b-instruct$/i)
   ]
 };
 

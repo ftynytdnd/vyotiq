@@ -4,6 +4,7 @@
 
 export type SettingsSectionId =
   | 'models-api'
+  | 'usage'
   | 'agent-behavior'
   | 'workspace-data'
   | 'appearance'
@@ -12,6 +13,7 @@ export type SettingsSectionId =
 
 const SETTINGS_SECTION_IDS: SettingsSectionId[] = [
   'models-api',
+  'usage',
   'agent-behavior',
   'workspace-data',
   'appearance',
@@ -62,6 +64,7 @@ export function isPersistableSettingsSection(
 /** Human-readable labels for settings sections (nav, title bar, headers). */
 export const SETTINGS_SECTION_LABELS: Record<SettingsSectionId, string> = {
   'models-api': 'Models & API',
+  usage: 'Usage',
   'agent-behavior': 'Agent behavior',
   'workspace-data': 'Workspace data',
   appearance: 'Appearance',

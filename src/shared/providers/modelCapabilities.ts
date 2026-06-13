@@ -10,6 +10,7 @@
  */
 
 import type { ModelThinkingCapabilities, ThinkingEffort, ThinkingWireStyle } from '../types/provider.js';
+import { parseProviderHostname } from './providerHostname.js';
 
 const REASONING_API_PARAMETERS = new Set([
   'reasoning',
@@ -211,12 +212,7 @@ export function contextWindowFromOllamaModelInfo(
 }
 
 export function isDeepSeekApiHost(baseUrl: string): boolean {
-  try {
-    const host = new URL(baseUrl).hostname.toLowerCase();
-    return host === 'api.deepseek.com' || host.endsWith('.deepseek.com');
-  } catch {
-    return false;
-  }
+  return parseProviderHostname(baseUrl).deepseek;
 }
 
 export function mergeThinkingCapabilities(
@@ -235,4 +231,42 @@ export function mergeContextWindows(
     if (typeof c === 'number' && c > 0) return c;
   }
   return undefined;
+}
+
+export function positiveTokenCount(value: unknown): number | undefined {
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return positiveTokenCount(parsed);
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  const n = Math.floor(value);
+  return n > 0 ? n : undefined;
+}
+
+/**
+ * OpenAI-compatible `/v1/models` row → context window in tokens.
+ * Covers OpenRouter, vLLM, LM Studio shims, and gateway extensions.
+ */
+export function contextWindowFromOpenAiModelRow(row: {
+  context_window?: unknown;
+  context_length?: unknown;
+  max_model_len?: unknown;
+  max_input_tokens?: unknown;
+  inputTokenLimit?: unknown;
+  max_context_length?: unknown;
+  top_provider?: { context_length?: unknown };
+  meta?: { context_size?: unknown; n_ctx_train?: unknown; context_length?: unknown };
+}): number | undefined {
+  return mergeContextWindows(
+    positiveTokenCount(row.context_window),
+    positiveTokenCount(row.context_length),
+    positiveTokenCount(row.top_provider?.context_length),
+    positiveTokenCount(row.max_model_len),
+    positiveTokenCount(row.max_input_tokens),
+    positiveTokenCount(row.inputTokenLimit),
+    positiveTokenCount(row.max_context_length),
+    positiveTokenCount(row.meta?.context_size),
+    positiveTokenCount(row.meta?.n_ctx_train),
+    positiveTokenCount(row.meta?.context_length)
+  );
 }

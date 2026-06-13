@@ -162,21 +162,19 @@ describe('detectDialect — auto-probe', () => {
   });
 
   it('falls back to "ollama-native" when /v1/models is 404 but /api/tags is 200 (non-well-known host)', async () => {
-    // Phase 8/9 (2026): well-known hosts (api.anthropic.com,
-    // generativelanguage.googleapis.com, ollama.com) short-circuit
-    // the probe race via `classifyKnownHost`. This test exercises the
-    // probe-race fallback path that ALL OTHER hosts still take — we
-    // use a self-hosted Ollama daemon URL to keep the assertion
-    // meaningful.
+    // Phase 8/9 (2026): well-known hosts short-circuit via `classifyKnownHost`.
+    // All other hosts race four dialect probes in parallel (2026 audit).
     const { calls } = mockFetchSequence([
-      () => new Response('not found', { status: 404, statusText: 'Not Found' }),
-      () => jsonResponse(200, { models: [] })
+      (call) =>
+        call.url.includes('/api/tags')
+          ? jsonResponse(200, { models: [] })
+          : new Response('not found', { status: 404, statusText: 'Not Found' })
     ]);
     const dialect = await detectDialect('http://localhost:11434', 'k');
     expect(dialect).toBe('ollama-native');
-    expect(calls).toHaveLength(2);
-    expect(calls[0]!.url).toContain('/v1/models');
-    expect(calls[1]!.url).toContain('/api/tags');
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    expect(calls.some((c) => c.url.includes('/v1/models'))).toBe(true);
+    expect(calls.some((c) => c.url.includes('/api/tags'))).toBe(true);
   });
 
   it('short-circuits to "ollama-native" for Ollama Cloud without probing', async () => {
@@ -213,7 +211,6 @@ describe('detectDialect — auto-probe', () => {
 
   it('throws when neither endpoint is reachable', async () => {
     mockFetchSequence([
-      () => new Response('nope', { status: 404 }),
       () => new Response('nope', { status: 404 })
     ]);
     await expect(detectDialect('https://broken.example', '')).rejects.toThrow(
@@ -223,10 +220,10 @@ describe('detectDialect — auto-probe', () => {
 
   it('continues to /api/tags even if /v1/models throws (DNS / TCP reset)', async () => {
     mockFetchSequence([
-      () => {
+      (call) => {
+        if (call.url.includes('/api/tags')) return jsonResponse(200, { models: [] });
         throw new Error('ECONNREFUSED');
-      },
-      () => jsonResponse(200, { models: [] })
+      }
     ]);
     const dialect = await detectDialect('http://localhost:11434', '');
     expect(dialect).toBe('ollama-native');
@@ -299,32 +296,23 @@ describe('detectDialect — auto-probe', () => {
   });
 
   /**
-   * Regression — Cluster 2 audit. Both detectDialect probes must
+   * Regression — Cluster 2 audit. All detectDialect probes must
    * forward an AbortSignal so a base URL that DNS-resolves but never
    * responds at the socket layer cannot hang PROVIDERS_ADD past the
-   * `MODEL_DISCOVERY_TIMEOUT_MS` budget. Before this fix, the probe
-   * fetches had no signal and the renderer's settings modal spun
-   * indefinitely (minutes on Linux, ~21s on Windows) when a user
-   * mistyped the URL or it pointed at a blackholing firewall.
-   *
-   * The assertion checks the SHAPE of the wired-up signal — every
-   * probe call's `init.signal` must be a live AbortSignal. We don't
-   * actually trigger the timer to fire because vitest's fake-timer
-   * setup would interfere with the real-fetch mock chain; a presence
-   * check is sufficient to prove the wiring is intact.
+   * `MODEL_DISCOVERY_TIMEOUT_MS` budget.
    */
   it('forwards a bounded AbortSignal on every probe fetch (timeout wiring)', async () => {
     const { calls } = mockFetchSequence([
-      () => new Response('not found', { status: 404 }),
-      () => jsonResponse(200, { models: [] })
+      (call) =>
+        call.url.includes('/api/tags')
+          ? jsonResponse(200, { models: [] })
+          : new Response('not found', { status: 404 })
     ]);
     await detectDialect('https://maybe-broken.example', '');
-    expect(calls).toHaveLength(2);
+    expect(calls.length).toBeGreaterThanOrEqual(2);
     for (const c of calls) {
       const sig = c.init?.signal;
       expect(sig).toBeDefined();
-      // AbortSignal instance check — not a literal undefined and not
-      // a boolean, so the underlying transport can cancel on timeout.
       expect(typeof (sig as AbortSignal).aborted).toBe('boolean');
     }
   });

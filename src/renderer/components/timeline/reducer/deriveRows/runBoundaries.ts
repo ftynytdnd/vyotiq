@@ -21,6 +21,7 @@ function enrichErrorRowWithRunMeta(
   out: Row[],
   errorKey: string,
   meta: {
+    promptId: string;
     durationMs: number;
     completedAt: number;
     usage?: TokenUsageAggregate;
@@ -34,6 +35,7 @@ function enrichErrorRowWithRunMeta(
     if (row?.kind === 'error' && row.key === errorKey) {
       out[i] = {
         ...row,
+        promptId: meta.promptId,
         durationMs: meta.durationMs,
         completedAt: meta.completedAt,
         ...(meta.usage !== undefined ? { usage: meta.usage } : {}),
@@ -66,7 +68,7 @@ export function flushRunToRows(
     commandCount
   };
   if (openRun.endedInError && openRun.errorKey) {
-    enrichErrorRowWithRunMeta(out, openRun.errorKey, meta);
+    enrichErrorRowWithRunMeta(out, openRun.errorKey, { ...meta, promptId: openRun.promptId });
   } else if (durationMs > 0) {
     out.push({
       kind: 'run-complete',

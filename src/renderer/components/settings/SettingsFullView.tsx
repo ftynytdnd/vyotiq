@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Brain, Cloud, FolderTree, Info, Keyboard, Palette } from 'lucide-react';
+import { Cloud, BarChart3, Brain, FolderTree, Info, Keyboard, Palette } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { ProvidersPanel } from './ProvidersPanel.js';
+import { UsagePanel } from './UsagePanel.js';
 import { AgentBehaviorPanel } from './AgentBehaviorPanel.js';
 import { AppearancePanel } from './AppearancePanel.js';
 import { WorkspaceDataPanel } from './WorkspaceDataPanel.js';
@@ -22,7 +23,10 @@ type NavGroup = { label: string; items: { id: SettingsSectionId; label: string; 
 const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Models & API',
-    items: [{ id: 'models-api', label: 'Models & API', Icon: Cloud }]
+    items: [
+      { id: 'models-api', label: 'Models & API', Icon: Cloud },
+      { id: 'usage', label: 'Usage', Icon: BarChart3 }
+    ]
   },
   {
     label: 'Agent',
@@ -137,6 +141,7 @@ export function SettingsFullView({ initialSection = 'models-api' }: SettingsFull
           ) : (
             <ShellStack>
               {section === 'models-api' && <ProvidersPanel />}
+              {section === 'usage' && <UsagePanel />}
               {section === 'agent-behavior' && <AgentBehaviorPanel />}
               {section === 'workspace-data' && <WorkspaceDataPanel />}
               {section === 'appearance' && <AppearancePanel />}

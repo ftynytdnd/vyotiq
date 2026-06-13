@@ -88,6 +88,21 @@ export interface GenerateRunSummaryInput {
 
   edits: Array<{ filePath: string; additions: number; deletions: number }>;
 
+  /** Token totals for the run window (optional). */
+  usageSummary?: {
+    promptTokens: number;
+    completionTokens: number;
+    cachedPromptTokens?: number;
+    cacheCreationTokens?: number;
+    reasoningTokens?: number;
+  };
+
+  /** Vyotiq-estimated USD for the run. */
+  costUsd?: number;
+
+  /** Human-readable model label, e.g. `providerId / modelId`. */
+  modelLabel?: string;
+
 }
 
 export type GenerateRunSummaryReply =
@@ -875,6 +890,10 @@ export interface VyotiqApi {
 
     onModelsUpdated(cb: (update: import('./provider.js').ProviderModelsUpdate) => void): () => void;
 
+    onDiscoveryPollHint(
+      cb: (hint: import('./provider.js').ProviderDiscoveryPollHint) => void
+    ): () => void;
+
   };
 
 
@@ -976,6 +995,16 @@ export interface VyotiqApi {
     archive(id: string): Promise<ConversationMeta>;
 
     unarchive(id: string): Promise<ConversationMeta>;
+
+    /**
+     * Increment Vyotiq-estimated spend for a completed turn. Idempotent
+     * per `(conversationId, promptId)`; returns refreshed meta.
+     */
+    incrementSpend(
+      id: string,
+      promptId: string,
+      usd: number
+    ): Promise<ConversationMeta | null>;
 
   };
 

@@ -35,9 +35,9 @@ describe('updateProvider — thinking config merge', () => {
     await updateProvider(created.id, {
       modelThinking: { 'deepseek-v4-flash': 'high' }
     });
-    const afterFirst = await updateProvider(created.id, {
+    const afterFirst = (await updateProvider(created.id, {
       modelThinking: { 'deepseek-v4-pro': 'off' }
-    });
+    })).provider;
 
     // Both models' overrides coexist after two single-key patches.
     expect(afterFirst.modelThinking).toEqual({
@@ -56,9 +56,9 @@ describe('updateProvider — thinking config merge', () => {
     await updateProvider(created.id, {
       modelThinking: { 'deepseek-v4-flash': 'high', 'deepseek-v4-pro': 'off' }
     });
-    const cleared = await updateProvider(created.id, {
+    const cleared = (await updateProvider(created.id, {
       modelThinking: { 'deepseek-v4-flash': null }
-    });
+    })).provider;
     expect(cleared.modelThinking).toEqual({ 'deepseek-v4-pro': 'off' });
   });
 
@@ -71,7 +71,7 @@ describe('updateProvider — thinking config merge', () => {
     });
     await updateProvider(created.id, { modelThinking: { 'deepseek-v4-flash': 'medium' } });
 
-    const afterRename = await updateProvider(created.id, { name: 'DeepSeek Direct' });
+    const afterRename = (await updateProvider(created.id, { name: 'DeepSeek Direct' })).provider;
     expect(afterRename.name).toBe('DeepSeek Direct');
     expect(afterRename.modelThinking).toEqual({ 'deepseek-v4-flash': 'medium' });
   });
@@ -84,10 +84,10 @@ describe('updateProvider — thinking config merge', () => {
       dialect: 'anthropic-native'
     });
 
-    const updated = await updateProvider(created.id, {
+    const updated = (await updateProvider(created.id, {
       anthropicThinking: { enabled: true, effort: 'high' },
       contextOverrides: { 'claude-opus-4-7': 200000 }
-    });
+    })).provider;
 
     expect(updated.anthropicThinking).toEqual({ enabled: true, effort: 'high' });
     expect(updated.contextOverrides).toEqual({ 'claude-opus-4-7': 200000 });

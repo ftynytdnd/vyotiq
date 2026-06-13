@@ -121,9 +121,9 @@ describe('providerStore base-URL normalization', () => {
       apiKey: 'k',
       dialect: 'ollama-native'
     });
-    const updated = await updateProvider(p.id, {
+    const updated = (await updateProvider(p.id, {
       baseUrl: 'https://new.example.com/api'
-    });
+    })).provider;
     expect(updated.baseUrl).toBe('https://new.example.com');
     // listProviders should reflect the same.
     const stored = (await listProviders()).find((x) => x.id === p.id);
@@ -144,12 +144,31 @@ describe('providerStore base-URL normalization', () => {
       dialect: 'openai'
     });
     expect(p.baseUrl).toBe('https://openrouter.ai/api');
-    const flipped = await updateProvider(p.id, {
+    const flipped = (await updateProvider(p.id, {
       baseUrl: 'https://ollama.com/api',
       dialect: 'ollama-native'
-    });
+    })).provider;
     expect(flipped.baseUrl).toBe('https://ollama.com');
     expect(flipped.dialect).toBe('ollama-native');
+  });
+
+  it('clears cached models when baseUrl changes', async () => {
+    const p = await addProvider({
+      name: 'Local',
+      baseUrl: 'http://localhost:11434',
+      apiKey: '',
+      dialect: 'openai'
+    });
+    await updateProvider(p.id, {
+      models: [{ id: 'llama3' }],
+      lastDiscoveredAt: Date.now()
+    });
+    const changed = (await updateProvider(p.id, {
+      baseUrl: 'http://localhost:1234'
+    })).provider;
+    expect(changed.baseUrl).toBe('http://localhost:1234');
+    expect(changed.models).toEqual([]);
+    expect(changed.lastDiscoveredAt).toBeUndefined();
   });
 
   it('does not strip mid-path segments — only TRAILING dialect suffix', async () => {

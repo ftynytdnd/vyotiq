@@ -20,6 +20,16 @@ import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../lib/shellIcon
 
 const EFFORT_COLUMN_CLASS = 'w-[9.75rem] shrink-0 border-l border-border-subtle/30';
 
+function formatContextLabel(
+  model: ModelInfo,
+  contextOverrides?: Record<string, number>
+): string | null {
+  const ctx = effectiveContextWindow(model, contextOverrides);
+  if (typeof ctx !== 'number') return null;
+  const prefix = model.contextEstimated ? '~' : '';
+  return `${prefix}${formatTokenCount(ctx)} ctx`;
+}
+
 interface ModelListProps {
   models: ModelInfo[];
   loading?: boolean;
@@ -180,17 +190,13 @@ export function ModelList({
                       }}
                     >
                       {(() => {
-                        const ctx = effectiveContextWindow(m, contextOverrides);
-                        return typeof ctx === 'number'
-                          ? `${formatTokenCount(ctx)} ctx`
-                          : 'Set ctx';
+                        const label = formatContextLabel(m, contextOverrides);
+                        return label ?? 'Set ctx';
                       })()}
                     </button>
                   ) : (() => {
-                      const ctx = effectiveContextWindow(m, contextOverrides);
-                      return typeof ctx === 'number' ? (
-                        <span className="vx-caption">{formatTokenCount(ctx)} ctx</span>
-                      ) : null;
+                      const label = formatContextLabel(m, contextOverrides);
+                      return label ? <span className="vx-caption">{label}</span> : null;
                     })()}
                 </div>
               </div>
@@ -219,6 +225,7 @@ export function ModelList({
               <ContextOverrideEditor
                 modelId={contextEditModelId}
                 discovered={contextEditModel.contextWindow}
+                discoveredEstimated={contextEditModel.contextEstimated}
                 override={contextOverrides?.[contextEditModelId]}
                 onSave={(tokens) => onContextOverrideSave(contextEditModelId, tokens)}
                 onClear={() => onContextOverrideClear?.(contextEditModelId)}

@@ -91,7 +91,7 @@ export function ProvidersPanel() {
       <ShellRow className="pt-0">
         <div className="flex w-full flex-wrap items-center justify-between gap-2">
           <ShellCaption>
-            OpenAI-compatible endpoints; models via <span className="font-mono">GET /v1/models</span>.
+            OpenAI-compatible, Anthropic-native, Gemini-native, and Ollama-native dialects; models discovered per dialect.
             Keys use the OS keychain.
           </ShellCaption>
           <Button
