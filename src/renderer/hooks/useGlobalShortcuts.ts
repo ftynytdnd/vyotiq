@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Window-level accelerators for core app actions (dock tooltips and
  * settings reference the same bindings).
  *
@@ -24,6 +24,13 @@ export interface GlobalShortcutActions {
   /** Toggle integrated terminal (Ctrl/Cmd+`). */
   toggleTerminal?: () => void;
   blockTerminal?: () => boolean;
+  closeWorkbenchTab?: () => void;
+  blockWorkbenchTab?: () => boolean;
+  cycleWorkbenchTabPrev?: () => void;
+  cycleWorkbenchTabNext?: () => void;
+  /** Save the active editor file when dirty. */
+  saveEditor?: () => void;
+  blockSaveEditor?: () => boolean;
   reload?: () => void;
   toggleDevTools?: () => void;
 }
@@ -66,6 +73,31 @@ export function useGlobalShortcuts(
       if (eventMatchesCombo(e, b.openSettings)) {
         e.preventDefault();
         actionsRef.current.openSettings();
+        return;
+      }
+      if (eventMatchesCombo(e, b.saveEditor)) {
+        if (!actionsRef.current.saveEditor || actionsRef.current.blockSaveEditor?.()) return;
+        e.preventDefault();
+        actionsRef.current.saveEditor();
+        return;
+      }
+
+      if (eventMatchesCombo(e, b.closeWorkbenchTab)) {
+        if (!actionsRef.current.closeWorkbenchTab || actionsRef.current.blockWorkbenchTab?.()) return;
+        e.preventDefault();
+        actionsRef.current.closeWorkbenchTab();
+        return;
+      }
+      if (eventMatchesCombo(e, b.cycleWorkbenchTabPrev)) {
+        if (!actionsRef.current.cycleWorkbenchTabPrev || actionsRef.current.blockWorkbenchTab?.()) return;
+        e.preventDefault();
+        actionsRef.current.cycleWorkbenchTabPrev();
+        return;
+      }
+      if (eventMatchesCombo(e, b.cycleWorkbenchTabNext)) {
+        if (!actionsRef.current.cycleWorkbenchTabNext || actionsRef.current.blockWorkbenchTab?.()) return;
+        e.preventDefault();
+        actionsRef.current.cycleWorkbenchTabNext();
         return;
       }
       if (eventMatchesCombo(e, b.reload)) {
