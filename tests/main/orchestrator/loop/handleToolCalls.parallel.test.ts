@@ -78,4 +78,44 @@ describe('handleToolCalls — parallel independent batch', () => {
     expect(elapsed).toBeLessThan(DELAY_MS * 2.5);
     expect(elapsed).toBeGreaterThanOrEqual(DELAY_MS - 5);
   });
+
+  it('runs write-shaped tools before reads in the same batch', async () => {
+    const messages: ChatMessage[] = [];
+    const emit = vi.fn<(e: TimelineEvent) => void>();
+    const order: string[] = [];
+
+    runToolByName.mockImplementation(async (name: string) => {
+      order.push(name);
+      return {
+        id: `r-${name}`,
+        name: name as ToolResult['name'],
+        ok: true,
+        output: 'ok',
+        durationMs: 1
+      };
+    });
+
+    await handleToolCalls(
+      [
+        readCall('before'),
+        {
+          id: 'e1',
+          name: 'edit',
+          argumentsBuf: JSON.stringify({
+            path: 'a.ts',
+            oldString: 'old',
+            newString: 'new'
+          })
+        },
+        readCall('after')
+      ],
+      messages,
+      emit,
+      baseOpts
+    );
+
+    expect(order[0]).toBe('edit');
+    expect(order.filter((n) => n === 'read')).toHaveLength(2);
+    expect(order.indexOf('edit')).toBeLessThan(order.indexOf('read'));
+  });
 });

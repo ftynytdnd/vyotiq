@@ -7,7 +7,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { TimelineEvent } from '@shared/types/chat';
 import { ProviderError } from '@main/providers/providerError';
-import { MAX_SELF_CORRECTION_ATTEMPTS } from '@shared/constants';
+import { MAX_PROVIDER_RECOVERY_ROUNDS, MAX_SELF_CORRECTION_ATTEMPTS } from '@shared/constants';
 
 vi.mock('@main/orchestrator/loop/handleAssistantTurn', () => ({
   handleAssistantTurn: vi.fn()
@@ -158,7 +158,9 @@ describe('runOrchestratorLoop — ProviderError handling', () => {
       strictApprovals: false
     });
 
-    expect(handleAssistantTurn).toHaveBeenCalledTimes(MAX_SELF_CORRECTION_ATTEMPTS);
+    expect(handleAssistantTurn).toHaveBeenCalledTimes(
+      MAX_SELF_CORRECTION_ATTEMPTS * (MAX_PROVIDER_RECOVERY_ROUNDS + 1)
+    );
   });
 
   it('paints friendlyMessage in the amber retry-warning thought for recoverable auth', async () => {
@@ -237,7 +239,9 @@ describe('runOrchestratorLoop — ProviderError handling', () => {
       strictApprovals: false
     });
 
-    expect(handleAssistantTurn).toHaveBeenCalledTimes(MAX_SELF_CORRECTION_ATTEMPTS);
+    expect(handleAssistantTurn).toHaveBeenCalledTimes(
+      MAX_SELF_CORRECTION_ATTEMPTS * (MAX_PROVIDER_RECOVERY_ROUNDS + 1)
+    );
     expect(result.terminalError).toMatch(/Rate limit exceeded/);
     const errors = events.filter((e) => e.kind === 'error');
     expect(errors).toHaveLength(1);

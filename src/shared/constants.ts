@@ -29,43 +29,36 @@ export const COMPACT_MIN_TOOL_OUTPUT_CHARS = 4_000;
  * the prompt cache for no gain.
  */
 export const COMPACT_MIN_TOOL_INPUT_CHARS = 4_000;
-/** Fallback when model context window is unknown at compaction time. */
-export const COMPACT_DEFAULT_CONTEXT_WINDOW = 128_000;
-
 /**
  * Unified context-window management defaults (2026 context-engineering
  * research: manage proactively well before the hard limit to avoid
  * "context rot"; reversible reduction first, lossy summarization last).
  * See `docs/context-management-design.md`.
  */
-/** Fraction of the effective window at which proactive reduction triggers. */
+/** Fraction of the model context window at which proactive reduction triggers. */
 export const CONTEXT_DEFAULT_TRIGGER_FRACTION = 0.75;
-/** Fraction of the effective window at which the UI shows an early warning. */
+/** Fraction of the model context window at which the UI shows an early warning. */
 export const CONTEXT_DEFAULT_WARN_FRACTION = 0.7;
-/**
- * Usable share of a model's advertised context window. Advertised windows
- * overstate the length over which a model reasons reliably; we treat 90%
- * as the working ceiling and compute thresholds against it.
- */
-export const CONTEXT_DEFAULT_EFFECTIVE_WINDOW_FRACTION = 0.9;
-/**
- * Adaptive absolute ceiling on the usable window (tokens). 2026 context-rot
- * research (Chroma's 18-model study) shows reasoning degradation onset is
- * roughly *absolute* (~tens of thousands of tokens), not proportional to the
- * advertised window. So a flat fraction of a 1M window (e.g. 750k) sits far
- * past where rot sets in. The effective window is therefore capped at
- * `min(advertised × fraction, absoluteCeiling)`. Set to 0 to disable the cap
- * (pure fractional behavior). 200k balances large-context capability against
- * the measured rot curve and matches the practical ceiling of today's
- * strongest long-context coding models.
- */
-export const CONTEXT_DEFAULT_ABSOLUTE_CEILING_TOKENS = 200_000;
 /** Most-recent tool results kept verbatim when clearing older ones. */
 export const CONTEXT_DEFAULT_KEEP_LAST_TOOL_RESULTS = 3;
 /** Minimum tokens a reduction pass must free, else it is skipped (protects the prompt cache). */
 export const CONTEXT_DEFAULT_MIN_SAVINGS_TOKENS = 2_000;
 /** Cooldown between automatic reduction passes for one run (anti-thrash). */
 export const CONTEXT_DEFAULT_COOLDOWN_MS = 15_000;
+/**
+ * Absolute compaction warn/trigger caps for large-window models. Display and
+ * meter % use the full discovered window; proactive reduction uses
+ * min(fraction × window, absolute) so 1M models still compact near ~200k.
+ */
+export const CONTEXT_ABSOLUTE_COMPACTION_WARN_TOKENS = 180_000;
+export const CONTEXT_ABSOLUTE_COMPACTION_TRIGGER_TOKENS = 200_000;
+/**
+ * History-layer bands for large-window models: when transcript history alone
+ * dominates the prompt, warn/trigger even if total tokens sit below the
+ * absolute caps (e.g. 119k history at 133k total on a 1M window).
+ */
+export const CONTEXT_HISTORY_COMPACTION_WARN_TOKENS = 100_000;
+export const CONTEXT_HISTORY_COMPACTION_TRIGGER_TOKENS = 120_000;
 /** Clamp band for provider-vs-estimate calibration (real ÷ heuristic). */
 export const CONTEXT_CALIBRATION_MIN = 0.5;
 export const CONTEXT_CALIBRATION_MAX = 2;
@@ -155,6 +148,8 @@ export const MODEL_DISCOVERY_TIMEOUT_MS = 12_000;
  */
 export const RUN_SETTLEMENT_TIMEOUT_MS = 120_000;
 export const MAX_SELF_CORRECTION_ATTEMPTS = 3;
+/** Harness recovery cycles before a sustained provider failure terminates the run. */
+export const MAX_PROVIDER_RECOVERY_ROUNDS = 1;
 export const MAX_TOTAL_ITERATIONS = 24;
 
 /** Backoff. */

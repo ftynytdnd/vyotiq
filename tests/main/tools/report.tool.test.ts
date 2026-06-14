@@ -58,4 +58,21 @@ describe('report tool', () => {
     expect(result.ok).toBe(false);
     expect(result.output).toMatch(/exceeds/i);
   });
+
+  it('appends a timestamp suffix when the slug already exists', async () => {
+    const ctx = makeCtx(workspacePath);
+    const first = await reportTool.run(
+      { title: 'Q1 Summary', body: '<p>v1</p>' },
+      ctx
+    );
+    expect(first.ok).toBe(true);
+    const second = await reportTool.run(
+      { title: 'Q1 Summary', body: '<p>v2</p>' },
+      ctx
+    );
+    expect(second.ok).toBe(true);
+    if (second.data?.tool !== 'report' || first.data?.tool !== 'report') return;
+    expect(second.data.relPath).not.toBe(first.data.relPath);
+    expect(second.data.relPath).toMatch(/q1-summary-\d+\.html$/);
+  });
 });

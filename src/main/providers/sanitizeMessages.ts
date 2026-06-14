@@ -16,6 +16,7 @@
  */
 
 import type { ChatMessage } from '@shared/types/chat.js';
+import { isOpenRouterHost } from './attributionHeaders.js';
 
 /**
  * Host-suffix check for DeepSeek's direct API.
@@ -45,9 +46,21 @@ function isDeepSeekDirect(baseUrl: string): boolean {
 }
 
 /**
+ * DeepSeek reasoning models routed through OpenRouter require
+ * `reasoning_content` echoed on follow-up turns (2026). Direct API
+ * and OpenRouter+DeepSeek both preserve the field; other gateways
+ * still strip it to avoid strict-dialect 422s.
+ */
+function shouldPreserveReasoningContent(baseUrl: string, modelId?: string): boolean {
+  if (isDeepSeekDirect(baseUrl)) return true;
+  if (!modelId || !isOpenRouterHost(baseUrl)) return false;
+  return /deepseek/i.test(modelId);
+}
+
+/**
  * Strip the DeepSeek-only `reasoning_content` field from every
  * outbound assistant message when the destination provider is NOT
- * DeepSeek-direct.
+ * DeepSeek-direct (or OpenRouter+DeepSeek).
  *
  * Why this exists: DeepSeek-V3.1+ reasoning models REQUIRE the
  * previous turn's `reasoning_content` to be echoed back on the
@@ -69,7 +82,8 @@ function isDeepSeekDirect(baseUrl: string): boolean {
  * The fix sanitizes at the transport edge: the persisted store
  * keeps `reasoning_content` (so a later switch back to DeepSeek
  * still round-trips it correctly), but the wire body never carries
- * the field unless the destination is DeepSeek-direct.
+ * the field unless the destination preserves it
+ * (DeepSeek-direct or OpenRouter+DeepSeek model id).
  *
  * Identity-preserving on the common path (every non-DeepSeek-sourced
  * conversation): when no assistant message has `reasoning_content`
@@ -78,11 +92,10 @@ function isDeepSeekDirect(baseUrl: string): boolean {
  */
 export function stripReasoningContentForStrictDialects(
   messages: readonly ChatMessage[],
-  baseUrl: string
+  baseUrl: string,
+  modelId?: string
 ): ChatMessage[] {
-  // DeepSeek-direct: pass through verbatim. The model relies on the
-  // echo for thinking-mode continuity.
-  if (isDeepSeekDirect(baseUrl)) return messages as ChatMessage[];
+  if (shouldPreserveReasoningContent(baseUrl, modelId)) return messages as ChatMessage[];
   let changed = false;
   const out: ChatMessage[] = [];
   for (const m of messages) {

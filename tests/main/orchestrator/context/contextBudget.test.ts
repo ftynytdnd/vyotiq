@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { evaluateContextBudget } from '@main/orchestrator/context/contextBudget';
 import { sumContextBreakdown } from '@shared/context/contextLevel';
 import { DEFAULT_CONTEXT_MANAGEMENT_SETTINGS } from '@shared/settings/agentBehaviorSettings';
+import { getProviderWithKey } from '@main/providers/providerStore.js';
 
 vi.mock('@main/providers/providerStore.js', () => ({
   getProviderWithKey: vi.fn(async () => ({
@@ -48,5 +49,30 @@ describe('evaluateContextBudget', () => {
     expect(usage.exact).toBe(true);
     expect(usage.breakdown).toBeDefined();
     expect(sumContextBreakdown(usage.breakdown!)).toBe(12_000);
+  });
+
+  it('uses the full discovered context window without artificial caps', async () => {
+    const usage = await evaluateContextBudget({
+      messages: [{ role: 'user', content: 'hello' }],
+      modelId: 'm1',
+      providerId: 'test',
+      settings: DEFAULT_CONTEXT_MANAGEMENT_SETTINGS,
+      skipRemoteRefine: true
+    });
+    expect(usage.effectiveWindow).toBe(128_000);
+    expect(usage.advertisedWindow).toBe(128_000);
+  });
+
+  it('returns zero window when provider or model context is unknown', async () => {
+    vi.mocked(getProviderWithKey).mockResolvedValueOnce(null);
+    const usage = await evaluateContextBudget({
+      messages: [{ role: 'user', content: 'hello' }],
+      modelId: 'm1',
+      providerId: 'missing',
+      settings: DEFAULT_CONTEXT_MANAGEMENT_SETTINGS,
+      skipRemoteRefine: true
+    });
+    expect(usage.effectiveWindow).toBe(0);
+    expect(usage.advertisedWindow).toBe(0);
   });
 });

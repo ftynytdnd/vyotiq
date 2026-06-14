@@ -2,8 +2,8 @@
  * Context management settings — proactive context-window reduction for long
  * agent runs (see `docs/context-management-design.md`). Basic knobs cover the
  * thresholds + summarization fallback; an Advanced group exposes the
- * anti-thrash pacing, the adaptive rot ceiling, an optional dedicated summary
- * model, and the opt-in Anthropic server-side compaction backstop.
+ * anti-thrash pacing, an optional dedicated summary model, and the opt-in
+ * Anthropic server-side compaction backstop.
  */
 
 import { useState } from 'react';
@@ -74,7 +74,7 @@ export function ContextManagementPanel() {
     <ShellSection title="Context management" className="mt-4">
       <ShellCaption>
         Keep long agent runs sharp by proactively managing the prompt against the model&apos;s
-        effective context window. Older detail is offloaded reversibly first (tool-result and
+        discovered context window. Older detail is offloaded reversibly first (tool-result and
         tool-input clearing, then on-disk references under .vyotiq/compaction/), and only
         summarized as a last resort (full transcript saved under .vyotiq/context-summaries/).
       </ShellCaption>
@@ -94,7 +94,7 @@ export function ContextManagementPanel() {
       />
 
       <label className="mt-3 flex flex-col gap-1 text-meta">
-        <span>Reduce at (% of effective window)</span>
+        <span>Reduce at (% of context window)</span>
         <input
           type="number"
           min={40}
@@ -108,7 +108,7 @@ export function ContextManagementPanel() {
       </label>
 
       <label className="mt-3 flex flex-col gap-1 text-meta">
-        <span>Warn at (% of effective window)</span>
+        <span>Warn at (% of context window)</span>
         <input
           type="number"
           min={30}
@@ -118,22 +118,6 @@ export function ContextManagementPanel() {
           className="vx-input w-full max-w-xs font-mono text-row disabled:opacity-50"
           value={pct(cm.warnFraction)}
           onChange={(e) => apply({ warnFraction: fromPct(e.target.value, cm.warnFraction) })}
-        />
-      </label>
-
-      <label className="mt-3 flex flex-col gap-1 text-meta">
-        <span>Effective window (% of advertised)</span>
-        <input
-          type="number"
-          min={50}
-          max={100}
-          step={1}
-          disabled={!cm.enabled}
-          className="vx-input w-full max-w-xs font-mono text-row disabled:opacity-50"
-          value={pct(cm.effectiveWindowFraction)}
-          onChange={(e) =>
-            apply({ effectiveWindowFraction: fromPct(e.target.value, cm.effectiveWindowFraction) })
-          }
         />
       </label>
 
@@ -165,29 +149,6 @@ export function ContextManagementPanel() {
 
       {advancedOpen && (
         <div className="mt-2 flex flex-col gap-3 border-l border-border-subtle/40 pl-3">
-          <ShellCaption>
-            Research (Chroma 2026) shows reasoning degrades at a roughly absolute token count, not
-            a fixed fraction. The adaptive ceiling caps the usable window so very large-context
-            models are still managed before &quot;context rot&quot;. 0 disables the cap.
-          </ShellCaption>
-
-          <label className="flex flex-col gap-1 text-meta">
-            <span>Adaptive ceiling (tokens, 0 = off)</span>
-            <input
-              type="number"
-              min={0}
-              max={2_000_000}
-              step={10_000}
-              disabled={!cm.enabled}
-              className="vx-input w-full max-w-xs font-mono text-row disabled:opacity-50"
-              value={cm.absoluteCeilingTokens}
-              onChange={(e) => {
-                const n = Number(e.target.value);
-                apply({ absoluteCeilingTokens: Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0 });
-              }}
-            />
-          </label>
-
           <label className="flex flex-col gap-1 text-meta">
             <span>Cooldown between passes (seconds)</span>
             <input

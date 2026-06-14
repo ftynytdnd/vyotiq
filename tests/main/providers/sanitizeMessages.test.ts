@@ -375,10 +375,6 @@ describe('stripReasoningContentForStrictDialects', () => {
   });
 
   it('strips tool-call assistant messages that also have reasoning_content', () => {
-    // DeepSeek-V4 thinking models emit `reasoning_content` AND
-    // `tool_calls` in the same assistant turn. Both should round-trip
-    // to DeepSeek; on a switch to a strict provider, the
-    // reasoning_content must go but the tool_calls must stay.
     const messages: ChatMessage[] = [
       {
         role: 'assistant',
@@ -398,8 +394,6 @@ describe('stripReasoningContentForStrictDialects', () => {
       'https://api.mistral.ai'
     );
     expect((out[0] as { reasoning_content?: string }).reasoning_content).toBeUndefined();
-    // tool_calls survive — they're the actual function-calling
-    // payload Mistral needs to dispatch.
     expect(out[0]!.tool_calls).toEqual([
       {
         id: 'tc_1',
@@ -407,5 +401,45 @@ describe('stripReasoningContentForStrictDialects', () => {
         function: { name: 'read', arguments: '{"path":"README.md"}' }
       }
     ]);
+  });
+
+  it('keeps reasoning_content on OpenRouter when model id is DeepSeek (2026 tool-turn round-trip)', () => {
+    const messages: ChatMessage[] = [
+      {
+        role: 'assistant',
+        content: null,
+        reasoning_content: 'Need to read the file first.',
+        tool_calls: [
+          {
+            id: 'tc_1',
+            type: 'function',
+            function: { name: 'read', arguments: '{"path":"a.ts"}' }
+          }
+        ]
+      }
+    ];
+    const out = stripReasoningContentForStrictDialects(
+      messages,
+      'https://openrouter.ai/api',
+      'deepseek/deepseek-v4-flash'
+    );
+    expect(out).toBe(messages);
+    expect(out[0]!.reasoning_content).toBe('Need to read the file first.');
+  });
+
+  it('strips reasoning_content on OpenRouter for non-DeepSeek models', () => {
+    const messages: ChatMessage[] = [
+      {
+        role: 'assistant',
+        content: 'hi',
+        reasoning_content: 'greeting'
+      }
+    ];
+    const out = stripReasoningContentForStrictDialects(
+      messages,
+      'https://openrouter.ai/api',
+      'anthropic/claude-sonnet-4'
+    );
+    expect((out[0] as { reasoning_content?: string }).reasoning_content).toBeUndefined();
   });
 });

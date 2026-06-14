@@ -264,6 +264,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         ...(rebuilt.orchestratorUsage !== undefined
           ? { orchestratorUsage: rebuilt.orchestratorUsage }
           : {}),
+        ...(rebuilt.latestContextUsage !== undefined
+          ? { latestContextUsage: rebuilt.latestContextUsage }
+          : {}),
         // Carry every reducer-maintained primitive that downstream
         // selectors read directly. Pre-fix this branch dropped
         // `lastUserPromptId` / `lastUserPromptContent`, which broke
@@ -316,6 +319,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         reasoningTexts: rebuilt.reasoningTexts,
         ...(rebuilt.orchestratorUsage !== undefined
           ? { orchestratorUsage: rebuilt.orchestratorUsage }
+          : {}),
+        ...(rebuilt.latestContextUsage !== undefined
+          ? { latestContextUsage: rebuilt.latestContextUsage }
           : {}),
         ...(rebuilt.lastUserPromptId !== undefined
           ? { lastUserPromptId: rebuilt.lastUserPromptId }
@@ -930,6 +936,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         reasoningTexts: rebuilt.reasoningTexts,
         ...(rebuilt.orchestratorUsage !== undefined
           ? { orchestratorUsage: rebuilt.orchestratorUsage }
+          : {}),
+        ...(rebuilt.latestContextUsage !== undefined
+          ? { latestContextUsage: rebuilt.latestContextUsage }
           : {}),
         ...(rebuilt.lastUserPromptId !== undefined
           ? { lastUserPromptId: rebuilt.lastUserPromptId }

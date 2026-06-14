@@ -15,7 +15,7 @@ import {
   formatOmittedLayerNote,
   layerCompositionShare
 } from './contextBreakdownLayers.js';
-import { contextPercent, levelClasses, levelLabel } from './contextMeterLevel.js';
+import { contextPercent, levelClasses, levelDetailTitle, levelLabel } from './contextMeterLevel.js';
 
 interface ContextBreakdownPopoverProps {
   id: string;
@@ -24,8 +24,6 @@ interface ContextBreakdownPopoverProps {
   triggerRef: RefObject<HTMLElement | null>;
   usage: ContextUsageSummary;
   evaluating: boolean;
-  /** Provider-billed prompt tokens from the last completed turn (live runs). */
-  billedPromptTokens?: number;
   onCompact: () => void;
   onReset: () => void;
   controlsEnabled: boolean;
@@ -66,7 +64,6 @@ export const ContextBreakdownPopover = memo(function ContextBreakdownPopover({
   triggerRef,
   usage,
   evaluating,
-  billedPromptTokens,
   onCompact,
   onReset,
   controlsEnabled,
@@ -75,23 +72,17 @@ export const ContextBreakdownPopover = memo(function ContextBreakdownPopover({
   const titleId = useId();
   const breakdown = usage.breakdown;
   const usedTokens = usage.usedTokens > 0 ? usage.usedTokens : 0;
-  const effectiveWindow = usage.effectiveWindow;
-  const showModelWindow =
-    usage.advertisedWindow > 0 && usage.advertisedWindow !== effectiveWindow;
+  const contextWindow = usage.effectiveWindow;
   const percent = contextPercent(usage);
   const tierLabel = levelLabel(usage.level);
   const tierClass = levelClasses(usage.level).text;
+  const tierTitle = levelDetailTitle(usage);
   const activeLayers = breakdown ? activeBreakdownLayers(breakdown) : [];
   const emptyLabels = breakdown ? emptyBreakdownLabels(breakdown) : [];
   const omittedNote =
     breakdown && emptyLabels.length > 0
       ? formatOmittedLayerNote(emptyLabels, breakdown)
       : null;
-  const showBilledNote =
-    typeof billedPromptTokens === 'number' &&
-    billedPromptTokens > 0 &&
-    usedTokens > 0 &&
-    Math.abs(billedPromptTokens - usedTokens) / usedTokens > 0.05;
 
   return (
     <Popover
@@ -115,7 +106,10 @@ export const ContextBreakdownPopover = memo(function ContextBreakdownPopover({
             <h2 id={titleId} className="vx-context-breakdown-popover__title">
               Context
               {tierLabel ? (
-                <span className={cn('vx-context-breakdown-popover__tier', tierClass)}>
+                <span
+                  className={cn('vx-context-breakdown-popover__tier', tierClass)}
+                  title={tierTitle}
+                >
                   {tierLabel}
                 </span>
               ) : null}
@@ -130,26 +124,26 @@ export const ContextBreakdownPopover = memo(function ContextBreakdownPopover({
                 /
               </span>
               <span className="vx-context-breakdown-popover__metrics-window">
-                {formatTokenCount(effectiveWindow)}
+                {formatTokenCount(contextWindow)}
               </span>
               <span className="vx-context-breakdown-popover__metrics-sep" aria-hidden>
                 ·
               </span>
               <span className="vx-context-breakdown-popover__metrics-pct">{percent}%</span>
+              {!usage.exact ? (
+                <>
+                  <span className="vx-context-breakdown-popover__metrics-sep" aria-hidden>
+                    ·
+                  </span>
+                  <span
+                    className="vx-context-breakdown-popover__metrics-est"
+                    title="Heuristic estimate until the provider bills a turn"
+                  >
+                    est
+                  </span>
+                </>
+              ) : null}
             </p>
-            {showModelWindow || !usage.exact ? (
-              <p className="vx-context-breakdown-popover__metrics-secondary tabular-nums">
-                {showModelWindow ? (
-                  <>
-                    Model {formatTokenCount(usage.advertisedWindow)}
-                    {!usage.exact ? ' · ' : null}
-                  </>
-                ) : null}
-                {!usage.exact ? (
-                  <span title="Heuristic estimate until the provider bills a turn">estimate</span>
-                ) : null}
-              </p>
-            ) : null}
           </div>
         </header>
 
@@ -157,12 +151,6 @@ export const ContextBreakdownPopover = memo(function ContextBreakdownPopover({
           <div className="vx-context-breakdown-popover__stack-wrap">
             <StackedBar breakdown={breakdown} usedTokens={usedTokens} />
           </div>
-        ) : null}
-
-        {showBilledNote ? (
-          <p className="vx-context-breakdown-popover__billed tabular-nums">
-            Billed {formatTokenCount(billedPromptTokens!)} · est {formatTokenCount(usedTokens)}
-          </p>
         ) : null}
 
         <div className="vx-context-breakdown-popover__table-wrap">
@@ -188,7 +176,7 @@ export const ContextBreakdownPopover = memo(function ContextBreakdownPopover({
                   <th
                     scope="col"
                     className="vx-context-breakdown-popover__num"
-                    title="% of usable window"
+                    title="% of model context window"
                   >
                     %
                   </th>
@@ -197,10 +185,10 @@ export const ContextBreakdownPopover = memo(function ContextBreakdownPopover({
               <tbody>
                 {activeLayers.map(({ key, label, title, tokens }) => {
                   const composition = layerCompositionShare(tokens, usedTokens);
-                  const windowPctLabel = formatLayerWindowPct(tokens, effectiveWindow);
+                  const windowPctLabel = formatLayerWindowPct(tokens, contextWindow);
                   const rowTitle =
                     usedTokens > 0
-                      ? `${title} — ${windowPctLabel} of usable window (${composition}% of prompt)`
+                      ? `${title} — ${windowPctLabel} of context window (${composition}% of prompt)`
                       : title;
                   return (
                     <tr key={key} title={rowTitle}>

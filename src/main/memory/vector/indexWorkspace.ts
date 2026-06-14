@@ -197,7 +197,13 @@ export async function indexWorkspaceVectors(
     }
 
     stats.durationMs = Date.now() - started;
-    log.info('vector index pass complete', { workspacePath, ...stats });
+    log.info('vector index pass complete', {
+      workspacePath,
+      ...stats,
+      ...(stats.skipped > 0 && stats.chunksWritten === 0
+        ? { note: 'skipped entries unchanged since prior hash' }
+        : {})
+    });
     return stats;
   } finally {
     releaseVectorDb(workspacePath);

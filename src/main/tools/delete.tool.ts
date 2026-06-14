@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import type { Tool } from './types.js';
 import type { ToolResult } from '@shared/types/tool.js';
 import { realpathInsideWorkspace, workspaceRelative } from './sandbox.js';
+import { decodeDiskTextBuffer } from '../text/decodeDiskText.js';
 import { recordChange } from '../checkpoints/index.js';
 
 interface DeleteArgs {
@@ -101,18 +102,20 @@ export const deleteTool: Tool = {
     // (with the accompanying non-reversible warning).
     let original: string;
     try {
-      original = await fs.readFile(abs, 'utf8');
+      const buf = await fs.readFile(abs);
+      const disk = decodeDiskTextBuffer(buf);
+      if (disk.body.includes('\0')) {
+        return failure(
+          id,
+          started,
+          `Refusing to delete binary file ${a.path} via \`delete\`. Use \`bash rm\` if required — but note that bash removals are NOT reversible from the checkpoint store.`,
+          'binary refusal'
+        );
+      }
+      original = disk.body;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return failure(id, started, `Cannot read ${a.path} for snapshot: ${msg}`, msg);
-    }
-    if (original.includes('\0')) {
-      return failure(
-        id,
-        started,
-        `Refusing to delete binary file ${a.path} via \`delete\`. Use \`bash rm\` if required — but note that bash removals are NOT reversible from the checkpoint store.`,
-        'binary refusal'
-      );
     }
 
     // Unlink.

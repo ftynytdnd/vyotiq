@@ -164,7 +164,8 @@ export async function* streamOpenAi(
     // neither sanitization.
     messages: stripReasoningContentForStrictDialects(
       stripGeminiSignatures(req.messages),
-      provider.baseUrl
+      provider.baseUrl,
+      req.model
     ),
     stream: true,
     // Ask the provider to emit a final usage frame so we can surface real

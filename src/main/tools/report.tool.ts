@@ -108,10 +108,20 @@ export const reportTool: Tool = {
       );
     }
 
-    const slug = slugifyTitle(a.title.trim());
-    const relPath = `${WORKSPACE_DOTDIR}/${REPORTS_SUBDIR}/${slug}.html`;
+    const slugBase = slugifyTitle(a.title.trim());
+    const relDir = `${WORKSPACE_DOTDIR}/${REPORTS_SUBDIR}`;
     const absDir = join(ctx.workspacePath, WORKSPACE_DOTDIR, REPORTS_SUBDIR);
-    const absPath = join(absDir, `${slug}.html`);
+
+    let slug = slugBase;
+    let absPath = join(absDir, `${slug}.html`);
+    try {
+      await fs.access(absPath);
+      slug = `${slugBase}-${Date.now()}`;
+      absPath = join(absDir, `${slug}.html`);
+    } catch {
+      /* first write for this slug */
+    }
+    const relPath = `${relDir}/${slug}.html`;
 
     try {
       await fs.mkdir(absDir, { recursive: true });

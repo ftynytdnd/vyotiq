@@ -38,17 +38,12 @@
 
   /* Accent + state
      --------------------------------------------------------------------
-     Vyotiq identity: steel violet. Chosen to sit cleanly on the
-     stealth-dark surface family without clashing with the warning
-     amber or danger red tokens below. Lightness ≈ 0.74 matches the
-     state token band so focus halos, links, and small chips land in
-     the same perceptual register.
+     Dual accent: steel violet for focus halos / links / send-ready CTA;
+     warm gold for live streaming phase labels (Exploring, Writing, …).
   */
-  --color-accent: oklch(0.82 0.14 75);
-  --color-accent-soft: oklch(0.82 0.14 75 / 0.18);
-  --color-accent-strong: oklch(0.88 0.16 75);
-  /* Live phase headings — warm gold accent for streaming status lines
-     (Exploring, Writing, …). Distinct from steel-violet focus/links. */
+  --color-accent: oklch(0.74 0.12 285);
+  --color-accent-soft: oklch(0.74 0.12 285 / 0.18);
+  --color-accent-strong: oklch(0.80 0.14 285);
   --color-accent-gold: oklch(0.82 0.12 75);
   --color-accent-gold-soft: oklch(0.82 0.12 75 / 0.14);
   --color-accent-gold-strong: oklch(0.88 0.14 75);
@@ -3552,14 +3547,6 @@ button.vx-mention-highlight--open:focus-visible {
   white-space: nowrap;
 }
 
-.vx-context-breakdown-popover__metrics-secondary {
-  margin: 0;
-  font-size: var(--text-caption);
-  line-height: 1.1;
-  color: var(--color-text-faint);
-  white-space: nowrap;
-}
-
 .vx-context-breakdown-popover__metrics-sep {
   color: var(--color-text-faint);
 }
@@ -3610,15 +3597,6 @@ button.vx-mention-highlight--open:focus-visible {
 }
 .vx-context-breakdown__stack-seg--tools {
   background: color-mix(in oklch, var(--color-text-muted) 55%, var(--color-accent));
-}
-
-.vx-context-breakdown-popover__billed {
-  margin: 0;
-  padding: 0 0.125rem;
-  font-family: var(--font-mono);
-  font-size: var(--text-caption);
-  line-height: 1.2;
-  color: var(--color-text-faint);
 }
 
 .vx-context-breakdown-popover__table-wrap {

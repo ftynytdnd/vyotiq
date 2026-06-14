@@ -4,6 +4,7 @@
  */
 
 import { promises as fs } from 'node:fs';
+import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Tool } from './types.js';
 import type { ToolResult } from '@shared/types/tool.js';
@@ -14,6 +15,40 @@ interface ReadArgs {
   path: string;
   startLine?: number;
   endLine?: number;
+}
+
+async function formatReadEnoent(
+  workspacePath: string,
+  relPath: string,
+  msg: string
+): Promise<string> {
+  const normalized = relPath.replace(/\\/g, '/');
+  const parts = normalized.split('/').filter(Boolean);
+  if (parts.length < 2) {
+    return `Failed to read ${relPath}: ${msg}`;
+  }
+  const parent = parts.slice(0, -1).join('/');
+  try {
+    await fs.access(join(workspacePath, parent));
+    return `Failed to read ${relPath}: ${msg}`;
+  } catch {
+    const top = parts[0]!;
+    const rootEntries = await fs.readdir(workspacePath).catch(() => [] as string[]);
+    const tl = top.toLowerCase();
+    const near = rootEntries
+      .filter((e) => {
+        const el = e.toLowerCase();
+        return el.includes(tl) || tl.includes(el) || el.slice(0, 4) === tl.slice(0, 4);
+      })
+      .slice(0, 5);
+    if (near.length === 0) {
+      return `Failed to read ${relPath}: ${msg}`;
+    }
+    return (
+      `Failed to read ${relPath}: ${msg}\n` +
+      `Parent \`${parent}\` not found. Similar at workspace root: ${near.join(', ')}`
+    );
+  }
 }
 
 export const readTool: Tool = {
@@ -88,11 +123,12 @@ export const readTool: Tool = {
       buf = await fs.readFile(abs);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
+      const output = await formatReadEnoent(ctx.workspacePath, a.path, msg);
       return {
         id,
         name: 'read',
         ok: false,
-        output: `Failed to read ${a.path}: ${msg}`,
+        output,
         error: msg,
         durationMs: Date.now() - started
       };

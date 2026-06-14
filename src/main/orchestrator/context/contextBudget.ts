@@ -2,9 +2,8 @@
  * ContextBudget — the single source of truth for "how full is the prompt?".
  *
  * Consolidates what used to be ad-hoc math scattered across the compaction
- * path: resolving a model's *effective* context window (advertised × a usable
- * fraction, with user overrides), estimating the current prompt size, and
- * classifying that into a level (ok / warn / trigger / critical) the reduction
+ * path: resolving a model's discovered context window (with user overrides),
+ * estimating the current prompt size, and classifying that into a level (ok / warn / trigger / critical) the reduction
  * engine and the UI both act on.
  *
  * Token estimate is best-effort and never blocks: exact BPE for the GPT family
@@ -23,7 +22,6 @@ import {
   type ContextUsageSummary
 } from '@shared/context/contextLevel.js';
 import {
-  COMPACT_DEFAULT_CONTEXT_WINDOW,
   CONTEXT_CALIBRATION_MAX,
   CONTEXT_CALIBRATION_MIN
 } from '@shared/constants.js';
@@ -46,12 +44,9 @@ function resolveAdvertisedWindowForProvider(
   provider: ProviderWithKey | null,
   modelId: string
 ): number {
-  if (!provider) return COMPACT_DEFAULT_CONTEXT_WINDOW;
+  if (!provider) return 0;
   const model = findProviderModel(provider, modelId);
-  return (
-    resolveAdvertisedWindow(model, provider.contextOverrides) ??
-    COMPACT_DEFAULT_CONTEXT_WINDOW
-  );
+  return resolveAdvertisedWindow(model, provider.contextOverrides) ?? 0;
 }
 
 /**
@@ -105,7 +100,7 @@ export function normalizeCalibration(ratio: number | undefined): number {
 }
 
 /**
- * Estimate current prompt size and classify it against the effective window.
+ * Estimate current prompt size and classify it against the discovered window.
  * Pure read — never mutates `messages`. Fires a background remote-count
  * refresh (when the provider supports it and the local count is heuristic)
  * so the NEXT evaluation is more accurate; the current call still returns
@@ -144,20 +139,18 @@ export async function evaluateContextBudget(
   return summarizeContextUsage({
     usedTokens,
     advertisedWindow,
-    effectiveWindowFraction: input.settings.effectiveWindowFraction,
     thresholds: {
       warnFraction: input.settings.warnFraction,
       triggerFraction: input.settings.triggerFraction
     },
     exact,
-    absoluteCeilingTokens: input.settings.absoluteCeilingTokens,
     breakdown
   });
 }
 
 /**
  * Build a usage summary from an already-known token count + window, applying
- * the same thresholds / adaptive ceiling as {@link evaluateContextBudget}.
+ * the same compaction thresholds as {@link evaluateContextBudget}.
  * Synchronous — used by the reduction engine to report POST-reduction usage
  * without re-resolving the provider or re-tokenizing through the async path.
  */
@@ -171,13 +164,11 @@ export function buildUsageFromTokens(opts: {
   return summarizeContextUsage({
     usedTokens: opts.usedTokens,
     advertisedWindow: opts.advertisedWindow,
-    effectiveWindowFraction: opts.settings.effectiveWindowFraction,
     thresholds: {
       warnFraction: opts.settings.warnFraction,
       triggerFraction: opts.settings.triggerFraction
     },
     exact: opts.exact,
-    absoluteCeilingTokens: opts.settings.absoluteCeilingTokens,
     ...(opts.breakdown ? { breakdown: opts.breakdown } : {})
   });
 }

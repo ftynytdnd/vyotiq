@@ -54,6 +54,30 @@ export function migrateLegacyDockUi<T extends UiRecord>(ui: T): { ui: T; changed
   return { ui: next as T, changed };
 }
 
+/** Strip removed context-management fields from persisted settings. */
+export function stripRemovedContextManagementFields(
+  agentBehavior: Record<string, unknown> | undefined
+): { agentBehavior: Record<string, unknown> | undefined; changed: boolean } {
+  if (!agentBehavior || typeof agentBehavior !== 'object') {
+    return { agentBehavior, changed: false };
+  }
+  const cm = agentBehavior['contextManagement'];
+  if (!cm || typeof cm !== 'object') return { agentBehavior, changed: false };
+  let changed = false;
+  const nextCm = { ...(cm as Record<string, unknown>) };
+  for (const key of ['effectiveWindowFraction', 'absoluteCeilingTokens'] as const) {
+    if (key in nextCm) {
+      delete nextCm[key];
+      changed = true;
+    }
+  }
+  if (!changed) return { agentBehavior, changed: false };
+  return {
+    agentBehavior: { ...agentBehavior, contextManagement: nextCm },
+    changed: true
+  };
+}
+
 /** Strip removed right-dock fields from persisted settings. */
 export function stripRemovedUiFields<T extends UiRecord>(ui: T): { ui: T; changed: boolean } {
   let changed = false;
@@ -76,6 +100,14 @@ export function normalizeSettingsPatch(patch: Partial<AppSettings>): Partial<App
   const stripped = stripRemovedUiFields(ui);
   ui = stripped.ui;
   changed = changed || stripped.changed;
+  if (ui.agentBehavior && typeof ui.agentBehavior === 'object') {
+    const { agentBehavior: cmStripped, changed: cmChanged } =
+      stripRemovedContextManagementFields(ui.agentBehavior as Record<string, unknown>);
+    if (cmChanged && cmStripped) {
+      ui = { ...ui, agentBehavior: cmStripped };
+      changed = true;
+    }
+  }
   const dock = normalizeDockWidthInUi(ui);
   ui = dock.ui;
   changed = changed || dock.changed;

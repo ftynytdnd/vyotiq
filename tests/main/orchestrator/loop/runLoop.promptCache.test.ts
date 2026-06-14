@@ -154,7 +154,7 @@ beforeEach(() => {
 
 describe('runOrchestratorLoop — prompt cache miss logging', () => {
   it('warns on multi-turn zero cache read for dialects that report cache metrics', async () => {
-    await runTwoTurnLoop('openai');
+    await runTwoTurnLoop('anthropic');
     expect(cacheMissWarnings()).toHaveLength(1);
   });
 

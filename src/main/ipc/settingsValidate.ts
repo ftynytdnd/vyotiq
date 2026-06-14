@@ -67,20 +67,21 @@ const PROMPT_CACHING_BOOLEAN_KEYS = [
 
 const PROMPT_CACHING_TTL_VALUES = ['5m', '1h'] as const;
 
-const CONTEXT_MANAGEMENT_BOOLEAN_KEYS = ['enabled', 'summarizationEnabled'] as const;
-
-const CONTEXT_MANAGEMENT_FRACTION_KEYS = [
-  'triggerFraction',
-  'warnFraction',
-  'effectiveWindowFraction'
+const CONTEXT_MANAGEMENT_BOOLEAN_KEYS = [
+  'enabled',
+  'summarizationEnabled',
+  'serverSideCompaction'
 ] as const;
+
+const CONTEXT_MANAGEMENT_FRACTION_KEYS = ['triggerFraction', 'warnFraction'] as const;
 
 const CONTEXT_MANAGEMENT_KEYS = [
   ...CONTEXT_MANAGEMENT_BOOLEAN_KEYS,
   ...CONTEXT_MANAGEMENT_FRACTION_KEYS,
   'keepLastToolResults',
   'cooldownMs',
-  'minSavingsTokens'
+  'minSavingsTokens',
+  'summaryModel'
 ] as const;
 
 const THEME_VALUES = ['dark', 'light', 'system'] as const;
@@ -522,6 +523,33 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
           min: 0,
           max: 1_000_000
         });
+      }
+      if ('summaryModel' in cm && cm.summaryModel !== undefined) {
+        assertObject(channel, 'patch.ui.agentBehavior.contextManagement.summaryModel', cm.summaryModel);
+        const summaryModel = cm.summaryModel as Record<string, unknown>;
+        for (const key of Object.keys(summaryModel)) {
+          if (key !== 'providerId' && key !== 'modelId') {
+            throw new Error(
+              `${channel}: patch.ui.agentBehavior.contextManagement.summaryModel.${key} is not a recognized field`
+            );
+          }
+        }
+        if ('providerId' in summaryModel && summaryModel.providerId !== undefined) {
+          assertString(
+            channel,
+            'patch.ui.agentBehavior.contextManagement.summaryModel.providerId',
+            summaryModel.providerId,
+            { nonEmpty: false }
+          );
+        }
+        if ('modelId' in summaryModel && summaryModel.modelId !== undefined) {
+          assertString(
+            channel,
+            'patch.ui.agentBehavior.contextManagement.summaryModel.modelId',
+            summaryModel.modelId,
+            { nonEmpty: false }
+          );
+        }
       }
     }
   }

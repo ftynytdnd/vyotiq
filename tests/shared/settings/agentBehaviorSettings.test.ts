@@ -20,7 +20,6 @@ describe('resolveAgentBehaviorSettings', () => {
     const def = resolveAgentBehaviorSettings();
     expect(def.contextManagement.triggerFraction).toBe(0.75);
     expect(def.contextManagement.warnFraction).toBe(0.7);
-    expect(def.contextManagement.effectiveWindowFraction).toBe(0.9);
     expect(def.contextManagement.keepLastToolResults).toBe(3);
 
     // Legacy `contextCompaction.enabled` seeds the master switch when the
@@ -49,25 +48,10 @@ describe('resolveAgentBehaviorSettings', () => {
     expect(clamped.contextManagement.warnFraction).toBeLessThan(0.6);
   });
 
-  it('context management: new advanced knobs (ceiling, summary model, server compaction)', () => {
+  it('context management: advanced knobs (summary model, server compaction)', () => {
     const def = resolveAgentBehaviorSettings();
-    expect(def.contextManagement.absoluteCeilingTokens).toBe(200_000);
     expect(def.contextManagement.summaryModel).toBeNull();
     expect(def.contextManagement.serverSideCompaction).toBe(false);
-
-    // 0 disables the adaptive ceiling explicitly.
-    const noCeiling = resolveAgentBehaviorSettings({
-      agentBehavior: { contextManagement: { absoluteCeilingTokens: 0 } }
-    });
-    expect(noCeiling.contextManagement.absoluteCeilingTokens).toBe(0);
-
-    // Out-of-range ceiling clamps into the safe band.
-    const tinyCeiling = resolveAgentBehaviorSettings({
-      agentBehavior: { contextManagement: { absoluteCeilingTokens: 100 } }
-    });
-    expect(tinyCeiling.contextManagement.absoluteCeilingTokens).toBe(16_000);
-
-    // Summary model requires BOTH ids; partial → null.
     const partial = resolveAgentBehaviorSettings({
       agentBehavior: { contextManagement: { summaryModel: { providerId: 'anthropic', modelId: '' } } }
     });

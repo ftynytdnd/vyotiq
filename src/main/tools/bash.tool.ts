@@ -706,7 +706,7 @@ export const bashTool: Tool = {
 
 **Safety rules.**
 - The cwd is the workspace root; you cannot \`cd ..\` out.
-- Destructive operations (\`rm -rf /\`, \`format c:\`, \`git reset --hard\`, etc.) require explicit user confirmation; do not attempt to bypass.
+- Destructive operations (\`rm -rf /\`, \`format c:\`, \`git reset --hard\`, etc.) are **hard-blocked** by the host — do not attempt them; use \`ask_user\` if the user explicitly requests recovery.
 - Output is truncated at 64K chars (head retained, tail dropped).
 - Each invocation has a 30-second timeout unless you override \`timeoutMs\`.
 
@@ -781,6 +781,20 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
         ok: false,
         output: `Destructive command blocked:\n\n${command}`,
         error: 'destructive blocked',
+        durationMs: Date.now() - started
+      };
+    }
+
+    if (process.platform === 'win32' && /\s&\s/.test(command)) {
+      return {
+        id,
+        name: 'bash',
+        ok: false,
+        output:
+          'PowerShell rejects `&` as a command separator.\n\n' +
+          `${command}\n\n` +
+          'Use `;` to chain commands (e.g. `echo step1; python -c "..."`).',
+        error: 'powershell syntax',
         durationMs: Date.now() - started
       };
     }

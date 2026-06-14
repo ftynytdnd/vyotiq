@@ -52,11 +52,16 @@ vi.mock('@main/providers/tokenCounter', () => ({
   }))
 }));
 
-// No provider on disk in the test sandbox → advertised window falls back to
-// the 128k default, deterministically. Keeps the reduction path off the FS.
 vi.mock('@main/providers/providerStore', () => ({
-  getProviderWithKey: vi.fn(async () => null)
+  getProviderWithKey: vi.fn(async () => ({
+    id: 'openai',
+    name: 'OpenAI',
+    models: [{ id: 'gpt-4o', contextWindow: 200_000 }],
+    contextOverrides: {}
+  }))
 }));
+
+import { getProviderWithKey } from '@main/providers/providerStore.js';
 
 const summarizeHistoryMock = vi.fn(async () => ({
   summary: '## Task intent\ncompacted',
@@ -101,6 +106,49 @@ describe('contextCompaction', () => {
       createContextReductionState()
     );
     expect(out.messages).toEqual(messages);
+  });
+
+  it('reduces on 1M-window models at the absolute compaction trigger (~200k)', async () => {
+    vi.mocked(getProviderWithKey).mockResolvedValueOnce({
+      id: 'deepseek',
+      name: 'DeepSeek',
+      models: [{ id: 'deepseek-v4-flash', contextWindow: 1_000_000 }],
+      contextOverrides: {}
+    } as Awaited<ReturnType<typeof getProviderWithKey>>);
+
+    const largeOutput = 'x'.repeat(5_000);
+    const messages = seedCacheLayeredMessages([], '<turn/>');
+    messages[0] = { role: 'system', content: '<system_instructions>x</system_instructions>' };
+    messages.splice(3, 0, {
+      role: 'tool',
+      tool_call_id: 'tc-1m',
+      name: 'read',
+      content: largeOutput
+    });
+
+    const out = await reduceContextIfNeeded(
+      messages,
+      {
+        conversationId: 'conv-1m',
+        runId: 'run-1m',
+        workspacePath,
+        modelId: 'deepseek-v4-flash',
+        providerId: 'deepseek',
+        settings: cmSettings({
+          enabled: true,
+          summarizationEnabled: false,
+          keepLastToolResults: 0,
+          minSavingsTokens: 0
+        }),
+        emit: () => {}
+      },
+      createContextReductionState()
+    );
+
+    expect(out.usage.effectiveWindow).toBe(1_000_000);
+    expect(out.usage.fractionUsed).toBeCloseTo(0.2, 2);
+    expect(out.usage.level).toBe('trigger');
+    expect(isCompactedToolContent(String(out.messages[3]?.content))).toBe(true);
   });
 
   it('replaces large tool outputs with reversible banners when over threshold', async () => {

@@ -95,7 +95,7 @@ export function buildRuntimeTailXml(
 
 /**
  * Build the `<context_pressure>` note surfaced near the tail when the prompt
- * approaches the effective window. Mirrors Anthropic's memory-tool "heads up,
+ * approaches the compaction threshold. Mirrors Anthropic's memory-tool "heads up,
  * older detail is about to be cleared" warning: it nudges the agent to persist
  * load-bearing state (via `memory` / the `run-progress` note) BEFORE host-side
  * reduction offloads older detail — so nothing important is lost when the
@@ -105,7 +105,7 @@ export function buildContextPressureXml(level: ContextLevel): string {
   if (level === 'ok') return '';
   const body =
     level === 'critical'
-      ? 'Context is at the effective window limit. Older detail is being offloaded to keep reasoning sharp. Persist anything load-bearing NOW to your `run-progress` note (via the `memory` tool) — file paths, key decisions, and the exact next step — and prefer finishing or narrowing scope over starting new exploration.'
+      ? 'Context is at the compaction threshold. Older detail is being offloaded to keep reasoning sharp. Persist anything load-bearing NOW to your `run-progress` note (via the `memory` tool) — file paths, key decisions, and the exact next step — and prefer finishing or narrowing scope over starting new exploration.'
       : level === 'trigger'
         ? 'Context has crossed the reduction threshold; older tool output is being offloaded reversibly (recoverable via `read`). Make sure your `run-progress` note captures the current plan, decisions, and next step so progress survives compaction.'
         : 'Context is filling up. Keep your `run-progress` note current (plan, key decisions, next step) so nothing important is lost if older detail is offloaded.';

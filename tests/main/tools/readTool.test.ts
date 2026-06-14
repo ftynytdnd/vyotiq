@@ -122,4 +122,14 @@ describe('read.tool BOM detection', () => {
     // The detail should mention the BOM-aware decode.
     expect(result.error).toMatch(/utf-16le/);
   });
+
+  it('suggests similar top-level dirs on ENOENT when parent is missing', async () => {
+    await fs.mkdir(join(ws, 'transport'), { recursive: true });
+    const result = await readTool.run(
+      { path: 'transports/client.py' },
+      ctxFor(ws)
+    );
+    expect(result.ok).toBe(false);
+    expect(result.output).toMatch(/Similar at workspace root:.*transport/i);
+  });
 });

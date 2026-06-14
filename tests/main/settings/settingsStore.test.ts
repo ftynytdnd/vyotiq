@@ -128,6 +128,35 @@ describe('getSettings — eager on-disk migration', () => {
     expect(onDisk?.ui).not.toHaveProperty('tokenBudgetWarningTokens');
     expect(onDisk?.ui).not.toHaveProperty('gatePromptOnPendingByWorkspace');
   });
+
+  it('strips removed context-management ceiling/fraction fields on first read', async () => {
+    vi.doMock('@main/secrets/safeStore', () => safeStore);
+    const seed = (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed;
+    const peek = (safeStore as unknown as { __peek: (f: string) => unknown }).__peek;
+    seed(SETTINGS_FILE, {
+      ui: {
+        agentBehavior: {
+          contextManagement: {
+            enabled: true,
+            effectiveWindowFraction: 0.9,
+            absoluteCeilingTokens: 200_000
+          }
+        }
+      }
+    });
+
+    const { getSettings } = await import('@main/settings/settingsStore');
+    await getSettings();
+
+    const onDisk = peek(SETTINGS_FILE) as {
+      ui?: { agentBehavior?: { contextManagement?: Record<string, unknown> } };
+    } | null;
+    const cm = onDisk?.ui?.agentBehavior?.contextManagement;
+    expect(cm).toBeDefined();
+    expect(cm).not.toHaveProperty('effectiveWindowFraction');
+    expect(cm).not.toHaveProperty('absoluteCeilingTokens');
+    expect(cm?.enabled).toBe(true);
+  });
 });
 
 describe('setSettings — legacy keys are stripped on first write', () => {

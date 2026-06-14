@@ -44,6 +44,35 @@ export function formatToolStrikeError(
   return `${base} ${tail}`;
 }
 
+/** Harness-driven recovery copy — run continues after sustained tool failures. */
+export function formatToolRecoveryThought(
+  strikeCount: number,
+  lastFailure?: string,
+  rootFailure?: string
+): string {
+  const last = lastFailure?.trim();
+  const root = rootFailure?.trim();
+  const detail =
+    root && last && root !== last
+      ? `Root: ${sentenceEnd(root)} Latest: ${sentenceEnd(last)}`
+      : last
+        ? sentenceEnd(last)
+        : 'Repeated tool failures.';
+  return (
+    `Tool recovery (${strikeCount} failed rounds): ${detail} ` +
+    'Re-read affected files with `read` before `edit`. On Windows PowerShell use `;` not `&` to chain commands. ' +
+    'Run `ls` to verify paths. Use `ask_user` if blocked.'
+  );
+}
+
+/** Harness-driven recovery when the provider keeps failing — run continues. */
+export function formatProviderRecoveryThought(consecutiveErrors: number, detail: string): string {
+  return (
+    `Provider recovery (${consecutiveErrors} failures): ${sentenceEnd(detail)} ` +
+    'Check network and API settings, switch models, or use `ask_user` if this persists.'
+  );
+}
+
 export const RUN_STOPPED_THOUGHT = 'Run stopped.';
 
 export function formatRunTokenBudgetError(cumulativeTotal: number, maxTotalTokens: number): string {

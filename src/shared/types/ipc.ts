@@ -440,7 +440,7 @@ export interface AppSettings {
 
       /**
        * Unified context-window management (default on). Proactively keeps the
-       * prompt under a fraction of the model's effective window via reversible
+       * prompt under compaction thresholds via reversible
        * reduction, with optional lossy summarization as a last resort. See
        * `docs/context-management-design.md`.
        */
@@ -453,8 +453,6 @@ export interface AppSettings {
 
         warnFraction?: number;
 
-        effectiveWindowFraction?: number;
-
         keepLastToolResults?: number;
 
         summarizationEnabled?: boolean;
@@ -462,9 +460,6 @@ export interface AppSettings {
         cooldownMs?: number;
 
         minSavingsTokens?: number;
-
-        /** Adaptive absolute ceiling on the usable window (tokens). 0 disables. */
-        absoluteCeilingTokens?: number;
 
         /**
          * Optional dedicated model for lossy summarization. When unset, the

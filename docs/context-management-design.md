@@ -1,7 +1,7 @@
 # Context Window Management — Design (2026)
 
 Status: **shipped, on by default.** Vyotiq proactively keeps the prompt under a
-fraction of each model's *effective* context window, using reversible reduction
+fraction of each model's discovered context window, using reversible reduction
 first and lossy summarization only as a last resort. Configured under
 Settings → Agent behavior → Context management
 (`settings.ui.agentBehavior.contextManagement`).
@@ -14,7 +14,7 @@ This supersedes the original opt-in "reversible compaction" design
 2026 context-engineering research ("context rot") shows a model's *effective*
 context — the length over which it reasons reliably — is well below the
 advertised window, and degradation begins long before the hard limit. The
-guidance: manage **proactively** (≈60–80% of the usable window), prefer
+guidance: manage **proactively** (≈60–80% of the context window), prefer
 **raw > reversible compaction > lossy summarization**, keep static prefixes
 byte-stable for prompt caching, and restate the goal near the tail to fight
 "lost-in-the-middle".
@@ -23,7 +23,7 @@ byte-stable for prompt caching, and restate the goal near the tail to fight
 
 | Concern | Module |
 |---------|--------|
-| Effective-window math + level classification (shared) | `src/shared/context/contextLevel.ts` |
+| Context-window math + level classification (shared) | `src/shared/context/contextLevel.ts` |
 | Budget service (estimate + window + level, single source of truth) | `src/main/orchestrator/context/contextBudget.ts` |
 | Tiered reversible reduction engine | `src/main/orchestrator/context/contextCompaction.ts` |
 | Reversible structured summarization | `src/main/orchestrator/context/contextSummarize.ts` |
@@ -34,23 +34,21 @@ byte-stable for prompt caching, and restate the goal near the tail to fight
 | Composer meter | `src/renderer/components/composer/ContextWindowMeter.tsx` |
 | Settings | `src/shared/settings/agentBehaviorSettings.ts`, `RunLimitsPanel.tsx` |
 
-## Effective window (adaptive)
+## Model context window
 
-```
-effectiveWindow = min(advertised × effectiveWindowFraction, absoluteCeilingTokens)
-```
+The composer meter and popover show fill against the **full provider-discovered**
+context window (`ModelInfo.contextWindow`, with optional per-model user
+overrides). No artificial fraction or absolute ceiling shrinks the displayed
+denominator. When the window is unknown after discovery, the composer meter is
+hidden and automatic reduction is skipped until a real value is available.
 
-Thresholds are computed against `effectiveWindow`, not the advertised window.
-Defaults: `effectiveWindowFraction = 0.90`, `triggerFraction = 0.75`,
-`warnFraction = 0.70`. Unknown windows fall back to `COMPACT_DEFAULT_CONTEXT_WINDOW`
-(128k) for the offload path only.
-
-**Adaptive ceiling (2026).** Chroma's 18-model context-rot study shows reasoning
-degradation onset is roughly *absolute* (tens of thousands of tokens), not a
-fixed fraction of the window — so a flat 75% of a 1M window (750k) sits far past
-the rot curve. `absoluteCeilingTokens` (default `200_000`, `0` to disable) caps
-the usable window so very large-context models are still managed before rot.
-Math lives in `computeEffectiveWindow` (shared by main + renderer).
+**Display vs compaction.** Meter/popover `%` = `usedTokens ÷ fullWindow`. Warn /
+trigger / critical bands (meter color, reduction engine) use
+`min(floor(window × fraction), absoluteCap)` so large models (e.g. 1M) still
+compact near ~200k tokens (`CONTEXT_ABSOLUTE_COMPACTION_WARN_TOKENS` /
+`CONTEXT_ABSOLUTE_COMPACTION_TRIGGER_TOKENS`) while the UI shows honest fill
+against the full window. Smaller windows (e.g. 128k) keep fraction-based
+thresholds (~70% / ~75%). Defaults: `triggerFraction = 0.75`, `warnFraction = 0.70`.
 
 ## Token estimate (calibrated to real billed tokens)
 
@@ -149,7 +147,6 @@ artifacts are swept on delete + startup.
 | `enabled` | `true` |
 | `triggerFraction` | `0.75` |
 | `warnFraction` | `0.70` |
-| `effectiveWindowFraction` | `0.90` |
 | `keepLastToolResults` | `3` |
 | `summarizationEnabled` | `true` |
 | `cooldownMs` | `15000` |

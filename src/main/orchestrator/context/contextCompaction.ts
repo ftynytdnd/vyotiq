@@ -3,7 +3,7 @@
  * Design: `docs/context-management-design.md`.
  *
  * When the estimated prompt crosses the trigger fraction of the model's
- * *effective* window, the host frees space in escalating order — cheapest and
+ * discovered context window, the host frees space in escalating order —
  * most reversible first (2026 guidance: raw > reversible compaction > lossy
  * summarization):
  *
@@ -28,7 +28,11 @@ import { randomUUID } from 'node:crypto';
 import type { ChatMessage, TimelineEvent } from '@shared/types/chat.js';
 import type { ContextManagementSettings } from '@shared/settings/agentBehaviorSettings.js';
 import { COMPACT_MIN_TOOL_INPUT_CHARS, COMPACT_MIN_TOOL_OUTPUT_CHARS } from '@shared/constants.js';
-import { scaleContextBreakdown, type ContextUsageSummary } from '@shared/context/contextLevel.js';
+import {
+  resolveCompactionThresholds,
+  scaleContextBreakdown,
+  type ContextUsageSummary
+} from '@shared/context/contextLevel.js';
 import { logger } from '../../logging/logger.js';
 import {
   type TokenizableToolSchema
@@ -171,8 +175,11 @@ export async function reduceContextIfNeeded(
 
   const effectiveWindow = usage.effectiveWindow;
   if (effectiveWindow <= 0) return { messages: [...messages], usage };
-  const warnThreshold = Math.floor(effectiveWindow * settings.warnFraction);
-  const triggerThreshold = Math.floor(effectiveWindow * settings.triggerFraction);
+  const { warnTokens: warnThreshold, triggerTokens: triggerThreshold } =
+    resolveCompactionThresholds(effectiveWindow, {
+      warnFraction: settings.warnFraction,
+      triggerFraction: settings.triggerFraction
+    });
   // Reversible offload stops once `est` drops below `offloadThreshold`. When
   // already in trigger/critical, aim for the warn band — not the trigger line —
   // so one new tool round doesn't immediately re-trip reduction. (Stopping at

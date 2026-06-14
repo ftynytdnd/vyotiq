@@ -16,9 +16,10 @@ describe('contextBreakdownLayers', () => {
     expect(layerShare(10, 0)).toBe(0);
   });
 
-  it('layerWindowShare is relative to the usable context window', () => {
-    expect(layerWindowShare(9_700, 200_000)).toBe(5);
-    expect(layerWindowShare(13_700, 200_000)).toBe(7);
+  it('layerWindowShare is relative to the model context window', () => {
+    expect(layerWindowShare(9_700, 1_000_000)).toBe(1);
+    expect(layerWindowShare(13_700, 1_000_000)).toBe(1);
+    expect(layerWindowShare(50_000, 1_000_000)).toBe(5);
   });
 
   it('layerCompositionShare is relative to current prompt usage', () => {
@@ -47,9 +48,9 @@ describe('contextBreakdownLayers', () => {
   });
 
   it('formatLayerWindowPct shows <1% for sub-half-percent layers', () => {
-    expect(formatLayerWindowPct(468, 200_000)).toBe('<1%');
-    expect(formatLayerWindowPct(1_000, 200_000)).toBe('1%');
-    expect(formatLayerWindowPct(0, 200_000)).toBe('0%');
+    expect(formatLayerWindowPct(468, 1_000_000)).toBe('<1%');
+    expect(formatLayerWindowPct(5_000, 1_000_000)).toBe('1%');
+    expect(formatLayerWindowPct(0, 1_000_000)).toBe('0%');
   });
 
   it('layerCompositionBarWidth uses fractional share without a display floor', () => {

@@ -40,4 +40,24 @@ describe('normalizeSettingsPatch', () => {
     const patch = normalizeSettingsPatch({ ui: { rightDockWidth: 200, secondaryZoneMode: 'docked' } });
     expect(patch.ui).toEqual({});
   });
+
+  it('strips removed context-management ceiling fields from patches', () => {
+    const patch = normalizeSettingsPatch({
+      ui: {
+        agentBehavior: {
+          contextManagement: {
+            enabled: true,
+            absoluteCeilingTokens: 200_000,
+            effectiveWindowFraction: 0.9
+          }
+        }
+      }
+    });
+    const cm = (
+      patch.ui as { agentBehavior?: { contextManagement?: Record<string, unknown> } }
+    )?.agentBehavior?.contextManagement;
+    expect(cm?.enabled).toBe(true);
+    expect(cm).not.toHaveProperty('absoluteCeilingTokens');
+    expect(cm).not.toHaveProperty('effectiveWindowFraction');
+  });
 });

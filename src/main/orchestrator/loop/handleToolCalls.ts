@@ -14,6 +14,7 @@ import { batchIndicesByDependencies, parseDependsOnIds } from './toolDependencyB
 import { parseToolArgs } from './parseToolArgs.js';
 import { validateToolArgs } from './validateToolArgs.js';
 import { insertHistoryBeforeTail } from '../context/buildContextLayers.js';
+import { isWriteShaped } from '../toolResultCacheInternals.js';
 import { truncateToolOutputForContext } from '@shared/text/truncateUtf8Safe.js';
 import { logger } from '../../logging/logger.js';
 
@@ -306,6 +307,92 @@ function formatToolFailureDetail(toolName: string, output: string, error?: strin
   return detail.length > 160 ? `${detail.slice(0, 157)}…` : detail;
 }
 
+/** True when dispatch would invalidate the tool-result cache (writes first). */
+function isWriteShapedToolCall(tc: PartialToolCall): boolean {
+  if (!tc.name) return false;
+  const canonical = normalizeRegisteredToolName(tc.name);
+  if (!canonical) return false;
+  const { args } = parseToolArgs(tc.name, tc.argumentsBuf);
+  return isWriteShaped(canonical, args);
+}
+
+/**
+ * Split a parallel batch so write-shaped tools finish before cacheable
+ * reads — prevents a concurrent `read` from recording pre-edit bytes
+ * after an `edit` in the same batch invalidates the cache.
+ */
+function partitionWriteBeforeRead(indices: number[], calls: PartialToolCall[]): {
+  writes: number[];
+  reads: number[];
+} {
+  const writes: number[] = [];
+  const reads: number[] = [];
+  for (const i of indices) {
+    if (isWriteShapedToolCall(calls[i]!)) writes.push(i);
+    else reads.push(i);
+  }
+  return { writes, reads };
+}
+
+async function dispatchRunnableBatch(
+  indices: number[],
+  finishedToolCalls: PartialToolCall[],
+  messages: ChatMessage[],
+  emit: (event: TimelineEvent) => void,
+  opts: HandleToolCallsOpts,
+  tallies: { refused: number },
+  processed: Set<number>,
+  tally: { attempted: number; failed: number; lastFailure?: string }
+): Promise<void> {
+  const { writes, reads } = partitionWriteBeforeRead(indices, finishedToolCalls);
+  const phases = writes.length > 0 && reads.length > 0 ? [writes, reads] : [indices];
+
+  for (const phase of phases) {
+    if (opts.signal.aborted) break;
+    // Writes run sequentially so cache invalidation is visible before reads.
+    if (phase === writes) {
+      for (const i of phase) {
+        processed.add(i);
+        const o = await dispatchOneToolCall(
+          finishedToolCalls[i]!,
+          i,
+          messages,
+          emit,
+          opts,
+          tallies
+        );
+        if (o.kind === 'ran') {
+          tally.attempted += o.attempted;
+          tally.failed += o.failed;
+          if (o.failureDetail) tally.lastFailure = o.failureDetail;
+        }
+      }
+      continue;
+    }
+    const outcomes = await Promise.all(
+      phase.map(async (i) => {
+        const o = await dispatchOneToolCall(
+          finishedToolCalls[i]!,
+          i,
+          messages,
+          emit,
+          opts,
+          tallies
+        );
+        processed.add(i);
+        return o;
+      })
+    );
+    for (const o of outcomes) {
+      if (o.kind === 'ran') {
+        tally.attempted += o.attempted;
+        tally.failed += o.failed;
+        if (o.failureDetail) tally.lastFailure = o.failureDetail;
+      }
+    }
+  }
+}
+
 export async function handleToolCalls(
   finishedToolCalls: PartialToolCall[],
   messages: ChatMessage[],
@@ -394,29 +481,20 @@ export async function handleToolCalls(
       }
     }
 
-    // Independent calls in a batch overlap; timeline JSONL order stays
-    // stable because conversationStore serializes per-conversation appends.
-    const outcomes = await Promise.all(
-      runnable.map(async (i) => {
-        const o = await dispatchOneToolCall(
-          finishedToolCalls[i]!,
-          i,
-          messages,
-          emit,
-          opts,
-          tallies
-        );
-        processed.add(i);
-        return o;
-      })
+    const batchTally = { attempted: 0, failed: 0, lastFailure: undefined as string | undefined };
+    await dispatchRunnableBatch(
+      runnable,
+      finishedToolCalls,
+      messages,
+      emit,
+      opts,
+      tallies,
+      processed,
+      batchTally
     );
-    for (const o of outcomes) {
-      if (o.kind === 'ran') {
-        attempted += o.attempted;
-        failed += o.failed;
-        recordFailure(o.failureDetail);
-      }
-    }
+    attempted += batchTally.attempted;
+    failed += batchTally.failed;
+    recordFailure(batchTally.lastFailure);
   }
 
   if (failed > 0) {

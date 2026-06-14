@@ -19,8 +19,8 @@
  * prose is delivered as the final answer.
  *
  * On streaming error, retry with exponential backoff up to
- * `MAX_SELF_CORRECTION_ATTEMPTS`; on the third strike, emit `error` and
- * abort the run.
+ * `MAX_SELF_CORRECTION_ATTEMPTS` per burst. After `MAX_PROVIDER_RECOVERY_ROUNDS`
+ * harness recovery cycles, emit `error` and abort the run.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -58,6 +58,7 @@ import type { ModelSelection, ModelThinkingCapabilities, ThinkingEffort } from '
 import {
   IMPLICIT_FINISH_MIN_CHARS,
   IMPLICIT_FINISH_MIN_SENTENCE_CHARS,
+  MAX_PROVIDER_RECOVERY_ROUNDS,
   MAX_SELF_CORRECTION_ATTEMPTS,
   MAX_TOTAL_ITERATIONS
 } from '@shared/constants.js';
@@ -70,7 +71,11 @@ import {
   insertHistoryBeforeTail,
   isCacheLayeredTopology
 } from '../context/buildContextLayers.js';
-import type { ContextLevel } from '@shared/context/contextLevel.js';
+import {
+  resolveAnthropicClearToolTriggerInputTokens,
+  resolveAnthropicServerCompactionTriggerTokens,
+  type ContextLevel
+} from '@shared/context/contextLevel.js';
 import { buildOrchestratorRequest } from './buildOrchestratorRequest.js';
 import { handleAssistantTurn } from './handleAssistantTurn.js';
 import { DiffStreamer } from '../diffStreamer.js';
@@ -120,11 +125,12 @@ import {
 import { toolSchemasFor } from '../../tools/registry.js';
 import { maybeInterceptHostReportGate } from './hostReportGate.js';
 import {
+  formatProviderRecoveryThought,
   formatProviderStrikeError,
   formatRetryThought,
   formatRunTokenBudgetError,
   formatRunWallClockBudgetError,
-  formatToolStrikeError,
+  formatToolRecoveryThought,
   RUN_STOPPED_THOUGHT
 } from './runLoopMessages.js';
 
@@ -255,6 +261,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     let consecutiveErrors = resume?.consecutiveErrors ?? 0;
     const allowlistRefusalCounts = new Map<string, number>();
     let consecutiveBadToolRounds = resume?.consecutiveBadToolRounds ?? 0;
+    let providerRecoveryRounds = 0;
     let transportFailuresThisRun = 0;
     let runHadLlmProgress = false;
     let lastToolRoundFailure: string | undefined;
@@ -397,7 +404,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         const runStateXml = buildRunStateXml(
           snapshotRunState(runStateAcc, spin, consecutiveBadToolRounds)
         );
-        const hostEnvXml = buildHostEnvironmentXml();
+        const hostEnvXml = buildHostEnvironmentXml(undefined, {
+          workspacePath: opts.workspacePath
+        });
         const contextPressureXml = agentBehaviorSettings.contextManagement.enabled
           ? buildContextPressureXml(lastUsageLevel)
           : '';
@@ -475,27 +484,33 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         // the window. Trigger sits ABOVE the host trigger so it only fires if
         // host-side reduction somehow fell behind (defense in depth).
         const cmSettings = agentBehaviorSettings.contextManagement;
+        const compactionThresholds = {
+          warnFraction: cmSettings.warnFraction,
+          triggerFraction: cmSettings.triggerFraction
+        };
         const anthropicContextEditing =
           cmSettings.enabled &&
           providerDialect === 'anthropic-native' &&
           advertisedWindowForTurn > 0
             ? {
               keepToolUses: cmSettings.keepLastToolResults,
-              triggerInputTokens: Math.floor(advertisedWindowForTurn * 0.92),
+              triggerInputTokens: resolveAnthropicClearToolTriggerInputTokens(
+                advertisedWindowForTurn,
+                compactionThresholds
+              ),
               // Free a worthwhile chunk per server pass + clear stale tool
               // inputs (mirrors the host-side `clear_tool_inputs` tier).
               clearAtLeastTokens: 8_192,
               clearToolInputs: true,
-              // Opt-in server-side compaction backstop. The API requires the
-              // compaction trigger to be ≥ 50k tokens; sit it below the
-              // clear_tool_uses trigger so summarization only fires if clearing
-              // alone can't keep the prompt lean.
+              // Opt-in server-side compaction backstop. Trigger sits below the
+              // host `clear_tool_uses` band so summarization only fires if
+              // clearing alone cannot keep the prompt lean.
               ...(cmSettings.serverSideCompaction
                 ? {
                   serverCompaction: {
-                    triggerTokens: Math.max(
-                      50_000,
-                      Math.floor(advertisedWindowForTurn * 0.85)
+                    triggerTokens: resolveAnthropicServerCompactionTriggerTokens(
+                      advertisedWindowForTurn,
+                      compactionThresholds
                     )
                   }
                 }
@@ -668,15 +683,35 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             emit({ kind: 'agent-text-aborted', id: turn.assistantMsgId, ts: Date.now() });
           }
           if (consecutiveErrors >= MAX_SELF_CORRECTION_ATTEMPTS) {
-            const userMsg = formatProviderStrikeError(consecutiveErrors, msg);
-            log.warn('provider strike halt', { consecutiveErrors, detail: msg });
+            providerRecoveryRounds += 1;
+            if (providerRecoveryRounds > MAX_PROVIDER_RECOVERY_ROUNDS) {
+              const strikeMsg = formatProviderStrikeError(consecutiveErrors, msg);
+              log.warn('provider sustained failures — terminating run', {
+                consecutiveErrors,
+                providerRecoveryRounds,
+                detail: msg
+              });
+              emit({
+                kind: 'error',
+                id: randomUUID(),
+                ts: Date.now(),
+                message: strikeMsg
+              });
+              return { terminalError: strikeMsg };
+            }
+            log.warn('provider sustained failures — harness recovery', {
+              consecutiveErrors,
+              providerRecoveryRounds,
+              detail: msg
+            });
             emit({
-              kind: 'error',
+              kind: 'agent-thought',
               id: randomUUID(),
               ts: Date.now(),
-              message: userMsg
+              content: formatProviderRecoveryThought(consecutiveErrors, msg),
+              severity: 'warn'
             });
-            return { terminalError: userMsg };
+            consecutiveErrors = 0;
           }
           const retryContent = formatRetryThought(msg, consecutiveErrors);
           emit({
@@ -793,7 +828,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           (turn.usage.cachedPromptTokens ?? 0) === 0 &&
           turn.usage.promptTokens >= 1024
         ) {
-          log.warn('prompt cache read near zero on multi-turn iteration', {
+          const cachePayload = {
             iteration: iter,
             providerId: opts.input.selection.providerId,
             modelId: opts.input.selection.modelId,
@@ -801,7 +836,17 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             ...(turn.anthropicCacheMissReason !== undefined
               ? { cacheMissReason: turn.anthropicCacheMissReason }
               : {})
-          });
+          };
+          // OpenAI-compat / automatic prefix caches (OpenRouter, DeepSeek)
+          // often miss on multi-turn growth — expected, not actionable.
+          if (
+            providerDialect === 'openai' &&
+            turn.anthropicCacheMissReason === undefined
+          ) {
+            log.debug('prompt cache read near zero (automatic prefix cache)', cachePayload);
+          } else {
+            log.warn('prompt cache read near zero on multi-turn iteration', cachePayload);
+          }
         }
 
         if (turn.hadReasoning && !turn.reasoningEndEmitted) {
@@ -992,23 +1037,25 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               }
               consecutiveBadToolRounds += 1;
               if (consecutiveBadToolRounds >= MAX_SELF_CORRECTION_ATTEMPTS) {
-                const toolStrikeMsg = formatToolStrikeError(
-                  lastToolRoundFailure,
-                  rootToolRoundFailure
-                );
-                log.warn('tool-round strike halt — consecutive failed tool rounds', {
+                log.warn('tool-round sustained failures — harness recovery', {
                   consecutiveBadToolRounds,
                   iteration: iter,
                   rootFailure: rootToolRoundFailure,
                   lastFailure: lastToolRoundFailure
                 });
                 emit({
-                  kind: 'error',
+                  kind: 'agent-thought',
                   id: randomUUID(),
                   ts: Date.now(),
-                  message: toolStrikeMsg
+                  content: formatToolRecoveryThought(
+                    consecutiveBadToolRounds,
+                    lastToolRoundFailure,
+                    rootToolRoundFailure
+                  ),
+                  severity: 'warn'
                 });
-                return { terminalError: toolStrikeMsg };
+                consecutiveBadToolRounds = 0;
+                rootToolRoundFailure = undefined;
               }
             } else if (summary.attempted > 0) {
               consecutiveBadToolRounds = 0;

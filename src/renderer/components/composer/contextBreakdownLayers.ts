@@ -21,7 +21,7 @@ export function layerShare(tokens: number, total: number): number {
   return Math.min(100, Math.round((tokens / total) * 100));
 }
 
-/** Share of the usable context window (what the meter header % uses). */
+/** Share of the model context window (what the meter header % uses). */
 export function layerWindowShare(tokens: number, effectiveWindow: number): number {
   return layerShare(tokens, effectiveWindow);
 }
@@ -37,7 +37,7 @@ export function layerCompositionBarWidth(tokens: number, usedTokens: number): nu
   return Math.min(100, (tokens / usedTokens) * 100);
 }
 
-/** Display percent of usable window; sub-0.5% layers show as `<1%`. */
+/** Display percent of model context window; sub-0.5% layers show as `<1%`. */
 export function formatLayerWindowPct(tokens: number, effectiveWindow: number): string {
   if (tokens <= 0 || effectiveWindow <= 0) return '0%';
   const pct = (tokens / effectiveWindow) * 100;

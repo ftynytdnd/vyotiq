@@ -55,8 +55,8 @@ function replayCachedEntry(entry: CacheEntry, name: ToolName, scope: 'run' | 'co
   const banner =
     `[cache] This exact \`${name}\` call has already been issued ` +
     `${entry.hits} time${entry.hits === 1 ? '' : 's'} earlier in this ${scope === 'conversation' ? 'conversation' : 'run'}. ` +
-    `The output has not changed. If you keep seeing this, move to a ` +
-    `planning or edit step instead of re-reading.\n\n`;
+    `The output may be stale if a write tool ran since. Re-issue after \`edit\`/\`delete\`/\`bash\`, or use a fresh \`read\`. ` +
+    `If you keep seeing this, move to planning or edit instead of re-reading.\n\n`;
   log.info('tool-result cache hit', {
     tool: name,
     hits: entry.hits,

@@ -106,8 +106,17 @@ async function runGlobal(
   ctx: ToolContext
 ): Promise<ToolResult> {
   switch (a.action) {
-    case 'read':
     case 'list': {
+      const content = await readGlobalMetaRules();
+      void touchGlobalMemoryLastReference(ctx.conversationId).catch(() => undefined);
+      return ok(id, started, `# Global Meta-Rules\n${content}`, {
+        tool: 'memory',
+        action: 'list',
+        scope: 'global',
+        preview: content
+      });
+    }
+    case 'read': {
       const content = await readGlobalMetaRules();
       void touchGlobalMemoryLastReference(ctx.conversationId).catch(() => undefined);
       return ok(id, started, `# Global Meta-Rules\n${content}`, {

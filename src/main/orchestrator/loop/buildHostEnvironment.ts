@@ -47,6 +47,11 @@ import os from 'node:os';
 import process from 'node:process';
 import { wrapXml } from '../envelope/index.js';
 
+export interface HostEnvironmentOpts {
+  /** Active workspace root — agent tools default cwd. */
+  workspacePath?: string;
+}
+
 /**
  * Render `Date.prototype.getTimezoneOffset()` (which returns minutes
  * WEST of UTC, so IST is `-330`) as the conventional `+HH:MM` / `-HH:MM`
@@ -135,7 +140,10 @@ const WEEKDAYS = [
  * path of every iteration). Each failure substitutes `'unknown'` so
  * the line shape stays stable.
  */
-export function buildHostEnvironmentXml(now: Date = new Date()): string {
+export function buildHostEnvironmentXml(
+  now: Date = new Date(),
+  opts?: HostEnvironmentOpts
+): string {
   let osPlatform: string;
   let osRelease: string;
   let osArch: string;
@@ -183,6 +191,14 @@ export function buildHostEnvironmentXml(now: Date = new Date()): string {
     lines.push(`electron_version: ${electronVersion}`);
   }
   lines.push(`locale: ${locale}`);
+
+  if (opts?.workspacePath && opts.workspacePath.length > 0) {
+    lines.push(`workspace_cwd: ${opts.workspacePath}`);
+    lines.push(
+      'shell_note: Agent `bash` uses PowerShell on Windows (`;` to chain — not `&`). ' +
+        'Isolated bash spawns reset cwd to workspace_cwd; shared PTY cwd may drift after `cd`.'
+    );
+  }
 
   return wrapXml('host_environment', lines.join('\n'));
 }

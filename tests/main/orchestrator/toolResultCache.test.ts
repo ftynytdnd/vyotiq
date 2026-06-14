@@ -87,12 +87,12 @@ describe('toolResultCache', () => {
     // — that's how the model recognises it should pivot. Without the
     // "no-op" framing the banner could be misread as a transient cache
     // hit that might next time return fresh data.
-    expect(secondCall!.output).toMatch(/output has not changed/i);
+    expect(secondCall!.output).toMatch(/may be stale|output has not changed/i);
     // The banner must hand the model a concrete pivot recommendation.
     // This is the line that replaces the deleted spin nudge's
     // "Either emit a `<delegate ... />` directive or finalize the
     // answer" copy.
-    expect(secondCall!.output).toMatch(/move to a planning or edit step/i);
+    expect(secondCall!.output).toMatch(/move to planning or edit/i);
   });
 
   it('treats argument key order as insignificant (stable hash)', () => {

@@ -16,7 +16,7 @@ import { resolveSettingsSectionId } from '@shared/settings/settingsSection.js';
 import { readBlob, updateBlob, type SettingsBlob } from './blob.js';
 import { normalizeDockWidthInUi } from '@shared/dock/dockWidth.js';
 import { normalizeWorkbenchPaneWidthInUi } from '@shared/workbench/workbenchPaneWidth.js';
-import { migrateLegacyDockUi, normalizeSettingsPatch } from './migrateUiFields.js';
+import { migrateLegacyDockUi, normalizeSettingsPatch, stripRemovedContextManagementFields } from './migrateUiFields.js';
 import { syncPromptCachingFromSettings } from './promptCachingRuntime.js';
 import { syncVectorEmbedFromSettings } from './vectorEmbedRuntime.js';
 
@@ -137,9 +137,21 @@ function normalizeBlobForPersistence(blob: SettingsBlob): { blob: SettingsBlob; 
     } as Record<string, unknown>);
     const { ui: tokenMigrated, changed: tokenBudgetMigrated } =
       migrateLegacyTokenBudgetWarning(migrated);
-    const stripped = stripDeprecatedUiFields(tokenMigrated);
+    const agentBehaviorRaw = tokenMigrated['agentBehavior'];
+    const { agentBehavior: cmStripped, changed: cmMigrated } =
+      stripRemovedContextManagementFields(
+        agentBehaviorRaw && typeof agentBehaviorRaw === 'object'
+          ? (agentBehaviorRaw as Record<string, unknown>)
+          : undefined
+      );
+    const tokenAndCmMigrated =
+      cmMigrated && cmStripped
+        ? { ...tokenMigrated, agentBehavior: cmStripped }
+        : tokenMigrated;
+    const stripped = stripDeprecatedUiFields(tokenAndCmMigrated);
     let ui = stripped;
-    let uiChanged = dockMigrated || tokenBudgetMigrated || stripped !== next.ui;
+    let uiChanged =
+      dockMigrated || tokenBudgetMigrated || cmMigrated || stripped !== next.ui;
     if (ui.density === undefined) {
       ui = { ...ui, density: 'compact' };
       uiChanged = true;
@@ -352,7 +364,9 @@ export async function setSettings(patch: Partial<AppSettings>): Promise<AppSetti
           ...agentPatch.contextManagement
         };
       }
-      mergedUi.agentBehavior = nextAgent;
+      const { agentBehavior: cmStripped, changed: cmChanged } =
+        stripRemovedContextManagementFields(nextAgent);
+      mergedUi.agentBehavior = cmChanged && cmStripped ? cmStripped : nextAgent;
     }
 
     const { permissions: _patchPerms, ...normalizedSansPerms } = normalized as Partial<AppSettings> & {

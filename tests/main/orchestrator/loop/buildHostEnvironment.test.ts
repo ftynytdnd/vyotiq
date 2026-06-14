@@ -144,4 +144,13 @@ describe('buildHostEnvironmentXml', () => {
     expect(ts).toBeGreaterThanOrEqual(before);
     expect(ts).toBeLessThanOrEqual(after);
   });
+
+  it('includes workspace cwd and shell note when workspacePath is provided', () => {
+    const xml = buildHostEnvironmentXml(new Date('2026-05-18T12:00:00Z'), {
+      workspacePath: 'C:\\Users\\dev\\project'
+    });
+    expect(xml).toContain('workspace_cwd: C:\\Users\\dev\\project');
+    expect(xml).toContain('shell_note:');
+    expect(xml).toMatch(/PowerShell on Windows/);
+  });
 });

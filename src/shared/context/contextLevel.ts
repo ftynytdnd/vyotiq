@@ -5,47 +5,28 @@
  */
 
 import type { ModelInfo } from '../types/provider.js';
+import {
+  CONTEXT_ABSOLUTE_COMPACTION_TRIGGER_TOKENS,
+  CONTEXT_ABSOLUTE_COMPACTION_WARN_TOKENS,
+  CONTEXT_HISTORY_COMPACTION_TRIGGER_TOKENS,
+  CONTEXT_HISTORY_COMPACTION_WARN_TOKENS
+} from '../constants.js';
 import { effectiveContextWindow } from '../providers/contextWindow.js';
 
-/** Severity of current context usage relative to the effective window. */
+/** Severity of compaction pressure (warn / trigger / critical bands). */
 export type ContextLevel = 'ok' | 'warn' | 'trigger' | 'critical';
 
 export interface ContextLevelThresholds {
-  /** Fraction of the effective window at which to warn (0..1). */
+  /** Fraction of the model context window at which to warn (0..1). */
   warnFraction: number;
-  /** Fraction of the effective window at which reduction triggers (0..1). */
+  /** Fraction of the model context window at which reduction triggers (0..1). */
   triggerFraction: number;
 }
 
-/**
- * Usable window = `min(advertised × effectiveWindowFraction, absoluteCeiling)`.
- *
- * Advertised windows overstate the length over which a model reasons reliably,
- * so we first take a fraction of them. 2026 context-rot research further shows
- * degradation onset is roughly *absolute* (tens of thousands of tokens) rather
- * than proportional, so for very large windows a flat fraction still lands far
- * past the rot curve. The optional `absoluteCeilingTokens` caps the usable
- * window at a fixed token bound (pass `0`/omit to disable the cap).
- */
-export function computeEffectiveWindow(
-  advertisedWindow: number,
-  effectiveWindowFraction: number,
-  absoluteCeilingTokens = 0
-): number {
+/** Normalize a discovered provider context window to a positive token count. */
+export function resolveModelContextWindow(advertisedWindow: number): number {
   if (!Number.isFinite(advertisedWindow) || advertisedWindow <= 0) return 0;
-  const frac =
-    Number.isFinite(effectiveWindowFraction) && effectiveWindowFraction > 0
-      ? Math.min(effectiveWindowFraction, 1)
-      : 1;
-  let usable = Math.floor(advertisedWindow * frac);
-  if (
-    Number.isFinite(absoluteCeilingTokens) &&
-    absoluteCeilingTokens > 0 &&
-    usable > absoluteCeilingTokens
-  ) {
-    usable = Math.floor(absoluteCeilingTokens);
-  }
-  return usable;
+  return Math.floor(advertisedWindow);
 }
 
 /** Resolve the advertised window for a model (with user overrides). */
@@ -58,8 +39,8 @@ export function resolveAdvertisedWindow(
 }
 
 /**
- * Classify usage into a level. `criticalFraction` (>= trigger) marks the
- * zone where context rot is acute even after reduction has run.
+ * Classify usage into a level from window fractions. Used by tests and legacy
+ * callers; live compaction uses {@link classifyCompactionLevel}.
  */
 export function classifyContextLevel(
   fractionUsed: number,
@@ -70,6 +51,104 @@ export function classifyContextLevel(
   if (fractionUsed >= thresholds.triggerFraction) return 'trigger';
   if (fractionUsed >= thresholds.warnFraction) return 'warn';
   return 'ok';
+}
+
+export interface CompactionTokenThresholds {
+  warnTokens: number;
+  triggerTokens: number;
+}
+
+/**
+ * Resolve warn/trigger token bands for compaction: fraction of the discovered
+ * window, capped by absolute constants so large models (e.g. 1M) still reduce
+ * near ~200k while the meter shows fill against the full window.
+ */
+export function resolveCompactionThresholds(
+  advertisedWindow: number,
+  thresholds: ContextLevelThresholds
+): CompactionTokenThresholds {
+  const window = resolveModelContextWindow(advertisedWindow);
+  if (window <= 0) return { warnTokens: 0, triggerTokens: 0 };
+  const fractionWarn = Math.floor(window * thresholds.warnFraction);
+  const fractionTrigger = Math.floor(window * thresholds.triggerFraction);
+  return {
+    warnTokens: Math.min(fractionWarn, CONTEXT_ABSOLUTE_COMPACTION_WARN_TOKENS),
+    triggerTokens: Math.min(fractionTrigger, CONTEXT_ABSOLUTE_COMPACTION_TRIGGER_TOKENS)
+  };
+}
+
+/** Classify compaction pressure from absolute token counts (not display %). */
+export function classifyCompactionLevel(
+  usedTokens: number,
+  warnTokens: number,
+  triggerTokens: number
+): ContextLevel {
+  if (triggerTokens <= 0) return 'ok';
+  const criticalTokens = Math.floor(triggerTokens * 1.05);
+  if (usedTokens >= criticalTokens) return 'critical';
+  if (usedTokens >= triggerTokens) return 'trigger';
+  if (warnTokens > 0 && usedTokens >= warnTokens) return 'warn';
+  return 'ok';
+}
+
+const LEVEL_RANK: Record<ContextLevel, number> = {
+  ok: 0,
+  warn: 1,
+  trigger: 2,
+  critical: 3
+};
+
+function maxContextLevel(a: ContextLevel, b: ContextLevel): ContextLevel {
+  return LEVEL_RANK[a] >= LEVEL_RANK[b] ? a : b;
+}
+
+/**
+ * Bump compaction pressure when replayed history alone is large — common on
+ * long tool-heavy runs against 1M-window models where total % stays low.
+ */
+export function applyHistoryCompactionPressure(
+  level: ContextLevel,
+  breakdown?: ContextUsageBreakdown
+): ContextLevel {
+  if (!breakdown) return level;
+  const history = breakdown.history;
+  if (history >= CONTEXT_HISTORY_COMPACTION_TRIGGER_TOKENS) {
+    return maxContextLevel(level, 'trigger');
+  }
+  if (history >= CONTEXT_HISTORY_COMPACTION_WARN_TOKENS) {
+    return maxContextLevel(level, 'warn');
+  }
+  return level;
+}
+
+/** Cushion above the host compaction trigger for Anthropic `clear_tool_uses`. */
+export const ANTHROPIC_CLEAR_TOOL_TRIGGER_CUSHION_TOKENS = 8_192;
+
+/** Offset below the host compaction trigger for server-side compaction backstop. */
+export const ANTHROPIC_SERVER_COMPACTION_TRIGGER_OFFSET_TOKENS = 10_000;
+
+/** Minimum Anthropic server-compaction trigger (API floor). */
+export const ANTHROPIC_SERVER_COMPACTION_MIN_TRIGGER_TOKENS = 50_000;
+
+/** Host `clear_tool_uses` trigger — just above the host compaction band. */
+export function resolveAnthropicClearToolTriggerInputTokens(
+  advertisedWindow: number,
+  thresholds: ContextLevelThresholds
+): number {
+  const { triggerTokens } = resolveCompactionThresholds(advertisedWindow, thresholds);
+  return triggerTokens + ANTHROPIC_CLEAR_TOOL_TRIGGER_CUSHION_TOKENS;
+}
+
+/** Server-side compaction trigger — below host clear, above API minimum. */
+export function resolveAnthropicServerCompactionTriggerTokens(
+  advertisedWindow: number,
+  thresholds: ContextLevelThresholds
+): number {
+  const { triggerTokens } = resolveCompactionThresholds(advertisedWindow, thresholds);
+  return Math.max(
+    ANTHROPIC_SERVER_COMPACTION_MIN_TRIGGER_TOKENS,
+    triggerTokens - ANTHROPIC_SERVER_COMPACTION_TRIGGER_OFFSET_TOKENS
+  );
 }
 
 /**
@@ -176,10 +255,15 @@ export function reconcileContextBreakdown(
 
 export interface ContextUsageSummary {
   usedTokens: number;
+  /** Provider-discovered (or user-overridden) model context window. */
   advertisedWindow: number;
+  /**
+   * Same as `advertisedWindow` — retained for timeline replay compatibility.
+   */
   effectiveWindow: number;
-  /** usedTokens / effectiveWindow, clamped to [0, 1+] (can exceed 1 when over). */
+  /** usedTokens / effectiveWindow — display % only (full discovered window). */
   fractionUsed: number;
+  /** Compaction pressure band (absolute/fraction thresholds, not display %). */
   level: ContextLevel;
   /** True when usedTokens came from an exact tokenizer (not the heuristic). */
   exact: boolean;
@@ -194,29 +278,24 @@ export interface ContextUsageSummary {
 export function summarizeContextUsage(opts: {
   usedTokens: number;
   advertisedWindow: number;
-  effectiveWindowFraction: number;
   thresholds: ContextLevelThresholds;
   exact: boolean;
-  /** Adaptive absolute cap on the usable window (tokens); 0/omitted disables it. */
-  absoluteCeilingTokens?: number;
   breakdown?: ContextUsageBreakdown;
 }): ContextUsageSummary {
-  const effectiveWindow = computeEffectiveWindow(
-    opts.advertisedWindow,
-    opts.effectiveWindowFraction,
-    opts.absoluteCeilingTokens ?? 0
-  );
+  const effectiveWindow = resolveModelContextWindow(opts.advertisedWindow);
   const fractionUsed =
     effectiveWindow > 0 ? opts.usedTokens / effectiveWindow : 0;
+  const { warnTokens, triggerTokens } = resolveCompactionThresholds(
+    opts.advertisedWindow,
+    opts.thresholds
+  );
+  const baseLevel = classifyCompactionLevel(opts.usedTokens, warnTokens, triggerTokens);
   return {
     usedTokens: opts.usedTokens,
-    advertisedWindow: opts.advertisedWindow,
+    advertisedWindow: effectiveWindow,
     effectiveWindow,
     fractionUsed,
-    level:
-      effectiveWindow > 0
-        ? classifyContextLevel(fractionUsed, opts.thresholds)
-        : 'ok',
+    level: applyHistoryCompactionPressure(baseLevel, opts.breakdown),
     exact: opts.exact,
     ...(opts.breakdown ? { breakdown: opts.breakdown } : {})
   };

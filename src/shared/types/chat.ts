@@ -333,10 +333,9 @@ export type TimelineEvent =
   /**
    * Live context-window usage telemetry (Phase: context-management 2026).
    * Emitted once per loop iteration with the current estimated prompt size
-   * against the model's *effective* window. Drives the composer context meter
-   * and the warn/trigger color states.
+   * against the model's full discovered context window. Drives the composer
+   * meter (display %) and compaction pressure (warn/trigger color states).
    *
-   * IMPORTANT: pure live telemetry — intentionally NOT persisted to the JSONL
    * Persisted per iteration for replay-accurate composer meter breakdown.
    * The renderer also keeps `latestContextUsage` as the live selector.
    */
@@ -346,9 +345,9 @@ export type TimelineEvent =
     ts: number;
     /** Estimated total prompt tokens for the next request. */
     usedTokens: number;
-    /** Usable window = advertised × effectiveWindowFraction. */
+    /** Provider-discovered model context window (tokens). */
     effectiveWindow: number;
-    /** Raw advertised/overridden window for the active model. */
+    /** Same as `effectiveWindow` — retained for timeline replay compatibility. */
     advertisedWindow: number;
     /** Severity classification (`ok` | `warn` | `trigger` | `critical`). */
     level: 'ok' | 'warn' | 'trigger' | 'critical';

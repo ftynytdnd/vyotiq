@@ -3,7 +3,7 @@
  * breakdown popover; Compact / Reset live in the popover footer.
  */
 
-import { memo, useCallback, useId, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { ModelSelection } from '@shared/types/provider.js';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import type { ContextUsageSummary } from '@shared/context/contextLevel.js';
@@ -16,12 +16,11 @@ import { useProviderStore } from '../../store/useProviderStore.js';
 import { findProviderModel } from './modelPicker/modelPickerContext.js';
 import { useContextWindowUsage } from './useContextWindowUsage.js';
 import { ContextBreakdownPopover } from './ContextBreakdownPopover.js';
-import { CONTEXT_BREAKDOWN_LAYERS } from './contextBreakdownLayers.js';
-import { useChatStore } from '../../store/useChatStore.js';
 import {
   contextPercent,
   isContextReducing,
   levelClasses,
+  levelDetailTitle,
   levelLabel
 } from './contextMeterLevel.js';
 
@@ -40,28 +39,13 @@ function breakdownTitle(
   percent: number,
   tierLabel: string | null
 ): string {
-  const modelNote =
-    usage.advertisedWindow > 0 && usage.advertisedWindow !== usage.effectiveWindow
-      ? ` (model advertises ${formatTokenCountWithUnit(usage.advertisedWindow)})`
-      : '';
-  const lines = [
-    `Context: ${formatTokenCountWithUnit(usage.usedTokens)} of ${formatTokenCountWithUnit(usage.effectiveWindow)} usable${modelNote}`,
-    `${percent}%${tierLabel ? ` (${tierLabel})` : ''}${usage.exact ? '' : ' — approximate'}`
-  ];
-  if (usage.breakdown) {
-    lines.push('');
-    for (const { key, label } of CONTEXT_BREAKDOWN_LAYERS) {
-      const n = usage.breakdown[key];
-      if (n > 0) {
-        const layerPct =
-          usage.effectiveWindow > 0
-            ? Math.round((n / usage.effectiveWindow) * 100)
-            : 0;
-        lines.push(`${label}: ${formatTokenCountWithUnit(n)} (${layerPct}% of window)`);
-      }
-    }
-  }
-  return lines.join('\n');
+  const approx = usage.exact ? '' : ' (approximate)';
+  const base =
+    `Context: ${formatTokenCountWithUnit(usage.usedTokens)} of ` +
+    `${formatTokenCountWithUnit(usage.effectiveWindow)}${approx} — ${percent}%`;
+  const compactionDetail = levelDetailTitle(usage);
+  if (compactionDetail) return `${base} · ${compactionDetail}`;
+  return tierLabel ? `${base} (${tierLabel})` : base;
 }
 
 export const ContextWindowMeter = memo(function ContextWindowMeter({
@@ -81,17 +65,26 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
     attachmentDraft,
     isRunActive
   });
-  const billedPromptTokens = useChatStore((s) =>
-    isRunActive && s.orchestratorUsage?.latest?.promptTokens
-      ? s.orchestratorUsage.latest.promptTokens
-      : undefined
-  );
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [compactionNote, setCompactionNote] = useState<string | null>(null);
   const providers = useProviderStore((s) => s.providers);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const compactOfferRef = useRef<string | null>(null);
   const panelId = useId();
+
+  useEffect(() => {
+    if (!usage || isRunActive || busy) return;
+    if (usage.level !== 'trigger' && usage.level !== 'critical') {
+      compactOfferRef.current = null;
+      return;
+    }
+    const key = `${usage.level}:${usage.usedTokens}`;
+    if (compactOfferRef.current === key) return;
+    compactOfferRef.current = key;
+    setCompactionNote('Context high — open meter or Compact now.');
+    setOpen(true);
+  }, [usage, isRunActive, busy]);
 
   const run = useCallback(
     async (mode: 'compact' | 'reset') => {
@@ -198,7 +191,6 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
         triggerRef={triggerRef}
         usage={usage}
         evaluating={evaluating}
-        billedPromptTokens={billedPromptTokens}
         controlsEnabled={controlsEnabled}
         hasConversation={Boolean(conversationId)}
         onCompact={() => void run('compact')}
