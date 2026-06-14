@@ -191,9 +191,12 @@ const api: VyotiqApi = {
 
   terminal: {
     attach: (input) => ipcRenderer.invoke(IPC.TERMINAL_ATTACH, input),
+    create: (input) => ipcRenderer.invoke(IPC.TERMINAL_CREATE, input),
+    list: (input) => ipcRenderer.invoke(IPC.TERMINAL_LIST, input),
+    close: (input) => ipcRenderer.invoke(IPC.TERMINAL_CLOSE, input),
     input: (payload) => ipcRenderer.invoke(IPC.TERMINAL_INPUT, payload),
     resize: (payload) => ipcRenderer.invoke(IPC.TERMINAL_RESIZE, payload),
-    restart: (workspaceId) => ipcRenderer.invoke(IPC.TERMINAL_RESTART, workspaceId),
+    restart: (input) => ipcRenderer.invoke(IPC.TERMINAL_RESTART, input),
     detach: (workspaceId) => ipcRenderer.invoke(IPC.TERMINAL_DETACH, workspaceId),
     onData: (cb) =>
       on<[import('@shared/types/terminal.js').TerminalDataEvent]>(IPC.TERMINAL_DATA, (event) =>
@@ -201,6 +204,24 @@ const api: VyotiqApi = {
       ),
     onExit: (cb) =>
       on<[import('@shared/types/terminal.js').TerminalExitEvent]>(IPC.TERMINAL_EXIT, (event) =>
+        cb(event)
+      )
+  },
+
+  browser: {
+    attach: (input) => ipcRenderer.invoke(IPC.BROWSER_ATTACH, input),
+    navigate: (input) => ipcRenderer.invoke(IPC.BROWSER_NAVIGATE, input),
+    back: () => ipcRenderer.invoke(IPC.BROWSER_BACK),
+    forward: () => ipcRenderer.invoke(IPC.BROWSER_FORWARD),
+    reload: () => ipcRenderer.invoke(IPC.BROWSER_RELOAD),
+    stop: () => ipcRenderer.invoke(IPC.BROWSER_STOP),
+    setBounds: (input) => ipcRenderer.invoke(IPC.BROWSER_SET_BOUNDS, input),
+    setVisible: (input) => ipcRenderer.invoke(IPC.BROWSER_SET_VISIBLE, input),
+    find: (input) => ipcRenderer.invoke(IPC.BROWSER_FIND, input),
+    stopFind: () => ipcRenderer.invoke(IPC.BROWSER_STOP_FIND),
+    destroy: () => ipcRenderer.invoke(IPC.BROWSER_DESTROY),
+    onState: (cb) =>
+      on<[import('@shared/types/browser.js').BrowserStateEvent]>(IPC.BROWSER_STATE, (event) =>
         cb(event)
       )
   },

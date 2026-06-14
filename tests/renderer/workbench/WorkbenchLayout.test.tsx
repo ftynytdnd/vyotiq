@@ -36,12 +36,44 @@ vi.mock('@renderer/lib/ipc.js', async (importOriginal) => {
         onEvent: subscribe
       },
       terminal: {
-        attach: vi.fn(async () => ({ shell: 'powershell' })),
+        attach: vi.fn(async () => ({
+          ok: true,
+          sessions: [
+            { sessionId: 's1', workspaceId: 'ws-1', shell: 'powershell', cols: 80, rows: 24, primary: true }
+          ]
+        })),
+        create: vi.fn(async () => ({
+          ok: true,
+          session: { sessionId: 's2', workspaceId: 'ws-1', shell: 'powershell', cols: 80, rows: 24, primary: false }
+        })),
+        list: vi.fn(async () => ({ sessions: [] })),
+        close: vi.fn(async () => undefined),
         detach: vi.fn(async () => undefined),
         input: vi.fn(async () => undefined),
         resize: vi.fn(async () => undefined),
+        restart: vi.fn(async () => ({
+          ok: true,
+          session: { sessionId: 's1', workspaceId: 'ws-1', shell: 'powershell', cols: 80, rows: 24, primary: true }
+        })),
         onData: subscribe,
         onExit: subscribe
+      },
+      browser: {
+        attach: vi.fn(async () => ({
+          ok: true,
+          state: { url: '', title: '', loading: false, canGoBack: false, canGoForward: false }
+        })),
+        navigate: vi.fn(async () => undefined),
+        back: vi.fn(async () => undefined),
+        forward: vi.fn(async () => undefined),
+        reload: vi.fn(async () => undefined),
+        stop: vi.fn(async () => undefined),
+        setBounds: vi.fn(async () => undefined),
+        setVisible: vi.fn(async () => undefined),
+        find: vi.fn(async () => undefined),
+        stopFind: vi.fn(async () => undefined),
+        destroy: vi.fn(async () => undefined),
+        onState: subscribe
       }
     }
   };
@@ -97,10 +129,12 @@ function seedFreshChat() {
   useTerminalStore.setState({
     open: false,
     workspaceId: null,
-    shellLabel: null,
+    sessions: [],
+    activeSessionId: null,
+    splitSessionId: null,
     attaching: false,
     error: null
-  });
+  } as never);
 }
 
 function shellWithChat() {
@@ -130,9 +164,12 @@ describe('Workbench layout', () => {
     useTerminalStore.setState({
       open: true,
       workspaceId: 'ws-1',
-      shellLabel: 'powershell',
+      sessions: [
+        { sessionId: 's1', workspaceId: 'ws-1', shell: 'powershell', cols: 80, rows: 24, primary: true }
+      ],
+      activeSessionId: 's1',
       attaching: false
-    });
+    } as never);
     const { container } = render(shellWithChat());
 
     expect(container.querySelector(`.${WORKBENCH_SHELL_SPLIT_ROW_CLASS}`)).toBeTruthy();
@@ -156,9 +193,12 @@ describe('Workbench layout', () => {
     useTerminalStore.setState({
       open: true,
       workspaceId: 'ws-1',
-      shellLabel: 'powershell',
+      sessions: [
+        { sessionId: 's1', workspaceId: 'ws-1', shell: 'powershell', cols: 80, rows: 24, primary: true }
+      ],
+      activeSessionId: 's1',
       attaching: false
-    });
+    } as never);
     useUiStore.setState({ workbenchTab: 'terminal' });
 
     render(shellWithChat());

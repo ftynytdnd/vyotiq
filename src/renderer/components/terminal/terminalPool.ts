@@ -1,0 +1,131 @@
+/**
+ * Persistent xterm.js instance pool, keyed by PTY `sessionId`.
+ *
+ * Each session keeps one long-lived `Terminal` whose host element is
+ * re-parented into whichever pane currently shows it. Output streams into
+ * the buffer continuously (single global `onData` listener) so scrollback
+ * survives tab switches, splits, and session re-selection without losing
+ * history or re-spawning the shell.
+ */
+
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon } from '@xterm/addon-search';
+import { WebLinksAddon } from '@xterm/addon-web-links';
+import '@xterm/xterm/css/xterm.css';
+import { vyotiq } from '../../lib/ipc.js';
+import { buildXtermTheme, resolveMonoFontFamily } from '@shared/terminal/xtermTheme.js';
+
+export interface TerminalPoolEntry {
+  sessionId: string;
+  term: Terminal;
+  fit: FitAddon;
+  search: SearchAddon;
+  host: HTMLDivElement;
+  opened: boolean;
+}
+
+const pool = new Map<string, TerminalPoolEntry>();
+
+let listenersBound = false;
+let themeObserver: MutationObserver | null = null;
+
+function bindGlobalListeners(): void {
+  if (listenersBound) return;
+  listenersBound = true;
+
+  vyotiq.terminal.onData((event) => {
+    pool.get(event.sessionId)?.term.write(event.data);
+  });
+
+  vyotiq.terminal.onExit((event) => {
+    const entry = pool.get(event.sessionId);
+    entry?.term.writeln(`\r\n\x1b[38;5;245m[shell exited ${event.exitCode}]\x1b[0m`);
+  });
+
+  if (typeof MutationObserver !== 'undefined') {
+    themeObserver = new MutationObserver(() => {
+      const theme = buildXtermTheme();
+      for (const entry of pool.values()) {
+        entry.term.options.theme = theme;
+      }
+    });
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme']
+    });
+  }
+}
+
+export function getTerminalEntry(sessionId: string): TerminalPoolEntry {
+  bindGlobalListeners();
+  const existing = pool.get(sessionId);
+  if (existing) return existing;
+
+  const host = document.createElement('div');
+  host.className = 'vx-xterm-host h-full min-h-0 w-full';
+
+  const term = new Terminal({
+    cursorBlink: true,
+    fontFamily: resolveMonoFontFamily(),
+    fontSize: 12,
+    lineHeight: 1.35,
+    letterSpacing: 0,
+    scrollback: 8000,
+    theme: buildXtermTheme()
+  });
+  const fit = new FitAddon();
+  const search = new SearchAddon();
+  term.loadAddon(fit);
+  term.loadAddon(search);
+  term.loadAddon(new WebLinksAddon());
+
+  // Forward keystrokes to the owning PTY session.
+  term.onData((data) => {
+    void vyotiq.terminal.input({ sessionId, data });
+  });
+
+  const entry: TerminalPoolEntry = { sessionId, term, fit, search, host, opened: false };
+  pool.set(sessionId, entry);
+  return entry;
+}
+
+/** Open the terminal into its host (idempotent) and fit + report size. */
+export function openTerminalEntry(entry: TerminalPoolEntry): void {
+  if (!entry.opened) {
+    entry.term.open(entry.host);
+    entry.opened = true;
+  }
+  fitTerminalEntry(entry);
+}
+
+export function fitTerminalEntry(entry: TerminalPoolEntry): void {
+  if (!entry.opened) return;
+  try {
+    entry.fit.fit();
+  } catch {
+    return;
+  }
+  const { cols, rows } = entry.term;
+  if (cols > 0 && rows > 0) {
+    void vyotiq.terminal.resize({ sessionId: entry.sessionId, cols, rows });
+  }
+}
+
+export function disposeTerminalEntry(sessionId: string): void {
+  const entry = pool.get(sessionId);
+  if (!entry) return;
+  try {
+    entry.term.dispose();
+  } catch {
+    /* noop */
+  }
+  entry.host.remove();
+  pool.delete(sessionId);
+}
+
+export function disposeAllTerminalEntries(): void {
+  for (const id of [...pool.keys()]) disposeTerminalEntry(id);
+  themeObserver?.disconnect();
+  themeObserver = null;
+}

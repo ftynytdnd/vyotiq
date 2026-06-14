@@ -16,7 +16,7 @@ export const useAttachmentPreviewStore = create<AttachmentPreviewStore>((set) =>
   attachment: null,
   open: (attachment) => {
     closeSettingsForCompanionOpen();
-    focusWorkbenchTab('globe');
+    focusWorkbenchTab('preview');
     set({ attachment });
   },
   close: () => {

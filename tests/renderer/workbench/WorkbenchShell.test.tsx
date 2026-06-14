@@ -34,10 +34,12 @@ describe('WorkbenchShell', () => {
     useTerminalStore.setState({
       open: false,
       workspaceId: null,
-      shellLabel: null,
+      sessions: [],
+      activeSessionId: null,
+      splitSessionId: null,
       attaching: false,
       error: null
-    });
+    } as never);
     useUiStore.setState({ workbenchTab: 'agent' });
   });
 
@@ -53,13 +55,13 @@ describe('WorkbenchShell', () => {
     useEditorStore.setState({ open: true });
     render(shell());
     expect(screen.getByRole('tablist', { name: /workbench/i })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: /^terminal$/i })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: /^globe$/i })).toBeTruthy();
+    // On-demand tabs: no terminal/browser tab unless those surfaces are open.
+    expect(screen.queryByRole('tab', { name: /^terminal$/i })).toBeNull();
     expect(screen.queryByRole('tab', { name: /^agent$/i })).toBeNull();
   });
 
   it('uses horizontal split layout when companions are open', () => {
-    useTerminalStore.setState({ open: true, workspaceId: 'ws-1', attaching: false });
+    useTerminalStore.setState({ open: true, workspaceId: 'ws-1', attaching: false } as never);
     const { container } = render(shell());
     expect(container.querySelector(`.${WORKBENCH_SHELL_SPLIT_ROW_CLASS}`)).toBeTruthy();
     expect(container.querySelector('[data-workbench-agent-main]')).toBeTruthy();
@@ -68,7 +70,7 @@ describe('WorkbenchShell', () => {
   });
 
   it('shows side pane when only the terminal is open', () => {
-    useTerminalStore.setState({ open: true, workspaceId: 'ws-1', attaching: false });
+    useTerminalStore.setState({ open: true, workspaceId: 'ws-1', attaching: false } as never);
     render(shell());
     expect(screen.getByRole('tablist', { name: /workbench/i })).toBeTruthy();
   });
@@ -84,7 +86,15 @@ describe('WorkbenchShell', () => {
   it('keeps agent chat visible beside the workbench pane on terminal', () => {
     useEditorStore.setState({ open: true });
     useUiStore.setState({ workbenchTab: 'terminal' });
-    useTerminalStore.setState({ open: true, workspaceId: 'ws-1', attaching: false });
+    useTerminalStore.setState({
+      open: true,
+      workspaceId: 'ws-1',
+      sessions: [
+        { sessionId: 's1', workspaceId: 'ws-1', shell: 'powershell', cols: 80, rows: 24, primary: true }
+      ],
+      activeSessionId: 's1',
+      attaching: false
+    } as never);
     render(shell(<p data-testid="agent-slot">Agent view</p>));
     expect(screen.getByTestId('agent-slot')).toBeTruthy();
     expect(document.querySelector('[data-workbench-agent-main]')).toBeTruthy();

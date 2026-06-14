@@ -19,6 +19,8 @@ import {
 import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useEditorLsp } from '../../hooks/useEditorLsp.js';
+import { useEditorCursorStore } from '../../store/useEditorCursorStore.js';
+import { EditorStatusBar } from './EditorStatusBar.js';
 import { WORKBENCH_BODY_CLASS } from './workbenchShared.js';
 import { cn } from '../../lib/cn.js';
 
@@ -30,7 +32,10 @@ export function EditorCanvas() {
   const loading = activeTab?.loading ?? false;
   const truncated = activeTab?.truncated ?? false;
   const staleOnDisk = activeTab?.staleOnDisk ?? false;
+  const eol = activeTab?.eol ?? 'lf';
+  const encoding = activeTab?.encoding ?? 'utf-8';
   const dirty = useEditorStore(selectEditorDirty);
+  const setCursor = useEditorCursorStore((s) => s.setCursor);
   const setContent = useEditorStore((s) => s.setContent);
   const save = useEditorStore((s) => s.save);
   const reloadFromDisk = useEditorStore((s) => s.reloadFromDisk);
@@ -86,6 +91,7 @@ export function EditorCanvas() {
           filePath={filePath}
           onChange={setContent}
           onSave={() => void save()}
+          onCursor={setCursor}
           inlineCompletion={inlineCompletion}
           onGoToDefinition={lsp.goToDefinition}
           lspBridge={lsp.bridge}
@@ -95,6 +101,9 @@ export function EditorCanvas() {
         <p className="sr-only" aria-live="polite">
           Unsaved changes
         </p>
+      ) : null}
+      {filePath && !loading ? (
+        <EditorStatusBar filePath={filePath} eol={eol} encoding={encoding} dirty={dirty} />
       ) : null}
     </div>
   );

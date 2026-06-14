@@ -1,9 +1,16 @@
 /**
- * Per-workspace shared PTY sessions — user terminal + agent bash bridge.
+ * Per-workspace PTY sessions — supports multiple user terminals plus the
+ * agent `bash` bridge.
+ *
+ * Each workspace has one **primary** session (the first one created) that
+ * the agent `bash` tool shares; additional sessions are user-only. All
+ * sessions are keyed globally by `sessionId`.
  */
 
+import { randomUUID } from 'node:crypto';
 import * as pty from 'node-pty';
 import type { IPty } from 'node-pty';
+import type { TerminalSessionMeta } from '@shared/types/terminal.js';
 import {
   PTY_CMD_END_PREFIX,
   PTY_CMD_START,
@@ -15,19 +22,35 @@ import { logger } from '../logging/logger.js';
 const log = logger.child('terminal/pty');
 
 interface PtySession {
+  sessionId: string;
   workspaceId: string;
   workspacePath: string;
+  shell: string;
   proc: IPty;
   cols: number;
   rows: number;
+  /** Primary sessions back the agent `bash` shared shell. */
+  primary: boolean;
   agentBusy: boolean;
   agentWaiters: Array<() => void>;
 }
 
 const sessions = new Map<string, PtySession>();
 
-type DataListener = (workspaceId: string, data: string) => void;
-type ExitListener = (workspaceId: string, exitCode: number, signal?: number) => void;
+interface PtyDataEvent {
+  workspaceId: string;
+  sessionId: string;
+  data: string;
+}
+interface PtyExitEvent {
+  workspaceId: string;
+  sessionId: string;
+  exitCode: number;
+  signal?: number;
+}
+
+type DataListener = (event: PtyDataEvent) => void;
+type ExitListener = (event: PtyExitEvent) => void;
 
 let onData: DataListener | null = null;
 let onExit: ExitListener | null = null;
@@ -40,12 +63,23 @@ export function setPtyEventHandlers(handlers: {
   onExit = handlers.onExit;
 }
 
-function emitData(workspaceId: string, data: string): void {
-  onData?.(workspaceId, data);
+function emitData(event: PtyDataEvent): void {
+  onData?.(event);
 }
 
-function emitExit(workspaceId: string, exitCode: number, signal?: number): void {
-  onExit?.(workspaceId, exitCode, signal);
+function emitExit(event: PtyExitEvent): void {
+  onExit?.(event);
+}
+
+function toMeta(session: PtySession): TerminalSessionMeta {
+  return {
+    sessionId: session.sessionId,
+    workspaceId: session.workspaceId,
+    shell: session.shell,
+    cols: session.cols,
+    rows: session.rows,
+    primary: session.primary
+  };
 }
 
 function escapePsSingle(value: string): string {
@@ -78,18 +112,22 @@ function wrapAgentCommand(command: string): string {
 }
 
 function attachProcHandlers(session: PtySession): void {
-  const { workspaceId, proc } = session;
+  const { workspaceId, sessionId, proc } = session;
   proc.onData((data) => {
-    emitData(workspaceId, data);
+    emitData({ workspaceId, sessionId, data });
   });
   proc.onExit(({ exitCode, signal }) => {
-    sessions.delete(workspaceId);
-    emitExit(workspaceId, exitCode, signal);
-    log.info('pty exited', { workspaceId, exitCode, signal });
+    sessions.delete(sessionId);
+    emitExit({ workspaceId, sessionId, exitCode, ...(signal !== undefined ? { signal } : {}) });
+    log.info('pty exited', { workspaceId, sessionId, exitCode, signal });
   });
 }
 
-function createSession(workspaceId: string, workspacePath: string): PtySession {
+function spawnSession(
+  workspaceId: string,
+  workspacePath: string,
+  primary: boolean
+): PtySession {
   const { shell, args } = shellSpawnSpec();
   const cols = 120;
   const rows = 32;
@@ -106,47 +144,88 @@ function createSession(workspaceId: string, workspacePath: string): PtySession {
   });
 
   const session: PtySession = {
+    sessionId: randomUUID(),
     workspaceId,
     workspacePath,
+    shell,
     proc,
     cols,
     rows,
+    primary,
     agentBusy: false,
     agentWaiters: []
   };
   attachProcHandlers(session);
-  sessions.set(workspaceId, session);
-  log.info('pty spawned', { workspaceId, shell, cwd: workspacePath });
+  sessions.set(session.sessionId, session);
+  log.info('pty spawned', { workspaceId, sessionId: session.sessionId, shell, primary, cwd: workspacePath });
   return session;
 }
 
-export function hasWorkspacePty(workspaceId: string): boolean {
-  return sessions.has(workspaceId);
+function primarySessionFor(workspaceId: string): PtySession | undefined {
+  for (const session of sessions.values()) {
+    if (session.workspaceId === workspaceId && session.primary) return session;
+  }
+  return undefined;
 }
 
+/** Kill every PTY session for a workspace (e.g. on workspace remove). */
+export function killWorkspacePty(workspaceId: string): void {
+  for (const session of [...sessions.values()]) {
+    if (session.workspaceId === workspaceId) killSession(session.sessionId);
+  }
+}
+
+export function hasWorkspacePty(workspaceId: string): boolean {
+  return primarySessionFor(workspaceId) !== undefined;
+}
+
+/** Ensure the workspace primary session exists and return it. */
 export function ensureWorkspacePty(
   workspaceId: string,
   workspacePath: string
-): { shell: string; cols: number; rows: number } {
-  let session = sessions.get(workspaceId);
-  if (!session) {
-    session = createSession(workspaceId, workspacePath);
-  } else if (session.workspacePath !== workspacePath) {
+): TerminalSessionMeta {
+  const existing = primarySessionFor(workspaceId);
+  if (existing) {
+    if (existing.workspacePath === workspacePath) return toMeta(existing);
+    // Workspace path changed (moved/remounted) — recycle every session.
     killWorkspacePty(workspaceId);
-    session = createSession(workspaceId, workspacePath);
   }
-  const { shell } = shellSpawnSpec();
-  return { shell, cols: session.cols, rows: session.rows };
+  return toMeta(spawnSession(workspaceId, workspacePath, true));
 }
 
-export function writeWorkspacePty(workspaceId: string, data: string): void {
-  const session = sessions.get(workspaceId);
-  if (!session) return;
-  session.proc.write(data);
+/** Spawn an additional, non-primary user session for a workspace. */
+export function createWorkspaceSession(
+  workspaceId: string,
+  workspacePath: string
+): TerminalSessionMeta {
+  // Ensure the primary exists first so the agent bridge always has a home.
+  if (!primarySessionFor(workspaceId)) {
+    spawnSession(workspaceId, workspacePath, true);
+  }
+  return toMeta(spawnSession(workspaceId, workspacePath, false));
 }
 
-export function resizeWorkspacePty(workspaceId: string, cols: number, rows: number): void {
-  const session = sessions.get(workspaceId);
+export function listWorkspaceSessions(workspaceId: string): TerminalSessionMeta[] {
+  const list: TerminalSessionMeta[] = [];
+  for (const session of sessions.values()) {
+    if (session.workspaceId === workspaceId) list.push(toMeta(session));
+  }
+  // Primary first, then creation order (Map preserves insertion order).
+  list.sort((a, b) => (a.primary === b.primary ? 0 : a.primary ? -1 : 1));
+  return list;
+}
+
+export function getSessionMeta(sessionId: string): TerminalSessionMeta | null {
+  const session = sessions.get(sessionId);
+  return session ? toMeta(session) : null;
+}
+
+export function writeSession(sessionId: string, data: string): void {
+  sessions.get(sessionId)?.proc.write(data);
+}
+
+export function resizeSession(sessionId: string, cols: number, rows: number): void {
+  const session = sessions.get(sessionId);
   if (!session) return;
   session.cols = cols;
   session.rows = rows;
@@ -154,26 +233,35 @@ export function resizeWorkspacePty(workspaceId: string, cols: number, rows: numb
     session.proc.resize(cols, rows);
   } catch (err) {
     log.debug('pty resize failed', {
-      workspaceId,
+      sessionId,
       err: err instanceof Error ? err.message : String(err)
     });
   }
 }
 
-export function killWorkspacePty(workspaceId: string): void {
-  const session = sessions.get(workspaceId);
+export function killSession(sessionId: string): void {
+  const session = sessions.get(sessionId);
   if (!session) return;
   try {
     session.proc.kill();
   } catch {
     /* noop */
   }
-  sessions.delete(workspaceId);
+  sessions.delete(sessionId);
+}
+
+/** Restart a session in place; preserves its primary flag + workspace. */
+export function restartSession(sessionId: string): TerminalSessionMeta | null {
+  const session = sessions.get(sessionId);
+  if (!session) return null;
+  const { workspaceId, workspacePath, primary } = session;
+  killSession(sessionId);
+  return toMeta(spawnSession(workspaceId, workspacePath, primary));
 }
 
 export function disposeAllPtySessions(): void {
   for (const id of [...sessions.keys()]) {
-    killWorkspacePty(id);
+    killSession(id);
   }
 }
 
@@ -182,11 +270,11 @@ async function acquireAgentLock(session: PtySession): Promise<void> {
     session.agentBusy = true;
     return;
   }
-    await new Promise<void>((resolve) => {
-      session.agentWaiters.push(() => {
-        resolve();
-      });
+  await new Promise<void>((resolve) => {
+    session.agentWaiters.push(() => {
+      resolve();
     });
+  });
   session.agentBusy = true;
 }
 
@@ -209,7 +297,7 @@ export async function runAgentCommandInPty(
   timeoutMs: number,
   signal?: AbortSignal
 ): Promise<AgentPtyRunResult | null> {
-  const session = sessions.get(workspaceId);
+  const session = primarySessionFor(workspaceId);
   if (!session) return null;
 
   await acquireAgentLock(session);
@@ -241,15 +329,10 @@ export async function runAgentCommandInPty(
     }
   };
 
-  const dataHandler = (id: string, data: string) => {
-    if (id !== workspaceId) return;
-    onChunk(data);
-  };
-
   const prevOnData = onData;
-  onData = (id, data) => {
-    dataHandler(id, data);
-    prevOnData?.(id, data);
+  onData = (event) => {
+    if (event.sessionId === session.sessionId) onChunk(event.data);
+    prevOnData?.(event);
   };
 
   const wrapped = wrapAgentCommand(command);

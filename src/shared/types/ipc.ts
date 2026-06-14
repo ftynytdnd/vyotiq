@@ -1326,23 +1326,68 @@ export interface VyotiqApi {
 
 
 
-  // ---- Workspace PTY terminal ----
+  // ---- Workspace PTY terminal (multi-session per workspace) ----
 
   terminal: {
 
+    /** Ensure the workspace primary session exists; returns all live sessions. */
     attach(input: import('./terminal.js').TerminalAttachInput): Promise<import('./terminal.js').TerminalAttachResult>;
+
+    /** Spawn an additional (non-primary) session for a workspace. */
+    create(input: import('./terminal.js').TerminalCreateInput): Promise<import('./terminal.js').TerminalCreateResult>;
+
+    /** List live sessions for a workspace. */
+    list(input: import('./terminal.js').TerminalListInput): Promise<import('./terminal.js').TerminalListResult>;
+
+    /** Kill a single session by id. */
+    close(input: import('./terminal.js').TerminalCloseInput): Promise<void>;
 
     input(payload: import('./terminal.js').TerminalInputPayload): Promise<void>;
 
     resize(payload: import('./terminal.js').TerminalResizePayload): Promise<void>;
 
-    restart(workspaceId?: string): Promise<void>;
+    /** Restart a session in place (kills + respawns its PTY). */
+    restart(input: import('./terminal.js').TerminalRestartInput): Promise<import('./terminal.js').TerminalCreateResult>;
 
     detach(workspaceId?: string): Promise<void>;
 
     onData(cb: (event: import('./terminal.js').TerminalDataEvent) => void): () => void;
 
     onExit(cb: (event: import('./terminal.js').TerminalExitEvent) => void): () => void;
+
+  };
+
+  // ---- In-app web browser (Globe) ----
+
+  browser: {
+
+    /** Create/show the embedded browser view; returns current nav state. */
+    attach(input?: import('./browser.js').BrowserAttachInput): Promise<import('./browser.js').BrowserAttachResult>;
+
+    navigate(input: import('./browser.js').BrowserNavigateInput): Promise<void>;
+
+    back(): Promise<void>;
+
+    forward(): Promise<void>;
+
+    reload(): Promise<void>;
+
+    stop(): Promise<void>;
+
+    /** Reposition the view over the renderer placeholder rect. */
+    setBounds(input: import('./browser.js').BrowserSetBoundsInput): Promise<void>;
+
+    /** Show/hide the view (hidden when the tab is inactive or occluded). */
+    setVisible(input: import('./browser.js').BrowserSetVisibleInput): Promise<void>;
+
+    find(input: import('./browser.js').BrowserFindInput): Promise<void>;
+
+    stopFind(): Promise<void>;
+
+    /** Tear down the view entirely. */
+    destroy(): Promise<void>;
+
+    onState(cb: (event: import('./browser.js').BrowserStateEvent) => void): () => void;
 
   };
 

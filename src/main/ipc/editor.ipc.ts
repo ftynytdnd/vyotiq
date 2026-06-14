@@ -65,7 +65,10 @@ export function registerEditorIpc(): void {
     return {
       content,
       mtimeMs: st.mtimeMs,
-      truncated
+      truncated,
+      eol: decoded.eol,
+      encoding: decoded.encoding,
+      utf8Bom: decoded.utf8Bom
     };
   });
 

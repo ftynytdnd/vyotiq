@@ -3,6 +3,7 @@
  */
 
 import { create } from 'zustand';
+import type { EditorEncoding, EditorEol } from '@shared/types/editor.js';
 import { basenameFromPath } from '@shared/text/languageFromPath.js';
 import { normalizePath } from '../lib/normalizePath.js';
 import { vyotiq } from '../lib/ipc.js';
@@ -34,6 +35,10 @@ export interface EditorTab {
   saving: boolean;
   staleOnDisk: boolean;
   error: string | null;
+  /** Line-ending style detected on disk. */
+  eol: EditorEol;
+  /** On-disk text encoding. */
+  encoding: EditorEncoding;
 }
 
 interface EditorStore {
@@ -71,7 +76,16 @@ interface EditorStore {
 
 function emptyTabFields(): Pick<
   EditorTab,
-  'content' | 'savedContent' | 'mtimeMs' | 'truncated' | 'loading' | 'saving' | 'staleOnDisk' | 'error'
+  | 'content'
+  | 'savedContent'
+  | 'mtimeMs'
+  | 'truncated'
+  | 'loading'
+  | 'saving'
+  | 'staleOnDisk'
+  | 'error'
+  | 'eol'
+  | 'encoding'
 > {
   return {
     content: '',
@@ -81,7 +95,9 @@ function emptyTabFields(): Pick<
     loading: false,
     saving: false,
     staleOnDisk: false,
-    error: null
+    error: null,
+    eol: 'lf',
+    encoding: 'utf-8'
   };
 }
 
@@ -202,7 +218,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
             savedContent: result.content,
             mtimeMs: result.mtimeMs,
             truncated: result.truncated,
-            loading: false
+            loading: false,
+            eol: result.eol,
+            encoding: result.encoding
           })
         })
       );
@@ -302,7 +320,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
             mtimeMs: result.mtimeMs,
             truncated: result.truncated,
             loading: false,
-            staleOnDisk: false
+            staleOnDisk: false,
+            eol: result.eol,
+            encoding: result.encoding
           })
         })
       );

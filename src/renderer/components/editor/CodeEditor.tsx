@@ -4,8 +4,15 @@
 
 import { useEffect, useRef } from 'react';
 import { Compartment, EditorState, type Extension } from '@codemirror/state';
-import { EditorView, keymap } from '@codemirror/view';
+import {
+  EditorView,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  keymap,
+  lineNumbers
+} from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search';
 import { cn } from '../../lib/cn.js';
 import { shellMonoEditorBase } from './codemirrorTheme.js';
 import { codemirrorLanguageForPath } from './codemirrorLanguage.js';
@@ -34,6 +41,8 @@ export interface CodeEditorProps {
   className?: string;
   onChange?: (value: string) => void;
   onSave?: () => void;
+  /** Reports the primary cursor position + selection length to the status bar. */
+  onCursor?: (line: number, col: number, selection: number) => void;
   inlineCompletion?: CodeEditorInlineCompletionConfig | null;
   onGoToDefinition?: (line: number, character: number) => void;
   lspBridge?: LspEditorBridge | null;
@@ -98,6 +107,7 @@ export function CodeEditor({
   className,
   onChange,
   onSave,
+  onCursor,
   inlineCompletion,
   onGoToDefinition,
   lspBridge = null
@@ -106,6 +116,7 @@ export function CodeEditor({
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
+  const onCursorRef = useRef(onCursor);
   const inlineCompletionRef = useRef(inlineCompletion);
   const lspBridgeRef = useRef(lspBridge);
 
@@ -114,6 +125,7 @@ export function CodeEditor({
 
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
+  onCursorRef.current = onCursor;
   inlineCompletionRef.current = inlineCompletion;
   lspBridgeRef.current = lspBridge;
 
@@ -133,8 +145,15 @@ export function CodeEditor({
 
     const extensions: Extension[] = [
       shellMonoEditorBase,
+      // Gutter + active-line affordances already styled in codemirrorTheme
+      // (.cm-gutters / .cm-activeLineGutter / .cm-activeLine) but never wired.
+      lineNumbers(),
+      highlightActiveLineGutter(),
+      highlightActiveLine(),
       history(),
-      keymap.of([...defaultKeymap, ...historyKeymap]),
+      search({ top: true }),
+      highlightSelectionMatches(),
+      keymap.of([...searchKeymap, ...defaultKeymap, ...historyKeymap]),
       saveBinding,
       ...codemirrorLanguageForPath(filePath),
       inlineCompletionCompartment.of(inlineCompletionExtensions(inlineCompletionRef.current)),
@@ -143,8 +162,18 @@ export function CodeEditor({
         onGoToDefRef.current?.(line, character);
       }),
       EditorView.updateListener.of((update) => {
-        if (!update.docChanged) return;
-        onChangeRef.current?.(update.state.doc.toString());
+        if (update.docChanged) {
+          onChangeRef.current?.(update.state.doc.toString());
+        }
+        if (update.docChanged || update.selectionSet) {
+          const sel = update.state.selection.main;
+          const lineInfo = update.state.doc.lineAt(sel.head);
+          onCursorRef.current?.(
+            lineInfo.number,
+            sel.head - lineInfo.from + 1,
+            Math.abs(sel.to - sel.from)
+          );
+        }
       }),
       EditorState.readOnly.of(readOnly),
       EditorView.editable.of(!readOnly)

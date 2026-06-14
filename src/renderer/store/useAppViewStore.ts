@@ -10,6 +10,7 @@ import {
 } from '@shared/settings/settingsSection.js';
 import { vyotiq } from '../lib/ipc.js';
 import { useAttachmentPreviewStore } from './useAttachmentPreviewStore.js';
+import { useBrowserStore } from './useBrowserStore.js';
 import { useEditorStore } from './useEditorStore.js';
 import { useTerminalStore } from './useTerminalStore.js';
 import { useSettingsStore } from './useSettingsStore.js';
@@ -46,6 +47,7 @@ function clearCompanionOverlays(): void {
   useAttachmentPreviewStore.getState().close();
   useEditorStore.getState().close();
   useTerminalStore.getState().close();
+  useBrowserStore.getState().close();
 }
 
 function collapseDockForSettings(): void {

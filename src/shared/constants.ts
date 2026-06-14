@@ -406,14 +406,32 @@ export const IPC = {
   EDITOR_READ: 'editor:read',
   EDITOR_WRITE: 'editor:write',
 
-  // Workspace PTY terminal
+  // Workspace PTY terminal (multi-session per workspace)
   TERMINAL_ATTACH: 'terminal:attach',
+  TERMINAL_CREATE: 'terminal:create',
+  TERMINAL_LIST: 'terminal:list',
+  TERMINAL_CLOSE: 'terminal:close',
   TERMINAL_INPUT: 'terminal:input',
   TERMINAL_RESIZE: 'terminal:resize',
   TERMINAL_RESTART: 'terminal:restart',
   TERMINAL_DETACH: 'terminal:detach',
   TERMINAL_DATA: 'terminal:data',
   TERMINAL_EXIT: 'terminal:exit',
+
+  // In-app web browser (Globe) — Electron WebContentsView owned by main
+  BROWSER_ATTACH: 'browser:attach',
+  BROWSER_NAVIGATE: 'browser:navigate',
+  BROWSER_BACK: 'browser:back',
+  BROWSER_FORWARD: 'browser:forward',
+  BROWSER_RELOAD: 'browser:reload',
+  BROWSER_STOP: 'browser:stop',
+  BROWSER_SET_BOUNDS: 'browser:set-bounds',
+  BROWSER_SET_VISIBLE: 'browser:set-visible',
+  BROWSER_FIND: 'browser:find',
+  BROWSER_STOP_FIND: 'browser:stop-find',
+  BROWSER_DESTROY: 'browser:destroy',
+  /** main → renderer: navigation / loading state for the embedded browser. */
+  BROWSER_STATE: 'browser:state',
 
   // Inline completion (editor FIM + composer continuation)
   COMPLETION_REQUEST: 'completion:request',

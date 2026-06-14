@@ -43,6 +43,7 @@ import {
   watchSystemTheme
 } from './lib/theme.js';
 import { useTerminalStore } from './store/useTerminalStore.js';
+import { useBrowserStore } from './store/useBrowserStore.js';
 import { selectEditorDirty, useEditorStore } from './store/useEditorStore.js';
 import { useEditorAgentSync } from './hooks/useEditorAgentSync.js';
 import { resolveKeybindings, isMacPlatform } from './lib/resolveKeybindings.js';
@@ -340,6 +341,20 @@ export default function App() {
       offHints();
     };
   }, [applyModelsUpdate, applyDiscoveryPollHint]);
+
+  // Mirror the embedded browser's navigation state into the renderer store.
+  useEffect(() => {
+    return vyotiq.browser.onState((state) => {
+      useBrowserStore.getState().applyState(state);
+    });
+  }, []);
+
+  // Reap closed/exited PTY sessions from the terminal store.
+  useEffect(() => {
+    return vyotiq.terminal.onExit((event) => {
+      useTerminalStore.getState().handleExit(event.sessionId);
+    });
+  }, []);
 
   const openSettingsSection = (section?: SettingsSectionId | 'providers' | 'memory') => {
     openSettings(section);

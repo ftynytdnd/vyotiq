@@ -122,7 +122,6 @@ export function DockWorkspaceTabs() {
           title="Vyotiq-estimated API spend for this workspace"
         >
           {activeSpendLabel}
-          <span className="text-text-faint/80"> est.</span>
         </div>
       ) : null}
       <button

@@ -2,13 +2,11 @@
  * DockToolbar — footer / collapsed-rail actions (composer-aligned h-6 pills).
  */
 
-import { ChevronLeft, ChevronRight, Plus, Search, Settings, ArrowLeft, Terminal } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Search, Settings, ArrowLeft } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { DOCK_FOOTER_TOOLBAR_CLASS, DOCK_TAB_ICON_CLASS, DOCK_TAB_ICON_STROKE } from './dockShared.js';
 import { cn } from '../../lib/cn.js';
 import { chromePillClassName, chromeToolbarButtonClassName } from '../ui/SurfaceShell.js';
-import { useTerminalStore } from '../../store/useTerminalStore.js';
-import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 
 export interface DockToolbarProps {
   layout: 'horizontal' | 'vertical';
@@ -26,7 +24,7 @@ export interface DockToolbarProps {
   onBackFromSettings?: () => void;
 }
 
-type DockActionId = 'new' | 'search' | 'terminal' | 'settings' | 'back' | 'collapse';
+type DockActionId = 'new' | 'search' | 'settings' | 'back' | 'collapse';
 
 interface DockActionDef {
   id: DockActionId;
@@ -49,10 +47,6 @@ export function DockToolbar({
   settingsMode = false,
   onBackFromSettings
 }: DockToolbarProps) {
-  const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
-  const terminalOpen = useTerminalStore((s) => s.open);
-  const toggleTerminal = useTerminalStore((s) => s.toggle);
-
   const CollapseIcon = collapseIcon === 'left' ? ChevronLeft : ChevronRight;
   const collapseLabel =
     collapseIcon === 'left' ? 'Collapse navigation' : 'Expand navigation';
@@ -81,13 +75,6 @@ export function DockToolbar({
       active: searchOpen,
       onClick: onToggleSearch
     },
-    {
-      id: 'terminal',
-      label: 'Terminal',
-      title: 'Terminal (Ctrl+`)',
-      active: terminalOpen,
-      onClick: () => toggleTerminal(activeWorkspaceId)
-    },
     ...(settingsMode
       ? [
           {
@@ -111,12 +98,12 @@ export function DockToolbar({
     layout === 'horizontal'
       ? settingsMode
         ? ['back']
-        : ['new', 'search', 'terminal', 'settings', 'collapse']
+        : ['new', 'search', 'settings', 'collapse']
       : dockStyle
         ? settingsMode
           ? ['back']
-          : ['collapse', 'new', 'search', 'terminal', 'settings']
-        : ['new', 'search', 'terminal', settingsMode ? 'back' : 'settings', 'collapse'];
+          : ['collapse', 'new', 'search', 'settings']
+        : ['new', 'search', settingsMode ? 'back' : 'settings', 'collapse'];
 
   const ordered = order
     .map((id) => actions.find((a) => a.id === id))
@@ -133,8 +120,6 @@ export function DockToolbar({
         return <Plus className={iconClass} strokeWidth={stroke} />;
       case 'search':
         return <Search className={iconClass} strokeWidth={stroke} />;
-      case 'terminal':
-        return <Terminal className={iconClass} strokeWidth={stroke} />;
       case 'settings':
         return <Settings className={iconClass} strokeWidth={stroke} />;
       case 'back':

@@ -177,17 +177,70 @@ function makeStubApi() {
       resetSection: asyncNoop
     },
     editor: {
-      read: vi.fn(async () => ({ content: '', mtimeMs: 0, truncated: false })),
+      read: vi.fn(async () => ({
+        content: '',
+        mtimeMs: 0,
+        truncated: false,
+        eol: 'lf' as const,
+        encoding: 'utf-8' as const,
+        utf8Bom: false
+      })),
       write: vi.fn(async () => ({ ok: true as const, mtimeMs: 0 }))
     },
     terminal: {
-      attach: vi.fn(async () => ({ ok: true as const, shell: 'bash', cols: 80, rows: 24 })),
+      attach: vi.fn(async () => ({ ok: true as const, sessions: [] })),
+      create: vi.fn(async () => ({
+        ok: true as const,
+        session: {
+          sessionId: 's-stub',
+          workspaceId: 'ws-stub',
+          shell: 'bash',
+          cols: 80,
+          rows: 24,
+          primary: false
+        }
+      })),
+      list: vi.fn(async () => ({ sessions: [] })),
+      close: asyncNoop,
       input: asyncNoop,
       resize: asyncNoop,
-      restart: asyncNoop,
+      restart: vi.fn(async () => ({
+        ok: true as const,
+        session: {
+          sessionId: 's-stub',
+          workspaceId: 'ws-stub',
+          shell: 'bash',
+          cols: 80,
+          rows: 24,
+          primary: true
+        }
+      })),
       detach: asyncNoop,
       onData: subscribe,
       onExit: subscribe
+    },
+    browser: {
+      attach: vi.fn(async () => ({
+        ok: true as const,
+        state: {
+          url: '',
+          title: '',
+          loading: false,
+          canGoBack: false,
+          canGoForward: false
+        }
+      })),
+      navigate: asyncNoop,
+      back: asyncNoop,
+      forward: asyncNoop,
+      reload: asyncNoop,
+      stop: asyncNoop,
+      setBounds: asyncNoop,
+      setVisible: asyncNoop,
+      find: asyncNoop,
+      stopFind: asyncNoop,
+      destroy: asyncNoop,
+      onState: subscribe
     },
     completion: {
       request: vi.fn(async (input: { requestId: number }) => ({ requestId: input.requestId, text: '' })),

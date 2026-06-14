@@ -9,6 +9,7 @@
 
 import { app, BrowserWindow } from 'electron';
 import { createMainWindow } from './window/createMainWindow.js';
+import { isBrowserWebContents } from './window/browserManager.js';
 import { registerIpc } from './ipc/registerIpc.js';
 import { logger, installCrashHandlers } from './logging/logger.js';
 import { assertHarnessBoot, warmHarnessOverrides } from './harness/harnessLoader.js';
@@ -169,6 +170,9 @@ app.on('before-quit', (event) => {
     import('./ipc/terminal.ipc.js').then((m) => {
       m.teardownTerminalIpc();
     }),
+    import('./ipc/browser.ipc.js').then((m) => {
+      m.teardownBrowserIpc();
+    }),
     import('./ipc/completion.ipc.js').then((m) => {
       m.teardownCompletionIpc();
     }),
@@ -191,8 +195,16 @@ app.on('before-quit', (event) => {
 // against future `<webview>` introduction; the renderer doesn't use any
 // today.
 app.on('web-contents-created', (_event, contents) => {
+  // The embedded Globe browser (a WebContentsView) is the ONE surface
+  // allowed to navigate freely across the web. It manages its own
+  // window-open handler in `browserManager` and runs in a separate
+  // sandboxed partition with no Vyotiq preload, so the renderer's
+  // `contextBridge` surface is never exposed to remote pages. Every
+  // other webContents keeps the strict navigation lockdown below.
+  if (isBrowserWebContents(contents.id)) return;
   contents.setWindowOpenHandler(() => ({ action: 'deny' }));
   contents.on('will-navigate', (event, url) => {
+    if (isBrowserWebContents(contents.id)) return;
     const allowed = process.env['ELECTRON_RENDERER_URL'];
     if (allowed && url.startsWith(allowed)) return;
     if (url.startsWith('file://')) return;

@@ -37,6 +37,7 @@ describe('WorkbenchToolbar', () => {
       activeFilePath: 'C:\\proj\\src\\main.py'
     } as never);
     render(<WorkbenchToolbar tab="editor" />);
-    expect(screen.getByText('src/main.py')).toBeTruthy();
+    expect(screen.getByText('src')).toBeTruthy();
+    expect(screen.getByText('main.py')).toBeTruthy();
   });
 });

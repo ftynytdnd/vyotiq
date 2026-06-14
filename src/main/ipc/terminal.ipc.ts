@@ -1,21 +1,31 @@
 /**
- * Terminal PTY IPC — shared workspace shell for user + agent bash.
+ * Terminal PTY IPC — multi-session workspace shells for user + agent bash.
  */
 
 import { IPC } from '@shared/constants.js';
 import type {
   TerminalAttachInput,
   TerminalAttachResult,
+  TerminalCloseInput,
+  TerminalCreateInput,
+  TerminalCreateResult,
   TerminalInputPayload,
-  TerminalResizePayload
+  TerminalListInput,
+  TerminalListResult,
+  TerminalResizePayload,
+  TerminalRestartInput
 } from '@shared/types/terminal.js';
 import {
+  createWorkspaceSession,
   disposeAllPtySessions,
   ensureWorkspacePty,
-  killWorkspacePty,
-  resizeWorkspacePty,
+  getSessionMeta,
+  killSession,
+  listWorkspaceSessions,
+  resizeSession,
+  restartSession,
   setPtyEventHandlers,
-  writeWorkspacePty
+  writeSession
 } from '../terminal/ptyManager.js';
 import { requireWorkspace, requireWorkspaceById, getActiveWorkspace } from '../workspace/workspaceState.js';
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
@@ -35,11 +45,11 @@ async function resolveWorkspace(id?: string): Promise<{ id: string; path: string
 
 export function registerTerminalIpc(): void {
   setPtyEventHandlers({
-    onData: (workspaceId, data) => {
-      safeWebContentsSend(IPC.TERMINAL_DATA, { workspaceId, data });
+    onData: (event) => {
+      safeWebContentsSend(IPC.TERMINAL_DATA, event);
     },
-    onExit: (workspaceId, exitCode, signal) => {
-      safeWebContentsSend(IPC.TERMINAL_EXIT, { workspaceId, exitCode, ...(signal !== undefined ? { signal } : {}) });
+    onExit: (event) => {
+      safeWebContentsSend(IPC.TERMINAL_EXIT, event);
     }
   });
 
@@ -49,34 +59,68 @@ export function registerTerminalIpc(): void {
       assertObject('terminal:attach', 'input', input);
       assertString('terminal:attach', 'workspaceId', input.workspaceId);
       const ws = await resolveWorkspace(input.workspaceId);
-      const meta = ensureWorkspacePty(ws.id, ws.path);
-      return { ok: true, ...meta };
+      ensureWorkspacePty(ws.id, ws.path);
+      return { ok: true, sessions: listWorkspaceSessions(ws.id) };
     }
   );
 
+  wrapIpcHandler(
+    IPC.TERMINAL_CREATE,
+    async (_event, input: TerminalCreateInput): Promise<TerminalCreateResult> => {
+      assertObject('terminal:create', 'input', input);
+      assertString('terminal:create', 'workspaceId', input.workspaceId);
+      const ws = await resolveWorkspace(input.workspaceId);
+      const session = createWorkspaceSession(ws.id, ws.path);
+      return { ok: true, session };
+    }
+  );
+
+  wrapIpcHandler(
+    IPC.TERMINAL_LIST,
+    async (_event, input: TerminalListInput): Promise<TerminalListResult> => {
+      assertObject('terminal:list', 'input', input);
+      assertString('terminal:list', 'workspaceId', input.workspaceId);
+      return { sessions: listWorkspaceSessions(input.workspaceId) };
+    }
+  );
+
+  wrapIpcHandler(IPC.TERMINAL_CLOSE, async (_event, input: TerminalCloseInput) => {
+    assertObject('terminal:close', 'input', input);
+    assertString('terminal:close', 'sessionId', input.sessionId);
+    killSession(input.sessionId);
+  });
+
   wrapIpcHandler(IPC.TERMINAL_INPUT, async (_event, input: TerminalInputPayload) => {
     assertObject('terminal:input', 'input', input);
-    assertString('terminal:input', 'workspaceId', input.workspaceId);
+    assertString('terminal:input', 'sessionId', input.sessionId);
     assertString('terminal:input', 'data', input.data, { nonEmpty: false, maxBytes: 64 * 1024 });
-    writeWorkspacePty(input.workspaceId, input.data);
+    writeSession(input.sessionId, input.data);
   });
 
   wrapIpcHandler(IPC.TERMINAL_RESIZE, async (_event, input: TerminalResizePayload) => {
     assertObject('terminal:resize', 'input', input);
-    assertString('terminal:resize', 'workspaceId', input.workspaceId);
+    assertString('terminal:resize', 'sessionId', input.sessionId);
     assertNumber('terminal:resize', 'cols', input.cols, { integer: true, min: 20, max: 500 });
     assertNumber('terminal:resize', 'rows', input.rows, { integer: true, min: 4, max: 200 });
-    resizeWorkspacePty(input.workspaceId, input.cols, input.rows);
+    resizeSession(input.sessionId, input.cols, input.rows);
   });
 
-  wrapIpcHandler(IPC.TERMINAL_RESTART, async (_event, workspaceId?: string) => {
-    assertOptionalString('terminal:restart', 'workspaceId', workspaceId);
-    const ws = await resolveWorkspace(workspaceId);
-    killWorkspacePty(ws.id);
-    ensureWorkspacePty(ws.id, ws.path);
-  });
+  wrapIpcHandler(
+    IPC.TERMINAL_RESTART,
+    async (_event, input: TerminalRestartInput): Promise<TerminalCreateResult> => {
+      assertObject('terminal:restart', 'input', input);
+      assertString('terminal:restart', 'sessionId', input.sessionId);
+      const session = restartSession(input.sessionId);
+      if (!session) {
+        const meta = getSessionMeta(input.sessionId);
+        if (!meta) throw new Error('Unknown terminal session');
+        return { ok: true, session: meta };
+      }
+      return { ok: true, session };
+    }
+  );
 
-  /** Closing the terminal panel detaches the renderer only — PTY stays alive for agent bash reuse. */
+  /** Closing the terminal panel detaches the renderer only — PTYs stay alive for agent bash reuse. */
   wrapIpcHandler(IPC.TERMINAL_DETACH, async (_event, workspaceId?: string) => {
     assertOptionalString('terminal:detach', 'workspaceId', workspaceId);
     void workspaceId;

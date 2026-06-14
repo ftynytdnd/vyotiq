@@ -7,7 +7,8 @@ import { useEditorStore } from '../../store/useEditorStore.js';
 import { EditorCanvas } from './EditorCanvas.js';
 import { EditorEmptyState } from './EditorEmptyState.js';
 import { TerminalCanvas } from './TerminalCanvas.js';
-import { GlobeCanvas } from './GlobeCanvas.js';
+import { BrowserCanvas } from './BrowserCanvas.js';
+import { PreviewCanvas } from './PreviewCanvas.js';
 import {
   WORKBENCH_BODY_CLASS,
   WORKBENCH_PANE_CLASS,
@@ -21,16 +22,23 @@ function CompanionCanvas({ tab }: { tab: CompanionTab }) {
   const editorTabs = useEditorStore((s) => s.tabs);
   const activeFilePath = useEditorStore((s) => s.activeFilePath);
 
-  if (tab === 'terminal') {
-    return <TerminalCanvas />;
+  switch (tab) {
+    case 'terminal':
+      return <TerminalCanvas />;
+    case 'browser':
+      return <BrowserCanvas />;
+    case 'preview':
+      return <PreviewCanvas />;
+    case 'editor':
+      if (editorTabs.length === 0 || !activeFilePath) {
+        return <EditorEmptyState />;
+      }
+      return <EditorCanvas />;
+    default: {
+      const _exhaustive: never = tab;
+      return _exhaustive;
+    }
   }
-  if (tab === 'globe') {
-    return <GlobeCanvas />;
-  }
-  if (editorTabs.length === 0 || !activeFilePath) {
-    return <EditorEmptyState />;
-  }
-  return <EditorCanvas />;
 }
 
 export function CompanionDeck() {

@@ -4378,7 +4378,8 @@ button.vx-mention-highlight--open:focus-visible {
 
 .vx-editor-canvas,
 .vx-terminal-canvas,
-.vx-globe-empty,
+.vx-preview-empty,
+.vx-browser-canvas,
 .vx-editor-empty {
   min-height: 0;
 }
@@ -4451,20 +4452,87 @@ button.vx-mention-highlight--open:focus-visible {
   scrollbar-width: thin;
 }
 
-.vx-xterm-host .xterm {
-  --color-text-primary: var(--color-text-primary);
-}
-
-.vx-xterm-host .xterm-screen {
-  color: var(--color-text-primary);
-}
-
 .vx-xterm-host .xterm-cursor {
   background-color: var(--color-accent) !important;
 }
 
 .vx-xterm-host .xterm-selection {
   background-color: color-mix(in oklch, var(--color-accent) 35%, transparent) !important;
+}
+
+/* Designed sunken terminal surface — distinct inset panel vs the flat pane. */
+.vx-terminal-surface {
+  margin: 0.5rem;
+  border-radius: var(--radius-inner);
+  border: 1px solid color-mix(in oklch, var(--color-border-subtle) 30%, transparent);
+  background: var(--color-surface-sunken);
+  box-shadow: inset 0 1px 3px var(--color-shadow-ambient-deep);
+  overflow: hidden;
+}
+
+.vx-terminal-pane {
+  position: relative;
+}
+
+/* Resize handle between split terminal panes. */
+.vx-terminal-split-handle {
+  width: 3px;
+  flex: 0 0 auto;
+  cursor: col-resize;
+  background: color-mix(in oklch, var(--color-border-subtle) 25%, transparent);
+  transition: background 0.12s ease;
+}
+
+.vx-terminal-split-handle:hover,
+.vx-terminal-split-handle[data-resize-handle-state='drag'] {
+  background: color-mix(in oklch, var(--color-accent) 55%, transparent);
+}
+
+.vx-terminal-chip {
+  line-height: 1.2;
+}
+
+/* Embedded browser surface — slot the native view sits over. */
+.vx-browser-slot {
+  background: var(--color-surface-sunken, var(--color-surface-base));
+}
+
+/* Indeterminate loading bar under the browser toolbar. */
+.vx-browser-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  overflow: hidden;
+  background: transparent;
+}
+
+.vx-browser-progress::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: var(--color-accent);
+  border-radius: 2px;
+  animation: vx-browser-indeterminate 1.1s ease-in-out infinite;
+}
+
+@keyframes vx-browser-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+.vx-browser-address {
+  height: 1.6rem;
+}
+
+.vx-editor-statusbar {
+  line-height: 1.2;
 }
 
 /* ComposerDialog — mini FloatingPanel anchored above the chat
