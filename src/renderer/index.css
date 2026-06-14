@@ -1,4 +1,4 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 @import "@fontsource-variable/geist/wght.css";
 @import "@fontsource-variable/geist-mono/wght.css";
 @import "highlight.js/styles/github-dark.css";
@@ -18,7 +18,7 @@
   --color-surface-overlay: oklch(0.26 0.006 260);
   /* slightly lighter */
   --color-surface-hover: oklch(0.30 0.007 260);
-  /* Region steps — frameless separation (dock, secondary zone, composer bar) */
+  /* Region steps — frameless separation (dock, workbench canvas, composer bar) */
   --color-surface-sidebar: oklch(0.20 0.005 260 / 0.5);
   --color-surface-input: oklch(0.22 0.005 260 / 0.35);
 
@@ -4293,6 +4293,20 @@ button.vx-mention-highlight--open:focus-visible {
   font-weight: 400;
 }
 
+.vx-dock-workspace-region {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.vx-dock-workspace-panel {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .vx-popover-panel {
   border-radius: 6px;
   border: 1px solid var(--color-border-field);
@@ -4309,20 +4323,73 @@ button.vx-mention-highlight--open:focus-visible {
   pointer-events: auto;
 }
 
-/* In-app workspace editor (secondary zone) */
-.vx-editor-panel .vx-floating-panel-body {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding: 0;
+/* Workbench shell — agent column + optional side pane */
+.vx-workbench {
+  min-height: 0;
 }
 
-.vx-editor-panel-body {
-  min-height: min(70dvh, 32rem);
+.vx-workbench--split-row {
+  flex-direction: row;
 }
 
-.vx-editor-path {
-  border-bottom: 1px solid color-mix(in oklch, var(--color-border-subtle) 55%, transparent);
+.vx-workbench-agent-pane {
+  min-height: 0;
+}
+
+.vx-workbench-agent-main {
+  min-height: 0;
+}
+
+.vx-workbench-agent-main--split {
+  flex: 1 1 auto;
+  min-width: 18rem;
+  width: 0;
+}
+
+.vx-workbench-companion {
+  flex: 0 0 var(--workbench-pane-w, 480px);
+  min-width: 16rem;
+  max-width: 72%;
+  width: var(--workbench-pane-w, 480px);
+}
+
+.vx-workbench-resize-handle {
+  background: transparent;
+  transition: background 160ms ease;
+}
+
+.vx-workbench-resize-handle:hover,
+.vx-workbench-resize-handle[data-resizing='true'] {
+  background: color-mix(in oklch, var(--color-border-subtle) 40%, transparent);
+  box-shadow: inset -1px 0 0 color-mix(in oklch, var(--color-border-subtle) 30%, transparent);
+}
+
+.vx-workbench-tabs {
+  min-height: 2.25rem;
+}
+
+.vx-workbench-tabs [data-workbench-tab-scroll] {
+  min-width: 0;
+}
+
+.vx-workbench-toolbar {
+  min-height: 2rem;
+}
+
+.vx-editor-canvas,
+.vx-terminal-canvas,
+.vx-globe-empty,
+.vx-editor-empty {
+  min-height: 0;
+}
+
+.vx-preview-zone {
+  min-height: 0;
+}
+
+.vx-terminal-panel-body {
+  min-height: 0;
+  flex: 1 1 auto;
 }
 
 .vx-editor-stale-banner {
@@ -4332,16 +4399,22 @@ button.vx-mention-highlight--open:focus-visible {
 }
 
 .vx-code-editor {
-  min-height: 12rem;
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
 }
 
 .vx-code-editor .cm-editor {
   height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
   outline: none;
 }
 
 .vx-code-editor .cm-scroller {
-  max-height: min(70dvh, 32rem);
+  min-height: 0;
+  max-height: none;
 }
 
 .vx-inline-completion-ghost {
@@ -4364,10 +4437,6 @@ button.vx-mention-highlight--open:focus-visible {
   flex-direction: column;
   overflow: hidden;
   padding: 0;
-}
-
-.vx-terminal-panel-body {
-  min-height: min(60dvh, 24rem);
 }
 
 .vx-xterm-host {
@@ -4495,21 +4564,19 @@ button.vx-mention-highlight--open:focus-visible {
   }
 }
 
-/* Empty-chat landing — wider composer shell within the same column. */
+/* Empty-chat landing — wider composer shell within the same column (surface-only). */
 .vx-composer-shell--landing {
   min-height: 7.5rem;
   border-color: var(--color-composer-border-strong);
   box-shadow:
     inset 0 1px 0 0 var(--color-highlight-inset),
-    inset 0 0 0 1px var(--color-highlight-inset),
-    0 1px 2px 0 var(--color-shadow-ambient-soft);
+    inset 0 0 0 1px var(--color-highlight-inset);
 }
 
 .vx-composer-shell--landing:focus-within {
   box-shadow:
     inset 0 1px 0 0 var(--color-highlight-inset-strong),
     inset 0 0 0 1px var(--color-composer-ring-focus),
-    0 1px 2px 0 var(--color-shadow-ambient-soft),
     0 0 0 1px var(--color-composer-seam);
 }
 

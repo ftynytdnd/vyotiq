@@ -49,9 +49,9 @@ export function ChatFooter({
       data-chat-footer
       data-chat-footer-centered={centered ? '' : undefined}
       className={cn(
-        'px-4 pb-[max(6px,env(safe-area-inset-bottom,0px))]',
+        'w-full px-4 pb-[max(6px,env(safe-area-inset-bottom,0px))]',
         centered
-          ? 'flex min-h-0 flex-1 flex-col justify-center'
+          ? 'flex min-h-0 w-full flex-1 flex-col justify-center'
           : cn('shrink-0 pt-3', dockingFromCenter && 'vyotiq-chat-dock-enter')
       )}
     >

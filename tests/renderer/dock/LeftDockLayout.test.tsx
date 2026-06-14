@@ -1,15 +1,11 @@
 /**
- * LeftDock layout — edge strip + expandable flyout.
+ * LeftDock layout — edge strip + inline nav panel.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { LeftDock } from '@renderer/components/dock/LeftDock';
-import {
-  DOCK_STRIP_WIDTH,
-  DOCK_WIDTH_DEFAULT,
-  DOCK_WIDTH_MAX
-} from '@renderer/components/dock/dockShared';
+import { DOCK_WIDTH_DEFAULT, DOCK_WIDTH_MAX } from '@renderer/components/dock/dockShared';
 import { useUiStore } from '@renderer/store/useUiStore';
 import { useWorkspaceStore } from '@renderer/store/useWorkspaceStore';
 import { useConversationsStore } from '@renderer/store/useConversationsStore';
@@ -25,6 +21,7 @@ beforeEach(() => {
   useUiStore.setState({
     dockExpanded: true,
     dockWidth: DOCK_WIDTH_DEFAULT,
+    dockPanelTab: 'files',
     collapsedWorkspaces: new Set<string>(),
     hydrated: true
   });
@@ -51,15 +48,15 @@ beforeEach(() => {
 });
 
 describe('LeftDock layout', () => {
-  it('renders expanded flyout width and workspace/chat tablists', () => {
+  it('renders expanded inline panel width and workspace/chat tablists', () => {
     render(<LeftDock {...dockProps} />);
-    const nav = screen.getByRole('dialog', { name: 'Workspace and session navigation' });
+    const nav = screen.getByRole('navigation', { name: 'Workspace and session navigation' });
     expect(nav).toHaveStyle({ width: `${DOCK_WIDTH_DEFAULT}px` });
-    expect(nav.className).toContain('vx-dock-flyout');
-    expect(nav).toHaveAttribute('aria-modal', 'true');
+    expect(nav.className).toContain('vx-dock-panel');
     expect(screen.getByText('Workspaces')).toBeInTheDocument();
-    expect(screen.getByText('Chats')).toBeInTheDocument();
     expect(screen.getByRole('tablist', { name: 'Workspaces' })).toBeInTheDocument();
+    expect(screen.getByRole('tablist', { name: 'Workspace contents' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: /Chats/i }));
     expect(screen.getByRole('tablist', { name: 'Chats in workspace' })).toBeInTheDocument();
     const rail = screen.getByRole('navigation', { name: 'Workspace and session navigation rail' });
     expect(within(rail).getByRole('button', { name: 'New chat' })).toBeInTheDocument();
@@ -72,19 +69,19 @@ describe('LeftDock layout', () => {
     const rail = screen.getByRole('navigation', { name: 'Workspace and session navigation rail' });
     expect(rail).toHaveAttribute('aria-expanded', 'false');
     expect(rail.className).toContain('vx-dock-edge-strip');
-    expect(screen.queryByRole('dialog', { name: 'Workspace and session navigation' })).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Workspace and session navigation' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Expand navigation' })).toBeInTheDocument();
   });
 
-  it('shows dismiss backdrop when expanded', () => {
+  it('does not render a dismiss backdrop when expanded', () => {
     render(<LeftDock {...dockProps} />);
-    expect(screen.getByRole('button', { name: 'Close navigation' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Close navigation' })).toBeNull();
   });
 
   it('uses dockWidth from the UI store when expanded', () => {
     useUiStore.setState({ dockWidth: 300 });
     render(<LeftDock {...dockProps} />);
-    const nav = screen.getByRole('dialog', { name: 'Workspace and session navigation' });
+    const nav = screen.getByRole('navigation', { name: 'Workspace and session navigation' });
     expect(nav).toHaveStyle({ width: '300px' });
   });
 
@@ -92,7 +89,7 @@ describe('LeftDock layout', () => {
     useUiStore.setState({ dockWidth: DOCK_WIDTH_DEFAULT, dockExpanded: true });
     const setDockWidth = vi.spyOn(useUiStore.getState(), 'setDockWidth');
     render(<LeftDock {...dockProps} />);
-    const nav = screen.getByRole('dialog', { name: 'Workspace and session navigation' });
+    const nav = screen.getByRole('navigation', { name: 'Workspace and session navigation' });
     const handle = screen.getByRole('separator', { name: 'Resize navigation dock' });
 
     fireEvent.mouseDown(handle, { clientX: 100 });
@@ -132,10 +129,13 @@ describe('LeftDock layout', () => {
     expect(handle).not.toHaveAttribute('data-resizing');
   });
 
-  it('positions expand backdrop after the flyout so panel items stay clickable', () => {
+  it('switches to the chats tab when New chat is clicked', () => {
+    useUiStore.setState({ dockPanelTab: 'files', dockExpanded: true });
     render(<LeftDock {...dockProps} />);
-    const backdrop = screen.getByRole('button', { name: 'Close navigation' });
-    expect(backdrop).toHaveStyle({ left: `${DOCK_STRIP_WIDTH + DOCK_WIDTH_DEFAULT}px` });
+    fireEvent.click(screen.getByRole('button', { name: 'New chat' }));
+    expect(useUiStore.getState().dockPanelTab).toBe('chats');
+    expect(screen.getByRole('tab', { name: /Chats/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /^Files$/i })).toHaveAttribute('aria-selected', 'false');
   });
 
   it('shows back on the strip in settings mode instead of settings gear', () => {
@@ -153,7 +153,7 @@ describe('LeftDock layout', () => {
     expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull();
   });
 
-  it('does not render flyout while settings mode is active', () => {
+  it('does not render panel while settings mode is active', () => {
     useUiStore.setState({ dockExpanded: true });
     render(
       <LeftDock
@@ -162,6 +162,6 @@ describe('LeftDock layout', () => {
         onBackFromSettings={() => {}}
       />
     );
-    expect(screen.queryByRole('dialog', { name: 'Workspace and session navigation' })).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Workspace and session navigation' })).toBeNull();
   });
 });

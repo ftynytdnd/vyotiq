@@ -1,34 +1,30 @@
 /**
- * LeftDock — persistent edge strip + expandable flyout for workspaces and chats.
- * Toolbar actions live on the strip; the flyout holds search, lists, and resize.
+ * LeftDock — persistent edge strip + inline navigation panel.
+ * Toolbar actions live on the strip; the panel holds search, lists, and resize.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { DockChatStrip } from './DockChatStrip.js';
-import { DockExpandBackdrop } from './DockExpandBackdrop.js';
 import { DockSearchPopover } from './DockSearchPopover.js';
 import { DockToolbar } from './DockToolbar.js';
 import { DockWorkspaceTabs } from './DockWorkspaceTabs.js';
-import { DockFileTree } from './DockFileTree.js';
+import { DockWorkspacePanel } from './DockWorkspacePanel.js';
 import { DockSectionHeader } from './DockSectionHeader.js';
 import {
   clampDockWidth,
-  dismissDockFlyout,
-  DOCK_DIVIDER_H_CLASS,
   DOCK_INSET_CLASS,
   DOCK_EDGE_CONTAINER_CLASS,
   DOCK_EDGE_STRIP_CLASS,
   DOCK_RESIZE_HANDLE_CLASS,
   dockFlyoutShellClassName,
-  dockWorkspaceActionClassName,
+  dockInlineActionClassName,
+  beginNewChatFromDock,
   workspacePanelClassName
 } from './dockShared.js';
-import { useDockFlyoutFocus } from './useDockFlyoutFocus.js';
 import { useDockShortcuts } from './useDockShortcuts.js';
 import { useUiStore } from '../../store/useUiStore.js';
-import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
+import { useWorkbenchActive } from '../workbench/useWorkbenchActive.js';
 import { cn } from '../../lib/cn.js';
 
 export interface LeftDockProps {
@@ -55,23 +51,18 @@ export function LeftDock({
   const setDockExpanded = useUiStore((s) => s.setDockExpanded);
   const setDockWidth = useUiStore((s) => s.setDockWidth);
 
-  const newConversation = useConversationsStore((s) => s.newConversation);
   const toggleSearch = useDockSearchStore((s) => s.toggle);
   const searchOpen = useDockSearchStore((s) => s.open);
 
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
   const workspaces = useWorkspaceStore((s) => s.list);
+  const workbenchActive = useWorkbenchActive();
 
   const [liveWidth, setLiveWidth] = useState<number | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const dragWidthRef = useRef<number | null>(null);
   const moveHandlerRef = useRef<((ev: MouseEvent) => void) | null>(null);
   const upHandlerRef = useRef<(() => void) | null>(null);
-  const flyoutRef = useRef<HTMLElement>(null);
-
-  const dismissFlyout = useCallback(() => dismissDockFlyout(), []);
-
-  useDockFlyoutFocus(dockExpanded, flyoutRef, dismissFlyout);
 
   const handleToggleSearch = () => {
     if (settingsMode) return;
@@ -158,7 +149,7 @@ export function LeftDock({
     searchOpen,
     onNewChat: () => {
       if (settingsMode) return;
-      void newConversation();
+      void beginNewChatFromDock();
     },
     onToggleSearch: handleToggleSearch,
     onOpenSettings,
@@ -169,48 +160,41 @@ export function LeftDock({
 
   const expandedPanel = (
     <nav
-      ref={flyoutRef}
-      role="dialog"
-      aria-modal="true"
       aria-label="Workspace and session navigation"
       aria-expanded
       className={dockFlyoutShellClassName(isResizing)}
       style={{ width: `${expandedWidthPx}px` }}
     >
-      <div className={cn(DOCK_INSET_CLASS, 'h-full gap-0 py-1 pr-2')}>
+      <div className={cn(DOCK_INSET_CLASS, 'h-full gap-1.5 py-1 pr-2')}>
         <DockSearchPopover />
         <div className={workspacePanelClassName(workspaces.length)}>
-          <DockSectionHeader label="Workspaces" />
-          <div className="flex shrink-0 gap-1 px-2 pb-1">
-            <button
-              type="button"
-              className={dockWorkspaceActionClassName()}
-              title="Open workspace folder (Ctrl+O)"
-              onClick={onOpenWorkspace}
-            >
-              Open…
-            </button>
-            <button
-              type="button"
-              className={dockWorkspaceActionClassName()}
-              title="Set workspace folder by path"
-              onClick={onSetWorkspacePath}
-            >
-              Set path…
-            </button>
-          </div>
+          <DockSectionHeader
+            label="Workspaces"
+            compact={workbenchActive}
+            actions={
+              <>
+                <button
+                  type="button"
+                  className={dockInlineActionClassName()}
+                  title="Open workspace folder (Ctrl+O)"
+                  onClick={onOpenWorkspace}
+                >
+                  Open…
+                </button>
+                <button
+                  type="button"
+                  className={dockInlineActionClassName()}
+                  title="Set workspace folder by path"
+                  onClick={onSetWorkspacePath}
+                >
+                  Set path…
+                </button>
+              </>
+            }
+          />
           <DockWorkspaceTabs />
         </div>
-        <div className={DOCK_DIVIDER_H_CLASS} aria-hidden />
-        <div className="flex min-h-0 max-h-[40%] flex-col overflow-hidden">
-          <DockSectionHeader label="Files" />
-          <DockFileTree workspaceId={activeWorkspaceId} />
-        </div>
-        <div className={DOCK_DIVIDER_H_CLASS} aria-hidden />
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <DockSectionHeader label="Chats" />
-          <DockChatStrip workspaceId={activeWorkspaceId} />
-        </div>
+        <DockWorkspacePanel workspaceId={activeWorkspaceId} />
       </div>
       <div
         role="separator"
@@ -240,15 +224,9 @@ export function LeftDock({
   );
 
   return (
-    <>
-      <DockExpandBackdrop
-        settingsMode={settingsMode}
-        flyoutWidth={dockExpanded ? expandedWidthPx : 0}
-      />
-      <div className={DOCK_EDGE_CONTAINER_CLASS}>
-        {edgeStrip}
-        {dockExpanded && !settingsMode ? expandedPanel : null}
-      </div>
-    </>
+    <div className={DOCK_EDGE_CONTAINER_CLASS}>
+      {edgeStrip}
+      {dockExpanded && !settingsMode ? expandedPanel : null}
+    </div>
   );
 }

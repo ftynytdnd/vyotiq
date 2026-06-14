@@ -11,6 +11,7 @@ import {
   previewDockWorkspaceFile
 } from './dockSearchFileActions.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
+import { useUiStore } from '../../store/useUiStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { cn } from '../../lib/cn.js';
@@ -66,10 +67,12 @@ function DockSearchInput() {
   const activateHit = useCallback(
     async (hit: DockSearchHit) => {
       if (hit.kind === 'chat') {
+        useUiStore.getState().setDockPanelTab('chats');
         void select(hit.id);
         setOpen(false);
         return;
       }
+      useUiStore.getState().setDockPanelTab('files');
       const attached = await attachDockWorkspaceFile(hit.path);
       if (attached) {
         setOpen(false);

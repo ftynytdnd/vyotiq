@@ -14,12 +14,12 @@ Ledger of remediation items closed in the 2026-06 full-app pass. Do not resurrec
 - **Harness lab** — Settings → Agent behavior harness viewer/editor with userData overrides merged at boot.
 - **Vector memory** — sqlite-vec hybrid index under `.vyotiq/`; upgraded `retrieval.ts`; hash embedder default.
 - **ast-grep search** — structural mode on `search` tool via `@ast-grep/napi`.
-- **Secondary-zone editor + PTY** — CodeMirror 6 editor; shared `node-pty` terminal bridged to agent `bash`; overlay `FloatingPanel` only (RightDock removed).
+- **Workbench editor + PTY** — CodeMirror 6 editor; shared `node-pty` terminal bridged to agent `bash`; `WorkbenchShell` top tabs + main canvas (no right column).
 - **Inline completion** — editor ghost text + composer prompt continuation via completion IPC.
 - **Distribution** — electron-builder packaging, fuse hardening, electron-updater with About-panel install path (docs/manual update path; no forced auto-update channel).
 - **Vector re-index** — Settings → Agent behavior → Vector memory manual re-index; embedder/Ollama model changes trigger `reindexAllWorkspacesIfVectorMemoryChanged` on settings save.
 - **Checkpoint blob preview** — Settings → Agent behavior → Checkpoints expands pending rows via `readBlob` pre/post hashes and `SnippetDiffBody` hunks.
-- **Terminal detach** — closing the secondary-zone terminal panel calls `terminal:detach` (renderer detach only); PTY session survives for agent `bash` reuse.
+- **Terminal detach** — closing the terminal tab calls `terminal:detach` (renderer detach only); PTY session survives for agent `bash` reuse.
 - **Editor LSP** — optional stdio LSP bridge (Settings → Agent behavior → Editor LSP): diagnostics, hover, Ctrl+Space completion, F2 rename, Shift+F12 find references, Mod+. code actions, F12 / Alt+click go-to-definition in CodeMirror; cross-file navigation via `VyotiqLspWorkspace.displayFile`.
 - **Edit encoding parity** — `read`/`edit`/editor preserve UTF-8/16/32 BOM and EOL via `src/main/text/decodeDiskText.ts`.
 - **Custom keybindings** — `settings.ui.keybindings` overrides; Settings → Shortcuts; `useGlobalShortcuts`, `useDockShortcuts`, timeline find, and settings Escape use resolved combos.
@@ -34,7 +34,7 @@ Ledger of remediation items closed in the 2026-06 full-app pass. Do not resurrec
 - Web search UI and `mode: 'web'` on `search` tool data (local-only).
 - Legacy workspace IPC: `workspace:get`, `workspace:pick`, `workspace:set`.
 - Per-workspace tool approval gates (`permissionsByWorkspace`, `strictApprovalsByWorkspace`, `gatePromptOnPendingByWorkspace`, and related maps).
-- **RightDock** — `secondaryZoneMode`, `rightDockWidth`, and docked secondary column; overlay-only secondary zone.
+- **RightDock / SecondaryZone** — `secondaryZoneMode`, `rightDockWidth`, right-column secondary zone, and overlay companion panels; replaced by workbench shell.
 - **Tool re-run** — IPC (`tools:rerun`), shared helpers, timeline UI, and tests removed.
 - Orphans: `AttachmentPicker`, `AboutOverlay`, `useMentionComputerPick`, `synthesizeReportPreview`, `emitToolValidationFailure`, `endpointWarning`, `settingsGroups`, `parseUnifiedPatch`, unused barrel indexes.
 - Mention picker "Coming soon" stub rows.

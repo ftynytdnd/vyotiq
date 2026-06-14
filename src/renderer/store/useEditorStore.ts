@@ -1,5 +1,5 @@
 /**
- * Zustand store for the in-app workspace editor (secondary zone) with multi-tab support.
+ * Zustand store for the in-app workspace editor (workbench) with multi-tab support.
  */
 
 import { create } from 'zustand';
@@ -7,6 +7,12 @@ import { basenameFromPath } from '@shared/text/languageFromPath.js';
 import { normalizePath } from '../lib/normalizePath.js';
 import { vyotiq } from '../lib/ipc.js';
 import { closeSettingsForCompanionOpen } from './useAppViewStore.js';
+import {
+  focusDockFilesPanel,
+  focusWorkbenchTab,
+  syncWorkbenchTabAfterClose
+} from '../components/workbench/workbenchShared.js';
+import { pushRecentEditorFile } from '../lib/recentEditorFiles.js';
 import { useAttachmentPreviewStore } from './useAttachmentPreviewStore.js';
 import { useToastStore } from './useToastStore.js';
 
@@ -48,6 +54,8 @@ interface EditorStore {
   error: string | null;
 
   openFile: (filePath: string, opts?: EditorOpenOpts) => Promise<void>;
+  /** Open editor surface without a file (empty state). */
+  openPanel: () => void;
   close: () => void;
   closeTab: (filePath: string) => void;
   setActiveTab: (filePath: string) => void;
@@ -123,14 +131,25 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   staleOnDisk: false,
   error: null,
 
+  openPanel: () => {
+    closeSettingsForCompanionOpen();
+    useAttachmentPreviewStore.getState().close();
+    focusDockFilesPanel();
+    focusWorkbenchTab('editor');
+    set(mirrorActiveTab({ ...get(), open: true }));
+  },
+
   openFile: async (filePath, opts = {}) => {
     closeSettingsForCompanionOpen();
     useAttachmentPreviewStore.getState().close();
+    focusDockFilesPanel();
+    focusWorkbenchTab('editor');
 
     const id = normalizePath(filePath);
     const existing = get().tabs.find((t) => normalizePath(t.filePath) === id);
     if (existing) {
       set(mirrorActiveTab({ ...get(), open: true, activeFilePath: existing.filePath }));
+      if (existing.workspaceId) pushRecentEditorFile(existing.workspaceId, existing.filePath);
       return;
     }
 
@@ -151,6 +170,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           activeFilePath: filePath
         })
       );
+      if (tab.workspaceId) pushRecentEditorFile(tab.workspaceId, filePath);
       return;
     }
 
@@ -186,6 +206,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           })
         })
       );
+      if (opts.workspaceId) pushRecentEditorFile(opts.workspaceId, filePath);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       useToastStore.getState().show(`Could not open ${basenameFromPath(filePath)}: ${msg}`, 'danger');
@@ -218,6 +239,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       staleOnDisk: false,
       error: null
     });
+    syncWorkbenchTabAfterClose();
   },
 
   closeTab: (filePath) => {
@@ -228,18 +250,21 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       if (activeFilePath && normalizePath(activeFilePath) === id) {
         activeFilePath = tabs.length > 0 ? tabs[tabs.length - 1]!.filePath : null;
       }
-      return mirrorActiveTab({
+      const next = mirrorActiveTab({
         ...state,
         tabs,
         activeFilePath,
         open: tabs.length > 0
       });
+      if (tabs.length === 0) syncWorkbenchTabAfterClose();
+      return next;
     });
   },
 
   setActiveTab: (filePath) => {
     const id = normalizePath(filePath);
     if (!get().tabs.some((t) => normalizePath(t.filePath) === id)) return;
+    focusWorkbenchTab('editor');
     set(mirrorActiveTab({ ...get(), activeFilePath: filePath }));
   },
 

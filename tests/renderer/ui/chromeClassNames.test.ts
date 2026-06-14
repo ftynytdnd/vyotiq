@@ -19,6 +19,7 @@ import {
   chromeTabIdleClassName,
   chromeGhostRowButtonClassName,
   chromeSegmentedTrayClassName,
+  panelTabStripClassName,
   secondaryZoneTabStripClassName,
   appPanelFrameClassName,
   appPanelHeadClassName,
@@ -87,9 +88,10 @@ describe('chrome class helpers', () => {
     expect(chromeNoMatchesClassName).not.toContain('rounded-card');
   });
 
-  it('secondary zone tab strip is a lightweight wrapper', () => {
-    expect(secondaryZoneTabStripClassName).toContain('shrink-0');
-    expect(secondaryZoneTabStripClassName).not.toContain('border-b');
+  it('panel tab strip is a lightweight wrapper', () => {
+    expect(panelTabStripClassName).toContain('shrink-0');
+    expect(panelTabStripClassName).not.toContain('border-b');
+    expect(secondaryZoneTabStripClassName).toBe(panelTabStripClassName);
   });
 
   it('Vyotiq UI panel frame helpers map to vx-panel-* classes', () => {

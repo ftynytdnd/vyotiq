@@ -1,4 +1,4 @@
-/**
+﻿/**
  * DockToolbar — footer / collapsed-rail actions (composer-aligned h-6 pills).
  */
 

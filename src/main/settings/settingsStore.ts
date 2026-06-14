@@ -15,6 +15,7 @@ import {
 import { resolveSettingsSectionId } from '@shared/settings/settingsSection.js';
 import { readBlob, updateBlob, type SettingsBlob } from './blob.js';
 import { normalizeDockWidthInUi } from '@shared/dock/dockWidth.js';
+import { normalizeWorkbenchPaneWidthInUi } from '@shared/workbench/workbenchPaneWidth.js';
 import { migrateLegacyDockUi, normalizeSettingsPatch } from './migrateUiFields.js';
 import { syncPromptCachingFromSettings } from './promptCachingRuntime.js';
 import { syncVectorEmbedFromSettings } from './vectorEmbedRuntime.js';
@@ -146,6 +147,11 @@ function normalizeBlobForPersistence(blob: SettingsBlob): { blob: SettingsBlob; 
     const dock = normalizeDockWidthInUi(ui);
     if (dock.changed) {
       ui = dock.ui;
+      uiChanged = true;
+    }
+    const pane = normalizeWorkbenchPaneWidthInUi(ui);
+    if (pane.changed) {
+      ui = pane.ui;
       uiChanged = true;
     }
     if (uiChanged) {

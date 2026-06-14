@@ -80,7 +80,9 @@ async function prepareRowNavigation(id: string): Promise<void> {
 }
 
 export function focusRow(id: string): boolean {
-  useUiStore.getState().setDockExpanded(true);
+  const ui = useUiStore.getState();
+  ui.setDockExpanded(true);
+  ui.setDockPanelTab('chats');
 
   void prepareRowNavigation(id).then(() => {
     deferScrollRowIntoView(id, 3);

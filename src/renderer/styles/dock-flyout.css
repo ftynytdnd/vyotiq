@@ -2,11 +2,10 @@
   pointer-events: auto;
 }
 
-.vx-dock-flyout {
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-inner);
-  background: var(--color-surface-raised);
-  box-shadow: 0 16px 40px var(--color-shadow-popover);
+/* Inline nav panel — flush with the shell, no popover elevation. */
+.vx-dock-panel {
+  border-right: 1px solid color-mix(in oklch, var(--color-border-subtle) 35%, transparent);
+  background: var(--color-surface-base);
 }
 
 .vx-dock-edge-strip {

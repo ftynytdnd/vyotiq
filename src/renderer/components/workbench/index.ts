@@ -1,0 +1,12 @@
+export { WorkbenchShell } from './WorkbenchShell.js';
+export { CompanionDeck } from './CompanionDeck.js';
+export { WorkbenchResizeHandle } from './WorkbenchResizeHandle.js';
+export { WorkbenchTabBar } from './WorkbenchTabBar.js';
+export { WorkbenchToolbar } from './WorkbenchToolbar.js';
+export { EditorCanvas } from './EditorCanvas.js';
+export { EditorEmptyState } from './EditorEmptyState.js';
+export { TerminalCanvas } from './TerminalCanvas.js';
+export { GlobeCanvas } from './GlobeCanvas.js';
+export { PreviewZone } from './PreviewZone.js';
+export { useWorkbenchActive } from './useWorkbenchActive.js';
+export * from './workbenchShared.js';

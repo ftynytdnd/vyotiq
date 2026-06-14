@@ -30,7 +30,7 @@ import {
   dockInlineActionClassName,
   dockTabRowClassName,
   dockTabActiveAttr,
-  collapseDockAfterSelection
+  dismissDockSearchAfterSelection
 } from './dockShared.js';
 import { useConversationProcessing } from '../../hooks/chat/index.js';
 import { useChatRowFocus } from '../../hooks/chat/index.js';
@@ -98,8 +98,9 @@ export function DockChatStrip({ workspaceId }: DockChatStripProps) {
 
   const activeId = workspaceId ? activeIdByWorkspace[workspaceId] ?? null : null;
   const selectChat = (id: string) => {
+    useUiStore.getState().setDockPanelTab('chats');
     void select(id);
-    collapseDockAfterSelection();
+    dismissDockSearchAfterSelection();
   };
   const isFiltering = searchOpen && query.trim().length > 0;
   const displayTitles = useMemo(() => buildDisplayChatTitles(entries), [entries]);

@@ -12,6 +12,12 @@
 import { create } from 'zustand';
 import { vyotiq } from '../lib/ipc.js';
 import { clampDockWidth, DOCK_WIDTH_DEFAULT } from '@shared/dock/dockWidth.js';
+import {
+  clampWorkbenchPaneWidth,
+  WORKBENCH_PANE_WIDTH_DEFAULT
+} from '@shared/workbench/workbenchPaneWidth.js';
+import type { DockPanelTab } from '../components/dock/dockShared.js';
+import type { WorkbenchTab } from '../components/workbench/workbenchShared.js';
 
 const PERSIST_DEBOUNCE_MS = 200;
 
@@ -20,6 +26,9 @@ let pendingDockExpanded: boolean | null = null;
 
 let dockWidthPersistTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingDockWidth: number | null = null;
+
+let workbenchPaneWidthPersistTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingWorkbenchPaneWidth: number | null = null;
 
 let collapsedPersistTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingCollapsed: Set<string> | null = null;
@@ -50,6 +59,19 @@ function flushDockWidthNow(): void {
   });
 }
 
+function flushWorkbenchPaneWidthNow(): void {
+  if (workbenchPaneWidthPersistTimer !== null) {
+    clearTimeout(workbenchPaneWidthPersistTimer);
+    workbenchPaneWidthPersistTimer = null;
+  }
+  if (pendingWorkbenchPaneWidth === null) return;
+  const next = pendingWorkbenchPaneWidth;
+  pendingWorkbenchPaneWidth = null;
+  void vyotiq.settings.set({ ui: { workbenchPaneWidth: next } }).catch(() => {
+    /* noop */
+  });
+}
+
 function flushCollapsedNow(): void {
   if (collapsedPersistTimer !== null) {
     clearTimeout(collapsedPersistTimer);
@@ -68,22 +90,33 @@ function flushCollapsedNow(): void {
 export function flushUiPersistence(): void {
   flushDockExpandedNow();
   flushDockWidthNow();
+  flushWorkbenchPaneWidthNow();
   flushCollapsedNow();
 }
+
+export type { DockPanelTab } from '../components/dock/dockShared.js';
+export type { WorkbenchTab } from '../components/workbench/workbenchShared.js';
 
 interface UiStore {
   dockExpanded: boolean;
   dockWidth: number;
+  workbenchPaneWidth: number;
+  dockPanelTab: DockPanelTab;
+  workbenchTab: WorkbenchTab;
   collapsedWorkspaces: Set<string>;
   hydrated: boolean;
   toggleDock: () => void;
   setDockExpanded: (expanded: boolean) => void;
   setDockWidth: (width: number) => void;
+  setWorkbenchPaneWidth: (width: number) => void;
+  setDockPanelTab: (tab: DockPanelTab) => void;
+  setWorkbenchTab: (tab: WorkbenchTab) => void;
   toggleWorkspaceCollapsed: (workspaceId: string) => void;
   clearWorkspaceCollapsed: (workspaceId: string) => void;
   hydrate: (init: {
     dockExpanded: boolean;
     dockWidth?: number;
+    workbenchPaneWidth?: number;
     collapsedWorkspaces?: string[];
   }) => void;
 }
@@ -100,6 +133,12 @@ function persistDockWidth(width: number): void {
   dockWidthPersistTimer = setTimeout(flushDockWidthNow, PERSIST_DEBOUNCE_MS);
 }
 
+function persistWorkbenchPaneWidth(width: number): void {
+  pendingWorkbenchPaneWidth = width;
+  if (workbenchPaneWidthPersistTimer !== null) clearTimeout(workbenchPaneWidthPersistTimer);
+  workbenchPaneWidthPersistTimer = setTimeout(flushWorkbenchPaneWidthNow, PERSIST_DEBOUNCE_MS);
+}
+
 function persistCollapsedWorkspaces(set: Set<string>): void {
   pendingCollapsed = new Set(set);
   if (collapsedPersistTimer !== null) clearTimeout(collapsedPersistTimer);
@@ -109,6 +148,9 @@ function persistCollapsedWorkspaces(set: Set<string>): void {
 export const useUiStore = create<UiStore>((set, get) => ({
   dockExpanded: false,
   dockWidth: DOCK_WIDTH_DEFAULT,
+  workbenchPaneWidth: WORKBENCH_PANE_WIDTH_DEFAULT,
+  dockPanelTab: 'files',
+  workbenchTab: 'agent',
   collapsedWorkspaces: new Set<string>(),
   hydrated: false,
   toggleDock: () => {
@@ -127,6 +169,20 @@ export const useUiStore = create<UiStore>((set, get) => ({
     set({ dockWidth: next });
     if (get().hydrated) persistDockWidth(next);
   },
+  setWorkbenchPaneWidth: (width) => {
+    const next = clampWorkbenchPaneWidth(width);
+    if (get().workbenchPaneWidth === next) return;
+    set({ workbenchPaneWidth: next });
+    if (get().hydrated) persistWorkbenchPaneWidth(next);
+  },
+  setDockPanelTab: (tab) => {
+    if (get().dockPanelTab === tab) return;
+    set({ dockPanelTab: tab });
+  },
+  setWorkbenchTab: (tab) => {
+    if (get().workbenchTab === tab) return;
+    set({ workbenchTab: tab });
+  },
   toggleWorkspaceCollapsed: (workspaceId) => {
     const current = get().collapsedWorkspaces;
     const next = new Set(current);
@@ -143,10 +199,13 @@ export const useUiStore = create<UiStore>((set, get) => ({
     set({ collapsedWorkspaces: next });
     if (get().hydrated) persistCollapsedWorkspaces(next);
   },
-  hydrate: ({ dockExpanded, dockWidth, collapsedWorkspaces }) =>
+  hydrate: ({ dockExpanded, dockWidth, workbenchPaneWidth, collapsedWorkspaces }) =>
     set({
       dockExpanded,
       dockWidth: clampDockWidth(dockWidth ?? DOCK_WIDTH_DEFAULT),
+      workbenchPaneWidth: clampWorkbenchPaneWidth(
+        workbenchPaneWidth ?? WORKBENCH_PANE_WIDTH_DEFAULT
+      ),
       collapsedWorkspaces: new Set(collapsedWorkspaces ?? []),
       hydrated: true
     })

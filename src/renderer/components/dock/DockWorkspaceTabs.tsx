@@ -6,8 +6,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
-  ChevronDown,
-  ChevronUp,
   Folder,
   FolderOpen,
   Pencil,
@@ -38,9 +36,8 @@ import {
   dockInlineActionClassName,
   dockTabRowClassName,
   dockTabActiveAttr,
-  collapseDockAfterSelection
+  dismissDockSearchAfterSelection
 } from './dockShared.js';
-import { useUiStore } from '../../store/useUiStore.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { formatWorkspaceSpend } from '../../lib/workspaceSpend.js';
 import { handleDockVerticalTablistKeyDown } from './dockVerticalTablistKeyboard.js';
@@ -93,7 +90,7 @@ export function DockWorkspaceTabs() {
       ref={scrollRef}
       role="tablist"
       aria-label="Workspaces"
-      className="scrollbar-stealth flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1 pb-1.5"
+      className="scrollbar-stealth flex min-h-0 flex-col gap-0.5 overflow-y-auto px-1 pb-1"
       onKeyDown={(e) => {
         handleDockVerticalTablistKeyDown({
           e,
@@ -101,7 +98,7 @@ export function DockWorkspaceTabs() {
           activeId,
           onActivate: (id) => {
             void setActive(id);
-            collapseDockAfterSelection();
+            dismissDockSearchAfterSelection();
           },
           focusTarget: (id) =>
             scrollRef.current?.querySelector<HTMLElement>(`[data-workspace-id="${id}"]`)
@@ -115,7 +112,7 @@ export function DockWorkspaceTabs() {
           active={ws.id === activeId}
           onActivate={() => {
             void setActive(ws.id);
-            collapseDockAfterSelection();
+            dismissDockSearchAfterSelection();
           }}
         />
       ))}
@@ -153,8 +150,6 @@ function WorkspaceTab({ workspace, active, onActivate }: WorkspaceTabProps) {
   const removeWorkspace = useWorkspaceStore((s) => s.remove);
   const retryReachability = useWorkspaceStore((s) => s.retryReachability);
   const moveConversation = useConversationsStore((s) => s.move);
-  const chatsCollapsed = useUiStore((s) => s.collapsedWorkspaces.has(workspace.id));
-  const toggleWorkspaceCollapsed = useUiStore((s) => s.toggleWorkspaceCollapsed);
   const hasActiveRun = useWorkspaceHasActiveRun(workspace.id);
 
   const [editing, setEditing] = useState(false);
@@ -281,27 +276,6 @@ function WorkspaceTab({ workspace, active, onActivate }: WorkspaceTabProps) {
               )}
               <span className={DOCK_TAB_LABEL_CLASS}>{workspace.label}</span>
             </button>
-            {active && (
-              <button
-                type="button"
-                aria-label={chatsCollapsed ? 'Expand chats' : 'Collapse chats'}
-                title={chatsCollapsed ? 'Expand chats' : 'Collapse chats'}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleWorkspaceCollapsed(workspace.id);
-                }}
-                className={cn(
-                  'vx-btn vx-btn-quiet inline-flex h-4 w-4 items-center justify-center px-0',
-                  'text-text-faint hover:text-text-primary focus-visible:opacity-100'
-                )}
-              >
-                {chatsCollapsed ? (
-                  <ChevronDown className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
-                ) : (
-                  <ChevronUp className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
-                )}
-              </button>
-            )}
             {isUnreachable && (
               <button
                 type="button"

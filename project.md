@@ -180,8 +180,8 @@ Vyotiq uses a **Shell Mono** design system on a stealth-dark oklch token palette
 
 ## 2. Layout Structure
 - **Frameless window** with custom title bar (no bottom border rule).
-- **Three-column shell:** Left dock | chat | secondary zone — dock and chat use `bg-surface-base`; title bar and secondary panels use `bg-surface-sidebar`, not vertical rules.
-- **Chat column** center-aligned, adaptive width (`max-w-4xl` default, `max-w-2xl` when attachment preview is open). Agent prose rail tracks the same measure via `--timeline-agent-max-w`.
+- **Workbench shell:** Left dock | main canvas — dock and chat use `bg-surface-base`. When editor, terminal, or attachment preview is open, a resizable companion pane splits the main area horizontally: agent chat (`ChatPage` + `ChatFooter`) on the left; workbench tabs (`Terminal | Globe | file tabs…`), contextual toolbar, and canvas on the right (no separate right column).
+- **Chat column** center-aligned, adaptive width (`max-w-4xl` in workbench mode). Agent prose rail tracks the same measure via `--timeline-agent-max-w`.
 
 ## 3. The Composer
 - **Container:** Flat `sm-composer-shell` on `surface-input` — no border, no drop shadow.

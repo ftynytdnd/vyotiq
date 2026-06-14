@@ -8,6 +8,7 @@ import {
 } from '@shared/keybindings/defaultKeybindings.js';
 import { filterDockChats } from './filterDockChats.js';
 import { collectRunningChatIds } from './collectRunningChatIds.js';
+import { dismissDockFlyout } from './dockShared.js';
 import { useUiStore } from '../../store/useUiStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
@@ -73,7 +74,7 @@ export function useDockShortcuts(): void {
         }
         if (useUiStore.getState().dockExpanded && !isTextInputTarget(e.target)) {
           e.preventDefault();
-          useUiStore.getState().setDockExpanded(false);
+          dismissDockFlyout();
         }
         return;
       }

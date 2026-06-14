@@ -4,6 +4,7 @@
  */
 
 import { normalizeDockWidthInUi } from '@shared/dock/dockWidth.js';
+import { normalizeWorkbenchPaneWidthInUi } from '@shared/workbench/workbenchPaneWidth.js';
 import type { AppSettings } from '@shared/types/ipc.js';
 
 type UiRecord = Record<string, unknown>;
@@ -78,6 +79,9 @@ export function normalizeSettingsPatch(patch: Partial<AppSettings>): Partial<App
   const dock = normalizeDockWidthInUi(ui);
   ui = dock.ui;
   changed = changed || dock.changed;
+  const pane = normalizeWorkbenchPaneWidthInUi(ui);
+  ui = pane.ui;
+  changed = changed || pane.changed;
   if (!changed) return patch;
   return { ...patch, ui: ui as AppSettings['ui'] };
 }

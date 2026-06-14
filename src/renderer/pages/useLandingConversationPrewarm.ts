@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useRef } from 'react';
+import { showDockChatsWhenExpanded } from '../components/dock/dockShared.js';
 import { useChatStore } from '../store/useChatStore.js';
 import { useConversationsStore } from '../store/useConversationsStore.js';
 
@@ -54,9 +55,13 @@ export function useLandingConversationPrewarm({
 
     if (inFlightRef.current) return;
     inFlightRef.current = true;
-    void newConversation().finally(() => {
-      inFlightRef.current = false;
-    });
+    void newConversation()
+      .then((meta) => {
+        if (meta) showDockChatsWhenExpanded();
+      })
+      .finally(() => {
+        inFlightRef.current = false;
+      });
   }, [
     enabled,
     needsSetup,

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Timeline. Pure row renderer over derived Row descriptors. All streaming
  * state (accumulators, tool previews) is maintained by the shared
  * timeline reducer in `useChatStore`. This file only renders — it does

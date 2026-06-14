@@ -1,9 +1,14 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useShallow } from 'zustand/react/shallow';
 import { TitleBar } from './components/titlebar/TitleBar.js';
 import { LeftDock } from './components/dock/index.js';
-import { DOCK_STRIP_WIDTH } from './components/dock/dockShared.js';
+import { dockMainPaddingLeft, DOCK_STRIP_WIDTH, beginNewChatFromDock } from './components/dock/dockShared.js';
+import { WorkbenchShell } from './components/workbench/WorkbenchShell.js';
+import {
+  closeActiveWorkbenchFocus,
+  cycleWorkbenchFocus,
+  workbenchIsActive
+} from './components/workbench/workbenchShared.js';
 import { ChatPage } from './pages/ChatPage.js';
 import { SettingsFullView } from './components/settings/SettingsFullView.js';
 import { ToastHost } from './components/toast/ToastHost.js';
@@ -28,7 +33,6 @@ import { useChatStore } from './store/useChatStore.js';
 import { useUiStore } from './store/useUiStore.js';
 import { useTimelineUiStore } from './store/useTimelineUiStore.js';
 import { useAppViewStore, type SettingsSectionId } from './store/useAppViewStore.js';
-import { usePersistedPanelWidth } from './hooks/usePersistedPanelWidth.js';
 import { vyotiq } from './lib/ipc.js';
 import { logger } from './lib/logger.js';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts.js';
@@ -38,12 +42,8 @@ import {
   themePrefsFromSettings,
   watchSystemTheme
 } from './lib/theme.js';
-import { AttachmentPreviewPanel } from './components/composer/AttachmentPreviewPanel.js';
-import { EditorPanel } from './components/editor/EditorPanel.js';
-import { TerminalPanel } from './components/terminal/TerminalPanel.js';
-import { useAttachmentPreviewStore } from './store/useAttachmentPreviewStore.js';
-import { useEditorStore } from './store/useEditorStore.js';
 import { useTerminalStore } from './store/useTerminalStore.js';
+import { selectEditorDirty, useEditorStore } from './store/useEditorStore.js';
 import { useEditorAgentSync } from './hooks/useEditorAgentSync.js';
 import { resolveKeybindings, isMacPlatform } from './lib/resolveKeybindings.js';
 import { eventMatchesCombo } from '@shared/keybindings/defaultKeybindings.js';
@@ -73,16 +73,14 @@ export default function App() {
     select: selectConversation,
     list: conversationsList,
     activeIdByWorkspace,
-    prewarm: prewarmConversation,
-    newConversation
+    prewarm: prewarmConversation
   } = useConversationsStore(
     useShallow((s) => ({
       hydrateActiveByWorkspace: s.hydrateActiveByWorkspace,
       select: s.select,
       list: s.list,
       activeIdByWorkspace: s.activeIdByWorkspace,
-      prewarm: s.prewarm,
-      newConversation: s.newConversation
+      prewarm: s.prewarm
     }))
   );
   const [activeMapHydrated, setActiveMapHydrated] = useState(false);
@@ -99,20 +97,15 @@ export default function App() {
         closeSettings: s.closeSettings
       }))
     );
-  const { previewAttachment, closePreview } = useAttachmentPreviewStore(
-    useShallow((s) => ({ previewAttachment: s.attachment, closePreview: s.close }))
-  );
-  const editorOpen = useEditorStore((s) => s.open);
-  const closeEditor = useEditorStore((s) => s.close);
-  const terminalOpen = useTerminalStore((s) => s.open);
-  const closeTerminal = useTerminalStore((s) => s.close);
   const toggleTerminal = useTerminalStore((s) => s.toggle);
-  const attachmentPreviewWidth = usePersistedPanelWidth('attachmentPreview');
-  const editorPanelWidth = usePersistedPanelWidth('workspaceEditor');
-  const terminalPanelWidth = usePersistedPanelWidth('workspaceTerminal');
-  const overlayOpen = previewAttachment !== null || editorOpen || terminalOpen;
-  useEditorAgentSync();
   const settingsOpen = appView === 'settings';
+  const dockExpanded = useUiStore((s) => s.dockExpanded);
+  const dockWidth = useUiStore((s) => s.dockWidth);
+  const mainPaddingLeft = dockMainPaddingLeft(
+    dockExpanded && !settingsOpen,
+    dockWidth
+  );
+  useEditorAgentSync();
   const showToast = useToastStore((s) => s.show);
   const updateCheckDone = useRef(false);
 
@@ -137,6 +130,7 @@ export default function App() {
     hydrateUi({
       dockExpanded,
       dockWidth: settings.ui?.dockWidth,
+      workbenchPaneWidth: settings.ui?.workbenchPaneWidth,
       collapsedWorkspaces: collapsed
     });
     if (
@@ -376,7 +370,9 @@ export default function App() {
   // File menu actions are wired here (the only place that knows the
   // settings modal opener) and threaded down into the title bar.
   const fileActions = {
-    newConversation: () => void newConversation(),
+    newConversation: () => {
+      void beginNewChatFromDock();
+    },
     openWorkspace: () => void pickWorkspace(),
     setWorkspacePath: openSetWorkspacePath,
     openSettings: () => toggleSettings(),
@@ -405,6 +401,17 @@ export default function App() {
     toggleTerminal: () => toggleTerminal(activeWorkspaceId),
     blockChatActions: () => useAppViewStore.getState().view === 'settings',
     blockTerminal: () => useAppViewStore.getState().view === 'settings',
+    saveEditor: () => {
+      const editor = useEditorStore.getState();
+      if (!editor.open || !editor.activeFilePath || !selectEditorDirty(editor)) return;
+      void editor.save();
+    },
+    blockSaveEditor: () => useAppViewStore.getState().view === 'settings',
+    blockWorkbenchTab: () =>
+      useAppViewStore.getState().view === 'settings' || !workbenchIsActive(),
+    closeWorkbenchTab: () => closeActiveWorkbenchFocus(),
+    cycleWorkbenchTabPrev: () => cycleWorkbenchFocus('prev'),
+    cycleWorkbenchTabNext: () => cycleWorkbenchFocus('next'),
     reload: () => void vyotiq.window.reload(),
     toggleDevTools: () => void vyotiq.window.toggleDevTools()
   }, keybindings);
@@ -443,48 +450,22 @@ export default function App() {
           className="relative z-0 flex h-full min-h-0 w-full flex-col overflow-hidden bg-surface-base"
           style={{
             paddingTop: 'var(--titlebar-h)',
-            paddingLeft: DOCK_STRIP_WIDTH,
-            paddingRight: settingsOpen ? 0 : DOCK_STRIP_WIDTH
+            paddingLeft: mainPaddingLeft,
+            paddingRight: settingsOpen ? 0 : DOCK_STRIP_WIDTH,
+            transition: 'padding-left 200ms ease-out'
           }}
-          inert={overlayOpen ? true : undefined}
-          aria-hidden={overlayOpen ? true : undefined}
         >
-          {settingsOpen ? (
-            <SettingsFullView initialSection={settingsSection} />
-          ) : (
-            <ChatPage onOpenProviders={() => openSettingsSection('providers')} />
-          )}
+          <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+            {settingsOpen ? (
+              <SettingsFullView initialSection={settingsSection} />
+            ) : (
+              <WorkbenchShell>
+                <ChatPage onOpenProviders={() => openSettingsSection('providers')} />
+              </WorkbenchShell>
+            )}
+          </div>
         </main>
       </div>
-      {overlayOpen &&
-        createPortal(
-          <button
-            type="button"
-            className="fixed inset-0 z-(--z-overlay-backdrop) bg-scrim"
-            aria-label="Close panel"
-            onClick={() => {
-              closePreview();
-              closeEditor();
-              closeTerminal();
-            }}
-          />,
-          document.body
-        )}
-      <AttachmentPreviewPanel
-        open={previewAttachment !== null}
-        attachment={previewAttachment}
-        onClose={closePreview}
-        initialWidth={attachmentPreviewWidth.initialWidth}
-        onWidthChange={attachmentPreviewWidth.onWidthChange}
-      />
-      <EditorPanel
-        initialWidth={editorPanelWidth.initialWidth}
-        onWidthChange={editorPanelWidth.onWidthChange}
-      />
-      <TerminalPanel
-        initialWidth={terminalPanelWidth.initialWidth}
-        onWidthChange={terminalPanelWidth.onWidthChange}
-      />
       <Suspense fallback={<LoadingHint className="py-4" />}>
         <PromptDialog
           open={workspacePathOpen}

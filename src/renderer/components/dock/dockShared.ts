@@ -2,6 +2,7 @@
 
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
 import { useUiStore } from '../../store/useUiStore.js';
+import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { cn } from '../../lib/cn.js';
 import {
   SHELL_DOCK_TAB_ICON_CLASS,
@@ -31,6 +32,7 @@ const DOCK_TAB_ROW_CLASS = cn('vx-dock-tab group app-no-drag shrink-0');
 
 export {
   clampDockWidth,
+  dockMainPaddingLeft,
   DOCK_STRIP_WIDTH,
   DOCK_WIDTH_DEFAULT,
   DOCK_WIDTH_MAX
@@ -63,7 +65,7 @@ export const DOCK_EDGE_CONTAINER_CLASS = cn(
 
 export function dockFlyoutShellClassName(isResizing: boolean): string {
   return cn(
-    'vx-dock-shell vx-dock-flyout app-no-drag z-(--z-dock-panel)',
+    'vx-dock-shell vx-dock-panel app-no-drag',
     'mt-[var(--titlebar-h)] flex min-h-0 max-h-[calc(100%-var(--titlebar-h))] flex-1 flex-col overflow-hidden',
     isResizing ? '' : 'transition-[width] duration-200 ease-out'
   );
@@ -76,13 +78,48 @@ export const DOCK_EDGE_STRIP_CLASS = cn(
 );
 
 export function workspacePanelClassName(_workspaceCount: number): string {
-  return 'flex min-h-0 flex-1 flex-col overflow-hidden';
+  return 'flex max-h-[9.5rem] min-h-0 shrink-0 flex-col overflow-hidden';
 }
 
-/** Collapse flyout after workspace/chat selection (strip stays visible). */
-export function collapseDockAfterSelection(): void {
+/** Flat region for the active workspace files/chats panel (no card chrome). */
+export const DOCK_WORKSPACE_PANEL_SHELL_CLASS = 'vx-dock-workspace-region';
+
+/** Inner layout for the active workspace panel. */
+export const DOCK_WORKSPACE_PANEL_CLASS = 'vx-dock-workspace-panel';
+
+export type DockPanelTab = 'files' | 'chats';
+
+/** Open inline search after picking a workspace or chat. */
+export function dismissDockSearchAfterSelection(): void {
   useDockSearchStore.getState().setOpen(false);
-  useUiStore.getState().setDockExpanded(false);
+}
+
+/** Expand the nav panel and show chats before starting a new conversation. */
+export function prepareDockForNewChat(): void {
+  const ui = useUiStore.getState();
+  ui.setDockExpanded(true);
+  ui.setDockPanelTab('chats');
+}
+
+/** When the nav panel is open, show chats after a conversation is created in the background. */
+export function showDockChatsWhenExpanded(): void {
+  const ui = useUiStore.getState();
+  if (ui.dockExpanded) ui.setDockPanelTab('chats');
+}
+
+/** Rail / menu / shortcut entry — expand nav, create chat, select it, show Chats tab. */
+export async function beginNewChatFromDock(): Promise<void> {
+  prepareDockForNewChat();
+  const convs = useConversationsStore.getState();
+  const meta = await convs.newConversation();
+  if (!meta) return;
+  useUiStore.getState().setDockPanelTab('chats');
+  await convs.select(meta.id);
+}
+
+/** @deprecated Use {@link dismissDockSearchAfterSelection}. */
+export function collapseDockAfterSelection(): void {
+  dismissDockSearchAfterSelection();
 }
 
 /** Active chat tab — stacks title row + context meter. */
@@ -105,7 +142,7 @@ export function dockTabActiveAttr(active: boolean): 'true' | 'false' {
   return active ? 'true' : 'false';
 }
 
-/** Close dock search first, then collapse the expanded flyout. */
+/** Close inline search, or collapse the nav panel when Escape is pressed. */
 export function dismissDockFlyout(): void {
   const search = useDockSearchStore.getState();
   if (search.open) {

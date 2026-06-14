@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Runtime shape gates for `settings:set` patches.
  */
 
@@ -6,6 +6,10 @@ import {
   DOCK_WIDTH_MAX,
   DOCK_WIDTH_MIN
 } from '@shared/dock/dockWidth.js';
+import {
+  WORKBENCH_PANE_WIDTH_MAX,
+  WORKBENCH_PANE_WIDTH_MIN
+} from '@shared/workbench/workbenchPaneWidth.js';
 import type { AppSettings } from '@shared/types/ipc.js';
 import {
   assertBoolean,
@@ -20,7 +24,12 @@ const SETTINGS_TOP_KEYS = new Set(['defaultModel', 'ui']);
 
 const UI_BOOLEAN_KEYS = ['sidebarOpen', 'dockExpanded', 'reducedMotion', 'firstLaunch'] as const;
 
-const UI_NUMERIC_KEYS = ['dockWidth'] as const;
+const UI_NUMERIC_KEYS = ['dockWidth', 'workbenchPaneWidth'] as const;
+
+const UI_NUMERIC_BOUNDS: Record<(typeof UI_NUMERIC_KEYS)[number], { min: number; max: number }> = {
+  dockWidth: { min: DOCK_WIDTH_MIN, max: DOCK_WIDTH_MAX },
+  workbenchPaneWidth: { min: WORKBENCH_PANE_WIDTH_MIN, max: WORKBENCH_PANE_WIDTH_MAX }
+};
 
 const UI_STRING_KEYS = ['theme', 'density', 'lastSettingsTab'] as const;
 
@@ -31,7 +40,8 @@ const UI_RECORD_KEYS = [
   'lastModelByWorkspace',
   'panelWidths',
   'pinnedConversationIds',
-  'keybindings'
+  'keybindings',
+  'recentEditorFilesByWorkspace'
 ] as const;
 
 const UI_NESTED_OBJECT_KEYS = [
@@ -82,6 +92,9 @@ const UI_RECORD_MAX_KEYS = 256;
 /** Max expanded row keys per conversation in `ui.expandedRows`. */
 const EXPANDED_ROWS_MAX_PER_CONV = 512;
 
+/** Max recent editor paths per workspace in `ui.recentEditorFilesByWorkspace`. */
+const RECENT_EDITOR_FILES_MAX_PER_WS = 8;
+
 function assertRecordKeyCount(
   channel: string,
   field: string,
@@ -119,10 +132,11 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
   }
   for (const k of UI_NUMERIC_KEYS) {
     if (k in ui && ui[k] !== undefined) {
+      const bounds = UI_NUMERIC_BOUNDS[k];
       assertNumber(channel, `patch.ui.${k}`, ui[k], {
         integer: true,
-        min: DOCK_WIDTH_MIN,
-        max: DOCK_WIDTH_MAX
+        min: bounds.min,
+        max: bounds.max
       });
     }
   }
@@ -248,6 +262,18 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
     for (const [id, combo] of Object.entries(map)) {
       assertString(channel, 'patch.ui.keybindings key', id, { maxBytes: 64 });
       assertString(channel, `patch.ui.keybindings[${id}]`, combo, { maxBytes: 64 });
+    }
+  }
+  if ('recentEditorFilesByWorkspace' in ui && ui.recentEditorFilesByWorkspace !== undefined) {
+    assertObject(channel, 'patch.ui.recentEditorFilesByWorkspace', ui.recentEditorFilesByWorkspace);
+    const map = ui.recentEditorFilesByWorkspace as Record<string, unknown>;
+    assertRecordKeyCount(channel, 'patch.ui.recentEditorFilesByWorkspace', map, UI_RECORD_MAX_KEYS);
+    for (const [wsId, paths] of Object.entries(map)) {
+      assertString(channel, 'patch.ui.recentEditorFilesByWorkspace key', wsId);
+      assertStringArray(channel, `patch.ui.recentEditorFilesByWorkspace[${wsId}]`, paths, {
+        maxItems: RECENT_EDITOR_FILES_MAX_PER_WS,
+        maxBytes: 4096
+      });
     }
   }
   if ('reports' in ui && ui.reports !== undefined) {

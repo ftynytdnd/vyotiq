@@ -16,12 +16,10 @@ import {
   timelineAgentColumnMaxWidth,
   timelineContentWidthClass
 } from '../lib/timelineContentWidth.js';
-import { useAttachmentPreviewStore } from '../store/useAttachmentPreviewStore.js';
-import { useEditorStore } from '../store/useEditorStore.js';
-import { useTerminalStore } from '../store/useTerminalStore.js';
 import { LoadingHint } from '../components/ui/LoadingHint.js';
 import { RegionErrorBoundary } from '../components/RegionErrorBoundary.js';
 import { useProviderAccountPollSource } from '../lib/useProviderAccountPollSource.js';
+import { useWorkbenchActive } from '../components/workbench/useWorkbenchActive.js';
 
 interface ChatPageProps {
   onOpenProviders: () => void;
@@ -40,13 +38,13 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
   const { conversationList, selecting } = useConversationsStore(
     useShallow((s) => ({ conversationList: s.list, selecting: s.selecting }))
   );
-  const attachmentZoneOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
-  const editorZoneOpen = useEditorStore((s) => s.open);
-  const terminalZoneOpen = useTerminalStore((s) => s.open);
-  const zoneOpen = attachmentZoneOpen || editorZoneOpen || terminalZoneOpen;
   const isProcessing = useChatStore((s) => s.isProcessing);
+  const workbenchActive = useWorkbenchActive();
 
   useProviderAccountPollSource('agent-run', isProcessing);
+
+  const contentWidth = timelineContentWidthClass(workbenchActive);
+  const agentColumnMaxWidth = timelineAgentColumnMaxWidth(workbenchActive);
 
   const [model, setModel] = useState<ModelSelection | null>(null);
 
@@ -152,8 +150,6 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
   const needsSetup = !hasWorkspace || !hasProviders;
   /** Empty chat — center the composer (setup CTAs above when blocked). */
   const centerComposer = isFresh;
-  const contentWidth = timelineContentWidthClass(zoneOpen);
-  const agentColumnMaxWidth = timelineAgentColumnMaxWidth(zoneOpen);
   const [jumpOverlayHost, setJumpOverlayHost] = useState<HTMLElement | null>(null);
   const prevCenterComposerRef = useRef(centerComposer);
   const [dockingFromCenter, setDockingFromCenter] = useState(false);
@@ -194,8 +190,8 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
       onModelChange={handleModelChange}
       onOpenProviders={onOpenProviders}
     >
-      <div className="flex h-full flex-col overflow-hidden">
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+        <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden">
           {selecting && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-surface-base/80">
               <LoadingHint message="Loading conversation…" />

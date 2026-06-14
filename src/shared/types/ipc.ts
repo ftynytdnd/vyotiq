@@ -227,7 +227,11 @@ export interface AppSettings {
 
     dockWidth?: number;
 
-    /** Secondary zone layout: floating overlay (default) or persistent right dock. */
+    /** Workbench side-pane width in px. Default 480; clamped 320–900. */
+
+    workbenchPaneWidth?: number;
+
+    /** @deprecated Legacy secondary-zone layout flags — ignored after workbench shell. */
     /** Custom keyboard binding overrides (binding id → combo string). */
     keybindings?: Record<string, string>;
 
@@ -308,6 +312,10 @@ export interface AppSettings {
     /** Last floating panel widths by panel id. */
 
     panelWidths?: Record<string, number>;
+
+    /** Per-workspace recently opened editor paths. */
+
+    recentEditorFilesByWorkspace?: Record<string, string[]>;
 
     /** When true, Settings opens on Appearance on next launch only. */
 

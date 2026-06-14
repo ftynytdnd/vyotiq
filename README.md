@@ -106,7 +106,7 @@ src/
 └── renderer/                      React frontend
     ├── components/                titlebar / composer / timeline / navigation / zone / settings / ui
     │   ├── dock/                  LeftDock (workspace tabs, chat strip, inline search)
-    │   ├── zone/                  SecondaryZone + PanelFrame (settings)
+    │   ├── workbench/               WorkbenchShell, editor, terminal, globe preview
     │   └── titlebar/menu/         Modular File / Edit menu strip
     ├── store/                     Zustand slices (chat / providers / conversations / settings /
     │                              workspace / ui / checkpoints)

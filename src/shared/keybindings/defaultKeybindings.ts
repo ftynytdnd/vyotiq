@@ -12,7 +12,11 @@ export type KeybindingId =
   | 'newConversation'
   | 'openWorkspace'
   | 'openSettings'
+  | 'saveEditor'
   | 'toggleTerminal'
+  | 'closeWorkbenchTab'
+  | 'cycleWorkbenchTabPrev'
+  | 'cycleWorkbenchTabNext'
   | 'reload'
   | 'toggleDevTools'
   | 'timelineFind'
@@ -38,7 +42,21 @@ export const KEYBINDING_DEFINITIONS: readonly KeybindingDefinition[] = [
   { id: 'newConversation', label: 'New conversation', defaultCombo: 'Mod+N', group: 'Workspace' },
   { id: 'openWorkspace', label: 'Open workspace', defaultCombo: 'Mod+O', group: 'Workspace' },
   { id: 'openSettings', label: 'Settings', defaultCombo: 'Mod+,', group: 'Workspace' },
+  { id: 'saveEditor', label: 'Save file in editor', defaultCombo: 'Mod+S', group: 'Window' },
   { id: 'toggleTerminal', label: 'Toggle terminal', defaultCombo: 'Mod+`', group: 'Window' },
+  { id: 'closeWorkbenchTab', label: 'Close workbench tab', defaultCombo: 'Mod+W', group: 'Window' },
+  {
+    id: 'cycleWorkbenchTabPrev',
+    label: 'Previous workbench tab',
+    defaultCombo: 'Mod+Alt+ArrowUp',
+    group: 'Window'
+  },
+  {
+    id: 'cycleWorkbenchTabNext',
+    label: 'Next workbench tab',
+    defaultCombo: 'Mod+Alt+ArrowDown',
+    group: 'Window'
+  },
   { id: 'reload', label: 'Reload', defaultCombo: 'Mod+R', group: 'Window' },
   { id: 'toggleDevTools', label: 'Toggle DevTools', defaultCombo: 'Mod+Shift+I', group: 'Window' },
   { id: 'timelineFind', label: 'Find in timeline', defaultCombo: 'Mod+F', group: 'Timeline' },
@@ -74,7 +92,8 @@ export function parseCombo(combo: string): {
   return { mod, shift, alt, key: key.toLowerCase() };
 }
 
-export function eventMatchesCombo(e: KeyboardEvent, combo: string): boolean {
+export function eventMatchesCombo(e: KeyboardEvent, combo: string | undefined): boolean {
+  if (!combo) return false;
   const { mod, shift, alt, key } = parseCombo(combo);
   const eventMod = e.ctrlKey || e.metaKey;
   if (mod !== eventMod) return false;

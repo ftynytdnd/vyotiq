@@ -120,13 +120,16 @@ export const chromeNoMatchesClassName = cn(
 );
 
 /** Horizontal inset matching the dialog body padding. */
-const secondaryZonePanelInsetXClassName = 'px-[clamp(0.875rem,3vw,1rem)]';
+const panelTabInsetXClassName = 'px-[clamp(0.875rem,3vw,1rem)]';
 
-/** Settings tab strip wrapper (Vyotiq UI tab bar supplies the edge). */
-export const secondaryZoneTabStripClassName = cn(
+/** Tab strip wrapper for settings / panel chrome. */
+export const panelTabStripClassName = cn(
   'mb-0 shrink-0 min-w-0',
-  secondaryZonePanelInsetXClassName
+  panelTabInsetXClassName
 );
+
+/** @deprecated Use {@link panelTabStripClassName}. */
+export const secondaryZoneTabStripClassName = panelTabStripClassName;
 
 /** Vyotiq UI panel chrome (secondary zone PanelFrame). */
 export const appPanelFrameClassName = 'vx-panel-frame flex h-full min-h-0 flex-col';

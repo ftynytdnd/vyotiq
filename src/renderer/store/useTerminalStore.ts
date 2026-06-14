@@ -6,7 +6,11 @@ import { create } from 'zustand';
 import { vyotiq } from '../lib/ipc.js';
 import { closeSettingsForCompanionOpen } from './useAppViewStore.js';
 import { useAttachmentPreviewStore } from './useAttachmentPreviewStore.js';
-import { useEditorStore } from './useEditorStore.js';
+import {
+  focusWorkbenchTab,
+  syncWorkbenchTabAfterClose
+} from '../components/workbench/workbenchShared.js';
+import { useUiStore } from './useUiStore.js';
 
 interface TerminalStore {
   open: boolean;
@@ -31,8 +35,13 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
 
   toggle: (workspaceId) => {
     if (!workspaceId) return;
-    if (get().open && get().workspaceId === workspaceId) {
-      get().close();
+    const { open, workspaceId: currentWs } = get();
+    if (open && currentWs === workspaceId) {
+      if (useUiStore.getState().workbenchTab === 'terminal') {
+        get().close();
+        return;
+      }
+      focusWorkbenchTab('terminal');
       return;
     }
     void get().openPanel(workspaceId);
@@ -41,7 +50,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
   openPanel: async (workspaceId) => {
     closeSettingsForCompanionOpen();
     useAttachmentPreviewStore.getState().close();
-    useEditorStore.getState().close();
+    focusWorkbenchTab('terminal');
     set({ open: true, workspaceId, attaching: true, error: null, shellLabel: null });
     try {
       const meta = await vyotiq.terminal.attach({ workspaceId });
@@ -49,6 +58,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       set({ attaching: false, error: msg, open: false, workspaceId: null });
+      syncWorkbenchTabAfterClose();
     }
   },
 
@@ -60,6 +70,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       });
     }
     set({ open: false, workspaceId: null, shellLabel: null, attaching: false, error: null });
+    syncWorkbenchTabAfterClose();
   },
 
   setShellLabel: (label) => set({ shellLabel: label }),
