@@ -148,7 +148,7 @@ export function registerWorkspaceIpc(): void {
       // registered entry). This is intentional — destroying the only
       // workspace SHOULD wipe the slate visually.
       // tear down per-workspace vector db + in-flight indexer
-      if (doomed) disposeWorkspaceVectorIndex(doomed.path);
+      if (doomed) void disposeWorkspaceVectorIndex(doomed.path);
       killWorkspacePty(id);
       return removeWorkspace(id);
     }

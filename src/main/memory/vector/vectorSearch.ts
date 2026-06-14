@@ -6,7 +6,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { VECTOR_SEARCH_TOP_K } from '@shared/memory/vectorConstants.js';
 import { embedQuery } from '../embedding/embedText.js';
 import type { VectorSourceKind } from './vectorDb.js';
-import { chunkCount, openVectorDb } from './vectorDb.js';
+import { acquireVectorDb, chunkCount, releaseVectorDb } from './vectorDb.js';
 
 export interface VectorSearchHit {
   sourceKind: VectorSourceKind;
@@ -33,37 +33,42 @@ export async function searchVectorIndex(
   if (!query.trim()) return [];
   let db: DatabaseSync;
   try {
-    db = await openVectorDb(workspacePath);
+    db = await acquireVectorDb(workspacePath);
   } catch {
     return [];
   }
-  if (chunkCount(db) === 0) return [];
 
-  const embedding = await embedQuery(query);
-  const rows = db
-    .prepare(
-      `SELECT source_kind, source_key, rel_path, chunk_index, content,
-              vec_distance_cosine(embedding, ?) AS distance
-       FROM chunk_index
-       ORDER BY distance
-       LIMIT ?`
-    )
-    .all(new Uint8Array(embedding.buffer), topK) as Array<{
-    source_kind: VectorSourceKind;
-    source_key: string;
-    rel_path: string;
-    chunk_index: number;
-    content: string;
-    distance: number;
-  }>;
+  try {
+    if (chunkCount(db) === 0) return [];
 
-  return rows.map((r) => ({
-    sourceKind: r.source_kind,
-    sourceKey: r.source_key,
-    relPath: r.rel_path,
-    chunkIndex: r.chunk_index,
-    content: r.content,
-    distance: r.distance,
-    similarity: distanceToSimilarity(r.distance)
-  }));
+    const embedding = await embedQuery(query);
+    const rows = db
+      .prepare(
+        `SELECT source_kind, source_key, rel_path, chunk_index, content,
+                vec_distance_cosine(embedding, ?) AS distance
+         FROM chunk_index
+         ORDER BY distance
+         LIMIT ?`
+      )
+      .all(new Uint8Array(embedding.buffer), topK) as Array<{
+      source_kind: VectorSourceKind;
+      source_key: string;
+      rel_path: string;
+      chunk_index: number;
+      content: string;
+      distance: number;
+    }>;
+
+    return rows.map((r) => ({
+      sourceKind: r.source_kind,
+      sourceKey: r.source_key,
+      relPath: r.rel_path,
+      chunkIndex: r.chunk_index,
+      content: r.content,
+      distance: r.distance,
+      similarity: distanceToSimilarity(r.distance)
+    }));
+  } finally {
+    releaseVectorDb(workspacePath);
+  }
 }

@@ -211,11 +211,14 @@ export function AboutPanel() {
         )}
 
         <h4 className="vx-settings-subhead">On-disk paths</h4>
-        <ShellCaption>For backup, transfer, or bug reports.</ShellCaption>
+        <ShellCaption>
+          Vyotiq data lives under <code className="font-mono">vyotiq/</code> inside the Electron
+          profile folder. Chromium caches (Cache/, GPUCache/, …) stay in the profile root.
+        </ShellCaption>
         {info ? (
           <div className="vx-settings-path-list mt-2">
             <PathRow
-              label="User data"
+              label="Vyotiq data"
               path={info.userDataDir}
               onReveal={() => void onReveal('userData')}
             />

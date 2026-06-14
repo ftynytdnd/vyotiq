@@ -12,8 +12,8 @@ const fixture: AppInfo = {
   version: '1.2.3',
   electron: '28.2.0',
   node: '18.18.2',
-  userDataDir: 'C:/Users/test/AppData/Roaming/Vyotiq',
-  settingsFile: 'C:/Users/test/AppData/Roaming/Vyotiq/settings.json',
+  userDataDir: 'C:/Users/test/AppData/Roaming/Vyotiq/vyotiq',
+  settingsFile: 'C:/Users/test/AppData/Roaming/Vyotiq/vyotiq/settings.json',
   logDir: 'C:/Users/test/AppData/Roaming/Vyotiq/vyotiq/logs'
 };
 

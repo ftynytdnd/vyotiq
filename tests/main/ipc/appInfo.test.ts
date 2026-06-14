@@ -40,7 +40,7 @@ describe('registerAppIpc — APP_INFO_GET', () => {
     // because the mock creates a fresh dir per test run.
     expect(info.userDataDir.length).toBeGreaterThan(0);
     expect(info.settingsFile).toBe(join(info.userDataDir, SETTINGS_FILE));
-    expect(info.logDir).toBe(join(info.userDataDir, 'vyotiq', 'logs'));
+    expect(info.logDir).toBe(join(info.userDataDir, 'logs'));
   });
 });
 

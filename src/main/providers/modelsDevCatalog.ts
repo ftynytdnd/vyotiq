@@ -14,7 +14,7 @@ import { logger } from '../logging/logger.js';
 const log = logger.child('providers/models-dev');
 
 const MODELS_DEV_URL = 'https://models.dev/api.json';
-const CACHE_FILE = 'vyotiq/models-dev-catalog.json';
+const CACHE_FILE = 'models-dev-catalog.json';
 const CATALOG_TTL_MS = 24 * 60 * 60 * 1000;
 
 type ModelsDevLimit = {

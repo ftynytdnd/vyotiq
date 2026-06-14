@@ -1,18 +1,15 @@
 /**
- * Global meta-rules store. Lives in `<userData>/meta-rules.md`. Loaded at boot
- * and injected into every system prompt as `<meta_rules>`. Agent V is allowed
- * (per harness) to append/rewrite it when the user issues persistent
+ * Global meta-rules store. Lives in `<userData>/vyotiq/meta-rules.md`. Loaded
+ * at boot and injected into every system prompt as `<meta_rules>`. Agent V is
+ * allowed (per harness) to append/rewrite it when the user issues persistent
  * corrections.
  */
 
-import { app } from 'electron';
-import { join } from 'node:path';
 import { promises as fs } from 'node:fs';
-import { GLOBAL_META_FILE } from '@shared/constants.js';
-
-function metaPath(): string {
-  return join(app.getPath('userData'), GLOBAL_META_FILE);
-}
+import {
+  globalMetaFilePath as resolveGlobalMetaFilePath,
+  vyotiqDataDir
+} from '../paths/userDataLayout.js';
 
 /**
  * Public accessor for the on-disk meta-rules file path. Used by the
@@ -21,7 +18,7 @@ function metaPath(): string {
  * stays centralized.
  */
 export function globalMetaFilePath(): string {
-  return metaPath();
+  return resolveGlobalMetaFilePath();
 }
 
 const SEED = `# Vyotiq — Global Meta-Rules
@@ -36,12 +33,13 @@ issues a persistent correction (e.g. "stop using X, I prefer Y").
 `;
 
 export async function readGlobalMetaRules(): Promise<string> {
+  const path = resolveGlobalMetaFilePath();
   try {
-    return await fs.readFile(metaPath(), 'utf8');
+    return await fs.readFile(path, 'utf8');
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
-      await fs.mkdir(app.getPath('userData'), { recursive: true });
-      await fs.writeFile(metaPath(), SEED, 'utf8');
+      await fs.mkdir(vyotiqDataDir(), { recursive: true });
+      await fs.writeFile(path, SEED, 'utf8');
       return SEED;
     }
     throw err;
@@ -49,8 +47,8 @@ export async function readGlobalMetaRules(): Promise<string> {
 }
 
 export async function writeGlobalMetaRules(content: string): Promise<void> {
-  await fs.mkdir(app.getPath('userData'), { recursive: true });
-  await fs.writeFile(metaPath(), content, 'utf8');
+  await fs.mkdir(vyotiqDataDir(), { recursive: true });
+  await fs.writeFile(resolveGlobalMetaFilePath(), content, 'utf8');
 }
 
 /**

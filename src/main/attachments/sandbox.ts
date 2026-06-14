@@ -1,6 +1,6 @@
 /**
  * Attachments-root path containment. External attachment copies live under
- * `<userData>/attachments/`; preview + read IPC must stay inside that tree.
+ * `<userData>/vyotiq/attachments/`; preview + read IPC must stay inside that tree.
  */
 
 import { resolve, relative, isAbsolute } from 'node:path';

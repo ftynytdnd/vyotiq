@@ -14,11 +14,12 @@ import { embedBatch } from '../embedding/embedText.js';
 import { chunkText } from './chunkText.js';
 import { INDEXABLE_GLOB, INDEXABLE_IGNORE } from './indexableFiles.js';
 import {
+  acquireVectorDb,
   deleteSourceChunks,
   getSourceHash,
   insertChunks,
-  openVectorDb,
-  pruneMissingSources
+  pruneMissingSources,
+  releaseVectorDb
 } from './vectorDb.js';
 import { logger } from '../../logging/logger.js';
 
@@ -42,7 +43,7 @@ function noteRelPath(key: string): string {
 }
 
 async function indexNote(
-  db: Awaited<ReturnType<typeof openVectorDb>>,
+  db: Awaited<ReturnType<typeof acquireVectorDb>>,
   key: string,
   content: string,
   mtime: number,
@@ -78,7 +79,7 @@ async function indexNote(
 }
 
 async function indexCodeFile(
-  db: Awaited<ReturnType<typeof openVectorDb>>,
+  db: Awaited<ReturnType<typeof acquireVectorDb>>,
   workspacePath: string,
   absPath: string,
   signal?: AbortSignal
@@ -142,59 +143,63 @@ export async function indexWorkspaceVectors(
     durationMs: 0
   };
 
-  let db: Awaited<ReturnType<typeof openVectorDb>>;
+  let db: Awaited<ReturnType<typeof acquireVectorDb>>;
   try {
-    db = await openVectorDb(workspacePath);
+    db = await acquireVectorDb(workspacePath);
   } catch (err: unknown) {
     log.warn('failed to open vector db', { workspacePath, err });
     stats.durationMs = Date.now() - started;
     return stats;
   }
 
-  const notePaths = new Set<string>();
   try {
-    const notes = await listWorkspaceNotes(workspacePath);
-    for (const note of notes) {
-      if (signal?.aborted) break;
-      if (isRunProgressKey(note.key)) continue;
-      notePaths.add(noteRelPath(note.key));
-      const result = await indexNote(db, note.key, note.content, note.updatedAt, signal);
-      if (result.skipped) stats.skipped += 1;
-      else stats.notesIndexed += 1;
-      stats.chunksWritten += result.chunks;
+    const notePaths = new Set<string>();
+    try {
+      const notes = await listWorkspaceNotes(workspacePath);
+      for (const note of notes) {
+        if (signal?.aborted) break;
+        if (isRunProgressKey(note.key)) continue;
+        notePaths.add(noteRelPath(note.key));
+        const result = await indexNote(db, note.key, note.content, note.updatedAt, signal);
+        if (result.skipped) stats.skipped += 1;
+        else stats.notesIndexed += 1;
+        stats.chunksWritten += result.chunks;
+      }
+    } catch (err: unknown) {
+      log.warn('note indexing failed', { workspacePath, err });
     }
-  } catch (err: unknown) {
-    log.warn('note indexing failed', { workspacePath, err });
-  }
 
-  const codePaths = new Set<string>();
-  try {
-    const files = await fg(INDEXABLE_GLOB, {
-      cwd: workspacePath,
-      ignore: INDEXABLE_IGNORE,
-      absolute: true,
-      onlyFiles: true,
-      suppressErrors: true
-    });
-    for (const absPath of files) {
-      if (signal?.aborted) break;
-      const relPath = relative(workspacePath, absPath).replace(/\\/g, '/');
-      codePaths.add(relPath);
-      const result = await indexCodeFile(db, workspacePath, absPath, signal);
-      if (result.skipped) stats.skipped += 1;
-      else stats.filesIndexed += 1;
-      stats.chunksWritten += result.chunks;
+    const codePaths = new Set<string>();
+    try {
+      const files = await fg(INDEXABLE_GLOB, {
+        cwd: workspacePath,
+        ignore: INDEXABLE_IGNORE,
+        absolute: true,
+        onlyFiles: true,
+        suppressErrors: true
+      });
+      for (const absPath of files) {
+        if (signal?.aborted) break;
+        const relPath = relative(workspacePath, absPath).replace(/\\/g, '/');
+        codePaths.add(relPath);
+        const result = await indexCodeFile(db, workspacePath, absPath, signal);
+        if (result.skipped) stats.skipped += 1;
+        else stats.filesIndexed += 1;
+        stats.chunksWritten += result.chunks;
+      }
+    } catch (err: unknown) {
+      log.warn('code indexing failed', { workspacePath, err });
     }
-  } catch (err: unknown) {
-    log.warn('code indexing failed', { workspacePath, err });
-  }
 
-  if (!signal?.aborted) {
-    stats.pruned += pruneMissingSources(db, 'note', notePaths);
-    stats.pruned += pruneMissingSources(db, 'code', codePaths);
-  }
+    if (!signal?.aborted) {
+      stats.pruned += pruneMissingSources(db, 'note', notePaths);
+      stats.pruned += pruneMissingSources(db, 'code', codePaths);
+    }
 
-  stats.durationMs = Date.now() - started;
-  log.info('vector index pass complete', { workspacePath, ...stats });
-  return stats;
+    stats.durationMs = Date.now() - started;
+    log.info('vector index pass complete', { workspacePath, ...stats });
+    return stats;
+  } finally {
+    releaseVectorDb(workspacePath);
+  }
 }

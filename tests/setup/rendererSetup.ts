@@ -125,7 +125,7 @@ function makeStubApi() {
         electron: '0.0.0',
         node: '0.0.0',
         userDataDir: '/tmp/userdata',
-        settingsFile: '/tmp/userdata/settings.json',
+        settingsFile: '/tmp/userdata/vyotiq/settings.json',
         logDir: '/tmp/userdata/vyotiq/logs'
       })),
       revealPath: asyncNoop,

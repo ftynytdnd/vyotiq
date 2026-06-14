@@ -62,58 +62,85 @@ function ensureSchema(db: DatabaseSync): void {
   }
 }
 
-const openDbs = new Map<string, DatabaseSync>();
+interface VectorDbEntry {
+  db: DatabaseSync;
+  /** Active index/search callers — never close while refs > 0. */
+  refs: number;
+}
+
+const openDbs = new Map<string, VectorDbEntry>();
 const OPEN_DB_MAX = 3;
 
-function evictLruIfNeeded(): void {
-  while (openDbs.size > OPEN_DB_MAX) {
-    const oldest = openDbs.keys().next().value as string | undefined;
-    if (!oldest) break;
-    const db = openDbs.get(oldest);
-    openDbs.delete(oldest);
-    try {
-      db?.close();
-    } catch {
-      // ignore
-    }
-  }
-}
-
-export async function openVectorDb(workspacePath: string): Promise<DatabaseSync> {
-  const existing = openDbs.get(workspacePath);
-  if (existing) {
-    openDbs.delete(workspacePath);
-    openDbs.set(workspacePath, existing);
-    return existing;
-  }
-  await mkdir(indexDir(workspacePath), { recursive: true });
-  const db = new DatabaseSync(indexDbPath(workspacePath), { allowExtension: true });
-  sqliteVec.load(db);
-  ensureSchema(db);
-  evictLruIfNeeded();
-  openDbs.set(workspacePath, db);
-  return db;
-}
-
-export function closeVectorDb(workspacePath: string): void {
-  const db = openDbs.get(workspacePath);
-  if (!db) return;
+function touchLru(workspacePath: string, entry: VectorDbEntry): void {
   openDbs.delete(workspacePath);
+  openDbs.set(workspacePath, entry);
+}
+
+function closeEntry(path: string, entry: VectorDbEntry): void {
+  openDbs.delete(path);
   try {
-    db.close();
+    entry.db.close();
   } catch {
     // ignore
   }
 }
 
-export function closeAllVectorDbs(): void {
-  for (const [path, db] of openDbs) {
-    try {
-      db.close();
-    } catch {
-      // ignore
+/** Evict idle (refs === 0) handles when the cache grows past the soft cap. */
+function evictIdleIfNeeded(): void {
+  while (openDbs.size > OPEN_DB_MAX) {
+    let evicted = false;
+    for (const [path, entry] of openDbs) {
+      if (entry.refs > 0) continue;
+      closeEntry(path, entry);
+      evicted = true;
+      break;
     }
-    openDbs.delete(path);
+    if (!evicted) break;
+  }
+}
+
+export async function openVectorDb(workspacePath: string): Promise<DatabaseSync> {
+  return acquireVectorDb(workspacePath);
+}
+
+/** Borrow an open vector db handle; pair with {@link releaseVectorDb}. */
+export async function acquireVectorDb(workspacePath: string): Promise<DatabaseSync> {
+  const existing = openDbs.get(workspacePath);
+  if (existing) {
+    existing.refs += 1;
+    touchLru(workspacePath, existing);
+    return existing.db;
+  }
+  await mkdir(indexDir(workspacePath), { recursive: true });
+  const db = new DatabaseSync(indexDbPath(workspacePath), { allowExtension: true });
+  sqliteVec.load(db);
+  ensureSchema(db);
+  const entry: VectorDbEntry = { db, refs: 1 };
+  evictIdleIfNeeded();
+  openDbs.set(workspacePath, entry);
+  return db;
+}
+
+export function releaseVectorDb(workspacePath: string): void {
+  const entry = openDbs.get(workspacePath);
+  if (!entry) return;
+  entry.refs = Math.max(0, entry.refs - 1);
+  if (entry.refs === 0) {
+    evictIdleIfNeeded();
+  }
+}
+
+export function closeVectorDb(workspacePath: string): void {
+  const entry = openDbs.get(workspacePath);
+  if (!entry) return;
+  entry.refs = 0;
+  closeEntry(workspacePath, entry);
+}
+
+export function closeAllVectorDbs(): void {
+  for (const [path, entry] of [...openDbs.entries()]) {
+    entry.refs = 0;
+    closeEntry(path, entry);
   }
 }
 

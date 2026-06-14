@@ -4,15 +4,14 @@
 
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
-import { join } from 'node:path';
-import { app } from 'electron';
 import type { ScheduledRun } from '@shared/types/scheduledRun.js';
+import { scheduledRunsFilePath, vyotiqDataDir } from '../paths/userDataLayout.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child('scheduler/store');
 
 function storePath(): string {
-  return join(app.getPath('userData'), 'vyotiq', 'scheduled-runs.json');
+  return scheduledRunsFilePath();
 }
 
 let cache: ScheduledRun[] | null = null;
@@ -34,8 +33,7 @@ export async function listScheduledRuns(): Promise<ScheduledRun[]> {
 
 async function persist(runs: ScheduledRun[]): Promise<void> {
   cache = runs;
-  const dir = join(app.getPath('userData'), 'vyotiq');
-  await fs.mkdir(dir, { recursive: true });
+  await fs.mkdir(vyotiqDataDir(), { recursive: true });
   await fs.writeFile(storePath(), JSON.stringify(runs, null, 2), 'utf8');
 }
 

@@ -13,8 +13,8 @@
  * Single source of truth — replaces ad-hoc `console.warn` / `console.error`.
  */
 
-import { app } from 'electron';
 import { join } from 'node:path';
+import { logsDir } from '../paths/userDataLayout.js';
 import { promises as fs, existsSync, statSync } from 'node:fs';
 import type { LogLevel, Logger } from '@shared/types/logger.js';
 import { abortAllActiveRunsWithError } from '../orchestrator/runCrashDrain.js';
@@ -31,7 +31,6 @@ const LEVEL_ORDER: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, e
 
 const MAX_BYTES = 1 * 1024 * 1024;
 const MAX_BACKUPS = 3; // keeps .log.1, .log.2, .log.3
-const LOG_DIR_NAME = 'logs';
 const LOG_FILE_NAME = 'vyotiq.log';
 const MIN_LEVEL: LogLevel = (process.env['VYOTIQ_LOG_LEVEL'] as LogLevel | undefined) ?? 'info';
 
@@ -43,8 +42,7 @@ let writeChain: Promise<void> = Promise.resolve();
 
 function resolvePaths(): { dir: string; file: string } {
   if (!logDir || !logFile) {
-    const userData = app.getPath('userData');
-    logDir = join(userData, 'vyotiq', LOG_DIR_NAME);
+    logDir = logsDir();
     logFile = join(logDir, LOG_FILE_NAME);
   }
   return { dir: logDir, file: logFile };

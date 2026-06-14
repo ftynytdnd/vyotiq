@@ -7,11 +7,11 @@
  *     pending.json            pending changes per conversation
  */
 
-import { app } from 'electron';
 import { join } from 'node:path';
+import { checkpointsDir } from '../paths/userDataLayout.js';
 
 function checkpointsRoot(): string {
-  return join(app.getPath('userData'), 'vyotiq', 'checkpoints');
+  return checkpointsDir();
 }
 
 export function workspaceDir(workspaceId: string): string {

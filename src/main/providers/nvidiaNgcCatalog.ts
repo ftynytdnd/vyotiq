@@ -3,19 +3,18 @@
  * integrate.api.nvidia.com `/v1/models` omits context metadata; model cards do not.
  */
 
-import { join } from 'node:path';
-import { app } from 'electron';
 import { MODEL_DISCOVERY_TIMEOUT_MS } from '@shared/constants.js';
 import { parseNvidiaContextLength } from '@shared/providers/nvidiaNgcContextParse.js';
 import type { ModelInfo } from '@shared/types/provider.js';
 import { readPlainJson, writePlainJson } from '../secrets/safeStore.js';
+import { nvidiaNgcCatalogFilePath } from '../paths/userDataLayout.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child('providers/nvidia-ngc');
 
 const NGC_BASE = 'https://api.ngc.nvidia.com/v2';
 const BUILD_ORG = 'qc69jvmznzxy';
-const CACHE_FILE = 'vyotiq/nvidia-ngc-context.json';
+const CACHE_FILE = 'nvidia-ngc-context.json';
 /** Catalog changes infrequently; refresh daily. */
 const CATALOG_TTL_MS = 24 * 60 * 60 * 1000;
 const FETCH_CONCURRENCY = 6;
@@ -43,10 +42,6 @@ type NgcEndpointDetail = {
 
 let memoryCache: { fetchedAt: number; byModelId: Map<string, number> } | null = null;
 let loadInFlight: Promise<Map<string, number>> | null = null;
-
-function cachePath(): string {
-  return join(app.getPath('userData'), CACHE_FILE);
-}
 
 async function fetchJson(url: string): Promise<unknown> {
   const ctrl = new AbortController();
@@ -234,7 +229,7 @@ export async function loadNvidiaNgcContextCatalog(force = false): Promise<Map<st
 }
 
 export function nvidiaNgcCachePathForDiagnostics(): string {
-  return cachePath();
+  return nvidiaNgcCatalogFilePath();
 }
 
 /** Apply NGC catalog context windows to discovered NVIDIA Integrate models. */

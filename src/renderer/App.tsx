@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { TitleBar } from './components/titlebar/TitleBar.js';
 import { LeftDock } from './components/dock/index.js';
@@ -12,19 +12,12 @@ import {
 import { ChatPage } from './pages/ChatPage.js';
 import { SettingsFullView } from './components/settings/SettingsFullView.js';
 import { ToastHost } from './components/toast/ToastHost.js';
-import { LoadingHint } from './components/ui/LoadingHint.js';
-// Lazy-loaded composer dialog portals into the `ComposerDialogAnchor` slot.
-const PromptDialog = lazy(() =>
-  retryDynamicImport(() =>
-    import('./components/ui/PromptDialog.js').then((m) => ({ default: m.PromptDialog }))
-  )
-);
+import { PromptDialog } from './components/ui/PromptDialog.js';
 import {
   selectEnabledProviderIds,
   useProviderStore
 } from './store/useProviderStore.js';
 import { useProviderAccountStore } from './store/useProviderAccountStore.js';
-import { retryDynamicImport } from './lib/retryDynamicImport.js';
 import { useWorkspaceStore } from './store/useWorkspaceStore.js';
 import { useSettingsStore, selectSettingsReady } from './store/useSettingsStore.js';
 import { useToastStore } from './store/useToastStore.js';
@@ -481,8 +474,7 @@ export default function App() {
           </div>
         </main>
       </div>
-      <Suspense fallback={<LoadingHint className="py-4" />}>
-        <PromptDialog
+      <PromptDialog
           open={workspacePathOpen}
           variant="workspacePath"
           title="Set Workspace by Path"
@@ -504,7 +496,6 @@ export default function App() {
             setWorkspacePathError(null);
           }}
         />
-      </Suspense>
       <ToastHost />
     </div>
   );

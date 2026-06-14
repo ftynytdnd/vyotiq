@@ -4,11 +4,11 @@
  * matching sections at runtime without rebuilding the app.
  */
 
-import { app } from 'electron';
 import { promises as fs, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { HarnessSectionId, HarnessSectionInfo } from '@shared/types/harness.js';
 import { HARNESS_SECTION_IDS } from '@shared/types/harness.js';
+import { harnessOverridesDir } from '../paths/userDataLayout.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child('harness/overrides');
@@ -24,7 +24,7 @@ const SECTION_TO_FILE: Record<HarnessSectionId, string> = {
 };
 
 function overridesDir(): string {
-  return join(app.getPath('userData'), 'vyotiq', 'harness-overrides');
+  return harnessOverridesDir();
 }
 
 function overridePath(sectionId: HarnessSectionId): string {

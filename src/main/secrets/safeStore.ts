@@ -4,16 +4,17 @@
  * here — there is no plaintext fallback for keys.
  */
 
-import { app, safeStorage } from 'electron';
+import { safeStorage } from 'electron';
 import { join } from 'node:path';
 import { promises as fs } from 'node:fs';
+import { vyotiqDataDir } from '../paths/userDataLayout.js';
 
-function userDataPath(file: string): string {
-  return join(app.getPath('userData'), file);
+function dataFilePath(filename: string): string {
+  return join(vyotiqDataDir(), filename);
 }
 
-async function ensureUserDataDir(): Promise<string> {
-  const dir = app.getPath('userData');
+async function ensureDataDir(): Promise<string> {
+  const dir = vyotiqDataDir();
   await fs.mkdir(dir, { recursive: true });
   return dir;
 }
@@ -52,7 +53,7 @@ async function atomicWrite(absPath: string, data: string | Buffer): Promise<void
  * On systems without crypto support, throws — we never silently downgrade.
  */
 export async function writeEncryptedJson(filename: string, data: unknown): Promise<void> {
-  await ensureUserDataDir();
+  await ensureDataDir();
   const json = JSON.stringify(data);
   if (!safeStorage.isEncryptionAvailable()) {
     throw new Error(
@@ -60,7 +61,7 @@ export async function writeEncryptedJson(filename: string, data: unknown): Promi
     );
   }
   const buf = safeStorage.encryptString(json);
-  await atomicWrite(userDataPath(filename), buf);
+  await atomicWrite(dataFilePath(filename), buf);
 }
 
 /**
@@ -69,7 +70,7 @@ export async function writeEncryptedJson(filename: string, data: unknown): Promi
  * keychain change).
  */
 export async function readEncryptedJson<T>(filename: string): Promise<T | null> {
-  const path = userDataPath(filename);
+  const path = dataFilePath(filename);
   try {
     const buf = await fs.readFile(path);
     if (!safeStorage.isEncryptionAvailable()) {
@@ -88,12 +89,12 @@ export async function readEncryptedJson<T>(filename: string): Promise<T | null> 
  * Atomic write via `${path}.tmp` + rename. Same crash-safety contract as
  * `writeEncryptedJson` above. Audit fix H-02 / M-02. */
 export async function writePlainJson(filename: string, data: unknown): Promise<void> {
-  await ensureUserDataDir();
-  await atomicWrite(userDataPath(filename), JSON.stringify(data, null, 2));
+  await ensureDataDir();
+  await atomicWrite(dataFilePath(filename), JSON.stringify(data, null, 2));
 }
 
 export async function readPlainJson<T>(filename: string): Promise<T | null> {
-  const path = userDataPath(filename);
+  const path = dataFilePath(filename);
   try {
     const txt = await fs.readFile(path, 'utf8');
     return JSON.parse(txt) as T;

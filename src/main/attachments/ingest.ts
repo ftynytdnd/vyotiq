@@ -1,20 +1,21 @@
 /**
  * External attachment ingest — copies files into app userData under
- * `attachments/{workspaceId}/{conversationId}/{messageId}/`.
+ * `attachments/{workspaceId}/{conversationId}/{messageId}/` under `<userData>/vyotiq/attachments/`.
  */
 
 import { copyFile, mkdir, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { app } from 'electron';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import {
   MAX_ATTACHMENT_FILE_BYTES,
   MAX_CHAT_ATTACHMENTS
 } from '@shared/constants.js';
 
+import { attachmentsDir } from '../paths/userDataLayout.js';
+
 export function attachmentsRoot(): string {
-  return join(app.getPath('userData'), 'attachments');
+  return attachmentsDir();
 }
 
 function messageDir(workspaceId: string, conversationId: string, messageId: string): string {

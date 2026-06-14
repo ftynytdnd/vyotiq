@@ -650,11 +650,15 @@ export interface AppInfo {
 
   node: string;
 
-  /** Resolved `app.getPath('userData')`. */
+  /** Vyotiq-owned data directory: `<electronUserData>/vyotiq`. */
 
   userDataDir: string;
 
-  /** Absolute path to `settings.json` inside `userDataDir`. */
+  /** Electron profile root (includes Chromium caches). */
+
+  electronUserDataDir?: string;
+
+  /** Absolute path to `settings.json` inside {@link userDataDir}. */
 
   settingsFile: string;
 

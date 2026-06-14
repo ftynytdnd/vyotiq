@@ -10,7 +10,12 @@
 import { app, BrowserWindow } from 'electron';
 import { createMainWindow } from './window/createMainWindow.js';
 import { isBrowserWebContents } from './window/browserManager.js';
+import { migrateUserDataLayout } from './paths/migrateUserDataLayout.js';
 import { registerIpc } from './ipc/registerIpc.js';
+import { teardownProvidersIpc } from './ipc/providers.ipc.js';
+import { teardownTerminalIpc } from './ipc/terminal.ipc.js';
+import { teardownBrowserIpc } from './ipc/browser.ipc.js';
+import { teardownCompletionIpc } from './ipc/completion.ipc.js';
 import { logger, installCrashHandlers } from './logging/logger.js';
 import { assertHarnessBoot, warmHarnessOverrides } from './harness/harnessLoader.js';
 import { flushAll as flushConversations } from './conversations/conversationStore.js';
@@ -22,7 +27,7 @@ import { sweepOrphanAttachments } from './attachments/gc.js';
 import { sweepOrphanCompactionAllWorkspaces } from './orchestrator/context/compactionSweep.js';
 import { getActiveWorkspace } from './workspace/workspaceState.js';
 import {
-  disposeAllVectorIndexes,
+  disposeAllVectorIndexesAsync,
   scheduleWorkspaceVectorIndex
 } from './memory/vector/indexScheduler.js';
 import { closeAllVectorDbs } from './memory/vector/vectorDb.js';
@@ -96,6 +101,10 @@ async function bootstrap() {
   assertHarnessBoot();
   await app.whenReady();
 
+  await migrateUserDataLayout().catch((err) =>
+    log.warn('userData layout migration failed; continuing with current paths', { err })
+  );
+
   registerIpc();
   await warmHarnessOverrides().catch((err) =>
     log.warn('harness override preload failed; using bundled defaults', { err })
@@ -159,23 +168,16 @@ app.on('before-quit', (event) => {
   isShuttingDown = true;
   event.preventDefault();
   Promise.allSettled([
-    import('./ipc/providers.ipc.js').then((m) => m.teardownProvidersIpc()),
+    teardownProvidersIpc(),
     flushConversations(),
     flushCheckpoints(),
     flushWorkspaceState(),
-    Promise.resolve().then(() => {
-      disposeAllVectorIndexes();
+    Promise.resolve().then(() => disposeAllVectorIndexesAsync()).then(() => {
       closeAllVectorDbs();
     }),
-    import('./ipc/terminal.ipc.js').then((m) => {
-      m.teardownTerminalIpc();
-    }),
-    import('./ipc/browser.ipc.js').then((m) => {
-      m.teardownBrowserIpc();
-    }),
-    import('./ipc/completion.ipc.js').then((m) => {
-      m.teardownCompletionIpc();
-    }),
+    Promise.resolve().then(() => teardownTerminalIpc()),
+    Promise.resolve().then(() => teardownBrowserIpc()),
+    Promise.resolve().then(() => teardownCompletionIpc()),
     Promise.resolve().then(() => teardownAutoUpdaterService())
   ])
     .catch((err) => log.error('shutdown flush failed', { err }))

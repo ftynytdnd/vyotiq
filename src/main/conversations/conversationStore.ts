@@ -14,7 +14,7 @@
  * streaming-text deltas never reorders on disk.
  */
 
-import { app } from 'electron';
+import { conversationsDir } from '../paths/userDataLayout.js';
 import { randomUUID } from 'node:crypto';
 import { promises as fs, createReadStream, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -55,7 +55,6 @@ function stripLegacySummaryTimelineEvents(
   return filtered.length === events.length ? [...events] : filtered;
 }
 
-const ROOT_DIR = 'conversations';
 const INDEX_FILE = 'index.json';
 const FILE_EXT = '.jsonl';
 const MAX_CONVERSATIONS = 200;
@@ -138,7 +137,7 @@ function pruneRemovedIds(): void {
 
 function resolveBase(): string {
   if (!baseDir) {
-    baseDir = join(app.getPath('userData'), 'vyotiq', ROOT_DIR);
+    baseDir = conversationsDir();
   }
   return baseDir;
 }

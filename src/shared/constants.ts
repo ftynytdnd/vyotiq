@@ -105,7 +105,10 @@ export const REPORTS_SUBDIR = 'reports';
  */
 export const MAX_REPORT_HTML_BYTES = 2 * 1024 * 1024;
 
-/** Files inside the global userData folder. */
+/** Subdirectory under Electron `userData` for all Vyotiq-owned files. */
+export const VYOTIQ_DATA_DIR_NAME = 'vyotiq';
+
+/** Filenames inside {@link VYOTIQ_DATA_DIR_NAME}. */
 export const GLOBAL_META_FILE = 'meta-rules.md';
 export const PROVIDERS_FILE = 'providers.encrypted.json';
 export const SETTINGS_FILE = 'settings.json';

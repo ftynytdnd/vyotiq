@@ -4,11 +4,9 @@
  */
 
 import { promises as fs } from 'node:fs';
-import path from 'node:path';
-import { app } from 'electron';
+import { dirname } from 'node:path';
+import { memoryLastReferencedFilePath } from '../paths/userDataLayout.js';
 import { getConversationMeta } from '../conversations/conversationStore.js';
-
-const STORE_FILE = path.join('vyotiq', 'memory-last-referenced.json');
 
 /** Bucket id for global meta-rules last-ref (not a real workspace). */
 export const GLOBAL_MEMORY_WORKSPACE_ID = '__global__';
@@ -32,7 +30,7 @@ export interface MemoryLastReference {
 type StoreShape = Record<string, Record<string, MemoryLastReference>>;
 
 function storePath(): string {
-  return path.join(app.getPath('userData'), STORE_FILE);
+  return memoryLastReferencedFilePath();
 }
 
 async function readStore(): Promise<StoreShape> {
@@ -48,7 +46,7 @@ async function readStore(): Promise<StoreShape> {
 
 async function writeStore(store: StoreShape): Promise<void> {
   const file = storePath();
-  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.mkdir(dirname(file), { recursive: true });
   await fs.writeFile(file, JSON.stringify(store, null, 2), 'utf8');
 }
 
