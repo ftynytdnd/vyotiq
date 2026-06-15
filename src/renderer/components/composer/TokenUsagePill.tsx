@@ -14,8 +14,11 @@ import {
   SHELL_ROW_ICON_STROKE
 } from '../../lib/shellIcons.js';
 import { formatTokenCount, formatTokenCountWithUnit } from '../../lib/formatTokens.js';
+import { formatLiveTokenRate, resolveLiveCompletionTokens } from '../../lib/liveTokenRate.js';
+import { useLiveTokenRate } from '../../lib/useLiveTokenRate.js';
 import { resolveLiveTurnCost } from '../../lib/workspaceSpend.js';
 import { useProviderStore } from '../../store/useProviderStore.js';
+import { useChatStore } from '../../store/useChatStore.js';
 import { formatComposerCostUsd } from '@shared/providers/estimateRunCost.js';
 
 interface TokenUsagePillProps {
@@ -49,12 +52,18 @@ function buildTitle(
   latest: TokenUsage,
   orchestrator: TokenUsageAggregate | undefined,
   costLabel: string | null,
-  costBreakdown: ReturnType<typeof resolveLiveTurnCost>
+  costBreakdown: ReturnType<typeof resolveLiveTurnCost>,
+  liveTokenRateLabel: string | null
 ): string {
   const lines: string[] = [
     `Last turn — in: ${formatTokenCountWithUnit(latest.promptTokens)}`,
-    `Last turn — out: ${formatTokenCountWithUnit(latest.completionTokens)}`
+    `Last turn — out: ${formatTokenCountWithUnit(
+      resolveLiveCompletionTokens(orchestrator ?? { latest })
+    )}`
   ];
+  if (liveTokenRateLabel) {
+    lines.push(`Live output: ${liveTokenRateLabel}`);
+  }
   if (costLabel) {
     lines.push(`Estimated cost: ${costLabel}`);
     if (costBreakdown) {
@@ -95,20 +104,36 @@ export const TokenUsagePill = memo(function TokenUsagePill({
   draftEstimate = null
 }: TokenUsagePillProps) {
   const providers = useProviderStore((s) => s.providers);
+  const isProcessing = useChatStore((s) => s.isProcessing);
+  const hasInFlight = orchestrator?.inFlight !== undefined;
+  const completionTokens = resolveLiveCompletionTokens(orchestrator ?? total);
+  const liveTokenRate = useLiveTokenRate(
+    isProcessing || hasInFlight,
+    completionTokens
+  );
+  const liveTokenRateLabel =
+    liveTokenRate !== null && liveTokenRate > 0 ? formatLiveTokenRate(liveTokenRate) : null;
   const { latest } = total ?? {
     latest: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
   };
+  const outCount =
+    orchestrator?.inFlight !== undefined
+      ? completionTokens
+      : latest.completionTokens;
   const liveCost = useMemo(
     () => resolveLiveTurnCost(model, providers, orchestrator),
     [model, providers, orchestrator]
   );
-  const hasUsage = latest.promptTokens > 0 || latest.completionTokens > 0;
+  const hasUsage =
+    latest.promptTokens > 0 ||
+    latest.completionTokens > 0 ||
+    (orchestrator?.inFlight?.completionTokens ?? 0) > 0;
   const hasDraft = draftEstimate != null && draftEstimate.tokens > 0;
 
   if (!hasUsage && !hasDraft) return null;
 
   const title = hasUsage
-    ? buildTitle(latest, orchestrator, liveCost?.label ?? null, liveCost)
+    ? buildTitle(latest, orchestrator, liveCost?.label ?? null, liveCost, liveTokenRateLabel)
     : hasDraft
       ? `Draft estimate: ~${formatTokenCountWithUnit(draftEstimate.tokens)}${draftEstimate.exact ? '' : ' (approx.)'}`
       : '';
@@ -128,7 +153,7 @@ export const TokenUsagePill = memo(function TokenUsagePill({
       {hasUsage ? (
         <span
           className="vx-composer-turn-usage__cluster"
-          aria-label={`Last turn input ${formatTokenCount(latest.promptTokens)} tokens, output ${formatTokenCount(latest.completionTokens)} tokens${liveCost ? `, estimated ${liveCost.label}` : ''}`}
+          aria-label={`Last turn input ${formatTokenCount(latest.promptTokens)} tokens, output ${formatTokenCount(outCount)} tokens${liveTokenRateLabel ? `, ${liveTokenRateLabel}` : ''}${liveCost ? `, estimated ${liveCost.label}` : ''}`}
         >
           <span className="vx-composer-turn-usage__pill">
             <span className="vx-composer-turn-usage__dir">in</span>
@@ -136,7 +161,13 @@ export const TokenUsagePill = memo(function TokenUsagePill({
           </span>
           <span className="vx-composer-turn-usage__pill">
             <span className="vx-composer-turn-usage__dir">out</span>
-            {formatTokenCount(latest.completionTokens)}
+            {formatTokenCount(outCount)}
+            {liveTokenRateLabel ? (
+              <span className="vx-composer-turn-usage__rate" title="Live output throughput">
+                {' · '}
+                {liveTokenRateLabel}
+              </span>
+            ) : null}
           </span>
           {liveCost ? (
             <span className="vx-composer-turn-usage__pill vx-composer-turn-usage__pill--cost">

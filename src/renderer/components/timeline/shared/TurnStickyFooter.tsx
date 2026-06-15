@@ -6,6 +6,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useChatStore } from '../../../store/useChatStore.js';
 import { formatTokenCountWithUnit } from '../../../lib/formatTokens.js';
+import {
+  formatLiveTokenRate,
+  resolveLiveCompletionTokens
+} from '../../../lib/liveTokenRate.js';
+import { useLiveTokenRate } from '../../../lib/useLiveTokenRate.js';
 import { cn } from '../../../lib/cn.js';
 import { timelineRunCompleteRowClassName } from './rowStyles.js';
 import { detectLiveRunActivity } from './detectLiveRunActivity.js';
@@ -64,10 +69,15 @@ export function TurnStickyFooter({
   }, [showLive]);
 
   const elapsedMs = showLive && promptTs !== null ? Math.max(0, now - promptTs) : 0;
+  const completionTokens = resolveLiveCompletionTokens(usage);
+  const liveTokenRate = useLiveTokenRate(showLive, completionTokens);
+  const liveTokenRateLabel =
+    liveTokenRate !== null && liveTokenRate > 0 ? formatLiveTokenRate(liveTokenRate) : null;
   const tokenLabel =
     showLive && usage && usage.cumulative.totalTokens > 0
       ? formatTokenCountWithUnit(usage.cumulative.totalTokens)
       : null;
+  const throughputLabel = liveTokenRateLabel ?? tokenLabel;
 
   const activity = useMemo(
     () =>
@@ -95,7 +105,7 @@ export function TurnStickyFooter({
     activity,
     fileEditCount,
     elapsedMs,
-    tokenLabel
+    tokenLabel: throughputLabel
   });
 
   return (

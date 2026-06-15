@@ -9,14 +9,21 @@ import type { TokenUsageAggregate } from '@renderer/components/timeline/reducer/
 
 function aggregate(
   promptTokens: number,
-  completionTokens: number
+  completionTokens: number,
+  inFlight?: { completionTokens: number }
 ): TokenUsageAggregate {
   const latest = {
     promptTokens,
     completionTokens,
     totalTokens: promptTokens + completionTokens
   };
-  return { latest, total: latest };
+  return {
+    latest,
+    peak: latest,
+    cumulative: latest,
+    samples: 1,
+    ...(inFlight !== undefined ? { inFlight } : {})
+  };
 }
 
 describe('TokenUsagePill', () => {
@@ -51,5 +58,15 @@ describe('TokenUsagePill', () => {
     const pill = container.querySelector('.vx-composer-token-pill');
     expect(pill?.getAttribute('title')).toMatch(/Prompt:/);
     expect(pill?.getAttribute('title')).toMatch(/Orchestrator:/);
+  });
+
+  it('renders when only in-flight synthetic completion exists', () => {
+    render(
+      <TokenUsagePill
+        total={aggregate(0, 0, { completionTokens: 12 })}
+        orchestrator={aggregate(0, 0, { completionTokens: 12 })}
+      />
+    );
+    expect(screen.getByText('12')).toBeTruthy();
   });
 });
