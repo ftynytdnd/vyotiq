@@ -11,7 +11,7 @@ import type { PartialToolCall } from './handleAssistantTurn.js';
 import { emitFinishToolSettlement, resolveFinishSummary } from './finishIntercept.js';
 import { emitRunStatus } from './emitRunStatus.js';
 import { batchIndicesByDependencies, parseDependsOnIds } from './toolDependencyBatches.js';
-import { parseToolArgs } from './parseToolArgs.js';
+import { parseToolArgs, tryParseArgumentsRecord, type ToolArgsParseResult } from './parseToolArgs.js';
 import { validateToolArgs } from './validateToolArgs.js';
 import { insertHistoryBeforeTail } from '../context/buildContextLayers.js';
 import { isWriteShaped } from '../toolResultCacheInternals.js';
@@ -104,7 +104,9 @@ async function dispatchOneToolCall(
   messages: ChatMessage[],
   emit: (event: TimelineEvent) => void,
   opts: HandleToolCallsOpts,
-  tallies: { refused: number }
+  tallies: { refused: number },
+  parsed: ToolArgsParseResult,
+  allowlistLogged: Set<string>
 ): Promise<DispatchOutcome> {
   if (!tc.name) {
     tallies.refused += 1;
@@ -142,23 +144,26 @@ async function dispatchOneToolCall(
 
   if (opts.allowlist && !opts.allowlist.includes(tc.name)) {
     tallies.refused += 1;
-    log.warn('allowlist refusal', {
-      tool: tc.name,
-      allowlist: opts.allowlist
-    });
+    if (!allowlistLogged.has(tc.name)) {
+      allowlistLogged.add(tc.name);
+      log.warn('allowlist refusal', {
+        tool: tc.name,
+        allowlist: opts.allowlist
+      });
+    }
+    if (!allowlistLogged.has(`thought:${tc.name}`)) {
+      allowlistLogged.add(`thought:${tc.name}`);
+      emit({
+        kind: 'agent-thought',
+        id: randomUUID(),
+        ts: Date.now(),
+        content: `Policy: "${tc.name}" is not available to Agent V. Choose another tool or approach.`,
+        severity: 'warn'
+      });
+    }
     if (opts.allowlistRefusalCounts) {
       const prev = opts.allowlistRefusalCounts.get(tc.name) ?? 0;
-      const next = prev + 1;
-      opts.allowlistRefusalCounts.set(tc.name, next);
-      if (next >= 2) {
-        emit({
-          kind: 'agent-thought',
-          id: randomUUID(),
-          ts: Date.now(),
-          content: `Policy: "${tc.name}" is not available to Agent V. Choose another tool or approach.`,
-          severity: 'warn'
-        });
-      }
+      opts.allowlistRefusalCounts.set(tc.name, prev + 1);
     }
     const refusalMessage =
       `Tool "${tc.name}" is not in the agent allowlist (${opts.allowlist.join(', ')}).`;
@@ -172,7 +177,7 @@ async function dispatchOneToolCall(
     return { kind: 'skipped' };
   }
 
-  const { args: parsed, parseError } = parseToolArgs(tc.name, tc.argumentsBuf);
+  const { args: parsedArgs, parseError } = parsed;
   opts.onToolCallSettled?.(callId, 'orc', batchIndex);
   emit({
     kind: 'tool-call',
@@ -181,7 +186,7 @@ async function dispatchOneToolCall(
     call: {
       id: callId,
       name: tc.name as ToolName,
-      args: parsed,
+      args: parsedArgs,
       ...(typeof tc.thoughtSignature === 'string' && tc.thoughtSignature.length > 0
         ? { thoughtSignature: tc.thoughtSignature }
         : {})
@@ -221,7 +226,7 @@ async function dispatchOneToolCall(
     };
   }
 
-  const validation = validateToolArgs(tc.name, parsed);
+  const validation = validateToolArgs(tc.name, parsedArgs);
   if (!validation.ok) {
     log.warn('tool arguments rejected before dispatch', {
       tool: tc.name,
@@ -257,7 +262,7 @@ async function dispatchOneToolCall(
   }
 
   emitRunStatus(emit, 'running-tool', 'Exploring', { toolName: tc.name });
-  const result = await runToolByName(tc.name, parsed, {
+  const result = await runToolByName(tc.name, parsedArgs, {
     workspacePath: opts.workspacePath,
     workspaceId: opts.workspaceId,
     runId: opts.runId,
@@ -312,7 +317,7 @@ function isWriteShapedToolCall(tc: PartialToolCall): boolean {
   if (!tc.name) return false;
   const canonical = normalizeRegisteredToolName(tc.name);
   if (!canonical) return false;
-  const { args } = parseToolArgs(tc.name, tc.argumentsBuf);
+  const args = tryParseArgumentsRecord(tc.argumentsBuf);
   return isWriteShaped(canonical, args);
 }
 
@@ -342,7 +347,9 @@ async function dispatchRunnableBatch(
   opts: HandleToolCallsOpts,
   tallies: { refused: number },
   processed: Set<number>,
-  tally: { attempted: number; failed: number; lastFailure?: string }
+  tally: { attempted: number; failed: number; lastFailure?: string },
+  parsedByIndex: Map<number, ToolArgsParseResult>,
+  allowlistLogged: Set<string>
 ): Promise<void> {
   const { writes, reads } = partitionWriteBeforeRead(indices, finishedToolCalls);
   const phases = writes.length > 0 && reads.length > 0 ? [writes, reads] : [indices];
@@ -359,7 +366,9 @@ async function dispatchRunnableBatch(
           messages,
           emit,
           opts,
-          tallies
+          tallies,
+          parsedByIndex.get(i) ?? { args: {} },
+          allowlistLogged
         );
         if (o.kind === 'ran') {
           tally.attempted += o.attempted;
@@ -377,7 +386,9 @@ async function dispatchRunnableBatch(
           messages,
           emit,
           opts,
-          tallies
+          tallies,
+          parsedByIndex.get(i) ?? { args: {} },
+          allowlistLogged
         );
         processed.add(i);
         return o;
@@ -409,16 +420,23 @@ export async function handleToolCalls(
     if (detail) lastFailure = detail;
   };
 
+  const parsedByIndex = new Map<number, ToolArgsParseResult>();
+  const allowlistLogged = new Set<string>();
+  for (let i = 0; i < finishedToolCalls.length; i++) {
+    const tc = finishedToolCalls[i]!;
+    if (!tc.name) continue;
+    parsedByIndex.set(i, parseToolArgs(tc.name, tc.argumentsBuf));
+  }
+
   const batches = opts.skipDependencyBatching
     ? [finishedToolCalls.map((_, i) => i)]
     : batchIndicesByDependencies(
         finishedToolCalls.map((tc, i) => {
           if (!tc.id) tc.id = randomUUID();
-          let dependsOn: string[] = [];
-          if (tc.name) {
-            const { args } = parseToolArgs(tc.name, tc.argumentsBuf);
-            dependsOn = parseDependsOnIds(args);
-          }
+          const args = tc.name
+            ? (parsedByIndex.get(i)?.args ?? tryParseArgumentsRecord(tc.argumentsBuf))
+            : {};
+          const dependsOn = parseDependsOnIds(args);
           return { id: tc.id!, dependsOn, index: i };
         }).map((d) => ({ id: d.id, dependsOn: d.dependsOn }))
       );
@@ -456,7 +474,7 @@ export async function handleToolCalls(
       if (
         !tc.name ||
         (opts.allowlist && !opts.allowlist.includes(tc.name)) ||
-        parseToolArgs(tc.name, tc.argumentsBuf).parseError !== undefined
+        parsedByIndex.get(i)?.parseError !== undefined
       ) {
         syncIndices.push(i);
         continue;
@@ -472,7 +490,9 @@ export async function handleToolCalls(
         messages,
         emit,
         opts,
-        tallies
+        tallies,
+        parsedByIndex.get(i) ?? { args: {} },
+        allowlistLogged
       );
       if (o.kind === 'ran') {
         attempted += o.attempted;
@@ -490,7 +510,9 @@ export async function handleToolCalls(
       opts,
       tallies,
       processed,
-      batchTally
+      batchTally,
+      parsedByIndex,
+      allowlistLogged
     );
     attempted += batchTally.attempted;
     failed += batchTally.failed;

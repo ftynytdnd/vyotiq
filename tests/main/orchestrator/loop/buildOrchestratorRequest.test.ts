@@ -3,6 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import os from 'node:os';
 import { buildOrchestratorRequest } from '@main/orchestrator/loop/buildOrchestratorRequest';
 import { AGENT_TOOLS } from '@main/tools/policy/agentTools';
 import type { ChatMessage } from '@shared/types/chat';
@@ -160,5 +161,22 @@ describe('buildOrchestratorRequest', () => {
       signal: new AbortController().signal
     });
     expect(withoutId.conversationId).toBeUndefined();
+  });
+
+  it('redacts user-home paths in wire messages without mutating the caller buffer', () => {
+    const home = os.homedir();
+    const rawPath =
+      process.platform === 'win32' ? `${home}\\proj\\x.ts` : `${home}/proj/x.ts`;
+    const messages: ChatMessage[] = [
+      { role: 'user', content: `read ${rawPath}` }
+    ];
+    const req = buildOrchestratorRequest({
+      selection,
+      messages,
+      signal: new AbortController().signal
+    });
+    const wire = String(req.messages[0]?.content ?? '');
+    expect(wire).not.toContain(home);
+    expect(String(messages[0]?.content)).toContain(home);
   });
 });

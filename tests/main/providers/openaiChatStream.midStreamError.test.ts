@@ -113,4 +113,21 @@ describe('streamOpenAi — mid-stream error envelope', () => {
       expect(err.friendlyMessage).toContain('something went wrong');
     }
   });
+
+  it('surfaces OpenRouter metadata when the top-level message is generic', async () => {
+    mockOpenAiResponse([
+      sseFrame({
+        error: {
+          message: 'Provider returned error',
+          metadata: { reason: 'Upstream idle timeout exceeded' }
+        }
+      })
+    ]);
+    const { err } = await collectThrow();
+    expect(isProviderError(err)).toBe(true);
+    if (isProviderError(err)) {
+      expect(err.friendlyMessage).toContain('Upstream idle timeout exceeded');
+      expect(err.friendlyMessage).not.toMatch(/Provider returned error — Provider returned error/);
+    }
+  });
 });

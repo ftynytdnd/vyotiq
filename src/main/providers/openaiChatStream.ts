@@ -13,7 +13,7 @@
 import type { ChatStreamRequest, ChatStreamDelta } from './chatClient.js';
 import type { ProviderWithKey } from '@shared/types/provider.js';
 import { logger } from '../logging/logger.js';
-import { classifyProviderError, ProviderError, looksRateLimited } from './providerError.js';
+import { classifyProviderError, extractOpenAiCompatStreamError, ProviderError, looksRateLimited } from './providerError.js';
 import { acquire, markRateLimited, markSuccess } from './providerRateGuard.js';
 import { createInactivityWatch, isStreamInactivityError } from './streamInactivity.js';
 import { buildAttributionHeaders, isOpenRouterHost } from './attributionHeaders.js';
@@ -127,7 +127,7 @@ interface RawSseChunk {
    * all surface failures this way. OpenAI's own canonical error object
    * is `{ message, type, code }`; some gateways send a bare string.
    */
-  error?: { message?: string; type?: string; code?: string | number } | string;
+  error?: { message?: string; type?: string; code?: string | number; metadata?: unknown } | string;
 }
 
 /**
@@ -349,12 +349,7 @@ export async function* streamOpenAi(
     // (a mid-generation 429 from OpenRouter/Groq must stagger sibling
     // concurrent streams instead of letting them dog-pile on retry).
     if (chunk.error !== undefined && chunk.error !== null) {
-      const errMsg =
-        typeof chunk.error === 'string'
-          ? chunk.error
-          : typeof chunk.error.message === 'string'
-            ? chunk.error.message
-            : 'Unknown mid-stream error from provider.';
+      const errMsg = extractOpenAiCompatStreamError(chunk.error);
       const rateLimited = looksRateLimited(errMsg);
       if (rateLimited) markRateLimited(req.providerId);
       throw new ProviderError({

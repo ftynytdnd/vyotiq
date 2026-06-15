@@ -11,6 +11,7 @@
 import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
 import { promises as fs } from 'node:fs';
+import { redactUserHomeInPath } from '@shared/path/redactUserHomeInPath.js';
 import { escapeXmlAttr, wrapXml } from './envelope/index.js';
 import { retrieveRelevantMemory } from '../memory/retrieval.js';
 import { readWorkspaceNote } from '../memory/workspaceNotes.js';
@@ -53,17 +54,18 @@ async function workspaceTopLevel(workspacePath?: string): Promise<string> {
     label = ws.label;
   }
   if (!path) return '(no workspace selected)';
+  const displayPath = redactUserHomeInPath(path);
   let entries: import('node:fs').Dirent[];
   try {
     entries = await fs.readdir(path, { withFileTypes: true });
   } catch {
-    return `(workspace ${path} unreachable)`;
+    return `(workspace ${displayPath} unreachable)`;
   }
   const lines = entries
     .filter((e) => !['node_modules', '.git', 'dist', 'out', '.next'].includes(e.name))
     .slice(0, TOP_LEVEL_LIMIT)
     .map((e) => (e.isDirectory() ? `[D] ${e.name}/` : `[F] ${e.name}`));
-  return `Workspace: ${path}\nLabel: ${label}\n\nTop-level entries:\n${lines.join('\n')}`;
+  return `Workspace: ${displayPath}\nLabel: ${label}\n\nTop-level entries:\n${lines.join('\n')}`;
 }
 
 export interface ContextEnvelopes {

@@ -31,11 +31,18 @@ vi.mock('@main/workspace/workspaceState', () => ({
 vi.mock('@main/conversations/conversationStore', () => ({
   listConversations: vi.fn()
 }));
+vi.mock('node:fs', () => ({
+  promises: {
+    readdir: vi.fn()
+  }
+}));
 
 import { buildContextEnvelope } from '@main/orchestrator/contextManager';
 import { retrieveRelevantMemory } from '@main/memory/retrieval';
 import { getWorkspace } from '@main/workspace/workspaceState';
 import { listConversations } from '@main/conversations/conversationStore';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
 
 describe('buildContextEnvelope — session context (plan §6)', () => {
   beforeEach(() => {
@@ -203,5 +210,22 @@ describe('buildContextEnvelope — prior conversations (plan §C1)', () => {
     const env = await buildContextEnvelope('q', 'any');
     expect(env.priorConversationsXml).toContain('<prior_conversations>');
     expect(env.priorConversationsXml).toContain('first conversation');
+  });
+
+  it('redacts the user profile segment in <workspace_context>', async () => {
+    const home = os.homedir();
+    const workspacePath =
+      process.platform === 'win32' ? `${home}\\vyotiq` : `${home}/vyotiq`;
+    vi.mocked(fs.readdir).mockResolvedValue([
+      { name: 'src', isDirectory: () => true } as import('node:fs').Dirent
+    ]);
+    const env = await buildContextEnvelope('q', undefined, workspacePath);
+    expect(env.workspaceXml).toContain('<workspace_context>');
+    expect(env.workspaceXml).not.toContain(home);
+    if (process.platform === 'win32') {
+      expect(env.workspaceXml).toContain('%USERPROFILE%');
+    } else {
+      expect(env.workspaceXml).toContain('~/vyotiq');
+    }
   });
 });

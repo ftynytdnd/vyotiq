@@ -25,11 +25,15 @@ import {
 import { notifyProviderPollSourcesChanged } from './providerDiscoveryPoller.js';
 import { logger } from '../logging/logger.js';
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
+import {
+  recordPollSuccess,
+  shouldLogRepeatedPollWarning
+} from './providerPollLogThrottle.js';
 
 const log = logger.child('providers/account-poller');
 
 let timer: ReturnType<typeof setInterval> | null = null;
-let tickInFlight = false;
+let pollQueue: Promise<void> = Promise.resolve();
 let abortController: AbortController | null = null;
 let currentIntervalMs = PROVIDER_ACCOUNT_POLL_IDLE_MS;
 let lastBroadcastJson: string | null = null;
@@ -65,14 +69,12 @@ function rescheduleTimer(): void {
   });
 }
 
-async function pollOnce(): Promise<void> {
-  if (tickInFlight) return;
-  tickInFlight = true;
+function pollOnceInner(): Promise<void> {
   abortController?.abort();
   abortController = new AbortController();
   const signal = abortController.signal;
 
-  try {
+  return (async () => {
     const providers = await listProviders();
     const enabledIds = new Set(providers.filter((p) => p.enabled).map((p) => p.id));
 
@@ -89,15 +91,25 @@ async function pollOnce(): Promise<void> {
       try {
         const snap = await fetchProviderAccount(withKey, signal);
         setProviderAccountSnapshot(snap);
+        const logKey = `account:${p.id}`;
         if (snap.status === 'error') {
-          log.warn('account poll returned error status', {
-            providerId: p.id,
-            hostKind: snap.hostKind,
-            message: snap.message
-          });
+          if (
+            shouldLogRepeatedPollWarning(logKey, snap.message ?? 'unknown error')
+          ) {
+            log.warn('account poll returned error status', {
+              providerId: p.id,
+              hostKind: snap.hostKind,
+              message: snap.message
+            });
+          }
+        } else {
+          recordPollSuccess(logKey);
         }
       } catch (err) {
-        log.warn('account fetch threw', { providerId: p.id, err });
+        const message = err instanceof Error ? err.message : String(err);
+        if (shouldLogRepeatedPollWarning(`account-throw:${p.id}`, message)) {
+          log.warn('account fetch threw', { providerId: p.id, err });
+        }
       }
     }
 
@@ -109,9 +121,13 @@ async function pollOnce(): Promise<void> {
     }
 
     broadcastSnapshots(getAllProviderAccountSnapshots());
-  } finally {
-    tickInFlight = false;
-  }
+  })();
+}
+
+async function pollOnce(): Promise<void> {
+  const run = pollQueue.then(() => pollOnceInner());
+  pollQueue = run.catch(() => undefined);
+  await run;
 }
 
 export function setProviderAccountPollSource(source: string, active: boolean): void {
@@ -138,7 +154,7 @@ export function stopProviderAccountPoller(): void {
   }
   abortController?.abort();
   abortController = null;
-  tickInFlight = false;
+  pollQueue = Promise.resolve();
   lastBroadcastJson = null;
   clearProviderPollSources();
 }

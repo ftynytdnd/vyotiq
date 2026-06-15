@@ -19,6 +19,8 @@ import type { ChatMessage } from '@shared/types/chat.js';
 import { logger } from '../../logging/logger.js';
 import { streamChat } from '../../providers/chatClient.js';
 import { isProviderError } from '../../providers/providerError.js';
+import { redactUserHomeInText } from '@shared/path/redactUserHomeInPath.js';
+import { redactChatMessagesForProvider } from './redactChatMessagesForProvider.js';
 import {
   removeSummaryArtifact,
   writeSummaryArtifact,
@@ -107,7 +109,7 @@ export interface SummarizeHistoryResult {
 export async function summarizeHistory(
   opts: SummarizeHistoryOpts
 ): Promise<SummarizeHistoryResult | null> {
-  const transcript = serializeHistoryTranscript(opts.history);
+  const transcript = redactUserHomeInText(serializeHistoryTranscript(opts.history));
   if (transcript.trim().length === 0) return null;
 
   let relativePath: string;
@@ -131,13 +133,13 @@ export async function summarizeHistory(
     const stream = streamChat({
       providerId: opts.providerId,
       model: opts.modelId,
-      messages: [
+      messages: redactChatMessagesForProvider([
         { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
         {
           role: 'user',
           content: `Summarize this agent session transcript:\n\n${transcript}`
         }
-      ],
+      ]),
       toolChoice: 'none',
       maxTokens: SUMMARY_MAX_TOKENS,
       ...(opts.signal ? { signal: opts.signal } : {})

@@ -13,6 +13,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import os from 'node:os';
 import { buildHostEnvironmentXml } from '@main/orchestrator/loop/buildHostEnvironment';
 
 describe('buildHostEnvironmentXml', () => {
@@ -146,10 +147,17 @@ describe('buildHostEnvironmentXml', () => {
   });
 
   it('includes workspace cwd and shell note when workspacePath is provided', () => {
+    const home = os.homedir();
+    const workspacePath =
+      process.platform === 'win32'
+        ? `${home}\\project`
+        : `${home}/project`;
     const xml = buildHostEnvironmentXml(new Date('2026-05-18T12:00:00Z'), {
-      workspacePath: 'C:\\Users\\dev\\project'
+      workspacePath
     });
-    expect(xml).toContain('workspace_cwd: C:\\Users\\dev\\project');
+    const expectedCwd =
+      process.platform === 'win32' ? '%USERPROFILE%\\project' : '~/project';
+    expect(xml).toContain(`workspace_cwd: ${expectedCwd}`);
     expect(xml).toContain('shell_note:');
     expect(xml).toMatch(/PowerShell on Windows/);
     expect(xml).toMatch(/&&/);

@@ -32,8 +32,9 @@
  *     the agent should match in user-facing prose.
  *
  * Excluded by design (Prime Directives §9 privacy + non-actionability):
- *   - `os.userInfo()` / `os.hostname()` / home-dir paths — PII the
- *     LLM provider does not need.
+ *   - `os.userInfo()` / `os.hostname()` — PII the LLM provider does not need.
+ *   - `workspace_cwd` uses `%USERPROFILE%` / `~` instead of the OS username
+ *     segment (tools still resolve the real absolute root on disk).
  *   - `os.cpus()[0].model` / total memory / load average — not
  *     actionable by the model and bulks the envelope.
  *   - Any network / interface info — out of scope.
@@ -46,6 +47,7 @@
 import os from 'node:os';
 import process from 'node:process';
 import { wrapXml } from '../envelope/index.js';
+import { redactUserHomeInPath } from '@shared/path/redactUserHomeInPath.js';
 
 export interface HostEnvironmentOpts {
   /** Active workspace root — agent tools default cwd. */
@@ -193,7 +195,7 @@ export function buildHostEnvironmentXml(
   lines.push(`locale: ${locale}`);
 
   if (opts?.workspacePath && opts.workspacePath.length > 0) {
-    lines.push(`workspace_cwd: ${opts.workspacePath}`);
+    lines.push(`workspace_cwd: ${redactUserHomeInPath(opts.workspacePath)}`);
     lines.push(
       'shell_note: Agent `bash` uses PowerShell on Windows (`;` to chain — not `&` or `&&`/`||`). ' +
         'Do not use bash redirection (`2>/dev/null`) — use `2>$null`. Prefer `Get-ChildItem`, `Select-String`, and `\\` paths. ' +

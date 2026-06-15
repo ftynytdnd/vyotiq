@@ -20,8 +20,7 @@
  */
 
 import type { ChatMessage, TimelineEvent } from '@shared/types/chat.js';
-import { MAX_TOOL_OUTPUT_CHARS } from '@shared/constants.js';
-import { truncateUtf8Safe } from '@shared/text/truncateUtf8Safe.js';
+import { truncateToolOutputForContext } from '@shared/text/truncateUtf8Safe.js';
 import { stableStringify } from '@shared/json/stableStringify.js';
 import { wrapXml } from '../envelope/index.js';
 import { buildCompactionBanner, buildToolInputBanner } from '../context/compactionArtifacts.js';
@@ -175,7 +174,7 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
         const output =
           compactedPath !== undefined
             ? buildCompactionBanner(compactedPath)
-            : truncateUtf8Safe(e.result.output, MAX_TOOL_OUTPUT_CHARS);
+            : truncateToolOutputForContext(e.result.output);
         messages.push({
           role: 'tool',
           tool_call_id: callId,

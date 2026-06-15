@@ -3,6 +3,7 @@
  */
 
 import { MAX_SELF_CORRECTION_ATTEMPTS } from '@shared/constants.js';
+import { formatPiiOrModerationHint } from '../../providers/providerError.js';
 
 /** Ensure a single sentence terminator without doubling punctuation. */
 export function sentenceEnd(msg: string): string {
@@ -16,15 +17,18 @@ export function formatRetryThought(
   attempt: number,
   max: number = MAX_SELF_CORRECTION_ATTEMPTS
 ): string {
-  return `LLM call failed (attempt ${attempt}/${max}): ${sentenceEnd(msg)} Retrying.`;
+  const piiHint = formatPiiOrModerationHint(msg);
+  const base = `LLM call failed (attempt ${attempt}/${max}): ${sentenceEnd(msg)} Retrying.`;
+  return piiHint ? `${base} ${piiHint}` : base;
 }
 
 export function formatProviderStrikeError(consecutiveErrors: number, detail: string): string {
   const core = sentenceEnd(detail);
-  return (
+  const piiHint = formatPiiOrModerationHint(detail);
+  const base =
     `The provider failed ${consecutiveErrors} times in a row (${core}) ` +
-    'Try Retry below, check API settings, or switch models.'
-  );
+    'Try Retry below, check API settings, or switch models.';
+  return piiHint ? `${base} ${piiHint}` : base;
 }
 
 export function formatToolStrikeError(
@@ -67,10 +71,11 @@ export function formatToolRecoveryThought(
 
 /** Harness-driven recovery when the provider keeps failing — run continues. */
 export function formatProviderRecoveryThought(consecutiveErrors: number, detail: string): string {
-  return (
+  const piiHint = formatPiiOrModerationHint(detail);
+  const base =
     `Provider recovery (${consecutiveErrors} failures): ${sentenceEnd(detail)} ` +
-    'Check network and API settings, switch models, or use `ask_user` if this persists.'
-  );
+    'Check network and API settings, switch models, or use `ask_user` if this persists.';
+  return piiHint ? `${base} ${piiHint}` : base;
 }
 
 export const RUN_STOPPED_THOUGHT = 'Run stopped.';

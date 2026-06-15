@@ -18,6 +18,10 @@ import {
 import { isProviderError } from './providerError.js';
 import { logger } from '../logging/logger.js';
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
+import {
+  recordPollSuccess,
+  shouldLogRepeatedPollWarning
+} from './providerPollLogThrottle.js';
 
 const log = logger.child('providers/discovery-poller');
 
@@ -42,6 +46,7 @@ function broadcastDiscoveryPollHint(hint: ProviderDiscoveryPollHint): void {
 /** Clear poll-failure hint after a successful manual or background discovery. */
 export function publishDiscoveryPollCleared(providerId: string): void {
   recordDiscoveryPollSuccess(providerId);
+  recordPollSuccess(`discovery:${providerId}`);
   broadcastDiscoveryPollHint({ providerId });
 }
 
@@ -115,12 +120,15 @@ async function pollOnce(): Promise<void> {
             ? err.message
             : String(err);
         const failures = recordDiscoveryPollFailure(p.id, message);
+        const logKey = `discovery:${p.id}`;
         if (failures >= 3) {
-          log.warn('discovery poll failed repeatedly', {
-            providerId: p.id,
-            failures,
-            err: message
-          });
+          if (shouldLogRepeatedPollWarning(logKey, message)) {
+            log.warn('discovery poll failed repeatedly', {
+              providerId: p.id,
+              failures,
+              err: message
+            });
+          }
           const hint = getDiscoveryPollHint(p.id);
           if (hint) broadcastDiscoveryPollHint({ providerId: p.id, hint });
         } else {

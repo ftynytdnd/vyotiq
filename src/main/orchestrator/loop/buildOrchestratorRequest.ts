@@ -35,6 +35,7 @@ import type {
 import { toolSchemasFor } from '../../tools/registry.js';
 import { AGENT_TOOLS } from '../../tools/policy/index.js';
 import { supportsParallelToolCalls, supportsToolChoice } from '../../providers/capabilities.js';
+import { redactChatMessagesForProvider } from '../context/redactChatMessagesForProvider.js';
 
 /**
  * Synthesis instruction for the iteration-cap wrap-up turn. Tool calling
@@ -119,7 +120,8 @@ export function buildOrchestratorRequest(opts: {
   const tools =
     opts.wrapUp && !toolChoiceSafe ? [] : toolSchemasFor(AGENT_TOOLS);
 
-  const messages = opts.wrapUp ? appendWrapUpInstruction(opts.messages) : opts.messages;
+  const rawMessages = opts.wrapUp ? appendWrapUpInstruction(opts.messages) : opts.messages;
+  const messages = redactChatMessagesForProvider(rawMessages);
 
   return {
     providerId: opts.selection.providerId,

@@ -3,12 +3,20 @@
  */
 
 import { logger } from '../../logging/logger.js';
+import { tryRepairTruncatedToolArgsRecord } from './repairToolArgsJson.js';
 
 const log = logger.child('orchestrator/parseToolArgs');
 
 export interface ToolArgsParseResult {
   args: Record<string, unknown>;
   parseError?: string;
+  /** True when a truncated streaming buffer was repaired before parse. */
+  repaired?: boolean;
+}
+
+export interface ParseToolArgsOpts {
+  /** When false, suppresses warn logs for probe parses (default true). */
+  log?: boolean;
 }
 
 /**
@@ -33,18 +41,35 @@ export function tryParseArgumentsRecord(buf: string): Record<string, unknown> {
  * or a non-object shape so callers can short-circuit with a synthetic
  * failure instead of running tools with `{}`.
  */
-export function parseToolArgs(name: string, buf: string): ToolArgsParseResult {
+export function parseToolArgs(
+  name: string,
+  buf: string,
+  opts?: ParseToolArgsOpts
+): ToolArgsParseResult {
   if (!buf) return { args: {} };
+  const shouldLog = opts?.log !== false;
   let parsed: unknown;
   try {
     parsed = JSON.parse(buf);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    log.warn('tool arguments failed to JSON.parse', {
-      tool: name,
-      buf: buf.slice(0, 200),
-      err: detail
-    });
+    const repaired = tryRepairTruncatedToolArgsRecord(buf);
+    if (repaired) {
+      if (shouldLog) {
+        log.warn('tool arguments JSON repaired after truncation', {
+          tool: name,
+          buf: buf.slice(0, 200)
+        });
+      }
+      return { args: repaired, repaired: true };
+    }
+    if (shouldLog) {
+      log.warn('tool arguments failed to JSON.parse', {
+        tool: name,
+        buf: buf.slice(0, 200),
+        err: detail
+      });
+    }
     return {
       args: {},
       parseError:
@@ -54,11 +79,13 @@ export function parseToolArgs(name: string, buf: string): ToolArgsParseResult {
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     const shape = parsed === null ? 'null' : Array.isArray(parsed) ? 'array' : typeof parsed;
-    log.warn('tool arguments parsed to non-record', {
-      tool: name,
-      buf: buf.slice(0, 200),
-      shape
-    });
+    if (shouldLog) {
+      log.warn('tool arguments parsed to non-record', {
+        tool: name,
+        buf: buf.slice(0, 200),
+        shape
+      });
+    }
     return {
       args: {},
       parseError:

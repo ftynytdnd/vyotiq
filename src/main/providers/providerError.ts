@@ -279,3 +279,51 @@ const RATE_LIMIT_HINT_RE =
 export function looksRateLimited(msg: string): boolean {
   return RATE_LIMIT_HINT_RE.test(msg);
 }
+
+const PII_OR_MODERATION_HINT_RE =
+  /\b(pii|personally identifiable|moderation|guardrail|content.?policy|blocked|redact)/i;
+
+/** Mid-stream or HTTP errors that retrying the same payload cannot fix. */
+export function looksLikePiiOrModerationBlock(msg: string): boolean {
+  return PII_OR_MODERATION_HINT_RE.test(msg);
+}
+
+/** Enrich provider recovery copy when guardrails block the request. */
+export function formatPiiOrModerationHint(detail: string): string | null {
+  if (!looksLikePiiOrModerationBlock(detail)) return null;
+  return (
+    'OpenRouter guardrails flagged sensitive content in the request context ' +
+    '(often Windows user paths in tool output). Check OpenRouter dashboard guardrails, ' +
+    'start a fresh conversation, or switch providers/models.'
+  );
+}
+
+/** Extract a useful message from OpenAI-compat mid-stream `data: {"error":…}` frames. */
+export function extractOpenAiCompatStreamError(error: unknown): string {
+  if (error === undefined || error === null) {
+    return 'Unknown mid-stream error from provider.';
+  }
+  if (typeof error === 'string') return error;
+  if (typeof error !== 'object') return 'Unknown mid-stream error from provider.';
+  const o = error as Record<string, unknown>;
+  const parts: string[] = [];
+  if (typeof o.message === 'string' && o.message.trim()) parts.push(o.message.trim());
+  if (typeof o.type === 'string' && o.type.trim()) parts.push(`type=${o.type.trim()}`);
+  if (typeof o.code === 'string' && o.code.trim()) parts.push(`code=${o.code.trim()}`);
+  else if (typeof o.code === 'number') parts.push(`code=${o.code}`);
+  if (o.metadata !== undefined && o.metadata !== null && typeof o.metadata === 'object') {
+    const meta = o.metadata as Record<string, unknown>;
+    for (const key of ['message', 'reason', 'detail', 'raw', 'error'] as const) {
+      const v = meta[key];
+      if (typeof v === 'string' && v.trim()) {
+        const t = v.trim();
+        if (!parts.includes(t)) parts.push(t);
+      }
+    }
+  }
+  if (parts.length === 0) return 'Unknown mid-stream error from provider.';
+  if (parts[0] === 'Provider returned error' && parts.length > 1) {
+    return parts.slice(1).join(' — ');
+  }
+  return parts.join(' — ');
+}
