@@ -29,6 +29,16 @@ describe('resolveBashLongRunning', () => {
     expect(plan.command).toContain('11434');
   });
 
+  it('rewrites Start-Process -Wait server commands on Windows', () => {
+    if (process.platform !== 'win32') return;
+    const plan = resolveBashLongRunning(
+      'Start-Process -FilePath "ollama.exe" -ArgumentList "serve" -Wait'
+    );
+    expect(plan?.kind).toBe('rewrite');
+    if (plan?.kind !== 'rewrite') return;
+    expect(plan.command).not.toMatch(/-Wait\b/i);
+  });
+
   it('blocks npm run dev with actionable guidance', () => {
     const blocked = resolveBashLongRunning('npm run dev');
     expect(blocked?.kind).toBe('block');

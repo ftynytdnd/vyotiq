@@ -33,6 +33,8 @@ export type BashLongRunningResolution = BashLongRunningRewrite | BashLongRunning
 const OLLAMA_SERVE_RE = /\bollama(?:\.exe)?\s+serve\b/i;
 const OLLAMA_START_PROCESS_RE = /Start-Process\b[\s\S]*\bollama(?:\.exe)?\b[\s\S]*\bserve\b/i;
 const START_PROCESS_NO_NEW_WINDOW_RE = /Start-Process\b[\s\S]*-NoNewWindow\b/i;
+const START_PROCESS_WAIT_SERVER_RE =
+  /Start-Process\b[\s\S]*-Wait\b[\s\S]*\b(serve|listen)\b/i;
 const SERVER_ARG_RE = /\b(serve|listen)\b/i;
 
 /** Dev servers and foreground daemons we cannot safely auto-detach. */
@@ -144,6 +146,15 @@ export function resolveBashLongRunning(command: string): BashLongRunningResoluti
     return rewritePlan(
       `${body}; ${windowsDetachedProbeSuffix(ollama)}`,
       'Start-Process -NoNewWindow rewritten to detached startup'
+    );
+  }
+
+  if (process.platform === 'win32' && START_PROCESS_WAIT_SERVER_RE.test(trimmed)) {
+    const body = rewriteStartProcessNoNewWindow(trimmed);
+    const ollama = OLLAMA_START_PROCESS_RE.test(trimmed);
+    return rewritePlan(
+      `${body}; ${windowsDetachedProbeSuffix(ollama)}`,
+      'Start-Process -Wait server rewritten to detached startup'
     );
   }
 

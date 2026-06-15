@@ -40,7 +40,7 @@ import { buildBashEnv } from '../terminal/bashEnv.js';
 import { hasWorkspacePty, runAgentCommandInPty } from '../terminal/ptyManager.js';
 import { resolveBashLongRunning } from './bashLongRunning.js';
 import { BashOutputCapture } from './bashOutputCapture.js';
-import { PTY_CMD_END_PREFIX, PTY_CMD_START } from '@shared/terminal/ptyMarkers.js';
+import { PtyAgentLiveStdoutTracker } from '@shared/terminal/ptyAgentStream.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child('tools/bash');
@@ -877,21 +877,20 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
             startedAt: started
           })
         : null;
+    outputCapture?.flush();
 
     const useSharedPty =
       !forceIsolated && a.shared !== false && hasWorkspacePty(ctx.workspaceId);
     if (useSharedPty) {
-      let ptyLive = false;
+      const ptyLive = new PtyAgentLiveStdoutTracker();
       const ptyRun = await runAgentCommandInPty(
         ctx.workspaceId,
         shellCommand,
         timeoutMs,
         ctx.signal,
         (chunk) => {
-          if (!outputCapture) return;
-          if (chunk.includes(PTY_CMD_START)) ptyLive = true;
-          if (!ptyLive || chunk.includes(PTY_CMD_END_PREFIX)) return;
-          outputCapture.appendStdout(chunk);
+          const delta = ptyLive.feed(chunk);
+          if (delta) outputCapture?.appendStdout(delta);
         }
       );
       if (ptyRun) {
@@ -1071,6 +1070,7 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
       });
 
       child.on('error', (err) => {
+        outputCapture?.flush();
         outputCapture?.close();
         clearTimeout(killTimer);
         ctx.signal.removeEventListener('abort', onAbort);

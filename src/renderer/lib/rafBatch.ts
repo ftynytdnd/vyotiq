@@ -31,6 +31,8 @@
 export interface RafBatcher<T> {
   /** Queue an item for the next frame's flush. */
   push: (item: T) => void;
+  /** Drain any buffered items immediately (boundary events). */
+  flush: () => void;
   /** Cancel any pending flush and clear the buffer. */
   cancel: () => void;
   /** Number of items currently buffered (exposed for tests). */
@@ -77,7 +79,7 @@ function pickScheduler(): { schedule: RafFn; cancel: CancelFn } {
 }
 
 export function createRafBatcher<T>(
-  flush: (batch: T[]) => void
+  onFlush: (batch: T[]) => void
 ): RafBatcher<T> {
   const { schedule, cancel } = pickScheduler();
   let buffer: T[] = [];
@@ -98,7 +100,7 @@ export function createRafBatcher<T>(
     const batch = buffer;
     buffer = [];
     try {
-      flush(batch);
+      onFlush(batch);
     } finally {
       // If items were pushed during flush, schedule the next frame.
       if (buffer.length > 0 && !cancelled && pending === null) {
@@ -113,6 +115,22 @@ export function createRafBatcher<T>(
       buffer.push(item);
       if (pending === null) {
         pending = schedule(drain);
+      }
+    },
+    flush() {
+      if (pending !== null) {
+        cancel(pending);
+        pending = null;
+      }
+      if (buffer.length === 0) return;
+      const batch = buffer;
+      buffer = [];
+      try {
+        onFlush(batch);
+      } finally {
+        if (buffer.length > 0 && !cancelled && pending === null) {
+          pending = schedule(drain);
+        }
       }
     },
     cancel() {

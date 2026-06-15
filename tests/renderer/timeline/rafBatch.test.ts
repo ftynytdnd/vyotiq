@@ -60,6 +60,15 @@ describe('createRafBatcher', () => {
     expect(flushes.length).toBe(0);
   });
 
+  it('flush() drains buffered items immediately', () => {
+    const flushes: number[][] = [];
+    const b = createRafBatcher<number>((batch) => flushes.push(batch));
+    b.push(1);
+    b.push(2);
+    b.flush();
+    expect(flushes).toEqual([[1, 2]]);
+  });
+
   it('re-entrant pushes during flush schedule the next cycle', async () => {
     const flushes: number[][] = [];
     let didReentrantPush = false;

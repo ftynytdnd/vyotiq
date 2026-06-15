@@ -21,6 +21,7 @@ import type { ToolCall, ToolResult } from '@shared/types/tool.js';
 import { resolveShellToolTitle } from '@shared/shell/displayShell.js';
 import { getHostPlatform } from '../../../lib/hostPlatform.js';
 import type { DiffStreamSnapshot, LiveToolOutputSnapshot } from '../reducer/types.js';
+import { useLiveElapsedMs, formatLiveElapsedMs } from '../../../hooks/useLiveElapsedMs.js';
 import { InvocationShell } from './shared/InvocationShell.js';
 import { DetailPane } from './shared/DetailPane.js';
 import { CodeBlock } from './shared/CodeBlock.js';
@@ -47,11 +48,6 @@ interface BashInvocationProps {
   diffStream?: DiffStreamSnapshot;
   /** Live stdout/stderr while the command is still running. */
   liveOutput?: LiveToolOutputSnapshot;
-}
-
-function formatLiveElapsed(startedAt: number): string {
-  const s = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
 export function BashInvocation({
@@ -86,8 +82,13 @@ export function BashInvocation({
     liveOutput !== undefined &&
     (liveOutput.stdout.length > 0 || liveOutput.stderr.length > 0);
 
+  const showLiveWaiting = !data && liveOutput !== undefined && !showLiveOutput;
+  const liveElapsed = formatLiveElapsedMs(
+    useLiveElapsedMs(liveOutput?.startedAt, showLiveOutput || showLiveWaiting)
+  );
+
   const hasDetail = Boolean(
-    command || data || (result && !result.ok) || showDiffStream || showLiveOutput
+    command || data || (result && !result.ok) || showDiffStream || showLiveOutput || showLiveWaiting
   );
   const errorHint = toolErrorHint(result);
 
@@ -104,14 +105,19 @@ export function BashInvocation({
           label={diffStream.settled ? 'live write' : 'streaming write'}
         />
       )}
+      {showLiveWaiting && liveOutput && (
+        <DetailPane label={`running · ${liveElapsed}`}>
+          <div className="font-mono text-row text-text-muted">Waiting for output…</div>
+        </DetailPane>
+      )}
       {showLiveOutput && liveOutput && (
         <>
           {liveOutput.stdout.length > 0 && (
             <DetailPane
               label={
                 liveOutput.stdoutTruncated
-                  ? `stdout (live · ${formatLiveElapsed(liveOutput.startedAt)}, truncated)`
-                  : `stdout (live · ${formatLiveElapsed(liveOutput.startedAt)})`
+                  ? `stdout (live · ${liveElapsed}, truncated)`
+                  : `stdout (live · ${liveElapsed})`
               }
             >
               <CodeBlock body={liveOutput.stdout} />
@@ -121,8 +127,8 @@ export function BashInvocation({
             <DetailPane
               label={
                 liveOutput.stderrTruncated
-                  ? `stderr (live · ${formatLiveElapsed(liveOutput.startedAt)}, truncated)`
-                  : `stderr (live · ${formatLiveElapsed(liveOutput.startedAt)})`
+                  ? `stderr (live · ${liveElapsed}, truncated)`
+                  : `stderr (live · ${liveElapsed})`
               }
               tone="danger"
             >
@@ -168,7 +174,7 @@ export function BashInvocation({
   // user sees the hunks materialise without clicking. Surrenders
   // to manual override; collapses naturally once `showDiffStream`
   // flips false on settle.
-  const liveAutoExpand = showDiffStream || showLiveOutput;
+  const liveAutoExpand = showDiffStream || showLiveOutput || showLiveWaiting;
 
   return (
     <InvocationShell

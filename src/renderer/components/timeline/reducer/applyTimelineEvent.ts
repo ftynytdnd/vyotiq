@@ -171,6 +171,10 @@ export function applyTimelineEvent(
       // never lands to reconcile it).
       const nextPartial =
         Object.keys(state.partialToolCallArgs).length > 0 ? {} : state.partialToolCallArgs;
+      const nextLiveDiff =
+        Object.keys(state.liveDiffByCallId).length > 0 ? {} : state.liveDiffByCallId;
+      const nextLiveOutput =
+        Object.keys(state.liveToolOutputByCallId).length > 0 ? {} : state.liveToolOutputByCallId;
       return {
         ...state,
         events: state.events.filter(
@@ -184,6 +188,10 @@ export function applyTimelineEvent(
         reasoningTexts: restReasoning,
         ...(nextPartial !== state.partialToolCallArgs
           ? { partialToolCallArgs: nextPartial }
+          : {}),
+        ...(nextLiveDiff !== state.liveDiffByCallId ? { liveDiffByCallId: nextLiveDiff } : {}),
+        ...(nextLiveOutput !== state.liveToolOutputByCallId
+          ? { liveToolOutputByCallId: nextLiveOutput }
           : {})
       };
     }

@@ -113,7 +113,9 @@ export function TurnStickyFooter({
     });
     if (!live) return null;
     const body = live.stderr.length > 0 ? live.stderr : live.stdout;
-    return tailLine(body);
+    if (body.length > 0) return tailLine(body);
+    const cmd = live.command.trim();
+    return cmd.length > 0 ? `$ ${cmd.length > 72 ? `…${cmd.slice(-71)}` : cmd}` : null;
   }, [showLive, events, liveToolOutputByCallId, toolResultSettledIds]);
 
   const liveLabel = resolveStickyFooterLiveLabel({

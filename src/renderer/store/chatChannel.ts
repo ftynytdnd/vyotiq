@@ -671,6 +671,10 @@ export async function bootstrapChatChannel(): Promise<void> {
           toolOutputDeltaBatcher.push({ runId, event });
           return;
         }
+        if (event.kind === 'tool-result' || event.kind === 'tool-call') {
+          toolOutputDeltaBatcher.flush();
+          argsDeltaBatcher.flush();
+        }
         // Audit fix A3: RAF-coalesce streaming text + reasoning
         // deltas the same way args-deltas are coalesced. The
         // reducer's accumulation semantics (`text + event.delta`)
