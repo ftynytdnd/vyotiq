@@ -31,9 +31,21 @@ export interface EditorStatusBarProps {
   encoding: EditorEncoding;
   utf8Bom?: boolean;
   dirty: boolean;
+  lspStatus?: { connected: boolean; lastError?: string | null } | null;
+  lspEnabled?: boolean;
+  onLspClick?: () => void;
 }
 
-export function EditorStatusBar({ filePath, eol, encoding, utf8Bom, dirty }: EditorStatusBarProps) {
+export function EditorStatusBar({
+  filePath,
+  eol,
+  encoding,
+  utf8Bom,
+  dirty,
+  lspStatus,
+  lspEnabled,
+  onLspClick
+}: EditorStatusBarProps) {
   const line = useEditorCursorStore((s) => s.line);
   const col = useEditorCursorStore((s) => s.col);
   const selection = useEditorCursorStore((s) => s.selection);
@@ -45,6 +57,18 @@ export function EditorStatusBar({ filePath, eol, encoding, utf8Bom, dirty }: Edi
         {selection > 0 ? ` (${selection} sel)` : ''}
       </span>
       <span className="ml-auto flex items-center gap-3">
+        {lspEnabled ? (
+          <button
+            type="button"
+            className={cn(
+              'vx-caption hover:text-text-secondary',
+              lspStatus?.connected ? 'text-text-faint' : 'text-warning'
+            )}
+            onClick={onLspClick}
+          >
+            LSP · {lspStatus?.connected ? 'connected' : lspStatus?.lastError ? 'error' : 'off'}
+          </button>
+        ) : null}
         <span>{languageLabel(filePath)}</span>
         <span>{eolLabel(eol)}</span>
         <span>

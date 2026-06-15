@@ -79,6 +79,14 @@ export interface InlineCompletionExtensionOptions {
 
 const MIN_PREFIX_CHARS = 3;
 
+/** CodeMirror forbids `view.dispatch` while a ViewPlugin `update` is running. */
+function deferDispatch(view: EditorView, spec: Parameters<EditorView['dispatch']>[0]): void {
+  queueMicrotask(() => {
+    if (!view.dom.isConnected) return;
+    view.dispatch(spec);
+  });
+}
+
 function inlineCompletionKeymap(): Extension {
   return keymap.of([
     {
@@ -133,7 +141,7 @@ export function inlineCompletionExtension(
         if (!this.enabled) {
           this.clearTimer();
           if (update.view.state.field(ghostStateField).text) {
-            update.view.dispatch({ effects: setGhostText.of(null) });
+            deferDispatch(update.view, { effects: setGhostText.of(null) });
           }
           return;
         }
@@ -161,7 +169,7 @@ export function inlineCompletionExtension(
 
       private schedule(view: EditorView): void {
         this.clearTimer();
-        view.dispatch({ effects: setGhostText.of(null) });
+        deferDispatch(view, { effects: setGhostText.of(null) });
         if (!this.enabled) return;
         this.timer = setTimeout(() => {
           this.timer = null;
@@ -179,6 +187,7 @@ export function inlineCompletionExtension(
         const text = await this.fetchCompletion({ prefix, suffix });
         if (seq !== this.seq || !text) return;
         if (view.state.selection.main.head !== pos) return;
+        if (!view.dom.isConnected) return;
         view.dispatch({ effects: setGhostText.of(text) });
       }
 

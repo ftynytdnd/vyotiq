@@ -16,6 +16,7 @@ import type { WorkspaceEntry, WorkspaceInfo } from '@shared/types/ipc.js';
 import { vyotiq } from '../lib/ipc.js';
 import { logger } from '../lib/logger.js';
 import { invalidateWorkspaceTreeCache } from '../lib/workspaceTreeCache.js';
+import { disposeLspClient } from '../lib/lspWorkspaceClient.js';
 import { useToastStore } from './useToastStore.js';
 import { useUiStore } from './useUiStore.js';
 // `useConversationsStore` and `useSettingsStore` were previously
@@ -29,6 +30,8 @@ import { useUiStore } from './useUiStore.js';
 // time, not at module init), and matches every other use site.
 import { useConversationsStore } from './useConversationsStore.js';
 import { useSettingsStore } from './useSettingsStore.js';
+import { cancelFileTreeExpandedPersist } from '../hooks/useFileTreeExpanded.js';
+import { cancelEditorTabsPersist } from '../lib/editorTabsPersistence.js';
 
 const log = logger.child('workspace-store');
 
@@ -165,6 +168,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((setState, getState) => 
     }
     const info = infoFromEntry(target);
     maybeInvalidate(prev.info, info);
+    if (prev.activeId) disposeLspClient(prev.activeId);
     setState({ activeId: id, info });
     try {
       const next = await vyotiq.workspace.setActive(id);
@@ -222,6 +226,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((setState, getState) => 
         info
       });
       useUiStore.getState().clearWorkspaceCollapsed(id);
+      cancelFileTreeExpandedPersist(id);
+      cancelEditorTabsPersist(id);
       await useConversationsStore.getState().reconcileWithMain();
       // Cascade: strip the removed workspace from every per-workspace
       // UI map (`activeConversationByWorkspace`, `lastModelByWorkspace`,

@@ -39,6 +39,8 @@ const api: VyotiqApi = {
   workspace: {
     pickDirectory: () => ipcRenderer.invoke(IPC.WORKSPACE_PICK_DIRECTORY),
     listTree: (opts) => ipcRenderer.invoke(IPC.WORKSPACE_LIST_TREE, opts),
+    listChildren: (input) => ipcRenderer.invoke(IPC.WORKSPACE_LIST_CHILDREN, input),
+    gitStatus: (opts) => ipcRenderer.invoke(IPC.WORKSPACE_GIT_STATUS, opts),
     list: () => ipcRenderer.invoke(IPC.WORKSPACES_LIST),
     add: (path?: string) => ipcRenderer.invoke(IPC.WORKSPACES_ADD, path),
     setActive: (id: string) => ipcRenderer.invoke(IPC.WORKSPACES_SET_ACTIVE, id),
@@ -46,7 +48,16 @@ const api: VyotiqApi = {
     remove: (id: string, opts: { deleteConversations: boolean }) =>
       ipcRenderer.invoke(IPC.WORKSPACES_REMOVE, id, opts),
     retryReachability: (id: string) =>
-      ipcRenderer.invoke(IPC.WORKSPACES_RETRY_REACHABILITY, id)
+      ipcRenderer.invoke(IPC.WORKSPACES_RETRY_REACHABILITY, id),
+    mkdir: (input) => ipcRenderer.invoke(IPC.WORKSPACE_MKDIR, input),
+    renamePath: (input) => ipcRenderer.invoke(IPC.WORKSPACE_RENAME_PATH, input),
+    deletePath: (input) => ipcRenderer.invoke(IPC.WORKSPACE_DELETE_PATH, input),
+    revealPath: (input) => ipcRenderer.invoke(IPC.WORKSPACE_REVEAL_PATH, input),
+    onTreeChanged: (cb) =>
+      on<[import('@shared/types/ipc.js').WorkspaceTreeChangedPayload]>(
+        IPC.WORKSPACE_TREE_CHANGED,
+        (payload) => cb(payload)
+      )
   },
 
   tokens: {

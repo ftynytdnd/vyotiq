@@ -38,6 +38,8 @@ export interface CodeEditorProps {
   value: string;
   filePath: string;
   readOnly?: boolean;
+  /** When false the view stays mounted but does not receive focus-oriented updates. */
+  active?: boolean;
   className?: string;
   onChange?: (value: string) => void;
   onSave?: () => void;
@@ -104,6 +106,7 @@ export function CodeEditor({
   value,
   filePath,
   readOnly = false,
+  active = true,
   className,
   onChange,
   onSave,
@@ -224,10 +227,19 @@ export function CodeEditor({
 
   useEffect(() => {
     const view = viewRef.current;
-    if (!view) return;
+    if (!view || !active) return;
     const reveal = useEditorStore.getState().consumeReveal(filePath);
     if (reveal) scrollToReveal(view, reveal.line, reveal.character);
-  }, [filePath, lspBridge]);
+    const sel = view.state.selection.main;
+    const lineInfo = view.state.doc.lineAt(sel.head);
+    onCursorRef.current?.(
+      lineInfo.number,
+      sel.head - lineInfo.from + 1,
+      Math.abs(sel.to - sel.from)
+    );
+    // Remeasure after tab switch — hidden/invisible panes can report wrong layout.
+    requestAnimationFrame(() => view.requestMeasure());
+  }, [filePath, lspBridge, active]);
 
   return (
     <div

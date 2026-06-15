@@ -4517,6 +4517,26 @@ button.vx-mention-highlight--open:focus-visible {
   line-height: 1.2;
 }
 
+.vx-dock-file-tree-filter__input::-webkit-search-decoration,
+.vx-dock-file-tree-filter__input::-webkit-search-cancel-button,
+.vx-dock-file-tree-filter__input::-webkit-search-results-button,
+.vx-dock-file-tree-filter__input::-webkit-search-results-decoration {
+  display: none;
+}
+
+.vx-dock-file-tree {
+  contain: content;
+}
+
+.vx-dock-file-tree-row:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-accent) 45%, transparent);
+}
+
+.vx-dock-file-tree-row-active {
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
 /* ComposerDialog — mini FloatingPanel anchored above the chat
    composer. No backdrop, no full-width banner: the dialog floats with
    shadow only and inherits the composer column's width via its mount

@@ -10,3 +10,13 @@ export const WORKSPACE_TREE_IGNORE = [
   '**/out/**',
   '**/.next/**'
 ] as const;
+
+/** Single-segment names skipped by lazy `list-children` reads. */
+export const WORKSPACE_TREE_IGNORED_NAMES = new Set([
+  'node_modules',
+  '.git',
+  'dist',
+  'out',
+  '.next',
+  '.vyotiq'
+]);

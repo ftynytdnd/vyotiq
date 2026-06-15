@@ -17,6 +17,7 @@ import {
 } from './workbenchShared.js';
 import { WorkbenchTabBar } from './WorkbenchTabBar.js';
 import { WorkbenchToolbar } from './WorkbenchToolbar.js';
+import { EditorUnsavedCloseDialog } from './EditorUnsavedCloseDialog.js';
 
 function CompanionCanvas({ tab }: { tab: CompanionTab }) {
   const editorTabs = useEditorStore((s) => s.tabs);
@@ -56,6 +57,7 @@ export function CompanionDeck() {
       <div className={WORKBENCH_BODY_CLASS}>
         <CompanionCanvas tab={tab} />
       </div>
+      <EditorUnsavedCloseDialog />
     </section>
   );
 }

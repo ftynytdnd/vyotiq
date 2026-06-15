@@ -20,7 +20,7 @@ import { logger, installCrashHandlers } from './logging/logger.js';
 import { assertHarnessBoot, warmHarnessOverrides } from './harness/harnessLoader.js';
 import { flushAll as flushConversations } from './conversations/conversationStore.js';
 import { flushAll as flushCheckpoints } from './checkpoints/index.js';
-import { flushWorkspaceState } from './workspace/workspaceState.js';
+import { flushWorkspaceState, teardownWorkspaceTreeWatcher } from './workspace/workspaceState.js';
 import { abortRun, listActiveRuns } from './orchestrator/AgentV.js';
 import { getSettings } from './settings/settingsStore.js';
 import { sweepOrphanAttachments } from './attachments/gc.js';
@@ -178,6 +178,7 @@ app.on('before-quit', (event) => {
     Promise.resolve().then(() => teardownTerminalIpc()),
     Promise.resolve().then(() => teardownBrowserIpc()),
     Promise.resolve().then(() => teardownCompletionIpc()),
+    Promise.resolve().then(() => teardownWorkspaceTreeWatcher()),
     Promise.resolve().then(() => teardownAutoUpdaterService())
   ])
     .catch((err) => log.error('shutdown flush failed', { err }))

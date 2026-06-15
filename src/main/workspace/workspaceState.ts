@@ -38,6 +38,10 @@ import type {
 } from '@shared/types/ipc.js';
 import { readBlob, updateBlob } from '../settings/blob.js';
 import { logger } from '../logging/logger.js';
+import {
+  disposeWorkspaceTreeWatcher,
+  watchActiveWorkspace
+} from './workspaceTreeWatcher.js';
 
 const log = logger.child('workspace');
 
@@ -49,6 +53,20 @@ interface State {
 let cached: State = { workspaces: [], activeId: null };
 let loaded = false;
 let loadPromise: Promise<void> | null = null;
+
+/** Start or stop the filesystem watcher for the active workspace. */
+function syncActiveWorkspaceWatcher(): void {
+  const entry = cached.activeId ? findEntry(cached.activeId) : undefined;
+  if (!entry || unreachable.has(entry.id)) {
+    disposeWorkspaceTreeWatcher();
+    return;
+  }
+  watchActiveWorkspace(entry.id, entry.path);
+}
+
+export function teardownWorkspaceTreeWatcher(): void {
+  disposeWorkspaceTreeWatcher();
+}
 
 /**
  * Set of workspace ids whose path could not be statted on the most
@@ -131,6 +149,7 @@ async function loadOnce(): Promise<void> {
         activeWorkspaceId: activeId ?? undefined
       }));
     }
+    syncActiveWorkspaceWatcher();
   })();
   return loadPromise;
 }
@@ -305,6 +324,7 @@ export async function addWorkspace(path: string): Promise<WorkspaceEntry> {
     cached.activeId = candidateActive;
     unreachable.delete(existing.id);
     log.info('reactivated existing workspace by path', { id: existing.id, path });
+    syncActiveWorkspaceWatcher();
     return { ...existing };
   }
   const entry: WorkspaceEntry = {
@@ -319,6 +339,7 @@ export async function addWorkspace(path: string): Promise<WorkspaceEntry> {
   cached.activeId = entry.id;
   unreachable.delete(entry.id);
   log.info('workspace added', { id: entry.id, path });
+  syncActiveWorkspaceWatcher();
   return { ...entry };
 }
 
@@ -331,6 +352,7 @@ export async function setActiveWorkspace(id: string): Promise<WorkspacesState> {
   await persistCandidate(cached.workspaces, id);
   cached.activeId = id;
   log.info('active workspace switched', { id });
+  syncActiveWorkspaceWatcher();
   return listWorkspaces();
 }
 
@@ -361,6 +383,7 @@ export async function removeWorkspace(id: string): Promise<WorkspacesState> {
   cached.activeId = candidateActive;
   unreachable.delete(id);
   log.info('workspace removed', { id });
+  syncActiveWorkspaceWatcher();
   return listWorkspaces();
 }
 

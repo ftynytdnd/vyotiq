@@ -16,6 +16,37 @@ import {
 import { pushRecentEditorFile } from '../lib/recentEditorFiles.js';
 import { useAttachmentPreviewStore } from './useAttachmentPreviewStore.js';
 import { useToastStore } from './useToastStore.js';
+import { useEditorCursorStore } from './useEditorCursorStore.js';
+import { revealFileInDockTree } from '../lib/revealFileInDockTree.js';
+import { schedulePersistEditorTabs } from '../lib/editorTabsPersistence.js';
+
+export const MAX_EDITOR_TABS = 20;
+
+/** Debounced autosave delay after the last edit keystroke. */
+export const EDITOR_AUTOSAVE_DEBOUNCE_MS = 1500;
+
+const autoSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function cancelAutoSave(filePath: string): void {
+  const id = normalizePath(filePath);
+  const timer = autoSaveTimers.get(id);
+  if (timer !== undefined) {
+    clearTimeout(timer);
+    autoSaveTimers.delete(id);
+  }
+}
+
+function scheduleAutoSave(filePath: string, runSave: () => Promise<boolean>): void {
+  cancelAutoSave(filePath);
+  const id = normalizePath(filePath);
+  autoSaveTimers.set(
+    id,
+    setTimeout(() => {
+      autoSaveTimers.delete(id);
+      void runSave();
+    }, EDITOR_AUTOSAVE_DEBOUNCE_MS)
+  );
+}
 
 export interface EditorOpenOpts {
   workspaceId?: string;
@@ -39,6 +70,9 @@ export interface EditorTab {
   eol: EditorEol;
   /** On-disk text encoding. */
   encoding: EditorEncoding;
+  utf8Bom: boolean;
+  /** Agent is streaming edits into this buffer — editor read-only until settled. */
+  agentStreaming?: boolean;
 }
 
 interface EditorStore {
@@ -63,12 +97,23 @@ interface EditorStore {
   openPanel: () => void;
   close: () => void;
   closeTab: (filePath: string) => void;
+  /** Close tab or queue unsaved prompt. Returns false when prompt is shown. */
+  requestCloseTab: (filePath: string) => boolean;
+  forceCloseTab: (filePath: string) => void;
+  remapTabPath: (from: string, to: string) => void;
+  pendingUnsavedClose: string | null;
+  completeUnsavedClose: (action: 'save' | 'discard') => Promise<void>;
+  cancelUnsavedClose: () => void;
+  isTabDirty: (filePath: string) => boolean;
   setActiveTab: (filePath: string) => void;
   setContent: (content: string) => void;
   reloadFromDisk: () => Promise<void>;
+  /** Re-read one tab from disk or mark stale when the buffer has unsaved edits. */
+  refreshTabFromDisk: (filePath: string, opts?: { force?: boolean }) => Promise<void>;
   save: () => Promise<boolean>;
   markStaleOnDisk: (filePath?: string) => void;
   applyExternalContent: (filePath: string, content: string, mtimeMs?: number) => void;
+  setAgentStreaming: (filePath: string, streaming: boolean) => void;
   /** Scroll active editor to LSP go-to-definition target after tab switch. */
   requestReveal: (filePath: string, line: number, character: number) => void;
   consumeReveal: (filePath: string) => { line: number; character: number } | null;
@@ -86,6 +131,8 @@ function emptyTabFields(): Pick<
   | 'error'
   | 'eol'
   | 'encoding'
+  | 'utf8Bom'
+  | 'agentStreaming'
 > {
   return {
     content: '',
@@ -97,8 +144,21 @@ function emptyTabFields(): Pick<
     staleOnDisk: false,
     error: null,
     eol: 'lf',
-    encoding: 'utf-8'
+    encoding: 'utf-8',
+    utf8Bom: false,
+    agentStreaming: false
   };
+}
+
+function persistTabsForWorkspace(workspaceId: string | null, tabs: EditorTab[], activeFilePath: string | null): void {
+  if (!workspaceId) return;
+  schedulePersistEditorTabs(
+    workspaceId,
+    tabs.map((t) => ({
+      filePath: t.filePath,
+      active: activeFilePath != null && normalizePath(t.filePath) === normalizePath(activeFilePath)
+    }))
+  );
 }
 
 function mirrorActiveTab(state: EditorStore): EditorStore {
@@ -132,6 +192,30 @@ function updateTab(
 
 const pendingReveal = new Map<string, { line: number; character: number }>();
 
+function performCloseTab(filePath: string, state: EditorStore): EditorStore {
+  cancelAutoSave(filePath);
+  const id = normalizePath(filePath);
+  const closedTab = state.tabs.find((t) => normalizePath(t.filePath) === id);
+  const tabs = state.tabs.filter((t) => normalizePath(t.filePath) !== id);
+  let activeFilePath = state.activeFilePath;
+  if (activeFilePath && normalizePath(activeFilePath) === id) {
+    activeFilePath = tabs.length > 0 ? tabs[tabs.length - 1]!.filePath : null;
+  }
+  const next = mirrorActiveTab({
+    ...state,
+    tabs,
+    activeFilePath,
+    open: tabs.length > 0,
+    pendingUnsavedClose: null
+  });
+  if (tabs.length === 0) syncWorkbenchTabAfterClose();
+  if (closedTab?.workspaceId) {
+    const wsTabs = next.tabs.filter((t) => t.workspaceId === closedTab.workspaceId);
+    persistTabsForWorkspace(closedTab.workspaceId, wsTabs, next.activeFilePath);
+  }
+  return next;
+}
+
 export const useEditorStore = create<EditorStore>((set, get) => ({
   open: false,
   tabs: [],
@@ -146,6 +230,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   saving: false,
   staleOnDisk: false,
   error: null,
+  pendingUnsavedClose: null,
+
+  isTabDirty: (filePath) => {
+    const tab = get().tabs.find((t) => normalizePath(t.filePath) === normalizePath(filePath));
+    return tab != null && tab.content !== tab.savedContent;
+  },
 
   openPanel: () => {
     closeSettingsForCompanionOpen();
@@ -164,8 +254,18 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const id = normalizePath(filePath);
     const existing = get().tabs.find((t) => normalizePath(t.filePath) === id);
     if (existing) {
-      set(mirrorActiveTab({ ...get(), open: true, activeFilePath: existing.filePath }));
-      if (existing.workspaceId) pushRecentEditorFile(existing.workspaceId, existing.filePath);
+      const next = mirrorActiveTab({ ...get(), open: true, activeFilePath: existing.filePath });
+      set(next);
+      if (existing.workspaceId) {
+        persistTabsForWorkspace(existing.workspaceId, next.tabs, next.activeFilePath);
+        pushRecentEditorFile(existing.workspaceId, existing.filePath);
+      }
+      revealFileInDockTree(existing.filePath);
+      return;
+    }
+
+    if (get().tabs.length >= MAX_EDITOR_TABS) {
+      useToastStore.getState().show(`Maximum ${MAX_EDITOR_TABS} editor tabs open.`, 'danger');
       return;
     }
 
@@ -186,7 +286,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           activeFilePath: filePath
         })
       );
-      if (tab.workspaceId) pushRecentEditorFile(tab.workspaceId, filePath);
+      if (tab.workspaceId) {
+        persistTabsForWorkspace(tab.workspaceId, get().tabs, filePath);
+        pushRecentEditorFile(tab.workspaceId, filePath);
+      }
       return;
     }
 
@@ -210,8 +313,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         path: filePath,
         ...(opts.workspaceId ? { workspaceId: opts.workspaceId } : {})
       });
-      set((state) =>
-        mirrorActiveTab({
+      set((state) => {
+        const mirrored = mirrorActiveTab({
           ...state,
           tabs: updateTab(state.tabs, filePath, {
             content: result.content,
@@ -220,11 +323,17 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
             truncated: result.truncated,
             loading: false,
             eol: result.eol,
-            encoding: result.encoding
+            encoding: result.encoding,
+            utf8Bom: result.utf8Bom
           })
-        })
-      );
+        });
+        if (opts.workspaceId) {
+          persistTabsForWorkspace(opts.workspaceId, mirrored.tabs, mirrored.activeFilePath);
+        }
+        return mirrored;
+      });
       if (opts.workspaceId) pushRecentEditorFile(opts.workspaceId, filePath);
+      revealFileInDockTree(filePath);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       useToastStore.getState().show(`Could not open ${basenameFromPath(filePath)}: ${msg}`, 'danger');
@@ -255,35 +364,79 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       loading: false,
       saving: false,
       staleOnDisk: false,
-      error: null
+      error: null,
+      pendingUnsavedClose: null
     });
     syncWorkbenchTabAfterClose();
   },
 
   closeTab: (filePath) => {
-    const id = normalizePath(filePath);
-    set((state) => {
-      const tabs = state.tabs.filter((t) => normalizePath(t.filePath) !== id);
-      let activeFilePath = state.activeFilePath;
-      if (activeFilePath && normalizePath(activeFilePath) === id) {
-        activeFilePath = tabs.length > 0 ? tabs[tabs.length - 1]!.filePath : null;
-      }
-      const next = mirrorActiveTab({
-        ...state,
-        tabs,
-        activeFilePath,
-        open: tabs.length > 0
-      });
-      if (tabs.length === 0) syncWorkbenchTabAfterClose();
-      return next;
-    });
+    get().requestCloseTab(filePath);
   },
+
+  requestCloseTab: (filePath) => {
+    if (get().isTabDirty(filePath)) {
+      set({ pendingUnsavedClose: filePath });
+      return false;
+    }
+    set((state) => performCloseTab(filePath, state));
+    return true;
+  },
+
+  forceCloseTab: (filePath) => {
+    set((state) => performCloseTab(filePath, state));
+  },
+
+  remapTabPath: (from, to) => {
+    const fromId = normalizePath(from);
+    const toId = normalizePath(to);
+    set((state) => {
+      const tabs = state.tabs.map((t) =>
+        normalizePath(t.filePath) === fromId ? { ...t, filePath: to } : t
+      );
+      let activeFilePath = state.activeFilePath;
+      if (activeFilePath && normalizePath(activeFilePath) === fromId) {
+        activeFilePath = to;
+      }
+      return mirrorActiveTab({ ...state, tabs, activeFilePath });
+    });
+    const reveal = pendingReveal.get(fromId);
+    if (reveal) {
+      pendingReveal.delete(fromId);
+      pendingReveal.set(toId, reveal);
+    }
+  },
+
+  completeUnsavedClose: async (action) => {
+    const path = get().pendingUnsavedClose;
+    if (!path) return;
+    if (action === 'save') {
+      const prevActive = get().activeFilePath;
+      if (normalizePath(get().activeFilePath ?? '') !== normalizePath(path)) {
+        get().setActiveTab(path);
+      }
+      const ok = await get().save();
+      if (!ok) return;
+      if (prevActive && normalizePath(prevActive) !== normalizePath(path)) {
+        get().setActiveTab(prevActive);
+      }
+    }
+    set((state) => performCloseTab(path, state));
+  },
+
+  cancelUnsavedClose: () => set({ pendingUnsavedClose: null }),
 
   setActiveTab: (filePath) => {
     const id = normalizePath(filePath);
     if (!get().tabs.some((t) => normalizePath(t.filePath) === id)) return;
     focusWorkbenchTab('editor');
-    set(mirrorActiveTab({ ...get(), activeFilePath: filePath }));
+    const next = mirrorActiveTab({ ...get(), activeFilePath: filePath });
+    set(next);
+    const tab = next.tabs.find((t) => normalizePath(t.filePath) === id);
+    if (tab?.workspaceId) {
+      persistTabsForWorkspace(tab.workspaceId, next.tabs, next.activeFilePath);
+    }
+    useEditorCursorStore.getState().reset();
   },
 
   setContent: (content) => {
@@ -292,14 +445,30 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set((state) =>
       mirrorActiveTab({
         ...state,
-        tabs: updateTab(state.tabs, activeFilePath, { content, staleOnDisk: false })
+        tabs: updateTab(state.tabs, activeFilePath, { content })
       })
     );
+    scheduleAutoSave(activeFilePath, async () => {
+      const tab = get().tabs.find(
+        (t) => normalizePath(t.filePath) === normalizePath(activeFilePath)
+      );
+      if (!tab || tab.content === tab.savedContent || tab.saving || tab.staleOnDisk) {
+        return false;
+      }
+      if (
+        get().activeFilePath &&
+        normalizePath(get().activeFilePath!) !== normalizePath(activeFilePath)
+      ) {
+        return false;
+      }
+      return get().save();
+    });
   },
 
   reloadFromDisk: async () => {
-    const { activeFilePath, workspaceId } = get();
+    const { activeFilePath } = get();
     if (!activeFilePath) return;
+    cancelAutoSave(activeFilePath);
     set((state) =>
       mirrorActiveTab({
         ...state,
@@ -307,40 +476,70 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       })
     );
     try {
+      await get().refreshTabFromDisk(activeFilePath);
+    } finally {
+      set((state) =>
+        mirrorActiveTab({
+          ...state,
+          tabs: updateTab(state.tabs, activeFilePath, { loading: false })
+        })
+      );
+    }
+  },
+
+  refreshTabFromDisk: async (filePath, opts) => {
+    const tab = get().tabs.find((t) => normalizePath(t.filePath) === normalizePath(filePath));
+    if (!tab) return;
+    const force = opts?.force === true;
+    if (!force && tab.content !== tab.savedContent) {
+      set((state) =>
+        mirrorActiveTab({
+          ...state,
+          tabs: updateTab(state.tabs, filePath, { staleOnDisk: true })
+        })
+      );
+      return;
+    }
+    try {
       const result = await vyotiq.editor.read({
-        path: activeFilePath,
-        ...(workspaceId ? { workspaceId } : {})
+        path: filePath,
+        ...(tab.workspaceId ? { workspaceId: tab.workspaceId } : {})
       });
       set((state) =>
         mirrorActiveTab({
           ...state,
-          tabs: updateTab(state.tabs, activeFilePath, {
+          tabs: updateTab(state.tabs, filePath, {
             content: result.content,
             savedContent: result.content,
             mtimeMs: result.mtimeMs,
             truncated: result.truncated,
-            loading: false,
             staleOnDisk: false,
+            agentStreaming: false,
+            error: null,
             eol: result.eol,
-            encoding: result.encoding
+            encoding: result.encoding,
+            utf8Bom: result.utf8Bom
           })
         })
       );
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+    } catch {
       set((state) =>
         mirrorActiveTab({
           ...state,
-          tabs: updateTab(state.tabs, activeFilePath, { loading: false, error: msg })
+          tabs: updateTab(state.tabs, filePath, { staleOnDisk: true })
         })
       );
-      useToastStore.getState().show(msg, 'danger');
     }
   },
 
   save: async () => {
     const { activeFilePath, workspaceId, content, mtimeMs, saving } = get();
     if (!activeFilePath || saving) return false;
+    const tab = get().tabs.find(
+      (t) => normalizePath(t.filePath) === normalizePath(activeFilePath)
+    );
+    if (!tab || tab.content === tab.savedContent) return true;
+    cancelAutoSave(activeFilePath);
     set((state) =>
       mirrorActiveTab({
         ...state,
@@ -395,19 +594,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   markStaleOnDisk: (filePath) => {
     const target = filePath ?? get().activeFilePath;
     if (!target) return;
-    const tab = get().tabs.find((t) => normalizePath(t.filePath) === normalizePath(target));
-    if (!tab) return;
-    const dirty = tab.content !== tab.savedContent;
-    if (dirty) {
-      set((state) =>
-        mirrorActiveTab({
-          ...state,
-          tabs: updateTab(state.tabs, target, { staleOnDisk: true })
-        })
-      );
-    } else {
-      void get().reloadFromDisk();
-    }
+    void get().refreshTabFromDisk(target);
   },
 
   applyExternalContent: (filePath, content, mtimeMs) => {
@@ -428,10 +615,19 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         ...state,
         tabs: updateTab(state.tabs, filePath, {
           content,
-          savedContent: content,
           ...(mtimeMs !== undefined ? { mtimeMs } : {}),
-          staleOnDisk: false
+          staleOnDisk: false,
+          agentStreaming: true
         })
+      })
+    );
+  },
+
+  setAgentStreaming: (filePath, streaming) => {
+    set((state) =>
+      mirrorActiveTab({
+        ...state,
+        tabs: updateTab(state.tabs, filePath, { agentStreaming: streaming })
       })
     );
   },

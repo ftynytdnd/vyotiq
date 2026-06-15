@@ -93,6 +93,7 @@ export const ContextBreakdownPopover = memo(function ContextBreakdownPopover({
       align="end"
       collisionPadding={{ top: 8, bottom: 8, left: 8, right: 8 }}
       fitMaxWidth={352}
+      widthMode="panel"
       className="vx-context-breakdown-popover"
     >
       <div

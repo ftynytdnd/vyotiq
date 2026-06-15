@@ -2,7 +2,7 @@
  * Card-body diff — syntax-highlighted snippets without unified-diff chrome.
  */
 
-import { useId, useMemo } from 'react';
+import { memo, useId, useMemo } from 'react';
 import type { DiffHunk } from '@shared/types/tool.js';
 import { languageFromPath } from '@shared/text/languageFromPath.js';
 import { cn } from '../../lib/cn.js';
@@ -25,7 +25,7 @@ export interface SnippetDiffBodyProps {
   maxHeightClass?: string;
 }
 
-export function SnippetDiffBody({
+export const SnippetDiffBody = memo(function SnippetDiffBody({
   hunks,
   variant,
   filePath,
@@ -114,4 +114,4 @@ export function SnippetDiffBody({
       )}
     </div>
   );
-}
+});

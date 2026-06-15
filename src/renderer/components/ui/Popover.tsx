@@ -30,6 +30,11 @@ interface PopoverProps {
   anchorStrict?: boolean;
   /** Cap panel width (px) when fitting to the chat column. */
   fitMaxWidth?: number;
+  /**
+   * `content` — shrink-wrap menu labels (`align` start/end).
+   * `panel` — stretch to `maxWidth` (`align` fit / wide panels).
+   */
+  widthMode?: 'content' | 'panel';
   className?: string;
   children: React.ReactNode;
 }
@@ -72,9 +77,11 @@ export function Popover({
   zIndex = 60,
   anchorStrict = false,
   fitMaxWidth = 640,
+  widthMode,
   className,
   children
 }: PopoverProps) {
+  const resolvedWidthMode = widthMode ?? (align === 'fit' ? 'panel' : 'content');
   const popoverRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<PopoverPosition | null>(null);
 
@@ -177,6 +184,7 @@ export function Popover({
   if (!open) return null;
 
   const ready = pos !== null;
+  const panelWidth = resolvedWidthMode === 'panel' ? pos?.maxWidth : undefined;
   return createPortal(
     <div
       ref={popoverRef}
@@ -185,16 +193,17 @@ export function Popover({
         position: 'fixed',
         top: pos?.top ?? 0,
         left: pos?.left ?? 0,
-        width: pos?.maxWidth,
+        width: panelWidth,
         maxWidth: pos?.maxWidth,
         maxHeight: pos?.maxHeight,
+        overflowY: pos?.maxHeight ? 'auto' : undefined,
         visibility: ready ? 'visible' : 'hidden',
         zIndex,
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0
       }}
-      className={cn('app-no-drag', className)}
+      className={cn('app-no-drag', resolvedWidthMode === 'content' && 'w-max', className)}
     >
       {children}
     </div>,

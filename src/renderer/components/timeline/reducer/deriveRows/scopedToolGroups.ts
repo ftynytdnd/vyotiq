@@ -2,7 +2,7 @@
  * Shared tool-group / file-edit-group folding for the timeline deriver.
  */
 
-import type { ToolCall, ToolName, ToolResult } from '@shared/types/tool.js';
+import type { DiffHunk, ToolCall, ToolName, ToolResult } from '@shared/types/tool.js';
 import type { FileEditGroupChild, Row } from '../deriveRows.js';
 import { editChildPath } from './groupTools.js';
 
@@ -115,6 +115,7 @@ export interface FileEditFoldInput {
   additions: number;
   deletions: number;
   entryId?: string;
+  hunks?: DiffHunk[];
 }
 
 export function foldScopedFileEdit(
@@ -147,7 +148,8 @@ function appendFileEditChild(out: Row[], groupIdx: number, edit: FileEditFoldInp
     filePath: edit.filePath,
     additions: edit.additions,
     deletions: edit.deletions,
-    ...(edit.entryId ? { entryId: edit.entryId } : {})
+    ...(edit.entryId ? { entryId: edit.entryId } : {}),
+    ...(edit.hunks ? { hunks: edit.hunks } : {})
   };
   out[groupIdx] = { ...row, children: [...row.children, child] };
 }

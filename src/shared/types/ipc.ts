@@ -317,6 +317,21 @@ export interface AppSettings {
 
     recentEditorFilesByWorkspace?: Record<string, string[]>;
 
+    /** Per-workspace expanded folder paths in the dock file tree. */
+
+    fileTreeExpandedByWorkspace?: Record<string, string[]>;
+
+    /** Per-workspace collapsed state for the dock open-editors section. */
+
+    openEditorsCollapsedByWorkspace?: Record<string, boolean>;
+
+    /** Per-workspace open editor tabs restored on workspace activate. */
+
+    editorTabsByWorkspace?: Record<
+      string,
+      Array<{ filePath: string; active?: boolean }>
+    >;
+
     /** When true, Settings opens on Appearance on next launch only. */
 
     firstLaunch?: boolean;
@@ -745,6 +760,53 @@ export interface WorkspaceTreeResult {
 
 }
 
+export interface WorkspaceListChildrenInput {
+  workspaceId?: string;
+  /** Workspace-relative directory; empty string for workspace root. */
+  relativeDir: string;
+  includeDotfiles?: boolean;
+}
+
+export interface WorkspaceListChildrenResult {
+  entries: string[];
+}
+
+export type GitPathStatus = 'M' | 'A' | 'D' | 'U' | 'R' | '?';
+
+export interface WorkspaceGitStatusResult {
+  paths: Record<string, GitPathStatus>;
+}
+
+export interface WorkspaceTreeChangedPayload {
+  workspaceId: string;
+}
+
+export interface WorkspaceMkdirInput {
+  workspaceId?: string;
+  path: string;
+}
+
+export interface WorkspaceRenamePathInput {
+  workspaceId?: string;
+  from: string;
+  to: string;
+}
+
+export interface WorkspaceDeletePathInput {
+  workspaceId?: string;
+  path: string;
+  recursive?: boolean;
+}
+
+export interface WorkspacePathOpReply {
+  ok: true;
+}
+
+export interface WorkspaceRevealPathInput {
+  workspaceId?: string;
+  path: string;
+}
+
 
 
 /**
@@ -794,6 +856,10 @@ export interface VyotiqApi {
     pickDirectory(): Promise<string | null>;
 
     listTree(opts?: { depth?: number; workspaceId?: string }): Promise<WorkspaceTreeResult>;
+
+    listChildren(input: WorkspaceListChildrenInput): Promise<WorkspaceListChildrenResult>;
+
+    gitStatus(opts?: { workspaceId?: string }): Promise<WorkspaceGitStatusResult>;
 
 
 
@@ -846,6 +912,16 @@ export interface VyotiqApi {
      */
 
     retryReachability(id: string): Promise<WorkspacesState>;
+
+    mkdir(input: WorkspaceMkdirInput): Promise<WorkspacePathOpReply>;
+
+    renamePath(input: WorkspaceRenamePathInput): Promise<WorkspacePathOpReply>;
+
+    deletePath(input: WorkspaceDeletePathInput): Promise<WorkspacePathOpReply>;
+
+    revealPath(input: WorkspaceRevealPathInput): Promise<WorkspacePathOpReply>;
+
+    onTreeChanged(cb: (payload: WorkspaceTreeChangedPayload) => void): () => void;
 
   };
 

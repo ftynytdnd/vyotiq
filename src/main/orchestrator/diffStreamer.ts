@@ -118,6 +118,8 @@ interface CallState {
   /** Aggregate stats cached alongside `lastHunks`. */
   lastAdditions: number;
   lastDeletions: number;
+  /** Synthesized post-edit body for live editor sync. */
+  lastPostBody: string | null;
   /**
    * Hash of the most recent args we've ACCEPTED (not necessarily yet
    * emitted). Updated synchronously in `onArgsDelta` so duplicate
@@ -418,6 +420,7 @@ export class DiffStreamer {
         hunks: cur.lastHunks,
         additions: cur.lastAdditions,
         deletions: cur.lastDeletions,
+        ...(cur.lastPostBody !== null ? { postBody: cur.lastPostBody } : {}),
         settled: true,
       });
     }
@@ -534,6 +537,7 @@ export class DiffStreamer {
         computing: false,
         latestHash: '',
         lastHunks: null,
+        lastPostBody: null,
         lastTool: null,
         lastAdditions: 0,
         lastDeletions: 0,
@@ -554,6 +558,7 @@ export class DiffStreamer {
     cur.lastTool = 'edit';
     cur.lastAdditions = stats.additions;
     cur.lastDeletions = stats.deletions;
+    cur.lastPostBody = content;
 
     const event: TimelineEvent = {
       kind: 'diff-stream',
@@ -564,7 +569,8 @@ export class DiffStreamer {
       filePath: cur.filePath,
       hunks,
       additions: stats.additions,
-      deletions: stats.deletions
+      deletions: stats.deletions,
+      postBody: content
     };
     this.deps.emit(event);
   }
@@ -610,6 +616,7 @@ export class DiffStreamer {
         computing: false,
         latestHash: '',
         lastHunks: null,
+        lastPostBody: null,
         lastTool: null,
         lastAdditions: 0,
         lastDeletions: 0,
@@ -710,6 +717,7 @@ export class DiffStreamer {
         computing: false,
         latestHash: '',
         lastHunks: null,
+        lastPostBody: null,
         lastTool: null,
         lastAdditions: 0,
         lastDeletions: 0,
@@ -815,6 +823,7 @@ export class DiffStreamer {
       cur.lastTool = tool;
       cur.lastAdditions = stats.additions;
       cur.lastDeletions = stats.deletions;
+      cur.lastPostBody = updated;
       const event: TimelineEvent = {
         kind: 'diff-stream',
         id: randomUUID(),
@@ -825,6 +834,7 @@ export class DiffStreamer {
         hunks,
         additions: stats.additions,
         deletions: stats.deletions,
+        postBody: updated,
       };
       this.deps.emit(event);
     } catch (err) {

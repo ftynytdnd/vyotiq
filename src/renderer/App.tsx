@@ -39,6 +39,7 @@ import { useTerminalStore } from './store/useTerminalStore.js';
 import { useBrowserStore } from './store/useBrowserStore.js';
 import { selectEditorDirty, useEditorStore } from './store/useEditorStore.js';
 import { useEditorAgentSync } from './hooks/useEditorAgentSync.js';
+import { useRestoreEditorTabs } from './hooks/useRestoreEditorTabs.js';
 import { resolveKeybindings, isMacPlatform } from './lib/resolveKeybindings.js';
 import { eventMatchesCombo } from '@shared/keybindings/defaultKeybindings.js';
 
@@ -100,6 +101,7 @@ export default function App() {
     dockWidth
   );
   useEditorAgentSync();
+  useRestoreEditorTabs();
   const showToast = useToastStore((s) => s.show);
   const updateCheckDone = useRef(false);
 

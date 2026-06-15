@@ -85,4 +85,35 @@ describe('registerSettingsIpc — SETTINGS_SET payload validation', () => {
     ).rejects.toThrow(/not a recognized ui field/);
     expect(setSettingsMock).not.toHaveBeenCalled();
   });
+
+  it('accepts fileTreeExpandedByWorkspace', async () => {
+    await mockIpc.__invoke(IPC.SETTINGS_SET, {
+      ui: { fileTreeExpandedByWorkspace: { 'ws-1': ['src', 'docs'] } }
+    });
+    expect(setSettingsMock).toHaveBeenCalledWith({
+      ui: { fileTreeExpandedByWorkspace: { 'ws-1': ['src', 'docs'] } }
+    });
+  });
+
+  it('accepts editorTabsByWorkspace and openEditorsCollapsedByWorkspace', async () => {
+    await mockIpc.__invoke(IPC.SETTINGS_SET, {
+      ui: {
+        editorTabsByWorkspace: {
+          'ws-1': [{ filePath: 'src/main.ts', active: true }]
+        },
+        openEditorsCollapsedByWorkspace: { 'ws-1': false }
+      }
+    });
+    expect(setSettingsMock).toHaveBeenCalledOnce();
+  });
+
+  it('rejects editorTabsByWorkspace exceeding tab cap', async () => {
+    const tabs = Array.from({ length: 21 }, (_, i) => ({ filePath: `f${i}.ts` }));
+    await expect(
+      mockIpc.__invoke(IPC.SETTINGS_SET, {
+        ui: { editorTabsByWorkspace: { 'ws-1': tabs } }
+      })
+    ).rejects.toThrow(/exceeds 20 tabs/);
+    expect(setSettingsMock).not.toHaveBeenCalled();
+  });
 });

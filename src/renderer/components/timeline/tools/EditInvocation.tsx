@@ -93,7 +93,6 @@ export function EditInvocation({
   groupExpanded
 }: EditInvocationProps) {
   const data = result?.data?.tool === 'edit' ? result.data : null;
-  const argCreate = call?.args?.['create'] === true;
   const argPath =
     typeof call?.args?.['path'] === 'string' ? (call.args['path'] as string) : '';
   const path = data?.filePath ?? argPath;
@@ -190,7 +189,7 @@ export function EditInvocation({
         ) : null}
       </>
     );
-  } else if (visibleDiffStream && !argCreate) {
+  } else if (visibleDiffStream) {
     detail = (
       <DiffStreamPane
         diffStream={visibleDiffStream}

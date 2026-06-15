@@ -91,6 +91,7 @@ export function FileEditGroupRow({ rowKey, items }: FileEditGroupRowProps) {
                 filePath={c.filePath}
                 additions={c.additions}
                 deletions={c.deletions}
+                hunks={c.hunks}
               />
             ))}
           </div>

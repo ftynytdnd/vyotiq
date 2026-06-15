@@ -453,6 +453,8 @@ export type TimelineEvent =
      * Optional because the event is also useful pre-settle.
      */
     settled?: boolean;
+    /** Cumulative synthesized post-edit body for live editor sync. */
+    postBody?: string;
   }
   | {
     kind: 'file-edit';
@@ -471,6 +473,8 @@ export type TimelineEvent =
     filePath: string;
     additions: number;
     deletions: number;
+    /** Authoritative diff hunks from the settled edit tool result. */
+    hunks?: DiffHunk[];
     /** Links this row to a checkpoint pending entry for inline Accept/Reject. */
     entryId?: string;
   }

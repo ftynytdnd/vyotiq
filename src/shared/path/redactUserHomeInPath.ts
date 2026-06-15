@@ -1,21 +1,33 @@
-import os from 'node:os';
-import process from 'node:process';
+type RuntimeProcess = {
+  platform?: string;
+  env?: Record<string, string | undefined>;
+};
+
+function runtimeProcess(): RuntimeProcess | undefined {
+  return (globalThis as { process?: RuntimeProcess }).process;
+}
+
+function runtimePlatform(): string {
+  const platform = runtimeProcess()?.platform;
+  return typeof platform === 'string' ? platform : 'unknown';
+}
 
 function homePlaceholder(): string {
-  return process.platform === 'win32' ? '%USERPROFILE%' : '~';
+  return runtimePlatform() === 'win32' ? '%USERPROFILE%' : '~';
 }
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function resolveHomeDir(): string {
+  const env = runtimeProcess()?.env;
+  if (!env) return '';
+  return env.USERPROFILE ?? env.HOME ?? env.HOMEPATH ?? '';
+}
+
 function cachedHomeVariants(): string[] {
-  let home = '';
-  try {
-    home = os.homedir();
-  } catch {
-    return [];
-  }
+  const home = resolveHomeDir();
   if (!home) return [];
   return [...new Set([home, home.replace(/\\/g, '/'), home.replace(/\//g, '\\')])].filter(
     (v) => v.length >= 2
@@ -34,12 +46,13 @@ export function redactUserHomeInPath(absPath: string): string {
 
   const norm = (p: string): string => p.replace(/\\/g, '/');
   const pathNorm = norm(absPath);
+  const platform = runtimePlatform();
   for (const home of variants) {
     const homeNorm = norm(home);
     const prefix = homeNorm.endsWith('/') ? homeNorm : `${homeNorm}/`;
     if (!pathNorm.toLowerCase().startsWith(prefix.toLowerCase())) continue;
     const rest = pathNorm.slice(prefix.length);
-    if (process.platform === 'win32') {
+    if (platform === 'win32') {
       return rest.length > 0
         ? `${homePlaceholder()}\\${rest.replace(/\//g, '\\')}`
         : homePlaceholder();
@@ -61,15 +74,14 @@ export function redactUserHomeInText(text: string): string {
   if (variants.length === 0) return text;
 
   const placeholder = homePlaceholder();
+  const platform = runtimePlatform();
   let out = text;
   for (const variant of variants) {
     const patterns =
-      process.platform === 'win32'
-        ? [variant, variant.replace(/\\/g, '\\\\')]
-        : [variant];
+      platform === 'win32' ? [variant, variant.replace(/\\/g, '\\\\')] : [variant];
     for (const pattern of patterns) {
       const re =
-        process.platform === 'win32'
+        platform === 'win32'
           ? new RegExp(escapeRegex(pattern), 'gi')
           : new RegExp(escapeRegex(pattern), 'g');
       out = out.replace(re, placeholder);

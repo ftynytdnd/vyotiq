@@ -103,7 +103,6 @@ export function WorkbenchTabBar() {
   const tabs = useEditorStore((s) => s.tabs);
   const activeFilePath = useEditorStore((s) => s.activeFilePath);
   const setActiveTab = useEditorStore((s) => s.setActiveTab);
-  const closeTab = useEditorStore((s) => s.closeTab);
 
   const terminalOpen = useTerminalStore((s) => s.open);
   const terminalLabel = useTerminalStore(selectTerminalShellLabel);
@@ -131,7 +130,8 @@ export function WorkbenchTabBar() {
     (filePath: string) => {
       const id = normalizePath(filePath);
       const remaining = tabs.filter((t) => normalizePath(t.filePath) !== id);
-      closeTab(filePath);
+      const closed = useEditorStore.getState().requestCloseTab(filePath);
+      if (!closed) return;
       if (remaining.length === 0) {
         closeEditorPanel();
         return;
@@ -141,7 +141,7 @@ export function WorkbenchTabBar() {
         setActiveTab(next.filePath);
       }
     },
-    [activeFilePath, activeTab, closeTab, setActiveTab, tabs]
+    [activeFilePath, activeTab, setActiveTab, tabs]
   );
 
   const onLaunchTerminal = useCallback(() => {

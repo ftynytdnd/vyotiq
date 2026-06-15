@@ -204,7 +204,8 @@ export function closeActiveWorkbenchFocus(): void {
     const id = normalizePath(activeFilePath);
     const tabs = useEditorStore.getState().tabs;
     const remaining = tabs.filter((t) => normalizePath(t.filePath) !== id);
-    useEditorStore.getState().closeTab(activeFilePath);
+    const closed = useEditorStore.getState().requestCloseTab(activeFilePath);
+    if (!closed) return;
     if (remaining.length === 0) {
       closeEditorPanel();
       return;

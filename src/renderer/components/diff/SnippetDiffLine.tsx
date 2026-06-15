@@ -2,7 +2,7 @@
  * One syntax-highlighted row inside a file change card.
  */
 
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import type { DiffLine } from '@shared/types/tool.js';
 import { cn } from '../../lib/cn.js';
 import { highlightLineText } from '../../lib/highlightLineText.js';
@@ -13,7 +13,11 @@ interface SnippetDiffLineProps {
   isStreamingTip?: boolean;
 }
 
-export function SnippetDiffLine({ line, language, isStreamingTip }: SnippetDiffLineProps) {
+export const SnippetDiffLine = memo(function SnippetDiffLine({
+  line,
+  language,
+  isStreamingTip
+}: SnippetDiffLineProps) {
   const html = useMemo(
     () => highlightLineText(line.text, language),
     [line.text, language]
@@ -36,4 +40,4 @@ export function SnippetDiffLine({ line, language, isStreamingTip }: SnippetDiffL
       {isStreamingTip ? <span className="vyotiq-stream-cursor mr-2 self-end" aria-hidden /> : null}
     </div>
   );
-}
+});

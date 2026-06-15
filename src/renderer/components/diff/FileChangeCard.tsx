@@ -2,9 +2,10 @@
  * Per-file change card — icon, basename, stats header + optional body.
  */
 
-import type { ReactNode } from 'react';
-import { ArrowUpRight, FileCode, FileJson, FileText } from 'lucide-react';
+import { memo, type ReactNode } from 'react';
+import { ArrowUpRight } from 'lucide-react';
 import { basenameFromPath } from '@shared/text/languageFromPath.js';
+import { fileIconForPath } from '../../lib/fileIconForPath.js';
 import { cn } from '../../lib/cn.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../lib/shellIcons.js';
 import { timelineActionPillClassName } from '../timeline/shared/rowStyles.js';
@@ -23,18 +24,11 @@ interface FileChangeCardProps {
   onOpen?: () => void;
 }
 
-function fileIconForPath(filePath: string) {
-  const base = basenameFromPath(filePath).toLowerCase();
-  if (base.endsWith('.json')) {
-    return <FileJson className={cn(SHELL_ROW_ICON_CLASS, 'text-accent')} strokeWidth={SHELL_ACTION_ICON_STROKE} />;
-  }
-  if (base.endsWith('.md') || base.endsWith('.mdx') || base.endsWith('.txt')) {
-    return <FileText className={cn(SHELL_ROW_ICON_CLASS, 'text-accent')} strokeWidth={SHELL_ACTION_ICON_STROKE} />;
-  }
-  return <FileCode className={cn(SHELL_ROW_ICON_CLASS, 'text-accent')} strokeWidth={SHELL_ACTION_ICON_STROKE} />;
+function fileIconForPathLocal(filePath: string) {
+  return fileIconForPath(filePath, false);
 }
 
-export function FileChangeCard({
+export const FileChangeCard = memo(function FileChangeCard({
   filePath,
   additions,
   deletions,
@@ -59,7 +53,7 @@ export function FileChangeCard({
       data-file-change-card
     >
       <div className="vx-file-change-card__header flex min-w-0 items-center gap-2 px-2.5 py-1.5">
-        {fileIconForPath(filePath)}
+        {fileIconForPathLocal(filePath)}
         <span
           className="min-w-0 flex-1 truncate font-mono text-row text-text-primary"
           title={filePath}
@@ -94,4 +88,4 @@ export function FileChangeCard({
       ) : null}
     </div>
   );
-}
+});

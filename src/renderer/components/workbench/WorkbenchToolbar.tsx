@@ -38,6 +38,8 @@ import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../lib/shellIcons.js';
 import type { CompanionTab } from './workbenchShared.js';
 import { cn } from '../../lib/cn.js';
+import { revealFileInDockTree } from '../../lib/revealFileInDockTree.js';
+import { dockTreeRelativePath } from '../dock/dockFileTreeModel.js';
 
 const TOOLBAR_CLASS =
   'vx-workbench-toolbar flex h-8 shrink-0 items-center gap-2 border-b border-border-subtle/20 px-2';
@@ -63,14 +65,10 @@ export function WorkbenchToolbar({ tab }: { tab: CompanionTab }) {
 }
 
 function editorBreadcrumbSegments(workspacePath: string | null, filePath: string): string[] {
-  const normFile = filePath.replace(/\\/g, '/');
-  if (!workspacePath) return normFile.split('/').filter(Boolean);
-  const normRoot = workspacePath.replace(/\\/g, '/').replace(/\/$/, '');
-  const prefix = `${normRoot.toLowerCase()}/`;
-  const rel = normFile.toLowerCase().startsWith(prefix)
-    ? normFile.slice(normRoot.length + 1)
-    : normFile;
-  return rel.split('/').filter(Boolean);
+  if (!workspacePath) {
+    return dockTreeRelativePath(filePath, '').split('/').filter(Boolean);
+  }
+  return dockTreeRelativePath(filePath, workspacePath).split('/').filter(Boolean);
 }
 
 function EditorToolbar() {
@@ -83,7 +81,11 @@ function EditorToolbar() {
   const save = useEditorStore((s) => s.save);
   const reloadFromDisk = useEditorStore((s) => s.reloadFromDisk);
   const tabs = useEditorStore((s) => s.tabs);
-  const workspacePath = useWorkspaceStore((s) => s.info.path);
+  const workspacePath = useWorkspaceStore((s) => {
+    const id = workspaceId ?? s.activeId;
+    const entry = id ? s.list.find((w) => w.id === id) : undefined;
+    return entry?.path ?? s.info.path ?? null;
+  });
 
   const onOpenExternal = useCallback(async () => {
     if (!filePath) return;
@@ -113,12 +115,23 @@ function EditorToolbar() {
       >
         {segments.map((seg, i) => {
           const last = i === segments.length - 1;
+          const relPath = segments.slice(0, i + 1).join('/');
           return (
             <span key={`${seg}-${i}`} className="flex min-w-0 items-center gap-0.5">
               {i > 0 ? (
                 <ChevronRight className="h-3 w-3 shrink-0 text-text-faint/60" strokeWidth={2} />
               ) : null}
-              <span className={cn('truncate', last && 'text-text-secondary')}>{seg}</span>
+              {last ? (
+                <span className={cn('truncate text-text-secondary')}>{seg}</span>
+              ) : (
+                <button
+                  type="button"
+                  className="truncate rounded px-0.5 hover:bg-chrome-hover-soft hover:text-text-primary"
+                  onClick={() => revealFileInDockTree(relPath)}
+                >
+                  {seg}
+                </button>
+              )}
             </span>
           );
         })}
@@ -137,14 +150,23 @@ function EditorToolbar() {
           <ExternalLink className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
         </Button>
         <Button
-          variant={dirty ? 'primary' : 'secondary'}
+          variant="ghost"
           size="sm"
           onClick={() => void save()}
           disabled={!dirty || saving || loading}
           title="Save (Ctrl+S)"
+          className={cn(
+            'relative',
+            dirty && 'bg-warning/12 text-warning hover:bg-warning/18 hover:text-warning'
+          )}
         >
           <Save className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
-          Save
+          {dirty ? (
+            <span
+              className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-warning"
+              aria-hidden
+            />
+          ) : null}
         </Button>
       </div>
     </header>

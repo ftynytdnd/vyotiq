@@ -6,7 +6,7 @@ import { useEffect } from 'react';
 import type { TimelineEvent } from '@shared/types/chat.js';
 import { normalizePath } from '../lib/normalizePath.js';
 import { vyotiq } from '../lib/ipc.js';
-import { editorMatchesPath, useEditorStore } from '../store/useEditorStore.js';
+import { useEditorStore } from '../store/useEditorStore.js';
 
 function eventTouchesPath(event: TimelineEvent, filePath: string): boolean {
   const target = normalizePath(filePath);
@@ -19,35 +19,23 @@ function eventTouchesPath(event: TimelineEvent, filePath: string): boolean {
   return false;
 }
 
-async function refreshEditorFromDisk(filePath: string, workspaceId: string | null): Promise<void> {
-  const store = useEditorStore.getState();
-  if (!editorMatchesPath(store, filePath)) return;
-  const tab = store.tabs.find((t) => normalizePath(t.filePath) === normalizePath(filePath));
-  if (!tab) return;
-  if (tab.content !== tab.savedContent) {
-    store.markStaleOnDisk(filePath);
-    return;
-  }
-  try {
-    const result = await vyotiq.editor.read({
-      path: filePath,
-      ...(workspaceId ? { workspaceId } : {})
-    });
-    store.applyExternalContent(filePath, result.content, result.mtimeMs);
-  } catch {
-    store.markStaleOnDisk(filePath);
-  }
-}
-
 export function useEditorAgentSync(): void {
   useEffect(() => {
     const unsub = vyotiq.chat.onEvent((_runId, event) => {
-      const { open, tabs, workspaceId } = useEditorStore.getState();
+      const { open, tabs, refreshTabFromDisk, applyExternalContent, setAgentStreaming } =
+        useEditorStore.getState();
       if (!open || tabs.length === 0) return;
       for (const tab of tabs) {
         if (!eventTouchesPath(event, tab.filePath)) continue;
-        if (event.kind === 'diff-stream' && !event.settled) continue;
-        void refreshEditorFromDisk(tab.filePath, tab.workspaceId ?? workspaceId);
+        if (event.kind === 'diff-stream' && !event.settled) {
+          if (event.postBody !== undefined) {
+            applyExternalContent(tab.filePath, event.postBody);
+            setAgentStreaming(tab.filePath, true);
+          }
+          continue;
+        }
+        setAgentStreaming(tab.filePath, false);
+        void refreshTabFromDisk(tab.filePath, { force: true });
       }
     });
     return unsub;

@@ -74,6 +74,7 @@ export function ModelPicker({
         collisionPadding={collisionPadding}
         revision={revision}
         fitMaxWidth={640}
+        widthMode="panel"
       >
         <ModelPickerPanel
           value={value}

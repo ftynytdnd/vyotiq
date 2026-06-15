@@ -20,7 +20,7 @@
 
 import type { PromptAttachmentMeta, TimelineEvent } from '@shared/types/chat.js';
 import type { MentionRef } from '@shared/types/mention.js';
-import type { ToolCall, ToolName, ToolResult } from '@shared/types/tool.js';
+import type { ToolCall, ToolName, ToolResult, DiffHunk } from '@shared/types/tool.js';
 import type { DiffStreamSnapshot, PartialToolCallArgs, TokenUsageAggregate } from './types.js';
 import { foldTokenUsage } from './types.js';
 import { appendSynthesizedPartialRows } from './deriveRows/partials.js';
@@ -82,6 +82,7 @@ export interface FileEditGroupChild {
   additions: number;
   deletions: number;
   entryId?: string;
+  hunks?: DiffHunk[];
 }
 
 export type Row =
@@ -430,7 +431,8 @@ export function deriveRows(
           filePath: e.filePath,
           additions: e.additions,
           deletions: e.deletions,
-          ...(e.entryId ? { entryId: e.entryId } : {})
+          ...(e.entryId ? { entryId: e.entryId } : {}),
+          ...(e.hunks ? { hunks: e.hunks } : {})
         };
 
         if (openRun) {

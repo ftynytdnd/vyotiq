@@ -116,10 +116,16 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     const lastModel = ui.lastModelByWorkspace ?? {};
     const collapsed = ui.collapsedWorkspaces ?? [];
     const spend = ui.workspaceSpendUsd ?? {};
+    const fileTreeExpanded = ui.fileTreeExpandedByWorkspace ?? {};
+    const openEditorsCollapsed = ui.openEditorsCollapsedByWorkspace ?? {};
+    const editorTabs = ui.editorTabsByWorkspace ?? {};
     const inAny =
       workspaceId in active ||
       workspaceId in lastModel ||
       workspaceId in spend ||
+      workspaceId in fileTreeExpanded ||
+      workspaceId in openEditorsCollapsed ||
+      workspaceId in editorTabs ||
       collapsed.includes(workspaceId);
     if (!inAny) return;
     // Build cleaned copies. Spread + delete keeps the other entries
@@ -135,12 +141,21 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     const nextSpend = { ...spend };
     delete nextSpend[workspaceId];
     const nextCollapsed = collapsed.filter((id) => id !== workspaceId);
+    const nextFileTreeExpanded = { ...fileTreeExpanded };
+    delete nextFileTreeExpanded[workspaceId];
+    const nextOpenEditorsCollapsed = { ...openEditorsCollapsed };
+    delete nextOpenEditorsCollapsed[workspaceId];
+    const nextEditorTabs = { ...editorTabs };
+    delete nextEditorTabs[workspaceId];
     const updated = await vyotiq.settings.set({
       ui: {
         activeConversationByWorkspace: nextActive,
         lastModelByWorkspace: nextLastModel,
         workspaceSpendUsd: nextSpend,
-        collapsedWorkspaces: nextCollapsed
+        collapsedWorkspaces: nextCollapsed,
+        fileTreeExpandedByWorkspace: nextFileTreeExpanded,
+        openEditorsCollapsedByWorkspace: nextOpenEditorsCollapsed,
+        editorTabsByWorkspace: nextEditorTabs
       }
     });
     setState({ settings: { ...getState().settings, ...updated } });

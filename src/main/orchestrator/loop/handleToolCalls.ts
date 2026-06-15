@@ -286,6 +286,7 @@ async function dispatchOneToolCall(
       filePath: result.data.filePath,
       additions: result.data.additions,
       deletions: result.data.deletions,
+      ...(result.data.hunks ? { hunks: result.data.hunks } : {}),
       ...(result.data.entryId ? { entryId: result.data.entryId } : {})
     });
   }

@@ -26,7 +26,8 @@ export const shellMonoEditorTheme: Extension = EditorView.theme(
       backgroundColor: 'transparent',
       color: 'var(--color-text-faint)',
       border: 'none',
-      paddingRight: '0.5rem'
+      paddingRight: '0.5rem',
+      minWidth: '2.75rem'
     },
     '.cm-activeLineGutter': {
       backgroundColor: 'transparent'
@@ -41,7 +42,7 @@ export const shellMonoEditorTheme: Extension = EditorView.theme(
       backgroundColor: 'color-mix(in oklch, var(--color-accent) 22%, transparent) !important'
     },
     '.cm-line': {
-      padding: '0 0.75rem 0 0'
+      padding: '0 0.75rem'
     }
   },
   { dark: true }

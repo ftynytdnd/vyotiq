@@ -2,10 +2,21 @@
  * Workspace IPC — directory picker, list-tree, and multi-workspace registry (`workspaces:*`).
  */
 
-import { dialog } from 'electron';
+import { dialog, shell } from 'electron';
 import fg from 'fast-glob';
-import { IPC } from '@shared/constants.js';
-import type { WorkspaceTreeResult } from '@shared/types/ipc.js';
+import { promises as fs } from 'node:fs';
+import { relative, resolve } from 'node:path';
+import { IPC, WORKSPACE_DOTDIR } from '@shared/constants.js';
+import type {
+  WorkspaceDeletePathInput,
+  WorkspaceListChildrenInput,
+  WorkspaceListChildrenResult,
+  WorkspaceMkdirInput,
+  WorkspacePathOpReply,
+  WorkspaceRenamePathInput,
+  WorkspaceRevealPathInput,
+  WorkspaceTreeResult
+} from '@shared/types/ipc.js';
 import {
   addWorkspace,
   getWorkspace,
@@ -23,7 +34,13 @@ import {
 } from '../memory/vector/indexScheduler.js';
 import { killWorkspacePty } from '../terminal/ptyManager.js';
 import { WORKSPACE_TREE_IGNORE } from '../workspace/workspaceTreeIgnore.js';
+import { listWorkspaceChildren } from '../workspace/workspaceListChildren.js';
+import { getWorkspaceGitStatus } from '../workspace/workspaceGitStatus.js';
+import { emitWorkspaceTreeChanged } from '../workspace/workspaceTreeWatcher.js';
+import { assertSafeRelativePath } from '../workspace/workspacePathGuards.js';
+import { realpathInsideWorkspace, resolveInsideWorkspace } from '../tools/sandbox.js';
 import { logger } from '../logging/logger.js';
+import { shouldLogRepeatedPollWarning } from '../providers/providerPollLogThrottle.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 // Audit fix 2026-06-P2-1 — runtime shape gates for workspace-channel
 // payloads. Path strings are capped at 4 KB (well above any
@@ -55,6 +72,32 @@ async function pickDirectoryPath(): Promise<string | null> {
 // ever approaches that — capping at 4 KB matches the `providers`
 // baseUrl ceiling and forecloses pathological inputs.
 const MAX_PATH_BYTES = 4096;
+
+async function resolveWorkspaceForPathOps(workspaceId: string | undefined): Promise<{
+  wsPath: string;
+  workspaceId: string;
+}> {
+  if (workspaceId) {
+    const wsPath = await requireWorkspaceById(workspaceId);
+    const entry = (await listWorkspaces()).workspaces.find((w) => w.id === workspaceId);
+    if (!entry) throw new Error(`Unknown workspace id: ${workspaceId}`);
+    return { wsPath, workspaceId: entry.id };
+  }
+  const ws = await getWorkspace();
+  if (!ws.path) throw new Error('No workspace bound.');
+  const state = await listWorkspaces();
+  if (!state.activeId) throw new Error('No workspace bound.');
+  return { wsPath: ws.path, workspaceId: state.activeId };
+}
+
+function isWorkspaceRootPath(wsPath: string, abs: string): boolean {
+  return resolve(wsPath) === resolve(abs);
+}
+
+async function emitTreeChangedForWorkspace(workspaceId: string, wsPath: string): Promise<void> {
+  emitWorkspaceTreeChanged(workspaceId);
+  scheduleWorkspaceVectorIndex(wsPath);
+}
 
 export function registerWorkspaceIpc(): void {
   wrapIpcHandler(IPC.WORKSPACE_PICK_DIRECTORY, async (): Promise<string | null> => {
@@ -229,10 +272,167 @@ export function registerWorkspaceIpc(): void {
       const total = indexed.length;
       const truncated = total > MAX_TREE_ENTRIES;
       if (truncated) {
-        log.warn('workspace tree truncated', { total, cap: MAX_TREE_ENTRIES });
+        const logKey = `workspace-tree-truncated:${wsPath}`;
+        const message = `workspace tree truncated total=${total} cap=${MAX_TREE_ENTRIES}`;
+        if (shouldLogRepeatedPollWarning(logKey, message)) {
+          log.warn('workspace tree truncated', { total, cap: MAX_TREE_ENTRIES });
+        }
       }
       const entries = indexed.slice(0, MAX_TREE_ENTRIES).map((e) => e.p);
       return { entries, truncated, total };
+    }
+  );
+
+  wrapIpcHandler(
+    IPC.WORKSPACE_LIST_CHILDREN,
+    async (_event, input: WorkspaceListChildrenInput): Promise<WorkspaceListChildrenResult> => {
+      assertObject('workspace:listChildren', 'input', input);
+      assertString('workspace:listChildren', 'input.relativeDir', input.relativeDir, {
+        maxBytes: MAX_PATH_BYTES,
+        nonEmpty: false
+      });
+      assertOptionalString('workspace:listChildren', 'input.workspaceId', input.workspaceId);
+      if (input.includeDotfiles !== undefined) {
+        assertBoolean('workspace:listChildren', 'input.includeDotfiles', input.includeDotfiles);
+      }
+      const relativeDir = input.relativeDir.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/$/, '');
+      if (relativeDir) {
+        assertSafeRelativePath('workspace:listChildren', 'input.relativeDir', relativeDir);
+      }
+      let wsPath: string | null = null;
+      if (input.workspaceId) {
+        try {
+          wsPath = await requireWorkspaceById(input.workspaceId);
+        } catch (err: unknown) {
+          log.warn('workspace:listChildren unknown workspaceId', {
+            workspaceId: input.workspaceId,
+            err: err instanceof Error ? err.message : String(err)
+          });
+          return { entries: [] };
+        }
+      } else {
+        const ws = await getWorkspace();
+        wsPath = ws.path;
+      }
+      if (!wsPath) return { entries: [] };
+      const entries = await listWorkspaceChildren(
+        wsPath,
+        relativeDir,
+        input.includeDotfiles ?? true
+      );
+      return { entries };
+    }
+  );
+
+  wrapIpcHandler(
+    IPC.WORKSPACE_GIT_STATUS,
+    async (_event, opts?: { workspaceId?: string }) => {
+      if (opts !== undefined) {
+        assertObject('workspace:gitStatus', 'opts', opts);
+        if (opts.workspaceId !== undefined) {
+          assertString('workspace:gitStatus', 'opts.workspaceId', opts.workspaceId);
+        }
+      }
+      let wsPath: string | null = null;
+      if (opts?.workspaceId) {
+        try {
+          wsPath = await requireWorkspaceById(opts.workspaceId);
+        } catch {
+          return { paths: {} };
+        }
+      } else {
+        const ws = await getWorkspace();
+        wsPath = ws.path;
+      }
+      if (!wsPath) return { paths: {} };
+      const paths = await getWorkspaceGitStatus(wsPath);
+      return { paths };
+    }
+  );
+
+  wrapIpcHandler(
+    IPC.WORKSPACE_MKDIR,
+    async (_event, input: WorkspaceMkdirInput): Promise<WorkspacePathOpReply> => {
+      assertObject('workspace:mkdir', 'input', input);
+      assertString('workspace:mkdir', 'path', input.path, { maxBytes: MAX_PATH_BYTES });
+      assertOptionalString('workspace:mkdir', 'workspaceId', input.workspaceId);
+      assertSafeRelativePath('workspace:mkdir', 'path', input.path);
+      const { wsPath, workspaceId } = await resolveWorkspaceForPathOps(input.workspaceId);
+      const abs = await realpathInsideWorkspace(wsPath, input.path);
+      await fs.mkdir(abs, { recursive: true });
+      await emitTreeChangedForWorkspace(workspaceId, wsPath);
+      return { ok: true };
+    }
+  );
+
+  wrapIpcHandler(
+    IPC.WORKSPACE_RENAME_PATH,
+    async (_event, input: WorkspaceRenamePathInput): Promise<WorkspacePathOpReply> => {
+      assertObject('workspace:rename-path', 'input', input);
+      assertString('workspace:rename-path', 'from', input.from, { maxBytes: MAX_PATH_BYTES });
+      assertString('workspace:rename-path', 'to', input.to, { maxBytes: MAX_PATH_BYTES });
+      assertOptionalString('workspace:rename-path', 'workspaceId', input.workspaceId);
+      assertSafeRelativePath('workspace:rename-path', 'from', input.from);
+      assertSafeRelativePath('workspace:rename-path', 'to', input.to);
+      const { wsPath, workspaceId } = await resolveWorkspaceForPathOps(input.workspaceId);
+      const fromAbs = await realpathInsideWorkspace(wsPath, input.from);
+      if (isWorkspaceRootPath(wsPath, fromAbs)) {
+        throw new Error('Cannot rename the workspace root.');
+      }
+      const toLex = resolveInsideWorkspace(wsPath, input.to);
+      try {
+        await fs.access(toLex);
+        throw new Error(`Destination already exists: ${input.to}`);
+      } catch (err: unknown) {
+        if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') throw err;
+      }
+      await fs.rename(fromAbs, toLex);
+      await emitTreeChangedForWorkspace(workspaceId, wsPath);
+      return { ok: true };
+    }
+  );
+
+  wrapIpcHandler(
+    IPC.WORKSPACE_DELETE_PATH,
+    async (_event, input: WorkspaceDeletePathInput): Promise<WorkspacePathOpReply> => {
+      assertObject('workspace:delete-path', 'input', input);
+      assertString('workspace:delete-path', 'path', input.path, { maxBytes: MAX_PATH_BYTES });
+      assertOptionalString('workspace:delete-path', 'workspaceId', input.workspaceId);
+      if (input.recursive !== undefined) {
+        assertBoolean('workspace:delete-path', 'recursive', input.recursive);
+      }
+      assertSafeRelativePath('workspace:delete-path', 'path', input.path);
+      const { wsPath, workspaceId } = await resolveWorkspaceForPathOps(input.workspaceId);
+      const abs = await realpathInsideWorkspace(wsPath, input.path);
+      if (isWorkspaceRootPath(wsPath, abs)) {
+        throw new Error('Cannot delete the workspace root.');
+      }
+      const rel = relative(resolve(wsPath), abs).replace(/\\/g, '/');
+      if (rel === WORKSPACE_DOTDIR || rel.startsWith(`${WORKSPACE_DOTDIR}/`)) {
+        throw new Error(`Cannot delete ${WORKSPACE_DOTDIR} metadata.`);
+      }
+      const st = await fs.stat(abs);
+      if (st.isDirectory()) {
+        await fs.rm(abs, { recursive: input.recursive === true, force: true });
+      } else {
+        await fs.unlink(abs);
+      }
+      await emitTreeChangedForWorkspace(workspaceId, wsPath);
+      return { ok: true };
+    }
+  );
+
+  wrapIpcHandler(
+    IPC.WORKSPACE_REVEAL_PATH,
+    async (_event, input: WorkspaceRevealPathInput): Promise<WorkspacePathOpReply> => {
+      assertObject('workspace:reveal-path', 'input', input);
+      assertString('workspace:reveal-path', 'path', input.path, { maxBytes: MAX_PATH_BYTES });
+      assertOptionalString('workspace:reveal-path', 'workspaceId', input.workspaceId);
+      assertSafeRelativePath('workspace:reveal-path', 'path', input.path);
+      const { wsPath } = await resolveWorkspaceForPathOps(input.workspaceId);
+      const abs = await realpathInsideWorkspace(wsPath, input.path);
+      shell.showItemInFolder(abs);
+      return { ok: true };
     }
   );
 }

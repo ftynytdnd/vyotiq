@@ -46,12 +46,19 @@ function makeStubApi() {
     workspace: {
       pickDirectory: vi.fn(async () => null),
       listTree: vi.fn(async () => ({ entries: [], truncated: false, total: 0 })),
+      listChildren: vi.fn(async () => ({ entries: [] })),
+      gitStatus: vi.fn(async () => ({ paths: {} })),
       list: vi.fn(async () => ({ activeId: null, workspaces: [] })),
       add: vi.fn(async () => ({ id: 'ws-stub', path: '/tmp', label: 'stub', addedAt: 0 })),
       setActive: vi.fn(async () => ({ activeId: null, workspaces: [] })),
       rename: vi.fn(async () => ({ id: 'ws-stub', path: '/tmp', label: 'stub', addedAt: 0 })),
       remove: vi.fn(async () => ({ activeId: null, workspaces: [] })),
-      retryReachability: vi.fn(async () => ({ activeId: null, workspaces: [] }))
+      retryReachability: vi.fn(async () => ({ activeId: null, workspaces: [] })),
+      mkdir: vi.fn(async () => ({ ok: true as const })),
+      renamePath: vi.fn(async () => ({ ok: true as const })),
+      deletePath: vi.fn(async () => ({ ok: true as const })),
+      revealPath: vi.fn(async () => ({ ok: true as const })),
+      onTreeChanged: subscribe
     },
     providers: {
       list: vi.fn(async () => []),

@@ -21,6 +21,7 @@ import {
   workspacePanelClassName
 } from './dockShared.js';
 import { useDockShortcuts } from './useDockShortcuts.js';
+import { useWorkspaceTreeWatcher } from '../../hooks/useWorkspaceTreeWatcher.js';
 import { useUiStore } from '../../store/useUiStore.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
@@ -44,6 +45,7 @@ export function LeftDock({
   onBackFromSettings
 }: LeftDockProps) {
   useDockShortcuts();
+  useWorkspaceTreeWatcher();
 
   const dockExpanded = useUiStore((s) => s.dockExpanded);
   const dockWidth = useUiStore((s) => s.dockWidth);

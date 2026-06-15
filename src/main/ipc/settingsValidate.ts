@@ -41,7 +41,10 @@ const UI_RECORD_KEYS = [
   'panelWidths',
   'pinnedConversationIds',
   'keybindings',
-  'recentEditorFilesByWorkspace'
+  'recentEditorFilesByWorkspace',
+  'fileTreeExpandedByWorkspace',
+  'openEditorsCollapsedByWorkspace',
+  'editorTabsByWorkspace'
 ] as const;
 
 const UI_NESTED_OBJECT_KEYS = [
@@ -95,6 +98,11 @@ const EXPANDED_ROWS_MAX_PER_CONV = 512;
 
 /** Max recent editor paths per workspace in `ui.recentEditorFilesByWorkspace`. */
 const RECENT_EDITOR_FILES_MAX_PER_WS = 8;
+
+/** Max expanded folder paths per workspace in `ui.fileTreeExpandedByWorkspace`. */
+const FILE_TREE_EXPANDED_MAX_PER_WS = 512;
+
+const EDITOR_TABS_MAX_PER_WS = 20;
 
 function assertRecordKeyCount(
   channel: string,
@@ -275,6 +283,51 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
         maxItems: RECENT_EDITOR_FILES_MAX_PER_WS,
         maxBytes: 4096
       });
+    }
+  }
+  if ('fileTreeExpandedByWorkspace' in ui && ui.fileTreeExpandedByWorkspace !== undefined) {
+    assertObject(channel, 'patch.ui.fileTreeExpandedByWorkspace', ui.fileTreeExpandedByWorkspace);
+    const map = ui.fileTreeExpandedByWorkspace as Record<string, unknown>;
+    assertRecordKeyCount(channel, 'patch.ui.fileTreeExpandedByWorkspace', map, UI_RECORD_MAX_KEYS);
+    for (const [wsId, paths] of Object.entries(map)) {
+      assertString(channel, 'patch.ui.fileTreeExpandedByWorkspace key', wsId);
+      assertStringArray(channel, `patch.ui.fileTreeExpandedByWorkspace[${wsId}]`, paths, {
+        maxItems: FILE_TREE_EXPANDED_MAX_PER_WS,
+        maxBytes: 4096
+      });
+    }
+  }
+  if ('openEditorsCollapsedByWorkspace' in ui && ui.openEditorsCollapsedByWorkspace !== undefined) {
+    assertObject(channel, 'patch.ui.openEditorsCollapsedByWorkspace', ui.openEditorsCollapsedByWorkspace);
+    const map = ui.openEditorsCollapsedByWorkspace as Record<string, unknown>;
+    assertRecordKeyCount(channel, 'patch.ui.openEditorsCollapsedByWorkspace', map, UI_RECORD_MAX_KEYS);
+    for (const [wsId, collapsed] of Object.entries(map)) {
+      assertString(channel, 'patch.ui.openEditorsCollapsedByWorkspace key', wsId);
+      assertBoolean(channel, `patch.ui.openEditorsCollapsedByWorkspace[${wsId}]`, collapsed);
+    }
+  }
+  if ('editorTabsByWorkspace' in ui && ui.editorTabsByWorkspace !== undefined) {
+    assertObject(channel, 'patch.ui.editorTabsByWorkspace', ui.editorTabsByWorkspace);
+    const map = ui.editorTabsByWorkspace as Record<string, unknown>;
+    assertRecordKeyCount(channel, 'patch.ui.editorTabsByWorkspace', map, UI_RECORD_MAX_KEYS);
+    for (const [wsId, tabs] of Object.entries(map)) {
+      assertString(channel, 'patch.ui.editorTabsByWorkspace key', wsId);
+      if (!Array.isArray(tabs)) {
+        throw new Error(`${channel}: patch.ui.editorTabsByWorkspace[${wsId}] must be an array`);
+      }
+      if (tabs.length > EDITOR_TABS_MAX_PER_WS) {
+        throw new Error(
+          `${channel}: patch.ui.editorTabsByWorkspace[${wsId}] exceeds ${EDITOR_TABS_MAX_PER_WS} tabs`
+        );
+      }
+      for (const entry of tabs) {
+        assertObject(channel, `patch.ui.editorTabsByWorkspace[${wsId}] entry`, entry);
+        const row = entry as Record<string, unknown>;
+        assertString(channel, 'editorTabs entry.filePath', row.filePath, { maxBytes: 4096 });
+        if ('active' in row && row.active !== undefined) {
+          assertBoolean(channel, 'editorTabs entry.active', row.active);
+        }
+      }
     }
   }
   if ('reports' in ui && ui.reports !== undefined) {

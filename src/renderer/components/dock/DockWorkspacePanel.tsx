@@ -8,6 +8,7 @@ import { Files, MessageSquare } from 'lucide-react';
 import { Tabs } from '../ui/Tabs.js';
 import { DockChatStrip } from './DockChatStrip.js';
 import { DockFileTree } from './DockFileTree.js';
+import { DockOpenEditorsSection } from './DockOpenEditorsSection.js';
 import {
   DOCK_WORKSPACE_PANEL_CLASS,
   DOCK_WORKSPACE_PANEL_SHELL_CLASS,
@@ -111,7 +112,10 @@ export function DockWorkspacePanel({ workspaceId }: DockWorkspacePanelProps) {
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
           {view === 'files' ? (
-            <DockFileTree workspaceId={workspaceId} />
+            <>
+              <DockOpenEditorsSection workspaceId={workspaceId} />
+              <DockFileTree workspaceId={workspaceId} />
+            </>
           ) : (
             <DockChatStrip workspaceId={workspaceId} />
           )}

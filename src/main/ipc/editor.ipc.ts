@@ -13,9 +13,11 @@ import type {
 import { scheduleWorkspaceVectorIndex } from '../memory/vector/indexScheduler.js';
 import { realpathInsideWorkspace } from '../tools/sandbox.js';
 import {
+  getActiveWorkspace,
   requireWorkspace,
   requireWorkspaceById
 } from '../workspace/workspaceState.js';
+import { suppressTreeWatchForWrite } from '../workspace/workspaceWatchSuppress.js';
 import { decodeDiskTextBuffer, encodeDiskTextBody, probeBinaryText } from '../text/decodeDiskText.js';
 import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
@@ -117,6 +119,11 @@ export function registerEditorIpc(): void {
     await fs.writeFile(abs, out);
     const st = await fs.stat(abs);
     scheduleWorkspaceVectorIndex(ws);
+    const workspaceId =
+      input.workspaceId ?? (await getActiveWorkspace())?.id ?? undefined;
+    if (workspaceId) {
+      suppressTreeWatchForWrite(workspaceId, input.path);
+    }
     log.debug('editor write', { path: input.path, bytes: Buffer.byteLength(input.content, 'utf8') });
     return { ok: true, mtimeMs: st.mtimeMs };
   });

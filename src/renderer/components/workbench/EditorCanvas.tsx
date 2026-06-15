@@ -2,15 +2,8 @@
  * Editor canvas body — CodeMirror surface without workbench chrome.
  */
 
-import { useMemo } from 'react';
-import {
-  resolveCompletionModelSelection,
-  resolveInlineCompletionSettings
-} from '@shared/settings/inlineCompletionSettings.js';
-import type { ModelSelection } from '@shared/types/provider.js';
 import { LoadingHint } from '../ui/LoadingHint.js';
 import { Button } from '../ui/Button.js';
-import { CodeEditor } from '../editor/CodeEditor.js';
 import {
   selectActiveEditorTab,
   selectEditorDirty,
@@ -20,7 +13,10 @@ import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useEditorLsp } from '../../hooks/useEditorLsp.js';
 import { useEditorCursorStore } from '../../store/useEditorCursorStore.js';
+import { useEditorDiskWatcher } from '../../hooks/useEditorDiskWatcher.js';
 import { EditorStatusBar } from './EditorStatusBar.js';
+import { EditorTabViews } from './EditorTabViews.js';
+import { useAppViewStore } from '../../store/useAppViewStore.js';
 import { WORKBENCH_BODY_CLASS } from './workbenchShared.js';
 import { cn } from '../../lib/cn.js';
 
@@ -28,45 +24,27 @@ export function EditorCanvas() {
   const activeTab = useEditorStore(selectActiveEditorTab);
   const filePath = activeTab?.filePath ?? null;
   const workspaceId = activeTab?.workspaceId ?? null;
-  const content = activeTab?.content ?? '';
   const loading = activeTab?.loading ?? false;
   const truncated = activeTab?.truncated ?? false;
   const staleOnDisk = activeTab?.staleOnDisk ?? false;
   const eol = activeTab?.eol ?? 'lf';
   const encoding = activeTab?.encoding ?? 'utf-8';
+  const utf8Bom = activeTab?.utf8Bom ?? false;
   const dirty = useEditorStore(selectEditorDirty);
   const setCursor = useEditorCursorStore((s) => s.setCursor);
-  const setContent = useEditorStore((s) => s.setContent);
-  const save = useEditorStore((s) => s.save);
   const reloadFromDisk = useEditorStore((s) => s.reloadFromDisk);
   const settings = useSettingsStore((s) => s.settings);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
 
+  useEditorDiskWatcher();
+
+  const openSettings = useAppViewStore((s) => s.openSettings);
+  const lspEnabled = settings.ui?.editorLsp?.enabled === true;
   const lsp = useEditorLsp({
-    enabled: settings.ui?.editorLsp?.enabled === true,
+    enabled: lspEnabled,
     filePath,
     workspaceId: workspaceId ?? activeWorkspaceId
   });
-
-  const inlineCompletion = useMemo(() => {
-    const ic = resolveInlineCompletionSettings(settings.ui);
-    if (!ic.enabled || !ic.editorEnabled || !filePath || !workspaceId) return null;
-    const wsLast =
-      activeWorkspaceId && settings.ui?.lastModelByWorkspace?.[activeWorkspaceId]
-        ? settings.ui.lastModelByWorkspace[activeWorkspaceId]
-        : null;
-    const fallback: ModelSelection | null = wsLast ?? settings.defaultModel ?? null;
-    const model = resolveCompletionModelSelection(ic, fallback);
-    if (!model) return null;
-    return {
-      enabled: true,
-      debounceMs: ic.debounceMs,
-      providerId: model.providerId,
-      modelId: model.modelId,
-      filePath,
-      workspaceId
-    };
-  }, [activeWorkspaceId, filePath, settings.defaultModel, settings.ui, workspaceId]);
 
   return (
     <div className={cn(WORKBENCH_BODY_CLASS, 'vx-editor-canvas')}>
@@ -77,24 +55,25 @@ export function EditorCanvas() {
       ) : null}
       {staleOnDisk ? (
         <div className="vx-editor-stale-banner flex shrink-0 items-center justify-between gap-2 px-3 py-1.5 text-meta">
-          <span>Agent or another process changed this file on disk.</span>
+          <span>Disk changed — reload to replace your buffer.</span>
           <Button variant="link" size="sm" onClick={() => void reloadFromDisk()}>
             Reload
           </Button>
         </div>
       ) : null}
+      {activeTab?.agentStreaming ? (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle/20 bg-accent/5 px-3 py-1 text-meta text-text-secondary">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
+          Agent editing…
+        </div>
+      ) : null}
       {loading ? (
         <LoadingHint message="Loading file…" className="py-6" />
       ) : filePath ? (
-        <CodeEditor
-          value={content}
-          filePath={filePath}
-          onChange={setContent}
-          onSave={() => void save()}
-          onCursor={setCursor}
-          inlineCompletion={inlineCompletion}
+        <EditorTabViews
           onGoToDefinition={lsp.goToDefinition}
           lspBridge={lsp.bridge}
+          onCursor={setCursor}
         />
       ) : null}
       {filePath && dirty ? (
@@ -103,7 +82,16 @@ export function EditorCanvas() {
         </p>
       ) : null}
       {filePath && !loading ? (
-        <EditorStatusBar filePath={filePath} eol={eol} encoding={encoding} dirty={dirty} />
+        <EditorStatusBar
+          filePath={filePath}
+          eol={eol}
+          encoding={encoding}
+          utf8Bom={utf8Bom}
+          dirty={dirty}
+          lspEnabled={lspEnabled}
+          lspStatus={lsp.status}
+          onLspClick={() => openSettings('agent-behavior')}
+        />
       ) : null}
     </div>
   );

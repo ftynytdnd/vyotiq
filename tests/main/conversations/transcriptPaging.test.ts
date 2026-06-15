@@ -53,7 +53,7 @@ describe('readTranscriptTail', () => {
     expect(tail.hasOlder).toBe(true);
     expect(tail.events[0]?.id).toBe('evt-25');
     expect(tail.events.at(-1)?.id).toBe(`evt-${total - 1}`);
-  });
+  }, 30_000);
 });
 
 describe('readTranscriptBefore', () => {

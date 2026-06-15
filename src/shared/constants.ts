@@ -275,6 +275,14 @@ export const IPC = {
   /** Open the folder picker and return a path without activating a workspace. */
   WORKSPACE_PICK_DIRECTORY: 'workspace:pick-directory',
   WORKSPACE_LIST_TREE: 'workspace:list-tree',
+  WORKSPACE_LIST_CHILDREN: 'workspace:list-children',
+  WORKSPACE_GIT_STATUS: 'workspace:git-status',
+  /** Push: workspace filesystem changed (main → renderer). */
+  WORKSPACE_TREE_CHANGED: 'workspace:tree-changed',
+  WORKSPACE_MKDIR: 'workspace:mkdir',
+  WORKSPACE_RENAME_PATH: 'workspace:rename-path',
+  WORKSPACE_DELETE_PATH: 'workspace:delete-path',
+  WORKSPACE_REVEAL_PATH: 'workspace:reveal-path',
   // Workspaces registry (multi)
   WORKSPACES_LIST: 'workspaces:list',
   WORKSPACES_ADD: 'workspaces:add',
