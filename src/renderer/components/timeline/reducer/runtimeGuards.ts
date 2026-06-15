@@ -108,6 +108,8 @@ export function isTimelineEvent(value: unknown): value is TimelineEvent {
       return hasStringField(o, 'status') || hasStringField(o, 'label');
     case 'diff-stream':
       return hasNonEmptyStringField(o, 'callId');
+    case 'tool-output-delta':
+      return hasNonEmptyStringField(o, 'callId') && hasStringField(o, 'stdout') && hasStringField(o, 'stderr');
     case 'checkpoint-entry':
     case 'checkpoint-revert':
     case 'checkpoint-bash-mutation':

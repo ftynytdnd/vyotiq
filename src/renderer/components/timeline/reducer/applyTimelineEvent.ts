@@ -17,6 +17,7 @@ import {
   setInFlightUsage,
   stampUsageStart,
   type PartialToolCallArgs,
+  type LiveToolOutputSnapshot,
   type TimelineState
 } from './types.js';
 import { clearStreamingToolPreview } from './clearStreamingToolPreview.js';
@@ -269,7 +270,9 @@ export function applyTimelineEvent(
     case 'tool-result': {
       const resultId = event.result.id;
       const { [resultId]: _dropLive, ...nextLiveDiff } = state.liveDiffByCallId;
+      const { [resultId]: _dropOut, ...nextLiveOutput } = state.liveToolOutputByCallId;
       void _dropLive;
+      void _dropOut;
       const toolResultSettledIds = {
         ...state.toolResultSettledIds,
         [resultId]: true as const
@@ -288,6 +291,7 @@ export function applyTimelineEvent(
         ...state,
         events: appendTimelineEvent(state.events, event, mutate),
         liveDiffByCallId: nextLiveDiff,
+        liveToolOutputByCallId: nextLiveOutput,
         toolResultSettledIds,
         liveReportResultIds,
         toolCacheHint
@@ -467,6 +471,27 @@ export function applyTimelineEvent(
         },
         liveDiffByCallId: {
           ...state.liveDiffByCallId,
+          [event.callId]: snapshot
+        }
+      };
+    }
+
+    case 'tool-output-delta': {
+      if (state.toolResultSettledIds[event.callId]) return state;
+      const snapshot: LiveToolOutputSnapshot = {
+        tool: 'bash',
+        command: event.command,
+        stdout: event.stdout,
+        stderr: event.stderr,
+        stdoutTruncated: event.stdoutTruncated === true,
+        stderrTruncated: event.stderrTruncated === true,
+        startedAt: event.startedAt,
+        ts: event.ts
+      };
+      return {
+        ...state,
+        liveToolOutputByCallId: {
+          ...state.liveToolOutputByCallId,
           [event.callId]: snapshot
         }
       };

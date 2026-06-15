@@ -268,7 +268,13 @@ async function dispatchOneToolCall(
     runId: opts.runId,
     conversationId: opts.conversationId,
     emit,
-    signal: opts.signal
+    signal: opts.signal,
+    toolCallId: callId,
+    onProgress: (message) => {
+      const label = message.trim().slice(0, 160);
+      if (!label) return;
+      emitRunStatus(emit, 'running-tool', label, { toolName: tc.name });
+    }
   });
   result.id = callId;
   emit({

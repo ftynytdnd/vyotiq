@@ -15,6 +15,8 @@ export interface StickyFooterLiveContext {
   fileEditCount: number;
   elapsedMs: number;
   tokenLabel: string | null;
+  /** Last line of live bash stdout/stderr while a command runs. */
+  bashLiveTail?: string | null;
 }
 
 export function resolveStickyFooterLiveLabel(ctx: StickyFooterLiveContext): {
@@ -32,6 +34,9 @@ export function resolveStickyFooterLiveLabel(ctx: StickyFooterLiveContext): {
   if (ctx.tokenLabel) detailParts.push(ctx.tokenLabel);
   if (ctx.fileEditCount > 0) {
     detailParts.push(`${ctx.fileEditCount} edit${ctx.fileEditCount === 1 ? '' : 's'}`);
+  }
+  if (ctx.bashLiveTail && ctx.bashLiveTail.length > 0) {
+    detailParts.push(ctx.bashLiveTail);
   }
 
   return { headline, detailParts };

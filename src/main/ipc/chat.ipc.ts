@@ -127,6 +127,7 @@ function isPersistentEvent(event: TimelineEvent): boolean {
     event.kind !== 'run-status' &&
     event.kind !== 'tool-call-args-delta' &&
     event.kind !== 'diff-stream' &&
+    event.kind !== 'tool-output-delta' &&
     event.kind !== 'synthetic-usage-update'
   );
 }

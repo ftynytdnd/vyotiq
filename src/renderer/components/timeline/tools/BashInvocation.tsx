@@ -20,7 +20,7 @@
 import type { ToolCall, ToolResult } from '@shared/types/tool.js';
 import { resolveShellToolTitle } from '@shared/shell/displayShell.js';
 import { getHostPlatform } from '../../../lib/hostPlatform.js';
-import type { DiffStreamSnapshot } from '../reducer/types.js';
+import type { DiffStreamSnapshot, LiveToolOutputSnapshot } from '../reducer/types.js';
 import { InvocationShell } from './shared/InvocationShell.js';
 import { DetailPane } from './shared/DetailPane.js';
 import { CodeBlock } from './shared/CodeBlock.js';
@@ -45,9 +45,24 @@ interface BashInvocationProps {
    * (the streamer skips those by design).
    */
   diffStream?: DiffStreamSnapshot;
+  /** Live stdout/stderr while the command is still running. */
+  liveOutput?: LiveToolOutputSnapshot;
 }
 
-export function BashInvocation({ call, result, dense, rowKey, partial, diffStream }: BashInvocationProps) {
+function formatLiveElapsed(startedAt: number): string {
+  const s = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
+export function BashInvocation({
+  call,
+  result,
+  dense,
+  rowKey,
+  partial,
+  diffStream,
+  liveOutput
+}: BashInvocationProps) {
   const data = result?.data?.tool === 'bash' ? result.data : null;
   const command =
     typeof call?.args?.['command'] === 'string'
@@ -66,7 +81,14 @@ export function BashInvocation({ call, result, dense, rowKey, partial, diffStrea
   const showDiffStream =
     partial === true && diffStream !== undefined && diffStream.tool === 'bash';
 
-  const hasDetail = Boolean(command || data || (result && !result.ok) || showDiffStream);
+  const showLiveOutput =
+    !data &&
+    liveOutput !== undefined &&
+    (liveOutput.stdout.length > 0 || liveOutput.stderr.length > 0);
+
+  const hasDetail = Boolean(
+    command || data || (result && !result.ok) || showDiffStream || showLiveOutput
+  );
   const errorHint = toolErrorHint(result);
 
   const detail = hasDetail ? (
@@ -81,6 +103,33 @@ export function BashInvocation({ call, result, dense, rowKey, partial, diffStrea
           diffStream={diffStream}
           label={diffStream.settled ? 'live write' : 'streaming write'}
         />
+      )}
+      {showLiveOutput && liveOutput && (
+        <>
+          {liveOutput.stdout.length > 0 && (
+            <DetailPane
+              label={
+                liveOutput.stdoutTruncated
+                  ? `stdout (live · ${formatLiveElapsed(liveOutput.startedAt)}, truncated)`
+                  : `stdout (live · ${formatLiveElapsed(liveOutput.startedAt)})`
+              }
+            >
+              <CodeBlock body={liveOutput.stdout} />
+            </DetailPane>
+          )}
+          {liveOutput.stderr.length > 0 && (
+            <DetailPane
+              label={
+                liveOutput.stderrTruncated
+                  ? `stderr (live · ${formatLiveElapsed(liveOutput.startedAt)}, truncated)`
+                  : `stderr (live · ${formatLiveElapsed(liveOutput.startedAt)})`
+              }
+              tone="danger"
+            >
+              <CodeBlock body={liveOutput.stderr} tone="danger" />
+            </DetailPane>
+          )}
+        </>
       )}
       {data && data.stdout.length > 0 && (
         <DetailPane label={data.stdoutTruncated ? 'stdout (truncated)' : 'stdout'}>
@@ -119,7 +168,7 @@ export function BashInvocation({ call, result, dense, rowKey, partial, diffStrea
   // user sees the hunks materialise without clicking. Surrenders
   // to manual override; collapses naturally once `showDiffStream`
   // flips false on settle.
-  const liveAutoExpand = showDiffStream;
+  const liveAutoExpand = showDiffStream || showLiveOutput;
 
   return (
     <InvocationShell

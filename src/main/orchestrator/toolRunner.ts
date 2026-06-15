@@ -28,6 +28,7 @@ export interface ToolRunOpts {
   conversationId: string;
   emit: (event: TimelineEvent) => void;
   signal: AbortSignal;
+  toolCallId?: string;
   onProgress?: (message: string) => void;
 }
 
@@ -82,6 +83,7 @@ export async function runToolByName(
       conversationId: opts.conversationId,
       emit: opts.emit,
       signal: opts.signal,
+      toolCallId: opts.toolCallId,
       progress: opts.onProgress
     });
     // Record-after-run: writes invalidate the cache, reads are memoized.

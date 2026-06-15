@@ -128,6 +128,7 @@ export function renderTranscriptMarkdown(
       case 'tool-compacted':
       case 'tool-call-args-delta':
       case 'diff-stream':
+      case 'tool-output-delta':
       case 'checkpoint-entry':
       case 'checkpoint-revert':
       case 'checkpoint-bash-mutation':

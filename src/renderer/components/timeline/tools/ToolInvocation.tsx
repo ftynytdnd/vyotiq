@@ -6,7 +6,7 @@
  */
 
 import type { ToolCall, ToolName, ToolResult } from '@shared/types/tool.js';
-import type { DiffStreamSnapshot } from '../reducer/types.js';
+import type { DiffStreamSnapshot, LiveToolOutputSnapshot } from '../reducer/types.js';
 import { BashInvocation } from './BashInvocation.js';
 import { LsInvocation } from './LsInvocation.js';
 import { ReadInvocation } from './ReadInvocation.js';
@@ -43,6 +43,7 @@ interface ToolInvocationProps {
    * that consume it.
    */
   diffStream?: DiffStreamSnapshot;
+  liveOutput?: LiveToolOutputSnapshot;
   retryCount?: number;
   /** When set, overrides the bespoke renderer's live auto-expand signal. */
   liveAutoExpand?: boolean;
@@ -56,6 +57,7 @@ export function ToolInvocation({
   rowKey,
   partial,
   diffStream,
+  liveOutput,
   retryCount,
   liveAutoExpand,
   groupExpanded
@@ -72,6 +74,7 @@ export function ToolInvocation({
           rowKey={rowKey}
           partial={partial}
           {...(diffStream ? { diffStream } : {})}
+          {...(liveOutput ? { liveOutput } : {})}
         />
       );
     case 'ls':

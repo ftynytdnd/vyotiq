@@ -81,6 +81,20 @@ export interface DiffStreamSnapshot {
 }
 
 /**
+ * Live stdout/stderr for an in-flight `bash` tool call.
+ */
+export interface LiveToolOutputSnapshot {
+  tool: 'bash';
+  command: string;
+  stdout: string;
+  stderr: string;
+  stdoutTruncated: boolean;
+  stderrTruncated: boolean;
+  startedAt: number;
+  ts: number;
+}
+
+/**
  * Rolling token-usage aggregation for the orchestrator turn.
  */
 export interface TokenUsageAggregate {
@@ -121,6 +135,7 @@ export interface TimelineState {
   partialToolCallArgs: Record<string, PartialToolCallArgs>;
   settledCallIds: Record<string, true>;
   liveDiffByCallId: Record<string, DiffStreamSnapshot>;
+  liveToolOutputByCallId: Record<string, LiveToolOutputSnapshot>;
   toolResultSettledIds: Record<string, true>;
   /** Report tool-results that settled via live IPC this session (not transcript replay). */
   liveReportResultIds: Record<string, true>;
@@ -142,6 +157,7 @@ export const INITIAL_TIMELINE_STATE: TimelineState = {
   partialToolCallArgs: {},
   settledCallIds: {},
   liveDiffByCallId: {},
+  liveToolOutputByCallId: {},
   toolResultSettledIds: {},
   liveReportResultIds: {},
   runIdToFileEditCount: {}

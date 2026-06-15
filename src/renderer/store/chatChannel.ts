@@ -75,6 +75,11 @@ interface ArgsDeltaQueueEntry {
   event: Extract<TimelineEvent, { kind: 'tool-call-args-delta' }>;
 }
 
+interface ToolOutputDeltaQueueEntry {
+  runId: string;
+  event: Extract<TimelineEvent, { kind: 'tool-output-delta' }>;
+}
+
 /**
  * Per-`(runId, id, kind)` accumulator for streaming text + reasoning
  * deltas. Pre-fix, every provider token (`agent-text-delta` /
@@ -619,6 +624,22 @@ export async function bootstrapChatChannel(): Promise<void> {
     }
   });
 
+  const toolOutputDeltaBatcher = createRafBatcher<ToolOutputDeltaQueueEntry>((batch) => {
+    const latest = new Map<string, ToolOutputDeltaQueueEntry>();
+    for (const entry of batch) {
+      const key = `${entry.runId}\u0000${entry.event.callId}`;
+      latest.set(key, entry);
+    }
+    const store = useChatStore.getState();
+    for (const entry of latest.values()) {
+      try {
+        store.applyEvent(entry.runId, entry.event);
+      } catch (err) {
+        log.warn('tool-output-delta drain threw', { runId: entry.runId, err });
+      }
+    }
+  });
+
   // Every listener body is wrapped in try/catch. A throw from the
   // reducer (malformed event slipping past the runtime guard, an
   // unhandled selector case, etc.) previously tore down the IPC
@@ -644,6 +665,10 @@ export async function bootstrapChatChannel(): Promise<void> {
         // happy-path render budget.
         if (event.kind === 'tool-call-args-delta') {
           argsDeltaBatcher.push({ runId, event });
+          return;
+        }
+        if (event.kind === 'tool-output-delta') {
+          toolOutputDeltaBatcher.push({ runId, event });
           return;
         }
         // Audit fix A3: RAF-coalesce streaming text + reasoning
@@ -779,6 +804,7 @@ export async function bootstrapChatChannel(): Promise<void> {
   // same rationale as the boot guard.
   unsub.push(() => {
     argsDeltaBatcher.cancel();
+    toolOutputDeltaBatcher.cancel();
     if (textDeltaRafHandle !== null) {
       rafCancel(textDeltaRafHandle);
       textDeltaRafHandle = null;

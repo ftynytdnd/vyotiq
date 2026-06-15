@@ -25,6 +25,8 @@ export interface ToolContext {
   signal: AbortSignal;
   /** Emit a `TimelineEvent` for the renderer. Used by checkpoint integration. */
   emit: (event: TimelineEvent) => void;
+  /** Originating tool-call id — required for live output telemetry. */
+  toolCallId?: string;
   /** Optional: emit a free-form progress line for the timeline. */
   progress?: (message: string) => void;
 }

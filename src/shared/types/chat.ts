@@ -456,6 +456,28 @@ export type TimelineEvent =
     /** Cumulative synthesized post-edit body for live editor sync. */
     postBody?: string;
   }
+  /**
+   * Live stdout/stderr for an in-flight tool (today: `bash` only).
+   * Emitted by the main process while the child process is still
+   * running. Cumulative semantics — latest frame per `callId` wins.
+   * Cleared when the matching `tool-result` lands.
+   *
+   * NOT persisted to JSONL — replay uses the settled `tool-result`.
+   */
+  | {
+    kind: 'tool-output-delta';
+    id: string;
+    ts: number;
+    callId: string;
+    tool: 'bash';
+    command: string;
+    stdout: string;
+    stderr: string;
+    stdoutTruncated?: boolean;
+    stderrTruncated?: boolean;
+    /** Wall-clock when the bash invocation started. */
+    startedAt: number;
+  }
   | {
     kind: 'file-edit';
     id: string;

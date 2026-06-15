@@ -42,6 +42,11 @@ export function toolGroupStreamingBody(
       const diff = stream.hunks.flatMap((h) => h.lines.map((l) => l.text)).join('\n');
       return cmd ? `$ ${cmd}\n\n${diff}` : diff;
     }
+    const live = tail.liveOutput;
+    if (live) {
+      const body = live.stderr.length > 0 ? live.stderr : live.stdout;
+      return cmd ? `$ ${cmd}\n\n${body}` : body;
+    }
     return cmd ? `$ ${cmd}` : '';
   }
 

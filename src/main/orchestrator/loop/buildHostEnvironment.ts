@@ -199,7 +199,8 @@ export function buildHostEnvironmentXml(
     lines.push(
       'shell_note: Agent `bash` uses PowerShell on Windows (`;` to chain — not `&` or `&&`/`||`). ' +
         'Do not use bash redirection (`2>/dev/null`) — use `2>$null`. Prefer `Get-ChildItem`, `Select-String`, and `\\` paths. ' +
-        'Isolated bash spawns reset cwd to workspace_cwd; shared PTY cwd may drift after `cd`.'
+        'Isolated bash spawns reset cwd to workspace_cwd; shared PTY cwd may drift after `cd`. ' +
+        'Do not start long-running servers via `bash` (`ollama serve`, `npm run dev`, `Start-Process -NoNewWindow …`) — probe existing services with curl/Invoke-RestMethod or ask the user to start them.'
     );
   }
 

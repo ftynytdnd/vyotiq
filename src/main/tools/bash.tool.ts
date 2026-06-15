@@ -38,6 +38,9 @@ import { recordChange } from '../checkpoints/index.js';
 import { computeDiffHunks } from '@shared/text/diff/computeDiffHunks.js';
 import { buildBashEnv } from '../terminal/bashEnv.js';
 import { hasWorkspacePty, runAgentCommandInPty } from '../terminal/ptyManager.js';
+import { resolveBashLongRunning } from './bashLongRunning.js';
+import { BashOutputCapture } from './bashOutputCapture.js';
+import { PTY_CMD_END_PREFIX, PTY_CMD_START } from '@shared/terminal/ptyMarkers.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child('tools/bash');
@@ -709,6 +712,8 @@ export const bashTool: Tool = {
 - Destructive operations (\`rm -rf /\`, \`format c:\`, \`git reset --hard\`, etc.) are **hard-blocked** by the host — do not attempt them; use \`ask_user\` if the user explicitly requests recovery.
 - Output is truncated at 64K chars (head retained, tail dropped).
 - Each invocation has a 30-second timeout unless you override \`timeoutMs\`.
+- **Live output:** stdout/stderr stream into the timeline while a command runs (sticky footer shows the latest line). The model still receives the full merged output only after the command exits.
+- **Long-running servers are not supported.** Do not run \`ollama serve\`, \`npm run dev\`, \`python -m http.server\`, or similar foreground daemons — they block the agent for minutes. Check whether a service is already up with a quick probe (\`curl -sf http://127.0.0.1:PORT/...\` / \`Invoke-RestMethod\`). Ask the user to start missing services outside Vyotiq. On Windows never use \`Start-Process -NoNewWindow\` for servers — it attaches to the shared shell and blocks. Do not raise \`timeoutMs\` to keep a server alive.
 
 **Windows / PowerShell quirks.** On Windows the runner is PowerShell, NOT bash. Bash idioms that look universal will fail with \`exited with code 1\` and no obvious hint. The most common traps and their PowerShell replacements:
 - Make a directory tree: \`New-Item -ItemType Directory -Path foo/bar -Force\` (NOT \`mkdir -p foo/bar\`).
@@ -818,10 +823,35 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
       };
     }
 
+    const longRunning = resolveBashLongRunning(command);
+    if (longRunning?.kind === 'block') {
+      return {
+        id,
+        name: 'bash',
+        ok: false,
+        output: longRunning.output,
+        error: longRunning.error,
+        durationMs: Date.now() - started
+      };
+    }
+
+    let shellCommand = command;
+    let forceIsolated = false;
+    let timeoutCap = BASH_MAX_TIMEOUT_MS;
+    if (longRunning?.kind === 'rewrite') {
+      shellCommand = longRunning.command;
+      forceIsolated = longRunning.isolated;
+      timeoutCap = longRunning.timeoutMs;
+      log.info('bash long-running rewrite', {
+        note: longRunning.note,
+        original: command
+      });
+    }
+
     const { cmd, args: argsFor } = platformShell();
     const requested =
       typeof a.timeoutMs === 'number' && a.timeoutMs > 0 ? a.timeoutMs : BASH_TIMEOUT_MS;
-    const timeoutMs = Math.min(requested, BASH_MAX_TIMEOUT_MS);
+    const timeoutMs = Math.min(requested, timeoutCap);
     const isWin = process.platform === 'win32';
 
     // Pre-snapshot BEFORE the spawn so we can recover (or audit) file
@@ -838,13 +868,31 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
       return { entries: new Map<string, PreSnapshotEntry>(), truncated: false, capturedBytes: 0 };
     });
 
-    const useSharedPty = a.shared !== false && hasWorkspacePty(ctx.workspaceId);
+    const outputCapture =
+      ctx.toolCallId && ctx.toolCallId.length > 0
+        ? new BashOutputCapture({
+            callId: ctx.toolCallId,
+            command,
+            emit: ctx.emit,
+            startedAt: started
+          })
+        : null;
+
+    const useSharedPty =
+      !forceIsolated && a.shared !== false && hasWorkspacePty(ctx.workspaceId);
     if (useSharedPty) {
+      let ptyLive = false;
       const ptyRun = await runAgentCommandInPty(
         ctx.workspaceId,
-        command,
+        shellCommand,
         timeoutMs,
-        ctx.signal
+        ctx.signal,
+        (chunk) => {
+          if (!outputCapture) return;
+          if (chunk.includes(PTY_CMD_START)) ptyLive = true;
+          if (!ptyLive || chunk.includes(PTY_CMD_END_PREFIX)) return;
+          outputCapture.appendStdout(chunk);
+        }
       );
       if (ptyRun) {
         const shellRuntime = isWin ? ('powershell' as const) : ('bash' as const);
@@ -863,6 +911,8 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
             ? `exited with code ${ptyRun.exitCode}`
             : null;
         await runPostBashMutationScan(command, ctx, preSnap);
+        outputCapture?.flush();
+        outputCapture?.close();
         return {
           id,
           name: 'bash',
@@ -918,7 +968,7 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
       };
 
       const shellRuntime = isWin ? ('powershell' as const) : ('bash' as const);
-      const child = spawn(cmd, argsFor(command), {
+      const child = spawn(cmd, argsFor(shellCommand), {
         cwd: ctx.workspacePath,
         detached: !isWin,
         // PRIVACY BOUNDARY (Audit fix H-01): build a minimal env allowlist
@@ -1000,6 +1050,7 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
         } else {
           stdout += chunk;
         }
+        outputCapture?.appendStdout(chunk);
       });
       child.stderr.on('data', (b: Buffer) => {
         if (stderrTruncated) {
@@ -1016,9 +1067,11 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
         } else {
           stderr += chunk;
         }
+        outputCapture?.appendStderr(chunk);
       });
 
       child.on('error', (err) => {
+        outputCapture?.close();
         clearTimeout(killTimer);
         ctx.signal.removeEventListener('abort', onAbort);
         settle({
@@ -1132,6 +1185,8 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
         // recomputed inside `settle` to include the scan time so
         // downstream telemetry is honest about the wait.
         runPostBashMutationScan(command, ctx, preSnap).finally(() => {
+          outputCapture?.flush();
+          outputCapture?.close();
           settle({
             id,
             name: 'bash',

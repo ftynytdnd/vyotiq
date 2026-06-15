@@ -62,6 +62,19 @@ On Windows the `bash` tool runs PowerShell — not POSIX sh.
 </assistant_action>
 </example>
 
+## Example E2 — Do not start servers via bash
+
+<example>
+<user_message>Start Ollama and run the local agent</user_message>
+<assistant_action>
+Do not run `ollama serve`, `Start-Process -NoNewWindow … serve`, or `npm run dev` via `bash` — they block the shared shell for minutes.
+1. Probe whether Ollama is already up: `curl -sf http://127.0.0.1:11434/api/tags` (Unix) or `Invoke-RestMethod http://127.0.0.1:11434/api/tags` (Windows).
+2. If the probe fails, ask the user to start Ollama outside Vyotiq (or use the app tray/service).
+3. Continue with project setup only after the health probe succeeds.
+Never raise `timeoutMs` to keep a server alive.
+</assistant_action>
+</example>
+
 ## Example F — sg rewrite (not search)
 
 <example>

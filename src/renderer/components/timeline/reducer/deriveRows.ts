@@ -72,6 +72,8 @@ export interface ToolGroupChild {
    * `tool-call` event lands.
    */
   diffStream?: DiffStreamSnapshot;
+  /** Live stdout/stderr while bash is still running. */
+  liveOutput?: import('./types.js').LiveToolOutputSnapshot;
   /** Collapsed retry count for consecutive failed edits on the same path. */
   retryCount?: number;
 }
@@ -215,6 +217,8 @@ export interface DeriveRowsOptions {
   settledCallIds?: Record<string, true>;
   /** Live FS diff keyed by callId — merged into settled tool-group children. */
   liveDiffByCallId?: Record<string, import('./types.js').DiffStreamSnapshot>;
+  /** Live bash stdout/stderr keyed by callId. */
+  liveToolOutputByCallId?: Record<string, import('./types.js').LiveToolOutputSnapshot>;
 }
 
 function enrichToolGroupsWithLiveDiff(
@@ -235,6 +239,25 @@ function enrichToolGroupsWithLiveDiff(
         diffStream: diff,
         partial: child.partial === true
       };
+    });
+    return changed ? { ...row, children } : row;
+  });
+}
+
+function enrichToolGroupsWithLiveOutput(
+  rows: Row[],
+  liveToolOutputByCallId: DeriveRowsOptions['liveToolOutputByCallId']
+): Row[] {
+  if (!liveToolOutputByCallId || Object.keys(liveToolOutputByCallId).length === 0) return rows;
+  return rows.map((row) => {
+    if (row.kind !== 'tool-group') return row;
+    let changed = false;
+    const children = row.children.map((child) => {
+      if (child.result) return child;
+      const liveOutput = liveToolOutputByCallId[child.callId];
+      if (!liveOutput) return child;
+      changed = true;
+      return { ...child, liveOutput };
     });
     return changed ? { ...row, children } : row;
   });
@@ -476,7 +499,8 @@ export function deriveRows(
 
       case 'tool-call-args-delta':
       case 'diff-stream':
-        // Ephemeral partial-args / FS-aware live diff — neither
+      case 'tool-output-delta':
+        // Ephemeral partial-args / FS-aware live diff / live bash output
         // emits its own row. Both fold into the matching
         // `partialToolCallArgs[callId]` entry; the in-flight
         // tool-group child is synthesised from that snapshot in a
@@ -587,5 +611,8 @@ export function applyDeriveRowsLiveLayer(rows: Row[], opts: DeriveRowsOptions): 
     out = [...rows];
     appendSynthesizedPartialRows(out, partials, opts.settledCallIds, true);
   }
-  return enrichToolGroupsWithLiveDiff(out, opts.liveDiffByCallId);
+  return enrichToolGroupsWithLiveOutput(
+    enrichToolGroupsWithLiveDiff(out, opts.liveDiffByCallId),
+    opts.liveToolOutputByCallId
+  );
 }

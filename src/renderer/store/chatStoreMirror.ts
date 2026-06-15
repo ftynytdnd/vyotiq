@@ -14,6 +14,7 @@ export function mirrorOf(slice: ChatSlice): ActiveMirror {
     partialToolCallArgs: slice.partialToolCallArgs,
     settledCallIds: slice.settledCallIds,
     liveDiffByCallId: slice.liveDiffByCallId,
+    liveToolOutputByCallId: slice.liveToolOutputByCallId,
     toolResultSettledIds: slice.toolResultSettledIds,
     liveReportResultIds: slice.liveReportResultIds,
     orchestratorUsage: slice.orchestratorUsage,

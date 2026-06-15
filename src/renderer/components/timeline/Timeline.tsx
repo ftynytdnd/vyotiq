@@ -98,6 +98,7 @@ export function Timeline({
   const partialToolCallArgs = useChatStore((s) => s.partialToolCallArgs);
   const settledCallIds = useChatStore((s) => s.settledCallIds);
   const liveDiffByCallId = useChatStore((s) => s.liveDiffByCallId);
+  const liveToolOutputByCallId = useChatStore((s) => s.liveToolOutputByCallId);
   const assistantTexts = useChatStore((s) => s.assistantTexts);
   const reasoningTexts = useChatStore((s) => s.reasoningTexts);
   const lastUserPromptContent = useChatStore((s) => s.lastUserPromptContent);
@@ -213,9 +214,10 @@ export function Timeline({
       applyDeriveRowsLiveLayer(baseRows, {
         partialToolCallArgs,
         settledCallIds,
-        liveDiffByCallId
+        liveDiffByCallId,
+        liveToolOutputByCallId
       }),
-    [baseRows, partialToolCallArgs, settledCallIds, liveDiffByCallId]
+    [baseRows, partialToolCallArgs, settledCallIds, liveDiffByCallId, liveToolOutputByCallId]
   );
 
   const turnSegments = useMemo(() => groupRowsIntoTurns(rows), [rows]);
@@ -230,8 +232,8 @@ export function Timeline({
 
   const tailScrollKey = useMemo(
     () =>
-      computeTailScrollKey(rows, assistantTexts, reasoningTexts, liveDiffByCallId),
-    [rows, assistantTexts, reasoningTexts, liveDiffByCallId]
+      computeTailScrollKey(rows, assistantTexts, reasoningTexts, liveDiffByCallId, liveToolOutputByCallId),
+    [rows, assistantTexts, reasoningTexts, liveDiffByCallId, liveToolOutputByCallId]
   );
 
   const scheduleScroll = (fn: () => void) => {

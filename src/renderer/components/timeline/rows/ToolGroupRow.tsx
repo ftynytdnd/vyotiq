@@ -205,6 +205,7 @@ export const ToolGroupRow = memo(function ToolGroupRow({ rowKey, toolName, items
               groupExpanded={expanded}
               {...(c.partial ? { partial: true } : {})}
               {...(c.diffStream ? { diffStream: c.diffStream } : {})}
+              {...(c.liveOutput ? { liveOutput: c.liveOutput } : {})}
               {...(c.retryCount && c.retryCount > 1 ? { retryCount: c.retryCount } : {})}
             />
           ))}

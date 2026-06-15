@@ -8,17 +8,23 @@ import type { TimelineState } from './types.js';
 
 type StreamingPreviewSlice = Pick<
   TimelineState,
-  'partialToolCallArgs' | 'liveDiffByCallId' | 'settledCallIds' | 'toolResultSettledIds'
+  | 'partialToolCallArgs'
+  | 'liveDiffByCallId'
+  | 'liveToolOutputByCallId'
+  | 'settledCallIds'
+  | 'toolResultSettledIds'
 >;
 
 export function clearStreamingToolPreview<T extends StreamingPreviewSlice>(state: T): T {
   const partialToolCallArgs = state.partialToolCallArgs ?? {};
   const liveDiffByCallId = state.liveDiffByCallId ?? {};
+  const liveToolOutputByCallId = state.liveToolOutputByCallId ?? {};
   const settledCallIds = state.settledCallIds ?? {};
   const toolResultSettledIds = state.toolResultSettledIds ?? {};
   if (
     Object.keys(partialToolCallArgs).length === 0 &&
     Object.keys(liveDiffByCallId).length === 0 &&
+    Object.keys(liveToolOutputByCallId).length === 0 &&
     Object.keys(settledCallIds).length === 0 &&
     Object.keys(toolResultSettledIds).length === 0
   ) {
@@ -28,6 +34,7 @@ export function clearStreamingToolPreview<T extends StreamingPreviewSlice>(state
     ...state,
     partialToolCallArgs: {},
     liveDiffByCallId: {},
+    liveToolOutputByCallId: {},
     settledCallIds: {},
     toolResultSettledIds: {}
   };

@@ -15,6 +15,10 @@ import { cn } from '../../../lib/cn.js';
 import { timelineRunCompleteRowClassName } from './rowStyles.js';
 import { detectLiveRunActivity } from './detectLiveRunActivity.js';
 import { resolveStickyFooterLiveLabel } from './resolveStickyFooterLiveLabel.js';
+import {
+  resolveActiveBashLiveOutput,
+  tailLine
+} from './resolveActiveBashLiveOutput.js';
 
 interface TurnStickyFooterProps {
   live?: boolean;
@@ -39,6 +43,7 @@ export function TurnStickyFooter({
   const assistantTexts = useChatStore((s) => s.assistantTexts);
   const partialToolCallArgs = useChatStore((s) => s.partialToolCallArgs);
   const toolResultSettledIds = useChatStore((s) => s.toolResultSettledIds);
+  const liveToolOutputByCallId = useChatStore((s) => s.liveToolOutputByCallId);
   const [now, setNow] = useState(() => Date.now());
 
   const { promptTs, runId } = useMemo(() => {
@@ -99,13 +104,26 @@ export function TurnStickyFooter({
     ]
   );
 
+  const bashLiveTail = useMemo(() => {
+    if (!showLive) return null;
+    const live = resolveActiveBashLiveOutput({
+      events,
+      liveToolOutputByCallId,
+      toolResultSettledIds
+    });
+    if (!live) return null;
+    const body = live.stderr.length > 0 ? live.stderr : live.stdout;
+    return tailLine(body);
+  }, [showLive, events, liveToolOutputByCallId, toolResultSettledIds]);
+
   const liveLabel = resolveStickyFooterLiveLabel({
     awaitingAskUser: showLive && awaitingAskUser,
     ...(latestStatus ? { latestStatus } : {}),
     activity,
     fileEditCount,
     elapsedMs,
-    tokenLabel: throughputLabel
+    tokenLabel: throughputLabel,
+    bashLiveTail
   });
 
   return (

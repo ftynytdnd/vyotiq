@@ -2,14 +2,15 @@
  * Stable key for sticky tail-follow scroll — row count plus tail growth proxy.
  */
 
-import type { DiffStreamSnapshot } from '../reducer/types.js';
+import type { DiffStreamSnapshot, LiveToolOutputSnapshot } from '../reducer/types.js';
 import type { DisplayRow } from './displayRowTypes.js';
 
 export function computeTailScrollKey(
   rows: DisplayRow[],
   assistantTexts: Record<string, { text: string }>,
   reasoningTexts: Record<string, { text: string }>,
-  liveDiffByCallId: Record<string, DiffStreamSnapshot>
+  liveDiffByCallId: Record<string, DiffStreamSnapshot>,
+  liveToolOutputByCallId: Record<string, LiveToolOutputSnapshot> = {}
 ): string {
   if (rows.length === 0) return '0';
   const last = rows[rows.length - 1]!;
@@ -28,6 +29,8 @@ export function computeTailScrollKey(
           growth += diff.additions + diff.deletions + diff.hunks.length;
         }
         if (child.partial) growth += 1;
+        const live = child.liveOutput ?? liveToolOutputByCallId[child.callId];
+        if (live) growth += live.stdout.length + live.stderr.length;
       }
       growth += last.children.length;
       break;

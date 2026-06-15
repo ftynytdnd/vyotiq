@@ -217,6 +217,11 @@ export const MAX_ATTACHMENT_FILE_BYTES = 10 * 1024 * 1024;
 export const BASH_TIMEOUT_MS = 30_000;
 /** Upper bound for per-invocation `timeoutMs` overrides from the model. */
 export const BASH_MAX_TIMEOUT_MS = 30 * 60 * 1000;
+/**
+ * Cap for detached server-start rewrites (Ollama serve, etc.) — long enough
+ * for a health probe, short enough that a blocking mistake cannot stall a run.
+ */
+export const BASH_SERVER_START_TIMEOUT_MS = 20_000;
 export const READ_MAX_BYTES = 512 * 1024; // 512 KB
 
 /** Max editor document body over LSP IPC (open/change). Matches read cap. */
@@ -455,6 +460,7 @@ export const IPC = {
   LSP_SEND: 'lsp:send',
   LSP_MESSAGE: 'lsp:message',
   LSP_STATUS: 'lsp:status',
+  LSP_DISCONNECT: 'lsp:disconnect',
 
   // Composer mention search helpers
   MENTIONS_SEARCH_SYMBOLS: 'mentions:search-symbols',

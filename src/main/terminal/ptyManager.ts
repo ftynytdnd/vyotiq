@@ -295,7 +295,8 @@ export async function runAgentCommandInPty(
   workspaceId: string,
   command: string,
   timeoutMs: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onLiveChunk?: (data: string) => void
 ): Promise<AgentPtyRunResult | null> {
   const session = primarySessionFor(workspaceId);
   if (!session) return null;
@@ -310,6 +311,7 @@ export async function runAgentCommandInPty(
 
   const onChunk = (data: string) => {
     if (settled) return;
+    onLiveChunk?.(data);
     if (buffer.length < PTY_MAX_CAPTURE_CHARS) {
       const room = PTY_MAX_CAPTURE_CHARS - buffer.length;
       buffer += data.length > room ? data.slice(0, room) : data;
