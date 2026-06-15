@@ -15,6 +15,7 @@ export const AGENT_TOOLS: readonly ToolName[] = [
   'edit',
   'delete',
   'search',
+  'sg',
   'memory',
   'recall',
   'report',

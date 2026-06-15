@@ -221,9 +221,8 @@ function verbFor(name: ToolName, pending = false): string {
       case 'ls': return 'Listing';
       case 'edit': return 'Editing';
       case 'delete': return 'Deleting';
-      // `search` is local-only (SearchData.mode is always 'local'), so the
-      // verb is always the grep form — no remote-search branch.
-      case 'search': return 'Grepping';
+      case 'search': return 'Searching';
+      case 'sg': return 'Running sg';
       case 'memory': return 'Memory';
       case 'recall': return 'Recalling';
       case 'report': return 'Writing';
@@ -238,7 +237,8 @@ function verbFor(name: ToolName, pending = false): string {
     case 'ls': return 'Listed';
     case 'edit': return 'Edited';
     case 'delete': return 'Deleted';
-    case 'search': return 'Grepped';
+    case 'search': return 'Searched';
+    case 'sg': return 'Ran sg';
     case 'memory': return 'Memory';
     case 'recall': return 'Recalled';
     case 'report': return 'Wrote';
@@ -256,6 +256,7 @@ function unitFor(name: ToolName, singular: boolean): string {
     case 'edit': return singular ? 'file' : 'files';
     case 'delete': return singular ? 'file' : 'files';
     case 'search': return singular ? 'query' : 'queries';
+    case 'sg': return singular ? 'sg run' : 'sg runs';
     case 'memory': return singular ? 'note' : 'notes';
     case 'recall': return singular ? 'conversation' : 'conversations';
     case 'report': return singular ? 'report' : 'reports';
@@ -312,18 +313,41 @@ function extractPrimary(name: ToolName, child: ToolGroupChild): string {
       return raw;
     }
     case 'search': {
-      const mode =
-        args['mode'] === 'structural' || (data?.tool === 'search' && data.mode === 'structural')
-          ? 'structural'
-          : 'local';
-      if (mode === 'structural') return 'Structural search';
+      const pattern =
+        typeof args['pattern'] === 'string'
+          ? (args['pattern'] as string)
+          : data?.tool === 'search'
+            ? (data.pattern ?? data.query)
+            : '';
       const q =
         typeof args['query'] === 'string'
           ? (args['query'] as string)
           : data?.tool === 'search'
             ? data.query
             : '';
-      return q;
+      const kind =
+        typeof args['kind'] === 'string'
+          ? (args['kind'] as string)
+          : data?.tool === 'search'
+            ? data.kind
+            : '';
+      return kind || pattern || q;
+    }
+    case 'sg': {
+      const action =
+        typeof args['action'] === 'string'
+          ? (args['action'] as string)
+          : data?.tool === 'sg'
+            ? data.action
+            : 'run';
+      const pattern =
+        typeof args['pattern'] === 'string' ? (args['pattern'] as string) : '';
+      const rulePath =
+        typeof args['rulePath'] === 'string' ? (args['rulePath'] as string) : '';
+      const configPath =
+        typeof args['configPath'] === 'string' ? (args['configPath'] as string) : '';
+      if (action === 'run' && pattern) return pattern;
+      return configPath || rulePath || action;
     }
     case 'memory': {
       const action =

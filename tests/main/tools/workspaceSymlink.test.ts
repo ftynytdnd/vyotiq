@@ -62,10 +62,10 @@ describe('ls + search — symlink containment (disk)', () => {
     }
   });
 
-  it('local search does not grep through a symlinked outside directory', async () => {
+  it('search does not match through a symlinked outside directory', async () => {
     if (!symlinkOk) return;
     const result = await searchTool.run(
-      { mode: 'local', query: 'OUTSIDE_ONLY_TOKEN' },
+      { query: 'OUTSIDE_ONLY_TOKEN' },
       makeCtx(workspace)
     );
     expect(result.ok).toBe(true);
@@ -74,9 +74,9 @@ describe('ls + search — symlink containment (disk)', () => {
     }
   });
 
-  it('local search finds tokens in real in-workspace files', async () => {
+  it('search finds tokens in real in-workspace files', async () => {
     const result = await searchTool.run(
-      { mode: 'local', query: 'INSIDE_ONLY_TOKEN' },
+      { query: 'INSIDE_ONLY_TOKEN' },
       makeCtx(workspace)
     );
     expect(result.ok).toBe(true);
@@ -85,10 +85,10 @@ describe('ls + search — symlink containment (disk)', () => {
     }
   });
 
-  it('local search rejects a symlinked path root via realpathInsideWorkspace', async () => {
+  it('search rejects a symlinked path root via realpathInsideWorkspace', async () => {
     if (!symlinkOk) return;
     const result = await searchTool.run(
-      { mode: 'local', query: 'anything', path: 'escape-dir' },
+      { query: 'anything', path: 'escape-dir' },
       makeCtx(workspace)
     );
     expect(result.ok).toBe(false);

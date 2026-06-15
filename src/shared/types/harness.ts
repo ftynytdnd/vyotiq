@@ -4,7 +4,8 @@ export const HARNESS_SECTION_IDS = [
   'orchestrator-core',
   'context-learning',
   'deliverables',
-  'static-examples'
+  'static-examples',
+  'ast-grep-reference'
 ] as const;
 
 export type HarnessSectionId = (typeof HARNESS_SECTION_IDS)[number];

@@ -46,13 +46,35 @@ export function toolGroupStreamingBody(
   }
 
   if (toolName === 'read' || toolName === 'search') {
+    const kind =
+      typeof tail.call?.args?.['kind'] === 'string'
+        ? (tail.call.args['kind'] as string)
+        : '';
     const query =
       typeof tail.call?.args?.['query'] === 'string'
         ? (tail.call.args['query'] as string)
-        : typeof tail.call?.args?.['path'] === 'string'
-          ? (tail.call.args['path'] as string)
-          : '';
-    return query;
+        : typeof tail.call?.args?.['pattern'] === 'string'
+          ? (tail.call.args['pattern'] as string)
+          : typeof tail.call?.args?.['path'] === 'string'
+            ? (tail.call.args['path'] as string)
+            : '';
+    return kind || query;
+  }
+
+  if (toolName === 'sg') {
+    const pattern =
+      typeof tail.call?.args?.['pattern'] === 'string'
+        ? (tail.call.args['pattern'] as string)
+        : '';
+    const rulePath =
+      typeof tail.call?.args?.['rulePath'] === 'string'
+        ? (tail.call.args['rulePath'] as string)
+        : '';
+    const configPath =
+      typeof tail.call?.args?.['configPath'] === 'string'
+        ? (tail.call.args['configPath'] as string)
+        : '';
+    return pattern || configPath || rulePath;
   }
 
   if (tail.result?.output) return tail.result.output;

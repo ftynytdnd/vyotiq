@@ -195,7 +195,8 @@ export function buildHostEnvironmentXml(
   if (opts?.workspacePath && opts.workspacePath.length > 0) {
     lines.push(`workspace_cwd: ${opts.workspacePath}`);
     lines.push(
-      'shell_note: Agent `bash` uses PowerShell on Windows (`;` to chain — not `&`). ' +
+      'shell_note: Agent `bash` uses PowerShell on Windows (`;` to chain — not `&` or `&&`/`||`). ' +
+        'Do not use bash redirection (`2>/dev/null`) — use `2>$null`. Prefer `Get-ChildItem`, `Select-String`, and `\\` paths. ' +
         'Isolated bash spawns reset cwd to workspace_cwd; shared PTY cwd may drift after `cd`.'
     );
   }

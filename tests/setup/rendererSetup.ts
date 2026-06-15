@@ -165,7 +165,8 @@ function makeStubApi() {
         { id: 'orchestrator-core', file: '00-orchestrator-core.md', hasOverride: false },
         { id: 'context-learning', file: '01-context-learning.md', hasOverride: false },
         { id: 'deliverables', file: '02-deliverables.md', hasOverride: false },
-        { id: 'static-examples', file: '03-static-examples.md', hasOverride: false }
+        { id: 'static-examples', file: '03-static-examples.md', hasOverride: false },
+        { id: 'ast-grep-reference', file: '04-ast-grep-cheatsheet.md', hasOverride: false }
       ]),
       readSection: vi.fn(async (sectionId: string) => ({
         sectionId,

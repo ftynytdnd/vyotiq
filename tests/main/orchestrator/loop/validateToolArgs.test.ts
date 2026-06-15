@@ -17,23 +17,26 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('edit', { path: 'src/foo.ts' }).ok).toBe(true);
   });
 
-  it('requires command for bash and query+mode for search', () => {
+  it('requires command for bash and query, pattern, or kind for search', () => {
     expect(validateToolArgs('bash', {}).ok).toBe(false);
     expect(validateToolArgs('search', {}).ok).toBe(false);
     expect(validateToolArgs('bash', { command: 'ls' }).ok).toBe(true);
-    expect(validateToolArgs('search', { query: 'foo' }).ok).toBe(false);
-    expect(validateToolArgs('search', { query: 'foo', mode: 'local' }).ok).toBe(true);
-    expect(validateToolArgs('search', { query: 'foo', mode: 'web' }).ok).toBe(false);
-    expect(
-      validateToolArgs('search', { query: 'export function $NAME', mode: 'structural' }).ok
-    ).toBe(false);
+    expect(validateToolArgs('search', { query: 'foo' }).ok).toBe(true);
+    expect(validateToolArgs('search', { kind: 'function_declaration' }).ok).toBe(true);
+    expect(validateToolArgs('search', { query: 'foo', mode: 'web' }).ok).toBe(true);
     expect(
       validateToolArgs('search', {
         query: 'export function $NAME',
-        mode: 'structural',
         language: 'typescript'
       }).ok
     ).toBe(true);
+  });
+
+  it('requires rulePath or configPath for sg scan', () => {
+    expect(validateToolArgs('sg', { action: 'scan' }).ok).toBe(false);
+    expect(validateToolArgs('sg', { action: 'scan', rulePath: 'rules/a.yml' }).ok).toBe(true);
+    expect(validateToolArgs('sg', { action: 'scan', configPath: 'sgconfig.yml' }).ok).toBe(true);
+    expect(validateToolArgs('sg', { action: 'test' }).ok).toBe(true);
   });
 
   it('requires action and scope for memory', () => {

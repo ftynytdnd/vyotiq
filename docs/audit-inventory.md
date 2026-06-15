@@ -13,7 +13,7 @@ Ledger of remediation items closed in the 2026-06 full-app pass. Do not resurrec
 - **Transcript pagination** — tail slice on load + `readBefore` / `TranscriptLoadEarlier` for long chats.
 - **Harness lab** — Settings → Agent behavior harness viewer/editor with userData overrides merged at boot.
 - **Vector memory** — sqlite-vec hybrid index under `.vyotiq/`; upgraded `retrieval.ts`; hash embedder default.
-- **ast-grep search** — structural mode on `search` tool via `@ast-grep/napi`.
+- **ast-grep search** — default AST `search` tool via `@ast-grep/napi` + bundled `@ast-grep/cli`; `sg` tool for run/scan/test.
 - **Workbench editor + PTY** — CodeMirror 6 editor; shared `node-pty` terminal bridged to agent `bash`; `WorkbenchShell` top tabs + main canvas (no right column).
 - **Inline completion** — editor ghost text + composer prompt continuation via completion IPC.
 - **Distribution** — electron-builder packaging, fuse hardening, electron-updater with About-panel install path (docs/manual update path; no forced auto-update channel).

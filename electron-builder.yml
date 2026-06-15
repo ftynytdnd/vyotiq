@@ -14,6 +14,8 @@ asar: true
 asarUnpack:
   - node_modules/node-pty/**/*
   - node_modules/@ast-grep/napi/**/*
+  - node_modules/@ast-grep/cli/**/*
+  - node_modules/@ast-grep/cli-*/**/*
   - node_modules/@photostructure/sqlite-vec/**/*
 
 # Native deps ship prebuilds (node-pty, @ast-grep/napi, sqlite-vec). Rebuilding

@@ -17,12 +17,12 @@ state always comes from `<workspace_context>` and tool results, not from these s
 </assistant_action>
 </example>
 
-## Example B — Local search then targeted read
+## Example B — AST search then targeted read
 
 <example>
 <user_message>Where is the auth middleware defined?</user_message>
 <assistant_action>
-1. `search` with `mode: "local"` and a precise query.
+1. `search` with an ast-grep pattern or identifier query and a precise `glob`.
 2. `read` the best matching path from results.
 3. Answer in prose or `finish` — no speculative paths.
 </assistant_action>
@@ -35,5 +35,40 @@ state always comes from `<workspace_context>` and tool results, not from these s
 <assistant_action>
 When the target API, endpoint, or behavior is ambiguous, call `ask_user` with concrete
 options instead of guessing. Do not embed timestamps or session ids in clarifying text.
+</assistant_action>
+</example>
+
+## Example D — Python AST search
+
+<example>
+<user_message>Find all tool classes in the Python package</user_message>
+<assistant_action>
+1. `search` with `pattern: "class $NAME"`, `glob: "tools/**/*.py"`, `language: "python"`.
+   Do not use grep regex like `class .*Tool(` — ast-grep uses `$NAME` metavariables.
+2. `read` the best hits to confirm inheritance and exports.
+3. Summarize paths in prose or `finish`.
+</assistant_action>
+</example>
+
+## Example E — PowerShell-safe bash on Windows
+
+<example>
+<user_message>List Python files under src/</user_message>
+<assistant_action>
+On Windows the `bash` tool runs PowerShell — not POSIX sh.
+- Chain with `;`, not `&&` / `||`.
+- Redirect stderr with `2>$null`, not `2>/dev/null`.
+- Prefer `Get-ChildItem -Recurse -Filter *.py src` over `find` / `ls` idioms.
+</assistant_action>
+</example>
+
+## Example F — sg rewrite (not search)
+
+<example>
+<user_message>Rename deprecated logger calls project-wide</user_message>
+<assistant_action>
+1. `search` with an AST pattern to locate call sites (read-only).
+2. `sg` with `action: "run"`, a YAML rule or `--pattern`, and `apply: true` only after
+   the user confirms bulk edits.
 </assistant_action>
 </example>

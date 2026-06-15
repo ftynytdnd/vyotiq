@@ -64,4 +64,10 @@ describe('buildOrchestratorSystemPrompt', () => {
     expect(prompt).toContain('≤80 lines');
     expect(prompt).toContain('host injects an end-of-run `ask_user` gate');
   });
+
+  it('includes bundled ast-grep reference in system instructions', () => {
+    expect(prompt).toContain('ast-grep Quick Reference');
+    expect(prompt).toContain('Metavariables');
+    expect(prompt).toContain('`search` tool');
+  });
 });

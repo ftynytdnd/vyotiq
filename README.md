@@ -13,7 +13,7 @@ A local-first **asynchronous AI orchestrator** that lives on your device. Vyotiq
 - **Flexible turn endings.** The agent may call `finish` or `ask_user`, or end with substantive prose when that fully answers the user (including short greetings and questions ending in `?`). Empty filler turns get one retry, then a visible error.
 - **Structured logging.** All main-process activity flows through a leveled logger with a rotating file at `<userData>/vyotiq/logs/vyotiq.log` (1 MB / 3 backups). Renderer logs relay through the same file via `vyotiq.log`; crashes are caught by an error boundary and forwarded at `error` level.
 - **Tailwind v4 CSS-first.** No `tailwind.config.js`. All design tokens live in [`src/renderer/index.css`](src/renderer/index.css) under `@theme` and surface as utilities (`bg-surface-base`, `text-text-muted`, etc.).
-- **Private by default.** API keys are encrypted via your OS keychain (Electron `safeStorage`). File operations are sandboxed to your active workspace. No outbound web search — retrieval is local (`search`, `grep`, vector index, workspace memory).
+- **Private by default.** API keys are encrypted via your OS keychain (Electron `safeStorage`). File operations are sandboxed to your active workspace. No outbound web search — retrieval is local (`search`, `sg`, vector index, workspace memory).
 
 ## Orchestrator surfaces
 
@@ -36,7 +36,7 @@ Vyotiq is an orchestrator first, not a full IDE — but selective surfaces suppo
 - **Tailwind CSS v4** (CSS-first via `@theme`)
 - **Zustand** (modular store slices)
 - **lucide-react** (icons)
-- **fast-glob** + **@ast-grep/napi** (local line + structural search)
+- **fast-glob** + **@ast-grep/napi** + **@ast-grep/cli** (AST search, rewrites, rule scans)
 - **sqlite-vec** (local hybrid vector index under `.vyotiq/`)
 
 ## Getting started
@@ -136,14 +136,15 @@ Each tool is in its own file (`src/main/tools/<name>.tool.ts`) and registered vi
 - **`read`** — UTF-8 file reader with line range, 512 KB cap, binary refusal.
 - **`edit`** — surgical exact-match edits + file creation. Returns diff stats for the FileChangeCard.
 - **`delete`** — remove workspace files (sandboxed).
-- **`search`** — local line grep **and** structural AST search (`@ast-grep/napi`) across the workspace.
+- **`search`** — ast-grep structural (AST) search across the workspace (`@ast-grep/napi` + CLI fallback).
+- **`sg`** — ast-grep CLI for `run` / `scan` / `test` (rewrites and YAML rules).
 - **`memory`** — read/write/append global meta-rules or workspace notes.
 - **`recall`** — read-only lookup against other conversations in the active workspace.
 - **`report`** — HTML deliverables under `.vyotiq/reports/` (Settings → Reports controls UX).
 
 ### Tool policy
 
-Agent V's allowlist is `AGENT_TOOLS` in [`src/main/tools/policy/agentTools.ts`](src/main/tools/policy/agentTools.ts): `bash`, `ls`, `read`, `edit`, `delete`, `search`, `memory`, `recall`, `report`, `finish`, `ask_user`. The `toolSchemasFor()` helper filters schemas before each model request.
+Agent V's allowlist is `AGENT_TOOLS` in [`src/main/tools/policy/agentTools.ts`](src/main/tools/policy/agentTools.ts): `bash`, `ls`, `read`, `edit`, `delete`, `search`, `sg`, `memory`, `recall`, `report`, `finish`, `ask_user`. The `toolSchemasFor()` helper filters schemas before each model request.
 
 ## Transcripts & checkpoints
 

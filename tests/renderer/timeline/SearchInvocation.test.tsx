@@ -26,8 +26,9 @@ function makeResult(matches: SearchMatch[]): ToolResult {
     durationMs: 1,
     data: {
       tool: 'search',
-      mode: 'local',
       query: 'foo',
+      pattern: 'foo',
+      language: 'typescript',
       matches,
       truncated: false
     }
@@ -37,7 +38,7 @@ function makeResult(matches: SearchMatch[]): ToolResult {
 const call = {
   id: 'call-1',
   name: 'search' as never,
-  args: { mode: 'local', query: 'foo' }
+  args: { query: 'foo', glob: '**/*.ts' }
 } as ToolCall;
 
 describe('SearchInvocation DOM cap', () => {

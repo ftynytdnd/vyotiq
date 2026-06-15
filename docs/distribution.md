@@ -16,7 +16,7 @@ Artifacts land in `release/`.
 
 ### Windows native modules
 
-`node-pty`, `@ast-grep/napi`, and `@photostructure/sqlite-vec` ship **prebuilt binaries**. `electron-builder.yml` sets `npmRebuild: false` so packaging does not invoke `node-gyp` (which on Windows often requires **MSVC Spectre-mitigated libraries** from the Visual Studio installer). If you change Electron major versions, run `npx electron-rebuild` locally with a full C++ toolchain before `dist`.
+`node-pty`, `@ast-grep/napi`, `@ast-grep/cli`, and `@photostructure/sqlite-vec` ship **prebuilt binaries**. `electron-builder.yml` sets `npmRebuild: false` so packaging does not invoke `node-gyp` (which on Windows often requires **MSVC Spectre-mitigated libraries** from the Visual Studio installer). If you change Electron major versions, run `npx electron-rebuild` locally with a full C++ toolchain before `dist`.
 
 ## Fuse hardening
 

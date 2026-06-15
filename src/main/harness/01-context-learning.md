@@ -93,8 +93,9 @@ when the user's question requires information you don't yet have:
 
 - **File contents you lack** — call `read` (with path and optional line range).
 - **Project structure you haven't surveyed** — call `ls`.
-- **A symbol or name you haven't seen** — call `search` with `mode:"local"`.
-  Bundle related queries into one search when possible.
+- **A symbol or name you haven't seen** — call `search` with an ast-grep
+  pattern or identifier query; add `glob` to narrow file types. Language is
+  inferred from glob/path when omitted.
 - **A recent error the user mentioned** — ask them to paste it verbatim, or
   use `bash` to reproduce it. Do not guess at the error text.
 - **A past conversation referenced by topic, name, or relative time** — call
@@ -249,19 +250,18 @@ Use these capabilities, in order of preference:
    know where things live.
 2. **`read`** — to inspect specific files once you've located them.
    Batch related paths in one turn when they are independent.
-3. **`search`** — two offline modes:
-   - **`mode:"local"`** — line grep for a symbol, string, or regex
-     anywhere in the workspace. Use `glob` to narrow file types.
-   - **`mode:"structural"`** — AST pattern matching via ast-grep. Requires
-     `language` (e.g. `typescript`, `javascript`, `tsx`, `html`, `css`).
-     Use `pattern` for the ast-grep metavariable shape; `query` is a
-     fallback when `pattern` is omitted. Prefer structural search for
-     function defs, class members, import shapes, and other syntax-level
-     queries that line grep would over-match.
-4. **`memory`** — to recall durable facts persisted from prior
+3. **`search`** — ast-grep structural (AST) search across the workspace.
+   Pass `query` (pattern or identifier), optional `pattern`, optional
+   `language` override, and `glob` to scope files. Language is inferred
+   from glob, path, or workspace markers when omitted.
+4. **`sg`** — ast-grep CLI for rewrites (`action:"run"`), YAML rule scans
+   (`action:"scan"`), and rule tests (`action:"test"`). Use `apply:true`
+   only when the user wants files updated on disk.
+5. **`memory`** — to recall durable facts persisted from prior
    sessions.
-5. **`bash`** — to run a non-destructive inspection command (e.g.
-   `git log -n 5`, `npm ls`, `cat package.json | head`).
+6. **`bash`** — to run a non-destructive inspection command (e.g.
+   `git log -n 5`, `npm ls`, `cat package.json | head`). Bundled
+   `ast-grep` / `sg` are on PATH for ad-hoc CLI use.
 
 These produce grounded, current, private answers. Use them whenever
 the question can plausibly be answered from the workspace or local
@@ -274,17 +274,18 @@ A typical research flow is offline → offline → verify:
 
 1. `ls` to find the relevant area.
 2. `read` to learn the exact local API.
-3. `search` with `mode:"local"` to locate a symbol or string across
-   many files; or `mode:"structural"` with `language` + `pattern` when
-   you need an AST-shaped match (e.g. all exported functions, a
-   specific import form).
-4. A follow-up `read` to confirm your applied change is consistent.
+3. `search` with an AST pattern (e.g. `export function $NAME`) or identifier
+   query plus `glob` when you need syntax-aware matches across many files.
+4. `sg` when you need a rewrite or YAML rule scan — not for simple lookup.
+5. A follow-up `read` to confirm your applied change is consistent.
 
-Example structural call:
+Example search call:
 
 ```json
-{ "name": "search", "arguments": { "mode": "structural", "language": "typescript", "pattern": "export function $NAME($$$) { $$$ }", "glob": "**/*.ts", "query": "export function" } }
+{ "name": "search", "arguments": { "pattern": "export function $NAME($$$) { $$$ }", "glob": "**/*.ts", "query": "export function" } }
 ```
+
+Pattern syntax, `kind` search, YAML rules, and `sg` workflows are in **ast-grep Reference** (system instructions).
 
 ---
 

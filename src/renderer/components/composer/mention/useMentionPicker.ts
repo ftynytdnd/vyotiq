@@ -78,16 +78,19 @@ export function useMentionPicker(input: UseMentionPickerInput) {
       return;
     }
     let cancelled = false;
-    void vyotiq.mentions
-      .searchSymbols({ workspaceId: workspaceIdForTree, query })
-      .then((result) => {
-        if (!cancelled) setSymbols(result.hits);
-      })
-      .catch(() => {
-        if (!cancelled) setSymbols([]);
-      });
+    const handle = window.setTimeout(() => {
+      void vyotiq.mentions
+        .searchSymbols({ workspaceId: workspaceIdForTree, query })
+        .then((result) => {
+          if (!cancelled) setSymbols(result.hits);
+        })
+        .catch(() => {
+          if (!cancelled) setSymbols([]);
+        });
+    }, 150);
     return () => {
       cancelled = true;
+      window.clearTimeout(handle);
     };
   }, [open, workspaceIdForTree, query]);
 

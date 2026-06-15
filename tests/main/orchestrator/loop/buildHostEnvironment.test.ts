@@ -152,5 +152,7 @@ describe('buildHostEnvironmentXml', () => {
     expect(xml).toContain('workspace_cwd: C:\\Users\\dev\\project');
     expect(xml).toContain('shell_note:');
     expect(xml).toMatch(/PowerShell on Windows/);
+    expect(xml).toMatch(/&&/);
+    expect(xml).toMatch(/2>\/dev\/null/);
   });
 });

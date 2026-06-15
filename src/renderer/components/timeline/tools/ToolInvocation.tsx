@@ -13,6 +13,7 @@ import { ReadInvocation } from './ReadInvocation.js';
 import { EditInvocation } from './EditInvocation.js';
 import { DeleteInvocation } from './DeleteInvocation.js';
 import { SearchInvocation } from './SearchInvocation.js';
+import { SgInvocation } from './SgInvocation.js';
 import { MemoryInvocation } from './MemoryInvocation.js';
 import { RecallInvocation } from './RecallInvocation.js';
 import { UnknownInvocation } from './UnknownInvocation.js';
@@ -104,6 +105,8 @@ export function ToolInvocation({
       );
     case 'search':
       return <SearchInvocation call={call} result={result} dense={dense} rowKey={rowKey} />;
+    case 'sg':
+      return <SgInvocation call={call} result={result} dense={dense} rowKey={rowKey} />;
     case 'memory':
       return (
         <MemoryInvocation

@@ -56,7 +56,7 @@ Design complete Architecture and build and create me simple(but working and func
 - retry logic with exponential backof
 
 ## Create each tool in separate file instead of one
-   * Core function-calling tools (each in its own file under `src/main/tools/`): **bash**, **ls**, **read**, **edit**, plus **delete**, **search**, **memory**, **recall**, and **report** where policy allows.
+   * Core function-calling tools (each in its own file under `src/main/tools/`): **bash**, **ls**, **read**, **edit**, plus **delete**, **search**, **sg**, **memory**, **recall**, and **report** where policy allows.
    * Tool exposure is enforced in `src/main/tools/policy/` (`AGENT_TOOLS` allowlist per solo Agent V run).
    * **HTML reports UX:** Settings → Agent behavior → Reports (`settings.ui.reports`) controls auto-open, in-app report `BrowserWindow`, host `ask_user` gate after large edit runs, and the token-costing **AI report** footer action. Free **Quick summary** uses `reports:generate-run-summary` (zero LLM tokens).
 
@@ -72,7 +72,7 @@ You must design the agent's system prompt to act as its operating system. The ha
 
 ## Single Dynamic Agent (Agent V)
 
-Agent V is **one solo agent** with a full tool surface (`bash`, `read`, `edit`, `search`, `ls`, `memory`, `recall`, …). It plans, executes tools directly in the active workspace, and synthesizes answers in one context — no worker or delegation layer. Legacy transcripts recorded before the solo-agent model are normalized on load (`normalizeLegacyTranscript`).
+Agent V is **one solo agent** with a full tool surface (`bash`, `read`, `edit`, `search`, `sg`, `ls`, `memory`, `recall`, …). It plans, executes tools directly in the active workspace, and synthesizes answers in one context — no worker or delegation layer. Legacy transcripts recorded before the solo-agent model are normalized on load (`normalizeLegacyTranscript`).
 
 The harness (`src/main/harness/00-orchestrator-core.md` and companions) defines how Agent V should decompose work, when to call tools, and how to verify outcomes before responding to the user.
 
@@ -129,10 +129,10 @@ Agent V must evolve. The orchestrator must include a mechanism where Agent V can
 - On boot, the natural language harness must always read and inject this "Meta-Rules" file, ensuring the agent never makes the same structural mistake twice.
 
 
-## 4. Dual-Mode Search & Research
+## 4. ast-grep Search & Research
 The harness must instruct the agent on how to conduct research autonomously:
 - **Offline Research:** Rules for exploring the local file system (using terminal/read tools) to understand the local codebase or read local documentation.
-- **Local Research:** Rules for when local context is insufficient — use `search` / `read` / `bash` against the workspace and vendored deps (no outbound web search by default).
+- **Local Research:** Rules for when local context is insufficient — use `search` (ast-grep AST patterns), `sg` (rewrites/scans), `read` / `bash` against the workspace and vendored deps (no outbound web search by default).
 
 ## 5. Natural Language Tool Definitions
 Instead of strict JSON schemas, the tools must be defined and explained within the harness using a conversational, intent-based structure. For every tool (Bash, Ls, Read, Edit, Search, Memory), the harness must explicitly define:

@@ -103,6 +103,8 @@ function toolHeadline(toolName: ToolName | undefined): string | null {
       return 'Editing';
     case 'search':
       return 'Searching';
+    case 'sg':
+      return 'Running sg';
     case 'ls':
       return 'Listing';
     case 'delete':

@@ -2,6 +2,8 @@
  * Privacy-allowlisted env for shell children (bash tool + workspace PTY).
  */
 
+import { resolveAstGrepBinaryDir } from '../astgrep/resolveBinary.js';
+
 const BASH_ENV_ALLOWLIST = new Set<string>([
   'PATH',
   'PATHEXT',
@@ -55,6 +57,12 @@ export function buildBashEnv(): NodeJS.ProcessEnv {
     if (typeof v !== 'string' || v.length === 0) continue;
     if (isDeniedBashEnvName(name)) continue;
     out[name] = v;
+  }
+  const sgDir = resolveAstGrepBinaryDir();
+  if (sgDir) {
+    const pathSep = process.platform === 'win32' ? ';' : ':';
+    const existing = out.PATH ?? process.env.PATH ?? '';
+    out.PATH = existing ? `${sgDir}${pathSep}${existing}` : sgDir;
   }
   return out;
 }

@@ -22,6 +22,7 @@ import orchestratorCore from './00-orchestrator-core.md?raw';
 import contextLearning from './01-context-learning.md?raw';
 import deliverables from './02-deliverables.md?raw';
 import staticExamples from './03-static-examples.md?raw';
+import astGrepReference from './04-ast-grep-cheatsheet.md?raw';
 import type { HarnessSectionId } from './harnessOverrides.js';
 import { readHarnessOverride } from './harnessOverrides.js';
 
@@ -29,7 +30,8 @@ const BUNDLED_BODIES: Record<HarnessSectionId, string> = {
   'orchestrator-core': orchestratorCore,
   'context-learning': contextLearning,
   deliverables: deliverables,
-  'static-examples': staticExamples
+  'static-examples': staticExamples,
+  'ast-grep-reference': astGrepReference
 };
 
 export function readBundledHarnessSection(sectionId: HarnessSectionId): string {
@@ -66,12 +68,14 @@ export function invalidateHarnessPromptCache(): void {
 const AGENT_SECTIONS: ReadonlyArray<{ title: string; id: HarnessSectionId }> = [
   { title: 'Agent Core', id: 'orchestrator-core' },
   { title: 'Context, Memory & Continuous Learning', id: 'context-learning' },
+  { title: 'ast-grep Reference', id: 'ast-grep-reference' },
   { title: 'Deliverables — Markdown vs HTML Reports', id: 'deliverables' }
 ];
 
 const BOOTSTRAP_HARNESS_MARKDOWN: ReadonlyArray<{ file: string; id: HarnessSectionId }> = [
   { file: '00-orchestrator-core.md', id: 'orchestrator-core' },
   { file: '01-context-learning.md', id: 'context-learning' },
+  { file: '04-ast-grep-cheatsheet.md', id: 'ast-grep-reference' },
   { file: '03-static-examples.md', id: 'static-examples' },
   { file: '02-deliverables.md', id: 'deliverables' }
 ];

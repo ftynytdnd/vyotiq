@@ -26,6 +26,7 @@
     "dist:publish": "npm run build && electron-builder --publish always"
   },
   "dependencies": {
+    "@ast-grep/cli": "^0.43.0",
     "@ast-grep/napi": "^0.43.0",
     "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/commands": "^6.10.3",
@@ -90,6 +91,7 @@
     "electron-winstaller@5.4.0": true,
     "esbuild@0.25.12": true,
     "esbuild@0.27.7": true,
-    "node-pty@1.1.0": true
+    "node-pty@1.1.0": true,
+    "@ast-grep/cli@0.43.0": true
   }
 }

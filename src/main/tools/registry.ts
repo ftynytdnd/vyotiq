@@ -10,6 +10,7 @@ import { readTool } from './read.tool.js';
 import { editTool } from './edit.tool.js';
 import { deleteTool } from './delete.tool.js';
 import { searchTool } from './search.tool.js';
+import { sgTool } from './sg.tool.js';
 import { memoryTool } from './memory.tool.js';
 import { recallTool } from './recall.tool.js';
 import { finishTool } from './finish.tool.js';
@@ -25,6 +26,7 @@ const TOOLS: Record<RegisteredToolName, Tool> = {
   edit: editTool,
   delete: deleteTool,
   search: searchTool,
+  sg: sgTool,
   memory: memoryTool,
   recall: recallTool,
   report: reportTool,

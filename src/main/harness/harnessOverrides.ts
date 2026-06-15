@@ -20,7 +20,8 @@ const SECTION_TO_FILE: Record<HarnessSectionId, string> = {
   'orchestrator-core': '00-orchestrator-core.md',
   'context-learning': '01-context-learning.md',
   deliverables: '02-deliverables.md',
-  'static-examples': '03-static-examples.md'
+  'static-examples': '03-static-examples.md',
+  'ast-grep-reference': '04-ast-grep-cheatsheet.md'
 };
 
 function overridesDir(): string {

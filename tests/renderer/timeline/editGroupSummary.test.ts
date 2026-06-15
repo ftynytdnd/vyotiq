@@ -101,31 +101,18 @@ describe('toolGroupSummary — edit branch', () => {
     expect(out.suffix).toBe(' and 1 other file');
   });
 
-  it('labels local search invocations as grep-style trace rows', () => {
+  it('labels search invocations as AST trace rows', () => {
     const call: ToolCall = {
-      id: 'search:local',
+      id: 'search:ast',
       name: 'search',
-      args: { mode: 'local', query: 'scrollbar-stealth-mask-image' }
+      args: { query: 'scrollbar-stealth-mask-image' }
     };
     const out = toolGroupSummary('search', [{ callId: call.id, call }]);
 
-    expect(out.verb).toBe('Grepped');
+    expect(out.verb).toBe('Searched');
     expect(out.primary).toBe('scrollbar-stealth-mask-image');
   });
 
-  it('labels search as local grep even when a stray non-local mode is passed', () => {
-    // `search` is local-only; the tool executes locally regardless of a
-    // model-supplied `mode`, so the verb is always the grep form.
-    const call: ToolCall = {
-      id: 'search:web',
-      name: 'search',
-      args: { mode: 'web', query: 'OpenAI docs' }
-    };
-    const out = toolGroupSummary('search', [{ callId: call.id, call }]);
-
-    expect(out.verb).toBe('Grepped');
-    expect(out.primary).toBe('OpenAI docs');
-  });
 });
 
 describe('tailInFlightEditChildIndex', () => {

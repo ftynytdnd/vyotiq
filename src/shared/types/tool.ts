@@ -19,6 +19,7 @@ export type RegisteredToolName =
   | 'edit'
   | 'delete'
   | 'search'
+  | 'sg'
   | 'memory'
   | 'recall'
   | 'report'
@@ -41,6 +42,7 @@ export const REGISTERED_TOOL_NAMES = [
   'edit',
   'delete',
   'search',
+  'sg',
   'memory',
   'recall',
   'report',
@@ -116,7 +118,7 @@ export interface DiffHunk {
   lines: DiffLine[];
 }
 
-/** One match in a local search. */
+/** One match in an ast-grep search. */
 export interface SearchMatch {
   /** Workspace-relative path. */
   path: string;
@@ -124,6 +126,8 @@ export interface SearchMatch {
   line: number;
   /** Trimmed line preview. */
   preview: string;
+  /** Full matched node text when available (structural search). */
+  matchedText?: string;
 }
 
 export type ToolData =
@@ -185,10 +189,28 @@ export type ToolData =
   }
   | {
     tool: 'search';
-    mode: 'local' | 'structural';
     query: string;
+    pattern?: string;
+    matcher?: 'ast' | 'regex';
+    autoNote?: string;
+    kind?: string;
+    zeroHitHints?: string;
+    debugQuery?: string;
+    language?: string;
+    inferenceSource?: 'explicit' | 'glob' | 'path' | 'workspace' | 'default';
     matches?: SearchMatch[];
     truncated: boolean;
+  }
+  | {
+    tool: 'sg';
+    action: 'run' | 'scan' | 'test';
+    stdout: string;
+    stderr: string;
+    exitCode: number | null;
+    signal: string | null;
+    timedOut: boolean;
+    stdoutTruncated: boolean;
+    stderrTruncated: boolean;
   }
   | {
     tool: 'report';

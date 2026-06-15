@@ -1499,7 +1499,8 @@ const TOOL_QUERY_FIELDS: Record<string, ReadonlyArray<string>> = {
   read: ['path'],
   edit: ['path', 'filePath'],
   bash: ['command'],
-  search: ['query', 'mode'],
+  search: ['query', 'pattern', 'language'],
+  sg: ['action', 'pattern', 'rulePath'],
   delete: ['path', 'filePath'],
   memory: ['action', 'key', 'scope'],
   recall: ['action', 'conversationId', 'query']

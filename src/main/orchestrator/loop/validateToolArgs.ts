@@ -65,47 +65,55 @@ export function validateToolArgs(
       return { ok: true };
     }
     case 'search': {
-      if (!requireNonEmptyString(args, 'query')) {
+      const query = args['query'];
+      const pattern = args['pattern'];
+      const kind = args['kind'];
+      const hasQuery = typeof query === 'string' && query.trim().length > 0;
+      const hasPattern = typeof pattern === 'string' && pattern.trim().length > 0;
+      const hasKind = typeof kind === 'string' && kind.trim().length > 0;
+      if (!hasQuery && !hasPattern && !hasKind) {
         log.warn('required tool argument missing', {
           tool: toolName,
-          field: 'query',
+          field: 'query|pattern|kind',
           argKeys: Object.keys(args)
         });
         return {
           ok: false,
-          output: 'Error: `query` is required.',
+          output: 'Error: provide `query`, `pattern`, or `kind`.',
           error: 'missing query'
         };
       }
-      const mode = args['mode'];
-      if (mode !== 'local' && mode !== 'structural') {
-        log.warn('invalid tool argument value', {
-          tool: toolName,
-          field: 'mode',
-          value: mode,
-          argKeys: Object.keys(args)
-        });
+      return { ok: true };
+    }
+    case 'sg': {
+      const action = args['action'];
+      if (action !== 'run' && action !== 'scan' && action !== 'test') {
         return {
           ok: false,
-          output: `Error: unknown search mode "${String(mode)}" — use "local" or "structural". Web search is not available.`,
-          error: 'invalid mode'
+          output: 'Error: `action` must be "run", "scan", or "test".',
+          error: 'invalid action'
         };
       }
-      if (mode === 'structural') {
-        const language = args['language'];
-        if (typeof language !== 'string' || !language.trim()) {
-          log.warn('required tool argument missing', {
-            tool: toolName,
-            field: 'language',
-            argKeys: Object.keys(args)
-          });
+      if (action === 'run' && !requireNonEmptyString(args, 'pattern')) {
+        return {
+          ok: false,
+          output: 'Error: `pattern` is required for sg run.',
+          error: 'missing pattern'
+        };
+      }
+      if (action === 'scan') {
+        const rulePath = requireNonEmptyString(args, 'rulePath');
+        const configPath = requireNonEmptyString(args, 'configPath');
+        if (!rulePath && !configPath) {
           return {
             ok: false,
-            output:
-              'Error: structural search requires `language` (e.g. typescript, javascript, tsx).',
-            error: 'missing language'
+            output: 'Error: provide `rulePath` or `configPath` for sg scan.',
+            error: 'missing rulePath or configPath'
           };
         }
+      }
+      if (action === 'test') {
+        return { ok: true };
       }
       return { ok: true };
     }

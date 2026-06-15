@@ -14,7 +14,8 @@ const SECTION_LABELS: Record<HarnessSectionId, string> = {
   'orchestrator-core': 'Agent core',
   'context-learning': 'Context & learning',
   deliverables: 'Deliverables',
-  'static-examples': 'Static examples (few-shot)'
+  'static-examples': 'Static examples (few-shot)',
+  'ast-grep-reference': 'ast-grep reference'
 };
 
 export function HarnessPanel() {
