@@ -15,6 +15,12 @@ import { previewDockWorkspaceFile } from './dockSearchFileActions.js';
 import { isEditableTextFile } from '@shared/text/isEditableTextFile.js';
 import { cn } from '../../lib/cn.js';
 import { readTitlebarInsetPx } from '../ui/popoverPosition.js';
+import type { DockTreeDeleteTarget } from '../../lib/dockFileTreeSelection.js';
+import {
+  closeTabsForDeleteTargets,
+  deleteWorkspaceTargets,
+  remainingTabsForTargets
+} from '../../lib/dockFileTreeDelete.js';
 
 export interface DockFileTreeContextTarget {
   path: string;
@@ -25,10 +31,14 @@ interface DockFileTreeContextMenuProps {
   workspaceId: string;
   workspacePath: string;
   target: DockFileTreeContextTarget | null;
+  selectionTargets: readonly DockTreeDeleteTarget[];
   anchorRef: React.RefObject<HTMLElement | null>;
   onClose: () => void;
   onRefresh: () => void;
   onStartInlineRename: (path: string) => void;
+  onSelectionDeleted?: () => void;
+  deleteDialogOpen?: boolean;
+  onDeleteDialogOpenChange?: (open: boolean) => void;
 }
 
 function menuItemClassName(): string {
@@ -66,30 +76,32 @@ async function openInTerminal(workspaceId: string, workspacePath: string, relPat
   await vyotiq.terminal.input({ sessionId, data: cmd });
 }
 
-function tabsMatchingTarget(target: DockFileTreeContextTarget) {
-  const prefix = target.path.replace(/\\/g, '/');
-  return useEditorStore.getState().tabs.filter((tab) => {
-    const p = tab.filePath.replace(/\\/g, '/');
-    if (target.isDir) return p === prefix || p.startsWith(`${prefix}/`);
-    return p === prefix;
-  });
-}
-
 export function DockFileTreeContextMenu({
   workspaceId,
   workspacePath,
   target,
+  selectionTargets,
   anchorRef,
   onClose,
   onRefresh,
-  onStartInlineRename
+  onStartInlineRename,
+  onSelectionDeleted,
+  deleteDialogOpen = false,
+  onDeleteDialogOpenChange
 }: DockFileTreeContextMenuProps) {
   const [prompt, setPrompt] = useState<
     null | { kind: 'newFile' | 'newFolder'; basePath: string }
   >(null);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState<DockFileTreeContextTarget | null>(null);
+  const [internalDeleteOpen, setInternalDeleteOpen] = useState(false);
+  const [pendingDeleteTargets, setPendingDeleteTargets] = useState<
+    readonly DockTreeDeleteTarget[] | null
+  >(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+
+  const deleteOpen = deleteDialogOpen || internalDeleteOpen;
+  const setDeleteOpen = onDeleteDialogOpenChange ?? setInternalDeleteOpen;
+  const multiDelete = selectionTargets.length > 1;
+  const deleteTargets = selectionTargets.length > 0 ? selectionTargets : target ? [target] : [];
 
   const runOpen = useCallback(async () => {
     if (!target) return;
@@ -117,28 +129,33 @@ export function DockFileTreeContextMenu({
   }, [target, onClose]);
 
   const onRename = useCallback(() => {
-    if (!target) return;
+    if (!target || multiDelete) return;
     onStartInlineRename(target.path);
     onClose();
-  }, [target, onStartInlineRename, onClose]);
+  }, [target, multiDelete, onStartInlineRename, onClose]);
 
   const onDeleteRequest = useCallback(() => {
     onClose();
     setDeleteOpen(true);
-  }, [onClose]);
+  }, [onClose, setDeleteOpen]);
 
   const onCopyPath = useCallback(async () => {
-    if (!target) return;
-    const abs = joinWorkspacePath(workspacePath, target.path);
-    await copyText(abs, 'Path copied.');
+    if (deleteTargets.length === 0) return;
+    const abs = deleteTargets
+      .map((item) => joinWorkspacePath(workspacePath, item.path))
+      .join('\n');
+    await copyText(abs, deleteTargets.length > 1 ? 'Paths copied.' : 'Path copied.');
     onClose();
-  }, [target, workspacePath, onClose]);
+  }, [deleteTargets, workspacePath, onClose]);
 
   const onCopyRelative = useCallback(async () => {
-    if (!target) return;
-    await copyText(target.path, 'Relative path copied.');
+    if (deleteTargets.length === 0) return;
+    await copyText(
+      deleteTargets.map((item) => item.path).join('\n'),
+      deleteTargets.length > 1 ? 'Relative paths copied.' : 'Relative path copied.'
+    );
     onClose();
-  }, [target, onClose]);
+  }, [deleteTargets, onClose]);
 
   const onReveal = useCallback(async () => {
     if (!target) return;
@@ -186,55 +203,43 @@ export function DockFileTreeContextMenu({
   );
 
   const executeDelete = useCallback(
-    async (deleteTarget: DockFileTreeContextTarget) => {
+    async (targets: readonly DockTreeDeleteTarget[]) => {
       try {
-        await vyotiq.workspace.deletePath({
-          workspaceId,
-          path: deleteTarget.path,
-          recursive: deleteTarget.isDir
-        });
+        await deleteWorkspaceTargets(workspaceId, targets);
         onRefresh();
+        onSelectionDeleted?.();
       } catch (err) {
         useToastStore.getState().show(err instanceof Error ? err.message : String(err), 'danger');
       }
     },
-    [workspaceId, onRefresh]
+    [workspaceId, onRefresh, onSelectionDeleted]
   );
 
-  const closeTabsForDelete = useCallback((deleteTarget: DockFileTreeContextTarget): boolean => {
-    const tabs = tabsMatchingTarget(deleteTarget);
-    for (const tab of tabs) {
-      const closed = useEditorStore.getState().requestCloseTab(tab.filePath);
-      if (!closed) return false;
-    }
-    return true;
-  }, []);
-
   const handleDelete = useCallback(async () => {
-    if (!target) return;
-    if (!closeTabsForDelete(target)) {
-      setPendingDelete(target);
+    if (deleteTargets.length === 0) return;
+    if (!closeTabsForDeleteTargets(deleteTargets)) {
+      setPendingDeleteTargets(deleteTargets);
       setDeleteOpen(false);
       return;
     }
-    await executeDelete(target);
+    await executeDelete(deleteTargets);
     setDeleteOpen(false);
-  }, [target, closeTabsForDelete, executeDelete]);
+  }, [deleteTargets, executeDelete, setDeleteOpen]);
 
   useEffect(() => {
-    if (!pendingDelete) return;
+    if (!pendingDeleteTargets) return;
     return useEditorStore.subscribe((state, prev) => {
       if (state.pendingUnsavedClose) return;
       if (prev.pendingUnsavedClose && !state.pendingUnsavedClose) {
-        const remaining = tabsMatchingTarget(pendingDelete);
+        const remaining = remainingTabsForTargets(pendingDeleteTargets);
         if (remaining.length > 0) {
-          if (!closeTabsForDelete(pendingDelete)) return;
+          if (!closeTabsForDeleteTargets(pendingDeleteTargets)) return;
         }
-        void executeDelete(pendingDelete);
-        setPendingDelete(null);
+        void executeDelete(pendingDeleteTargets);
+        setPendingDeleteTargets(null);
       }
     });
-  }, [pendingDelete, closeTabsForDelete, executeDelete]);
+  }, [pendingDeleteTargets, executeDelete]);
 
   const promptTitle = prompt?.kind === 'newFolder' ? 'New folder' : 'New file';
 
@@ -270,11 +275,17 @@ export function DockFileTreeContextMenu({
           <button type="button" role="menuitem" className={menuItemClassName()} onClick={onNewFolder}>
             New folder…
           </button>
-          <button type="button" role="menuitem" className={menuItemClassName()} onClick={onRename}>
+          <button
+            type="button"
+            role="menuitem"
+            className={menuItemClassName()}
+            onClick={onRename}
+            disabled={multiDelete}
+          >
             Rename…
           </button>
           <button type="button" role="menuitem" className={menuItemClassName()} onClick={onDeleteRequest}>
-            Delete…
+            {multiDelete ? `Delete ${selectionTargets.length} items…` : 'Delete…'}
           </button>
           <div className="my-0.5 h-px bg-border-subtle/30" role="separator" />
           <button type="button" role="menuitem" className={menuItemClassName()} onClick={() => void onCopyPath()}>
@@ -304,11 +315,13 @@ export function DockFileTreeContextMenu({
       <DestructiveConfirm
         variant="composer"
         open={deleteOpen}
-        title="Delete path?"
+        title={multiDelete ? 'Delete selected items?' : 'Delete path?'}
         message={
-          target
-            ? `Delete "${target.path}"${target.isDir ? ' and its contents' : ''}? This cannot be undone.`
-            : ''
+          multiDelete
+            ? `Delete ${selectionTargets.length} selected items? This cannot be undone.`
+            : deleteTargets[0]
+              ? `Delete "${deleteTargets[0].path}"${deleteTargets[0].isDir ? ' and its contents' : ''}? This cannot be undone.`
+              : ''
         }
         confirmLabel="Delete"
         onConfirm={() => void handleDelete()}

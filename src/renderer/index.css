@@ -67,6 +67,21 @@
   --color-success-soft: oklch(0.78 0.16 150 / 0.12);
   --color-success-strong: oklch(0.78 0.16 150 / 0.85);
 
+  /* Editor syntax (Shell Mono — muted but distinguishable) */
+  --color-syntax-keyword: oklch(0.74 0.12 285);
+  --color-syntax-name: oklch(0.88 0.04 260);
+  --color-syntax-property: oklch(0.80 0.10 285);
+  --color-syntax-function: oklch(0.78 0.11 200);
+  --color-syntax-type: oklch(0.76 0.10 75);
+  --color-syntax-number: oklch(0.82 0.14 80);
+  --color-syntax-operator: oklch(0.70 0.02 260);
+  --color-syntax-regexp: oklch(0.72 0.14 25);
+  --color-syntax-comment: oklch(0.52 0.006 260);
+  --color-syntax-link: oklch(0.74 0.12 285);
+  --color-syntax-heading: oklch(0.90 0.03 260);
+  --color-syntax-atom: oklch(0.78 0.14 150);
+  --color-syntax-string: oklch(0.76 0.12 145);
+
   /* Diff */
   --color-diff-add: oklch(0.78 0.16 150);
   --color-diff-del: oklch(0.70 0.20 25);
@@ -4534,6 +4549,47 @@ button.vx-mention-highlight--open:focus-visible {
 }
 
 .vx-dock-file-tree-row-active {
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+.vx-dock-file-icon {
+  display: block;
+  flex-shrink: 0;
+}
+
+.vx-dock-file-icon svg {
+  display: block;
+}
+
+.vx-dock-file-tree-indent-guides {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.vx-dock-file-tree-indent-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: color-mix(in oklch, var(--color-border-subtle) 70%, transparent);
+}
+
+.vx-dock-file-tree-row:hover .vx-dock-file-tree-indent-guide {
+  background: color-mix(in oklch, var(--color-border-strong) 45%, transparent);
+}
+
+.vx-dock-file-tree-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.vx-dock-file-tree-row-selected {
+  color: var(--color-text-primary);
+}
+
+.vx-dock-open-editor-row-active {
   box-shadow: inset 2px 0 0 var(--color-accent);
 }
 

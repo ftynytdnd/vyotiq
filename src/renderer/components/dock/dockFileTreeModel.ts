@@ -220,3 +220,52 @@ export function dockTreeRelativePath(filePath: string, workspacePath: string): s
   }
   return normalizeDockTreePath(filePath);
 }
+
+/** Parent folder path for a tree entry (`''` = workspace root). */
+export function parentFolderPath(path: string): string {
+  const norm = normalizeDockTreePath(path);
+  const idx = norm.lastIndexOf('/');
+  return idx < 0 ? '' : norm.slice(0, idx);
+}
+
+/** Direct child folder paths that share the same parent as `targetPath`. */
+export function siblingFolderPaths(rows: readonly FlatTreeRow[], targetPath: string): string[] {
+  const target = rows.find((r) => r.path === targetPath);
+  if (!target) return [];
+  const parentPath = parentFolderPath(target.path);
+  return rows
+    .filter((r) => r.isDir && parentFolderPath(r.path) === parentPath)
+    .map((r) => r.path);
+}
+
+/**
+ * Deepest expanded ancestor folder scrolled off the top — drives the sticky header.
+ */
+export function resolveStickyFolderRow(
+  rows: readonly FlatTreeRow[],
+  scrollTop: number
+): FlatTreeRow | null {
+  if (scrollTop < DOCK_TREE_ROW_HEIGHT_PX || rows.length === 0) return null;
+
+  const firstVisible = Math.min(
+    rows.length - 1,
+    Math.floor(scrollTop / DOCK_TREE_ROW_HEIGHT_PX)
+  );
+  const firstRow = rows[firstVisible];
+  if (!firstRow || firstRow.depth === 0) return null;
+
+  for (let depth = firstRow.depth - 1; depth >= 0; depth--) {
+    for (let i = firstVisible; i >= 0; i--) {
+      const row = rows[i];
+      if (!row?.isDir || !row.isExpanded || row.depth !== depth) continue;
+      const rowTop = i * DOCK_TREE_ROW_HEIGHT_PX;
+      if (rowTop < scrollTop) return row;
+    }
+  }
+  return null;
+}
+
+/** Inclusive index range between two flat row indices. */
+export function flatRowIndexRange(a: number, b: number): { from: number; to: number } {
+  return { from: Math.min(a, b), to: Math.max(a, b) };
+}

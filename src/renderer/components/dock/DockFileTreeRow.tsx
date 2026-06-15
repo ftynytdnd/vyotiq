@@ -3,21 +3,28 @@
  */
 
 import { memo, useEffect, useRef, type CSSProperties, type MouseEvent } from 'react';
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import {
   DOCK_TREE_INDENT_PX,
   type FlatTreeRow
 } from './dockFileTreeModel.js';
-import { fileIconForPath } from '../../lib/fileIconForPath.js';
+import { FileIconForPath } from '../../lib/fileIconForPath.js';
+import {
+  gitStatusAriaLabel,
+  gitStatusBadgeCn,
+  gitStatusNameClass
+} from '../../lib/dockGitTreeStyle.js';
 import { cn } from '../../lib/cn.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../lib/shellIcons.js';
+import type { GitPathStatus } from '@shared/types/ipc.js';
 
 export interface DockFileTreeRowProps {
   row: FlatTreeRow;
   activePath: string | null;
   contextTargetPath?: string | null;
-  gitStatus?: string | null;
+  gitStatus?: GitPathStatus | null;
   focused?: boolean;
+  selected?: boolean;
   renaming?: boolean;
   renameValue?: string;
   onRenameChange?: (value: string) => void;
@@ -25,6 +32,11 @@ export interface DockFileTreeRowProps {
   onRenameCancel?: () => void;
   onToggle: (path: string) => void;
   onOpenFile: (path: string) => void;
+  onRowPointerDown?: (
+    path: string,
+    isDir: boolean,
+    event: MouseEvent<HTMLButtonElement>
+  ) => void;
   onContextMenu: (path: string, isDir: boolean, event: MouseEvent<HTMLButtonElement>) => void;
   setRowRef?: (path: string, el: HTMLButtonElement | null) => void;
   style?: CSSProperties;
@@ -36,6 +48,7 @@ export const DockFileTreeRow = memo(function DockFileTreeRow({
   contextTargetPath = null,
   gitStatus = null,
   focused = false,
+  selected = false,
   renaming = false,
   renameValue = '',
   onRenameChange,
@@ -43,6 +56,7 @@ export const DockFileTreeRow = memo(function DockFileTreeRow({
   onRenameCancel,
   onToggle,
   onOpenFile,
+  onRowPointerDown,
   onContextMenu,
   setRowRef,
   style
@@ -92,24 +106,26 @@ export const DockFileTreeRow = memo(function DockFileTreeRow({
       role="treeitem"
       aria-expanded={isDir ? isExpanded : undefined}
       aria-label={isDir ? `${name} folder` : name}
-      aria-selected={focused || isActive}
+      aria-selected={focused || isActive || selected}
       tabIndex={focused ? 0 : -1}
       className={cn(
-        'vx-dock-file-tree-row group flex w-full min-w-0 items-center gap-1 rounded-md py-1 pr-2 text-left font-mono text-row transition-colors hover:bg-chrome-hover-soft',
+        'vx-dock-file-tree-row group relative flex w-full min-w-0 items-center gap-1 rounded-md py-1 pr-2 text-left font-mono text-row transition-colors hover:bg-chrome-hover-soft',
         isDir ? 'text-text-secondary' : 'text-text-primary',
         isActive && 'vx-dock-file-tree-row-active bg-accent/10 text-text-primary',
+        selected && !isActive && 'vx-dock-file-tree-row-selected bg-accent/5 ring-1 ring-inset ring-accent/25',
         isContextTarget && 'bg-chrome-hover-soft ring-1 ring-inset ring-border-strong/50',
-        focused && !isActive && 'bg-chrome-hover-soft/60'
+        focused && !isActive && 'bg-chrome-hover-soft/60',
+        !isActive && gitStatusNameClass(gitStatus)
       )}
       style={{
         ...style,
-        paddingLeft: `${indent}px`,
-        backgroundImage:
-          depth > 0
-            ? `linear-gradient(to right, transparent ${indent - 1}px, color-mix(in oklch, var(--color-border-subtle) 35%, transparent) ${indent - 1}px, color-mix(in oklch, var(--color-border-subtle) 35%, transparent) ${indent}px, transparent ${indent}px)`
-            : undefined
+        paddingLeft: `${indent}px`
       }}
-      onClick={() => {
+      onClick={(event) => {
+        if (event.ctrlKey || event.metaKey || event.shiftKey) {
+          onRowPointerDown?.(path, isDir, event);
+          return;
+        }
         if (isDir) onToggle(path);
         else void onOpenFile(path);
       }}
@@ -118,27 +134,28 @@ export const DockFileTreeRow = memo(function DockFileTreeRow({
         onContextMenu(path, isDir, e);
       }}
     >
-      {isDir ? (
-        isLoading ? (
-          <Loader2
-            className={cn(SHELL_ROW_ICON_CLASS, 'animate-spin text-text-faint')}
-            strokeWidth={SHELL_ACTION_ICON_STROKE}
-          />
-        ) : isExpanded ? (
-          <ChevronDown className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
-        ) : (
-          <ChevronRight className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
-        )
+      {depth > 0 ? (
+        <span className="vx-dock-file-tree-indent-guides" aria-hidden>
+          {Array.from({ length: depth }, (_, level) => (
+            <span
+              key={level}
+              className="vx-dock-file-tree-indent-guide"
+              style={{ left: `${8 + level * DOCK_TREE_INDENT_PX + DOCK_TREE_INDENT_PX / 2}px` }}
+            />
+          ))}
+        </span>
+      ) : null}
+      {isDir && isLoading ? (
+        <Loader2
+          className={cn(SHELL_ROW_ICON_CLASS, 'animate-spin text-text-faint')}
+          strokeWidth={SHELL_ACTION_ICON_STROKE}
+        />
       ) : (
-        <span className="inline-block w-3.5 shrink-0" aria-hidden />
+        <FileIconForPath filePath={path} isDir={isDir} isExpanded={isDir && isExpanded} />
       )}
-      {fileIconForPath(path, isDir)}
       <span className="min-w-0 flex-1 truncate">{name}</span>
       {gitStatus ? (
-        <span
-          className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-text-faint"
-          aria-label={`Git status ${gitStatus}`}
-        >
+        <span className={gitStatusBadgeCn(gitStatus)} aria-label={gitStatusAriaLabel(gitStatus)}>
           {gitStatus}
         </span>
       ) : null}

@@ -5,9 +5,14 @@ import {
   dockTreeRelativePath,
   expandFoldersForFilter,
   filterDockTreePaths,
+  flatRowIndexRange,
   flattenDockTreeNodes,
   flattenLazyDockTree,
-  normalizeDockTreePath
+  normalizeDockTreePath,
+  parentFolderPath,
+  resolveStickyFolderRow,
+  siblingFolderPaths,
+  DOCK_TREE_ROW_HEIGHT_PX
 } from '../../../src/renderer/components/dock/dockFileTreeModel.js';
 
 describe('buildDockFileTree', () => {
@@ -80,5 +85,51 @@ describe('flattenDockTreeNodes', () => {
     const tree = buildDockFileTree(['src/', 'src/main.ts']);
     const rows = flattenDockTreeNodes(tree, new Set(['src']));
     expect(rows.map((r) => r.path)).toEqual(['src', 'src/main.ts']);
+  });
+});
+
+describe('parentFolderPath', () => {
+  it('returns parent segments', () => {
+    expect(parentFolderPath('src/main.ts')).toBe('src');
+    expect(parentFolderPath('src')).toBe('');
+  });
+});
+
+describe('siblingFolderPaths', () => {
+  it('lists peer folders under the same parent', () => {
+    const rows = flattenLazyDockTree(
+      new Map([
+        ['', ['src/', 'docs/', 'README.md']],
+        ['src', ['src/components/', 'src/main.ts']],
+        ['docs', ['docs/readme.md']]
+      ]),
+      new Set(['src', 'docs', 'src/components']),
+      new Set()
+    );
+    expect(siblingFolderPaths(rows, 'src/main.ts')).toEqual(['src/components']);
+    expect(siblingFolderPaths(rows, 'src/components')).toEqual(['src/components']);
+    expect(siblingFolderPaths(rows, 'src').sort()).toEqual(['docs', 'src']);
+  });
+});
+
+describe('resolveStickyFolderRow', () => {
+  it('returns scrolled-off parent folder for nested rows', () => {
+    const rows = flattenLazyDockTree(
+      new Map([
+        ['', ['src/']],
+        ['src', ['src/components/', 'src/main.ts']],
+        ['src/components', ['src/components/App.tsx']]
+      ]),
+      new Set(['src', 'src/components']),
+      new Set()
+    );
+    const scrollTop = DOCK_TREE_ROW_HEIGHT_PX * 3.5;
+    expect(resolveStickyFolderRow(rows, scrollTop)?.path).toBe('src');
+  });
+});
+
+describe('flatRowIndexRange', () => {
+  it('orders endpoints', () => {
+    expect(flatRowIndexRange(4, 1)).toEqual({ from: 1, to: 4 });
   });
 });

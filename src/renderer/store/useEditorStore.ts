@@ -19,6 +19,7 @@ import { useToastStore } from './useToastStore.js';
 import { useEditorCursorStore } from './useEditorCursorStore.js';
 import { revealFileInDockTree } from '../lib/revealFileInDockTree.js';
 import { schedulePersistEditorTabs } from '../lib/editorTabsPersistence.js';
+import { reorderWorkspaceTabs as reorderWorkspaceTabsInList } from '../lib/editorTabReorder.js';
 
 export const MAX_EDITOR_TABS = 20;
 
@@ -106,6 +107,7 @@ interface EditorStore {
   cancelUnsavedClose: () => void;
   isTabDirty: (filePath: string) => boolean;
   setActiveTab: (filePath: string) => void;
+  reorderWorkspaceTabs: (workspaceId: string, fromFilePath: string, toFilePath: string) => void;
   setContent: (content: string) => void;
   reloadFromDisk: () => Promise<void>;
   /** Re-read one tab from disk or mark stale when the buffer has unsaved edits. */
@@ -437,6 +439,15 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       persistTabsForWorkspace(tab.workspaceId, next.tabs, next.activeFilePath);
     }
     useEditorCursorStore.getState().reset();
+  },
+
+  reorderWorkspaceTabs: (workspaceId, fromFilePath, toFilePath) => {
+    const state = get();
+    const tabs = reorderWorkspaceTabsInList(state.tabs, workspaceId, fromFilePath, toFilePath);
+    if (tabs.every((tab, index) => tab === state.tabs[index])) return;
+    const next = mirrorActiveTab({ ...state, tabs });
+    set(next);
+    persistTabsForWorkspace(workspaceId, next.tabs, next.activeFilePath);
   },
 
   setContent: (content) => {

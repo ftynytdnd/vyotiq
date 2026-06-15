@@ -27,12 +27,14 @@ import { useEditorStore } from '@renderer/store/useEditorStore';
 import { useSettingsStore } from '@renderer/store/useSettingsStore';
 import { invalidateWorkspaceTreeCache } from '@renderer/lib/workspaceTreeCache';
 import { invalidateWorkspaceChildrenCache } from '@renderer/lib/workspaceChildrenCache';
+import { useDockFileTreeSelectionStore } from '@renderer/store/useDockFileTreeSelectionStore';
 
 const WS = 'ws-1';
 
 beforeEach(() => {
   invalidateWorkspaceTreeCache();
   invalidateWorkspaceChildrenCache();
+  useDockFileTreeSelectionStore.setState({ workspaceId: null, paths: [] });
   useWorkspaceStore.setState({
     activeId: WS,
     list: [{ id: WS, label: 'Proj', path: 'C:\\proj' }],

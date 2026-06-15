@@ -9,6 +9,7 @@ import { Tabs } from '../ui/Tabs.js';
 import { DockChatStrip } from './DockChatStrip.js';
 import { DockFileTree } from './DockFileTree.js';
 import { DockOpenEditorsSection } from './DockOpenEditorsSection.js';
+import { useDockEditorTreeSync } from '../../hooks/useDockEditorTreeSync.js';
 import {
   DOCK_WORKSPACE_PANEL_CLASS,
   DOCK_WORKSPACE_PANEL_SHELL_CLASS,
@@ -34,6 +35,9 @@ export function DockWorkspacePanel({ workspaceId }: DockWorkspacePanelProps) {
   const workspace = useWorkspaceStore((s) =>
     workspaceId ? s.list.find((entry) => entry.id === workspaceId) : undefined
   );
+  const workspacePath = workspace?.path ?? '';
+
+  useDockEditorTreeSync(workspaceId, workspacePath);
 
   const chatCount = useConversationsStore((s) => {
     if (!workspaceId) return 0;

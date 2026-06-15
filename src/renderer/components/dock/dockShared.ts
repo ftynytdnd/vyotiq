@@ -10,6 +10,7 @@ import {
 } from '../../lib/shellIcons.js';
 
 export const CONV_DRAG_MIME = 'application/x-vyotiq-conversation';
+export const EDITOR_TAB_DRAG_MIME = 'application/x-vyotiq-editor-tab';
 
 /**
  * Hover-only dock actions. Hidden from layout until hover or keyboard focus

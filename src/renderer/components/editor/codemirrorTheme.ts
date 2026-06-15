@@ -4,6 +4,7 @@
 
 import { EditorView } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
+import { shellMonoSyntaxHighlighting } from './codemirrorShellMonoHighlight.js';
 
 export const shellMonoEditorTheme: Extension = EditorView.theme(
   {
@@ -50,5 +51,6 @@ export const shellMonoEditorTheme: Extension = EditorView.theme(
 
 export const shellMonoEditorBase: Extension = [
   shellMonoEditorTheme,
+  shellMonoSyntaxHighlighting,
   EditorView.lineWrapping
 ];

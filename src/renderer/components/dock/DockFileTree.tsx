@@ -2,7 +2,8 @@
  * Collapsible workspace file tree for the left dock — lazy children + virtualization.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, startTransition, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, startTransition, type KeyboardEvent, type MouseEvent } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { isEditableTextFile } from '@shared/text/isEditableTextFile.js';
 import { getWorkspaceTree } from '../../lib/workspaceTreeCache.js';
@@ -12,6 +13,7 @@ import { previewDockWorkspaceFile } from './dockSearchFileActions.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useEditorStore } from '../../store/useEditorStore.js';
 import { useDockFileTreeRefreshStore } from '../../store/useDockFileTreeRefreshStore.js';
+import { useDockFileTreeSelectionStore } from '../../store/useDockFileTreeSelectionStore.js';
 import { useFileTreeExpanded } from '../../hooks/useFileTreeExpanded.js';
 import { useWorkspaceGitStatus } from '../../hooks/useWorkspaceGitStatus.js';
 import { registerDockFileTreeReveal } from '../../lib/revealFileInDockTree.js';
@@ -25,17 +27,31 @@ import {
   DOCK_TREE_ROW_HEIGHT_PX,
   expandFoldersForFilter,
   filterDockTreePaths,
+  flatRowIndexRange,
   flattenDockTreeNodes,
   flattenLazyDockTree,
-  normalizeDockTreePath
+  normalizeDockTreePath,
+  resolveStickyFolderRow,
+  siblingFolderPaths,
+  type FlatTreeRow
 } from './dockFileTreeModel.js';
 import { DockFileTreeFilter } from './DockFileTreeFilter.js';
+import { DockFileTreeToolbar } from './DockFileTreeToolbar.js';
 import { DockFileTreeRow } from './DockFileTreeRow.js';
+import { DockFileTreeStickyHeader } from './DockFileTreeStickyHeader.js';
+import { PromptDialog } from '../ui/PromptDialog.js';
 import {
   DockFileTreeContextMenu,
   useDockFileTreeContextMenu
 } from './DockFileTreeContextMenu.js';
 import { cn } from '../../lib/cn.js';
+import {
+  allVisibleRowPaths,
+  selectionTargetsFromPaths
+} from '../../lib/dockFileTreeSelection.js';
+
+const MAX_RECURSIVE_EXPAND_FOLDERS = 200;
+const EMPTY_TREE_SELECTION: string[] = [];
 
 export interface DockFileTreeProps {
   workspaceId: string | null;
@@ -57,7 +73,7 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
   });
 
   const treeRefreshVersion = useDockFileTreeRefreshStore((s) => s.version);
-  const { expandedSet, toggleExpanded, mergeExpanded } = useFileTreeExpanded(workspaceId);
+  const { expandedSet, toggleExpanded, mergeExpanded, setExpandedSet } = useFileTreeExpanded(workspaceId);
   const { anchorRef, target, openContextMenu, closeContextMenu } = useDockFileTreeContextMenu();
 
   const [filter, setFilter] = useState('');
@@ -71,7 +87,31 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
+  const [createPrompt, setCreatePrompt] = useState<null | { kind: 'newFile' | 'newFolder' }>(null);
+  const [stickyRow, setStickyRow] = useState<FlatTreeRow | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const typeaheadRef = useRef({ buffer: '', timer: null as ReturnType<typeof setTimeout> | null });
+  const selectionAnchorRef = useRef(0);
+
+  const selectedPathList = useDockFileTreeSelectionStore(
+    useShallow((s) => (workspaceId && s.workspaceId === workspaceId ? s.paths : EMPTY_TREE_SELECTION))
+  );
+  const selectedPaths = useMemo(() => new Set(selectedPathList), [selectedPathList]);
+  const setWorkspaceSelection = useDockFileTreeSelectionStore((s) => s.setWorkspaceSelection);
+  const clearWorkspaceSelection = useDockFileTreeSelectionStore((s) => s.clearWorkspaceSelection);
+
+  const setSelectedPaths = useCallback(
+    (next: Set<string>) => {
+      if (!workspaceId) return;
+      setWorkspaceSelection(workspaceId, next);
+    },
+    [workspaceId, setWorkspaceSelection]
+  );
+
+  const clearSelection = useCallback(() => {
+    if (!workspaceId) return;
+    clearWorkspaceSelection(workspaceId);
+  }, [workspaceId, clearWorkspaceSelection]);
 
   const gitStatusMap = useWorkspaceGitStatus(workspaceId, true);
 
@@ -174,6 +214,11 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
     return flattenLazyDockTree(childrenByDir, expandedSet, loadingDirs);
   }, [filterActive, filterPaths, expandedSet, childrenByDir, loadingDirs]);
 
+  const selectionTargets = useMemo(
+    () => selectionTargetsFromPaths(selectedPaths, flatRows),
+    [selectedPaths, flatRows]
+  );
+
   const virtualizer = useVirtualizer({
     count: flatRows.length,
     getScrollElement: () => scrollRef.current,
@@ -184,6 +229,7 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
 
   const onToggleFolder = useCallback(
     (path: string) => {
+      setSelectedPaths(new Set());
       const willExpand = !expandedSet.has(path);
       startTransition(() => {
         toggleExpanded(path);
@@ -194,6 +240,65 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
     },
     [expandedSet, toggleExpanded, childrenByDir, loadChildren]
   );
+
+  const expandSiblingFolders = useCallback(() => {
+    const row = flatRows[focusedIndex];
+    if (!row) return;
+    const siblings = siblingFolderPaths(flatRows, row.path);
+    if (siblings.length === 0) return;
+    mergeExpanded(siblings);
+    for (const dir of siblings) {
+      if (!childrenByDir.has(dir)) {
+        void loadChildren(dir);
+      }
+    }
+  }, [flatRows, focusedIndex, mergeExpanded, childrenByDir, loadChildren]);
+
+  const expandAllFolders = useCallback(async () => {
+    if (!workspacePath || filterActive) return;
+    const queue = [''];
+    const folders: string[] = [];
+    const visited = new Set<string>();
+    const childrenSnapshot = new Map(childrenByDir);
+
+    const ensureLoaded = async (dir: string): Promise<string[]> => {
+      const norm = dir.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/$/, '');
+      if (childrenSnapshot.has(norm)) {
+        return childrenSnapshot.get(norm) ?? [];
+      }
+      const entries = await getWorkspaceChildren(workspacePath, norm, workspaceId ?? undefined);
+      childrenSnapshot.set(norm, entries);
+      setChildrenByDir((prev) => {
+        const next = new Map(prev);
+        next.set(norm, entries);
+        return next;
+      });
+      return entries;
+    };
+
+    while (queue.length > 0 && folders.length < MAX_RECURSIVE_EXPAND_FOLDERS) {
+      const dir = queue.shift()!;
+      if (visited.has(dir)) continue;
+      visited.add(dir);
+      const entries = await ensureLoaded(dir);
+      for (const raw of entries) {
+        if (!raw.endsWith('/')) continue;
+        const path = raw.slice(0, -1);
+        folders.push(path);
+        queue.push(path);
+        if (folders.length >= MAX_RECURSIVE_EXPAND_FOLDERS) break;
+      }
+    }
+
+    if (folders.length > 0) {
+      mergeExpanded(folders);
+    }
+    if (folders.length >= MAX_RECURSIVE_EXPAND_FOLDERS) {
+      useToastStore
+        .getState()
+        .show(`Expanded first ${MAX_RECURSIVE_EXPAND_FOLDERS} folders.`, 'info');
+    }
+  }, [workspacePath, workspaceId, filterActive, childrenByDir, mergeExpanded]);
 
   const revealPath = useCallback(
     (relativePath: string) => {
@@ -235,6 +340,9 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
 
   const onOpenFile = useCallback(
     async (path: string) => {
+      if (workspaceId) {
+        setWorkspaceSelection(workspaceId, [path]);
+      }
       if (isEditableTextFile(path)) {
         await openWorkspaceFileInEditor(path, { workspaceId: workspaceId ?? undefined });
       } else {
@@ -242,7 +350,37 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
       }
       revealPath(path);
     },
-    [workspaceId, revealPath]
+    [workspaceId, revealPath, setWorkspaceSelection]
+  );
+
+  const onRowPointerDown = useCallback(
+    (path: string, _isDir: boolean, event: MouseEvent<HTMLButtonElement>) => {
+      const index = flatRows.findIndex((r) => r.path === path);
+      if (index < 0) return;
+      event.preventDefault();
+
+      if (event.shiftKey) {
+        const { from, to } = flatRowIndexRange(selectionAnchorRef.current, index);
+        const next = new Set<string>();
+        for (let i = from; i <= to; i++) {
+          const rowPath = flatRows[i]?.path;
+          if (rowPath) next.add(rowPath);
+        }
+        setSelectedPaths(next);
+        setFocusedIndex(index);
+        return;
+      }
+
+      if (event.ctrlKey || event.metaKey) {
+        const next = new Set(selectedPaths);
+        if (next.has(path)) next.delete(path);
+        else next.add(path);
+        setSelectedPaths(next);
+        selectionAnchorRef.current = index;
+        setFocusedIndex(index);
+      }
+    },
+    [flatRows, selectedPaths]
   );
 
   const setRowRef = useCallback((path: string, el: HTMLButtonElement | null) => {
@@ -253,6 +391,49 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
   const onRefresh = useCallback(() => {
     useDockFileTreeRefreshStore.getState().bump();
   }, []);
+
+  const onCollapseAll = useCallback(() => {
+    setExpandedSet(new Set());
+  }, [setExpandedSet]);
+
+  const requestDeleteSelection = useCallback(() => {
+    if (selectionTargets.length === 0) return;
+    setDeleteDialogOpen(true);
+  }, [selectionTargets.length]);
+
+  const handleContextMenu = useCallback(
+    (path: string, isDir: boolean, event: MouseEvent<HTMLButtonElement>) => {
+      if (!selectedPaths.has(path)) {
+        setSelectedPaths(new Set([path]));
+        const index = flatRows.findIndex((row) => row.path === path);
+        if (index >= 0) selectionAnchorRef.current = index;
+      }
+      openContextMenu(path, isDir, event);
+    },
+    [selectedPaths, flatRows, openContextMenu]
+  );
+
+  const handleCreateSubmit = useCallback(
+    async (name: string) => {
+      if (!createPrompt || !workspaceId) return;
+      const trimmed = name.trim().replace(/^[/\\]+/, '');
+      if (!trimmed) return;
+      try {
+        if (createPrompt.kind === 'newFolder') {
+          await vyotiq.workspace.mkdir({ workspaceId, path: trimmed });
+        } else {
+          await vyotiq.editor.write({ path: trimmed, content: '', workspaceId });
+          await openWorkspaceFileInEditor(trimmed, { workspaceId });
+        }
+        onRefresh();
+      } catch (err) {
+        useToastStore.getState().show(err instanceof Error ? err.message : String(err), 'danger');
+      } finally {
+        setCreatePrompt(null);
+      }
+    },
+    [createPrompt, workspaceId, onRefresh]
+  );
 
   const startInlineRename = useCallback((path: string) => {
     setRenamingPath(path);
@@ -296,7 +477,21 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
     if (focusedIndex >= flatRows.length) {
       setFocusedIndex(Math.max(0, flatRows.length - 1));
     }
+    selectionAnchorRef.current = Math.min(selectionAnchorRef.current, Math.max(0, flatRows.length - 1));
   }, [flatRows.length, focusedIndex]);
+
+  const syncStickyHeader = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) {
+      setStickyRow(null);
+      return;
+    }
+    setStickyRow(resolveStickyFolderRow(flatRows, el.scrollTop));
+  }, [flatRows]);
+
+  useEffect(() => {
+    syncStickyHeader();
+  }, [syncStickyHeader]);
 
   const onTreeKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
@@ -322,6 +517,30 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
       if (event.key === 'End') {
         event.preventDefault();
         setFocusedIndex(flatRows.length - 1);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setSelectedPaths(new Set());
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+        event.preventDefault();
+        setSelectedPaths(new Set(allVisibleRowPaths(flatRows)));
+        return;
+      }
+      if (event.key === 'Delete' && selectedPaths.size > 0) {
+        event.preventDefault();
+        requestDeleteSelection();
+        return;
+      }
+      if (event.key === '*' || event.code === 'NumpadMultiply') {
+        event.preventDefault();
+        if (event.shiftKey) {
+          void expandAllFolders();
+        } else {
+          expandSiblingFolders();
+        }
         return;
       }
       if (event.key === 'ArrowRight' && row.isDir && !expandedSet.has(row.path)) {
@@ -362,12 +581,13 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
         if (hit >= 0) setFocusedIndex(hit);
       }
     },
-    [renamingPath, flatRows, focusedIndex, expandedSet, onToggleFolder, onOpenFile]
+    [renamingPath, flatRows, focusedIndex, expandedSet, selectedPaths.size, onToggleFolder, onOpenFile, expandSiblingFolders, expandAllFolders, requestDeleteSelection]
   );
 
   useEffect(() => {
     const row = flatRows[focusedIndex];
     if (!row) return;
+    selectionAnchorRef.current = focusedIndex;
     virtualizer.scrollToIndex(focusedIndex, { align: 'auto' });
     rowRefs.current.get(row.path)?.focus();
   }, [focusedIndex, flatRows, virtualizer]);
@@ -385,6 +605,16 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <DockFileTreeToolbar
+        disabled={!workspaceId}
+        onNewFile={() => setCreatePrompt({ kind: 'newFile' })}
+        onNewFolder={() => setCreatePrompt({ kind: 'newFolder' })}
+        onExpandAll={() => void expandAllFolders()}
+        onCollapseAll={onCollapseAll}
+        onRefresh={onRefresh}
+        selectionCount={selectedPaths.size}
+        onDeleteSelection={requestDeleteSelection}
+      />
       <DockFileTreeFilter value={filter} onChange={setFilter} />
       {truncated ? (
         <p className="vx-caption shrink-0 px-1.5 pb-1.5 pt-0.5 text-text-faint">
@@ -400,11 +630,16 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
       ) : (
         <div
           ref={scrollRef}
-          className={cn('vx-dock-file-tree scrollbar-stealth min-h-0 flex-1 overflow-y-auto px-1 pb-2')}
+          className={cn('vx-dock-file-tree scrollbar-stealth relative min-h-0 flex-1 overflow-y-auto px-1 pb-2')}
           role="tree"
+          aria-multiselectable
           tabIndex={0}
           onKeyDown={onTreeKeyDown}
+          onScroll={syncStickyHeader}
         >
+          {stickyRow ? (
+            <DockFileTreeStickyHeader row={stickyRow} onToggle={onToggleFolder} />
+          ) : null}
           <div
             className="relative w-full"
             style={{ height: `${virtualizer.getTotalSize()}px` }}
@@ -420,6 +655,7 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
                   contextTargetPath={target?.path ?? null}
                   gitStatus={gitStatusMap[row.path] ?? null}
                   focused={virtualRow.index === focusedIndex}
+                  selected={selectedPaths.has(row.path)}
                   renaming={renamingPath === row.path}
                   renameValue={renameDraft}
                   onRenameChange={setRenameDraft}
@@ -427,7 +663,8 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
                   onRenameCancel={cancelRename}
                   onToggle={onToggleFolder}
                   onOpenFile={onOpenFile}
-                  onContextMenu={openContextMenu}
+                  onRowPointerDown={onRowPointerDown}
+                  onContextMenu={handleContextMenu}
                   setRowRef={setRowRef}
                   style={{
                     position: 'absolute',
@@ -448,12 +685,24 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
           workspaceId={workspaceId}
           workspacePath={workspacePath}
           target={target}
+          selectionTargets={selectionTargets}
           anchorRef={anchorRef}
           onClose={closeContextMenu}
           onRefresh={onRefresh}
           onStartInlineRename={startInlineRename}
+          onSelectionDeleted={clearSelection}
+          deleteDialogOpen={deleteDialogOpen}
+          onDeleteDialogOpenChange={setDeleteDialogOpen}
         />
       ) : null}
+      <PromptDialog
+        open={createPrompt !== null}
+        title={createPrompt?.kind === 'newFolder' ? 'New folder' : 'New file'}
+        placeholder={createPrompt?.kind === 'newFolder' ? 'folder-name' : 'file-name.ext'}
+        initialValue=""
+        onSubmit={(v) => void handleCreateSubmit(v)}
+        onCancel={() => setCreatePrompt(null)}
+      />
     </div>
   );
 }
