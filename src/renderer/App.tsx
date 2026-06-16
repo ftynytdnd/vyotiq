@@ -4,6 +4,8 @@ import { TitleBar } from './components/titlebar/TitleBar.js';
 import { LeftDock } from './components/dock/index.js';
 import { dockMainPaddingLeft, DOCK_STRIP_WIDTH, beginNewChatFromDock } from './components/dock/dockShared.js';
 import { WorkbenchShell } from './components/workbench/WorkbenchShell.js';
+import { RightWorkbenchRail } from './components/workbench/RightWorkbenchRail.js';
+import { WORKBENCH_EDGE_CONTAINER_CLASS } from './components/workbench/workbenchChrome.js';
 import {
   closeActiveWorkbenchFocus,
   cycleWorkbenchFocus,
@@ -12,6 +14,7 @@ import {
 import { ChatPage } from './pages/ChatPage.js';
 import { SettingsFullView } from './components/settings/SettingsFullView.js';
 import { ToastHost } from './components/toast/ToastHost.js';
+import { VectorReindexModal } from './components/settings/VectorReindexModal.js';
 import { PromptDialog } from './components/ui/PromptDialog.js';
 import {
   selectEnabledProviderIds,
@@ -456,6 +459,11 @@ export default function App() {
           onSetWorkspacePath={openSetWorkspacePath}
         />
         <TitleBar fileActions={fileActions} />
+        {!settingsOpen ? (
+          <div className={WORKBENCH_EDGE_CONTAINER_CLASS}>
+            <RightWorkbenchRail />
+          </div>
+        ) : null}
         <main
           className="relative z-0 flex h-full min-h-0 w-full flex-col overflow-hidden bg-surface-base"
           style={{
@@ -499,6 +507,7 @@ export default function App() {
           }}
         />
       <ToastHost />
+      <VectorReindexModal />
     </div>
   );
 }

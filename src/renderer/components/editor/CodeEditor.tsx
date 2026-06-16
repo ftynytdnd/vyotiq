@@ -3,7 +3,7 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { Compartment, EditorState, type Extension } from '@codemirror/state';
+import { Compartment, EditorState, type Extension, Annotation } from '@codemirror/state';
 import {
   EditorView,
   highlightActiveLine,
@@ -52,6 +52,8 @@ export interface CodeEditorProps {
 
 const inlineCompletionCompartment = new Compartment();
 const lspCompartment = new Compartment();
+/** Programmatic buffer sync from Zustand — must not mark the tab dirty. */
+const externalDocSync = Annotation.define<boolean>();
 
 function buildInlineCompletionFetch(
   config: CodeEditorInlineCompletionConfig
@@ -166,7 +168,10 @@ export function CodeEditor({
       }),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
-          onChangeRef.current?.(update.state.doc.toString());
+          const external = update.transactions.some((tr) => tr.annotation(externalDocSync) === true);
+          if (!external) {
+            onChangeRef.current?.(update.state.doc.toString());
+          }
         }
         if (update.docChanged || update.selectionSet) {
           const sel = update.state.selection.main;
@@ -221,7 +226,8 @@ export function CodeEditor({
     const current = view.state.doc.toString();
     if (current === value) return;
     view.dispatch({
-      changes: { from: 0, to: current.length, insert: value }
+      changes: { from: 0, to: current.length, insert: value },
+      annotations: externalDocSync.of(true)
     });
   }, [value]);
 

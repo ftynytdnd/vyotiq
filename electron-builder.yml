@@ -17,6 +17,9 @@ asarUnpack:
   - node_modules/@ast-grep/cli/**/*
   - node_modules/@ast-grep/cli-*/**/*
   - node_modules/@photostructure/sqlite-vec/**/*
+  - node_modules/pyright/**/*
+  - node_modules/typescript-language-server/**/*
+  - node_modules/typescript/**/*
 
 # Native deps ship prebuilds (node-pty, @ast-grep/napi, sqlite-vec). Rebuilding
 # requires MSVC Spectre-mitigated libs on Windows and is unnecessary for dist.

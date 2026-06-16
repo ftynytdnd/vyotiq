@@ -25,6 +25,9 @@ interface BrowserStore {
   error: string | null;
   /** Whether any page has been loaded this session (drives empty state). */
   hasLoaded: boolean;
+  /** Find-in-page overlay visibility. */
+  findOpen: boolean;
+  setFindOpen: (open: boolean) => void;
   openPanel: (url?: string) => Promise<void>;
   navigate: (input: string) => void;
   back: () => void;
@@ -61,12 +64,15 @@ export const useBrowserStore = create<BrowserStore>((set, get) => ({
   canGoForward: false,
   error: null,
   hasLoaded: false,
+  findOpen: false,
+
+  setFindOpen: (open) => set({ findOpen: open }),
 
   openPanel: async (url) => {
     closeSettingsForCompanionOpen();
     useAttachmentPreviewStore.getState().close();
     focusWorkbenchTab('browser');
-    set({ open: true });
+    set({ open: true, error: null });
     try {
       const target = url ? normalizeBrowserInput(url) : undefined;
       const reply = await vyotiq.browser.attach(target ? { url: target } : undefined);
@@ -76,10 +82,13 @@ export const useBrowserStore = create<BrowserStore>((set, get) => ({
         loading: reply.state.loading,
         canGoBack: reply.state.canGoBack,
         canGoForward: reply.state.canGoForward,
+        error: reply.state.error ?? null,
         hasLoaded: reply.state.url.length > 0 && reply.state.url !== 'about:blank'
       });
     } catch (err) {
-      set({ error: err instanceof Error ? err.message : String(err) });
+      const msg = err instanceof Error ? err.message : String(err);
+      set({ open: false, error: msg });
+      syncWorkbenchTabAfterClose();
     }
   },
 
@@ -96,7 +105,7 @@ export const useBrowserStore = create<BrowserStore>((set, get) => ({
   stop: () => void vyotiq.browser.stop(),
 
   close: () => {
-    set({ open: false });
+    set({ open: false, findOpen: false });
     void vyotiq.browser.setVisible({ visible: false }).catch(() => {});
     syncWorkbenchTabAfterClose();
   },

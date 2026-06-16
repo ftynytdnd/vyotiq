@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import type { EditorEncoding, EditorEol } from '@shared/types/editor.js';
 import { basenameFromPath } from '@shared/text/languageFromPath.js';
 import { normalizePath } from '../lib/normalizePath.js';
+import { normalizeEditorBufferText } from '@shared/text/normalizeEditorBuffer.js';
 import { vyotiq } from '../lib/ipc.js';
 import { closeSettingsForCompanionOpen } from './useAppViewStore.js';
 import {
@@ -107,13 +108,14 @@ interface EditorStore {
   cancelUnsavedClose: () => void;
   isTabDirty: (filePath: string) => boolean;
   setActiveTab: (filePath: string) => void;
+  /** Drop every tab scoped to a workspace (e.g. workspace removed). */
+  closeTabsForWorkspace: (workspaceId: string) => void;
   reorderWorkspaceTabs: (workspaceId: string, fromFilePath: string, toFilePath: string) => void;
   setContent: (content: string) => void;
   reloadFromDisk: () => Promise<void>;
   /** Re-read one tab from disk or mark stale when the buffer has unsaved edits. */
   refreshTabFromDisk: (filePath: string, opts?: { force?: boolean }) => Promise<void>;
   save: () => Promise<boolean>;
-  markStaleOnDisk: (filePath?: string) => void;
   applyExternalContent: (filePath: string, content: string, mtimeMs?: number) => void;
   setAgentStreaming: (filePath: string, streaming: boolean) => void;
   /** Scroll active editor to LSP go-to-definition target after tab switch. */
@@ -276,8 +278,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         filePath,
         workspaceId: opts.workspaceId ?? null,
         ...emptyTabFields(),
-        content: opts.initialContent,
-        savedContent: opts.initialContent,
+        content: normalizeEditorBufferText(opts.initialContent),
+        savedContent: normalizeEditorBufferText(opts.initialContent),
         mtimeMs: opts.initialMtimeMs ?? null
       };
       set(
@@ -319,8 +321,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         const mirrored = mirrorActiveTab({
           ...state,
           tabs: updateTab(state.tabs, filePath, {
-            content: result.content,
-            savedContent: result.content,
+            content: normalizeEditorBufferText(result.content),
+            savedContent: normalizeEditorBufferText(result.content),
             mtimeMs: result.mtimeMs,
             truncated: result.truncated,
             loading: false,
@@ -441,6 +443,35 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     useEditorCursorStore.getState().reset();
   },
 
+  closeTabsForWorkspace: (workspaceId) => {
+    const state = get();
+    const closing = state.tabs.filter((tab) => tab.workspaceId === workspaceId);
+    if (closing.length === 0) return;
+
+    for (const tab of closing) {
+      cancelAutoSave(tab.filePath);
+    }
+
+    const tabs = state.tabs.filter((tab) => tab.workspaceId !== workspaceId);
+    let activeFilePath = state.activeFilePath;
+    if (
+      activeFilePath &&
+      closing.some((tab) => normalizePath(tab.filePath) === normalizePath(activeFilePath!))
+    ) {
+      activeFilePath = tabs.length > 0 ? tabs[tabs.length - 1]!.filePath : null;
+    }
+
+    const next = mirrorActiveTab({
+      ...state,
+      tabs,
+      activeFilePath,
+      open: tabs.length > 0,
+      pendingUnsavedClose: null
+    });
+    set(next);
+    if (tabs.length === 0) syncWorkbenchTabAfterClose();
+  },
+
   reorderWorkspaceTabs: (workspaceId, fromFilePath, toFilePath) => {
     const state = get();
     const tabs = reorderWorkspaceTabsInList(state.tabs, workspaceId, fromFilePath, toFilePath);
@@ -500,7 +531,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   refreshTabFromDisk: async (filePath, opts) => {
     const tab = get().tabs.find((t) => normalizePath(t.filePath) === normalizePath(filePath));
-    if (!tab) return;
+    if (!tab || tab.loading) return;
     const force = opts?.force === true;
     if (!force && tab.content !== tab.savedContent) {
       set((state) =>
@@ -520,8 +551,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         mirrorActiveTab({
           ...state,
           tabs: updateTab(state.tabs, filePath, {
-            content: result.content,
-            savedContent: result.content,
+            content: normalizeEditorBufferText(result.content),
+            savedContent: normalizeEditorBufferText(result.content),
             mtimeMs: result.mtimeMs,
             truncated: result.truncated,
             staleOnDisk: false,
@@ -602,12 +633,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }
   },
 
-  markStaleOnDisk: (filePath) => {
-    const target = filePath ?? get().activeFilePath;
-    if (!target) return;
-    void get().refreshTabFromDisk(target);
-  },
-
   applyExternalContent: (filePath, content, mtimeMs) => {
     const tab = get().tabs.find((t) => normalizePath(t.filePath) === normalizePath(filePath));
     if (!tab) return;
@@ -625,7 +650,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       mirrorActiveTab({
         ...state,
         tabs: updateTab(state.tabs, filePath, {
-          content,
+          content: normalizeEditorBufferText(content),
           ...(mtimeMs !== undefined ? { mtimeMs } : {}),
           staleOnDisk: false,
           agentStreaming: true
@@ -661,11 +686,6 @@ export function selectEditorDirty(s: EditorStore): boolean {
       ? s.tabs.find((t) => normalizePath(t.filePath) === normalizePath(s.activeFilePath!))
       : null;
   return s.open && tab != null && tab.content !== tab.savedContent;
-}
-
-export function editorMatchesPath(s: EditorStore, filePath: string): boolean {
-  const id = normalizePath(filePath);
-  return s.open && s.tabs.some((t) => normalizePath(t.filePath) === id);
 }
 
 export function selectActiveEditorTab(s: EditorStore): EditorTab | null {

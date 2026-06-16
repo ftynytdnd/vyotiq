@@ -605,17 +605,19 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <DockFileTreeToolbar
-        disabled={!workspaceId}
-        onNewFile={() => setCreatePrompt({ kind: 'newFile' })}
-        onNewFolder={() => setCreatePrompt({ kind: 'newFolder' })}
-        onExpandAll={() => void expandAllFolders()}
-        onCollapseAll={onCollapseAll}
-        onRefresh={onRefresh}
-        selectionCount={selectedPaths.size}
-        onDeleteSelection={requestDeleteSelection}
-      />
-      <DockFileTreeFilter value={filter} onChange={setFilter} />
+      <div className="vx-dock-file-tree-chrome shrink-0 border-b border-border-subtle/25">
+        <DockFileTreeFilter value={filter} onChange={setFilter} />
+        <DockFileTreeToolbar
+          disabled={!workspaceId}
+          onNewFile={() => setCreatePrompt({ kind: 'newFile' })}
+          onNewFolder={() => setCreatePrompt({ kind: 'newFolder' })}
+          onExpandAll={() => void expandAllFolders()}
+          onCollapseAll={onCollapseAll}
+          onRefresh={onRefresh}
+          selectionCount={selectedPaths.size}
+          onDeleteSelection={requestDeleteSelection}
+        />
+      </div>
       {truncated ? (
         <p className="vx-caption shrink-0 px-1.5 pb-1.5 pt-0.5 text-text-faint">
           Showing {shownCount} of {totalCount} files — narrow folders or use search (Mod+K).

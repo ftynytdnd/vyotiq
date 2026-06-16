@@ -72,6 +72,7 @@ vi.mock('@renderer/lib/ipc.js', async (importOriginal) => {
         setVisible: vi.fn(async () => undefined),
         find: vi.fn(async () => undefined),
         stopFind: vi.fn(async () => undefined),
+        openExternal: vi.fn(async () => undefined),
         destroy: vi.fn(async () => undefined),
         onState: subscribe
       }
@@ -205,6 +206,10 @@ describe('Workbench layout', () => {
 
     expect(document.querySelector('[data-workbench-agent-main]')).toBeTruthy();
     expect(document.querySelector('[data-workbench-agent-main] [role="textbox"]')).toBeTruthy();
-    expect(screen.getByRole('tab', { name: /^powershell$/i })).toHaveAttribute('aria-selected', 'true');
+    const tabScroll = document.querySelector('[data-workbench-tab-scroll]');
+    expect(tabScroll).toBeTruthy();
+    expect(
+      tabScroll!.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim()
+    ).toMatch(/^terminal$/i);
   });
 });

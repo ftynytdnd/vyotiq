@@ -12,9 +12,10 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { vyotiq } from '../../lib/ipc.js';
-import { buildXtermTheme, resolveMonoFontFamily } from '@shared/terminal/xtermTheme.js';
+import { applyXtermTheme, buildXtermTheme, resolveMonoFontFamily } from '@shared/terminal/xtermTheme.js';
 
 export interface TerminalPoolEntry {
   sessionId: string;
@@ -45,15 +46,23 @@ function bindGlobalListeners(): void {
 
   if (typeof MutationObserver !== 'undefined') {
     themeObserver = new MutationObserver(() => {
-      const theme = buildXtermTheme();
       for (const entry of pool.values()) {
-        entry.term.options.theme = theme;
+        applyXtermTheme(entry.term);
       }
     });
     themeObserver.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ['data-theme']
+      attributeFilter: ['data-theme', 'data-density']
     });
+  }
+}
+
+function tryLoadWebglRenderer(term: Terminal): void {
+  try {
+    const webgl = new WebglAddon();
+    term.loadAddon(webgl);
+  } catch {
+    /* canvas renderer fallback */
   }
 }
 
@@ -67,11 +76,14 @@ export function getTerminalEntry(sessionId: string): TerminalPoolEntry {
 
   const term = new Terminal({
     cursorBlink: true,
+    cursorStyle: 'bar',
+    cursorWidth: 2,
     fontFamily: resolveMonoFontFamily(),
-    fontSize: 12,
-    lineHeight: 1.35,
+    fontSize: 13,
+    lineHeight: 1.55,
     letterSpacing: 0,
     scrollback: 8000,
+    smoothScrollDuration: 120,
     theme: buildXtermTheme()
   });
   const fit = new FitAddon();
@@ -94,6 +106,8 @@ export function getTerminalEntry(sessionId: string): TerminalPoolEntry {
 export function openTerminalEntry(entry: TerminalPoolEntry): void {
   if (!entry.opened) {
     entry.term.open(entry.host);
+    tryLoadWebglRenderer(entry.term);
+    applyXtermTheme(entry.term);
     entry.opened = true;
   }
   fitTerminalEntry(entry);

@@ -17,6 +17,7 @@ import { useEditorDiskWatcher } from '../../hooks/useEditorDiskWatcher.js';
 import { EditorStatusBar } from './EditorStatusBar.js';
 import { EditorTabViews } from './EditorTabViews.js';
 import { useAppViewStore } from '../../store/useAppViewStore.js';
+import { resolveEditorLspSettings } from '@shared/settings/editorLspSettings.js';
 import { WORKBENCH_BODY_CLASS } from './workbenchShared.js';
 import { cn } from '../../lib/cn.js';
 
@@ -39,9 +40,9 @@ export function EditorCanvas() {
   useEditorDiskWatcher();
 
   const openSettings = useAppViewStore((s) => s.openSettings);
-  const lspEnabled = settings.ui?.editorLsp?.enabled === true;
+  const lspSettings = resolveEditorLspSettings(settings.ui);
   const lsp = useEditorLsp({
-    enabled: lspEnabled,
+    enabled: lspSettings.enabled,
     filePath,
     workspaceId: workspaceId ?? activeWorkspaceId
   });
@@ -88,7 +89,7 @@ export function EditorCanvas() {
           encoding={encoding}
           utf8Bom={utf8Bom}
           dirty={dirty}
-          lspEnabled={lspEnabled}
+          lspEnabled={lspSettings.enabled}
           lspStatus={lsp.status}
           onLspClick={() => openSettings('agent-behavior')}
         />

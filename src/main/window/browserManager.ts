@@ -167,6 +167,14 @@ export function browserStopFind(): void {
   view?.webContents.stopFindInPage('clearSelection');
 }
 
+export function browserOpenExternal(url: string): void {
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    void shell.openExternal(url);
+    return;
+  }
+  throw new Error('Only http(s) URLs can be opened externally');
+}
+
 export function browserDestroy(): void {
   if (!view) return;
   const win = getMainWindow();

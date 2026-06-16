@@ -33,6 +33,7 @@ import {
   scheduleWorkspaceVectorIndex
 } from '../memory/vector/indexScheduler.js';
 import { killWorkspacePty } from '../terminal/ptyManager.js';
+import { disposeLspSession } from '../lsp/lspManager.js';
 import { WORKSPACE_TREE_IGNORE } from '../workspace/workspaceTreeIgnore.js';
 import { listWorkspaceChildren } from '../workspace/workspaceListChildren.js';
 import { getWorkspaceGitStatus } from '../workspace/workspaceGitStatus.js';
@@ -193,6 +194,7 @@ export function registerWorkspaceIpc(): void {
       // tear down per-workspace vector db + in-flight indexer
       if (doomed) void disposeWorkspaceVectorIndex(doomed.path);
       killWorkspacePty(id);
+      await disposeLspSession(id);
       return removeWorkspace(id);
     }
   );

@@ -8,6 +8,7 @@ import type {
   BrowserAttachResult,
   BrowserFindInput,
   BrowserNavigateInput,
+  BrowserOpenExternalInput,
   BrowserSetBoundsInput,
   BrowserSetVisibleInput
 } from '@shared/types/browser.js';
@@ -18,6 +19,7 @@ import {
   browserFind,
   browserForward,
   browserNavigate,
+  browserOpenExternal,
   browserReload,
   browserSetBounds,
   browserSetVisible,
@@ -71,6 +73,13 @@ export function registerBrowserIpc(): void {
   });
 
   wrapIpcHandler(IPC.BROWSER_STOP_FIND, async () => browserStopFind());
+
+  wrapIpcHandler(IPC.BROWSER_OPEN_EXTERNAL, async (_event, input: BrowserOpenExternalInput) => {
+    assertObject('browser:open-external', 'input', input);
+    assertString('browser:open-external', 'url', input.url, { maxBytes: 8 * 1024 });
+    browserOpenExternal(input.url);
+  });
+
   wrapIpcHandler(IPC.BROWSER_DESTROY, async () => browserDestroy());
 }
 

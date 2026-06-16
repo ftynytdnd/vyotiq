@@ -15,7 +15,8 @@ import { vyotiq } from '../../lib/ipc.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../lib/shellIcons.js';
-import { WORKBENCH_BODY_CLASS } from './workbenchShared.js';
+import { WORKBENCH_BODY_CLASS, closeEditorPanel } from './workbenchShared.js';
+import { WORKBENCH_EMPTY_CARD_CLASS } from './workbenchChrome.js';
 import { cn } from '../../lib/cn.js';
 
 export function EditorEmptyState() {
@@ -83,7 +84,7 @@ export function EditorEmptyState() {
         'vx-editor-empty relative flex items-center justify-center px-6 py-10'
       )}
     >
-      <div className="flex w-full max-w-md flex-col items-center gap-6 text-center">
+      <div className={cn('flex w-full max-w-md flex-col items-center gap-6 text-center', WORKBENCH_EMPTY_CARD_CLASS)}>
         <div className="space-y-1">
           <p className="text-section font-medium text-text-primary">No file open</p>
           <p className="text-row text-text-muted">
@@ -100,6 +101,9 @@ export function EditorEmptyState() {
           <Button variant="primary" size="sm" onClick={onNewFile} disabled={!workspacePath}>
             <FilePlus className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
             New file
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => closeEditorPanel()}>
+            Close editor
           </Button>
         </div>
         {recent.length > 0 ? (

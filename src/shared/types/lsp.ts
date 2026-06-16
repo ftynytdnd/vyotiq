@@ -17,18 +17,6 @@ export interface LspLocation {
   character: number;
 }
 
-export interface LspCompletionItem {
-  label: string;
-  insertText: string;
-  detail?: string;
-}
-
-export interface LspDiagnosticsEvent {
-  workspaceId: string;
-  path: string;
-  diagnostics: LspDiagnostic[];
-}
-
 export interface LspRelayStatus {
   connected: boolean;
   pid: number | null;
@@ -39,7 +27,8 @@ export interface LspConnectResult {
   ok: boolean;
   rootUri: string;
   status: LspRelayStatus;
-  configSource: 'global' | 'workspace' | 'disabled';
+  configSource: 'global' | 'workspace' | 'disabled' | 'bundled';
+  languageId?: string;
   reason?: string;
 }
 

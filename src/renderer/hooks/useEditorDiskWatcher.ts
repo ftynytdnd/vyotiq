@@ -18,6 +18,7 @@ export function useEditorDiskWatcher(): void {
         debounceTimer = null;
         const { tabs, refreshTabFromDisk } = useEditorStore.getState();
         for (const tab of tabs) {
+          if (tab.loading) continue;
           if (tab.workspaceId && tab.workspaceId !== payload.workspaceId) continue;
           void refreshTabFromDisk(tab.filePath);
         }

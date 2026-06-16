@@ -43,10 +43,11 @@ describe('WorkbenchShell', () => {
     useUiStore.setState({ workbenchTab: 'agent' });
   });
 
-  it('hides workbench pane when no companions are open', () => {
+  it('uses full-width agent column when no companions are open', () => {
     const { container } = render(shell());
     expect(screen.queryByRole('tablist', { name: /workbench/i })).toBeNull();
     expect(container.querySelector('[data-workbench-pane]')).toBeNull();
+    expect(container.querySelector('[data-workbench-launcher-rail]')).toBeNull();
     expect(container.textContent).toContain('Agent view');
     expect(container.querySelector('.vx-workbench--split-row')).toBeNull();
   });
@@ -55,7 +56,6 @@ describe('WorkbenchShell', () => {
     useEditorStore.setState({ open: true });
     render(shell());
     expect(screen.getByRole('tablist', { name: /workbench/i })).toBeTruthy();
-    // On-demand tabs: no terminal/browser tab unless those surfaces are open.
     expect(screen.queryByRole('tab', { name: /^terminal$/i })).toBeNull();
     expect(screen.queryByRole('tab', { name: /^agent$/i })).toBeNull();
   });

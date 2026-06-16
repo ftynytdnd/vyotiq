@@ -3,11 +3,7 @@
  */
 
 import type { ToolName } from '@shared/types/tool.js';
-
-function basename(path: string): string {
-  const parts = path.split(/[/\\]/);
-  return parts[parts.length - 1] || path;
-}
+import { basenameFromPath } from '@shared/text/languageFromPath.js';
 
 export function formatToolGroupDisplayPrimary(
   toolName: ToolName,
@@ -23,7 +19,7 @@ export function formatToolGroupDisplayPrimary(
       if (primary === 'workspace' || primary === '.' || primary === './') {
         return { display: primary };
       }
-      const base = basename(primary);
+      const base = basenameFromPath(primary);
       return base !== primary ? { display: base, title: primary } : { display: primary };
     }
     case 'bash': {

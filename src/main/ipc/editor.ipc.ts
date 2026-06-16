@@ -18,6 +18,7 @@ import {
   requireWorkspaceById
 } from '../workspace/workspaceState.js';
 import { suppressTreeWatchForWrite } from '../workspace/workspaceWatchSuppress.js';
+import { normalizeEditorBufferText } from '@shared/text/normalizeEditorBuffer.js';
 import { decodeDiskTextBuffer, encodeDiskTextBody, probeBinaryText } from '../text/decodeDiskText.js';
 import { logger } from '../logging/logger.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
@@ -62,7 +63,7 @@ export function registerEditorIpc(): void {
       throw new Error(`Refusing to open binary file: ${input.path} (${binary.detail})`);
     }
     const decoded = decodeDiskTextBuffer(slice);
-    const content = decoded.body;
+    const content = normalizeEditorBufferText(decoded.body);
 
     return {
       content,

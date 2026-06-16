@@ -22,6 +22,10 @@ export interface BrowserNavigateInput {
   url: string;
 }
 
+export interface BrowserOpenExternalInput {
+  url: string;
+}
+
 export interface BrowserSetBoundsInput {
   bounds: BrowserBounds;
 }

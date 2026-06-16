@@ -230,6 +230,7 @@ const api: VyotiqApi = {
     setVisible: (input) => ipcRenderer.invoke(IPC.BROWSER_SET_VISIBLE, input),
     find: (input) => ipcRenderer.invoke(IPC.BROWSER_FIND, input),
     stopFind: () => ipcRenderer.invoke(IPC.BROWSER_STOP_FIND),
+    openExternal: (input) => ipcRenderer.invoke(IPC.BROWSER_OPEN_EXTERNAL, input),
     destroy: () => ipcRenderer.invoke(IPC.BROWSER_DESTROY),
     onState: (cb) =>
       on<[import('@shared/types/browser.js').BrowserStateEvent]>(IPC.BROWSER_STATE, (event) =>
@@ -246,18 +247,9 @@ const api: VyotiqApi = {
     connect: (input) => ipcRenderer.invoke(IPC.LSP_CONNECT, input),
     send: (input) => ipcRenderer.invoke(IPC.LSP_SEND, input),
     status: (input) => ipcRenderer.invoke(IPC.LSP_STATUS, input),
+    disconnect: (input) => ipcRenderer.invoke(IPC.LSP_DISCONNECT, input),
     onMessage: (cb) =>
-      on<[import('@shared/types/lsp.js').LspMessageEvent]>(IPC.LSP_MESSAGE, (event) => cb(event)),
-    open: (input) => ipcRenderer.invoke(IPC.LSP_OPEN, input),
-    change: (input) => ipcRenderer.invoke(IPC.LSP_CHANGE, input),
-    close: (input) => ipcRenderer.invoke(IPC.LSP_CLOSE, input),
-    definition: (input) => ipcRenderer.invoke(IPC.LSP_DEFINITION, input),
-    hover: (input) => ipcRenderer.invoke(IPC.LSP_HOVER, input),
-    completion: (input) => ipcRenderer.invoke(IPC.LSP_COMPLETION, input),
-    onDiagnostics: (cb) =>
-      on<[import('@shared/types/lsp.js').LspDiagnosticsEvent]>(IPC.LSP_DIAGNOSTICS, (event) =>
-        cb(event)
-      )
+      on<[import('@shared/types/lsp.js').LspMessageEvent]>(IPC.LSP_MESSAGE, (event) => cb(event))
   },
 
   mentions: {

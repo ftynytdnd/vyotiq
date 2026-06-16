@@ -29,6 +29,7 @@ import {
   recordPollSuccess,
   shouldLogRepeatedPollWarning
 } from './providerPollLogThrottle.js';
+import { isSupersededProviderPollAbort } from './providerPollAbort.js';
 
 const log = logger.child('providers/account-poller');
 
@@ -90,9 +91,11 @@ function pollOnceInner(): Promise<void> {
       if (!withKey?.apiKey?.trim() && !withKey?.billingApiKey?.trim()) continue;
       try {
         const snap = await fetchProviderAccount(withKey, signal);
+        if (signal.aborted) break;
         setProviderAccountSnapshot(snap);
         const logKey = `account:${p.id}`;
         if (snap.status === 'error') {
+          if (isSupersededProviderPollAbort(snap.message, signal)) continue;
           if (
             shouldLogRepeatedPollWarning(logKey, snap.message ?? 'unknown error')
           ) {
@@ -106,6 +109,7 @@ function pollOnceInner(): Promise<void> {
           recordPollSuccess(logKey);
         }
       } catch (err) {
+        if (isSupersededProviderPollAbort(err, signal)) continue;
         const message = err instanceof Error ? err.message : String(err);
         if (shouldLogRepeatedPollWarning(`account-throw:${p.id}`, message)) {
           log.warn('account fetch threw', { providerId: p.id, err });

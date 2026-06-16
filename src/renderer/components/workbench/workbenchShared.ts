@@ -23,9 +23,16 @@ export const WORKBENCH_BODY_CLASS = 'flex min-h-0 w-full flex-1 flex-col overflo
 export const WORKBENCH_AGENT_MAIN_CLASS =
   'vx-workbench-agent-main flex min-h-0 w-full flex-1 flex-col overflow-hidden';
 export const WORKBENCH_PANE_CLASS =
-  'vx-workbench-companion flex min-h-0 flex-col overflow-hidden border-l border-border-subtle/25 bg-surface-base';
+  'vx-workbench-companion flex min-h-0 flex-col overflow-hidden bg-surface-base';
 export const WORKBENCH_RESIZE_HANDLE_CLASS =
   'vx-workbench-resize-handle relative z-10 w-1.5 shrink-0 cursor-col-resize';
+
+/** Display name for a shell executable path (`powershell.exe` → `powershell`). */
+export function shellBasename(shell: string): string {
+  const normalized = shell.replace(/\\/g, '/');
+  const leaf = normalized.split('/').pop() ?? shell;
+  return leaf.replace(/\.exe$/i, '');
+}
 
 function terminalOpen(): boolean {
   return useTerminalStore.getState().open;

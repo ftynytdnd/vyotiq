@@ -40,4 +40,14 @@ describe('WorkbenchToolbar', () => {
     expect(screen.getByText('src')).toBeTruthy();
     expect(screen.getByText('main.py')).toBeTruthy();
   });
+
+  it('renders nothing when editor has no open file', () => {
+    useEditorStore.setState({
+      open: true,
+      tabs: [],
+      activeFilePath: null
+    } as never);
+    const { container } = render(<WorkbenchToolbar tab="editor" />);
+    expect(container.firstChild).toBeNull();
+  });
 });

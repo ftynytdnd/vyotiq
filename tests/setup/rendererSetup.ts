@@ -247,6 +247,7 @@ function makeStubApi() {
       setVisible: asyncNoop,
       find: asyncNoop,
       stopFind: asyncNoop,
+      openExternal: asyncNoop,
       destroy: asyncNoop,
       onState: subscribe
     },
@@ -255,11 +256,21 @@ function makeStubApi() {
       cancel: asyncNoop
     },
     lsp: {
-      open: asyncNoop,
-      change: asyncNoop,
-      close: asyncNoop,
-      definition: vi.fn(async () => null),
-      onDiagnostics: subscribe
+      connect: vi.fn(async () => ({
+        ok: false,
+        rootUri: '',
+        status: { connected: false, pid: null, lastError: null },
+        configSource: 'disabled' as const
+      })),
+      send: asyncNoop,
+      status: vi.fn(async () => ({
+        ok: false,
+        rootUri: '',
+        status: { connected: false, pid: null, lastError: null },
+        configSource: 'disabled' as const
+      })),
+      disconnect: asyncNoop,
+      onMessage: subscribe
     },
     mentions: {
       searchSymbols: vi.fn(async () => ({ hits: [] }))

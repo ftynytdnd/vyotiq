@@ -22,6 +22,8 @@ import {
 const XAI_MANAGEMENT_API_BASE = 'https://management-api.x.ai';
 import { safeText } from './errorBody.js';
 import { logger } from '../logging/logger.js';
+import { isAbortError } from '../orchestrator/abortSignal.js';
+import { isSupersededProviderPollAbort } from './providerPollAbort.js';
 
 const log = logger.child('providers/account-fetch');
 
@@ -84,6 +86,7 @@ async function fetchProviderAccountInner(
         return finalize(await fetchRateLimitFallback(provider, base, kind, signal));
     }
   } catch (err) {
+    if (isAbortError(err, signal)) throw err;
     return {
       ...base,
       status: 'error',
@@ -94,11 +97,13 @@ async function fetchProviderAccountInner(
 
 function finalize(snapshot: ProviderAccountSnapshot): ProviderAccountSnapshot {
   if (snapshot.status === 'error' && snapshot.message) {
-    log.warn('provider account snapshot error', {
-      providerId: snapshot.providerId,
-      hostKind: snapshot.hostKind,
-      message: snapshot.message
-    });
+    if (!isSupersededProviderPollAbort(snapshot.message)) {
+      log.warn('provider account snapshot error', {
+        providerId: snapshot.providerId,
+        hostKind: snapshot.hostKind,
+        message: snapshot.message
+      });
+    }
   }
   const resetAt = snapshot.limits?.resetAt;
   if (resetAt !== undefined && !snapshot.resetsAt?.length) {

@@ -37,7 +37,7 @@ import {
 import { recordChange } from '../checkpoints/index.js';
 import { computeDiffHunks } from '@shared/text/diff/computeDiffHunks.js';
 import { buildBashEnv } from '../terminal/bashEnv.js';
-import { hasWorkspacePty, runAgentCommandInPty } from '../terminal/ptyManager.js';
+import { ensureWorkspacePty, runAgentCommandInPty } from '../terminal/ptyManager.js';
 import { resolveBashLongRunning } from './bashLongRunning.js';
 import { BashOutputCapture } from './bashOutputCapture.js';
 import { PtyAgentLiveStdoutTracker } from '@shared/terminal/ptyAgentStream.js';
@@ -742,7 +742,7 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
           shared: {
             type: 'boolean',
             description:
-              'When true (default), run in the shared workspace PTY when the terminal panel is open; false spawns an isolated shell.'
+              'When true (default), run in the shared workspace PTY (auto-created on first bash); false spawns an isolated shell.'
           }
         },
         required: ['command']
@@ -879,9 +879,9 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
         : null;
     outputCapture?.flush();
 
-    const useSharedPty =
-      !forceIsolated && a.shared !== false && hasWorkspacePty(ctx.workspaceId);
+    const useSharedPty = !forceIsolated && a.shared !== false;
     if (useSharedPty) {
+      ensureWorkspacePty(ctx.workspaceId, ctx.workspacePath);
       const ptyLive = new PtyAgentLiveStdoutTracker();
       const ptyRun = await runAgentCommandInPty(
         ctx.workspaceId,

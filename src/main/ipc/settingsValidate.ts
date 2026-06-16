@@ -43,7 +43,6 @@ const UI_RECORD_KEYS = [
   'keybindings',
   'recentEditorFilesByWorkspace',
   'fileTreeExpandedByWorkspace',
-  'openEditorsCollapsedByWorkspace',
   'editorTabsByWorkspace'
 ] as const;
 
@@ -297,15 +296,6 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
       });
     }
   }
-  if ('openEditorsCollapsedByWorkspace' in ui && ui.openEditorsCollapsedByWorkspace !== undefined) {
-    assertObject(channel, 'patch.ui.openEditorsCollapsedByWorkspace', ui.openEditorsCollapsedByWorkspace);
-    const map = ui.openEditorsCollapsedByWorkspace as Record<string, unknown>;
-    assertRecordKeyCount(channel, 'patch.ui.openEditorsCollapsedByWorkspace', map, UI_RECORD_MAX_KEYS);
-    for (const [wsId, collapsed] of Object.entries(map)) {
-      assertString(channel, 'patch.ui.openEditorsCollapsedByWorkspace key', wsId);
-      assertBoolean(channel, `patch.ui.openEditorsCollapsedByWorkspace[${wsId}]`, collapsed);
-    }
-  }
   if ('editorTabsByWorkspace' in ui && ui.editorTabsByWorkspace !== undefined) {
     assertObject(channel, 'patch.ui.editorTabsByWorkspace', ui.editorTabsByWorkspace);
     const map = ui.editorTabsByWorkspace as Record<string, unknown>;
@@ -432,7 +422,7 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
     assertObject(channel, 'patch.ui.editorLsp', ui.editorLsp);
     const editorLsp = ui.editorLsp as Record<string, unknown>;
     for (const key of Object.keys(editorLsp)) {
-      if (key !== 'enabled' && key !== 'command' && key !== 'args') {
+      if (key !== 'enabled' && key !== 'command' && key !== 'args' && key !== 'languages') {
         throw new Error(
           `${channel}: patch.ui.editorLsp.${key} is not a recognized editorLsp field`
         );
@@ -446,6 +436,22 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
     }
     if ('args' in editorLsp && editorLsp.args !== undefined) {
       assertStringArray(channel, 'patch.ui.editorLsp.args', editorLsp.args);
+    }
+    if ('languages' in editorLsp && editorLsp.languages !== undefined) {
+      assertObject(channel, 'patch.ui.editorLsp.languages', editorLsp.languages);
+      const languages = editorLsp.languages as Record<string, unknown>;
+      for (const [lang, entry] of Object.entries(languages)) {
+        assertObject(channel, `patch.ui.editorLsp.languages.${lang}`, entry);
+        const langEntry = entry as Record<string, unknown>;
+        if ('command' in langEntry && langEntry.command !== undefined) {
+          assertString(channel, `patch.ui.editorLsp.languages.${lang}.command`, langEntry.command, {
+            nonEmpty: false
+          });
+        }
+        if ('args' in langEntry && langEntry.args !== undefined) {
+          assertStringArray(channel, `patch.ui.editorLsp.languages.${lang}.args`, langEntry.args);
+        }
+      }
     }
   }
   if ('agentBehavior' in ui && ui.agentBehavior !== undefined) {

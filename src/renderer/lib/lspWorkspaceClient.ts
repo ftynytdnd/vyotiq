@@ -1,5 +1,5 @@
 /**
- * Shared LSPClient per workspace — connects via main-process stdio relay.
+ * Shared LSPClient per workspace + language — connects via main-process stdio relay.
  */
 
 import {
@@ -7,6 +7,7 @@ import {
   languageServerExtensions,
   type LSPClient as LSPClientType
 } from '@codemirror/lsp-client';
+import { languageIdForPath } from '@shared/text/languageFromPath.js';
 import { createIpcLspTransport } from './ipcLspTransport.js';
 import { sanitizeLspHtml } from './lspSanitize.js';
 import { vyotiq } from './ipc.js';
@@ -15,10 +16,15 @@ import { VyotiqLspWorkspace } from './vyotiqLspWorkspace.js';
 export interface WorkspaceLspEntry {
   client: LSPClientType;
   rootUri: string;
+  languageId: string;
   ready: Promise<void>;
 }
 
 const clients = new Map<string, WorkspaceLspEntry>();
+
+function clientKey(workspaceId: string, languageId: string): string {
+  return `${workspaceId}\0${languageId}`;
+}
 
 export function fileUriForWorkspace(rootUri: string, relPath: string): string {
   const normalized = relPath.replace(/\\/g, '/');
@@ -38,11 +44,27 @@ export function relPathFromFileUri(rootUri: string, uri: string): string | null 
   }
 }
 
-export async function ensureLspClient(workspaceId: string): Promise<WorkspaceLspEntry | null> {
-  const existing = clients.get(workspaceId);
-  if (existing) return existing;
+export function languageIdForLspFile(filePath: string | null | undefined): string {
+  if (!filePath) return 'plaintext';
+  return languageIdForPath(filePath);
+}
 
-  const connect = await vyotiq.lsp.connect({ workspaceId });
+export async function ensureLspClient(
+  workspaceId: string,
+  languageId: string
+): Promise<WorkspaceLspEntry | null> {
+  const key = clientKey(workspaceId, languageId);
+  const existing = clients.get(key);
+  if (existing) {
+    const live = await vyotiq.lsp
+      .status({ workspaceId, languageId })
+      .then((st) => st.status.connected)
+      .catch(() => false);
+    if (live) return existing;
+    disposeLspClient(workspaceId, languageId);
+  }
+
+  const connect = await vyotiq.lsp.connect({ workspaceId, languageId });
   if (!connect.ok) return null;
 
   const transport = createIpcLspTransport(workspaceId);
@@ -57,24 +79,55 @@ export async function ensureLspClient(workspaceId: string): Promise<WorkspaceLsp
   const entry: WorkspaceLspEntry = {
     client,
     rootUri: connect.rootUri,
+    languageId,
     ready: client.initializing.then(() => undefined)
   };
-  clients.set(workspaceId, entry);
-  await entry.ready;
+
+  try {
+    await entry.ready;
+  } catch {
+    client.disconnect();
+    void vyotiq.lsp.disconnect({ workspaceId });
+    return null;
+  }
+
+  clients.set(key, entry);
   return entry;
 }
 
-export async function getLspClient(workspaceId: string): Promise<WorkspaceLspEntry | null> {
-  return ensureLspClient(workspaceId);
+export async function getLspClient(
+  workspaceId: string,
+  languageId: string
+): Promise<WorkspaceLspEntry | null> {
+  return ensureLspClient(workspaceId, languageId);
 }
 
-export function disposeLspClient(workspaceId: string): void {
-  const entry = clients.get(workspaceId);
-  if (!entry) return;
-  entry.client.disconnect();
-  clients.delete(workspaceId);
+export function disposeLspClient(workspaceId: string, languageId?: string): void {
+  if (languageId) {
+    const key = clientKey(workspaceId, languageId);
+    const entry = clients.get(key);
+    if (!entry) return;
+    entry.client.disconnect();
+    clients.delete(key);
+    if (![...clients.keys()].some((k) => k.startsWith(`${workspaceId}\0`))) {
+      void vyotiq.lsp.disconnect({ workspaceId });
+    }
+    return;
+  }
+
+  for (const key of [...clients.keys()]) {
+    if (!key.startsWith(`${workspaceId}\0`)) continue;
+    const entry = clients.get(key);
+    entry?.client.disconnect();
+    clients.delete(key);
+  }
+  void vyotiq.lsp.disconnect({ workspaceId });
 }
 
-export async function fetchLspStatus(workspaceId: string) {
-  return vyotiq.lsp.status({ workspaceId });
+export async function fetchLspStatus(workspaceId: string, languageId?: string | null) {
+  return vyotiq.lsp.status({ workspaceId, languageId: languageId ?? undefined });
+}
+
+export function invalidateLspClients(workspaceId: string): void {
+  disposeLspClient(workspaceId);
 }

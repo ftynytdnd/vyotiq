@@ -6,11 +6,11 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import { createPortal } from 'react-dom';
 import { cn } from '../../lib/cn.js';
 import { bindFocusTrap, focusFirstFocusable } from '../../lib/focusTrap.js';
+import { PANEL_WIDTH_DEFAULT, usePersistedPanelWidth } from '../../hooks/usePersistedPanelWidth.js';
 import { PanelHeader } from './PanelHeader.js';
 
 const WIDTH_MIN = 320;
 const WIDTH_MAX = 720;
-const WIDTH_DEFAULT = 480;
 /** Full-width panel at or below this viewport width. */
 const NARROW_MQ = '(max-width: 560px)';
 
@@ -41,7 +41,7 @@ export function FloatingPanel({
   title,
   children,
   widthKey,
-  initialWidth = WIDTH_DEFAULT,
+  initialWidth = PANEL_WIDTH_DEFAULT,
   onWidthChange,
   showBackdrop = true,
   embedded = false,
@@ -49,9 +49,11 @@ export function FloatingPanel({
   headerActions
 }: FloatingPanelProps) {
   const titleId = useId();
+  const persisted = usePersistedPanelWidth(widthKey ?? '');
+  const resolvedInitial = widthKey ? persisted.initialWidth : initialWidth;
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
-  const widthRef = useRef(clampWidth(initialWidth));
+  const widthRef = useRef(clampWidth(resolvedInitial));
   const dragRef = useRef<{ startX: number; startW: number } | null>(null);
   const moveHandlerRef = useRef<((ev: PointerEvent) => void) | null>(null);
   const upHandlerRef = useRef<(() => void) | null>(null);
@@ -82,9 +84,17 @@ export function FloatingPanel({
   }, []);
 
   useEffect(() => {
-    widthRef.current = clampWidth(initialWidth);
+    widthRef.current = clampWidth(resolvedInitial);
     if (open) applyPanelWidth(widthRef.current, narrow);
-  }, [initialWidth, open, narrow, applyPanelWidth]);
+  }, [resolvedInitial, open, narrow, applyPanelWidth]);
+
+  const handleWidthChange = useCallback(
+    (width: number) => {
+      if (widthKey) persisted.onWidthChange(width);
+      onWidthChange?.(width);
+    },
+    [onWidthChange, persisted, widthKey]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -142,14 +152,14 @@ export function FloatingPanel({
         upHandlerRef.current = null;
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
-        onWidthChange?.(widthRef.current);
+        handleWidthChange(widthRef.current);
       };
       moveHandlerRef.current = onMove;
       upHandlerRef.current = onUp;
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
     },
-    [applyPanelWidth, narrow, onWidthChange]
+    [applyPanelWidth, handleWidthChange, narrow]
   );
 
   if (!open) return null;

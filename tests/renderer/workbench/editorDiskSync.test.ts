@@ -79,6 +79,22 @@ describe('useEditorStore disk sync', () => {
     expect(tab.staleOnDisk).toBe(false);
   });
 
+  it('refreshTabFromDisk skips tabs that are still loading', async () => {
+    seedCleanTab({ loading: true });
+    readMock.mockResolvedValue({
+      content: 'loaded',
+      mtimeMs: 200,
+      truncated: false,
+      eol: 'lf',
+      encoding: 'utf-8',
+      utf8Bom: false
+    });
+
+    await useEditorStore.getState().refreshTabFromDisk('main.py');
+
+    expect(readMock).not.toHaveBeenCalled();
+  });
+
   it('refreshTabFromDisk marks dirty tabs stale instead of reloading active file', async () => {
     seedCleanTab({
       content: 'local edit',

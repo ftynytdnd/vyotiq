@@ -151,11 +151,11 @@ describe('DockFileTree', () => {
     });
   });
 
-  it('filter input uses text type with left padding for search icon', async () => {
+  it('filter input uses search type with inline search icon row', async () => {
     render(<DockFileTree workspaceId={WS} />);
     const filter = await screen.findByLabelText('Filter files');
-    expect(filter).toHaveAttribute('type', 'text');
-    expect(filter.className).toMatch(/pl-8/);
+    expect(filter).toHaveAttribute('type', 'search');
+    expect(filter.className).toMatch(/vx-dock-file-tree-filter__input/);
     expect(filter).toHaveAttribute('autocomplete', 'off');
   });
 });

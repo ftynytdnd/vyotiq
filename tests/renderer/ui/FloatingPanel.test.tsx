@@ -56,8 +56,46 @@ describe('FloatingPanel', () => {
 
     const panel = document.querySelector('.vx-floating-panel') as HTMLElement;
     await waitFor(() => {
-      expect(panel.className).toContain('max-w-[min(720px,92vw)]');
       expect(panel.style.getPropertyValue('--vx-panel-width')).toBe('480px');
     });
+  });
+
+  it('persists width when widthKey is set', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: false,
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      }))
+    );
+
+    const setMock = vi.fn(async () => ({}));
+    const prevVyotiq = window.vyotiq;
+    window.vyotiq = {
+      ...prevVyotiq,
+      settings: { ...prevVyotiq.settings, set: setMock }
+    };
+
+    render(
+      <FloatingPanel open onClose={vi.fn()} title="Memory" widthKey="memory-panel">
+        <p>Memory body</p>
+      </FloatingPanel>
+    );
+
+    const panel = document.querySelector('.vx-floating-panel') as HTMLElement;
+    expect(panel.getAttribute('data-panel-width-key')).toBe('memory-panel');
+
+    const handle = panel.querySelector('[aria-hidden]') as HTMLElement;
+    handle.dispatchEvent(new PointerEvent('pointerdown', { clientX: 400, bubbles: true }));
+    window.dispatchEvent(new PointerEvent('pointermove', { clientX: 360, bubbles: true }));
+    window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+
+    await waitFor(() => {
+      expect(setMock).toHaveBeenCalled();
+    });
+
+    window.vyotiq = prevVyotiq;
   });
 });

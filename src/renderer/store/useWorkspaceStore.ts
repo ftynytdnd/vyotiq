@@ -32,6 +32,8 @@ import { useConversationsStore } from './useConversationsStore.js';
 import { useSettingsStore } from './useSettingsStore.js';
 import { cancelFileTreeExpandedPersist } from '../hooks/useFileTreeExpanded.js';
 import { cancelEditorTabsPersist } from '../lib/editorTabsPersistence.js';
+import { useEditorStore } from './useEditorStore.js';
+import { useDockFileTreeSelectionStore } from './useDockFileTreeSelectionStore.js';
 
 const log = logger.child('workspace-store');
 
@@ -220,11 +222,17 @@ export const useWorkspaceStore = create<WorkspaceStore>((setState, getState) => 
       const active = next.workspaces.find((w) => w.id === next.activeId);
       const info = infoFromEntry(active);
       maybeInvalidate(getState().info, info);
+      disposeLspClient(id);
       setState({
         list: next.workspaces,
         activeId: next.activeId,
         info
       });
+      useEditorStore.getState().closeTabsForWorkspace(id);
+      if (next.workspaces.length === 0) {
+        useEditorStore.getState().close();
+      }
+      useDockFileTreeSelectionStore.getState().clearWorkspaceSelection(id);
       useUiStore.getState().clearWorkspaceCollapsed(id);
       cancelFileTreeExpandedPersist(id);
       cancelEditorTabsPersist(id);

@@ -95,13 +95,12 @@ describe('registerSettingsIpc — SETTINGS_SET payload validation', () => {
     });
   });
 
-  it('accepts editorTabsByWorkspace and openEditorsCollapsedByWorkspace', async () => {
+  it('accepts editorTabsByWorkspace', async () => {
     await mockIpc.__invoke(IPC.SETTINGS_SET, {
       ui: {
         editorTabsByWorkspace: {
           'ws-1': [{ filePath: 'src/main.ts', active: true }]
-        },
-        openEditorsCollapsedByWorkspace: { 'ws-1': false }
+        }
       }
     });
     expect(setSettingsMock).toHaveBeenCalledOnce();

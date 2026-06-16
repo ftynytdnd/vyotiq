@@ -3,10 +3,11 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
-import { ChevronDown, ChevronUp, Search, X } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { cn } from '../../../lib/cn.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/shellIcons.js';
 import { appPopoverPanelClassName } from '../../ui/SurfaceShell.js';
+import { FindBarShell } from '../../ui/FindBarShell.js';
 
 const MARK_CLASS = 'vyotiq-timeline-find-mark';
 const MARK_ACTIVE_CLASS = 'vyotiq-timeline-find-mark-active';
@@ -111,64 +112,28 @@ export function TimelineFindBar({
         : '—';
 
   return (
-    <div
+    <FindBarShell
+      placeholder="Find in conversation…"
+      value={query}
+      onChange={setQuery}
+      onStep={(forward) => stepMatch(forward ? 1 : -1)}
+      onClose={onClose}
+      inputRef={inputRef}
+      matchLabel={matchLabel}
+      stepDisabled={matchCount === 0}
+      navVariant="chevron"
+      inputType="search"
+      inputClassName="border-b-0 py-0 text-row"
+      inputAriaLabel="Find in conversation"
+      leadingIcon={
+        <Search className={cn(SHELL_ROW_ICON_CLASS, 'text-text-faint')} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+      }
       className={cn(
         'sticky top-2 z-40 mb-2 flex items-center gap-2 px-2 py-1.5 backdrop-blur-sm',
         appPopoverPanelClassName
       )}
       role="search"
-    >
-      <Search className={cn(SHELL_ROW_ICON_CLASS, 'text-text-faint')} strokeWidth={SHELL_ACTION_ICON_STROKE} />
-      <input
-        ref={inputRef}
-        type="search"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') {
-            e.preventDefault();
-            onClose();
-            return;
-          }
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            stepMatch(e.shiftKey ? -1 : 1);
-          }
-        }}
-        placeholder="Find in conversation…"
-        className="vx-input min-w-0 flex-1 border-b-0 py-0 text-row"
-        aria-label="Find in conversation"
-      />
-      <div className="flex shrink-0 items-center gap-0.5">
-        <button
-          type="button"
-          onClick={() => stepMatch(-1)}
-          disabled={matchCount === 0}
-          className="vx-btn vx-btn-quiet rounded-[4px] p-0.5 disabled:opacity-40"
-          aria-label="Previous match"
-        >
-          <ChevronUp className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
-        </button>
-        <button
-          type="button"
-          onClick={() => stepMatch(1)}
-          disabled={matchCount === 0}
-          className="vx-btn vx-btn-quiet rounded-[4px] p-0.5 disabled:opacity-40"
-          aria-label="Next match"
-        >
-          <ChevronDown className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
-        </button>
-      </div>
-      <span className="shrink-0 font-mono vx-caption">{matchLabel}</span>
-      <button
-        type="button"
-        onClick={onClose}
-        className="vx-btn vx-btn-quiet rounded-[4px] p-0.5"
-        aria-label="Close find"
-      >
-        <X className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
-      </button>
-    </div>
+    />
   );
 }
 

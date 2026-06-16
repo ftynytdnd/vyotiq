@@ -10,7 +10,6 @@ import { TerminalCanvas } from './TerminalCanvas.js';
 import { BrowserCanvas } from './BrowserCanvas.js';
 import { PreviewCanvas } from './PreviewCanvas.js';
 import {
-  WORKBENCH_BODY_CLASS,
   WORKBENCH_PANE_CLASS,
   resolveCompanionTab,
   type CompanionTab
@@ -54,7 +53,7 @@ export function CompanionDeck() {
     >
       <WorkbenchTabBar />
       <WorkbenchToolbar tab={tab} />
-      <div className={WORKBENCH_BODY_CLASS}>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <CompanionCanvas tab={tab} />
       </div>
       <EditorUnsavedCloseDialog />

@@ -16,13 +16,19 @@ import { resolveSettingsSectionId } from '@shared/settings/settingsSection.js';
 import { readBlob, updateBlob, type SettingsBlob } from './blob.js';
 import { normalizeDockWidthInUi } from '@shared/dock/dockWidth.js';
 import { normalizeWorkbenchPaneWidthInUi } from '@shared/workbench/workbenchPaneWidth.js';
-import { migrateLegacyDockUi, normalizeSettingsPatch, stripRemovedContextManagementFields } from './migrateUiFields.js';
+import { migrateLegacyDockUi, normalizeSettingsPatch, stripRemovedContextManagementFields, stripRemovedUiFields } from './migrateUiFields.js';
 import { syncPromptCachingFromSettings } from './promptCachingRuntime.js';
 import { syncVectorEmbedFromSettings } from './vectorEmbedRuntime.js';
 
 export { normalizeSettingsPatch };
 
-const DEFAULTS: AppSettings = {};
+const DEFAULTS: AppSettings = {
+  ui: {
+    editorLsp: {
+      enabled: true
+    }
+  }
+};
 
 /**
  * One-time on-disk cleanup for deprecated top-level / ui fields.
@@ -149,9 +155,10 @@ function normalizeBlobForPersistence(blob: SettingsBlob): { blob: SettingsBlob; 
         ? { ...tokenMigrated, agentBehavior: cmStripped }
         : tokenMigrated;
     const stripped = stripDeprecatedUiFields(tokenAndCmMigrated);
-    let ui = stripped;
+    const removedUi = stripRemovedUiFields(stripped);
+    let ui = removedUi.ui;
     let uiChanged =
-      dockMigrated || tokenBudgetMigrated || cmMigrated || stripped !== next.ui;
+      dockMigrated || tokenBudgetMigrated || cmMigrated || stripped !== next.ui || removedUi.changed;
     if (ui.density === undefined) {
       ui = { ...ui, density: 'compact' };
       uiChanged = true;

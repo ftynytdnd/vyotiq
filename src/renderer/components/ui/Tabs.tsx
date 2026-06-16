@@ -71,6 +71,8 @@ export interface TabItem<T extends string = string> {
   panelId?: string;
   /** Optional stable id for the tab button (`aria-labelledby` target). */
   tabId?: string;
+  /** Overrides the accessible name (avoids clashing with other tablists). */
+  ariaLabel?: string;
 }
 
 interface TabsProps<T extends string = string> {
@@ -222,6 +224,7 @@ export function Tabs<T extends string = string>({
               id={item.tabId}
               aria-selected={active}
               aria-controls={item.panelId}
+              aria-label={item.ariaLabel}
               tabIndex={active ? 0 : -1}
               disabled={item.disabled}
               data-active={active ? 'true' : 'false'}

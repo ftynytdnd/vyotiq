@@ -6,20 +6,45 @@
  * the rest of the workbench.
  */
 
-import { useEffect, useRef, useState } from 'react';
-import { Globe, Search } from 'lucide-react';
-import { Button } from '../ui/Button.js';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { vyotiq } from '../../lib/ipc.js';
 import { useBrowserStore } from '../../store/useBrowserStore.js';
 import { WORKBENCH_BODY_CLASS } from './workbenchShared.js';
+import { WorkbenchFindBar } from './WorkbenchFindBar.js';
+import { BrowserEmptyState } from './BrowserEmptyState.js';
 import { cn } from '../../lib/cn.js';
-import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../lib/shellIcons.js';
+
+function BrowserFindOverlay() {
+  const setFindOpen = useBrowserStore((s) => s.setFindOpen);
+  const [findText, setFindText] = useState('');
+
+  const runFind = useCallback(
+    (forward: boolean) => {
+      if (!findText) return;
+      void vyotiq.browser.find({ text: findText, forward, findNext: true });
+    },
+    [findText]
+  );
+
+  return (
+    <WorkbenchFindBar
+      placeholder="Find in page…"
+      value={findText}
+      onChange={setFindText}
+      onFind={runFind}
+      onClose={() => {
+        setFindOpen(false);
+        void vyotiq.browser.stopFind();
+      }}
+    />
+  );
+}
 
 export function BrowserCanvas() {
   const slotRef = useRef<HTMLDivElement>(null);
   const hasLoaded = useBrowserStore((s) => s.hasLoaded);
-  const navigate = useBrowserStore((s) => s.navigate);
-  const [draft, setDraft] = useState('');
+  const error = useBrowserStore((s) => s.error);
+  const findOpen = useBrowserStore((s) => s.findOpen);
 
   // Continuously report the slot rect so the native view tracks it.
   useEffect(() => {
@@ -57,46 +82,12 @@ export function BrowserCanvas() {
 
   return (
     <div className={cn(WORKBENCH_BODY_CLASS, 'vx-browser-canvas relative')}>
-      <div ref={slotRef} className="vx-browser-slot min-h-0 flex-1" />
-      {!hasLoaded ? (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 py-10 text-center">
-          <Globe className="h-9 w-9 text-text-faint" strokeWidth={SHELL_ACTION_ICON_STROKE} />
-          <div className="max-w-sm space-y-1">
-            <p className="text-section font-medium text-text-primary">Browser</p>
-            <p className="text-row text-text-muted">
-              Search the web or enter a URL. Pages open in an isolated, persistent session.
-            </p>
-          </div>
-          <form
-            className="vx-browser-start flex w-full max-w-md items-center gap-1.5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (draft.trim()) navigate(draft.trim());
-            }}
-          >
-            <div className="relative min-w-0 flex-1">
-              <Search
-                className={cn(
-                  SHELL_ROW_ICON_CLASS,
-                  'pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-text-faint'
-                )}
-                strokeWidth={SHELL_ACTION_ICON_STROKE}
-              />
-              <input
-                type="text"
-                autoFocus
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="Search or type a URL"
-                className="vx-input w-full pl-8"
-              />
-            </div>
-            <Button type="submit" variant="primary" size="sm" className="shrink-0">
-              Go
-            </Button>
-          </form>
-        </div>
+      {findOpen ? <BrowserFindOverlay /> : null}
+      {error ? (
+        <p className="shrink-0 px-3 py-2 text-center text-meta text-text-muted">{error}</p>
       ) : null}
+      <div ref={slotRef} className="vx-browser-slot min-h-0 flex-1" />
+      {!hasLoaded && !error ? <BrowserEmptyState /> : null}
     </div>
   );
 }

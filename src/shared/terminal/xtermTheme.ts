@@ -6,7 +6,7 @@
  * literals in renderer TS. Runtime resolution still reads live CSS tokens.
  */
 
-import type { ITheme } from '@xterm/xterm';
+import type { ITheme, Terminal } from '@xterm/xterm';
 
 let probeCanvasCtx: CanvasRenderingContext2D | null | undefined;
 
@@ -52,7 +52,7 @@ export function buildXtermTheme(): ITheme {
   const surface = token('--color-surface-base', '#222428');
 
   return {
-    background: 'rgba(0, 0, 0, 0)',
+    background: surface,
     foreground,
     cursor: accent,
     cursorAccent: surface,
@@ -61,6 +61,18 @@ export function buildXtermTheme(): ITheme {
       'rgba(224, 164, 74, 0.3)'
     ),
     selectionForeground: foreground,
+    scrollbarSliderBackground: resolveColorExpr(
+      'color-mix(in oklch, var(--color-border-subtle) 55%, transparent)',
+      'rgba(120, 120, 130, 0.35)'
+    ),
+    scrollbarSliderHoverBackground: resolveColorExpr(
+      'color-mix(in oklch, var(--color-chrome-hover) 70%, transparent)',
+      'rgba(140, 140, 150, 0.5)'
+    ),
+    scrollbarSliderActiveBackground: resolveColorExpr(
+      'color-mix(in oklch, var(--color-accent) 45%, transparent)',
+      'rgba(224, 164, 74, 0.45)'
+    ),
     black: resolveColorExpr('oklch(0.30 0.005 260)', '#3a3d42'),
     red: token('--color-danger', '#d65a4a'),
     green: token('--color-success', '#4fbf7e'),
@@ -78,6 +90,11 @@ export function buildXtermTheme(): ITheme {
     brightCyan: resolveColorExpr('oklch(0.82 0.10 200)', '#76d2de'),
     brightWhite: foreground
   };
+}
+
+/** Assign a fresh theme object — xterm 6 requires reference replacement. */
+export function applyXtermTheme(term: Terminal): void {
+  term.options.theme = buildXtermTheme();
 }
 
 export function resolveMonoFontFamily(): string {

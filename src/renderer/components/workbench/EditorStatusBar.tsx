@@ -31,7 +31,11 @@ export interface EditorStatusBarProps {
   encoding: EditorEncoding;
   utf8Bom?: boolean;
   dirty: boolean;
-  lspStatus?: { connected: boolean; lastError?: string | null } | null;
+  lspStatus?: {
+    connected: boolean;
+    lastError?: string | null;
+    configSource?: 'global' | 'workspace' | 'disabled' | 'bundled';
+  } | null;
   lspEnabled?: boolean;
   onLspClick?: () => void;
 }
@@ -61,12 +65,26 @@ export function EditorStatusBar({
           <button
             type="button"
             className={cn(
-              'vx-caption hover:text-text-secondary',
+              'vx-caption max-w-[14rem] truncate hover:text-text-secondary',
               lspStatus?.connected ? 'text-text-faint' : 'text-warning'
             )}
+            title={
+              lspStatus?.connected
+                ? lspStatus.configSource === 'bundled'
+                  ? 'Built-in language server connected'
+                  : 'Language server connected'
+                : lspStatus?.lastError ?? 'Language server not connected'
+            }
             onClick={onLspClick}
           >
-            LSP · {lspStatus?.connected ? 'connected' : lspStatus?.lastError ? 'error' : 'off'}
+            LSP ·{' '}
+            {lspStatus?.connected
+              ? lspStatus.configSource === 'bundled'
+                ? 'built-in'
+                : 'connected'
+              : lspStatus?.lastError
+                ? 'error'
+                : 'off'}
           </button>
         ) : null}
         <span>{languageLabel(filePath)}</span>

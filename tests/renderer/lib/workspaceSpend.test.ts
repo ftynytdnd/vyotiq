@@ -23,7 +23,7 @@ import {
 
 vi.mock('@renderer/store/useSettingsStore.js', () => ({
   useSettingsStore: {
-    getState: () => ({ addWorkspaceSpend: addWorkspaceUsage, addWorkspaceUsage })
+    getState: () => ({ addWorkspaceUsage })
   }
 }));
 

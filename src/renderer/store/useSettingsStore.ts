@@ -31,8 +31,6 @@ interface SettingsStore {
    */
   setLastModelByWorkspace: (workspaceId: string, sel: ModelSelection) => Promise<void>;
   toggleFavoriteModel: (providerId: string, modelId: string) => Promise<void>;
-  /** Accumulate estimated API spend for a workspace (USD). */
-  addWorkspaceSpend: (workspaceId: string, usd: number) => Promise<void>;
   /** Accumulate workspace usage stats for a completed turn. */
   addWorkspaceUsage: (
     workspaceId: string,
@@ -117,14 +115,12 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     const collapsed = ui.collapsedWorkspaces ?? [];
     const spend = ui.workspaceSpendUsd ?? {};
     const fileTreeExpanded = ui.fileTreeExpandedByWorkspace ?? {};
-    const openEditorsCollapsed = ui.openEditorsCollapsedByWorkspace ?? {};
     const editorTabs = ui.editorTabsByWorkspace ?? {};
     const inAny =
       workspaceId in active ||
       workspaceId in lastModel ||
       workspaceId in spend ||
       workspaceId in fileTreeExpanded ||
-      workspaceId in openEditorsCollapsed ||
       workspaceId in editorTabs ||
       collapsed.includes(workspaceId);
     if (!inAny) return;
@@ -143,8 +139,6 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     const nextCollapsed = collapsed.filter((id) => id !== workspaceId);
     const nextFileTreeExpanded = { ...fileTreeExpanded };
     delete nextFileTreeExpanded[workspaceId];
-    const nextOpenEditorsCollapsed = { ...openEditorsCollapsed };
-    delete nextOpenEditorsCollapsed[workspaceId];
     const nextEditorTabs = { ...editorTabs };
     delete nextEditorTabs[workspaceId];
     const updated = await vyotiq.settings.set({
@@ -154,7 +148,6 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
         workspaceSpendUsd: nextSpend,
         collapsedWorkspaces: nextCollapsed,
         fileTreeExpandedByWorkspace: nextFileTreeExpanded,
-        openEditorsCollapsedByWorkspace: nextOpenEditorsCollapsed,
         editorTabsByWorkspace: nextEditorTabs
       }
     });
@@ -194,10 +187,6 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
       ui: { favoriteModels: [...set] }
     });
     setState({ settings: { ...getState().settings, ...updated } });
-  },
-
-  addWorkspaceSpend: async (workspaceId, usd) => {
-    await getState().addWorkspaceUsage(workspaceId, usd);
   },
 
   addWorkspaceUsage: async (workspaceId, usd, stats = {}) => {

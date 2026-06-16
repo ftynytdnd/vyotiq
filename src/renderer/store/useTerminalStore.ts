@@ -40,12 +40,6 @@ interface TerminalStore {
   setError: (error: string | null) => void;
 }
 
-/** Active session shell label, for tab/toolbar display. */
-export function selectTerminalShellLabel(s: TerminalStore): string | null {
-  const active = s.sessions.find((sess) => sess.sessionId === s.activeSessionId);
-  return active?.shell ?? s.sessions[0]?.shell ?? null;
-}
-
 export const useTerminalStore = create<TerminalStore>((set, get) => ({
   open: false,
   workspaceId: null,

@@ -224,9 +224,6 @@ export const BASH_MAX_TIMEOUT_MS = 30 * 60 * 1000;
 export const BASH_SERVER_START_TIMEOUT_MS = 20_000;
 export const READ_MAX_BYTES = 512 * 1024; // 512 KB
 
-/** Max editor document body over LSP IPC (open/change). Matches read cap. */
-export const LSP_MAX_DOCUMENT_BYTES = READ_MAX_BYTES;
-
 /**
  * Bash mutation snapshotting caps.
  *
@@ -440,6 +437,7 @@ export const IPC = {
   BROWSER_SET_VISIBLE: 'browser:set-visible',
   BROWSER_FIND: 'browser:find',
   BROWSER_STOP_FIND: 'browser:stop-find',
+  BROWSER_OPEN_EXTERNAL: 'browser:open-external',
   BROWSER_DESTROY: 'browser:destroy',
   /** main → renderer: navigation / loading state for the embedded browser. */
   BROWSER_STATE: 'browser:state',
@@ -448,14 +446,7 @@ export const IPC = {
   COMPLETION_REQUEST: 'completion:request',
   COMPLETION_CANCEL: 'completion:cancel',
 
-  // Language server (editor diagnostics / go-to-def)
-  LSP_OPEN: 'lsp:open',
-  LSP_CHANGE: 'lsp:change',
-  LSP_CLOSE: 'lsp:close',
-  LSP_DEFINITION: 'lsp:definition',
-  LSP_HOVER: 'lsp:hover',
-  LSP_COMPLETION: 'lsp:completion',
-  LSP_DIAGNOSTICS: 'lsp:diagnostics',
+  // Language server (editor relay for @codemirror/lsp-client)
   LSP_CONNECT: 'lsp:connect',
   LSP_SEND: 'lsp:send',
   LSP_MESSAGE: 'lsp:message',

@@ -869,29 +869,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
   },
 
-  beginSideRun: (runId, conversationId) => {
-    const startedAt = Date.now();
-    set((s) => {
-      const nextMap = { ...s.runIdToConv, [runId]: conversationId };
-      const nextSlices = updateSlice(s.slices, conversationId, (prev) => ({
-        ...prev,
-        runId,
-        isProcessing: true,
-        awaitingAskUser: false,
-        runStartedAt: startedAt
-      }));
-      if (s.conversationId === conversationId) {
-        return {
-          ...s,
-          slices: nextSlices,
-          runIdToConv: nextMap,
-          ...mirrorOf(nextSlices[conversationId]!)
-        };
-      }
-      return { ...s, slices: nextSlices, runIdToConv: nextMap };
-    });
-  },
-
   setDraft: (conversationId, text) => {
     set((s) => {
       const nextSlices = updateSlice(s.slices, conversationId, (prev) => ({

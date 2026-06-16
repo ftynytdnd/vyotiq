@@ -3,15 +3,15 @@
  * Session strip + actions live in the contextual toolbar (TerminalToolbar).
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { ArrowDown, ArrowUp, X } from 'lucide-react';
 import { LoadingHint } from '../ui/LoadingHint.js';
+import { TerminalEmptyState } from './TerminalEmptyState.js';
 import { XtermView } from '../terminal/XtermView.js';
 import { getTerminalEntry } from '../terminal/terminalPool.js';
 import { useTerminalStore } from '../../store/useTerminalStore.js';
 import { WORKBENCH_BODY_CLASS } from './workbenchShared.js';
-import { SHELL_ACTION_ICON_STROKE, SHELL_COMPACT_ICON_CLASS } from '../../lib/shellIcons.js';
+import { WorkbenchFindBar } from './WorkbenchFindBar.js';
 import { cn } from '../../lib/cn.js';
 
 function TerminalPane({ sessionId }: { sessionId: string }) {
@@ -25,11 +25,6 @@ function TerminalPane({ sessionId }: { sessionId: string }) {
 function SearchOverlay({ sessionId }: { sessionId: string }) {
   const setSearchOpen = useTerminalStore((s) => s.setSearchOpen);
   const [query, setQuery] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
 
   const runFind = useCallback(
     (forward: boolean) => {
@@ -43,49 +38,14 @@ function SearchOverlay({ sessionId }: { sessionId: string }) {
   );
 
   return (
-    <div className="vx-terminal-search flex shrink-0 items-center gap-1 border-b border-border-subtle/20 bg-surface-raised/60 px-2 py-1">
-      <input
-        ref={inputRef}
-        type="text"
-        className="vx-input min-w-0 flex-1 font-mono text-meta"
-        placeholder="Find in terminal…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            runFind(!e.shiftKey);
-          } else if (e.key === 'Escape') {
-            e.preventDefault();
-            setSearchOpen(false);
-          }
-        }}
-      />
-      <button
-        type="button"
-        className="rounded p-1 text-text-muted hover:bg-chrome-hover-soft hover:text-text-primary"
-        title="Previous match (Shift+Enter)"
-        onClick={() => runFind(false)}
-      >
-        <ArrowUp className={SHELL_COMPACT_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
-      </button>
-      <button
-        type="button"
-        className="rounded p-1 text-text-muted hover:bg-chrome-hover-soft hover:text-text-primary"
-        title="Next match (Enter)"
-        onClick={() => runFind(true)}
-      >
-        <ArrowDown className={SHELL_COMPACT_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
-      </button>
-      <button
-        type="button"
-        className="rounded p-1 text-text-muted hover:bg-chrome-hover-soft hover:text-text-primary"
-        title="Close (Esc)"
-        onClick={() => setSearchOpen(false)}
-      >
-        <X className={SHELL_COMPACT_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
-      </button>
-    </div>
+    <WorkbenchFindBar
+      placeholder="Find in terminal…"
+      value={query}
+      onChange={setQuery}
+      onFind={runFind}
+      onClose={() => setSearchOpen(false)}
+      mono
+    />
   );
 }
 
@@ -102,11 +62,13 @@ export function TerminalCanvas() {
   return (
     <div className={cn(WORKBENCH_BODY_CLASS, 'vx-terminal-canvas')}>
       {searchOpen && activeSessionId ? <SearchOverlay sessionId={activeSessionId} /> : null}
-      <div className="vx-terminal-surface flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {error ? (
-          <p className="px-4 py-6 text-meta text-text-muted">{error}</p>
-        ) : attaching || !hasSession ? (
+          <TerminalEmptyState message={error} />
+        ) : attaching ? (
           <LoadingHint message="Starting shell…" className="py-6" />
+        ) : !hasSession ? (
+          <TerminalEmptyState message="No shell session is active. Use + in the tab bar to open one." />
         ) : splitSessionId ? (
           <PanelGroup direction="horizontal" className="min-h-0 flex-1">
             <Panel defaultSize={50} minSize={20} className="min-h-0">

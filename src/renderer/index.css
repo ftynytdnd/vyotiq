@@ -4341,6 +4341,7 @@ button.vx-mention-highlight--open:focus-visible {
   flex: 1 1 auto;
   min-width: 18rem;
   width: 0;
+  box-shadow: inset -1px 0 0 color-mix(in oklch, var(--color-border-subtle) 55%, transparent);
 }
 
 .vx-workbench-companion {
@@ -4348,11 +4349,14 @@ button.vx-mention-highlight--open:focus-visible {
   min-width: 16rem;
   max-width: 72%;
   width: var(--workbench-pane-w, 480px);
+  align-self: stretch;
+  box-shadow: inset 1px 0 0 var(--color-border-subtle);
 }
 
 .vx-workbench-resize-handle {
   background: transparent;
   transition: background 160ms ease;
+  box-shadow: inset -1px 0 0 color-mix(in oklch, var(--color-border-subtle) 40%, transparent);
 }
 
 .vx-workbench-resize-handle:hover,
@@ -4369,25 +4373,52 @@ button.vx-mention-highlight--open:focus-visible {
   min-width: 0;
 }
 
+/* Session tabs scroll horizontally — never wrap into a clipped second row */
+.vx-workbench-tabs [data-workbench-tab-scroll] .vx-workbench-tab {
+  flex-shrink: 0;
+}
+
+.vx-workbench-tab {
+  min-height: 2.25rem;
+}
+
+.vx-workbench-edge-strip {
+  box-shadow: inset 1px 0 0 color-mix(in oklch, var(--color-border-subtle) 40%, transparent);
+}
+
+.vx-workbench-empty-card {
+  background: color-mix(in oklch, var(--color-surface-raised) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-border-subtle) 65%, transparent);
+}
+
+.vx-workbench-launcher-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--color-accent) 45%, transparent);
+}
+
+.vx-workbench-tab[draggable='true'] {
+  cursor: grab;
+}
+
+.vx-workbench-tab[draggable='true']:active {
+  cursor: grabbing;
+}
+
 .vx-workbench-toolbar {
   min-height: 2rem;
 }
 
 .vx-editor-canvas,
 .vx-terminal-canvas,
-.vx-preview-empty,
 .vx-browser-canvas,
+.vx-browser-empty,
+.vx-preview-empty,
 .vx-editor-empty {
   min-height: 0;
 }
 
 .vx-preview-zone {
   min-height: 0;
-}
-
-.vx-terminal-panel-body {
-  min-height: 0;
-  flex: 1 1 auto;
 }
 
 .vx-editor-stale-banner {
@@ -4429,24 +4460,44 @@ button.vx-mention-highlight--open:focus-visible {
   white-space: pre-wrap;
 }
 
-/* Workspace terminal (xterm.js) */
-.vx-terminal-panel .vx-floating-panel-body {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding: 0;
-}
-
+/* Workspace terminal (xterm.js) — flat edge-to-edge canvas matching editor. */
 .vx-xterm-host {
-  padding: 0.5rem 0.75rem 0.75rem;
+  padding: 0.75rem 0.875rem;
 }
 
 .vx-xterm-host .xterm {
   height: 100%;
 }
 
+.vx-xterm-host .xterm-screen {
+  background-color: transparent !important;
+}
+
 .vx-xterm-host .xterm-viewport {
   scrollbar-width: thin;
+}
+
+.vx-xterm-host .xterm-viewport::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.vx-xterm-host .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.vx-xterm-host .xterm-viewport::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 9999px;
+  border: 0;
+}
+
+.vx-xterm-host .xterm-viewport:hover::-webkit-scrollbar-thumb {
+  background: var(--color-border-subtle);
+}
+
+.vx-xterm-host .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-strong);
 }
 
 .vx-xterm-host .xterm-cursor {
@@ -4455,16 +4506,6 @@ button.vx-mention-highlight--open:focus-visible {
 
 .vx-xterm-host .xterm-selection {
   background-color: color-mix(in oklch, var(--color-accent) 35%, transparent) !important;
-}
-
-/* Designed sunken terminal surface — distinct inset panel vs the flat pane. */
-.vx-terminal-surface {
-  margin: 0.5rem;
-  border-radius: var(--radius-inner);
-  border: 1px solid color-mix(in oklch, var(--color-border-subtle) 30%, transparent);
-  background: var(--color-surface-sunken);
-  box-shadow: inset 0 1px 3px var(--color-shadow-ambient-deep);
-  overflow: hidden;
 }
 
 .vx-terminal-pane {
@@ -4485,16 +4526,12 @@ button.vx-mention-highlight--open:focus-visible {
   background: color-mix(in oklch, var(--color-accent) 55%, transparent);
 }
 
-.vx-terminal-chip {
-  line-height: 1.2;
-}
-
-/* Embedded browser surface — slot the native view sits over. */
+/* Embedded browser surface — flat slot for WebContentsView bounds. */
 .vx-browser-slot {
-  background: var(--color-surface-sunken, var(--color-surface-base));
+  background: transparent;
 }
 
-/* Indeterminate loading bar under the browser toolbar. */
+/* Indeterminate loading bar on the browser toolbar row. */
 .vx-browser-progress {
   position: absolute;
   left: 0;
@@ -4503,6 +4540,7 @@ button.vx-mention-highlight--open:focus-visible {
   height: 2px;
   overflow: hidden;
   background: transparent;
+  pointer-events: none;
 }
 
 .vx-browser-progress::before {
@@ -4525,11 +4563,19 @@ button.vx-mention-highlight--open:focus-visible {
 }
 
 .vx-browser-address {
-  height: 1.6rem;
+  min-height: 1.5rem;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
 }
 
 .vx-editor-statusbar {
   line-height: 1.2;
+}
+
+.vx-dock-file-tree-chrome {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
 .vx-dock-file-tree-filter__input::-webkit-search-decoration,
@@ -4546,10 +4592,6 @@ button.vx-mention-highlight--open:focus-visible {
 .vx-dock-file-tree-row:focus-visible {
   outline: none;
   box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-accent) 45%, transparent);
-}
-
-.vx-dock-file-tree-row-active {
-  box-shadow: inset 2px 0 0 var(--color-accent);
 }
 
 .vx-dock-file-icon {
@@ -4587,10 +4629,6 @@ button.vx-mention-highlight--open:focus-visible {
 
 .vx-dock-file-tree-row-selected {
   color: var(--color-text-primary);
-}
-
-.vx-dock-open-editor-row-active {
-  box-shadow: inset 2px 0 0 var(--color-accent);
 }
 
 /* ComposerDialog — mini FloatingPanel anchored above the chat

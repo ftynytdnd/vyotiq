@@ -221,7 +221,7 @@ export interface AppSettings {
 
     /**
 
-     * Expanded left dock width in px. Default 200; clamped 180–320.
+     * Expanded left dock width in px. Default 260; clamped 220–320.
 
      */
 
@@ -321,10 +321,6 @@ export interface AppSettings {
 
     fileTreeExpandedByWorkspace?: Record<string, string[]>;
 
-    /** Per-workspace collapsed state for the dock open-editors section. */
-
-    openEditorsCollapsedByWorkspace?: Record<string, boolean>;
-
     /** Per-workspace open editor tabs restored on workspace activate. */
 
     editorTabsByWorkspace?: Record<
@@ -423,6 +419,9 @@ export interface AppSettings {
       command?: string;
 
       args?: string[];
+
+      /** Per-language stdio server overrides (languageId → command). */
+      languages?: Record<string, { command: string; args?: string[] }>;
 
     };
 
@@ -1459,6 +1458,9 @@ export interface VyotiqApi {
 
     stopFind(): Promise<void>;
 
+    /** Open the current URL in the system default browser. */
+    openExternal(input: import('./browser.js').BrowserOpenExternalInput): Promise<void>;
+
     /** Tear down the view entirely. */
     destroy(): Promise<void>;
 
@@ -1482,42 +1484,21 @@ export interface VyotiqApi {
 
   lsp: {
 
-    connect(input: { workspaceId: string }): Promise<import('./lsp.js').LspConnectResult>;
+    connect(input: {
+      workspaceId: string;
+      languageId?: string | null;
+    }): Promise<import('./lsp.js').LspConnectResult>;
 
     send(input: { workspaceId: string; message: string }): Promise<{ ok: true }>;
 
-    status(input: { workspaceId: string }): Promise<import('./lsp.js').LspConnectResult>;
+    status(input: {
+      workspaceId: string;
+      languageId?: string | null;
+    }): Promise<import('./lsp.js').LspConnectResult>;
+
+    disconnect(input: { workspaceId: string }): Promise<{ ok: true }>;
 
     onMessage(cb: (event: import('./lsp.js').LspMessageEvent) => void): () => void;
-
-    open(input: { workspaceId: string; path: string; text: string }): Promise<{ ok: true }>;
-
-    change(input: { workspaceId: string; path: string; text: string }): Promise<{ ok: true }>;
-
-    close(input: { workspaceId: string; path: string }): Promise<{ ok: true }>;
-
-    definition(input: {
-      workspaceId: string;
-      path: string;
-      line: number;
-      character: number;
-    }): Promise<import('./lsp.js').LspLocation | null>;
-
-    hover(input: {
-      workspaceId: string;
-      path: string;
-      line: number;
-      character: number;
-    }): Promise<{ contents: string | null }>;
-
-    completion(input: {
-      workspaceId: string;
-      path: string;
-      line: number;
-      character: number;
-    }): Promise<{ items: import('./lsp.js').LspCompletionItem[] }>;
-
-    onDiagnostics(cb: (event: import('./lsp.js').LspDiagnosticsEvent) => void): () => void;
 
   };
 

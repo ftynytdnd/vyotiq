@@ -8,7 +8,6 @@ import { Files, MessageSquare } from 'lucide-react';
 import { Tabs } from '../ui/Tabs.js';
 import { DockChatStrip } from './DockChatStrip.js';
 import { DockFileTree } from './DockFileTree.js';
-import { DockOpenEditorsSection } from './DockOpenEditorsSection.js';
 import { useDockEditorTreeSync } from '../../hooks/useDockEditorTreeSync.js';
 import {
   DOCK_WORKSPACE_PANEL_CLASS,
@@ -91,22 +90,15 @@ export function DockWorkspacePanel({ workspaceId }: DockWorkspacePanelProps) {
   return (
     <div className={cn(DOCK_WORKSPACE_PANEL_SHELL_CLASS, 'flex min-h-0 flex-1 flex-col overflow-hidden')}>
       <div className={cn(DOCK_WORKSPACE_PANEL_CLASS, 'flex min-h-0 flex-1 flex-col overflow-hidden')}>
-        <header className="shrink-0 border-t border-border-subtle/25 px-2 pb-1.5 pt-2">
-          {workspace?.path ? (
-            <p className="truncate px-0.5 font-mono text-meta text-text-faint" title={workspace.path}>
-              {workspace.path}
-            </p>
-          ) : null}
-          <div className={workspace?.path ? 'mt-1.5' : undefined}>
-            <Tabs
-              variant="segmented"
-              size="sm"
-              ariaLabel="Workspace contents"
-              items={tabItems}
-              value={view}
-              onChange={onTabChange}
-            />
-          </div>
+        <header className="shrink-0 border-t border-border-subtle/20 px-2 pb-1 pt-1.5">
+          <Tabs
+            variant="segmented"
+            size="sm"
+            ariaLabel="Workspace contents"
+            items={tabItems}
+            value={view}
+            onChange={onTabChange}
+          />
         </header>
 
         <div
@@ -116,10 +108,7 @@ export function DockWorkspacePanel({ workspaceId }: DockWorkspacePanelProps) {
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
           {view === 'files' ? (
-            <>
-              <DockOpenEditorsSection workspaceId={workspaceId} />
-              <DockFileTree workspaceId={workspaceId} />
-            </>
+            <DockFileTree workspaceId={workspaceId} />
           ) : (
             <DockChatStrip workspaceId={workspaceId} />
           )}

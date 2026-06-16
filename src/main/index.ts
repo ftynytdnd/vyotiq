@@ -16,6 +16,7 @@ import { teardownProvidersIpc } from './ipc/providers.ipc.js';
 import { teardownTerminalIpc } from './ipc/terminal.ipc.js';
 import { teardownBrowserIpc } from './ipc/browser.ipc.js';
 import { teardownCompletionIpc } from './ipc/completion.ipc.js';
+import { lspDisconnectAll } from './lsp/lspManager.js';
 import { logger, installCrashHandlers } from './logging/logger.js';
 import { assertHarnessBoot, warmHarnessOverrides } from './harness/harnessLoader.js';
 import { flushAll as flushConversations } from './conversations/conversationStore.js';
@@ -179,6 +180,7 @@ app.on('before-quit', (event) => {
     Promise.resolve().then(() => teardownBrowserIpc()),
     Promise.resolve().then(() => teardownCompletionIpc()),
     Promise.resolve().then(() => teardownWorkspaceTreeWatcher()),
+    Promise.resolve().then(() => lspDisconnectAll()),
     Promise.resolve().then(() => teardownAutoUpdaterService())
   ])
     .catch((err) => log.error('shutdown flush failed', { err }))

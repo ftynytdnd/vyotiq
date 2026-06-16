@@ -118,11 +118,6 @@ export async function beginNewChatFromDock(): Promise<void> {
   await convs.select(meta.id);
 }
 
-/** @deprecated Use {@link dismissDockSearchAfterSelection}. */
-export function collapseDockAfterSelection(): void {
-  dismissDockSearchAfterSelection();
-}
-
 /** Active chat tab — stacks title row + context meter. */
 export const DOCK_CHAT_TAB_STACK_CLASS = 'flex flex-col gap-0';
 

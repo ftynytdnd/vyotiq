@@ -17,8 +17,7 @@ applyAppTheme(readCachedThemePrefs());
 
 void bootstrapChatChannel();
 
-// After a dev rebuild or app update, lazy route chunks can 404. Retry
-// once via `retryDynamicImport`; if preload still fails, debounce a
+// After a dev rebuild or app update, lazy route chunks can 404. Debounce a
 // single full reload so the user is not stuck on a blank shell.
 let preloadReloadScheduled = false;
 window.addEventListener('vite:preloadError', (event) => {

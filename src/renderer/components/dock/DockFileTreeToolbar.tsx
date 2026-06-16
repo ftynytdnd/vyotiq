@@ -40,7 +40,7 @@ export function DockFileTreeToolbar({
 
   return (
     <div
-      className="vx-dock-file-tree-toolbar flex shrink-0 items-center gap-0.5 border-b border-border-subtle/20 px-1.5 py-1"
+      className="vx-dock-file-tree-toolbar flex shrink-0 items-center gap-0.5 px-1.5 pb-1 pt-0"
       role="toolbar"
       aria-label="File explorer actions"
     >

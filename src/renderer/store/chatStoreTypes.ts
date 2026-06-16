@@ -109,7 +109,6 @@ export interface ChatStore extends ActiveMirror {
   }) => Promise<void>;
   pauseForAskUser: (runId: string) => void;
   rehydrateActiveRuns: (infos: ActiveRunInfo[]) => void;
-  beginSideRun: (runId: string, conversationId: string) => void;
   prewarmSlice: (conversationId: string, events: TimelineEvent[], paging?: TranscriptPaging | null) => void;
   setDraft: (conversationId: string, text: string) => void;
   setAttachmentDraft: (conversationId: string, attachments: PromptAttachmentMeta[]) => void;

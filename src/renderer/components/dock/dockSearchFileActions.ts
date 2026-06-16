@@ -3,6 +3,7 @@
  */
 
 import { isEditableTextFile } from '@shared/text/isEditableTextFile.js';
+import { basenameFromPath } from '@shared/text/languageFromPath.js';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import { MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
 import { randomId } from '../../lib/ids.js';
@@ -13,15 +14,10 @@ import { useChatStore } from '../../store/useChatStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 
-function basename(path: string): string {
-  const parts = path.split(/[/\\]/);
-  return parts[parts.length - 1] ?? path;
-}
-
 function workspaceFileMeta(path: string): PromptAttachmentMeta {
   return {
     id: `dock-preview:${path}`,
-    name: basename(path),
+    name: basenameFromPath(path),
     workspacePath: path
   };
 }
