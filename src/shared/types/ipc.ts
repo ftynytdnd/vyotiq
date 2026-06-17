@@ -425,6 +425,18 @@ export interface AppSettings {
 
     };
 
+    /** Phased execution engine — gated subtask state machine. */
+    phasedExecution?: {
+      /** `auto` | `always` | `never` (default `auto`). */
+      mode?: 'auto' | 'always' | 'never';
+      /** Per-subtask phase-cycle soft cap (default 8). */
+      phaseCycleCap?: number;
+      /** Soft global-iteration cap that surfaces the escape hatch (default 24). */
+      maxIterations?: number;
+      /** Host acceptance-command timeout during VERIFY, in seconds (default 120). */
+      verifyTimeoutSeconds?: number;
+    };
+
     /** Run limits and long-task context options. */
 
     agentBehavior?: {
@@ -1410,9 +1422,6 @@ export interface VyotiqApi {
     /** Spawn an additional (non-primary) session for a workspace. */
     create(input: import('./terminal.js').TerminalCreateInput): Promise<import('./terminal.js').TerminalCreateResult>;
 
-    /** List live sessions for a workspace. */
-    list(input: import('./terminal.js').TerminalListInput): Promise<import('./terminal.js').TerminalListResult>;
-
     /** Kill a single session by id. */
     close(input: import('./terminal.js').TerminalCloseInput): Promise<void>;
 
@@ -1460,9 +1469,6 @@ export interface VyotiqApi {
 
     /** Open the current URL in the system default browser. */
     openExternal(input: import('./browser.js').BrowserOpenExternalInput): Promise<void>;
-
-    /** Tear down the view entirely. */
-    destroy(): Promise<void>;
 
     onState(cb: (event: import('./browser.js').BrowserStateEvent) => void): () => void;
 

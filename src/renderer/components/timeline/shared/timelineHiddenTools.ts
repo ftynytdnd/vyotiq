@@ -5,7 +5,7 @@
 
 import type { ToolName } from '@shared/types/tool.js';
 
-const HIDDEN: ReadonlySet<ToolName> = new Set(['finish', 'ask_user']);
+const HIDDEN: ReadonlySet<ToolName> = new Set(['finish', 'ask_user', 'phase_gate']);
 
 export function isTimelineHiddenTool(name: ToolName | string | undefined): boolean {
   return typeof name === 'string' && (HIDDEN as ReadonlySet<string>).has(name);

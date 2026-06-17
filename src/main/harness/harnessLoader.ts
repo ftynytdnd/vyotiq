@@ -23,6 +23,7 @@ import contextLearning from './01-context-learning.md?raw';
 import deliverables from './02-deliverables.md?raw';
 import staticExamples from './03-static-examples.md?raw';
 import astGrepReference from './04-ast-grep-cheatsheet.md?raw';
+import phasedExecutionBundled from './05-phased-execution.md?raw';
 import type { HarnessSectionId } from './harnessOverrides.js';
 import { readHarnessOverride } from './harnessOverrides.js';
 
@@ -31,7 +32,8 @@ const BUNDLED_BODIES: Record<HarnessSectionId, string> = {
   'context-learning': contextLearning,
   deliverables: deliverables,
   'static-examples': staticExamples,
-  'ast-grep-reference': astGrepReference
+  'ast-grep-reference': astGrepReference,
+  'phased-execution': phasedExecutionBundled
 };
 
 export function readBundledHarnessSection(sectionId: HarnessSectionId): string {
@@ -60,8 +62,14 @@ async function loadSectionBodies(): Promise<Record<HarnessSectionId, string>> {
   return sectionBodiesCache;
 }
 
+let agentPromptCache: Map<string, string> = new Map();
+
+function promptCacheKey(phasedExecution: boolean): string {
+  return phasedExecution ? 'phased' : 'base';
+}
+
 export function invalidateHarnessPromptCache(): void {
-  agentPromptCache = null;
+  agentPromptCache = new Map();
   sectionBodiesCache = null;
 }
 
@@ -77,7 +85,8 @@ const BOOTSTRAP_HARNESS_MARKDOWN: ReadonlyArray<{ file: string; id: HarnessSecti
   { file: '01-context-learning.md', id: 'context-learning' },
   { file: '04-ast-grep-cheatsheet.md', id: 'ast-grep-reference' },
   { file: '03-static-examples.md', id: 'static-examples' },
-  { file: '02-deliverables.md', id: 'deliverables' }
+  { file: '02-deliverables.md', id: 'deliverables' },
+  { file: '05-phased-execution.md', id: 'phased-execution' }
 ];
 
 function assertHarnessMarkdownPresent(): void {
@@ -124,8 +133,6 @@ function buildAgentToolCatalogue(): string {
   );
 }
 
-let agentPromptCache: string | null = null;
-
 export function assertHarnessBoot(): void {
   assertHarnessMarkdownPresent();
   const prompt = buildOrchestratorSystemPrompt();
@@ -145,15 +152,22 @@ export function assertHarnessBoot(): void {
 }
 
 /** System prompt for Agent V (single dynamic agent). */
-export function buildOrchestratorSystemPrompt(): string {
-  if (agentPromptCache !== null) return agentPromptCache;
+export function buildOrchestratorSystemPrompt(opts?: { phasedExecution?: boolean }): string {
+  const phased = opts?.phasedExecution === true;
+  const key = promptCacheKey(phased);
+  const cached = agentPromptCache.get(key);
+  if (cached !== undefined) return cached;
+
   const bodies = sectionBodiesCache ?? BUNDLED_BODIES;
   const sections = AGENT_SECTIONS.map((s) => bodies[s.id]).join('\n\n---\n\n');
+  const phasedBlock = phased
+    ? `\n\n---\n\n${bodies['phased-execution']}`
+    : '\n\nPhased execution: available when the host activates phased mode (see runtime `<phase_state>`).';
   const built = wrapXml(
     'system_instructions',
-    `${sections}\n\n---\n\n${buildRuntimeLimitsBlock()}\n\n---\n\n${buildAgentToolCatalogue()}`
+    `${sections}${phasedBlock}\n\n---\n\n${buildRuntimeLimitsBlock()}\n\n---\n\n${buildAgentToolCatalogue()}`
   );
-  agentPromptCache = built;
+  agentPromptCache.set(key, built);
   return built;
 }
 
@@ -164,7 +178,7 @@ export function __resetOrchestratorPromptCacheForTests(): void {
 /** Load user overrides into memory. Call at app boot and after harness edits. */
 export async function warmHarnessOverrides(): Promise<void> {
   sectionBodiesCache = null;
-  agentPromptCache = null;
+  agentPromptCache = new Map();
   await loadSectionBodies();
 }
 

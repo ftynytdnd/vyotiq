@@ -12,6 +12,11 @@ import {
 } from '@shared/workbench/workbenchPaneWidth.js';
 import type { AppSettings } from '@shared/types/ipc.js';
 import {
+  MAX_TOTAL_ITERATIONS,
+  PHASE_VERIFY_TIMEOUT_MAX_S,
+  PHASE_VERIFY_TIMEOUT_MIN_S
+} from '@shared/constants.js';
+import {
   assertBoolean,
   assertEnum,
   assertNumber,
@@ -52,7 +57,8 @@ const UI_NESTED_OBJECT_KEYS = [
   'inlineCompletion',
   'vectorMemory',
   'editorLsp',
-  'agentBehavior'
+  'agentBehavior',
+  'phasedExecution'
 ] as const;
 
 const REPORTS_BOOLEAN_KEYS = [
@@ -358,6 +364,41 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
         'patch.ui.promptCaching.anthropicCacheTtl',
         promptCaching.anthropicCacheTtl,
         PROMPT_CACHING_TTL_VALUES
+      );
+    }
+  }
+  if ('phasedExecution' in ui && ui.phasedExecution !== undefined) {
+    assertObject(channel, 'patch.ui.phasedExecution', ui.phasedExecution);
+    const phased = ui.phasedExecution as Record<string, unknown>;
+    const PHASED_KEYS = ['mode', 'phaseCycleCap', 'maxIterations', 'verifyTimeoutSeconds'];
+    for (const key of Object.keys(phased)) {
+      if (!PHASED_KEYS.includes(key)) {
+        throw new Error(
+          `${channel}: patch.ui.phasedExecution.${key} is not a recognized phasedExecution field`
+        );
+      }
+    }
+    if ('mode' in phased && phased.mode !== undefined) {
+      assertEnum(channel, 'patch.ui.phasedExecution.mode', phased.mode, ['auto', 'always', 'never']);
+    }
+    if ('phaseCycleCap' in phased && phased.phaseCycleCap !== undefined) {
+      assertNumber(channel, 'patch.ui.phasedExecution.phaseCycleCap', phased.phaseCycleCap, {
+        min: 2,
+        max: 64
+      });
+    }
+    if ('maxIterations' in phased && phased.maxIterations !== undefined) {
+      assertNumber(channel, 'patch.ui.phasedExecution.maxIterations', phased.maxIterations, {
+        min: 2,
+        max: MAX_TOTAL_ITERATIONS
+      });
+    }
+    if ('verifyTimeoutSeconds' in phased && phased.verifyTimeoutSeconds !== undefined) {
+      assertNumber(
+        channel,
+        'patch.ui.phasedExecution.verifyTimeoutSeconds',
+        phased.verifyTimeoutSeconds,
+        { min: PHASE_VERIFY_TIMEOUT_MIN_S, max: PHASE_VERIFY_TIMEOUT_MAX_S }
       );
     }
   }

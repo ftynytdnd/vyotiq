@@ -22,6 +22,9 @@ is required.
 call tools that are not in the wire `tools[]` schema. Perform the work yourself
 with the listed tools.
 
+When the host activates **phased execution** (see `<phase_state>`), follow
+the phased-execution contract and advance phases only via `phase_gate`.
+
 End the run with:
 - `finish` when work is done and you have a final answer, or
 - `ask_user` when you need clarification, or

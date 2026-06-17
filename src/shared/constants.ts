@@ -152,6 +152,23 @@ export const MAX_SELF_CORRECTION_ATTEMPTS = 3;
 export const MAX_PROVIDER_RECOVERY_ROUNDS = 1;
 export const MAX_TOTAL_ITERATIONS = 24;
 
+/** Default per-subtask phase-cycle convergence guard (soft cap). */
+export const DEFAULT_PHASE_CYCLE_CAP = 8;
+
+/** Host acceptance-test runner timeout during VERIFY phase (ms). */
+export const PHASE_VERIFY_TIMEOUT_MS = 120_000;
+
+/** Min / max configurable VERIFY acceptance-command timeout (seconds). */
+export const PHASE_VERIFY_TIMEOUT_MIN_S = 10;
+export const PHASE_VERIFY_TIMEOUT_MAX_S = 600;
+
+/**
+ * Max chars of acceptance-test output persisted inside a `phase-gate`
+ * durable snapshot. Keeps the append-only JSONL ledger bounded for
+ * always-on desktop sessions.
+ */
+export const VERIFY_EVIDENCE_PERSIST_CHARS = 2_000;
+
 /** Backoff. */
 export const BASE_BACKOFF_MS = 250;
 export const MAX_BACKOFF_MS = 8000;
@@ -417,7 +434,6 @@ export const IPC = {
   // Workspace PTY terminal (multi-session per workspace)
   TERMINAL_ATTACH: 'terminal:attach',
   TERMINAL_CREATE: 'terminal:create',
-  TERMINAL_LIST: 'terminal:list',
   TERMINAL_CLOSE: 'terminal:close',
   TERMINAL_INPUT: 'terminal:input',
   TERMINAL_RESIZE: 'terminal:resize',
@@ -438,7 +454,6 @@ export const IPC = {
   BROWSER_FIND: 'browser:find',
   BROWSER_STOP_FIND: 'browser:stop-find',
   BROWSER_OPEN_EXTERNAL: 'browser:open-external',
-  BROWSER_DESTROY: 'browser:destroy',
   /** main → renderer: navigation / loading state for the embedded browser. */
   BROWSER_STATE: 'browser:state',
 
@@ -488,7 +503,6 @@ export const IPC = {
   APP_REVEAL_PATH: 'app:reveal-path',
   APP_SET_THEME_SOURCE: 'app:set-theme-source',
   APP_CHECK_UPDATES: 'app:check-updates',
-  APP_DOWNLOAD_UPDATE: 'app:download-update',
   APP_INSTALL_UPDATE: 'app:install-update',
   /** main → renderer broadcast of electron-updater phase/progress. */
   APP_UPDATE_STATUS: 'app:update-status',

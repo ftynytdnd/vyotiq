@@ -41,6 +41,8 @@ import {
   resolveFinishSummary
 } from './finishIntercept.js';
 import { normalizeRegisteredToolName } from '@shared/tools/normalizeToolName.js';
+import { buildPhasedEscapeAskUser } from '../phased/phasedEscape.js';
+import { pauseRunForPhasedEscape } from './phasedEscapePause.js';
 import { pauseRunForAskUser } from './askUserPause.js';
 import { backoff } from '../retry.js';
 import { isAbortError } from '../abortSignal.js';
@@ -124,6 +126,11 @@ import {
 } from '../context/contextCalibration.js';
 import { toolSchemasFor } from '../../tools/registry.js';
 import { maybeInterceptHostReportGate } from './hostReportGate.js';
+import { interceptPhaseGate } from './phaseGateIntercept.js';
+import { PhaseEngine, maybePromotePhasedEngine } from '../phased/phaseEngine.js';
+import { buildPhaseStateXml } from '../phased/buildPhaseStateXml.js';
+import { loadPhaseEngineSnapshotFromStore } from '../phased/reconstructFromTranscript.js';
+import { resolvePhasedExecutionSettings } from '@shared/settings/phasedExecutionSettings.js';
 import {
   formatProviderRecoveryThought,
   formatProviderStrikeError,
@@ -196,6 +203,8 @@ interface RunLoopOpts {
   reportsSettings?: ResolvedReportsSettings;
   /** Snapshot of `settings.ui.agentBehavior` at run start. */
   agentBehaviorSettings?: ResolvedAgentBehaviorSettings;
+  /** Snapshot of `settings.ui.phasedExecution` at run start. */
+  phasedExecutionSettings?: import('@shared/settings/phasedExecutionSettings.js').ResolvedPhasedExecutionSettings;
   /** Wall-clock anchor for optional per-run duration budget. */
   runStartedAt?: number;
 }
@@ -221,7 +230,7 @@ interface RunLoopResult {
 }
 
 export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopResult> {
-  const harness = buildOrchestratorSystemPrompt();
+  let harness = buildOrchestratorSystemPrompt();
   const messages = opts.initialMessages;
   let query = opts.initialQuery;
 
@@ -306,6 +315,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     const reportsSettings = opts.reportsSettings ?? resolveReportsSettings();
     const agentBehaviorSettings =
       opts.agentBehaviorSettings ?? resolveAgentBehaviorSettings();
+    const phasedSettings = opts.phasedExecutionSettings ?? resolvePhasedExecutionSettings();
     const reductionState = createContextReductionState();
     const budgetToolSchemas = toolSchemasFor(AGENT_TOOLS);
     // Calibration: provider-reported prompt tokens ÷ our estimate, carried turn
@@ -341,6 +351,36 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     let consecutiveSpinHotIterations = 0;
     let spinHotNudgeEmitted = false;
 
+    // Resume order: in-memory pause snapshot → durable transcript
+    // reconstruction (survives a process restart) → fresh engine.
+    const resumeSnapshot =
+      resume?.phaseEngineSnapshot ??
+      (opts.input.conversationId
+        ? await loadPhaseEngineSnapshotFromStore(
+            opts.input.conversationId,
+            opts.input.runId,
+            phasedSettings
+          )
+        : null);
+    const phaseEngine = resumeSnapshot
+      ? PhaseEngine.fromSnapshot(resumeSnapshot, {
+          runId: opts.input.runId,
+          workspaceId: opts.workspaceId,
+          workspacePath: opts.workspacePath,
+          emit,
+          settings: phasedSettings,
+          signal: opts.signal
+        })
+      : new PhaseEngine({
+          runId: opts.input.runId,
+          workspaceId: opts.workspaceId,
+          workspacePath: opts.workspacePath,
+          prompt: opts.input.prompt,
+          settings: phasedSettings,
+          emit,
+          signal: opts.signal
+        });
+
     for (let iter = resume?.nextIteration ?? 0; iter < iterationCap; iter++) {
       const abortedEarly = exitIfAborted(opts, emit, runHadLlmProgress);
       if (abortedEarly) return abortedEarly;
@@ -351,7 +391,44 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: wallClockMsg });
         return { terminalError: wallClockMsg };
       }
+
+      maybePromotePhasedEngine(phaseEngine, opts.input.prompt);
+      harness = buildOrchestratorSystemPrompt({ phasedExecution: phaseEngine.active });
+      const phaseGuardTrip = phaseEngine.onIterationStart(iter, {
+        tokenExceeded: isRunTokenBudgetExceeded(runCumulativeTokens, agentBehaviorSettings),
+        wallExceeded: isRunWallClockBudgetExceeded(
+          Date.now() - runStartedAtMs,
+          agentBehaviorSettings
+        )
+      });
+      if (phaseGuardTrip && phaseEngine.active) {
+        const payload = buildPhasedEscapeAskUser(phaseGuardTrip, phaseEngine.ledgerEntryIds);
+        const pausedForAskUser = pauseRunForPhasedEscape({
+          runId: opts.input.runId,
+          messages,
+          query,
+          nextIteration: iter,
+          consecutiveEmptyTurns,
+          injectedStubsHighWater,
+          consecutiveErrors,
+          consecutiveBadToolRounds,
+          runStateAcc,
+          spin,
+          toolCallId: randomUUID(),
+          payload,
+          displayText: payload.questions[0]?.prompt ?? 'Phased execution stuck',
+          phaseEngineSnapshot: phaseEngine.snapshot(),
+          trip: phaseGuardTrip,
+          emit,
+          runCumulativeTokens
+        });
+        return { pausedForAskUser };
+      }
+
       const iterStartedAt = Date.now();
+      const iterationAgentTools = phaseEngine.active
+        ? (phaseEngine.getToolAllowlist() ?? AGENT_TOOLS)
+        : AGENT_TOOLS.filter((t) => t !== 'phase_gate');
 
         if (iter > 0) {
           try {
@@ -401,9 +478,10 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           consecutiveSpinHotIterations = 0;
           spinHotNudgeEmitted = false;
         }
-        const runStateXml = buildRunStateXml(
-          snapshotRunState(runStateAcc, spin, consecutiveBadToolRounds)
-        );
+        const runStateXml =
+          buildRunStateXml(snapshotRunState(runStateAcc, spin, consecutiveBadToolRounds)) +
+          '\n' +
+          buildPhaseStateXml(phaseEngine);
         const hostEnvXml = buildHostEnvironmentXml(undefined, {
           workspacePath: opts.workspacePath
         });
@@ -555,6 +633,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           signal: opts.signal,
           dialect: providerDialect,
           omitToolChoice,
+          agentTools: iterationAgentTools,
           ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
           ...(modelThinkingCaps !== undefined ? { modelThinkingCaps } : {}),
           ...(opts.input.conversationId !== undefined
@@ -868,12 +947,14 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
 
         let finishCall: (typeof finishedToolCalls)[number] | undefined;
         let askUserCall: (typeof finishedToolCalls)[number] | undefined;
+        let phaseGateCall: (typeof finishedToolCalls)[number] | undefined;
         const actionTools: typeof finishedToolCalls = [];
         for (const tc of finishedToolCalls) {
           const canonical = normalizeRegisteredToolName(tc.name);
           if (canonical) tc.name = canonical;
           if (canonical === 'finish' && !finishCall) finishCall = tc;
           else if (canonical === 'ask_user' && !askUserCall) askUserCall = tc;
+          else if (canonical === 'phase_gate' && !phaseGateCall) phaseGateCall = tc;
           else actionTools.push(tc);
         }
 
@@ -900,6 +981,14 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           reasoningChars: turn.reasoningText.length,
           ms: Date.now() - iterStartedAt
         });
+
+        if (phaseEngine.active && phaseEngine.currentPhase !== 'done' && finishCall) {
+          log.warn('finish blocked — phased execution incomplete', {
+            iteration: iter,
+            phase: phaseEngine.currentPhase
+          });
+          finishCall = undefined;
+        }
 
         if (finishCall) {
           if (actionTools.length > 0) {
@@ -1009,7 +1098,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             runId: opts.input.runId,
             conversationId: opts.input.conversationId ?? '',
             signal: opts.signal,
-            allowlist: AGENT_TOOLS,
+            allowlist: iterationAgentTools,
             allowlistRefusalCounts,
             onToolCallSettled
           });
@@ -1083,6 +1172,17 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               }
             }
           }
+        }
+
+        if (phaseGateCall && phaseEngine.active) {
+          await interceptPhaseGate({
+            engine: phaseEngine,
+            tc: phaseGateCall,
+            messages,
+            emit,
+            runId: opts.input.runId
+          });
+          continue;
         }
 
         if (finishCall && actionTools.length > 0) {
@@ -1235,24 +1335,46 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     if (abortedBeforeSynth) return abortedBeforeSynth;
     {
       const synthMessages = sanitizeToolCallPairingWithStats(messages).messages;
-      const synthReq = buildOrchestratorRequest({
-        selection: opts.input.selection,
-        messages: synthMessages,
-        signal: opts.signal,
-        dialect: providerDialect,
-        wrapUp: true,
-        omitToolChoice,
-        ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
-        ...(modelThinkingCaps !== undefined ? { modelThinkingCaps } : {}),
-        ...(opts.input.conversationId !== undefined
-          ? { conversationId: opts.input.conversationId }
-          : {}),
-        ...(opts.input.workspaceId !== undefined ? { workspaceId: opts.input.workspaceId } : {}),
-        ...(providerDialect === 'anthropic-native'
-          ? { previousAnthropicMessageId: lastAnthropicMessageId ?? null }
-          : {})
-      });
-      const synthTurn = await handleAssistantTurn(synthReq, emit, argsDeltaTap);
+      let synthOmitToolChoice = omitToolChoice;
+      let synthTurn: Awaited<ReturnType<typeof handleAssistantTurn>> | null = null;
+      for (let synthAttempt = 0; synthAttempt < 2; synthAttempt++) {
+        const synthReq = buildOrchestratorRequest({
+          selection: opts.input.selection,
+          messages: synthMessages,
+          signal: opts.signal,
+          dialect: providerDialect,
+          wrapUp: true,
+          omitToolChoice: synthOmitToolChoice,
+          ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
+          ...(modelThinkingCaps !== undefined ? { modelThinkingCaps } : {}),
+          ...(opts.input.conversationId !== undefined
+            ? { conversationId: opts.input.conversationId }
+            : {}),
+          ...(opts.input.workspaceId !== undefined ? { workspaceId: opts.input.workspaceId } : {}),
+          ...(providerDialect === 'anthropic-native'
+            ? { previousAnthropicMessageId: lastAnthropicMessageId ?? null }
+            : {})
+        });
+        synthTurn = await handleAssistantTurn(synthReq, emit, argsDeltaTap);
+        if (
+          synthTurn.error &&
+          !synthOmitToolChoice &&
+          isPermanentToolChoiceRejection(synthTurn.error)
+        ) {
+          synthOmitToolChoice = true;
+          omitToolChoice = true;
+          log.warn('synthesis rejected tool_choice — retrying with the field omitted', {
+            runId: opts.input.runId,
+            conversationId: opts.input.conversationId
+          });
+          if (synthTurn.hadText || synthTurn.hadReasoning) {
+            emit({ kind: 'agent-text-aborted', id: synthTurn.assistantMsgId, ts: Date.now() });
+          }
+          continue;
+        }
+        break;
+      }
+      if (!synthTurn) return {};
       if (synthTurn.error) {
         if (isAbortError(synthTurn.error, opts.signal)) {
           if (synthTurn.hadText || synthTurn.hadReasoning) {

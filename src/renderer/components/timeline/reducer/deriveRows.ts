@@ -20,6 +20,12 @@
 
 import type { PromptAttachmentMeta, TimelineEvent } from '@shared/types/chat.js';
 import type { MentionRef } from '@shared/types/mention.js';
+import type {
+  AcceptanceRunEvidence,
+  AttemptedApproach,
+  CheckpointMarkerRef,
+  CodeLink
+} from '@shared/types/phased.js';
 import type { ToolCall, ToolName, ToolResult, DiffHunk } from '@shared/types/tool.js';
 import type { DiffStreamSnapshot, PartialToolCallArgs, TokenUsageAggregate } from './types.js';
 import { foldTokenUsage } from './types.js';
@@ -148,6 +154,28 @@ export type Row =
     id: string;
     label: string;
     tooltip?: string;
+    gateDecision?: {
+      kind: 'passed' | 'looped_back' | 'blocked';
+      reason: string;
+      targetPhase?: string;
+      citeLedgerEntryId?: string;
+    };
+    acceptanceEvidence?: AcceptanceRunEvidence[];
+  }
+  | {
+    kind: 'phase-ledger';
+    key: string;
+    id: string;
+    subtaskId: string;
+    phase: string;
+    summary: string;
+    collapsedDefault: boolean;
+    discoveredConstraints?: string[];
+    assumptions?: string[];
+    decisions?: Array<{ decision: string; rationale: string }>;
+    attemptedApproaches?: AttemptedApproach[];
+    codeLinks?: CodeLink[];
+    checkpointRef?: CheckpointMarkerRef;
   }
   | {
     kind: 'run-complete';
@@ -430,6 +458,41 @@ export function deriveRows(
           id: e.id,
           label: e.label,
           ...(e.tooltip ? { tooltip: e.tooltip } : {})
+        });
+        break;
+
+      case 'phase-gate': {
+        closeGroups();
+        for (let i = out.length - 1; i >= 0; i--) {
+          const row = out[i];
+          if (row?.kind === 'phase-log') {
+            out[i] = {
+              ...row,
+              gateDecision: e.gateDecision,
+              ...(e.acceptanceEvidence ? { acceptanceEvidence: e.acceptanceEvidence } : {})
+            };
+            break;
+          }
+        }
+        break;
+      }
+
+      case 'phase-ledger-entry':
+        closeGroups();
+        out.push({
+          kind: 'phase-ledger',
+          key: e.id,
+          id: e.id,
+          subtaskId: e.subtaskId,
+          phase: e.phase,
+          summary: e.artifactSummary ?? e.exitCriteria ?? e.phase,
+          collapsedDefault: true,
+          ...(e.discoveredConstraints ? { discoveredConstraints: e.discoveredConstraints } : {}),
+          ...(e.assumptions ? { assumptions: e.assumptions } : {}),
+          ...(e.decisions ? { decisions: e.decisions } : {}),
+          ...(e.attemptedApproaches ? { attemptedApproaches: e.attemptedApproaches } : {}),
+          ...(e.codeLinks ? { codeLinks: e.codeLinks } : {}),
+          ...(e.checkpointRef ? { checkpointRef: e.checkpointRef } : {})
         });
         break;
 

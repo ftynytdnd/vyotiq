@@ -169,12 +169,15 @@ export function applyTimelineEvent(
       // pressed mid-stream would leave the synthesized tool-group
       // row painted indefinitely (the authoritative `tool-call`
       // never lands to reconcile it).
+      const partialToolCallArgs = state.partialToolCallArgs ?? {};
+      const liveDiffByCallId = state.liveDiffByCallId ?? {};
+      const liveToolOutputByCallId = state.liveToolOutputByCallId ?? {};
       const nextPartial =
-        Object.keys(state.partialToolCallArgs).length > 0 ? {} : state.partialToolCallArgs;
+        Object.keys(partialToolCallArgs).length > 0 ? {} : partialToolCallArgs;
       const nextLiveDiff =
-        Object.keys(state.liveDiffByCallId).length > 0 ? {} : state.liveDiffByCallId;
+        Object.keys(liveDiffByCallId).length > 0 ? {} : liveDiffByCallId;
       const nextLiveOutput =
-        Object.keys(state.liveToolOutputByCallId).length > 0 ? {} : state.liveToolOutputByCallId;
+        Object.keys(liveToolOutputByCallId).length > 0 ? {} : liveToolOutputByCallId;
       return {
         ...state,
         events: state.events.filter(
@@ -186,11 +189,9 @@ export function applyTimelineEvent(
         ),
         assistantTexts: restText,
         reasoningTexts: restReasoning,
-        ...(nextPartial !== state.partialToolCallArgs
-          ? { partialToolCallArgs: nextPartial }
-          : {}),
-        ...(nextLiveDiff !== state.liveDiffByCallId ? { liveDiffByCallId: nextLiveDiff } : {}),
-        ...(nextLiveOutput !== state.liveToolOutputByCallId
+        ...(nextPartial !== partialToolCallArgs ? { partialToolCallArgs: nextPartial } : {}),
+        ...(nextLiveDiff !== liveDiffByCallId ? { liveDiffByCallId: nextLiveDiff } : {}),
+        ...(nextLiveOutput !== liveToolOutputByCallId
           ? { liveToolOutputByCallId: nextLiveOutput }
           : {})
       };
@@ -396,6 +397,8 @@ export function applyTimelineEvent(
     case 'agent-thought':
     case 'ask-user-prompt':
     case 'phase':
+    case 'phase-gate':
+    case 'phase-ledger-entry':
     case 'error':
       return { ...state, events: appendTimelineEvent(state.events, event, mutate) };
 
@@ -415,11 +418,7 @@ export function applyTimelineEvent(
     case 'tool-compacted':
     case 'context-summary':
       // Audit-trail kinds persisted into the transcript so replay
-      // reconstructs the same state the live run had (`tool-compacted`
-      // and `context-summary` let the main-process replay rebuild lean
-      // banners / collapsed history). The checkpoint kinds produce no
-      // derived row; `tool-compacted` / `context-summary` fold into a single
-      // `context-reduction` audit row (see `deriveRows.ts`).
+      // reconstructs the same state the live run had.
       return { ...state, events: appendTimelineEvent(state.events, event, mutate) };
 
     case 'context-usage':

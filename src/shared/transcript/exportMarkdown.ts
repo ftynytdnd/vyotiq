@@ -119,6 +119,15 @@ export function renderTranscriptMarkdown(
       case 'phase':
         lines.push(`_Phase: ${e.label}_ · ${formatTimestamp(e.ts)}`, '');
         break;
+      case 'phase-gate':
+        lines.push(
+          `_Phase gate (${e.phase}): ${e.gateDecision.kind} — ${e.gateDecision.reason}_ · ${formatTimestamp(e.ts)}`,
+          ''
+        );
+        break;
+      case 'phase-ledger-entry':
+        lines.push(`_Ledger (${e.phase}, seq ${e.seq})_ · ${formatTimestamp(e.ts)}`, '');
+        break;
       case 'agent-thought':
         lines.push(`_Thought:_ ${e.content}`, '');
         break;

@@ -8,6 +8,16 @@ import type { CheckpointChangeKind } from './checkpoint.js';
 import type { AskUserStructuredPayload } from './askUser.js';
 import type { MentionRef } from './mention.js';
 import type { ContextUsageBreakdown } from '../context/contextLevel.js';
+import type {
+  AcceptanceRunEvidence,
+  CheckpointMarkerRef,
+  CodeLink,
+  AttemptedApproach,
+  ExecutionPhase,
+  GateDecisionKind,
+  PersistedPhaseEngineState,
+  PhasedExecutionMode
+} from './phased.js';
 
 /**
  * Internal role union for `ChatMessage`. Not exported because the only
@@ -226,6 +236,58 @@ export type TimelineEvent =
    */
   | { kind: 'phase'; id: string; ts: number; label: string; tooltip?: string }
   /**
+   * Phase gate decision — persisted audit of exit-gate evaluation.
+   * Rendered as compact badges on `phase` rows; full detail in tooltip.
+   */
+  | {
+    kind: 'phase-gate';
+    id: string;
+    ts: number;
+    runId: string;
+    subtaskId: string;
+    seq: number;
+    phase: ExecutionPhase;
+    exitCriteria: string;
+    gateDecision: {
+      kind: GateDecisionKind;
+      reason: string;
+      targetPhase?: ExecutionPhase;
+      citeLedgerEntryId?: string;
+    };
+    acceptanceEvidence?: AcceptanceRunEvidence[];
+    /**
+     * Durable engine state at this gate. Lets a run reconstruct exact phase
+     * state (incl. no-progress counters) from the JSONL transcript after a
+     * process restart, with no in-memory snapshot. Bounded: evidence output
+     * is truncated before persistence.
+     */
+    engineState?: PersistedPhaseEngineState;
+  }
+  /**
+   * Append-only phased-execution ledger entry — artifacts, constraints,
+   * decisions, checkpoint references. Collapsible child row in timeline.
+   */
+  | {
+    kind: 'phase-ledger-entry';
+    id: string;
+    ts: number;
+    runId: string;
+    subtaskId: string;
+    seq: number;
+    phase: ExecutionPhase;
+    exitCriteria?: string;
+    discoveredConstraints?: string[];
+    assumptions?: string[];
+    decisions?: Array<{ decision: string; rationale: string }>;
+    attemptedApproaches?: AttemptedApproach[];
+    codeLinks?: CodeLink[];
+    checkpointRef?: CheckpointMarkerRef;
+    /** JSON snapshot of phase artifact for inspector replay. */
+    artifactSummary?: string;
+    /** Auditable promote/demote of phased mode mid-run. */
+    modeDecision?: PhasedExecutionMode;
+  }
+  /**
    * Structured clarifying question from `ask_user` (multi-choice). Persisted
    * for timeline replay; plain-text fallback uses `agent-text-delta` when
    * only legacy `question` is present.
@@ -240,7 +302,7 @@ export type TimelineEvent =
     runId: string;
     status?: 'pending' | 'submitted';
     /** Distinguishes host-injected gates from agent clarifications. */
-    source?: 'host-report-gate';
+    source?: 'host-report-gate' | 'phased-escape';
   }
   /** Marks an interactive ask_user prompt as answered (UI latch). */
   | {

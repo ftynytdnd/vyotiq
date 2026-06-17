@@ -70,4 +70,14 @@ describe('buildOrchestratorSystemPrompt', () => {
     expect(prompt).toContain('Metavariables');
     expect(prompt).toContain('`search` tool');
   });
+
+  it('injects the phased-execution contract only when phased mode is active', () => {
+    expect(prompt).not.toContain('Phase contracts');
+    expect(prompt).toContain('Phased execution: available when the host activates');
+
+    const phasedPrompt = buildOrchestratorSystemPrompt({ phasedExecution: true });
+    expect(phasedPrompt).toContain('Phased Execution — Subtask State Machine');
+    expect(phasedPrompt).toContain('Phase contracts');
+    expect(phasedPrompt).toContain('escape hatch');
+  });
 });

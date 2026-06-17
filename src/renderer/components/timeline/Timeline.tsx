@@ -32,6 +32,7 @@ import { FileEditGroupRow } from './rows/FileEditGroupRow.js';
 import { RunCompleteRow } from './rows/RunCompleteRow.js';
 import type { RunCompleteMetaProps } from './rows/RunCompleteMeta.js';
 import { PhaseLogRow } from './rows/PhaseLogRow.js';
+import { PhaseLedgerRow } from './rows/PhaseLedgerRow.js';
 import { ContextReductionRow } from './rows/ContextReductionRow.js';
 import type { DisplayRow } from './shared/displayRowTypes.js';
 import { RowAnchor } from './shared/RowAnchor.js';
@@ -48,7 +49,6 @@ import { isSliceRunActive } from '../../lib/isSliceRunActive.js';
 import { suggestProvidersForError } from '../../lib/runRecovery.js';
 import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../lib/shellIcons.js';
 import { useToastStore } from '../../store/useToastStore.js';
-import { useTimelineUiStore } from '../../store/useTimelineUiStore.js';
 import { computeTailScrollKey } from './shared/computeTailScrollKey.js';
 import { pinScrollParentToTail } from './shared/pinScrollToTail.js';
 import { findTimelineScrollParent } from './shared/timelineScrollParent.js';
@@ -106,8 +106,6 @@ export function Timeline({
   const send = useChatStore((s) => s.send);
 
   const showToast = useToastStore((s) => s.show);
-  const setTimelineAtTail = useTimelineUiStore((s) => s.setTimelineAtTail);
-  const scrollToTailRequest = useTimelineUiStore((s) => s.scrollToTailRequest);
   // --- Refs (all before any effect) ---
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollFrameRef = useRef<number | null>(null);
@@ -153,13 +151,12 @@ export function Timeline({
       }
       if (stickyRef.current !== nextSticky) {
         stickyRef.current = nextSticky;
-        setTimelineAtTail(nextSticky);
       }
       const nextShowJump =
         scrollable && distanceFromBottom > TIMELINE_SCROLL_UNSTICK_PX;
       setShowJumpToLatest((prev) => (prev === nextShowJump ? prev : nextShowJump));
     },
-    [setTimelineAtTail]
+    [setUnreadTailBumps]
   );
 
   const releaseUserScrollLock = useCallback(() => {
@@ -169,8 +166,7 @@ export function Timeline({
   const engageUserScrollLock = useCallback(() => {
     userScrollLockRef.current = true;
     stickyRef.current = false;
-    setTimelineAtTail(false);
-  }, [setTimelineAtTail]);
+  }, []);
 
   const syncScrollTail = useCallback(() => {
     const parent = findTimelineScrollParent(containerRef.current);
@@ -287,14 +283,6 @@ export function Timeline({
     [isProcessing, releaseUserScrollLock, useVirtualizedList]
   );
 
-  useEffect(() => {
-    if (scrollToTailRequest === 0) return;
-    releaseUserScrollLock();
-    stickyRef.current = true;
-    applyTailState(true, true, 0);
-    scrollToTail(true);
-  }, [scrollToTailRequest, applyTailState, releaseUserScrollLock, scrollToTail]);
-
   // Resolve the scroll parent, sync tail state on mount / layout changes,
   // and attach a passive scroll listener (stable — not re-bound per delta).
   useEffect(() => {
@@ -364,8 +352,7 @@ export function Timeline({
   useEffect(() => {
     releaseUserScrollLock();
     stickyRef.current = true;
-    setTimelineAtTail(true);
-  }, [conversationId, releaseUserScrollLock, setTimelineAtTail]);
+  }, [conversationId, releaseUserScrollLock]);
 
   // Keyboard navigation between user prompts (`g j` / `g k`) and Esc to
   // drop sticky scroll. The `g`-prefix uses a short timeout so accidental
@@ -777,6 +764,24 @@ function renderRow(
           key={r.key}
           label={r.label}
           {...(r.tooltip ? { tooltip: r.tooltip } : {})}
+          {...(r.gateDecision ? { gateDecision: r.gateDecision } : {})}
+          {...(r.acceptanceEvidence ? { acceptanceEvidence: r.acceptanceEvidence } : {})}
+        />
+      );
+    case 'phase-ledger':
+      return (
+        <PhaseLedgerRow
+          key={r.key}
+          subtaskId={r.subtaskId}
+          phase={r.phase}
+          summary={r.summary}
+          collapsedDefault={r.collapsedDefault}
+          {...(r.discoveredConstraints ? { discoveredConstraints: r.discoveredConstraints } : {})}
+          {...(r.assumptions ? { assumptions: r.assumptions } : {})}
+          {...(r.decisions ? { decisions: r.decisions } : {})}
+          {...(r.attemptedApproaches ? { attemptedApproaches: r.attemptedApproaches } : {})}
+          {...(r.codeLinks ? { codeLinks: r.codeLinks } : {})}
+          {...(r.checkpointRef ? { checkpointRef: r.checkpointRef } : {})}
         />
       );
     case 'context-reduction':

@@ -80,6 +80,8 @@ export function buildOrchestratorRequest(opts: {
   omitToolChoice?: boolean;
   conversationId?: string;
   workspaceId?: string;
+  /** Override default AGENT_TOOLS catalogue (phased per-phase allowlist). */
+  agentTools?: readonly string[];
   previousAnthropicMessageId?: string | null;
   /**
    * Opportunistic Anthropic native context-editing backstop. Set by `runLoop`
@@ -117,8 +119,9 @@ export function buildOrchestratorRequest(opts: {
   // Wrap-up forces prose. Capable models keep the tool schema present
   // and rely on `tool_choice: 'none'`; tool_choice-rejecting models get
   // an empty tool list so there is nothing to call.
+  const toolNames = opts.agentTools ?? AGENT_TOOLS;
   const tools =
-    opts.wrapUp && !toolChoiceSafe ? [] : toolSchemasFor(AGENT_TOOLS);
+    opts.wrapUp && !toolChoiceSafe ? [] : toolSchemasFor(toolNames);
 
   const rawMessages = opts.wrapUp ? appendWrapUpInstruction(opts.messages) : opts.messages;
   const messages = redactChatMessagesForProvider(rawMessages);
