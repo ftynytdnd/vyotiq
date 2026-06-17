@@ -18,7 +18,7 @@ import type {
 import { VERIFY_EVIDENCE_PERSIST_CHARS } from '@shared/constants.js';
 import type { ResolvedPhasedExecutionSettings } from '@shared/settings/phasedExecutionSettings.js';
 import { recordCheckpointMarker, revertEntriesAfterMarker } from './checkpointMarker.js';
-import { routeDiagnoseTarget } from './diagnoseRouter.js';
+import { diagnoseFailedApproachLabel, routeDiagnoseTarget } from './diagnoseRouter.js';
 import {
   exitCriteriaForPhase,
   nextPhaseAfter,
@@ -191,9 +191,6 @@ export class PhaseEngine {
 
   getToolAllowlist(): readonly string[] | undefined {
     if (!this.active) return undefined;
-    if (this.currentPhase === 'done') {
-      return toolsAllowedInPhase('done');
-    }
     return toolsAllowedInPhase(this.currentPhase);
   }
 
@@ -259,7 +256,7 @@ export class PhaseEngine {
         checkpointRef: marker,
         artifactSummary: 'Checkpoint manifest head recorded'
       });
-      return this.passGate(parsed.phase, exitCriteria, ledgerId);
+      return this.passGate(parsed.phase, exitCriteria);
     }
 
     if (parsed.phase === 'verify') {
@@ -366,13 +363,12 @@ export class PhaseEngine {
       return { kind: 'all_subtasks_done' };
     }
 
-    return this.passGate(parsed.phase, exitCriteria, ledgerId);
+    return this.passGate(parsed.phase, exitCriteria);
   }
 
   private async passGate(
     phase: ExecutionPhase,
-    exitCriteria: string,
-    _ledgerId: string
+    exitCriteria: string
   ): Promise<PhaseGateHandleResult> {
     clearNoProgress(this.guards);
     const gatedSubtask = this.activeSubtaskId;
@@ -560,7 +556,12 @@ export class PhaseEngine {
         };
       case 'diagnose':
         return {
-          attemptedApproaches: [{ approach: artifact.targetPhase, whyFailed: artifact.evidence }],
+          attemptedApproaches: [
+            {
+              approach: diagnoseFailedApproachLabel(artifact.classification),
+              whyFailed: artifact.evidence
+            }
+          ],
           decisions: [
             {
               decision: `Route to ${artifact.targetPhase}`,
@@ -576,7 +577,12 @@ export class PhaseEngine {
           }))
         };
       case 'intake':
+        return {
+          doneCriteria: artifact.doneCriteria,
+          acceptanceCommandCount: artifact.acceptanceCommands.length
+        };
       case 'plan':
+        return { planSteps: artifact.steps };
       case 'checkpoint':
       case 'verify':
         return {};

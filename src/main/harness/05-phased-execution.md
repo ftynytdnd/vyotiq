@@ -24,15 +24,15 @@ Use stable `subtaskId` values from `<phase_state>` in every `phase_gate` call.
 
 | Phase | Artifact (via `phase_gate`) | Exit gate |
 |-------|-----------------------------|-----------|
-| **Intake** | Goal restatement, `doneCriteria[]`, `acceptanceCommands[]` | Every later step maps to a criterion; tests declared up front |
-| **Understand** | `facts[]` with `codeLinks`; `openAmbiguities` must be `[]` | No open ambiguity |
+| **Intake** | `goalRestatement`, ≥1 `doneCriteria[]`, ≥1 `acceptanceCommands[]` | Every later step maps to a criterion; tests declared up front |
+| **Understand** | `facts[]` (each needs ≥1 `codeLinks`); `openAmbiguities` must be `[]` | No open ambiguity |
 | **Think/Frame** | `chosenApproach`, `rejectedAlternatives[]`, hypotheses, constraints | Approach + rejected alternatives recorded |
 | **Plan** | `steps[]` with `doneCriterionId` + `verificationMethod` | Every step has definition of done |
 | **Rethink** | Risk attack; `unaddressedHighRisks` must be `[]` | No unaddressed high-risk assumptions |
 | **Checkpoint** | `{ ready: true }` | Host records manifest-head restore marker |
 | **Execute** | `incrementSummary`, `codeLinks`, `selfConsistent: true` | Increment complete |
 | **Verify** | `validationNotes`, `supplementalChecksPass: true` | Host runs `acceptanceCommands` — exit code 0 required |
-| **Diagnose** | `classification`, `targetPhase`, `evidence`, `citeLedgerEntryId` | Typed route with cited ledger entry |
+| **Diagnose** | `classification`, `targetPhase`, `evidence`, `citeLedgerEntryId` | Typed route with cited ledger entry (host derives the real target from `classification`) |
 | **Reflect** | `lessons[]`, `remainingSteps[]` | Lessons recorded; plan re-derived |
 
 ## Tool discipline per phase
@@ -45,6 +45,15 @@ only in **EXECUTE**. Read-only phases permit `ls`, `read`, `search`, `sg`,
 
 Call `phase_gate` only when the current phase artifact is complete. The host
 validates schema and structural invariants — not subjective quality.
+
+Submit **exactly one** `phase_gate` per turn. Only one gate advances per turn;
+extra `phase_gate` calls in the same turn are ignored (re-submit the next gate on
+the following turn).
+
+For **DIAGNOSE**, the host routes by `classification` (`wrong_facts → understand`,
+`wrong_approach → think_frame`, `bad_implementation → execute`,
+`test_failure → verify`, `blocked_environment → understand`); your `targetPhase`
+should agree but the classification is authoritative.
 
 Do **not** self-report test pass/fail for declared acceptance commands; the host
 runs them in **VERIFY** and reads exit codes.

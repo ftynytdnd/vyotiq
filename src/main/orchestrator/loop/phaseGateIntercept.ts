@@ -27,7 +27,8 @@ async function settleToolResult(
   messages: ChatMessage[],
   emit: (event: TimelineEvent) => void,
   output: string,
-  ok: boolean
+  ok: boolean,
+  errorLabel = 'phase_gate rejected'
 ): Promise<void> {
   const callId = tc.id ?? randomUUID();
   emit({
@@ -39,7 +40,7 @@ async function settleToolResult(
       name: 'phase_gate',
       ok,
       output,
-      ...(ok ? {} : { error: 'phase_gate rejected' }),
+      ...(ok ? {} : { error: errorLabel }),
       durationMs: 0
     }
   });
@@ -49,6 +50,26 @@ async function settleToolResult(
     name: 'phase_gate',
     content: truncateToolOutputForContext(output)
   });
+}
+
+/**
+ * Settle a phase_gate call that was superseded by an earlier gate in the same
+ * turn. Only one gate advances per turn; extras get a paired tool result so the
+ * tool-call/tool-result pairing invariant holds (no orphaned tool message).
+ */
+export async function settleSupersededPhaseGate(
+  tc: PartialToolCall,
+  messages: ChatMessage[],
+  emit: (event: TimelineEvent) => void
+): Promise<void> {
+  await settleToolResult(
+    tc,
+    messages,
+    emit,
+    'Ignored: only one phase_gate is processed per turn. Submit the next gate on the following turn.',
+    false,
+    'phase_gate superseded'
+  );
 }
 
 export async function interceptPhaseGate(

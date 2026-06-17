@@ -155,6 +155,15 @@ export const MAX_TOTAL_ITERATIONS = 24;
 /** Default per-subtask phase-cycle convergence guard (soft cap). */
 export const DEFAULT_PHASE_CYCLE_CAP = 8;
 
+/**
+ * Iterations of headroom the phased soft global-iteration cap keeps below the
+ * hard `MAX_TOTAL_ITERATIONS` ceiling. The phased escape hatch ("ask the
+ * human") must surface *before* the loop's forced-synthesis fallback, so the
+ * soft cap trips this many iterations early rather than coinciding with — and
+ * being masked by — the hard cap.
+ */
+export const PHASED_SOFT_ITERATION_MARGIN = 2;
+
 /** Host acceptance-test runner timeout during VERIFY phase (ms). */
 export const PHASE_VERIFY_TIMEOUT_MS = 120_000;
 

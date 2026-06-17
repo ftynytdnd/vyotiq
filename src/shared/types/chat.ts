@@ -13,10 +13,12 @@ import type {
   CheckpointMarkerRef,
   CodeLink,
   AttemptedApproach,
+  DoneCriterion,
   ExecutionPhase,
   GateDecisionKind,
   PersistedPhaseEngineState,
-  PhasedExecutionMode
+  PhasedExecutionMode,
+  PlanStep
 } from './phased.js';
 
 /**
@@ -282,6 +284,12 @@ export type TimelineEvent =
     attemptedApproaches?: AttemptedApproach[];
     codeLinks?: CodeLink[];
     checkpointRef?: CheckpointMarkerRef;
+    /** Structured INTAKE artifact: measurable done-criteria (queryable). */
+    doneCriteria?: DoneCriterion[];
+    /** Structured INTAKE artifact: number of declared acceptance commands. */
+    acceptanceCommandCount?: number;
+    /** Structured PLAN artifact: ordered steps mapped to criteria + verification. */
+    planSteps?: PlanStep[];
     /** JSON snapshot of phase artifact for inspector replay. */
     artifactSummary?: string;
     /** Auditable promote/demote of phased mode mid-run. */
@@ -829,6 +837,11 @@ export interface ConversationMeta {
   cumulativeCacheSavingsUsd?: number;
   /** Last turn cache hit percentage (0–100). */
   lastCacheHitPct?: number;
+  /**
+   * Prompt turn ids already counted toward `estimatedSpendUsd`.
+   * Persisted so spend is not re-recorded after app restart.
+   */
+  recordedSpendPromptIds?: string[];
   /**
    * Provider-billed ÷ local-estimate calibration per model selection.
    * Key: `${providerId}\0${modelId}` — see `calibrationSelectionKey`.

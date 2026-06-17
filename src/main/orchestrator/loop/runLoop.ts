@@ -126,7 +126,7 @@ import {
 } from '../context/contextCalibration.js';
 import { toolSchemasFor } from '../../tools/registry.js';
 import { maybeInterceptHostReportGate } from './hostReportGate.js';
-import { interceptPhaseGate } from './phaseGateIntercept.js';
+import { interceptPhaseGate, settleSupersededPhaseGate } from './phaseGateIntercept.js';
 import { PhaseEngine, maybePromotePhasedEngine } from '../phased/phaseEngine.js';
 import { buildPhaseStateXml } from '../phased/buildPhaseStateXml.js';
 import { loadPhaseEngineSnapshotFromStore } from '../phased/reconstructFromTranscript.js';
@@ -947,16 +947,23 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
 
         let finishCall: (typeof finishedToolCalls)[number] | undefined;
         let askUserCall: (typeof finishedToolCalls)[number] | undefined;
-        let phaseGateCall: (typeof finishedToolCalls)[number] | undefined;
+        // Collect every phase_gate call (the model occasionally emits more
+        // than one in a turn). Only the first advances the engine; extras are
+        // settled with a paired "one gate per turn" result so the
+        // tool-call/tool-result pairing invariant holds. When phased mode is
+        // inactive a stray phase_gate falls through to `actionTools`, where the
+        // registry intercept-only stub settles it (still paired).
+        const phaseGateCalls: typeof finishedToolCalls = [];
         const actionTools: typeof finishedToolCalls = [];
         for (const tc of finishedToolCalls) {
           const canonical = normalizeRegisteredToolName(tc.name);
           if (canonical) tc.name = canonical;
           if (canonical === 'finish' && !finishCall) finishCall = tc;
           else if (canonical === 'ask_user' && !askUserCall) askUserCall = tc;
-          else if (canonical === 'phase_gate' && !phaseGateCall) phaseGateCall = tc;
+          else if (canonical === 'phase_gate' && phaseEngine.active) phaseGateCalls.push(tc);
           else actionTools.push(tc);
         }
+        const phaseGateCall = phaseGateCalls[0];
 
         // When both terminal pause and stop tools appear, clarification wins.
         if (finishCall && askUserCall) {
@@ -1060,8 +1067,15 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           });
         }
 
+        // Every tool call that will have a settled `role:'tool'` result in
+        // history must appear in this assistant message's `tool_calls`, or the
+        // result is an orphan that `sanitizeToolPairing` drops next turn.
+        // `phase_gate` results are settled by `interceptPhaseGate` below, so the
+        // gate calls must be included here alongside `actionTools`.
+        const historyToolCalls =
+          phaseGateCalls.length > 0 ? [...actionTools, ...phaseGateCalls] : actionTools;
         const assistantContent: string | null =
-          actionTools.length > 0 && turn.assistantText.length === 0 ? null : turn.assistantText;
+          historyToolCalls.length > 0 && turn.assistantText.length === 0 ? null : turn.assistantText;
         insertHistoryBeforeTail(messages, {
           role: 'assistant',
           content: assistantContent,
@@ -1072,9 +1086,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           ...(typeof turn.reasoningSignature === 'string' && turn.reasoningSignature.length > 0
             ? { reasoning_signature: turn.reasoningSignature }
             : {}),
-          ...(actionTools.length > 0
+          ...(historyToolCalls.length > 0
             ? {
-              tool_calls: actionTools.map((tc) => ({
+              tool_calls: historyToolCalls.map((tc) => ({
                 id: tc.id!,
                 type: 'function' as const,
                 function: {
@@ -1175,6 +1189,11 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         }
 
         if (phaseGateCall && phaseEngine.active) {
+          // Settle any extra phase_gate calls first (paired, no-op) so only one
+          // gate advances per turn and no tool result is left orphaned.
+          for (let k = 1; k < phaseGateCalls.length; k++) {
+            await settleSupersededPhaseGate(phaseGateCalls[k]!, messages, emit);
+          }
           await interceptPhaseGate({
             engine: phaseEngine,
             tc: phaseGateCall,

@@ -2,11 +2,23 @@
  * Termination guards — iteration caps, no-progress detector, budget hooks.
  */
 
-import { MAX_TOTAL_ITERATIONS } from '@shared/constants.js';
+import { MAX_TOTAL_ITERATIONS, PHASED_SOFT_ITERATION_MARGIN } from '@shared/constants.js';
 import type { DiagnoseClassification, ExecutionPhase, PersistedGuardState } from '@shared/types/phased.js';
 import { failureSignature } from './diagnoseRouter.js';
 
 export type TerminationGuardState = PersistedGuardState;
+
+/**
+ * Clamp a requested soft global-iteration cap so it always trips a fixed margin
+ * below the hard `MAX_TOTAL_ITERATIONS` ceiling. This guarantees the phased
+ * escape hatch surfaces to the human before the loop's forced-synthesis
+ * fallback (which would otherwise mask it). Floored at 2 so tiny configured
+ * caps remain usable. Shared by fresh state and transcript reconstruction.
+ */
+export function effectiveGlobalIterationCap(requested: number): number {
+  const ceiling = Math.max(2, MAX_TOTAL_ITERATIONS - PHASED_SOFT_ITERATION_MARGIN);
+  return Math.max(2, Math.min(requested, ceiling));
+}
 
 export function createTerminationGuardState(
   phaseCycleCap: number,
@@ -16,7 +28,7 @@ export function createTerminationGuardState(
     phaseCyclesUsed: 0,
     phaseCycleCap,
     globalIteration: 0,
-    globalIterationCap: Math.min(globalIterationCap, MAX_TOTAL_ITERATIONS),
+    globalIterationCap: effectiveGlobalIterationCap(globalIterationCap),
     lastFailureSignature: null,
     repeatFailureCount: 0
   };

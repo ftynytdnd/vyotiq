@@ -9,7 +9,9 @@ import { useState } from 'react';
 import type {
   AttemptedApproach,
   CheckpointMarkerRef,
-  CodeLink
+  CodeLink,
+  DoneCriterion,
+  PlanStep
 } from '@shared/types/phased.js';
 
 interface PhaseLedgerRowProps {
@@ -23,6 +25,9 @@ interface PhaseLedgerRowProps {
   attemptedApproaches?: AttemptedApproach[];
   codeLinks?: CodeLink[];
   checkpointRef?: CheckpointMarkerRef;
+  doneCriteria?: DoneCriterion[];
+  acceptanceCommandCount?: number;
+  planSteps?: PlanStep[];
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -44,7 +49,10 @@ export function PhaseLedgerRow({
   decisions,
   attemptedApproaches,
   codeLinks,
-  checkpointRef
+  checkpointRef,
+  doneCriteria,
+  acceptanceCommandCount,
+  planSteps
 }: PhaseLedgerRowProps) {
   const [open, setOpen] = useState(!collapsedDefault);
   const hasStructured =
@@ -53,7 +61,10 @@ export function PhaseLedgerRow({
     (decisions?.length ?? 0) > 0 ||
     (attemptedApproaches?.length ?? 0) > 0 ||
     (codeLinks?.length ?? 0) > 0 ||
-    checkpointRef !== undefined;
+    checkpointRef !== undefined ||
+    (doneCriteria?.length ?? 0) > 0 ||
+    typeof acceptanceCommandCount === 'number' ||
+    (planSteps?.length ?? 0) > 0;
 
   return (
     <div className="vyotiq-stepfade-once py-0.5 text-meta" data-row-kind="phase-ledger">
@@ -75,6 +86,41 @@ export function PhaseLedgerRow({
                   <li key={i}>
                     <span className="text-text-default">{d.decision}</span>
                     {d.rationale ? <span className="text-text-faint"> — {d.rationale}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          ) : null}
+          {doneCriteria && doneCriteria.length > 0 ? (
+            <Section title="Done criteria">
+              <ul className="space-y-0.5">
+                {doneCriteria.map((c) => (
+                  <li key={c.id}>
+                    <span className="font-mono text-text-faint">{c.id}</span>
+                    <span className="text-text-default"> — {c.description}</span>
+                  </li>
+                ))}
+              </ul>
+              {typeof acceptanceCommandCount === 'number' ? (
+                <div className="mt-0.5 text-text-faint">
+                  {acceptanceCommandCount} acceptance command
+                  {acceptanceCommandCount === 1 ? '' : 's'} declared
+                </div>
+              ) : null}
+            </Section>
+          ) : null}
+          {planSteps && planSteps.length > 0 ? (
+            <Section title="Plan steps">
+              <ul className="space-y-0.5">
+                {planSteps.map((s) => (
+                  <li key={`${s.subtaskId}-${s.order}`}>
+                    <span className="text-text-default">
+                      [{s.order}] {s.description}
+                    </span>
+                    <span className="text-text-faint">
+                      {' '}
+                      (criterion={s.doneCriterionId}; verify={s.verificationMethod})
+                    </span>
                   </li>
                 ))}
               </ul>

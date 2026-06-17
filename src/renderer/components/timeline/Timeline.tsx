@@ -782,6 +782,11 @@ function renderRow(
           {...(r.attemptedApproaches ? { attemptedApproaches: r.attemptedApproaches } : {})}
           {...(r.codeLinks ? { codeLinks: r.codeLinks } : {})}
           {...(r.checkpointRef ? { checkpointRef: r.checkpointRef } : {})}
+          {...(r.doneCriteria ? { doneCriteria: r.doneCriteria } : {})}
+          {...(typeof r.acceptanceCommandCount === 'number'
+            ? { acceptanceCommandCount: r.acceptanceCommandCount }
+            : {})}
+          {...(r.planSteps ? { planSteps: r.planSteps } : {})}
         />
       );
     case 'context-reduction':

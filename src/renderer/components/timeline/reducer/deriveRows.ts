@@ -24,7 +24,9 @@ import type {
   AcceptanceRunEvidence,
   AttemptedApproach,
   CheckpointMarkerRef,
-  CodeLink
+  CodeLink,
+  DoneCriterion,
+  PlanStep
 } from '@shared/types/phased.js';
 import type { ToolCall, ToolName, ToolResult, DiffHunk } from '@shared/types/tool.js';
 import type { DiffStreamSnapshot, PartialToolCallArgs, TokenUsageAggregate } from './types.js';
@@ -176,6 +178,9 @@ export type Row =
     attemptedApproaches?: AttemptedApproach[];
     codeLinks?: CodeLink[];
     checkpointRef?: CheckpointMarkerRef;
+    doneCriteria?: DoneCriterion[];
+    acceptanceCommandCount?: number;
+    planSteps?: PlanStep[];
   }
   | {
     kind: 'run-complete';
@@ -492,7 +497,12 @@ export function deriveRows(
           ...(e.decisions ? { decisions: e.decisions } : {}),
           ...(e.attemptedApproaches ? { attemptedApproaches: e.attemptedApproaches } : {}),
           ...(e.codeLinks ? { codeLinks: e.codeLinks } : {}),
-          ...(e.checkpointRef ? { checkpointRef: e.checkpointRef } : {})
+          ...(e.checkpointRef ? { checkpointRef: e.checkpointRef } : {}),
+          ...(e.doneCriteria ? { doneCriteria: e.doneCriteria } : {}),
+          ...(typeof e.acceptanceCommandCount === 'number'
+            ? { acceptanceCommandCount: e.acceptanceCommandCount }
+            : {}),
+          ...(e.planSteps ? { planSteps: e.planSteps } : {})
         });
         break;
 

@@ -7,7 +7,7 @@ import type { PhaseEngineSnapshot } from './phaseEngine.js';
 import type { ResolvedPhasedExecutionSettings } from '@shared/settings/phasedExecutionSettings.js';
 import { readTranscript } from '../../conversations/conversationStore.js';
 import { logger } from '../../logging/logger.js';
-import { createTerminationGuardState } from './terminationGuards.js';
+import { createTerminationGuardState, effectiveGlobalIterationCap } from './terminationGuards.js';
 import type {
   AcceptanceRunEvidence,
   CheckpointMarkerRef,
@@ -61,7 +61,7 @@ export function reconstructPhaseEngineFromEvents(
         guards: {
           ...e.engineState.guards,
           phaseCycleCap: settings.phaseCycleCap,
-          globalIterationCap: settings.maxIterations
+          globalIterationCap: effectiveGlobalIterationCap(settings.maxIterations)
         }
       };
     }
