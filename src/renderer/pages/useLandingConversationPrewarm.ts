@@ -1,12 +1,12 @@
 /**
- * Ensures a conversation exists on the empty-chat landing so attachments
- * work before the first send.
+ * Empty-workspace landing: create one conversation so attachments work
+ * before first send. Session restore (persisted slot / newest chat) is
+ * owned by `useConversationsStore.restoreWorkspaceSession` in App.tsx.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { showDockChatsWhenExpanded } from '../components/dock/dockShared.js';
-import { useChatStore } from '../store/useChatStore.js';
-import { useConversationsStore } from '../store/useConversationsStore.js';
+import { isSessionBootReady, useConversationsStore } from '../store/useConversationsStore.js';
 
 export interface LandingConversationPrewarmOptions {
   /** Empty-chat centered landing is active. */
@@ -16,60 +16,28 @@ export interface LandingConversationPrewarmOptions {
   /** Conversation list is loading a selection. */
   selecting: boolean;
   activeWorkspaceId: string | null;
-  activeConversationId: string | null;
-  chatConversationId: string | null;
 }
 
 export function useLandingConversationPrewarm({
   enabled,
   needsSetup,
   selecting,
-  activeWorkspaceId,
-  activeConversationId,
-  chatConversationId
+  activeWorkspaceId
 }: LandingConversationPrewarmOptions): void {
-  const newConversation = useConversationsStore((s) => s.newConversation);
-  const selectConversation = useConversationsStore((s) => s.select);
-  const inFlightRef = useRef(false);
+  const ensureLandingConversation = useConversationsStore((s) => s.ensureLandingConversation);
+  const sessionBootReady = useConversationsStore((s) => isSessionBootReady(s));
 
   useEffect(() => {
-    if (!enabled || needsSetup || selecting) return;
-    if (!activeWorkspaceId) return;
-
-    if (activeConversationId) {
-      if (chatConversationId === activeConversationId) return;
-      const convState = useConversationsStore.getState();
-      if (
-        convState.list.length > 0 &&
-        !convState.list.some((m) => m.id === activeConversationId)
-      ) {
-        return;
-      }
-      if (convState.hydratedIds.has(activeConversationId)) {
-        useChatStore.getState().setActiveConversation(activeConversationId);
-        return;
-      }
-      void selectConversation(activeConversationId);
-      return;
-    }
-
-    if (inFlightRef.current) return;
-    inFlightRef.current = true;
-    void newConversation()
-      .then((meta) => {
-        if (meta) showDockChatsWhenExpanded();
-      })
-      .finally(() => {
-        inFlightRef.current = false;
-      });
+    if (!enabled || needsSetup || selecting || !sessionBootReady || !activeWorkspaceId) return;
+    void ensureLandingConversation(activeWorkspaceId).then((meta) => {
+      if (meta) showDockChatsWhenExpanded();
+    });
   }, [
     enabled,
     needsSetup,
     selecting,
+    sessionBootReady,
     activeWorkspaceId,
-    activeConversationId,
-    chatConversationId,
-    newConversation,
-    selectConversation
+    ensureLandingConversation
   ]);
 }

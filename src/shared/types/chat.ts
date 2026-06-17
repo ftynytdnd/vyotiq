@@ -8,18 +8,48 @@ import type { CheckpointChangeKind } from './checkpoint.js';
 import type { AskUserStructuredPayload } from './askUser.js';
 import type { MentionRef } from './mention.js';
 import type { ContextUsageBreakdown } from '../context/contextLevel.js';
-import type {
-  AcceptanceRunEvidence,
-  CheckpointMarkerRef,
-  CodeLink,
-  AttemptedApproach,
-  DoneCriterion,
-  ExecutionPhase,
-  GateDecisionKind,
-  PersistedPhaseEngineState,
-  PhasedExecutionMode,
-  PlanStep
-} from './phased.js';
+
+/** Legacy phased-execution transcript phase ids (engine removed; replay only). */
+type ExecutionPhase =
+  | 'intake'
+  | 'understand'
+  | 'think_frame'
+  | 'plan'
+  | 'rethink'
+  | 'checkpoint'
+  | 'execute'
+  | 'verify'
+  | 'diagnose'
+  | 'reflect'
+  | 'done';
+
+type PhasedExecutionMode = 'auto' | 'always' | 'never';
+
+type GateDecisionKind = 'passed' | 'looped_back' | 'blocked';
+
+interface CodeLink {
+  file: string;
+  line?: number;
+}
+
+interface AttemptedApproach {
+  approach: string;
+  whyFailed: string;
+}
+
+/** Host-recorded acceptance test evidence (legacy VERIFY gate rows). */
+interface AcceptanceRunEvidence {
+  command: string;
+  exitCode: number;
+  output: string;
+  timedOut: boolean;
+}
+
+interface CheckpointMarkerRef {
+  checkpointId: string;
+  lastEntryId: string;
+  entryCount: number;
+}
 
 /**
  * Internal role union for `ChatMessage`. Not exported because the only
@@ -257,13 +287,6 @@ export type TimelineEvent =
       citeLedgerEntryId?: string;
     };
     acceptanceEvidence?: AcceptanceRunEvidence[];
-    /**
-     * Durable engine state at this gate. Lets a run reconstruct exact phase
-     * state (incl. no-progress counters) from the JSONL transcript after a
-     * process restart, with no in-memory snapshot. Bounded: evidence output
-     * is truncated before persistence.
-     */
-    engineState?: PersistedPhaseEngineState;
   }
   /**
    * Append-only phased-execution ledger entry — artifacts, constraints,
@@ -284,12 +307,6 @@ export type TimelineEvent =
     attemptedApproaches?: AttemptedApproach[];
     codeLinks?: CodeLink[];
     checkpointRef?: CheckpointMarkerRef;
-    /** Structured INTAKE artifact: measurable done-criteria (queryable). */
-    doneCriteria?: DoneCriterion[];
-    /** Structured INTAKE artifact: number of declared acceptance commands. */
-    acceptanceCommandCount?: number;
-    /** Structured PLAN artifact: ordered steps mapped to criteria + verification. */
-    planSteps?: PlanStep[];
     /** JSON snapshot of phase artifact for inspector replay. */
     artifactSummary?: string;
     /** Auditable promote/demote of phased mode mid-run. */
@@ -310,7 +327,7 @@ export type TimelineEvent =
     runId: string;
     status?: 'pending' | 'submitted';
     /** Distinguishes host-injected gates from agent clarifications. */
-    source?: 'host-report-gate' | 'phased-escape';
+    source?: 'host-report-gate';
   }
   /** Marks an interactive ask_user prompt as answered (UI latch). */
   | {
@@ -800,10 +817,6 @@ export type ChatSendReply =
     conversationId: string;
   };
 
-export interface ChatPermissions {
-  /** Reserved — no approval gating; mutating tools apply immediately. */
-}
-
 /** Compact metadata for the dock chat list (loaded eagerly). */
 export interface ConversationMeta {
   id: string;
@@ -837,10 +850,7 @@ export interface ConversationMeta {
   cumulativeCacheSavingsUsd?: number;
   /** Last turn cache hit percentage (0–100). */
   lastCacheHitPct?: number;
-  /**
-   * Prompt turn ids already counted toward `estimatedSpendUsd`.
-   * Persisted so spend is not re-recorded after app restart.
-   */
+  /** Prompt event ids already counted toward `estimatedSpendUsd` (persisted dedupe). */
   recordedSpendPromptIds?: string[];
   /**
    * Provider-billed ÷ local-estimate calibration per model selection.

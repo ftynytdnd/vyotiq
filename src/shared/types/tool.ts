@@ -24,8 +24,7 @@ export type RegisteredToolName =
   | 'recall'
   | 'report'
   | 'finish'
-  | 'ask_user'
-  | 'phase_gate';
+  | 'ask_user';
 
 /**
  * Runtime catalogue of registered tool names — the single source of truth
@@ -48,8 +47,7 @@ export const REGISTERED_TOOL_NAMES = [
   'recall',
   'report',
   'finish',
-  'ask_user',
-  'phase_gate'
+  'ask_user'
 ] as const satisfies readonly RegisteredToolName[];
 
 // Compile-time completeness guard: fails if any `RegisteredToolName` is

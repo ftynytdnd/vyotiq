@@ -1,7 +1,6 @@
 /**
- * ComposerDialog — mini FloatingPanel-style dialog anchored above the
- * chat composer. Used for confirms / approvals / prompts that cannot
- * fit inline at the trigger (see `InlineConfirm`).
+ * ComposerDialog — anchored dialog above the chat composer for inline prompts
+ * (confirms / approvals that cannot fit inline at the trigger).
  *
  * Layout contract (per `dialog-ux-redesign.md`):
  *   - Rendered into a designated mount point inside the chat column

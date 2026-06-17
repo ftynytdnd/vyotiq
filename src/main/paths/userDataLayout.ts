@@ -34,8 +34,6 @@ import {
   VYOTIQ_DATA_DIR_NAME
 } from '@shared/constants.js';
 
-export { VYOTIQ_DATA_DIR_NAME };
-
 /** Electron `app.getPath('userData')` — includes Chromium profile dirs. */
 export function electronUserDataDir(): string {
   return app.getPath('userData');

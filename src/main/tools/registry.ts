@@ -16,7 +16,6 @@ import { recallTool } from './recall.tool.js';
 import { finishTool } from './finish.tool.js';
 import { askUserTool } from './ask_user.tool.js';
 import { reportTool } from './report.tool.js';
-import { phaseGateTool } from './phase_gate.tool.js';
 // Internal registry. Kept module-private so the only legitimate access
 // paths are `listTools` / `getTool` / `isKnownToolName` / `toolSchemasFor`,
 // each of which already encodes the policy guarantees we want.
@@ -32,8 +31,7 @@ const TOOLS: Record<RegisteredToolName, Tool> = {
   recall: recallTool,
   report: reportTool,
   finish: finishTool,
-  ask_user: askUserTool,
-  phase_gate: phaseGateTool
+  ask_user: askUserTool
 };
 
 /**
@@ -59,7 +57,7 @@ export function getTool(name: string): Tool | undefined {
  * so a `depends_on` edge on them is meaningless. Every other tool may
  * declare dependencies on sibling calls in the same assistant turn.
  */
-const DEPENDS_ON_EXCLUDED = new Set<string>(['finish', 'ask_user', 'phase_gate']);
+const DEPENDS_ON_EXCLUDED = new Set<string>(['finish', 'ask_user']);
 
 /**
  * Shared `depends_on` wire-schema property. Injected centrally (rather

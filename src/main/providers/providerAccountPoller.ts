@@ -169,9 +169,3 @@ export async function refreshProviderAccountsNow(): Promise<ProviderAccountSnaps
   await pollOnce();
   return getAllProviderAccountSnapshots();
 }
-
-/** Test-only: reset poll source tracking. */
-export function __test_resetProviderAccountPollSources(): void {
-  clearProviderPollSources();
-  rescheduleTimer();
-}

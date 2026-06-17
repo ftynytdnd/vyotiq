@@ -116,6 +116,35 @@ describe('StreamingMarkdownBody', () => {
     expect(container.querySelectorAll('li').length).toBeGreaterThanOrEqual(2);
   });
 
+  it('uses full-width table scroll shell so columns do not collapse in flex prose', () => {
+    const { container } = render(
+      <StreamingMarkdownBody
+        text={
+          '| Aspect | My version | This hardened version |\n|---|---|---|\n| Phases | Same 7 names | Renamed expanded |'
+        }
+        done={false}
+      />
+    );
+    const wrap = container.querySelector('.vx-timeline-md-table-wrap');
+    expect(wrap).not.toBeNull();
+    expect(wrap!.className).not.toContain('fit-content');
+    expect(container.querySelectorAll('th')).toHaveLength(3);
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(1);
+  });
+
+  it('renders settled comparison tables via full markdown without column collapse', () => {
+    const { container } = render(
+      <StreamingMarkdownBody
+        text={
+          '| Aspect | My version | This hardened version |\n|---|---|---|\n| Phases | Same 7 names | Renamed expanded |'
+        }
+        done={true}
+      />
+    );
+    expect(container.querySelector('.vx-timeline-md-table-wrap')).not.toBeNull();
+    expect(container.querySelectorAll('th')).toHaveLength(3);
+  });
+
   it('exposes copy on streamed fenced code blocks', () => {
     const { getByLabelText } = render(
       <StreamingMarkdownBody text={'```ts\nconst x = 1\n```'} done={false} />

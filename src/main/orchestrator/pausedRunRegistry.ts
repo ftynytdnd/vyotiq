@@ -7,7 +7,6 @@ import type { ChatMessage, ChatSendInput, TimelineEvent } from '@shared/types/ch
 import type { AskUserStructuredPayload } from '@shared/types/askUser.js';
 import type { ResolvedReportsSettings } from '@shared/report/reportsSettings.js';
 import type { ResolvedAgentBehaviorSettings } from '@shared/settings/agentBehaviorSettings.js';
-import type { ResolvedPhasedExecutionSettings } from '@shared/settings/phasedExecutionSettings.js';
 import type { RunStateAccumulator } from './loop/buildRunState.js';
 import type { SpinSignatureBuffer } from './loop/toolSpinSignature.js';
 
@@ -31,12 +30,6 @@ export interface LoopCheckpoint {
   reportGateBonusIteration?: boolean;
   /** Summed provider `usage.totalTokens` across LLM turns in this run. */
   runCumulativeTokens?: number;
-  /** Phased execution engine snapshot for resume after ask_user pause. */
-  phaseEngineSnapshot?: import('./phased/phaseEngine.js').PhaseEngineSnapshot;
-  /** True when this pause is a phased-execution escape hatch (guard trip). */
-  phasedEscape?: boolean;
-  /** Which termination guard tripped — drives the resume recovery. */
-  phasedEscapeTrip?: import('./phased/terminationGuards.js').GuardTripReason['kind'];
 }
 
 interface PausedRunCallbacks {
@@ -55,7 +48,6 @@ export interface PausedRunEntry {
   callbacks: PausedRunCallbacks;
   reportsSettings: ResolvedReportsSettings;
   agentBehaviorSettings: ResolvedAgentBehaviorSettings;
-  phasedExecutionSettings: ResolvedPhasedExecutionSettings;
 }
 
 const pausedRuns = new Map<string, PausedRunEntry>();
@@ -107,9 +99,6 @@ export function cloneLoopCheckpoint(state: {
   pendingTerminal?: 'finish' | 'implicit-finish';
   reportGateBonusIteration?: boolean;
   runCumulativeTokens?: number;
-  phaseEngineSnapshot?: import('./phased/phaseEngine.js').PhaseEngineSnapshot;
-  phasedEscape?: boolean;
-  phasedEscapeTrip?: import('./phased/terminationGuards.js').GuardTripReason['kind'];
 }): LoopCheckpoint {
   return {
     // Defensive shallow copy: the checkpoint must not alias the live
@@ -134,13 +123,6 @@ export function cloneLoopCheckpoint(state: {
       : {}),
     ...(state.runCumulativeTokens !== undefined
       ? { runCumulativeTokens: state.runCumulativeTokens }
-      : {}),
-    ...(state.phaseEngineSnapshot !== undefined
-      ? { phaseEngineSnapshot: state.phaseEngineSnapshot }
-      : {}),
-    ...(state.phasedEscape !== undefined ? { phasedEscape: state.phasedEscape } : {}),
-    ...(state.phasedEscapeTrip !== undefined
-      ? { phasedEscapeTrip: state.phasedEscapeTrip }
       : {})
   };
 }

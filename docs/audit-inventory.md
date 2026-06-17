@@ -7,7 +7,7 @@ Ledger of remediation items closed in the 2026-06 full-app pass. Do not resurrec
 - **`report` tool** — registered in registry/policy/harness; writes `.vyotiq/reports/*.html`; `ReportInvocation` timeline UI.
 - **Token estimation IPC** — `tokens:estimate` exposes main `tokenCounter`; composer draft estimate via `useComposerTokenEstimate` + `TokenUsagePill`.
 - **Inline revert model picker** — `InlinePromptSession` includes `ModelPicker`.
-- **Clickable Latest** — `ComposerStatusStrip` calls `requestScrollToTail`; `Timeline` listens via `useTimelineUiStore`.
+- **Clickable Latest** — Timeline "Latest" chip scrolls the transcript to tail; no store-level scroll-to-tail API (`requestScrollToTail` / `timelineAtTail` removed).
 - **Checkpoint file restore** — `blobStore` + `recordChange` persist pre/post bodies; pending accept/reject UI; `previewRewind` / `rewindToPrompt` restore on-disk files and truncate JSONL.
 - **Transcript export** — `conversations:export` → JSONL or Markdown via native save dialog (dock chat strip).
 - **Transcript pagination** — tail slice on load + `readBefore` / `TranscriptLoadEarlier` for long chats.
@@ -37,6 +37,10 @@ Ledger of remediation items closed in the 2026-06 full-app pass. Do not resurrec
 - **RightDock / SecondaryZone** — `secondaryZoneMode`, `rightDockWidth`, right-column secondary zone, and overlay companion panels; replaced by workbench shell.
 - **Tool re-run** — IPC (`tools:rerun`), shared helpers, timeline UI, and tests removed.
 - Orphans: `AttachmentPicker`, `AboutOverlay`, `useMentionComputerPick`, `synthesizeReportPreview`, `emitToolValidationFailure`, `endpointWarning`, `settingsGroups`, `parseUnifiedPatch`, unused barrel indexes.
+- **`FloatingPanel` / `usePersistedPanelWidth`** — dead UI; deleted in 2026-06 remediation pass.
+- **Phased execution engine** — `phase_gate` tool, `src/main/orchestrator/phased/`, settings panel, harness `05-phased-execution.md`, and runtime state machine removed; legacy `phase` / `phase-gate` / `phase-ledger-entry` transcript rows still replay in the timeline.
+- **Redundant IPC** — `APP_DOWNLOAD_UPDATE`, `terminal.list`, `browser.destroy` removed from public preload/API (internal teardown paths retained).
+- **Dead store exports** — `requestScrollToTail` / `timelineAtTail`, `selectRunRecoveryState`, `recordWorkspaceSpendForPrompt`.
 - Mention picker "Coming soon" stub rows.
 - `ModelPickerProviderLabel` (unused).
 
@@ -50,14 +54,15 @@ Ledger of remediation items closed in the 2026-06 full-app pass. Do not resurrec
 - `AttachmentChipRow` replaces `AttachmentCollapsible`.
 - Timeline virtualization (`VirtualizedTurnList` at 50+ rows).
 - `ChatComposerZone` width wrapper deduplicated (width owned by `ChatFooter`).
+- **2026-06 full audit remediation (runtime)** — `ask_user` replay pairing (`replayTranscript` reconstructs `tool_calls`, skips redundant tool-result); tool-runner cache-before-dedupe; OpenRouter `tool_choice` synthesis retry (`must be auto`); terminal resize clamp (`cols≥20`, `rows≥4`); conversation restorability gate (`eventCount>0` for slot/landing only); LSP stale-workspace guard; secret redaction on persist + replay + provider wire (`redactSecretsInText`); `pendingChanges` cache eviction on workspace remove; `safeWebContentsSend` for LSP/vector reindex; shared `reportSlugify`.
 
 ## Known test limitations (documented, not regressions)
 
 - `TimelineAutoScroll.test.tsx` — one case skipped: happy-dom does not model scroll metrics reliably for off-tail auto-scroll.
 - `timelineAlignment.test.tsx` — jump-chip backdrop case skipped: portal layout differs from production Electron shell.
 
-## Verification (2026-06 gap-analysis pass)
+## Verification (2026-06 full audit remediation)
 
 - `npm run typecheck` — pass
-- `npm test` — 2220+ passed, 2 skipped (happy-dom limits above)
+- `npm test` — 2473 passed, 2 skipped (happy-dom limits above)
 - `npm run build` — pass

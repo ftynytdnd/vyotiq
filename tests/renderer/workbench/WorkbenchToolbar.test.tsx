@@ -41,13 +41,14 @@ describe('WorkbenchToolbar', () => {
     expect(screen.getByText('main.py')).toBeTruthy();
   });
 
-  it('renders nothing when editor has no open file', () => {
+  it('shows empty-editor chrome when editor has no open file', () => {
     useEditorStore.setState({
       open: true,
       tabs: [],
       activeFilePath: null
     } as never);
-    const { container } = render(<WorkbenchToolbar tab="editor" />);
-    expect(container.firstChild).toBeNull();
+    render(<WorkbenchToolbar tab="editor" />);
+    expect(screen.getByText('No file open')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /close editor/i })).toBeTruthy();
   });
 });

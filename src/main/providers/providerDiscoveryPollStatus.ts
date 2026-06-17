@@ -26,21 +26,9 @@ export function getDiscoveryPollHint(providerId: string): string | undefined {
   return pollHintsByProvider.get(providerId);
 }
 
-export function getAllDiscoveryPollHints(): Record<string, string> {
-  return Object.fromEntries(pollHintsByProvider);
-}
-
 export function clearDiscoveryPollStatus(providerId: string): void {
   pollFailuresByProvider.delete(providerId);
   pollHintsByProvider.delete(providerId);
-}
-
-export function publishDiscoveryPollSuccess(providerId: string): void {
-  recordDiscoveryPollSuccess(providerId);
-}
-
-export function publishDiscoveryPollFailure(providerId: string, message: string): number {
-  return recordDiscoveryPollFailure(providerId, message);
 }
 
 /** Test-only reset. */

@@ -33,6 +33,7 @@ import {
   scheduleWorkspaceVectorIndex
 } from '../memory/vector/indexScheduler.js';
 import { killWorkspacePty } from '../terminal/ptyManager.js';
+import { evictPendingChangesCache } from '../checkpoints/pendingChanges.js';
 import { disposeLspSession } from '../lsp/lspManager.js';
 import { WORKSPACE_TREE_IGNORE } from '../workspace/workspaceTreeIgnore.js';
 import { listWorkspaceChildren } from '../workspace/workspaceListChildren.js';
@@ -195,6 +196,7 @@ export function registerWorkspaceIpc(): void {
       if (doomed) void disposeWorkspaceVectorIndex(doomed.path);
       killWorkspacePty(id);
       await disposeLspSession(id);
+      evictPendingChangesCache(id);
       return removeWorkspace(id);
     }
   );

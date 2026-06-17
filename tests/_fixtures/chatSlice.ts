@@ -58,6 +58,7 @@ export interface ChatSliceFixture {
   partialToolCallArgs: Record<string, PartialToolCallArgs>;
   settledCallIds: Record<string, true>;
   liveDiffByCallId: Record<string, import('@renderer/components/timeline/reducer/types').DiffStreamSnapshot>;
+  liveToolOutputByCallId: Record<string, import('@renderer/components/timeline/reducer/types').LiveToolOutputSnapshot>;
   toolResultSettledIds: Record<string, true>;
   liveReportResultIds: Record<string, true>;
   orchestratorUsage?: TokenUsageAggregate;
@@ -93,6 +94,7 @@ export function chatSliceFixture(
     partialToolCallArgs: {},
     settledCallIds: {},
     liveDiffByCallId: {},
+    liveToolOutputByCallId: {},
     toolResultSettledIds: {},
     liveReportResultIds: {},
     runIdToFileEditCount: {},

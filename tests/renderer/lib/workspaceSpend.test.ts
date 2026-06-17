@@ -17,9 +17,12 @@ const { addWorkspaceUsage, incrementSpend, patchMeta, recordTurn } = vi.hoisted(
 import {
   __test_resetRecordedPromptSpend,
   recordRunSpendForPrompt,
-  recordWorkspaceSpendForPrompt,
   resolveLiveTurnCost
 } from '@renderer/lib/workspaceSpend';
+import {
+  __test_resetSpendPromptBaseline,
+  syncSpendPromptBaseline
+} from '@renderer/lib/spendPromptBaseline';
 
 vi.mock('@renderer/store/useSettingsStore.js', () => ({
   useSettingsStore: {
@@ -47,32 +50,10 @@ vi.mock('@renderer/store/useConversationsStore.js', () => ({
   }
 }));
 
-describe('recordWorkspaceSpendForPrompt', () => {
-  beforeEach(() => {
-    __test_resetRecordedPromptSpend();
-    addWorkspaceUsage.mockClear();
-    incrementSpend.mockClear();
-    patchMeta.mockClear();
-    recordTurn.mockClear();
-  });
-
-  it('records once per workspace and prompt', async () => {
-    await recordWorkspaceSpendForPrompt('ws-1', 'prompt-a', 0.05);
-    await recordWorkspaceSpendForPrompt('ws-1', 'prompt-a', 0.05);
-    expect(addWorkspaceUsage).toHaveBeenCalledTimes(1);
-    expect(addWorkspaceUsage).toHaveBeenCalledWith('ws-1', 0.05, {});
-  });
-
-  it('records again for a different prompt', async () => {
-    await recordWorkspaceSpendForPrompt('ws-1', 'prompt-a', 0.05);
-    await recordWorkspaceSpendForPrompt('ws-1', 'prompt-b', 0.02);
-    expect(addWorkspaceUsage).toHaveBeenCalledTimes(2);
-  });
-});
-
 describe('recordRunSpendForPrompt', () => {
   beforeEach(() => {
     __test_resetRecordedPromptSpend();
+    __test_resetSpendPromptBaseline();
     addWorkspaceUsage.mockClear();
     incrementSpend.mockClear();
     patchMeta.mockClear();
@@ -86,6 +67,35 @@ describe('recordRunSpendForPrompt', () => {
     expect(incrementSpend).toHaveBeenCalledWith('conv-1', 'prompt-a', 0.05, {});
     expect(patchMeta).toHaveBeenCalledTimes(1);
     expect(recordTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips spend for prompt ids already present in the hydrated transcript baseline', async () => {
+    syncSpendPromptBaseline('conv-1', [
+      {
+        kind: 'user-prompt',
+        id: 'prompt-a',
+        ts: 1,
+        content: 'hello'
+      }
+    ]);
+    await recordRunSpendForPrompt('ws-1', 'conv-1', 'prompt-a', 0.05);
+    expect(addWorkspaceUsage).not.toHaveBeenCalled();
+    expect(incrementSpend).not.toHaveBeenCalled();
+    expect(recordTurn).not.toHaveBeenCalled();
+  });
+
+  it('still records spend for a new live prompt not in the baseline', async () => {
+    syncSpendPromptBaseline('conv-1', [
+      {
+        kind: 'user-prompt',
+        id: 'prompt-old',
+        ts: 1,
+        content: 'hello'
+      }
+    ]);
+    await recordRunSpendForPrompt('ws-1', 'conv-1', 'prompt-new', 0.05);
+    expect(addWorkspaceUsage).toHaveBeenCalledTimes(1);
+    expect(incrementSpend).toHaveBeenCalledTimes(1);
   });
 });
 

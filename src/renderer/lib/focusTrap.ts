@@ -1,6 +1,5 @@
 /**
- * Shared focus-trap helpers for modal surfaces ({@link FloatingPanel},
- * {@link ComposerDialog}).
+ * Shared focus-trap helpers for modal surfaces ({@link ComposerDialog}).
  */
 
 const FOCUSABLE_SELECTOR = [

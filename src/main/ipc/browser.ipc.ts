@@ -80,7 +80,6 @@ export function registerBrowserIpc(): void {
     browserOpenExternal(input.url);
   });
 
-  wrapIpcHandler(IPC.BROWSER_DESTROY, async () => browserDestroy());
 }
 
 export function teardownBrowserIpc(): void {

@@ -55,7 +55,7 @@ export function focusWorkbenchTab(tab: WorkbenchTab): void {
   useUiStore.getState().setWorkbenchTab(tab);
 }
 
-export function focusWorkbenchAgent(): void {
+function focusWorkbenchAgent(): void {
   focusWorkbenchTab('agent');
 }
 
@@ -121,14 +121,14 @@ export function syncWorkbenchTabAfterClose(): void {
   }
 }
 
-export type WorkbenchFocusTarget = 'terminal' | 'browser' | 'preview' | { editor: string };
+type WorkbenchFocusTarget = 'terminal' | 'browser' | 'preview' | { editor: string };
 
 function workbenchFocusTargetKey(target: WorkbenchFocusTarget): string {
   return typeof target === 'string' ? target : `editor:${normalizePath(target.editor)}`;
 }
 
 /** On-demand focus targets — only currently-open surfaces are listed. */
-export function listWorkbenchFocusTargets(): WorkbenchFocusTarget[] {
+function listWorkbenchFocusTargets(): WorkbenchFocusTarget[] {
   const targets: WorkbenchFocusTarget[] = [];
   if (terminalOpen()) targets.push('terminal');
   if (browserOpen()) targets.push('browser');
@@ -139,7 +139,7 @@ export function listWorkbenchFocusTargets(): WorkbenchFocusTarget[] {
   return targets;
 }
 
-export function getActiveWorkbenchFocusTarget(): WorkbenchFocusTarget | null {
+function getActiveWorkbenchFocusTarget(): WorkbenchFocusTarget | null {
   if (!workbenchIsActive()) return null;
   const tab = resolveCompanionTab(useUiStore.getState().workbenchTab);
   if (tab === 'terminal') return 'terminal';
@@ -149,7 +149,7 @@ export function getActiveWorkbenchFocusTarget(): WorkbenchFocusTarget | null {
   return activeFile ? { editor: activeFile } : firstOpenCompanion() === 'terminal' ? 'terminal' : null;
 }
 
-export function focusWorkbenchFocusTarget(target: WorkbenchFocusTarget): void {
+function focusWorkbenchFocusTarget(target: WorkbenchFocusTarget): void {
   if (target === 'terminal') {
     const terminal = useTerminalStore.getState();
     const workspaceId = terminal.workspaceId ?? useWorkspaceStore.getState().activeId;

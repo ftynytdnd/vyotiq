@@ -53,13 +53,6 @@ function maybeSyncPollSources(): void {
   syncAllPollSourcesToMain();
 }
 
-export function setProviderAccountPollSource(
-  source: ProviderAccountPollSource,
-  active: boolean
-): void {
-  void vyotiq.providers.setAccountPollSource(source, active);
-}
-
 /** Test-only reset. */
 export function __test_resetProviderAccountPollRegistrations(): void {
   registrations.clear();

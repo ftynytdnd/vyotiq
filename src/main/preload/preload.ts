@@ -203,7 +203,6 @@ const api: VyotiqApi = {
   terminal: {
     attach: (input) => ipcRenderer.invoke(IPC.TERMINAL_ATTACH, input),
     create: (input) => ipcRenderer.invoke(IPC.TERMINAL_CREATE, input),
-    list: (input) => ipcRenderer.invoke(IPC.TERMINAL_LIST, input),
     close: (input) => ipcRenderer.invoke(IPC.TERMINAL_CLOSE, input),
     input: (payload) => ipcRenderer.invoke(IPC.TERMINAL_INPUT, payload),
     resize: (payload) => ipcRenderer.invoke(IPC.TERMINAL_RESIZE, payload),
@@ -231,7 +230,6 @@ const api: VyotiqApi = {
     find: (input) => ipcRenderer.invoke(IPC.BROWSER_FIND, input),
     stopFind: () => ipcRenderer.invoke(IPC.BROWSER_STOP_FIND),
     openExternal: (input) => ipcRenderer.invoke(IPC.BROWSER_OPEN_EXTERNAL, input),
-    destroy: () => ipcRenderer.invoke(IPC.BROWSER_DESTROY),
     onState: (cb) =>
       on<[import('@shared/types/browser.js').BrowserStateEvent]>(IPC.BROWSER_STATE, (event) =>
         cb(event)

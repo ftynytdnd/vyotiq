@@ -340,5 +340,7 @@ describe('replayTranscript', () => {
     const assistant = msgs.find((m) => m.role === 'assistant');
     expect(assistant?.content).toContain('Drop the legacy column?');
     expect(assistant?.content).toContain('Yes (yes)');
+    expect(assistant?.tool_calls?.[0]?.function.name).toBe('ask_user');
+    expect(assistant?.tool_calls?.[0]?.id).toBe('tc-ask');
   });
 });

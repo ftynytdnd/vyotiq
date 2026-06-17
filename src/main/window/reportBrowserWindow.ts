@@ -108,12 +108,3 @@ export async function openReportInAppBrowser(
     throw new Error(msg);
   }
 }
-
-/** Test-only: tear down the singleton between cases. */
-export function __test_closeReportBrowserWindow(): void {
-  if (reportWindow && !reportWindow.isDestroyed()) {
-    reportWindow.close();
-  }
-  reportWindow = null;
-  loadedAbsPath = null;
-}

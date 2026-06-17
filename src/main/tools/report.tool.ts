@@ -13,28 +13,14 @@ import {
   REPORTS_SUBDIR,
   MAX_REPORT_HTML_BYTES
 } from '@shared/constants.js';
-import {
-  REPORT_TOOL_LINE_THRESHOLD,
-  TIMELINE_MARKDOWN_LINE_BUDGET
-} from '@shared/report/deliverables.js';
+import { TIMELINE_MARKDOWN_LINE_BUDGET } from '@shared/report/deliverables.js';
 import { buildReportHtml } from './reportTemplate.js';
+import { slugifyReportSegment } from './reportSlugify.js';
 
 interface ReportArgs {
   title: string;
   body: string;
   description?: string;
-}
-
-function slugifyTitle(title: string): string {
-  return (
-    title
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]+/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-{2,}/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 60) || 'report'
-  );
 }
 
 function fail(id: string, started: number, message: string): ToolResult {
@@ -68,7 +54,7 @@ export const reportTool: Tool = {
 
 **WHY it exists.** For structured deliverables the user opens in their browser — audits, PR reviews, design comparisons, visual analyses — without polluting project source or the transcript.
 
-**WHEN to trigger it.** When the user asks for a report; when prose would exceed ~${REPORT_TOOL_LINE_THRESHOLD} lines; for tabular/comparative/severity-coded output; after large multi-file edit runs you **MUST** call \`report\` when the user accepts the host prompt (one timeline paragraph, full detail in HTML). Never paste HTML into timeline chat.`,
+**WHEN to trigger it.** When the user asks for a report; when prose would exceed ~${TIMELINE_MARKDOWN_LINE_BUDGET} lines; for tabular/comparative/severity-coded output; after large multi-file edit runs you **MUST** call \`report\` when the user accepts the host prompt (one timeline paragraph, full detail in HTML). Never paste HTML into timeline chat.`,
   schema: {
     type: 'function',
     function: {
@@ -108,7 +94,7 @@ export const reportTool: Tool = {
       );
     }
 
-    const slugBase = slugifyTitle(a.title.trim());
+    const slugBase = slugifyReportSegment(a.title.trim(), 60, 'report');
     const relDir = `${WORKSPACE_DOTDIR}/${REPORTS_SUBDIR}`;
     const absDir = join(ctx.workspacePath, WORKSPACE_DOTDIR, REPORTS_SUBDIR);
 

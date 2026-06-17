@@ -6,7 +6,6 @@ import { LoadingHint } from './components/ui/LoadingHint.js';
 import { bootstrapChatChannel } from './store/chatChannel.js';
 import { flushTimelineUiPersistence } from './store/useTimelineUiStore.js';
 import { flushUiPersistence } from './store/useUiStore.js';
-import { flushPanelWidthPersistence } from './hooks/usePersistedPanelWidth.js';
 import './index.css';
 import './styles/shell-chrome.css';
 import './styles/titlebar-menu.css';
@@ -35,7 +34,6 @@ window.addEventListener('vite:preloadError', (event) => {
 window.addEventListener('beforeunload', () => {
   flushTimelineUiPersistence();
   flushUiPersistence();
-  flushPanelWidthPersistence();
 });
 
 const root = createRoot(document.getElementById('root')!);

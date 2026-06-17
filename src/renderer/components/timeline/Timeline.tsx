@@ -765,7 +765,6 @@ function renderRow(
           label={r.label}
           {...(r.tooltip ? { tooltip: r.tooltip } : {})}
           {...(r.gateDecision ? { gateDecision: r.gateDecision } : {})}
-          {...(r.acceptanceEvidence ? { acceptanceEvidence: r.acceptanceEvidence } : {})}
         />
       );
     case 'phase-ledger':
@@ -776,17 +775,6 @@ function renderRow(
           phase={r.phase}
           summary={r.summary}
           collapsedDefault={r.collapsedDefault}
-          {...(r.discoveredConstraints ? { discoveredConstraints: r.discoveredConstraints } : {})}
-          {...(r.assumptions ? { assumptions: r.assumptions } : {})}
-          {...(r.decisions ? { decisions: r.decisions } : {})}
-          {...(r.attemptedApproaches ? { attemptedApproaches: r.attemptedApproaches } : {})}
-          {...(r.codeLinks ? { codeLinks: r.codeLinks } : {})}
-          {...(r.checkpointRef ? { checkpointRef: r.checkpointRef } : {})}
-          {...(r.doneCriteria ? { doneCriteria: r.doneCriteria } : {})}
-          {...(typeof r.acceptanceCommandCount === 'number'
-            ? { acceptanceCommandCount: r.acceptanceCommandCount }
-            : {})}
-          {...(r.planSteps ? { planSteps: r.planSteps } : {})}
         />
       );
     case 'context-reduction':

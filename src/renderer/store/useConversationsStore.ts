@@ -50,6 +50,50 @@ const log = logger.child('conversations');
  */
 const PLACEHOLDER_TITLE = 'New conversation';
 
+/** True when a conversation has persisted transcript content worth restoring. */
+export function isConversationRestorable(meta: ConversationMeta): boolean {
+  return !meta.archived && meta.eventCount > 0;
+}
+
+/** True when `conversationId` is a live row in `workspaceId` (including fresh empty chats). */
+export function isConversationSlotValid(
+  list: readonly ConversationMeta[],
+  workspaceId: string,
+  conversationId: string | null | undefined
+): boolean {
+  if (typeof conversationId !== 'string' || conversationId.length === 0) return false;
+  const row = list.find(
+    (m) => m.id === conversationId && m.workspaceId === workspaceId && !m.archived
+  );
+  return row !== undefined;
+}
+
+/** Most recently updated restorable conversation for a workspace, or null. */
+export function mostRecentConversationForWorkspace(
+  list: readonly ConversationMeta[],
+  workspaceId: string
+): ConversationMeta | null {
+  let best: ConversationMeta | null = null;
+  for (const m of list) {
+    if (m.workspaceId !== workspaceId || !isConversationRestorable(m)) continue;
+    if (!best || m.updatedAt > best.updatedAt) best = m;
+  }
+  return best;
+}
+
+/**
+ * Persisted slot when valid; otherwise the newest non-archived chat in the
+ * workspace; null when the workspace has no restorable conversations.
+ */
+export function resolveWorkspaceConversationTarget(
+  list: readonly ConversationMeta[],
+  workspaceId: string,
+  slotId: string | null | undefined
+): string | null {
+  if (isConversationSlotValid(list, workspaceId, slotId)) return slotId!;
+  return mostRecentConversationForWorkspace(list, workspaceId)?.id ?? null;
+}
+
 /** Merge a backfilled peak from `conversations.read` into the list mirror. */
 function patchListPeak(
   list: ConversationMeta[],
@@ -151,6 +195,22 @@ interface ConversationsStore {
    * Called once on app boot from `App.tsx` after `settings.load()`.
    */
   hydrateActiveByWorkspace: (map: Record<string, string>) => void;
+  /**
+   * True after `hydrateActiveByWorkspace` runs — gates landing auto-create
+   * so a child effect cannot fire before persisted slots are loaded.
+   */
+  activeSlotsHydrated: boolean;
+  /**
+   * Boot / workspace-switch: restore the persisted slot or newest chat;
+   * clear stale slots; leave the mirror empty only when the workspace has
+   * no restorable conversations.
+   */
+  restoreWorkspaceSession: (workspaceId: string) => Promise<void>;
+  /**
+   * Empty-workspace landing only: create one chat so attachments work before
+   * first send. No-op when the workspace already has a restorable session.
+   */
+  ensureLandingConversation: (workspaceId: string) => Promise<ConversationMeta | null>;
 }
 
 /**
@@ -177,6 +237,33 @@ function persistActiveMap(map: Record<string, string | null>): void {
     if (typeof convId === 'string' && convId.length > 0) cleaned[wsId] = convId;
   }
   void useSettingsStore.getState().setActiveConversationByWorkspace(cleaned);
+}
+
+function writeWorkspaceSlot(
+  set: (partial: Partial<ConversationsStore> | ((s: ConversationsStore) => Partial<ConversationsStore>)) => void,
+  get: () => ConversationsStore,
+  workspaceId: string,
+  conversationId: string
+): void {
+  if (get().activeIdByWorkspace[workspaceId] === conversationId) return;
+  set((s) => {
+    const nextActiveMap = { ...s.activeIdByWorkspace, [workspaceId]: conversationId };
+    persistActiveMap(nextActiveMap);
+    return { activeIdByWorkspace: nextActiveMap };
+  });
+}
+
+/** Dedupes landing auto-create per workspace (strict-mode / rapid effects). */
+const landingCreateByWorkspace = new Map<string, Promise<ConversationMeta | null>>();
+
+/** Test-only reset for module-level landing-create dedupe. */
+export function __resetLandingCreateForTests(): void {
+  landingCreateByWorkspace.clear();
+}
+
+/** Boot gate: persisted slots loaded and catalogue fetched at least once. */
+export function isSessionBootReady(state: Pick<ConversationsStore, 'activeSlotsHydrated' | 'loading'>): boolean {
+  return state.activeSlotsHydrated && !state.loading;
 }
 
 /**
@@ -217,10 +304,12 @@ export function __resetSelectSpinnerForTests(): void {
 
 export const useConversationsStore = create<ConversationsStore>((set, get) => ({
   list: [],
-  loading: false,
+  /** True until the first `refresh()` completes — avoids boot races that create chats against an empty catalogue. */
+  loading: true,
   selecting: false,
   activeIdByWorkspace: {},
   hydratedIds: new Set<string>(),
+  activeSlotsHydrated: false,
 
   refresh: async () => {
     set({ loading: true });
@@ -301,6 +390,8 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
   },
 
   select: async (id) => {
+    if (!isSessionBootReady(get())) return;
+
     // Bump the global select epoch on EVERY entry — including the
     // synchronous short-circuit branches below — so an in-flight
     // read started by a prior `select(otherId)` can detect that
@@ -712,6 +803,70 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
   },
 
   hydrateActiveByWorkspace: (map) => {
-    set({ activeIdByWorkspace: { ...map } });
+    set({ activeIdByWorkspace: { ...map }, activeSlotsHydrated: true });
+  },
+
+  restoreWorkspaceSession: async (workspaceId) => {
+    if (!isSessionBootReady(get())) return;
+
+    const slot = get().activeIdByWorkspace[workspaceId] ?? null;
+    const targetId = resolveWorkspaceConversationTarget(get().list, workspaceId, slot);
+
+    if (!targetId) {
+      if (slot) {
+        set((s) => {
+          const nextActiveMap = { ...s.activeIdByWorkspace, [workspaceId]: null };
+          persistActiveMap(nextActiveMap);
+          return { activeIdByWorkspace: nextActiveMap };
+        });
+      }
+      const mirrorId = useChatStore.getState().conversationId;
+      if (mirrorId) {
+        const mirrorMeta = get().list.find((m) => m.id === mirrorId);
+        if (mirrorMeta?.workspaceId === workspaceId) return;
+      }
+      useChatStore.getState().setActiveConversation(null);
+      return;
+    }
+
+    const chat = useChatStore.getState();
+    if (chat.conversationId === targetId && get().hydratedIds.has(targetId)) {
+      writeWorkspaceSlot(set, get, workspaceId, targetId);
+      return;
+    }
+
+    await get().select(targetId);
+  },
+
+  ensureLandingConversation: async (workspaceId) => {
+    if (!isSessionBootReady(get())) return null;
+
+    const targetId = resolveWorkspaceConversationTarget(
+      get().list,
+      workspaceId,
+      get().activeIdByWorkspace[workspaceId]
+    );
+    if (targetId) return null;
+
+    const activeWs = useWorkspaceStore.getState().activeId;
+    if (activeWs !== workspaceId) return null;
+
+    const mirrorId = useChatStore.getState().conversationId;
+    if (mirrorId) {
+      const mirrorMeta = get().list.find((m) => m.id === mirrorId);
+      if (mirrorMeta?.workspaceId === workspaceId) return mirrorMeta;
+      if (get().hydratedIds.has(mirrorId)) return null;
+    }
+
+    const inflight = landingCreateByWorkspace.get(workspaceId);
+    if (inflight) return inflight;
+
+    const createPromise = get()
+      .newConversation()
+      .finally(() => {
+        landingCreateByWorkspace.delete(workspaceId);
+      });
+    landingCreateByWorkspace.set(workspaceId, createPromise);
+    return createPromise;
   }
 }));

@@ -15,8 +15,7 @@ const SECTION_LABELS: Record<HarnessSectionId, string> = {
   'context-learning': 'Context & learning',
   deliverables: 'Deliverables',
   'static-examples': 'Static examples (few-shot)',
-  'ast-grep-reference': 'ast-grep reference',
-  'phased-execution': 'Phased execution'
+  'ast-grep-reference': 'ast-grep reference'
 };
 
 export function HarnessPanel() {

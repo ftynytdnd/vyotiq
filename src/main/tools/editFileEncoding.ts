@@ -37,4 +37,4 @@ export function composeOnDiskTextFromEdit(body: string, disk: DecodedDiskText): 
   return encodeDiskTextBody(body, disk);
 }
 
-export { composeOnDiskText, encodeDiskTextBody };
+export { composeOnDiskText };

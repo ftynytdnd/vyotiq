@@ -10,9 +10,10 @@
  * wires a `StringDecoder('utf8')` per stream so the partial trailing
  * bytes carry over to the next chunk.
  *
- * We test through the real `bashTool.run` to exercise the actual
- * wiring (`StringDecoder.write` per chunk + `StringDecoder.end()` on
- * close). The command echoes a mixed CJK + emoji string that is
+ * We test through the real `bashTool.run` with `shared: false` so the
+ * isolated subprocess path exercises `StringDecoder('utf8')` per chunk
+ * plus `StringDecoder.end()` on close. The shared PTY path uses a
+ * different capture stack and is covered elsewhere.
  * known to contain multi-byte codepoints; we then assert that every
  * codepoint we emitted is present in the captured stdout. If the
  * decode regresses, replacement chars `\uFFFD` would show up
@@ -50,7 +51,9 @@ function makeCtx(workspacePath: string) {
 const MULTIBYTE_PAYLOAD = '中é😀';
 
 describe('bash tool — UTF-8 round-trip (C1 regression)', () => {
-  it('emits multi-byte codepoints losslessly through stdout', async () => {
+  it(
+    'emits multi-byte codepoints losslessly through stdout',
+    async () => {
     const workspace = await mkdtemp(join(tmpdir(), 'vyotiq-bash-utf8-'));
     try {
       // PowerShell on Windows; /bin/bash elsewhere. PowerShell writes
@@ -64,7 +67,7 @@ describe('bash tool — UTF-8 round-trip (C1 regression)', () => {
           ? `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Write-Output '${MULTIBYTE_PAYLOAD}'`
           : `printf '%s\\n' '${MULTIBYTE_PAYLOAD}'`;
 
-      const result = await bashTool.run({ command }, makeCtx(workspace));
+      const result = await bashTool.run({ command, shared: false }, makeCtx(workspace));
       expect(result.ok).toBe(true);
 
       // `result.data.stdout` is what the StringDecoder produced. Each

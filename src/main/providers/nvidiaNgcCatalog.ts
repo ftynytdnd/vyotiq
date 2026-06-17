@@ -7,7 +7,6 @@ import { MODEL_DISCOVERY_TIMEOUT_MS } from '@shared/constants.js';
 import { parseNvidiaContextLength } from '@shared/providers/nvidiaNgcContextParse.js';
 import type { ModelInfo } from '@shared/types/provider.js';
 import { readPlainJson, writePlainJson } from '../secrets/safeStore.js';
-import { nvidiaNgcCatalogFilePath } from '../paths/userDataLayout.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child('providers/nvidia-ngc');
@@ -226,10 +225,6 @@ export async function loadNvidiaNgcContextCatalog(force = false): Promise<Map<st
   })();
 
   return loadInFlight;
-}
-
-export function nvidiaNgcCachePathForDiagnostics(): string {
-  return nvidiaNgcCatalogFilePath();
 }
 
 /** Apply NGC catalog context windows to discovered NVIDIA Integrate models. */

@@ -425,17 +425,6 @@ export interface AppSettings {
 
     };
 
-    /** Phased execution engine — gated subtask state machine. */
-    phasedExecution?: {
-      /** `auto` | `always` | `never` (default `auto`). */
-      mode?: 'auto' | 'always' | 'never';
-      /** Per-subtask phase-cycle soft cap (default 8). */
-      phaseCycleCap?: number;
-      /** Soft global-iteration cap that surfaces the escape hatch (default 24). */
-      maxIterations?: number;
-      /** Host acceptance-command timeout during VERIFY, in seconds (default 120). */
-      verifyTimeoutSeconds?: number;
-    };
 
     /** Run limits and long-task context options. */
 

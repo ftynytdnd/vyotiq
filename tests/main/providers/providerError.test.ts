@@ -222,6 +222,20 @@ describe('isPermanentToolChoiceRejection', () => {
     expect(isPermanentToolChoiceRejection(err)).toBe(true);
   });
 
+  it('matches OpenRouter tool choice must be auto 400s', () => {
+    const err = classifyProviderError({
+      ...baseInput,
+      status: 400,
+      body: JSON.stringify({
+        error: {
+          message: 'Tool choice must be auto',
+          type: 'invalid_request_error'
+        }
+      })
+    });
+    expect(isPermanentToolChoiceRejection(err)).toBe(true);
+  });
+
   it('ignores unrelated 400s and non-400 statuses', () => {
     const unrelated400 = classifyProviderError({
       ...baseInput,

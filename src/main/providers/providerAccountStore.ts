@@ -57,9 +57,3 @@ export function evictProviderAccountSnapshot(providerId: string): void {
   cache.delete(providerId);
   referenceBalanceByProvider.delete(providerId);
 }
-
-/** Test-only reset. */
-export function __test_resetProviderAccountCache(): void {
-  cache.clear();
-  referenceBalanceByProvider.clear();
-}

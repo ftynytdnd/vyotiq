@@ -7,7 +7,7 @@ import { resolve } from 'node:path';
 import { WORKSPACE_TREE_IGNORED_NAMES } from './workspaceTreeIgnore.js';
 import { realpathInsideWorkspace } from '../tools/sandbox.js';
 
-export function sortWorkspaceChildEntries(entries: string[]): string[] {
+function sortWorkspaceChildEntries(entries: string[]): string[] {
   return [...entries].sort((a, b) => {
     const aDir = a.endsWith('/');
     const bDir = b.endsWith('/');

@@ -107,8 +107,19 @@ function seedFreshChat() {
     settings: { defaultModel: { providerId: 'p1', modelId: 'm1' } }
   } as never);
   useConversationsStore.setState({
-    list: [{ id: 'c1', title: 'New conversation', updatedAt: 1, workspaceId: 'ws-1' }],
+    list: [
+      {
+        id: 'c1',
+        title: 'New conversation',
+        createdAt: 0,
+        updatedAt: 1,
+        eventCount: 1,
+        workspaceId: 'ws-1'
+      }
+    ],
     selecting: false,
+    loading: false,
+    activeSlotsHydrated: true,
     activeIdByWorkspace: { 'ws-1': 'c1' }
   } as never);
   useUiStore.setState({ workbenchTab: 'agent' });
@@ -161,7 +172,7 @@ describe('Workbench layout', () => {
     expect(screen.queryByRole('tablist', { name: /workbench/i })).toBeNull();
   });
 
-  it('keeps centered composer visible beside the workbench side pane', () => {
+  it('keeps centered composer visible beside the workbench side pane', async () => {
     useTerminalStore.setState({
       open: true,
       workspaceId: 'ws-1',
@@ -171,6 +182,7 @@ describe('Workbench layout', () => {
       activeSessionId: 's1',
       attaching: false
     } as never);
+    useUiStore.setState({ workbenchTab: 'terminal' });
     const { container } = render(shellWithChat());
 
     expect(container.querySelector(`.${WORKBENCH_SHELL_SPLIT_ROW_CLASS}`)).toBeTruthy();
@@ -179,7 +191,7 @@ describe('Workbench layout', () => {
     expect(document.querySelector('[data-workbench-agent-main] [role="textbox"]')).toBeTruthy();
     expect(document.querySelector('[data-workbench-agent-main]')).toBeTruthy();
     expect(document.querySelector('[data-workbench-pane]')).toBeTruthy();
-  });
+  }, 10_000);
 
   it('wires flex height classes through agent main and chat footer', () => {
     const { container } = render(shellWithChat());

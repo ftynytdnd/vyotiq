@@ -11,7 +11,7 @@ interface MdTableShellProps {
   busy?: boolean;
 }
 
-export function MdTableShell({ children, className, busy }: MdTableShellProps) {
+function MdTableShell({ children, className, busy }: MdTableShellProps) {
   return (
     <div
       className={cn(

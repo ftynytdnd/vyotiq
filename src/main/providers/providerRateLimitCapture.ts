@@ -80,8 +80,3 @@ export function getProviderRateLimits(providerId: string): ProviderRateLimits | 
 export function evictProviderRateLimits(providerId: string): void {
   snapshots.delete(providerId);
 }
-
-/** Test-only reset. */
-export function __test_resetProviderRateLimits(): void {
-  snapshots.clear();
-}

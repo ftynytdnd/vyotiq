@@ -1,10 +1,10 @@
 {
+  "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
     "src/main/index.ts",
     "src/main/preload/preload.ts",
     "src/renderer/main.tsx",
     "electron.vite.config.ts",
-    "vitest.config.ts",
     "tests/**/*.test.{ts,tsx}",
     "tests/setup/*.ts"
   ],
@@ -12,18 +12,25 @@
     "src/**/*.{ts,tsx}",
     "tests/**/*.{ts,tsx}"
   ],
+  "paths": {
+    "@shared/*": ["src/shared/*"],
+    "@main/*": ["src/main/*"],
+    "@renderer/*": ["src/renderer/*"]
+  },
+  "ignoreExportsUsedInFile": true,
   "ignore": [
-    "out/**",
-    "dist/**",
-    "src/main/harness/**",
-    "src/main/tools/policy/**/*.md",
     "src/main/types/raw.d.ts",
     "src/renderer/types/assets.d.ts"
   ],
+  "ignoreIssues": {
+    "src/shared/types/**": ["exports", "types"],
+    "src/shared/settings/**": ["exports", "types"]
+  },
   "ignoreDependencies": [
     "@fontsource-variable/geist",
     "@fontsource-variable/geist-mono",
-    "highlight.js",
-    "tailwindcss"
+    "pyright",
+    "tailwindcss",
+    "typescript-language-server"
   ]
 }

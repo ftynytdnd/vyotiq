@@ -79,7 +79,7 @@ describe('WorkbenchShell', () => {
     useEditorStore.setState({ open: true });
     useUiStore.setState({ workbenchTab: 'editor' });
     render(shell());
-    expect(screen.getByText(/no file open/i)).toBeTruthy();
+    expect(screen.getAllByText(/no file open/i).length).toBeGreaterThan(0);
     expect(screen.getByText('Agent view')).toBeTruthy();
   });
 

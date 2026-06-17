@@ -31,6 +31,7 @@ import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/she
 import { useCopyFeedback } from '../../../hooks/useCopyFeedback.js';
 import { TaskCheckbox } from './TaskCheckbox.js';
 import { MdTableFromMarkdown } from './MdTable.js';
+import { MdLink } from './MdLink.js';
 
 interface MarkdownBodyProps {
   text: string;
@@ -51,17 +52,7 @@ const REHYPE_PLUGINS: MdProps['rehypePlugins'] = [
 const MD_COMPONENTS: MdProps['components'] = {
   pre: PreWithCopy,
   table: TableWithWrap,
-  a: ({ href, children, ...rest }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer noopener"
-      referrerPolicy="no-referrer"
-      {...rest}
-    >
-      {children}
-    </a>
-  ),
+  a: ({ href, children }) => <MdLink href={href}>{children}</MdLink>,
   // GFM task-list checkboxes (`- [x] …` / `- [ ] …`) — remark-gfm
   // renders these as `<input type="checkbox" disabled>` inside an
   // `<li class="task-list-item">`. The native browser checkbox reads

@@ -45,8 +45,3 @@ export const FileIconForPath = memo(function FileIconForPath({
   const fileName = basenameFromPath(filePath);
   return <FileIcon fileName={fileName} autoAssign {...iconProps()} />;
 });
-
-/** @deprecated Prefer `<FileIconForPath />` — kept for call sites that expect a function. */
-export function fileIconForPath(filePath: string, isDir = false, isExpanded = false) {
-  return <FileIconForPath filePath={filePath} isDir={isDir} isExpanded={isExpanded} />;
-}

@@ -19,8 +19,3 @@ export function hasActivePollSources(): boolean {
 export function clearProviderPollSources(): void {
   activePollSources.clear();
 }
-
-/** Test-only reset. */
-export function __test_resetProviderPollSources(): void {
-  activePollSources.clear();
-}

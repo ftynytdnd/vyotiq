@@ -23,7 +23,7 @@ export interface FlatTreeRow {
 }
 
 /** Sort child path entries — directories first, then locale name order. */
-export function sortDockChildEntries(entries: string[]): string[] {
+function sortDockChildEntries(entries: string[]): string[] {
   return [...entries].sort((a, b) => {
     const aDir = a.endsWith('/');
     const bDir = b.endsWith('/');

@@ -32,7 +32,7 @@ describe('lspGetStatus', () => {
     const result = await lspGetStatus({ workspaceId: 'missing-workspace-id' });
     expect(result.ok).toBe(false);
     expect(result.configSource).toBe('disabled');
-    expect(result.reason).toBe('Workspace not found');
+    expect(result.reason).toBe('unknown_workspace');
     expect(result.status.connected).toBe(false);
   });
 });

@@ -157,13 +157,6 @@ export async function checkForAppUpdates(): Promise<AppCheckUpdatesResult> {
   }
 }
 
-export async function downloadAppUpdate(): Promise<AppUpdateStatus> {
-  const au = await loadUpdater();
-  if (!au) throw new Error('Updater unavailable');
-  await au.downloadUpdate();
-  return getAppUpdateStatus();
-}
-
 export function installDownloadedUpdate(): void {
   const au = updater;
   if (!au) throw new Error('Updater unavailable');

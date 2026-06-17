@@ -41,8 +41,6 @@ import {
   resolveFinishSummary
 } from './finishIntercept.js';
 import { normalizeRegisteredToolName } from '@shared/tools/normalizeToolName.js';
-import { buildPhasedEscapeAskUser } from '../phased/phasedEscape.js';
-import { pauseRunForPhasedEscape } from './phasedEscapePause.js';
 import { pauseRunForAskUser } from './askUserPause.js';
 import { backoff } from '../retry.js';
 import { isAbortError } from '../abortSignal.js';
@@ -126,11 +124,6 @@ import {
 } from '../context/contextCalibration.js';
 import { toolSchemasFor } from '../../tools/registry.js';
 import { maybeInterceptHostReportGate } from './hostReportGate.js';
-import { interceptPhaseGate, settleSupersededPhaseGate } from './phaseGateIntercept.js';
-import { PhaseEngine, maybePromotePhasedEngine } from '../phased/phaseEngine.js';
-import { buildPhaseStateXml } from '../phased/buildPhaseStateXml.js';
-import { loadPhaseEngineSnapshotFromStore } from '../phased/reconstructFromTranscript.js';
-import { resolvePhasedExecutionSettings } from '@shared/settings/phasedExecutionSettings.js';
 import {
   formatProviderRecoveryThought,
   formatProviderStrikeError,
@@ -203,8 +196,6 @@ interface RunLoopOpts {
   reportsSettings?: ResolvedReportsSettings;
   /** Snapshot of `settings.ui.agentBehavior` at run start. */
   agentBehaviorSettings?: ResolvedAgentBehaviorSettings;
-  /** Snapshot of `settings.ui.phasedExecution` at run start. */
-  phasedExecutionSettings?: import('@shared/settings/phasedExecutionSettings.js').ResolvedPhasedExecutionSettings;
   /** Wall-clock anchor for optional per-run duration budget. */
   runStartedAt?: number;
 }
@@ -315,7 +306,6 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     const reportsSettings = opts.reportsSettings ?? resolveReportsSettings();
     const agentBehaviorSettings =
       opts.agentBehaviorSettings ?? resolveAgentBehaviorSettings();
-    const phasedSettings = opts.phasedExecutionSettings ?? resolvePhasedExecutionSettings();
     const reductionState = createContextReductionState();
     const budgetToolSchemas = toolSchemasFor(AGENT_TOOLS);
     // Calibration: provider-reported prompt tokens ÷ our estimate, carried turn
@@ -351,36 +341,6 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     let consecutiveSpinHotIterations = 0;
     let spinHotNudgeEmitted = false;
 
-    // Resume order: in-memory pause snapshot → durable transcript
-    // reconstruction (survives a process restart) → fresh engine.
-    const resumeSnapshot =
-      resume?.phaseEngineSnapshot ??
-      (opts.input.conversationId
-        ? await loadPhaseEngineSnapshotFromStore(
-            opts.input.conversationId,
-            opts.input.runId,
-            phasedSettings
-          )
-        : null);
-    const phaseEngine = resumeSnapshot
-      ? PhaseEngine.fromSnapshot(resumeSnapshot, {
-          runId: opts.input.runId,
-          workspaceId: opts.workspaceId,
-          workspacePath: opts.workspacePath,
-          emit,
-          settings: phasedSettings,
-          signal: opts.signal
-        })
-      : new PhaseEngine({
-          runId: opts.input.runId,
-          workspaceId: opts.workspaceId,
-          workspacePath: opts.workspacePath,
-          prompt: opts.input.prompt,
-          settings: phasedSettings,
-          emit,
-          signal: opts.signal
-        });
-
     for (let iter = resume?.nextIteration ?? 0; iter < iterationCap; iter++) {
       const abortedEarly = exitIfAborted(opts, emit, runHadLlmProgress);
       if (abortedEarly) return abortedEarly;
@@ -392,43 +352,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         return { terminalError: wallClockMsg };
       }
 
-      maybePromotePhasedEngine(phaseEngine, opts.input.prompt);
-      harness = buildOrchestratorSystemPrompt({ phasedExecution: phaseEngine.active });
-      const phaseGuardTrip = phaseEngine.onIterationStart(iter, {
-        tokenExceeded: isRunTokenBudgetExceeded(runCumulativeTokens, agentBehaviorSettings),
-        wallExceeded: isRunWallClockBudgetExceeded(
-          Date.now() - runStartedAtMs,
-          agentBehaviorSettings
-        )
-      });
-      if (phaseGuardTrip && phaseEngine.active) {
-        const payload = buildPhasedEscapeAskUser(phaseGuardTrip, phaseEngine.ledgerEntryIds);
-        const pausedForAskUser = pauseRunForPhasedEscape({
-          runId: opts.input.runId,
-          messages,
-          query,
-          nextIteration: iter,
-          consecutiveEmptyTurns,
-          injectedStubsHighWater,
-          consecutiveErrors,
-          consecutiveBadToolRounds,
-          runStateAcc,
-          spin,
-          toolCallId: randomUUID(),
-          payload,
-          displayText: payload.questions[0]?.prompt ?? 'Phased execution stuck',
-          phaseEngineSnapshot: phaseEngine.snapshot(),
-          trip: phaseGuardTrip,
-          emit,
-          runCumulativeTokens
-        });
-        return { pausedForAskUser };
-      }
-
       const iterStartedAt = Date.now();
-      const iterationAgentTools = phaseEngine.active
-        ? (phaseEngine.getToolAllowlist() ?? AGENT_TOOLS)
-        : AGENT_TOOLS.filter((t) => t !== 'phase_gate');
 
         if (iter > 0) {
           try {
@@ -478,10 +402,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           consecutiveSpinHotIterations = 0;
           spinHotNudgeEmitted = false;
         }
-        const runStateXml =
-          buildRunStateXml(snapshotRunState(runStateAcc, spin, consecutiveBadToolRounds)) +
-          '\n' +
-          buildPhaseStateXml(phaseEngine);
+        const runStateXml = buildRunStateXml(
+          snapshotRunState(runStateAcc, spin, consecutiveBadToolRounds)
+        );
         const hostEnvXml = buildHostEnvironmentXml(undefined, {
           workspacePath: opts.workspacePath
         });
@@ -633,7 +556,6 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           signal: opts.signal,
           dialect: providerDialect,
           omitToolChoice,
-          agentTools: iterationAgentTools,
           ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
           ...(modelThinkingCaps !== undefined ? { modelThinkingCaps } : {}),
           ...(opts.input.conversationId !== undefined
@@ -947,23 +869,14 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
 
         let finishCall: (typeof finishedToolCalls)[number] | undefined;
         let askUserCall: (typeof finishedToolCalls)[number] | undefined;
-        // Collect every phase_gate call (the model occasionally emits more
-        // than one in a turn). Only the first advances the engine; extras are
-        // settled with a paired "one gate per turn" result so the
-        // tool-call/tool-result pairing invariant holds. When phased mode is
-        // inactive a stray phase_gate falls through to `actionTools`, where the
-        // registry intercept-only stub settles it (still paired).
-        const phaseGateCalls: typeof finishedToolCalls = [];
         const actionTools: typeof finishedToolCalls = [];
         for (const tc of finishedToolCalls) {
           const canonical = normalizeRegisteredToolName(tc.name);
           if (canonical) tc.name = canonical;
           if (canonical === 'finish' && !finishCall) finishCall = tc;
           else if (canonical === 'ask_user' && !askUserCall) askUserCall = tc;
-          else if (canonical === 'phase_gate' && phaseEngine.active) phaseGateCalls.push(tc);
           else actionTools.push(tc);
         }
-        const phaseGateCall = phaseGateCalls[0];
 
         // When both terminal pause and stop tools appear, clarification wins.
         if (finishCall && askUserCall) {
@@ -988,14 +901,6 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           reasoningChars: turn.reasoningText.length,
           ms: Date.now() - iterStartedAt
         });
-
-        if (phaseEngine.active && phaseEngine.currentPhase !== 'done' && finishCall) {
-          log.warn('finish blocked — phased execution incomplete', {
-            iteration: iter,
-            phase: phaseEngine.currentPhase
-          });
-          finishCall = undefined;
-        }
 
         if (finishCall) {
           if (actionTools.length > 0) {
@@ -1067,15 +972,8 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           });
         }
 
-        // Every tool call that will have a settled `role:'tool'` result in
-        // history must appear in this assistant message's `tool_calls`, or the
-        // result is an orphan that `sanitizeToolPairing` drops next turn.
-        // `phase_gate` results are settled by `interceptPhaseGate` below, so the
-        // gate calls must be included here alongside `actionTools`.
-        const historyToolCalls =
-          phaseGateCalls.length > 0 ? [...actionTools, ...phaseGateCalls] : actionTools;
         const assistantContent: string | null =
-          historyToolCalls.length > 0 && turn.assistantText.length === 0 ? null : turn.assistantText;
+          actionTools.length > 0 && turn.assistantText.length === 0 ? null : turn.assistantText;
         insertHistoryBeforeTail(messages, {
           role: 'assistant',
           content: assistantContent,
@@ -1086,9 +984,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           ...(typeof turn.reasoningSignature === 'string' && turn.reasoningSignature.length > 0
             ? { reasoning_signature: turn.reasoningSignature }
             : {}),
-          ...(historyToolCalls.length > 0
+          ...(actionTools.length > 0
             ? {
-              tool_calls: historyToolCalls.map((tc) => ({
+              tool_calls: actionTools.map((tc) => ({
                 id: tc.id!,
                 type: 'function' as const,
                 function: {
@@ -1112,7 +1010,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             runId: opts.input.runId,
             conversationId: opts.input.conversationId ?? '',
             signal: opts.signal,
-            allowlist: iterationAgentTools,
+            allowlist: AGENT_TOOLS,
             allowlistRefusalCounts,
             onToolCallSettled
           });
@@ -1186,22 +1084,6 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               }
             }
           }
-        }
-
-        if (phaseGateCall && phaseEngine.active) {
-          // Settle any extra phase_gate calls first (paired, no-op) so only one
-          // gate advances per turn and no tool result is left orphaned.
-          for (let k = 1; k < phaseGateCalls.length; k++) {
-            await settleSupersededPhaseGate(phaseGateCalls[k]!, messages, emit);
-          }
-          await interceptPhaseGate({
-            engine: phaseEngine,
-            tc: phaseGateCall,
-            messages,
-            emit,
-            runId: opts.input.runId
-          });
-          continue;
         }
 
         if (finishCall && actionTools.length > 0) {
@@ -1602,7 +1484,7 @@ export function endsWithQuestionMark(s: string): boolean {
 }
 
 /** True when prose ends with `.` / `!` (ASCII or common CJK/fullwidth forms). */
-export function endsWithSentenceEnd(s: string): boolean {
+function endsWithSentenceEnd(s: string): boolean {
   return endsWithMeaningfulCodePoint(s, SENTENCE_END_CODEPOINTS);
 }
 

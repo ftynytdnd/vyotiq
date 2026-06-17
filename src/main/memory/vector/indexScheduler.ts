@@ -88,14 +88,6 @@ export async function disposeAllVectorIndexesAsync(): Promise<void> {
   await Promise.allSettled([...inFlight.values()]);
 }
 
-/** @deprecated Prefer {@link disposeAllVectorIndexesAsync} when shutdown must drain in-flight work. */
-export function disposeAllVectorIndexes(): void {
-  for (const timer of debounceTimers.values()) clearTimeout(timer);
-  debounceTimers.clear();
-  for (const ac of running.values()) ac.abort();
-  running.clear();
-}
-
 /** Clear stored vectors and rebuild immediately (no debounce). Coalesces duplicate requests. */
 export function forceReindexWorkspace(
   workspacePath: string

@@ -1,6 +1,6 @@
 /**
  * PanelHeader — title row + close X with the optional actions slot
- * shared by {@link FloatingPanel} and {@link ComposerDialog}. Keeps
+ * shared by {@link ComposerDialog}. Keeps
  * both surfaces visually identical (same hairline, same height, same
  * X button placement) so the chrome reads as one family.
  */

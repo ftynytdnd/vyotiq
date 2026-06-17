@@ -42,6 +42,7 @@ import { normalizeLegacyTranscript } from '@shared/transcript/normalizeLegacyTra
 import { TRANSCRIPT_PAGE_SIZE } from '@shared/constants.js';
 import type { TranscriptBeforeRead, TranscriptPaging } from '@shared/types/chat.js';
 import { migrateConversationPending } from '../checkpoints/pendingChanges.js';
+import { redactEventForPersist } from './redactPersistedEvent.js';
 
 const log = logger.child('conversations');
 
@@ -195,6 +196,7 @@ async function loadIndex(): Promise<ConversationMeta[]> {
       }
     }
     await migrateWorkspaceIdsInPlace();
+    seedRecordedConversationSpendFromIndex(indexCache!);
     return indexCache!;
   })();
   return indexLoad;
@@ -584,7 +586,8 @@ export async function appendEvent(id: string, event: TimelineEvent): Promise<voi
       if (!existsSync(file)) {
         await fs.writeFile(file, '', 'utf8');
       }
-      await fs.appendFile(file, JSON.stringify(event) + '\n', 'utf8');
+      const persisted = redactEventForPersist(event);
+      await fs.appendFile(file, JSON.stringify(persisted) + '\n', 'utf8');
       if (event.kind === 'token-usage') {
         const prompt = event.usage.promptTokens;
         if (typeof prompt === 'number' && prompt > 0) {
@@ -604,6 +607,14 @@ export async function appendEvent(id: string, event: TimelineEvent): Promise<voi
 
 /** Idempotent per conversation + prompt — mirrors renderer workspace spend dedupe. */
 const recordedConversationPromptSpend = new Set<string>();
+
+function seedRecordedConversationSpendFromIndex(list: ConversationMeta[]): void {
+  for (const meta of list) {
+    for (const promptId of meta.recordedSpendPromptIds ?? []) {
+      recordedConversationPromptSpend.add(`${meta.id}::${promptId}`);
+    }
+  }
+}
 
 /** Update best-effort meta about the last model used. */
 export async function setLastModel(
@@ -631,14 +642,15 @@ export async function incrementConversationSpend(
 ): Promise<ConversationMeta | null> {
   if (!id || !promptId || !Number.isFinite(usd) || usd <= 0) return null;
   const key = `${id}::${promptId}`;
-  if (recordedConversationPromptSpend.has(key)) {
-    await loadIndex();
-    return findMeta(id) ?? null;
-  }
-  recordedConversationPromptSpend.add(key);
   await loadIndex();
   const meta = findMeta(id);
   if (!meta) return null;
+  const persisted = meta.recordedSpendPromptIds ?? [];
+  if (persisted.includes(promptId) || recordedConversationPromptSpend.has(key)) {
+    recordedConversationPromptSpend.add(key);
+    return meta;
+  }
+  recordedConversationPromptSpend.add(key);
   meta.estimatedSpendUsd = (meta.estimatedSpendUsd ?? 0) + usd;
   meta.runCount = (meta.runCount ?? 0) + 1;
   if (stats.cachedTokens && stats.cachedTokens > 0) {
@@ -655,6 +667,7 @@ export async function incrementConversationSpend(
   if (stats.lastCacheHitPct !== undefined && Number.isFinite(stats.lastCacheHitPct)) {
     meta.lastCacheHitPct = stats.lastCacheHitPct;
   }
+  meta.recordedSpendPromptIds = [...persisted, promptId];
   bumpMeta(meta);
   scheduleIndexFlush();
   return meta;

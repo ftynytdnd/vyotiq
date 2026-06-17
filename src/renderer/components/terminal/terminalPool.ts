@@ -113,6 +113,21 @@ export function openTerminalEntry(entry: TerminalPoolEntry): void {
   fitTerminalEntry(entry);
 }
 
+const MIN_TERMINAL_COLS = 20;
+const MIN_TERMINAL_ROWS = 4;
+
+/** Clamp xterm dimensions to main-process validation minimums; null when unusable. */
+export function clampTerminalDimensions(
+  cols: number,
+  rows: number
+): { cols: number; rows: number } | null {
+  if (cols <= 0 || rows <= 0) return null;
+  return {
+    cols: Math.max(MIN_TERMINAL_COLS, cols),
+    rows: Math.max(MIN_TERMINAL_ROWS, rows)
+  };
+}
+
 export function fitTerminalEntry(entry: TerminalPoolEntry): void {
   if (!entry.opened) return;
   try {
@@ -120,10 +135,13 @@ export function fitTerminalEntry(entry: TerminalPoolEntry): void {
   } catch {
     return;
   }
-  const { cols, rows } = entry.term;
-  if (cols > 0 && rows > 0) {
-    void vyotiq.terminal.resize({ sessionId: entry.sessionId, cols, rows });
-  }
+  const clamped = clampTerminalDimensions(entry.term.cols, entry.term.rows);
+  if (!clamped) return;
+  void vyotiq.terminal.resize({
+    sessionId: entry.sessionId,
+    cols: clamped.cols,
+    rows: clamped.rows
+  });
 }
 
 export function disposeTerminalEntry(sessionId: string): void {
@@ -136,10 +154,4 @@ export function disposeTerminalEntry(sessionId: string): void {
   }
   entry.host.remove();
   pool.delete(sessionId);
-}
-
-export function disposeAllTerminalEntries(): void {
-  for (const id of [...pool.keys()]) disposeTerminalEntry(id);
-  themeObserver?.disconnect();
-  themeObserver = null;
 }

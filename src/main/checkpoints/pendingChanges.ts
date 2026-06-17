@@ -197,3 +197,9 @@ export async function dropPendingForRuns(
   return dropped;
 }
 
+/** Drop in-memory bucket state when a workspace is removed. */
+export function evictPendingChangesCache(workspaceId: string): void {
+  cache.delete(workspaceId);
+  writeChains.delete(workspaceId);
+}
+

@@ -173,16 +173,6 @@ export interface ContextUsageBreakdown {
   tools: number;
 }
 
-export const EMPTY_CONTEXT_BREAKDOWN: ContextUsageBreakdown = {
-  system: 0,
-  fewShot: 0,
-  workspace: 0,
-  history: 0,
-  runtime: 0,
-  turn: 0,
-  tools: 0
-};
-
 /** Sum every layer in a breakdown (equals total prompt tokens when complete). */
 export function sumContextBreakdown(b: ContextUsageBreakdown): number {
   return (

@@ -26,6 +26,7 @@ import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/she
 import type { RevertIntent } from './RevertPromptContext.js';
 import { useRewindPromptSession } from './useRewindPromptSession.js';
 import { RewindImpactSummary } from './RewindImpactSummary.js';
+import { COMPOSER_DEFAULT_PLACEHOLDER } from '../../composer/composerPlaceholder.js';
 
 const TEXTAREA_MAX_HEIGHT = 168;
 
@@ -210,7 +211,7 @@ export function InlinePromptSession({
               <MentionComposer
                 value={session.editText}
                 onChange={(next) => session.setEditText(next)}
-                placeholder="@ to mention files, or describe your task…"
+                placeholder={COMPOSER_DEFAULT_PLACEHOLDER}
                 className="min-h-[2.5rem] min-w-0 flex-1"
                 style={{ maxHeight: TEXTAREA_MAX_HEIGHT }}
                 onKeyDown={(e) => {

@@ -2,12 +2,8 @@
  * Application-wide constants. Imported by both main and renderer.
  */
 
-import type { ChatPermissions } from './types/chat.js';
-
 export const APP_NAME = 'Vyotiq';
 export const AGENT_NAME = 'Agent V';
-
-export const DEFAULT_PERMISSIONS: ChatPermissions = {};
 
 /**
  * Maximum characters of a single tool's `output` we retain in replay /
@@ -151,32 +147,6 @@ export const MAX_SELF_CORRECTION_ATTEMPTS = 3;
 /** Harness recovery cycles before a sustained provider failure terminates the run. */
 export const MAX_PROVIDER_RECOVERY_ROUNDS = 1;
 export const MAX_TOTAL_ITERATIONS = 24;
-
-/** Default per-subtask phase-cycle convergence guard (soft cap). */
-export const DEFAULT_PHASE_CYCLE_CAP = 8;
-
-/**
- * Iterations of headroom the phased soft global-iteration cap keeps below the
- * hard `MAX_TOTAL_ITERATIONS` ceiling. The phased escape hatch ("ask the
- * human") must surface *before* the loop's forced-synthesis fallback, so the
- * soft cap trips this many iterations early rather than coinciding with — and
- * being masked by — the hard cap.
- */
-export const PHASED_SOFT_ITERATION_MARGIN = 2;
-
-/** Host acceptance-test runner timeout during VERIFY phase (ms). */
-export const PHASE_VERIFY_TIMEOUT_MS = 120_000;
-
-/** Min / max configurable VERIFY acceptance-command timeout (seconds). */
-export const PHASE_VERIFY_TIMEOUT_MIN_S = 10;
-export const PHASE_VERIFY_TIMEOUT_MAX_S = 600;
-
-/**
- * Max chars of acceptance-test output persisted inside a `phase-gate`
- * durable snapshot. Keeps the append-only JSONL ledger bounded for
- * always-on desktop sessions.
- */
-export const VERIFY_EVIDENCE_PERSIST_CHARS = 2_000;
 
 /** Backoff. */
 export const BASE_BACKOFF_MS = 250;

@@ -143,8 +143,30 @@ function buildListTree(
 
 function parseTableCells(line: string): string[] | null {
   const trimmed = line.trim();
-  if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) return null;
-  return trimmed.slice(1, -1).split('|').map((c) => c.trim());
+  if (!trimmed.includes('|')) return null;
+
+  let core = trimmed;
+  if (core.startsWith('|')) core = core.slice(1);
+  if (core.endsWith('|')) core = core.slice(0, -1);
+
+  const cells = core.split('|').map((c) => c.trim());
+  return cells.length > 0 ? cells : null;
+}
+
+function isTableHeaderLine(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed.startsWith('|') || /^\S.*\|/.test(trimmed);
+}
+
+function normalizeTableRows(rows: InlineSpan[][][], colCount: number): InlineSpan[][][] {
+  const emptyCell: InlineSpan[] = [{ kind: 'text', text: '' }];
+  return rows.map((cells) => {
+    if (cells.length === colCount) return cells;
+    if (cells.length < colCount) {
+      return [...cells, ...Array.from({ length: colCount - cells.length }, () => emptyCell)];
+    }
+    return cells.slice(0, colCount);
+  });
 }
 
 function isTableSeparator(line: string): boolean {
@@ -320,6 +342,7 @@ export function parseStreamingBlocks(text: string): StreamingBlock[] {
     | { kind: 'paragraph'; text: string }
     | { kind: 'blockquote'; text: string }
     | { kind: 'list'; itemTexts: string[] }
+    | { kind: 'table'; headerRaws: string[]; rowRaws: string[][] }
     | null;
   const rawSrc: RawSrc[] = [];
 
@@ -415,22 +438,29 @@ export function parseStreamingBlocks(text: string): StreamingBlock[] {
         const headers = headerCells.map((c) => parseInlineSpans(c));
         i += 2;
         const rows: InlineSpan[][][] = [];
+        const rowRaws: string[][] = [];
         while (i < lines.length) {
           const cells = parseTableCells(lines[i]!);
           if (!cells) break;
+          rowRaws.push(cells);
           rows.push(cells.map((c) => parseInlineSpans(c)));
           i++;
         }
+        const colCount = headers.length;
         blocks.push({
           kind: 'table',
           headers,
-          rows,
+          rows: normalizeTableRows(rows, colCount),
           partial: isLastLine && rows.length === 0
         });
-        rawSrc.push(null);
+        rawSrc.push({
+          kind: 'table',
+          headerRaws: headerCells,
+          rowRaws
+        });
         continue;
       }
-      if (isLastLine) {
+      if (isLastLine && isTableHeaderLine(line)) {
         flushParagraph();
         blocks.push({
           kind: 'table',
@@ -439,7 +469,7 @@ export function parseStreamingBlocks(text: string): StreamingBlock[] {
           partial: true,
           preview: true
         });
-        rawSrc.push(null);
+        rawSrc.push({ kind: 'table', headerRaws: headerCells, rowRaws: [] });
         i++;
         continue;
       }
@@ -516,6 +546,20 @@ export function parseStreamingBlocks(text: string): StreamingBlock[] {
       const lastRaw = src.itemTexts[src.itemTexts.length - 1];
       if (typeof lastRaw === 'string') {
         applyPartialToListTree(tail.items, lastRaw);
+      }
+    } else if (tail.kind === 'table' && src?.kind === 'table') {
+      const colCount = tail.headers.length;
+      if (tail.preview) {
+        tail.headers = src.headerRaws.map((raw) => parseInlineSpans(raw, true));
+      } else if (src.rowRaws.length > 0) {
+        const lastRaw = src.rowRaws[src.rowRaws.length - 1]!;
+        const paddedRaw = [...lastRaw];
+        while (paddedRaw.length < colCount) paddedRaw.push('');
+        tail.rows[tail.rows.length - 1] = paddedRaw
+          .slice(0, colCount)
+          .map((raw, cellIdx) =>
+            parseInlineSpans(raw, cellIdx === lastRaw.length - 1)
+          );
       }
     }
   }

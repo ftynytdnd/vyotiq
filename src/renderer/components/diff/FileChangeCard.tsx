@@ -5,7 +5,7 @@
 import { memo, type ReactNode } from 'react';
 import { ArrowUpRight } from 'lucide-react';
 import { basenameFromPath } from '@shared/text/languageFromPath.js';
-import { fileIconForPath } from '../../lib/fileIconForPath.js';
+import { FileIconForPath } from '../../lib/fileIconForPath.js';
 import { cn } from '../../lib/cn.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../lib/shellIcons.js';
 import { timelineActionPillClassName } from '../timeline/shared/rowStyles.js';
@@ -22,10 +22,6 @@ interface FileChangeCardProps {
   children?: ReactNode;
   className?: string;
   onOpen?: () => void;
-}
-
-function fileIconForPathLocal(filePath: string) {
-  return fileIconForPath(filePath, false);
 }
 
 export const FileChangeCard = memo(function FileChangeCard({
@@ -53,7 +49,7 @@ export const FileChangeCard = memo(function FileChangeCard({
       data-file-change-card
     >
       <div className="vx-file-change-card__header flex min-w-0 items-center gap-2 px-2.5 py-1.5">
-        {fileIconForPathLocal(filePath)}
+        <FileIconForPath filePath={filePath} />
         <span
           className="min-w-0 flex-1 truncate font-mono text-row text-text-primary"
           title={filePath}

@@ -21,21 +21,6 @@ const BY_LANGUAGE: Record<string, BundledLspId> = {
   javascript: 'typescript-language-server'
 };
 
-export interface BundledLspDescriptor {
-  languageId: string;
-  id: BundledLspId;
-  label: string;
-}
-
-export const BUNDLED_LSP_DESCRIPTORS: BundledLspDescriptor[] = [
-  { languageId: 'python', id: 'pyright', label: 'Pyright (Python)' },
-  {
-    languageId: 'typescript',
-    id: 'typescript-language-server',
-    label: 'TypeScript Language Server (TypeScript / JavaScript)'
-  }
-];
-
 export function resolveBundledLspEntry(id: BundledLspId): string | null {
   try {
     return require.resolve(ENTRY[id]);

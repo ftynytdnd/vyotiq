@@ -1,5 +1,5 @@
 import { MAX_TOOL_OUTPUT_CHARS } from '../constants.js';
-import { redactUserHomeInText } from '../path/redactUserHomeInPath.js';
+import { redactSensitiveText } from './redactSecretsInText.js';
 
 /** Truncate at a UTF-16 code-unit boundary without splitting a surrogate pair. */
 export function truncateUtf8Safe(s: string, maxChars: number): string {
@@ -17,7 +17,7 @@ export function truncateToolOutputForContext(
   s: string,
   maxChars: number = MAX_TOOL_OUTPUT_CHARS
 ): string {
-  const redacted = redactUserHomeInText(s);
+  const redacted = redactSensitiveText(s);
   if (redacted.length <= maxChars) return redacted;
   const budget = Math.max(1, maxChars - TRUNC_MARKER.length);
   return truncateUtf8Safe(redacted, budget) + TRUNC_MARKER;

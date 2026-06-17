@@ -20,7 +20,6 @@ import {
   chromeGhostRowButtonClassName,
   chromeSegmentedTrayClassName,
   panelTabStripClassName,
-  secondaryZoneTabStripClassName,
   appPanelFrameClassName,
   appPanelHeadClassName,
   appDialogFrameClassName,
@@ -91,7 +90,6 @@ describe('chrome class helpers', () => {
   it('panel tab strip is a lightweight wrapper', () => {
     expect(panelTabStripClassName).toContain('shrink-0');
     expect(panelTabStripClassName).not.toContain('border-b');
-    expect(secondaryZoneTabStripClassName).toBe(panelTabStripClassName);
   });
 
   it('Vyotiq UI panel frame helpers map to vx-panel-* classes', () => {

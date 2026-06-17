@@ -5,8 +5,7 @@ export const HARNESS_SECTION_IDS = [
   'context-learning',
   'deliverables',
   'static-examples',
-  'ast-grep-reference',
-  'phased-execution'
+  'ast-grep-reference'
 ] as const;
 
 export type HarnessSectionId = (typeof HARNESS_SECTION_IDS)[number];

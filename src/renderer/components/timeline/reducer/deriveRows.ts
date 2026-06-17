@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Pure transformer from `TimelineEvent[]` → a stable row-descriptor list
  * rendered in the Cascade-style compact log.
  *
@@ -20,14 +20,6 @@
 
 import type { PromptAttachmentMeta, TimelineEvent } from '@shared/types/chat.js';
 import type { MentionRef } from '@shared/types/mention.js';
-import type {
-  AcceptanceRunEvidence,
-  AttemptedApproach,
-  CheckpointMarkerRef,
-  CodeLink,
-  DoneCriterion,
-  PlanStep
-} from '@shared/types/phased.js';
 import type { ToolCall, ToolName, ToolResult, DiffHunk } from '@shared/types/tool.js';
 import type { DiffStreamSnapshot, PartialToolCallArgs, TokenUsageAggregate } from './types.js';
 import { foldTokenUsage } from './types.js';
@@ -162,7 +154,6 @@ export type Row =
       targetPhase?: string;
       citeLedgerEntryId?: string;
     };
-    acceptanceEvidence?: AcceptanceRunEvidence[];
   }
   | {
     kind: 'phase-ledger';
@@ -172,15 +163,6 @@ export type Row =
     phase: string;
     summary: string;
     collapsedDefault: boolean;
-    discoveredConstraints?: string[];
-    assumptions?: string[];
-    decisions?: Array<{ decision: string; rationale: string }>;
-    attemptedApproaches?: AttemptedApproach[];
-    codeLinks?: CodeLink[];
-    checkpointRef?: CheckpointMarkerRef;
-    doneCriteria?: DoneCriterion[];
-    acceptanceCommandCount?: number;
-    planSteps?: PlanStep[];
   }
   | {
     kind: 'run-complete';
@@ -473,8 +455,7 @@ export function deriveRows(
           if (row?.kind === 'phase-log') {
             out[i] = {
               ...row,
-              gateDecision: e.gateDecision,
-              ...(e.acceptanceEvidence ? { acceptanceEvidence: e.acceptanceEvidence } : {})
+              gateDecision: e.gateDecision
             };
             break;
           }
@@ -491,18 +472,7 @@ export function deriveRows(
           subtaskId: e.subtaskId,
           phase: e.phase,
           summary: e.artifactSummary ?? e.exitCriteria ?? e.phase,
-          collapsedDefault: true,
-          ...(e.discoveredConstraints ? { discoveredConstraints: e.discoveredConstraints } : {}),
-          ...(e.assumptions ? { assumptions: e.assumptions } : {}),
-          ...(e.decisions ? { decisions: e.decisions } : {}),
-          ...(e.attemptedApproaches ? { attemptedApproaches: e.attemptedApproaches } : {}),
-          ...(e.codeLinks ? { codeLinks: e.codeLinks } : {}),
-          ...(e.checkpointRef ? { checkpointRef: e.checkpointRef } : {}),
-          ...(e.doneCriteria ? { doneCriteria: e.doneCriteria } : {}),
-          ...(typeof e.acceptanceCommandCount === 'number'
-            ? { acceptanceCommandCount: e.acceptanceCommandCount }
-            : {}),
-          ...(e.planSteps ? { planSteps: e.planSteps } : {})
+          collapsedDefault: true
         });
         break;
 

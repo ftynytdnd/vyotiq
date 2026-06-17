@@ -20,11 +20,3 @@ export function scheduleWorkspaceTreeRefresh(): void {
     useDockFileTreeRefreshStore.getState().bump();
   }, TREE_REFRESH_DEBOUNCE_MS);
 }
-
-/** Test-only reset. */
-export function __test_resetWorkspaceTreeRefreshDebounce(): void {
-  if (debounceTimer !== null) {
-    clearTimeout(debounceTimer);
-    debounceTimer = null;
-  }
-}

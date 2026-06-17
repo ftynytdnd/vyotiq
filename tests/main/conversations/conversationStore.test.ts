@@ -234,5 +234,17 @@ describe('conversationStore', () => {
     expect(second?.runCount).toBe(2);
     expect(second?.cumulativeCachedTokens).toBe(1600);
     expect(second?.estimatedSpendUsd).toBeCloseTo(0.06, 6);
+    expect(second?.recordedSpendPromptIds).toEqual(['prompt-1', 'prompt-2']);
+  });
+
+  it('survives process restart via persisted recordedSpendPromptIds', async () => {
+    __test_resetRecordedConversationSpend();
+    const meta = await createConversation('ws-restart');
+    await incrementConversationSpend(meta.id, 'prompt-1', 0.05);
+    __test_resetRecordedConversationSpend();
+
+    const again = await incrementConversationSpend(meta.id, 'prompt-1', 0.05);
+    expect(again?.estimatedSpendUsd).toBeCloseTo(0.05, 6);
+    expect(again?.runCount).toBe(1);
   });
 });

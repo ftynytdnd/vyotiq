@@ -121,12 +121,19 @@ export function renderTranscriptMarkdown(
         break;
       case 'phase-gate':
         lines.push(
-          `_Phase gate (${e.phase}): ${e.gateDecision.kind} — ${e.gateDecision.reason}_ · ${formatTimestamp(e.ts)}`,
+          `### Phase gate · ${e.phase} · ${formatTimestamp(e.ts)}`,
+          '',
+          e.gateDecision.reason,
           ''
         );
         break;
       case 'phase-ledger-entry':
-        lines.push(`_Ledger (${e.phase}, seq ${e.seq})_ · ${formatTimestamp(e.ts)}`, '');
+        lines.push(
+          `### Phase ledger · ${e.phase} · ${formatTimestamp(e.ts)}`,
+          '',
+          e.artifactSummary ?? e.exitCriteria ?? '',
+          ''
+        );
         break;
       case 'agent-thought':
         lines.push(`_Thought:_ ${e.content}`, '');

@@ -20,6 +20,7 @@ import type { TurnUsageStatsDelta, WorkspaceSpendEntry, WorkspaceSpendStats } fr
 import { normalizeWorkspaceSpendEntry } from '@shared/types/usageStats.js';
 import { useSessionStatsStore } from '../store/useSessionStatsStore.js';
 import type { TokenUsageAggregate } from '../components/timeline/reducer/types.js';
+import { isPersistedSpendPrompt } from './spendPromptBaseline.js';
 
 type TokenUsageSlice = {
   promptTokens: number;
@@ -103,16 +104,6 @@ export function estimateCostForUsage(
   return formatRunCostUsd(usd);
 }
 
-export function estimateComposerCostForUsage(
-  model: ModelSelection | null,
-  providers: ProviderConfig[],
-  usage: TokenUsageSlice
-): string | null {
-  const usd = estimateRunCostUsd(model, providers, usage);
-  if (usd === null) return null;
-  return formatComposerCostUsd(usd);
-}
-
 /** Last-turn cumulative cost for the composer pill (includes in-flight estimate). */
 export function resolveLiveTurnCost(
   model: ModelSelection | null,
@@ -163,6 +154,10 @@ export async function recordRunSpendForPrompt(
 ): Promise<void> {
   if (!promptId || !Number.isFinite(usd) || usd <= 0) return;
 
+  // Historical turns re-render after transcript hydrate on every boot;
+  // their spend is already persisted on conversation meta / workspace settings.
+  if (conversationId && isPersistedSpendPrompt(conversationId, promptId)) return;
+
   if (workspaceId) {
     const wsKey = `ws::${workspaceId}::${promptId}`;
     if (!recordedPromptSpend.has(wsKey)) {
@@ -192,15 +187,6 @@ export async function recordRunSpendForPrompt(
     recordedPromptSpend.add(sessionKey);
     useSessionStatsStore.getState().recordTurn(usd, stats);
   }
-}
-
-/** @deprecated Use `recordRunSpendForPrompt`. */
-export async function recordWorkspaceSpendForPrompt(
-  workspaceId: string | null | undefined,
-  promptId: string,
-  usd: number
-): Promise<void> {
-  await recordRunSpendForPrompt(workspaceId, null, promptId, usd);
 }
 
 /** Test-only reset. */

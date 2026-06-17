@@ -11,7 +11,7 @@ const meta = (id: string) => ({
   title: id,
   createdAt: 0,
   updatedAt: 0,
-  eventCount: 0,
+  eventCount: 1,
   workspaceId: 'ws-test'
 });
 
@@ -33,6 +33,7 @@ describe('useConversationsStore.select — stale slot', () => {
       activeIdByWorkspace: { 'ws-test': 'conv-deleted' },
       hydratedIds: new Set<string>(),
       loading: false,
+      activeSlotsHydrated: true,
       selecting: false
     });
 
@@ -49,6 +50,7 @@ describe('useConversationsStore.select — stale slot', () => {
       activeIdByWorkspace: { 'ws-test': 'conv-pending' },
       hydratedIds: new Set<string>(),
       loading: false,
+      activeSlotsHydrated: true,
       selecting: false
     });
 

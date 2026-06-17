@@ -31,6 +31,9 @@ export function EditorLspPanel() {
   const resolved = resolveEditorLspSettings(settings.ui);
   const lsp = settings.ui?.editorLsp ?? {};
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
+  const workspaceKnown = useWorkspaceStore(
+    (s) => activeWorkspaceId != null && s.list.some((workspace) => workspace.id === activeWorkspaceId)
+  );
   const [preview, setPreview] = useState<{
     connected: boolean;
     pid: number | null;
@@ -59,7 +62,7 @@ export function EditorLspPanel() {
   );
 
   useEffect(() => {
-    if (!resolved.enabled || !activeWorkspaceId) {
+    if (!resolved.enabled || !activeWorkspaceId || !workspaceKnown) {
       setPreview(null);
       return;
     }
@@ -88,7 +91,7 @@ export function EditorLspPanel() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [resolved.enabled, configFingerprint, activeWorkspaceId]);
+  }, [resolved.enabled, configFingerprint, activeWorkspaceId, workspaceKnown]);
 
   const setLanguageCommand = (languageId: string, command: string) => {
     const languages = { ...(lsp.languages ?? {}) };

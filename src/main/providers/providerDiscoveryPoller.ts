@@ -180,9 +180,3 @@ export function stopProviderDiscoveryPoller(): void {
   lastFingerprintByProvider.clear();
   discoveryPollerEverStarted = false;
 }
-
-/** Test-only reset. */
-export function __test_resetProviderDiscoveryPoller(): void {
-  lastFingerprintByProvider.clear();
-  discoveryPollerEverStarted = false;
-}

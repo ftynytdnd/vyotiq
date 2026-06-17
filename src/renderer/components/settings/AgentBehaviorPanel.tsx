@@ -14,7 +14,6 @@ import { CheckpointsPanel } from './CheckpointsPanel.js';
 import { HarnessPanel } from './HarnessPanel.js';
 import { InlineCompletionPanel } from './InlineCompletionPanel.js';
 import { ScheduledRunsPanel } from './ScheduledRunsPanel.js';
-import { PhasedExecutionPanel } from './PhasedExecutionPanel.js';
 import { LeftSubnav, type LeftSubnavItem } from '../ui/LeftSubnav.js';
 import { ShellStack } from '../ui/ShellSection.js';
 
@@ -29,8 +28,7 @@ export type AgentBehaviorSectionId =
   | 'checkpoints'
   | 'prompt-caching'
   | 'reports'
-  | 'scheduled-runs'
-  | 'phased-execution';
+  | 'scheduled-runs';
 
 const SECTION_ITEMS: LeftSubnavItem<AgentBehaviorSectionId>[] = [
   { id: 'memory', label: 'Memory', tabId: 'agent-tab-memory', panelId: 'agent-panel-memory' },
@@ -68,12 +66,6 @@ const SECTION_ITEMS: LeftSubnavItem<AgentBehaviorSectionId>[] = [
     label: 'Scheduled runs',
     tabId: 'agent-tab-scheduled',
     panelId: 'agent-panel-scheduled'
-  },
-  {
-    id: 'phased-execution',
-    label: 'Phased execution',
-    tabId: 'agent-tab-phased',
-    panelId: 'agent-panel-phased'
   }
 ];
 
@@ -101,8 +93,6 @@ function AgentBehaviorSectionPanel({ section }: { section: AgentBehaviorSectionI
       return <ReportsPanel />;
     case 'scheduled-runs':
       return <ScheduledRunsPanel />;
-    case 'phased-execution':
-      return <PhasedExecutionPanel />;
     default: {
       const _exhaustive: never = section;
       return _exhaustive;

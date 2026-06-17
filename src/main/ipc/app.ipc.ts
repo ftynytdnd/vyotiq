@@ -8,7 +8,7 @@ import { app, nativeTheme, shell } from 'electron';
 import { spawn } from 'node:child_process';
 import { IPC } from '@shared/constants.js';
 import type { AppInfo, AppRevealTarget } from '@shared/types/ipc.js';
-import type { AppCheckUpdatesResult, AppUpdateStatus } from '@shared/types/appUpdate.js';
+import type { AppCheckUpdatesResult } from '@shared/types/appUpdate.js';
 import {
   electronUserDataDir,
   logsDir,
@@ -17,7 +17,6 @@ import {
 } from '../paths/userDataLayout.js';
 import {
   checkForAppUpdates,
-  downloadAppUpdate,
   installDownloadedUpdate
 } from '../updater/autoUpdaterService.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
@@ -130,15 +129,6 @@ export function registerAppIpc(): void {
       return await checkForAppUpdates();
     } catch (err) {
       log.warn('checkForUpdates failed', { err });
-      throw err instanceof Error ? err : new Error(String(err));
-    }
-  });
-
-  wrapIpcHandler(IPC.APP_DOWNLOAD_UPDATE, async (): Promise<AppUpdateStatus> => {
-    try {
-      return await downloadAppUpdate();
-    } catch (err) {
-      log.warn('downloadUpdate failed', { err });
       throw err instanceof Error ? err : new Error(String(err));
     }
   });

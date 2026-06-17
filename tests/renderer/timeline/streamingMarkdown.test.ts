@@ -207,6 +207,33 @@ describe('parseStreamingBlocks', () => {
       partial: true
     });
   });
+
+  it('parses GFM tables without a trailing pipe on each row', () => {
+    const blocks = parseStreamingBlocks(
+      '| Aspect | My version | Hardened |\n|---|---|---|\n| Phases | Same 7 | Expanded'
+    );
+    expect(blocks[0]).toMatchObject({ kind: 'table' });
+    if (blocks[0]!.kind !== 'table') throw new Error('expected table');
+    expect(blocks[0].headers).toHaveLength(3);
+    expect(blocks[0].rows).toHaveLength(1);
+    expect(blocks[0].rows[0]).toHaveLength(3);
+  });
+
+  it('pads short table rows to the header column count', () => {
+    const blocks = parseStreamingBlocks('| A | B | C |\n|---|---|---|\n| only-a |');
+    if (blocks[0]!.kind !== 'table') throw new Error('expected table');
+    expect(blocks[0].rows[0]).toHaveLength(3);
+  });
+
+  it('applies partial tail parsing to the last table row while streaming', () => {
+    const blocks = parseStreamingBlocks(
+      '| H | V |\n|---|---|\n| **open bold'
+    );
+    if (blocks[0]!.kind !== 'table') throw new Error('expected table');
+    const tailCell = blocks[0].rows[0]![0]!;
+    expect(tailCell.some((s) => s.kind === 'strong')).toBe(true);
+    expect(JSON.stringify(tailCell)).not.toContain('"text":"**open bold"');
+  });
 });
 
 describe('phase headline helpers', () => {

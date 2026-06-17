@@ -175,10 +175,6 @@ export function killWorkspacePty(workspaceId: string): void {
   }
 }
 
-export function hasWorkspacePty(workspaceId: string): boolean {
-  return primarySessionFor(workspaceId) !== undefined;
-}
-
 /** Ensure the workspace primary session exists and return it. */
 export function ensureWorkspacePty(
   workspaceId: string,

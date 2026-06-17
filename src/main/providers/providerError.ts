@@ -241,7 +241,12 @@ const NON_RECOVERABLE_PROVIDER_ERROR_KINDS: ReadonlySet<ProviderErrorKind> = new
 export function isPermanentToolChoiceRejection(err: unknown): err is ProviderError {
   if (!isProviderError(err) || err.status !== 400) return false;
   const hay = `${err.friendlyMessage}\n${err.rawBody}`.toLowerCase();
-  return hay.includes('tool_choice') && (hay.includes('does not support') || hay.includes('not support'));
+  if (!hay.includes('tool_choice') && !hay.includes('tool choice')) return false;
+  return (
+    hay.includes('does not support') ||
+    hay.includes('not support') ||
+    hay.includes('must be auto')
+  );
 }
 
 /** Provider failures that should not consume the self-correction retry budget. */

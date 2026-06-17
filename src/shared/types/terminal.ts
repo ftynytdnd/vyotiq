@@ -41,14 +41,6 @@ export interface TerminalCreateResult {
   session: TerminalSessionMeta;
 }
 
-export interface TerminalListInput {
-  workspaceId: string;
-}
-
-export interface TerminalListResult {
-  sessions: TerminalSessionMeta[];
-}
-
 export interface TerminalCloseInput {
   sessionId: string;
 }

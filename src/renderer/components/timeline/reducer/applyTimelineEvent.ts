@@ -418,7 +418,11 @@ export function applyTimelineEvent(
     case 'tool-compacted':
     case 'context-summary':
       // Audit-trail kinds persisted into the transcript so replay
-      // reconstructs the same state the live run had.
+      // reconstructs the same state the live run had (`tool-compacted`
+      // and `context-summary` let the main-process replay rebuild lean
+      // banners / collapsed history). The checkpoint kinds produce no
+      // derived row; `tool-compacted` / `context-summary` fold into a single
+      // `context-reduction` audit row (see `deriveRows.ts`).
       return { ...state, events: appendTimelineEvent(state.events, event, mutate) };
 
     case 'context-usage':

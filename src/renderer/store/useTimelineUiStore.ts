@@ -58,13 +58,6 @@ interface TimelineUiStore {
    */
   diffFoldExpandedByScope: Record<string, ReadonlySet<string>>;
   toggleDiffFold: (scopeKey: string, foldId: string) => void;
-
-  /** True when the main timeline scroll is pinned to the latest messages. */
-  timelineAtTail: boolean;
-  setTimelineAtTail: (atTail: boolean) => void;
-  /** Monotonic counter — increment to request scroll-to-tail from outside Timeline. */
-  scrollToTailRequest: number;
-  requestScrollToTail: () => void;
 }
 
 // F-010 / F-015 note: `persistTimer` and `pendingExpanded` are
@@ -129,11 +122,6 @@ export const useTimelineUiStore = create<TimelineUiStore>((set, get) => ({
   manualOverrideByConvo: {},
   diffFoldExpandedByScope: {},
   hydrated: false,
-  timelineAtTail: true,
-  setTimelineAtTail: (atTail) => set({ timelineAtTail: atTail }),
-  scrollToTailRequest: 0,
-  requestScrollToTail: () =>
-    set((s) => ({ scrollToTailRequest: s.scrollToTailRequest + 1 })),
 
   hydrate: (persisted) => {
     const next: Record<string, Set<string>> = {};

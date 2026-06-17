@@ -82,7 +82,7 @@ export function stripRemovedContextManagementFields(
 export function stripRemovedUiFields<T extends UiRecord>(ui: T): { ui: T; changed: boolean } {
   let changed = false;
   let next: UiRecord = { ...ui };
-  for (const key of ['secondaryZoneMode', 'rightDockWidth', 'openEditorsCollapsedByWorkspace'] as const) {
+  for (const key of ['secondaryZoneMode', 'rightDockWidth', 'openEditorsCollapsedByWorkspace', 'phasedExecution'] as const) {
     if (key in next) {
       const { [key]: _removed, ...rest } = next;
       void _removed;

@@ -55,17 +55,9 @@ import {
   type ResolvedAgentBehaviorSettings
 } from '@shared/settings/agentBehaviorSettings.js';
 import {
-  resolvePhasedExecutionSettings,
-  type ResolvedPhasedExecutionSettings
-} from '@shared/settings/phasedExecutionSettings.js';
-import {
   HOST_REPORT_GATE_YES_INSTRUCTION,
   isHostReportGateNoAnswer
 } from './loop/hostReportGate.js';
-import {
-  applyPhasedEscapeResolution,
-  readPhasedEscapeAction
-} from './phased/phasedEscapeResolve.js';
 
 const log = logger.child('orchestrator/AgentV');
 
@@ -387,17 +379,14 @@ export async function startRun(
 
   let reportsSettings: ResolvedReportsSettings;
   let agentBehaviorSettings: ResolvedAgentBehaviorSettings;
-  let phasedExecutionSettings: ResolvedPhasedExecutionSettings;
   try {
     const settings = await getSettings();
     reportsSettings = resolveReportsSettings(settings.ui);
     agentBehaviorSettings = resolveAgentBehaviorSettings(settings.ui);
-    phasedExecutionSettings = resolvePhasedExecutionSettings(settings.ui);
   } catch (err) {
     log.warn('getSettings failed; using report defaults', { err });
     reportsSettings = resolveReportsSettings();
     agentBehaviorSettings = resolveAgentBehaviorSettings();
-    phasedExecutionSettings = resolvePhasedExecutionSettings();
   }
 
   try {
@@ -439,7 +428,6 @@ export async function startRun(
       initialQuery: input.prompt,
       reportsSettings,
       agentBehaviorSettings,
-      phasedExecutionSettings,
       runStartedAt: activeRuns.get(input.runId)?.startedAt ?? Date.now()
     });
   } catch (err: unknown) {
@@ -474,7 +462,6 @@ interface RunLoopBodyOpts {
   resumeCheckpoint?: LoopCheckpoint;
   reportsSettings: ResolvedReportsSettings;
   agentBehaviorSettings: ResolvedAgentBehaviorSettings;
-  phasedExecutionSettings: ResolvedPhasedExecutionSettings;
   runStartedAt?: number;
 }
 
@@ -489,7 +476,6 @@ async function runLoopBody(opts: RunLoopBodyOpts): Promise<void> {
     initialQuery: opts.initialQuery,
     reportsSettings: opts.reportsSettings,
     agentBehaviorSettings: opts.agentBehaviorSettings,
-    phasedExecutionSettings: opts.phasedExecutionSettings,
     ...(opts.runStartedAt !== undefined ? { runStartedAt: opts.runStartedAt } : {}),
     ...(opts.resumeCheckpoint ? { resumeCheckpoint: opts.resumeCheckpoint } : {})
   });
@@ -505,7 +491,6 @@ async function runLoopBody(opts: RunLoopBodyOpts): Promise<void> {
       checkpoint: loopResult.pausedForAskUser,
       reportsSettings: opts.reportsSettings,
       agentBehaviorSettings: opts.agentBehaviorSettings,
-      phasedExecutionSettings: opts.phasedExecutionSettings,
       callbacks: {
         emit: opts.emit,
         onDone: opts.deps.onDone,
@@ -619,43 +604,6 @@ export async function submitAskUserAnswers(input: AskUserSubmitInput): Promise<b
     content: toolContent
   });
 
-  // Phased-execution escape hatch: the human's choice maps to a concrete
-  // recovery (supply / approve / rollback / abort) applied to the resume
-  // snapshot before the loop continues.
-  if (entry.checkpoint.phasedEscape && entry.checkpoint.phaseEngineSnapshot) {
-    const action = readPhasedEscapeAction(input.answers);
-    const resolution = await applyPhasedEscapeResolution({
-      snapshot: entry.checkpoint.phaseEngineSnapshot,
-      action,
-      trip: entry.checkpoint.phasedEscapeTrip,
-      workspaceId: entry.workspaceId,
-      runId: input.runId
-    });
-    emit({
-      kind: 'phase',
-      id: randomUUID(),
-      ts: Date.now(),
-      label: resolution.kind === 'abort' ? 'Run aborted by user' : 'Resuming phased run',
-      tooltip: resolution.note
-    });
-    if (resolution.kind === 'abort') {
-      onDone();
-      removeActiveRunIfCurrent(input.runId, entry.generation);
-      if (entry.workspaceId && entry.input.conversationId) {
-        try {
-          await finalizeCheckpointRun(input.runId);
-        } catch (err) {
-          log.warn('checkpoint finalizeRun failed after phased abort', {
-            runId: input.runId,
-            err
-          });
-        }
-      }
-      return true;
-    }
-    entry.checkpoint.phaseEngineSnapshot = resolution.snapshot;
-  }
-
   if (hostGateNo) {
     onDone();
     removeActiveRunIfCurrent(input.runId, entry.generation);
@@ -686,7 +634,6 @@ export async function submitAskUserAnswers(input: AskUserSubmitInput): Promise<b
       resumeCheckpoint: entry.checkpoint,
       reportsSettings: entry.reportsSettings,
       agentBehaviorSettings: entry.agentBehaviorSettings,
-      phasedExecutionSettings: entry.phasedExecutionSettings,
       runStartedAt: run.startedAt
     });
   } catch (err: unknown) {
@@ -782,10 +729,5 @@ async function buildInitialMessages(
 
   return seedCacheLayeredMessages(replayed, userEnvelope);
 }
-
-// `ChatPermissions` is intentionally NOT re-exported here. Layering rule:
-// orchestrator modules consume shared types but should not bridge them
-// for the renderer — external callers import directly from
-// `@shared/types/chat`.
 
 registerRunCrashDrain(abortAllActiveRunsWithError);

@@ -309,7 +309,7 @@ function fingerprintWorkspaceBody(body: string): string {
  * the top-level listing body is byte-identical to the last value for this
  * workspace — keeps the prompt prefix stable for provider-side caching.
  */
-export function getStableWorkspaceXml(
+function getStableWorkspaceXml(
   workspaceId: string | undefined,
   workspacePath: string | undefined,
   topLevelBody: string
@@ -331,10 +331,6 @@ export function getStableWorkspaceXml(
     if (oldest !== undefined) workspaceXmlByFingerprint.delete(oldest);
   }
   return workspaceXml;
-}
-
-export function __resetWorkspaceXmlCacheForTests(): void {
-  workspaceXmlByFingerprint.clear();
 }
 
 const ENVELOPE_TTL_MS = 3_000;

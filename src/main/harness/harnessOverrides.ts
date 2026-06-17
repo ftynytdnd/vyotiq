@@ -21,8 +21,7 @@ const SECTION_TO_FILE: Record<HarnessSectionId, string> = {
   'context-learning': '01-context-learning.md',
   deliverables: '02-deliverables.md',
   'static-examples': '03-static-examples.md',
-  'ast-grep-reference': '04-ast-grep-cheatsheet.md',
-  'phased-execution': '05-phased-execution.md'
+  'ast-grep-reference': '04-ast-grep-cheatsheet.md'
 };
 
 function overridesDir(): string {

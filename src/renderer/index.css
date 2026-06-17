@@ -939,10 +939,15 @@ textarea {
 .vyotiq-md table,
 .vx-timeline-md table,
 .vx-timeline-md-table {
-  width: 100%;
   border-collapse: collapse;
   font-size: var(--text-row);
   line-height: 1.45;
+  /* Responsive doc-table pattern: intrinsic column widths inside a horizontal
+     scroll shell — never width:100% alone on a flex child, which lets
+     overflow-wrap:anywhere shrink columns to one character. */
+  width: max-content;
+  min-width: 100%;
+  table-layout: auto;
 }
 
 .vx-timeline-md-table-wrap>table,
@@ -980,9 +985,15 @@ textarea {
 .vx-timeline-md-table td {
   padding: 0.35em 0.75em;
   text-align: left;
+  vertical-align: top;
   color: var(--color-text-secondary);
+  /* Override `.vyotiq-md { word-break: break-word }` inheritance. */
   word-break: normal;
-  overflow-wrap: anywhere;
+  /* `break-word` (not `anywhere`) keeps readable min column widths in
+     auto-layout tables nested under flex prose columns. */
+  overflow-wrap: break-word;
+  min-width: 4.5rem;
+  max-width: 28rem;
 }
 
 .vyotiq-md th,
@@ -1032,10 +1043,21 @@ textarea {
 
 .vx-timeline-md-table-wrap {
   display: block;
-  width: fit-content;
+  /* Stretch inside `.vx-prose` flex columns; scroll when intrinsic width
+     exceeds the timeline rail instead of squashing cells vertically. */
+  align-self: stretch;
+  width: 100%;
   max-width: 100%;
+  min-width: 0;
   margin: 0.5em 0 0.85em;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--color-border-table);
+  border-radius: 6px;
+}
+
+.vx-timeline-md-table-wrap>.vx-timeline-md-table {
+  border-radius: 6px;
 }
 
 .vx-timeline-md blockquote {
@@ -3271,10 +3293,11 @@ mark.vyotiq-timeline-find-mark-active {
 
 .vx-timeline-md-table-preview {
   opacity: 0.92;
+  border-style: dashed;
 }
 
 .vx-timeline-md-table-preview table {
-  border: 1px dashed var(--color-border-subtle);
+  border: none;
 }
 
 .vx-timeline-detail-shell {

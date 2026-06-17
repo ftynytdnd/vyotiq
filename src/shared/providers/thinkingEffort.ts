@@ -14,7 +14,6 @@
  */
 
 import type {
-  ModelInfo,
   ModelThinkingCapabilities,
   ProviderConfig,
   ProviderDialect,
@@ -106,16 +105,6 @@ export function isThinkingCapableModel(
   options?: ThinkingCapabilityOptions
 ): boolean {
   return resolveThinkingCapabilities(options)?.supported === true;
-}
-
-export function isThinkingCapableModelInfo(
-  _dialect: ProviderDialect | undefined,
-  model: Pick<ModelInfo, 'id' | 'supportedParameters' | 'thinking'>
-): boolean {
-  return isThinkingCapableModel(_dialect, model.id, {
-    supportedParameters: model.supportedParameters,
-    thinking: model.thinking
-  });
 }
 
 function defaultEffortsForWire(wireStyle: ThinkingWireStyle | undefined): ThinkingEffort[] {

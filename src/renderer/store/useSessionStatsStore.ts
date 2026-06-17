@@ -22,8 +22,3 @@ export const useSessionStatsStore = create<SessionStatsState>((set) => ({
     set((s) => ({ stats: mergeAppSessionStats(s.stats, usd, delta) }));
   }
 }));
-
-/** Test-only reset. */
-export function __test_resetSessionStats(): void {
-  useSessionStatsStore.setState({ stats: { ...EMPTY_APP_SESSION_STATS } });
-}

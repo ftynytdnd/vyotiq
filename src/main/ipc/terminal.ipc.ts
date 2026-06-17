@@ -10,8 +10,6 @@ import type {
   TerminalCreateInput,
   TerminalCreateResult,
   TerminalInputPayload,
-  TerminalListInput,
-  TerminalListResult,
   TerminalResizePayload,
   TerminalRestartInput
 } from '@shared/types/terminal.js';
@@ -72,15 +70,6 @@ export function registerTerminalIpc(): void {
       const ws = await resolveWorkspace(input.workspaceId);
       const session = createWorkspaceSession(ws.id, ws.path);
       return { ok: true, session };
-    }
-  );
-
-  wrapIpcHandler(
-    IPC.TERMINAL_LIST,
-    async (_event, input: TerminalListInput): Promise<TerminalListResult> => {
-      assertObject('terminal:list', 'input', input);
-      assertString('terminal:list', 'workspaceId', input.workspaceId);
-      return { sessions: listWorkspaceSessions(input.workspaceId) };
     }
   );
 

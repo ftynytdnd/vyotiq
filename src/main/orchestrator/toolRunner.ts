@@ -54,6 +54,11 @@ export async function runToolByName(
   }
   const tool = getTool(toolName)!;
 
+  // Cache check before dedupe — identical read-shaped calls must return
+  // the memoized result instead of counting toward the duplicate block.
+  const cached = lookupCachedResult(opts.signal, tool.name, args, opts.conversationId);
+  if (cached) return cached;
+
   const dedupeBlocked = checkToolCallDedupe(opts.signal, tool.name, args);
   if (dedupeBlocked) {
     log.warn('duplicate tool call blocked', {
@@ -64,16 +69,6 @@ export async function runToolByName(
     });
     return dedupeBlocked;
   }
-
-  // Cache check — only reached for registered tools so `tool.name` is
-  // the canonical `ToolName`. A hit returns the prior successful result
-  // with a "you already did this" banner prepended to `output`; tool
-  // execution is skipped entirely so the 14×-read loop observed in
-  // production can never burn tokens re-running `read` on a file whose
-  // contents are already in the model's context.
-  // Cache is scoped per run `AbortSignal`. See `toolResultCache.ts`.
-  const cached = lookupCachedResult(opts.signal, tool.name, args, opts.conversationId);
-  if (cached) return cached;
 
   try {
     const result = await tool.run(args, {

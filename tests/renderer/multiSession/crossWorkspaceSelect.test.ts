@@ -30,12 +30,13 @@ beforeEach(() => {
   });
   useConversationsStore.setState({
     list: [
-      { id: 'conv-A', title: 'A', createdAt: 0, updatedAt: 0, eventCount: 0, workspaceId: 'ws-A' },
-      { id: 'conv-B', title: 'B', createdAt: 0, updatedAt: 0, eventCount: 0, workspaceId: 'ws-B' }
+      { id: 'conv-A', title: 'A', createdAt: 0, updatedAt: 0, eventCount: 1, workspaceId: 'ws-A' },
+      { id: 'conv-B', title: 'B', createdAt: 0, updatedAt: 0, eventCount: 1, workspaceId: 'ws-B' }
     ],
     activeIdByWorkspace: { 'ws-A': 'conv-A', 'ws-B': null },
     hydratedIds: new Set<string>(['conv-A']),
-    loading: false
+    loading: false,
+    activeSlotsHydrated: true
   });
   useWorkspaceStore.setState({
     list: [

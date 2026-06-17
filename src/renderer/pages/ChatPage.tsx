@@ -27,7 +27,6 @@ interface ChatPageProps {
 
 export function ChatPage({ onOpenProviders }: ChatPageProps) {
   const events = useChatStore((s) => s.events);
-  const chatConversationId = useChatStore((s) => s.conversationId);
   const providers = useProviderStore((s) => s.providers);
   const workspaceInfo = useWorkspaceStore((s) => s.info);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
@@ -160,9 +159,7 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
     enabled: centerComposer,
     needsSetup,
     selecting,
-    activeWorkspaceId,
-    activeConversationId,
-    chatConversationId
+    activeWorkspaceId
   });
 
   useEffect(() => {

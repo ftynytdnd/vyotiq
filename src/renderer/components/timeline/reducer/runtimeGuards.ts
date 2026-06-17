@@ -69,27 +69,14 @@ export function isTimelineEvent(value: unknown): value is TimelineEvent {
       return true;
     case 'user-prompt':
     case 'agent-thought':
-      return hasStringField(o, 'content');
     case 'phase':
-      return hasStringField(o, 'label');
     case 'error':
-      return hasStringField(o, 'message');
-    case 'phase-gate':
+      // `content` (user-prompt / agent-thought) and `message` (error)
+      // / `label` (phase) — every variant has a single text field.
       return (
-        hasStringField(o, 'runId') &&
-        hasStringField(o, 'subtaskId') &&
-        hasNumberField(o, 'seq') &&
-        hasStringField(o, 'phase') &&
-        hasStringField(o, 'exitCriteria') &&
-        typeof o['gateDecision'] === 'object' &&
-        o['gateDecision'] !== null
-      );
-    case 'phase-ledger-entry':
-      return (
-        hasStringField(o, 'runId') &&
-        hasStringField(o, 'subtaskId') &&
-        hasNumberField(o, 'seq') &&
-        hasStringField(o, 'phase')
+        hasStringField(o, 'content') ||
+        hasStringField(o, 'message') ||
+        hasStringField(o, 'label')
       );
     case 'ask-user-prompt':
       return (

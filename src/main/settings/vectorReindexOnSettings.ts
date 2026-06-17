@@ -2,8 +2,8 @@
  * Re-index workspace vector stores when embedder settings change.
  */
 
-import { BrowserWindow } from 'electron';
 import { IPC } from '@shared/constants.js';
+import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import { resolveVectorMemorySettings } from '@shared/settings/vectorMemorySettings.js';
 import type { AppSettings } from '@shared/types/ipc.js';
 import { forceReindexWorkspace } from '../memory/vector/indexScheduler.js';
@@ -20,9 +20,7 @@ export function pushVectorReindexProgress(payload: {
   total?: number;
   message?: string;
 }): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send(IPC.MEMORY_REINDEX_PROGRESS, payload);
-  }
+  safeWebContentsSend(IPC.MEMORY_REINDEX_PROGRESS, payload);
 }
 
 function vectorMemoryFingerprint(settings: AppSettings): string {

@@ -19,6 +19,7 @@
  *      memory).
  */
 
+import type { AskUserStructuredPayload } from '@shared/types/askUser.js';
 import type { ChatMessage, TimelineEvent } from '@shared/types/chat.js';
 import { truncateToolOutputForContext } from '@shared/text/truncateUtf8Safe.js';
 import { stableStringify } from '@shared/json/stableStringify.js';
@@ -55,6 +56,31 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
   let curToolCalls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> = [];
   const toolCallMeta = new Map<string, { name: string }>();
   let pendingCallIds: string[] = [];
+  /** User answer deferred until pending `ask_user` tool-result is replayed. */
+  let deferredUserAfterTools: ChatMessage | null = null;
+
+  function pushUserPrompt(content: string): void {
+    const wrapped = wrapXml('turn', wrapXml('user_message', content, undefined, { escape: true }));
+    const msg: ChatMessage = { role: 'user', content: wrapped };
+    if (pendingCallIds.length > 0) {
+      deferredUserAfterTools = msg;
+      return;
+    }
+    messages.push(msg);
+  }
+
+  function flushDeferredUserAfterTools(): void {
+    if (!deferredUserAfterTools) return;
+    messages.push(deferredUserAfterTools);
+    deferredUserAfterTools = null;
+  }
+
+  function askUserArgsFromPayload(payload: AskUserStructuredPayload): Record<string, unknown> {
+    return {
+      ...(payload.title && payload.title.length > 0 ? { title: payload.title } : {}),
+      questions: payload.questions
+    };
+  }
 
   const flushAssistant = (opts?: { dropUnpairedToolCalls?: boolean }) => {
     if (curAssistantId === null) return;
@@ -88,10 +114,7 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
     switch (e.kind) {
       case 'user-prompt': {
         flushAssistant({ dropUnpairedToolCalls: true });
-        pendingCallIds = [];
-        const content =
-          wrapXml('turn', wrapXml('user_message', e.content, undefined, { escape: true }));
-        messages.push({ role: 'user', content });
+        pushUserPrompt(e.content);
         break;
       }
       case 'agent-text-delta':
@@ -181,6 +204,9 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
           name: meta?.name ?? e.result.name,
           content: output
         });
+        if (pendingCallIds.length === 0) {
+          flushDeferredUserAfterTools();
+        }
         break;
       }
       case 'phase':
@@ -210,9 +236,22 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
       case 'ask-user-prompt': {
         flushAssistant({ dropUnpairedToolCalls: true });
         pendingCallIds = [];
-        if (e.displayText.length > 0) {
-          messages.push({ role: 'assistant', content: e.displayText });
-        }
+        const askArgs = askUserArgsFromPayload(e.payload);
+        const askTc: NonNullable<ChatMessage['tool_calls']>[number] = {
+          id: e.toolCallId,
+          type: 'function',
+          function: {
+            name: 'ask_user',
+            arguments: stableStringify(askArgs)
+          }
+        };
+        messages.push({
+          role: 'assistant',
+          content: e.displayText.length > 0 ? e.displayText : null,
+          tool_calls: [askTc]
+        });
+        toolCallMeta.set(e.toolCallId, { name: 'ask_user' });
+        pendingCallIds.push(e.toolCallId);
         break;
       }
       default:
@@ -220,6 +259,7 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
     }
   }
   flushAssistant();
+  flushDeferredUserAfterTools();
   return messages;
 }
 

@@ -12,19 +12,8 @@ import {
 import type { ToolResult } from '@shared/types/tool.js';
 import { buildReportHtml } from './reportTemplate.js';
 import { buildEditRunSummaryBody } from './reportBodyBuilders.js';
+import { slugifyReportSegment } from './reportSlugify.js';
 import type { GenerateRunSummaryInput } from '@shared/types/ipc.js';
-
-function slugify(text: string): string {
-  return (
-    text
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]+/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-{2,}/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 48) || 'run-summary'
-  );
-}
 
 export async function generateRunSummaryReport(
   input: GenerateRunSummaryInput,
@@ -46,7 +35,7 @@ export async function generateRunSummaryReport(
 
   const stamp = new Date(input.completedAt).toISOString().slice(0, 16).replace('T', ' ');
   const title = `Run summary — ${stamp}`;
-  const slug = `${slugify(title)}-${input.promptId.slice(0, 8)}`;
+  const slug = `${slugifyReportSegment(title, 48, 'run-summary')}-${input.promptId.slice(0, 8)}`;
   const relPath = `${WORKSPACE_DOTDIR}/${REPORTS_SUBDIR}/${slug}.html`;
   const absDir = join(workspacePath, WORKSPACE_DOTDIR, REPORTS_SUBDIR);
   const absPath = join(absDir, `${slug}.html`);

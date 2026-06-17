@@ -6,9 +6,6 @@
 /** Keep assistant timeline prose under this line count when possible. */
 export const TIMELINE_MARKDOWN_LINE_BUDGET = 80;
 
-/** Prefer `report` when a single answer would exceed this many lines. */
-export const REPORT_TOOL_LINE_THRESHOLD = TIMELINE_MARKDOWN_LINE_BUDGET;
-
 /** Offer a run-summary HTML report after edits at or above this count. */
 export const AUTO_REPORT_MIN_EDITS = 3;
 

@@ -152,18 +152,6 @@ const ORCHESTRATION_TAG_NAMES = [
 /** Joined alternation for the orchestration tag-name group. */
 const ORCH_TAG_GROUP = `(?:${ORCHESTRATION_TAG_NAMES.join('|')})`;
 
-/** Paired form `<delegate ...>...</delegate>`. Defensive — model variants. */
-const DELEGATE_PAIR_RE = new RegExp(
-  `<delegate\\b${ATTR_LIST_SRC}>[\\s\\S]*?</delegate>`,
-  'gi'
-);
-
-/** Self-closing canonical form `<delegate ... />` and shorthand `<delegate ...>`. */
-const DELEGATE_SELFCLOSE_RE = new RegExp(
-  `<delegate\\b${ATTR_LIST_SRC}/?>`,
-  'gi'
-);
-
 /**
  * Paired form for any allowlisted orchestration tag. Non-greedy body so
  * stacked envelopes don't collapse into one giant match.
@@ -283,91 +271,13 @@ function withFencedRegionsMasked(
 /**
  * Match a trailing OPEN fence (no closing delimiter yet). Mirrors
  * `FENCE_RE` exactly through the opener, then accepts any body
- * (including newlines) up to end-of-string with NO closing `\2`. Used
- * by the streaming-safe `stripFencedCode` so a buffer that ends mid-
- * fence (`hello\n\`\`\`xml\n<delegate id="A1"`) doesn't leak the
- * fenced body to a subsequent regex pass.
- *
+ * (including newlines) up to end-of-string with NO closing delimiter.
  * Capture group 1 is the leading `^|\n` so the replacement can
  * preserve paragraph spacing without re-anchoring. Capture group 3
  * is the body after the info-line (may be undefined when only the
- * opener has arrived); preserved so the pure-orchestration-fence
- * unwrap can also fire mid-stream.
+ * opener has arrived).
  */
 const TRAILING_OPEN_FENCE_RE = /(^|\n)(```|~~~)[^\n]*(?:\n([\s\S]*))?$/;
-
-/**
- * Drop every fenced markdown code block from `text`, EXCEPT fences whose
- * body is exclusively `<delegate ... />` markup (whitespace tolerated).
- * Closed fences (``` ... ``` and ~~~ ... ~~~) are removed entirely; a
- * trailing OPEN fence (no closing delimiter at end-of-buffer, common
- * during streaming) is also removed so a partial fence body cannot
- * leak into a subsequent regex pass.
- *
- * Pure-orchestration fences (legacy: model wrapped `<delegate ... />` in
- * ```xml … ```) are unwrapped so display stripping can remove the markup.
- * Detection: run the body through `<delegate ... />` strip; if the result
- * trims to empty, every character was orchestration scaffolding.
- *
- * Streaming safety: trailing-open-fence pass drops incomplete fence bodies
- * so partial `<delegate id="A1"` tails do not flash in the timeline.
- *
- * Returns the input unchanged if no fences are present.
- */
-export function stripFencedCode(text: string): string {
-  // Order matters: process closed fences FIRST. For each closed
-  // fence, decide whether the body is a real-spawn pure-
-  // orchestration fence (preserve body) or a prose / illustration
-  // fence (drop body). After this pass, any remaining ``` or ~~~
-  // at line-start MUST be an unclosed opener.
-  const noClosed = text.replace(
-    FENCE_BODY_RE,
-    (_match, leading: string, _delim: string, body: string) => {
-      const stripped = body
-        .replace(DELEGATE_PAIR_RE, '')
-        .replace(DELEGATE_SELFCLOSE_RE, '')
-        .trim();
-      if (stripped.length === 0 && body.trim().length > 0) {
-        // Pure-orchestration fence: preserve the body verbatim so
-        // `DELEGATE_RE` can match the directives inside. Reset the
-        // global regex state used in the test (`lastIndex` would
-        // otherwise stick across `.replace` invocations because
-        // `DELEGATE_*_RE` are `g`-flagged) before returning.
-        DELEGATE_PAIR_RE.lastIndex = 0;
-        DELEGATE_SELFCLOSE_RE.lastIndex = 0;
-        // Body usually ends with a trailing `\n` from the closing
-        // delimiter line; preserve the leading newline so paragraph
-        // spacing around the unwrapped block matches the original.
-        return `${leading}${body}`;
-      }
-      DELEGATE_PAIR_RE.lastIndex = 0;
-      DELEGATE_SELFCLOSE_RE.lastIndex = 0;
-      // Illustration / prose fence — drop the body. Preserve the
-      // leading newline (if any) for paragraph spacing.
-      return leading;
-    }
-  );
-  return noClosed.replace(
-    TRAILING_OPEN_FENCE_RE,
-    (_match, leading: string, _delim: string, body: string | undefined) => {
-      // No body yet (just the opener line) — drop the opener and
-      // preserve only the leading newline.
-      if (typeof body !== 'string') return leading;
-      const stripped = body
-        .replace(DELEGATE_PAIR_RE, '')
-        .replace(DELEGATE_SELFCLOSE_RE, '')
-        .trim();
-      DELEGATE_PAIR_RE.lastIndex = 0;
-      DELEGATE_SELFCLOSE_RE.lastIndex = 0;
-      // Pure-orchestration body so far: preserve for display stripping.
-      // Partial directives at the buffer tail strip to empty and are ignored.
-      if (stripped.length === 0 && body.trim().length > 0) {
-        return `${leading}${body}`;
-      }
-      return leading;
-    }
-  );
-}
 
 /**
  * Pre-pass for the display strip: drop any fenced code block whose body
@@ -434,9 +344,8 @@ function dropOrchestrationOnlyFences(text: string): string {
  */
 /**
  * Drop a trailing OPEN fence (no closing delimiter yet) from display text
- * when it would render as an empty gray `<pre>` pill. Unlike
- * `stripFencedCode` (parse path), we never unwrap pure-orchestration
- * bodies for display — orchestration markup is stripped, not rendered.
+ * when it would render as an empty gray `<pre>` pill. Orchestration markup
+ * is stripped, not rendered.
  *
  * Illustration fences that still carry real prose/code mid-stream are
  * left intact so a closing delimiter can arrive on the next delta.

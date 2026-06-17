@@ -43,7 +43,8 @@ beforeEach(() => {
     list: [],
     activeIdByWorkspace: {},
     hydratedIds: new Set<string>(),
-    loading: false
+    loading: false,
+    activeSlotsHydrated: true
   });
   // Single workspace registered, active. Without an active workspace,
   // `select` is a no-op (the multi-workspace contract requires it),
@@ -85,8 +86,8 @@ describe('useConversationsStore.select — multi-session contract', () => {
     });
     useConversationsStore.setState({
       list: [
-        { id: 'conv-A', title: 'A', createdAt: 0, updatedAt: 0, eventCount: 0, workspaceId: 'ws-test' },
-        { id: 'conv-B', title: 'B', createdAt: 0, updatedAt: 0, eventCount: 0, workspaceId: 'ws-test' }
+        { id: 'conv-A', title: 'A', createdAt: 0, updatedAt: 0, eventCount: 1, workspaceId: 'ws-test' },
+        { id: 'conv-B', title: 'B', createdAt: 0, updatedAt: 0, eventCount: 1, workspaceId: 'ws-test' }
       ],
       activeIdByWorkspace: { 'ws-test': 'conv-A' }
     });
@@ -114,8 +115,8 @@ describe('useConversationsStore.select — multi-session contract', () => {
   it('records the new active id under the active workspace slot', async () => {
     useConversationsStore.setState({
       list: [
-        { id: 'conv-A', title: 'A', createdAt: 0, updatedAt: 0, eventCount: 0, workspaceId: 'ws-test' },
-        { id: 'conv-B', title: 'B', createdAt: 0, updatedAt: 0, eventCount: 0, workspaceId: 'ws-test' }
+        { id: 'conv-A', title: 'A', createdAt: 0, updatedAt: 0, eventCount: 1, workspaceId: 'ws-test' },
+        { id: 'conv-B', title: 'B', createdAt: 0, updatedAt: 0, eventCount: 1, workspaceId: 'ws-test' }
       ],
       activeIdByWorkspace: { 'ws-test': 'conv-A' }
     });
@@ -138,7 +139,7 @@ describe('useConversationsStore.select — multi-session contract', () => {
     });
     useConversationsStore.setState({
       list: [
-        { id: 'conv-A', title: 'A', createdAt: 0, updatedAt: 0, eventCount: 0, workspaceId: 'ws-test' }
+        { id: 'conv-A', title: 'A', createdAt: 0, updatedAt: 0, eventCount: 1, workspaceId: 'ws-test' }
       ],
       activeIdByWorkspace: { 'ws-test': 'conv-A' },
       hydratedIds: new Set<string>(['conv-A'])

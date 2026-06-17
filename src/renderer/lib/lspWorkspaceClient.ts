@@ -95,13 +95,6 @@ export async function ensureLspClient(
   return entry;
 }
 
-export async function getLspClient(
-  workspaceId: string,
-  languageId: string
-): Promise<WorkspaceLspEntry | null> {
-  return ensureLspClient(workspaceId, languageId);
-}
-
 export function disposeLspClient(workspaceId: string, languageId?: string): void {
   if (languageId) {
     const key = clientKey(workspaceId, languageId);

@@ -16,7 +16,7 @@ function tabsMatchingTarget(target: DockTreeDeleteTarget) {
 }
 
 /** Close open editor tabs for a delete target; returns false if unsaved gate blocks. */
-export function closeTabsForDeleteTarget(target: DockTreeDeleteTarget): boolean {
+function closeTabsForDeleteTarget(target: DockTreeDeleteTarget): boolean {
   const tabs = tabsMatchingTarget(target);
   for (const tab of tabs) {
     const closed = useEditorStore.getState().requestCloseTab(tab.filePath);

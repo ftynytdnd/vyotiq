@@ -128,9 +128,6 @@ export const panelTabStripClassName = cn(
   panelTabInsetXClassName
 );
 
-/** @deprecated Use {@link panelTabStripClassName}. */
-export const secondaryZoneTabStripClassName = panelTabStripClassName;
-
 /** Vyotiq UI panel chrome (secondary zone PanelFrame). */
 export const appPanelFrameClassName = 'vx-panel-frame flex h-full min-h-0 flex-col';
 /** Dialog overlay — content-sized height (no viewport stretch). */

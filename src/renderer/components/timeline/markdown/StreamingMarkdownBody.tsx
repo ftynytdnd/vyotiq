@@ -25,6 +25,7 @@ import { useThrottledValue } from '../../../lib/useThrottledValue.js';
 import { MarkdownBody } from './MarkdownBody.js';
 import { TaskCheckbox } from './TaskCheckbox.js';
 import { MdTable } from './MdTable.js';
+import { MdLink } from './MdLink.js';
 import { healStreamingMarkdown } from './healStreamingMarkdown.js';
 import {
   parseStreamingBlocks,
@@ -106,7 +107,7 @@ export function StreamingMarkdownBody({
       ) : (
         blocks.map((block, idx) => (
           <StreamBlock
-            key={`block-${idx}`}
+            key={`${idx}:${blockContentKey(block)}`}
             block={block}
             isTail={idx === blocks.length - 1}
           />
@@ -332,15 +333,9 @@ function InlineSpan({ span }: { span: InlineSpan }): ReactNode {
       );
     case 'link':
       return (
-        <a
-          href={span.href}
-          target="_blank"
-          rel="noreferrer noopener"
-          referrerPolicy="no-referrer"
-          className="text-accent underline decoration-accent/40 underline-offset-2"
-        >
+        <MdLink href={span.href}>
           <InlineSpans spans={span.children} />
-        </a>
+        </MdLink>
       );
     default: {
       const _exhaustive: never = span;

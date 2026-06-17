@@ -3,8 +3,8 @@
  */
 
 import { pathToFileURL } from 'node:url';
-import { BrowserWindow } from 'electron';
 import { IPC } from '@shared/constants.js';
+import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import { LspRelaySession, type LspRelayStatus } from './lspRelaySession.js';
 import {
   mergeLspConfig,
@@ -44,7 +44,7 @@ function workspaceMissingResult(): LspConnectResult {
     rootUri: '',
     status: { connected: false, pid: null, lastError: null },
     configSource: 'disabled',
-    reason: 'Workspace not found'
+    reason: 'unknown_workspace'
   };
 }
 
@@ -63,10 +63,7 @@ async function resolveLspConfig(workspaceId: string) {
 }
 
 function pushRelayMessage(workspaceId: string, message: string): void {
-  const payload = { workspaceId, message };
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send(IPC.LSP_MESSAGE, payload);
-  }
+  safeWebContentsSend(IPC.LSP_MESSAGE, { workspaceId, message });
 }
 
 async function stopRelayByKey(key: string): Promise<void> {

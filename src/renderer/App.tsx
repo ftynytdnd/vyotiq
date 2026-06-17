@@ -24,8 +24,9 @@ import { useProviderAccountStore } from './store/useProviderAccountStore.js';
 import { useWorkspaceStore } from './store/useWorkspaceStore.js';
 import { useSettingsStore, selectSettingsReady } from './store/useSettingsStore.js';
 import { useToastStore } from './store/useToastStore.js';
-import { useConversationsStore } from './store/useConversationsStore.js';
-import { useChatStore } from './store/useChatStore.js';
+import {
+  useConversationsStore
+} from './store/useConversationsStore.js';
 import { useUiStore } from './store/useUiStore.js';
 import { useTimelineUiStore } from './store/useTimelineUiStore.js';
 import { useAppViewStore, type SettingsSectionId } from './store/useAppViewStore.js';
@@ -68,17 +69,17 @@ export default function App() {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
   const {
     hydrateActiveByWorkspace,
-    select: selectConversation,
     list: conversationsList,
     activeIdByWorkspace,
-    prewarm: prewarmConversation
+    prewarm: prewarmConversation,
+    conversationsLoading
   } = useConversationsStore(
     useShallow((s) => ({
       hydrateActiveByWorkspace: s.hydrateActiveByWorkspace,
-      select: s.select,
       list: s.list,
       activeIdByWorkspace: s.activeIdByWorkspace,
-      prewarm: s.prewarm
+      prewarm: s.prewarm,
+      conversationsLoading: s.loading
     }))
   );
   const [activeMapHydrated, setActiveMapHydrated] = useState(false);
@@ -206,6 +207,7 @@ export default function App() {
   useEffect(() => {
     if (prewarmDone) return;
     if (!activeMapHydrated) return;
+    if (conversationsLoading) return;
     if (conversationsList.length === 0) return;
     const slots = Object.entries(activeIdByWorkspace).filter(
       ([wsId, convId]) =>
@@ -252,53 +254,24 @@ export default function App() {
   }, [
     prewarmDone,
     activeMapHydrated,
+    conversationsLoading,
     activeIdByWorkspace,
     activeWorkspaceId,
     conversationsList,
     prewarmConversation
   ]);
 
-  const slotIsValidForWorkspace = useMemo(() => {
-    if (!activeWorkspaceId) return false;
-    const targetId = activeIdByWorkspace[activeWorkspaceId] ?? null;
-    return (
-      targetId !== null &&
-      conversationsList.some((m) => m.id === targetId && m.workspaceId === activeWorkspaceId)
-    );
-  }, [activeWorkspaceId, activeIdByWorkspace, conversationsList]);
-
-  const activeSlotConversationId =
-    activeWorkspaceId && slotIsValidForWorkspace
-      ? (activeIdByWorkspace[activeWorkspaceId] ?? null)
-      : null;
-
-  // Follow the persisted last-active slot for the active workspace once
-  // settings + the conversation catalogue are ready. Skip when the mirror
-  // already shows that hydrated conversation — avoids redundant
-  // `select()` supersede churn from duplicate boot-time effects.
+  // Restore the active workspace session once persisted slots + catalogue
+  // are ready (persisted slot, else newest chat; clear stale slots).
   useEffect(() => {
-    if (!activeMapHydrated || !activeWorkspaceId) return;
-    if (conversationsList.length === 0) return;
-    if (!slotIsValidForWorkspace || !activeSlotConversationId) {
-      useChatStore.getState().setActiveConversation(null);
-      return;
-    }
-    const chat = useChatStore.getState();
-    const conv = useConversationsStore.getState();
-    if (
-      chat.conversationId === activeSlotConversationId &&
-      conv.hydratedIds.has(activeSlotConversationId)
-    ) {
-      return;
-    }
-    void selectConversation(activeSlotConversationId);
+    if (!activeMapHydrated || !activeWorkspaceId || conversationsLoading) return;
+    void useConversationsStore.getState().restoreWorkspaceSession(activeWorkspaceId);
   }, [
     activeMapHydrated,
     activeWorkspaceId,
+    conversationsLoading,
     conversationsList,
-    activeSlotConversationId,
-    slotIsValidForWorkspace,
-    selectConversation
+    activeIdByWorkspace
   ]);
 
   // Background TTL-respecting model discovery, once per provider per boot.

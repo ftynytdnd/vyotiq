@@ -56,6 +56,11 @@ import {
 } from './chatStoreTypes.js';
 import { mirrorOf } from './chatStoreMirror.js';
 import { shouldUnloadIdleSlice, unloadIdleSlice } from './chatStoreRam.js';
+import {
+  clearSpendPromptBaseline,
+  mergeSpendPromptBaseline,
+  syncSpendPromptBaseline
+} from '../lib/spendPromptBaseline.js';
 
 export { __resetTotalRunUsageCacheForTests } from './chatStoreTotalRunUsage.js';
 
@@ -250,6 +255,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
     set((s) => {
       const prepared = prepareTranscriptEventsForLoad(events);
+      syncSpendPromptBaseline(conversationId, prepared);
       const rebuilt = rebuildTimelineState(prepared);
       // Preserve any in-flight `runId / isProcessing / runStartedAt`
       // already on the slice — this is the entire point of the
@@ -306,6 +312,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   prependTranscript: (conversationId, olderEvents, paging) => {
     if (olderEvents.length === 0) return;
+    mergeSpendPromptBaseline(conversationId, prepareTranscriptEventsForLoad(olderEvents));
     set((s) => {
       const prior = s.slices[conversationId];
       if (!prior) return s;
@@ -366,6 +373,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   dropConversation: (conversationId) => {
+    clearSpendPromptBaseline(conversationId);
     useCheckpointsStore.getState().dropConversation(conversationId);
     set((s) => {
       if (!s.slices[conversationId]) return s;
@@ -905,6 +913,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const existing = s.slices[conversationId];
       if (existing && existing.events.length > 0) return s;
       const prepared = prepareTranscriptEventsForLoad(events);
+      syncSpendPromptBaseline(conversationId, prepared);
       const rebuilt = rebuildTimelineState(prepared);
       const fresh: ChatSlice = {
         ...emptySlice(conversationId),
