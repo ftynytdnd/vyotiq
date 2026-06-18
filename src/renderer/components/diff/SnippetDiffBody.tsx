@@ -1,38 +1,49 @@
 /**
- * Card-body diff — syntax-highlighted snippets without unified-diff chrome.
+ * Card-body diff — virtualized, syntax-highlighted snippets with
+ * intra-line word highlights on adjacent `-` / `+` pairs.
  */
 
-import { memo, useId, useMemo } from 'react';
+import { memo, useId, useLayoutEffect, useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import type { DiffHunk } from '@shared/types/tool.js';
 import { languageFromPath } from '@shared/text/languageFromPath.js';
 import { cn } from '../../lib/cn.js';
 import { useTimelineUiStore } from '../../store/useTimelineUiStore.js';
 import type { DiffViewVariant } from '../timeline/tools/edit/diff/DiffHunk.js';
+import { buildIntraLineMap } from '../timeline/tools/edit/diff/useIntraLineHighlight.js';
 import {
   buildSnippetItems,
-  findLastChangedLineIndex,
-  hunksToChangedSnippet
+  hunksToChangedSnippet,
+  type SnippetItem
 } from './extractSnippetItems.js';
 import { SnippetDiffLine } from './SnippetDiffLine.js';
 import { DiffCopyButton } from '../timeline/tools/edit/diff/DiffCopyButton.js';
 
 const EMPTY_FOLD_SET: ReadonlySet<string> = new Set();
+const LINE_ESTIMATE_PX = 22;
+const FOLD_ESTIMATE_PX = 28;
+/** Below this line count, a plain list is cheaper than virtualizer setup. */
+const VIRTUALIZE_LINE_THRESHOLD = 64;
 
 export interface SnippetDiffBodyProps {
   hunks: DiffHunk[];
   variant: DiffViewVariant;
   filePath?: string;
   maxHeightClass?: string;
+  /** Brief crossfade when handoff from preview → FS-aware stream. */
+  handoff?: boolean;
 }
 
 export const SnippetDiffBody = memo(function SnippetDiffBody({
   hunks,
   variant,
   filePath,
-  maxHeightClass = 'max-h-80'
+  maxHeightClass = 'max-h-80',
+  handoff = false
 }: SnippetDiffBodyProps) {
   const instanceId = useId();
   const foldScopeKey = `${instanceId}:snippet`;
+  const scrollRef = useRef<HTMLDivElement>(null);
   const expandedFolds = useTimelineUiStore(
     (s) => s.diffFoldExpandedByScope[foldScopeKey] ?? EMPTY_FOLD_SET
   );
@@ -49,22 +60,27 @@ export const SnippetDiffBody = memo(function SnippetDiffBody({
     [safeHunks, expandedFolds]
   );
 
-  const streamingTipKey = useMemo(() => {
-    if (variant !== 'partial') return null;
-    const idx = findLastChangedLineIndex(safeHunks);
-    if (idx === null) return null;
-    let cursor = 0;
-    for (let h = 0; h < safeHunks.length; h++) {
-      const hunk = safeHunks[h]!;
-      for (let i = 0; i < hunk.lines.length; i++) {
-        if (cursor === idx) return `${h}:${i}`;
-        cursor++;
-      }
-    }
-    return null;
-  }, [safeHunks, variant]);
+  const intraMaps = useMemo(
+    () => safeHunks.map((hunk) => buildIntraLineMap(hunk.lines, -1)),
+    [safeHunks]
+  );
 
   const copyText = useMemo(() => hunksToChangedSnippet(safeHunks), [safeHunks]);
+
+  const shouldVirtualize = items.length > VIRTUALIZE_LINE_THRESHOLD;
+
+  const virtualizer = useVirtualizer({
+    count: shouldVirtualize ? items.length : 0,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (index) =>
+      items[index]?.kind === 'fold' ? FOLD_ESTIMATE_PX : LINE_ESTIMATE_PX,
+    overscan: 12
+  });
+
+  useLayoutEffect(() => {
+    if (!shouldVirtualize || items.length === 0 || !scrollRef.current) return;
+    virtualizer.measure();
+  }, [shouldVirtualize, items.length, virtualizer]);
 
   if (safeHunks.length === 0) {
     return (
@@ -72,41 +88,84 @@ export const SnippetDiffBody = memo(function SnippetDiffBody({
     );
   }
 
+  const virtualItems = shouldVirtualize ? virtualizer.getVirtualItems() : [];
+  const measuring = shouldVirtualize && virtualItems.length === 0 && items.length > 0;
+
+  const renderItem = (item: SnippetItem, i: number) => {
+    if (item.kind === 'fold') {
+      if (item.hidden === 0) return null;
+      return (
+        <button
+          key={`${item.foldId}-${i}`}
+          type="button"
+          onClick={() => toggleDiffFold(foldScopeKey, item.foldId)}
+          className="vx-snippet-diff-fold w-full px-2.5 py-1 text-left font-mono text-meta text-text-faint"
+        >
+          … {item.hidden} unchanged line{item.hidden === 1 ? '' : 's'} — expand
+        </button>
+      );
+    }
+    const intra = intraMaps[item.hunkIdx]?.get(item.lineIndex);
+    return (
+      <SnippetDiffLine
+        key={`${item.hunkIdx}:${item.lineIndex}`}
+        line={item.line}
+        {...(language ? { language } : {})}
+        {...(intra ? { intra } : {})}
+      />
+    );
+  };
+
   return (
     <div
       data-variant={variant}
       data-snippet-diff
-      className={cn('group/diff relative vx-snippet-diff-body overflow-y-auto', maxHeightClass)}
+      className={cn(
+        'group/diff relative vx-snippet-diff-body',
+        handoff && 'vyotiq-diff-handoff',
+        maxHeightClass
+      )}
     >
       {variant !== 'partial' && copyText.trim().length > 0 ? (
         <DiffCopyButton text={copyText} />
       ) : null}
-      {items.map((item, i) => {
-        if (item.kind === 'fold') {
-          if (item.hidden === 0) return null;
-          return (
-            <button
-              key={`${item.foldId}-${i}`}
-              type="button"
-              onClick={() => toggleDiffFold(foldScopeKey, item.foldId)}
-              className="vx-snippet-diff-fold w-full px-2.5 py-1 text-left font-mono text-meta text-text-faint"
+      <div
+        ref={scrollRef}
+        className={cn('overflow-y-auto', maxHeightClass)}
+        data-snippet-diff-scroll
+      >
+        {shouldVirtualize ? (
+          measuring ? (
+            <div
+              className="vx-snippet-diff-measuring"
+              style={{ height: `${virtualizer.getTotalSize()}px` }}
+              aria-busy="true"
+            />
+          ) : (
+            <div
+              className="relative w-full"
+              style={{ height: `${virtualizer.getTotalSize()}px` }}
             >
-              … {item.hidden} unchanged line{item.hidden === 1 ? '' : 's'} — expand
-            </button>
-          );
-        }
-        const tip =
-          streamingTipKey !== null &&
-          `${item.hunkIdx}:${item.lineIndex}` === streamingTipKey;
-        return (
-          <SnippetDiffLine
-            key={`${item.hunkIdx}:${item.lineIndex}`}
-            line={item.line}
-            {...(language ? { language } : {})}
-            isStreamingTip={tip}
-          />
-        );
-      })}
+              {virtualItems.map((virtualRow) => {
+                const item = items[virtualRow.index]!;
+                return (
+                  <div
+                    key={virtualRow.key}
+                    data-index={virtualRow.index}
+                    ref={virtualizer.measureElement}
+                    className="absolute left-0 top-0 w-full"
+                    style={{ transform: `translateY(${virtualRow.start}px)` }}
+                  >
+                    {renderItem(item, virtualRow.index)}
+                  </div>
+                );
+              })}
+            </div>
+          )
+        ) : (
+          items.map((item, i) => renderItem(item, i))
+        )}
+      </div>
       {hiddenLineCount > 0 && (
         <div className="px-2.5 py-1 font-mono text-meta italic text-text-faint">
           … {hiddenLineCount} more line{hiddenLineCount === 1 ? '' : 's'}

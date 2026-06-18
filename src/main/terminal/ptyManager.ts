@@ -14,7 +14,8 @@ import type { TerminalSessionMeta } from '@shared/types/terminal.js';
 import {
   PTY_CMD_END_PREFIX,
   PTY_CMD_START,
-  PTY_MAX_CAPTURE_CHARS
+  PTY_MAX_CAPTURE_CHARS,
+  parsePtyAgentCompletion
 } from '@shared/terminal/ptyMarkers.js';
 import { buildBashEnv, shellSpawnSpec } from './bashEnv.js';
 import { logger } from '../logging/logger.js';
@@ -33,6 +34,12 @@ interface PtySession {
   primary: boolean;
   agentBusy: boolean;
   agentWaiters: Array<() => void>;
+  /**
+   * When true, the next agent injection sends Ctrl+C first to recover
+   * from a prior timed-out / aborted run. Never set on clean success —
+   * avoids interrupting the user's foreground job on a shared PTY.
+   */
+  agentInterruptPending: boolean;
 }
 
 const sessions = new Map<string, PtySession>();
@@ -90,16 +97,25 @@ function escapeBashSingle(value: string): string {
   return value.replace(/'/g, `'\\''`);
 }
 
+function buildWindowsAgentScript(command: string): string {
+  const escaped = escapePsSingle(command);
+  return (
+    `$env:VYOTIQ_AGENT_CMD = '${escaped}'; ` +
+    `Write-Output '${PTY_CMD_START}'; ` +
+    `Invoke-Expression $env:VYOTIQ_AGENT_CMD; ` +
+    `$vyotiqEc = $LASTEXITCODE; ` +
+    `Write-Output ('${PTY_CMD_END_PREFIX}' + $vyotiqEc); ` +
+    `Remove-Item Env:VYOTIQ_AGENT_CMD; ` +
+    `exit $vyotiqEc`
+  );
+}
+
 function wrapAgentCommand(command: string): string {
   if (process.platform === 'win32') {
-    const escaped = escapePsSingle(command);
-    return (
-      `$env:VYOTIQ_AGENT_CMD = '${escaped}'; ` +
-      `Write-Output '${PTY_CMD_START}'; ` +
-      `Invoke-Expression $env:VYOTIQ_AGENT_CMD; ` +
-      `Write-Output ('${PTY_CMD_END_PREFIX}' + $LASTEXITCODE); ` +
-      `Remove-Item Env:VYOTIQ_AGENT_CMD`
-    );
+    // Run via a short EncodedCommand line so PSReadLine never soft-wraps a
+    // long injected script into `>>` continuation (breaks Invoke-Expression).
+    const encoded = Buffer.from(buildWindowsAgentScript(command), 'utf16le').toString('base64');
+    return `powershell -NoProfile -EncodedCommand ${encoded}`;
   }
   const escaped = escapeBashSingle(command);
   return (
@@ -153,7 +169,8 @@ function spawnSession(
     rows,
     primary,
     agentBusy: false,
-    agentWaiters: []
+    agentWaiters: [],
+    agentInterruptPending: false
   };
   attachProcHandlers(session);
   sessions.set(session.sessionId, session);
@@ -316,14 +333,11 @@ export async function runAgentCommandInPty(
       truncated = true;
     }
 
-    const endIdx = buffer.lastIndexOf(PTY_CMD_END_PREFIX);
-    if (endIdx >= 0) {
-      const tail = buffer.slice(endIdx + PTY_CMD_END_PREFIX.length);
-      const codeMatch = /^(-?\d+)/.exec(tail);
-      if (codeMatch) {
-        exitCode = Number.parseInt(codeMatch[1] ?? '1', 10);
-        settled = true;
-      }
+    const completion = parsePtyAgentCompletion(buffer);
+    if (completion.settled) {
+      exitCode = completion.exitCode;
+      settled = true;
+      session.agentInterruptPending = false;
     }
   };
 
@@ -334,6 +348,14 @@ export async function runAgentCommandInPty(
   };
 
   const wrapped = wrapAgentCommand(command);
+  if (session.agentInterruptPending) {
+    try {
+      session.proc.write('\x03');
+    } catch {
+      /* noop — recover shell after a prior timed-out / aborted run */
+    }
+    session.agentInterruptPending = false;
+  }
   session.proc.write(`${wrapped}\r\n`);
 
   try {
@@ -341,6 +363,7 @@ export async function runAgentCommandInPty(
       const timer = setTimeout(() => {
         timedOut = true;
         settled = true;
+        session.agentInterruptPending = true;
         try {
           session.proc.write('\x03');
         } catch {
@@ -352,6 +375,7 @@ export async function runAgentCommandInPty(
       const abort = () => {
         timedOut = true;
         settled = true;
+        session.agentInterruptPending = true;
         try {
           session.proc.write('\x03');
         } catch {
@@ -377,18 +401,14 @@ export async function runAgentCommandInPty(
     releaseAgentLock(session);
   }
 
-  const startIdx = buffer.indexOf(PTY_CMD_START);
-  const endIdx = buffer.lastIndexOf(PTY_CMD_END_PREFIX);
-  let output = buffer;
-  if (startIdx >= 0 && endIdx > startIdx) {
-    output = buffer.slice(startIdx + PTY_CMD_START.length, endIdx);
-  } else if (startIdx >= 0) {
-    output = buffer.slice(startIdx + PTY_CMD_START.length);
-  }
-
+  const completion = parsePtyAgentCompletion(buffer);
   return {
-    output: output.trimEnd(),
-    exitCode: Number.isFinite(exitCode) ? exitCode : 1,
+    output: completion.output.trimEnd(),
+    exitCode: Number.isFinite(completion.settled ? completion.exitCode : exitCode)
+      ? completion.settled
+        ? completion.exitCode
+        : exitCode
+      : 1,
     timedOut,
     truncated
   };

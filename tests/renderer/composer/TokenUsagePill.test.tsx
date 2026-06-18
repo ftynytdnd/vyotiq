@@ -69,4 +69,16 @@ describe('TokenUsagePill', () => {
     );
     expect(screen.getByText('12')).toBeTruthy();
   });
+
+  it('renders compact in/out counts when cost is unavailable', () => {
+    render(
+      <TokenUsagePill
+        compact
+        total={aggregate(12_000, 3_400)}
+        orchestrator={aggregate(10_000, 2_000)}
+      />
+    );
+    expect(screen.getByText(/12k/)).toBeTruthy();
+    expect(screen.getByText(/3\.4k/)).toBeTruthy();
+  });
 });

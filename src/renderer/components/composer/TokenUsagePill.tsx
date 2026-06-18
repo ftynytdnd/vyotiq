@@ -27,6 +27,8 @@ interface TokenUsagePillProps {
   orchestrator?: TokenUsageAggregate;
   /** Pre-flight draft estimate for the current composer input. */
   draftEstimate?: { tokens: number; exact: boolean } | null;
+  /** Show only estimated cost while the composer is unfocused mid-run. */
+  compact?: boolean;
 }
 
 function usageLine(label: string, u: TokenUsage | undefined): string[] {
@@ -101,7 +103,8 @@ export const TokenUsagePill = memo(function TokenUsagePill({
   model = null,
   total,
   orchestrator,
-  draftEstimate = null
+  draftEstimate = null,
+  compact = false
 }: TokenUsagePillProps) {
   const providers = useProviderStore((s) => s.providers);
   const isProcessing = useChatStore((s) => s.isProcessing);
@@ -145,12 +148,28 @@ export const TokenUsagePill = memo(function TokenUsagePill({
       )}
       title={title}
     >
-      <BarChart2
-        className={cn(SHELL_ROW_ICON_CLASS, 'inline-block shrink-0 align-[-2px]')}
-        strokeWidth={SHELL_ROW_ICON_STROKE}
-        aria-hidden
-      />
+      {!compact ? (
+        <BarChart2
+          className={cn(SHELL_ROW_ICON_CLASS, 'inline-block shrink-0 align-[-2px]')}
+          strokeWidth={SHELL_ROW_ICON_STROKE}
+          aria-hidden
+        />
+      ) : null}
       {hasUsage ? (
+        compact ? (
+          liveCost ? (
+            <span className="vx-composer-turn-usage__pill vx-composer-turn-usage__pill--cost ml-1">
+              {liveCost.label}
+            </span>
+          ) : (
+            <span className="vx-composer-turn-usage__pill ml-1" aria-label={`Last turn input ${formatTokenCount(latest.promptTokens)} tokens, output ${formatTokenCount(outCount)} tokens`}>
+              <span className="vx-composer-turn-usage__dir">in</span>
+              {formatTokenCount(latest.promptTokens)}
+              <span className="vx-composer-turn-usage__dir">out</span>
+              {formatTokenCount(outCount)}
+            </span>
+          )
+        ) : (
         <span
           className="vx-composer-turn-usage__cluster"
           aria-label={`Last turn input ${formatTokenCount(latest.promptTokens)} tokens, output ${formatTokenCount(outCount)} tokens${liveTokenRateLabel ? `, ${liveTokenRateLabel}` : ''}${liveCost ? `, estimated ${liveCost.label}` : ''}`}
@@ -175,6 +194,7 @@ export const TokenUsagePill = memo(function TokenUsagePill({
             </span>
           ) : null}
         </span>
+        )
       ) : (
         <span className={cn('ml-1', !draftEstimate?.exact && 'italic text-text-faint')}>
           ~{formatTokenCount(draftEstimate!.tokens)}
