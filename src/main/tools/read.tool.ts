@@ -10,6 +10,10 @@ import type { Tool } from './types.js';
 import type { ToolResult } from '@shared/types/tool.js';
 import { realpathInsideWorkspace, workspaceRelative } from './sandbox.js';
 import { READ_MAX_BYTES } from '@shared/constants.js';
+import {
+  queueWorkspaceVision,
+  mediaKindFromWorkspacePath
+} from '../orchestrator/runVisionQueue.js';
 
 interface ReadArgs {
   path: string;
@@ -114,6 +118,32 @@ export const readTool: Tool = {
         ok: false,
         output: `Sandbox error: ${msg}`,
         error: msg,
+        durationMs: Date.now() - started
+      };
+    }
+
+    const visionKind = mediaKindFromWorkspacePath(a.path);
+    if (visionKind === 'image' || visionKind === 'pdf') {
+      queueWorkspaceVision(ctx.runId, {
+        path: a.path,
+        kind: visionKind,
+        source: 'read'
+      });
+      let sizeBytes = 0;
+      try {
+        const st = await fs.stat(abs);
+        sizeBytes = st.size;
+      } catch {
+        /* best-effort */
+      }
+      return {
+        id,
+        name: 'read',
+        ok: true,
+        output:
+          `[vision] Queued ${visionKind} file "${a.path}"` +
+          (sizeBytes > 0 ? ` (${sizeBytes} bytes)` : '') +
+          ' for native model vision on the next assistant turn. You will receive pixels on the wire — use this path reference meanwhile.',
         durationMs: Date.now() - started
       };
     }

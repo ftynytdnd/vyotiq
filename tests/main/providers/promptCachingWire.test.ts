@@ -74,7 +74,7 @@ describe('cache-layered topology invariants', () => {
 });
 
 describe('Gemini wire snapshots', () => {
-  it('hoists system, few-shot, and workspace out of contents when cache-layered', () => {
+  it('hoists system, few-shot, and workspace out of contents when cache-layered', async () => {
     const messages = seedCacheLayeredMessages(
       [{ role: 'assistant', content: 'history' }],
       '<turn>tail</turn>'
@@ -99,7 +99,16 @@ describe('Gemini wire snapshots', () => {
     expect(staticParts[1]).toContain('static_examples');
     expect(staticParts[2]).toContain('workspace_context');
 
-    const { contents } = __geminiInternals.toGeminiContents(messages);
+    const geminiWireProvider = {
+      id: 'p',
+      name: 'Gemini',
+      baseUrl: 'https://generativelanguage.googleapis.com',
+      dialect: 'gemini-native' as const,
+      enabled: true,
+      models: [],
+      apiKey: 'AIza-test'
+    };
+    const { contents } = await __geminiInternals.toGeminiContents(messages, geminiWireProvider);
     expect(contents[0]?.parts[0]).toMatchObject({ text: expect.stringContaining('history') });
     expect(contents.some((c) => String(c.parts[0]?.text ?? '').includes('workspace_context'))).toBe(
       false

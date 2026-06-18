@@ -107,6 +107,13 @@ export type Row =
     mentions?: MentionRef[];
   }
   | { kind: 'assistant-text'; key: string; id: string }
+  | {
+      kind: 'assistant-image';
+      key: string;
+      id: string;
+      mime: string;
+      storedPath: string;
+    }
   | { kind: 'reasoning-line'; key: string; id: string }
   | { kind: 'agent-thought'; key: string; content: string; severity?: 'info' | 'warn' }
   | {
@@ -118,6 +125,7 @@ export type Row =
     toolCallId: string;
     runId: string;
     status?: 'pending' | 'submitted';
+    source?: 'host-report-gate';
   }
   | {
     kind: 'error';
@@ -383,7 +391,8 @@ export function deriveRows(
           payload: e.payload,
           toolCallId: e.toolCallId,
           runId: e.runId,
-          ...(e.status ? { status: e.status } : {})
+          ...(e.status ? { status: e.status } : {}),
+          ...(e.source ? { source: e.source } : {})
         });
         break;
 
@@ -401,6 +410,17 @@ export function deriveRows(
             id: e.id
           });
         }
+        break;
+
+      case 'assistant-image':
+        closeGroups();
+        out.push({
+          kind: 'assistant-image',
+          key: `assistant-image:${e.id}`,
+          id: e.id,
+          mime: e.mime,
+          storedPath: e.storedPath
+        });
         break;
 
       case 'agent-reasoning-delta':

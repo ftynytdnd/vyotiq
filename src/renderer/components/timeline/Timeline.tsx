@@ -24,6 +24,7 @@ import { applyDeriveRowsLiveLayer, deriveRows } from './reducer/deriveRows.js';
 import { UserPromptRow } from './rows/UserPromptRow.js';
 import { AskUserRow } from './rows/AskUserRow.js';
 import { AssistantTextRow } from './rows/AssistantTextRow.js';
+import { AssistantImageRow } from './rows/AssistantImageRow.js';
 import { ReasoningLineRow } from './rows/ReasoningLineRow.js';
 import { AgentThoughtRow } from './rows/AgentThoughtRow.js';
 import { ErrorRow } from './rows/ErrorRow.js';
@@ -57,7 +58,6 @@ import { promptTurnIndices } from './shared/timelineVirtualNav.js';
 import { runWithProgrammaticScrollGuard } from './shared/programmaticScrollGuard.js';
 import {
   TIMELINE_SCROLL_RESTICK_PX,
-  TIMELINE_SCROLL_STREAM_FOLLOW_PX,
   TIMELINE_SCROLL_UNSTICK_PX,
   measureTimelineScrollTail
 } from './shared/scrollTailState.js';
@@ -109,6 +109,7 @@ export function Timeline({
   // --- Refs (all before any effect) ---
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollFrameRef = useRef<number | null>(null);
+  const pendingScrollRef = useRef<(() => void) | null>(null);
   const pinHandleRef = useRef<TimelinePinHandle | null>(null);
   const stickyRef = useRef(true);
   /** Set when the user scrolls up; blocks tail follow until they restick. */
@@ -125,6 +126,8 @@ export function Timeline({
   const [unreadTailBumps, setUnreadTailBumps] = useState(0);
   const [findOpen, setFindOpen] = useState(false);
   const [virtualized, setVirtualized] = useState(false);
+  /** Mirrors userScrollLockRef for virtualizer follow + render without polling refs. */
+  const [tailFollowPaused, setTailFollowPaused] = useState(false);
 
   const onRetryLastMessage = useCallback(() => {
     const prompt = lastUserPromptContent?.trim();
@@ -161,11 +164,13 @@ export function Timeline({
 
   const releaseUserScrollLock = useCallback(() => {
     userScrollLockRef.current = false;
+    setTailFollowPaused(false);
   }, []);
 
   const engageUserScrollLock = useCallback(() => {
     userScrollLockRef.current = true;
     stickyRef.current = false;
+    setTailFollowPaused(true);
   }, []);
 
   const syncScrollTail = useCallback(() => {
@@ -233,34 +238,20 @@ export function Timeline({
   );
 
   const scheduleScroll = (fn: () => void) => {
+    pendingScrollRef.current = fn;
     if (scrollFrameRef.current !== null) return;
     scrollFrameRef.current = requestAnimationFrame(() => {
       scrollFrameRef.current = null;
-      fn();
+      const run = pendingScrollRef.current;
+      pendingScrollRef.current = null;
+      run?.();
     });
   };
 
   const scrollToTail = useCallback(
     (force: boolean) => {
       if (!force) {
-        if (userScrollLockRef.current) {
-          if (isProcessing) {
-            const parent = findTimelineScrollParent(containerRef.current);
-            if (parent) {
-              const { distanceFromBottom } = measureTimelineScrollTail(parent);
-              if (distanceFromBottom <= TIMELINE_SCROLL_STREAM_FOLLOW_PX) {
-                releaseUserScrollLock();
-                stickyRef.current = true;
-              } else {
-                return;
-              }
-            } else {
-              return;
-            }
-          } else {
-            return;
-          }
-        } else if (!stickyRef.current) {
+        if (userScrollLockRef.current || !stickyRef.current) {
           return;
         }
       }
@@ -280,7 +271,7 @@ export function Timeline({
         });
       });
     },
-    [isProcessing, releaseUserScrollLock, useVirtualizedList]
+    [useVirtualizedList]
   );
 
   // Resolve the scroll parent, sync tail state on mount / layout changes,
@@ -294,9 +285,9 @@ export function Timeline({
         const { distanceFromBottom } = measureTimelineScrollTail(parent);
         const prev = lastScrollDistanceRef.current;
         if (
+          stickyRef.current &&
           prev !== null &&
-          distanceFromBottom > prev + 4 &&
-          distanceFromBottom > TIMELINE_SCROLL_RESTICK_PX
+          distanceFromBottom > prev + 2
         ) {
           engageUserScrollLock();
         }
@@ -306,11 +297,8 @@ export function Timeline({
     };
 
     const onWheel = (e: WheelEvent) => {
-      if (e.deltaY >= -12) return;
-      const { distanceFromBottom } = measureTimelineScrollTail(parent);
-      if (distanceFromBottom > TIMELINE_SCROLL_UNSTICK_PX) {
-        engageUserScrollLock();
-      }
+      if (programmaticScrollRef.current || e.deltaY >= -12) return;
+      engageUserScrollLock();
     };
 
     let touchStartY: number | null = null;
@@ -348,11 +336,46 @@ export function Timeline({
     };
   }, [companionOverlayOpen, syncScrollTail, engageUserScrollLock]);
 
-  // Reset scroll lock on conversation switch.
+  // Reset scroll lock on conversation switch and pin to the latest turn.
   useEffect(() => {
     releaseUserScrollLock();
     stickyRef.current = true;
-  }, [conversationId, releaseUserScrollLock]);
+    setUnreadTailBumps(0);
+    setShowJumpToLatest(false);
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(() => scrollToTail(true));
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [conversationId, releaseUserScrollLock, scrollToTail]);
+
+  const prevRunActiveRef = useRef(isRunActive);
+  useEffect(() => {
+    const wasActive = prevRunActiveRef.current;
+    prevRunActiveRef.current = isRunActive;
+    if (wasActive && !isRunActive && stickyRef.current && !userScrollLockRef.current) {
+      scrollToTail(false);
+    }
+  }, [isRunActive, scrollToTail]);
+
+  useEffect(() => {
+    if (!promptAnchorEnter) return;
+    const id = window.setTimeout(() => scrollToTail(true), 260);
+    return () => window.clearTimeout(id);
+  }, [promptAnchorEnter, scrollToTail]);
+
+  useEffect(() => {
+    return () => {
+      if (scrollFrameRef.current !== null) {
+        cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
+      pendingScrollRef.current = null;
+      if (gTimerRef.current !== null) {
+        clearTimeout(gTimerRef.current);
+        gTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Keyboard navigation between user prompts (`g j` / `g k`) and Esc to
   // drop sticky scroll. The `g`-prefix uses a short timeout so accidental
@@ -420,6 +443,8 @@ export function Timeline({
         );
         const targetTurnIdx = promptTurns[targetListIdx]!;
 
+        engageUserScrollLock();
+
         const scrollPromptIntoView = (): void => {
           const prompt =
             containerRef.current?.querySelector(
@@ -428,7 +453,10 @@ export function Timeline({
             containerRef.current?.querySelectorAll('[data-row-kind="user-prompt"]')[
               targetListIdx
             ];
-          prompt?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          prompt?.scrollIntoView({
+            behavior: isRunActive ? 'auto' : 'smooth',
+            block: 'start'
+          });
         };
 
         if (useVirtualizedList && pinHandleRef.current) {
@@ -470,7 +498,7 @@ export function Timeline({
       window.removeEventListener('keydown', onKey);
       disarm();
     };
-  }, [companionOverlayOpen, applyTailState, engageUserScrollLock, promptTurns, useVirtualizedList]);
+  }, [companionOverlayOpen, applyTailState, engageUserScrollLock, promptTurns, useVirtualizedList, isRunActive]);
 
   // Sticky follow during streaming: pin when tail grows if sticky and not user-locked.
   useEffect(() => {
@@ -479,7 +507,7 @@ export function Timeline({
       tailScrollKey !== prevTailScrollKeyRef.current &&
       (userScrollLockRef.current || !stickyRef.current)
     ) {
-      setUnreadTailBumps((n) => n + 1);
+      setUnreadTailBumps((n) => Math.min(n + 1, 99));
     }
     prevTailScrollKeyRef.current = tailScrollKey;
     scrollToTail(false);
@@ -488,12 +516,9 @@ export function Timeline({
         cancelAnimationFrame(scrollFrameRef.current);
         scrollFrameRef.current = null;
       }
+      pendingScrollRef.current = null;
     };
   }, [tailScrollKey, scrollToTail]);
-
-  useEffect(() => {
-    setUnreadTailBumps(0);
-  }, [conversationId]);
 
   const locationHash = typeof window !== 'undefined' ? window.location.hash : '';
   useEffect(() => {
@@ -603,7 +628,7 @@ export function Timeline({
             turnSegments={turnSegments}
             tailScrollKey={tailScrollKey}
             renderTurn={renderTurnBlock}
-            streamFollow={isProcessing}
+            streamFollow={isRunActive && !tailFollowPaused}
           />
         ) : (
           turnSegments.map((segment, segmentIndex) => renderTurnBlock(segment, segmentIndex))
@@ -622,7 +647,10 @@ export function Timeline({
               applyTailState(true, true, 0);
               scrollToTail(true);
             }}
-            className="vx-jump-to-latest-chip elev-1 pointer-events-auto flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors hover:bg-chrome-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong"
+            className={cn(
+              'vx-jump-to-latest-chip elev-1 pointer-events-auto flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors hover:bg-chrome-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong',
+              isRunActive && unreadTailBumps > 0 && 'vx-jump-to-latest-chip--live'
+            )}
             aria-label={
               unreadTailBumps > 0
                 ? `Jump to latest messages (${unreadTailBumps} updates)`
@@ -693,6 +721,15 @@ function renderRow(
           inlineRunComplete={opts?.inlineRunComplete ?? null}
         />
       );
+    case 'assistant-image':
+      return (
+        <AssistantImageRow
+          key={r.key}
+          id={r.id}
+          mime={r.mime}
+          storedPath={r.storedPath}
+        />
+      );
     case 'reasoning-line':
       return (
         <ReasoningLineRow key={r.key} id={r.id} />
@@ -716,6 +753,7 @@ function renderRow(
           toolCallId={r.toolCallId}
           runId={r.runId}
           {...(r.status ? { status: r.status } : {})}
+          {...(r.source ? { source: r.source } : {})}
         />
       );
     case 'error':

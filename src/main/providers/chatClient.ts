@@ -175,6 +175,8 @@ export interface ChatStreamDelta {
      */
     thoughtSignature?: string;
   };
+  /** Incremental generated image from multimodal output models. */
+  imageDelta?: { mime: string; base64: string; index?: number };
   /** Set on the FINAL chunk only. */
   finishReason?: 'stop' | 'tool_calls' | 'length' | 'error' | string;
   /**

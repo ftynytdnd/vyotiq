@@ -45,16 +45,19 @@ describe('scheduledRunsService guards', () => {
     expect(conversationHasActiveRun('conv-2')).toBe(false);
   });
 
-  it('shouldDispatchScheduledRun rejects disabled, empty prompt, not-due, and busy conversation', () => {
+  it('shouldDispatchScheduledRun rejects disabled, empty prompt, and not-due runs', () => {
     const now = Date.now();
     expect(shouldDispatchScheduledRun(sampleRun({ enabled: false }), now)).toBe(false);
     expect(shouldDispatchScheduledRun(sampleRun({ prompt: '   ' }), now)).toBe(false);
     expect(
       shouldDispatchScheduledRun(sampleRun({ nextRunAt: now + 60_000 }), now)
     ).toBe(false);
+  });
 
+  it('shouldDispatchScheduledRun allows due enabled runs even when conversation is busy', () => {
+    const now = Date.now();
     listActiveRunsMock.mockReturnValue([{ conversationId: 'conv-1' }]);
-    expect(shouldDispatchScheduledRun(sampleRun(), now)).toBe(false);
+    expect(shouldDispatchScheduledRun(sampleRun(), now)).toBe(true);
   });
 
   it('shouldDispatchScheduledRun allows due enabled runs on idle conversations', () => {

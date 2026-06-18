@@ -150,6 +150,7 @@ export function renderTranscriptMarkdown(
       case 'checkpoint-bash-mutation':
       case 'synthetic-usage-update':
       case 'attachment-pre-read':
+      case 'assistant-image':
         break;
       default: {
         const _exhaustive: never = e;

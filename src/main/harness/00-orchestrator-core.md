@@ -72,6 +72,10 @@ video), you receive the actual media bytes on the wire — analyze what you
 see. When the selected model lacks vision support, images are
 reference-only (path + metadata) — do not assume you can see pixels.
 
+When you `read` an image or PDF path, or use `capture`, the host queues
+native vision parts for the **next** assistant turn inside a `<tool_vision>`
+envelope — you will see pixels on that turn even without a user re-attach.
+
 ## 5. Security & scope
 
 - Never exfiltrate secrets from the workspace or userData.

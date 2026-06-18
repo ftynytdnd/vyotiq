@@ -112,7 +112,8 @@ export type ChatContentPart =
       image_url: { url: string; detail?: 'auto' | 'low' | 'high' };
     }
   | { type: 'file'; file: { filename: string; file_data: string } }
-  | { type: 'video_url'; video_url: { url: string } };
+  | { type: 'video_url'; video_url: { url: string } }
+  | { type: 'input_audio'; input_audio: { data: string; format: string } };
 
 export interface TokenUsage {
   promptTokens: number;
@@ -247,6 +248,17 @@ export type TimelineEvent =
   | { kind: 'agent-text-end'; id: string; ts: number }
   /** Drop the partial in-flight assistant text (mid-stream error → retry). */
   | { kind: 'agent-text-aborted'; id: string; ts: number }
+  /** Model-generated image saved to workspace during a run. */
+  | {
+      kind: 'assistant-image';
+      id: string;
+      ts: number;
+      mime: string;
+      storedPath: string;
+      width?: number;
+      height?: number;
+      runId?: string;
+    }
   /** Streaming chain-of-thought (DeepSeek-style). UI shows a collapsible card. */
   | {
       kind: 'agent-reasoning-delta';
@@ -764,7 +776,7 @@ export type TimelineEvent =
 export type RunStatusPhase = Extract<TimelineEvent, { kind: 'run-status' }>['phase'];
 
 /** Classified attachment media kind (set at ingest). */
-export type AttachmentMediaKind = 'image' | 'pdf' | 'video' | 'text';
+export type AttachmentMediaKind = 'image' | 'pdf' | 'video' | 'audio' | 'text';
 
 /** Attachment descriptor on user-prompt events and send wire. */
 export interface PromptAttachmentMeta {

@@ -63,6 +63,24 @@ export async function buildUserTurnMessage(
   const modalities =
     input.inputModalities ?? (await resolveInputModalitiesForSelection(input.selection));
 
+  const mergedAttachmentMeta = [...(input.attachmentMeta ?? [])];
+  if (input.mentions?.length) {
+    for (const ref of input.mentions) {
+      if (ref.kind !== 'file' || !ref.workspacePath) continue;
+      const meta: PromptAttachmentMeta = {
+        id: ref.id,
+        name: ref.label,
+        workspacePath: ref.workspacePath,
+        ...(ref.mimeType ? { mimeType: ref.mimeType } : {}),
+        mediaKind: mediaKindFromMeta({ name: ref.label, mimeType: ref.mimeType })
+      };
+      const kind = meta.mediaKind ?? mediaKindFromMeta(meta);
+      if (kind !== 'image' && kind !== 'pdf' && kind !== 'video') continue;
+      if (mergedAttachmentMeta.some((m) => m.workspacePath === meta.workspacePath)) continue;
+      mergedAttachmentMeta.push(meta);
+    }
+  }
+
   const userMessageXml = wrapXml('user_message', input.prompt, undefined, { escape: true });
   const attachmentBlocks = await resolveAttachmentsForInline({
     attachmentMeta: input.attachmentMeta,
@@ -86,9 +104,9 @@ export async function buildUserTurnMessage(
   let visionParts: ChatContentPart[] = [];
   let visionTokenEstimate = 0;
 
-  if (input.attachmentMeta?.length) {
+  if (mergedAttachmentMeta.length) {
     const prepared = await prepareVisionParts({
-      attachmentMeta: input.attachmentMeta,
+      attachmentMeta: mergedAttachmentMeta,
       workspacePath: input.workspacePath,
       inputModalities: modalities,
       cache: input.mediaCache,
@@ -99,7 +117,7 @@ export async function buildUserTurnMessage(
     visionTokenEstimate = prepared.visionTokenEstimate;
   }
 
-  const hasImages = input.attachmentMeta?.some(
+  const hasImages = mergedAttachmentMeta.some(
     (m) => (m.mediaKind ?? mediaKindFromMeta(m)) === 'image'
   );
   if (hasImages && !modelSupportsVision(modalities) && input.conversationId) {

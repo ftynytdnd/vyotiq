@@ -25,6 +25,7 @@ import { flushWorkspaceState, teardownWorkspaceTreeWatcher } from './workspace/w
 import { abortRun, listActiveRuns } from './orchestrator/AgentV.js';
 import { getSettings } from './settings/settingsStore.js';
 import { sweepOrphanAttachments } from './attachments/gc.js';
+import { sweepVisionDiskCache } from './attachments/preparedMediaDiskCache.js';
 import { sweepOrphanCompactionAllWorkspaces } from './orchestrator/context/compactionSweep.js';
 import { getActiveWorkspace } from './workspace/workspaceState.js';
 import {
@@ -133,6 +134,9 @@ async function bootstrap() {
   const gcTimer = setTimeout(() => {
     sweepOrphanAttachments().catch((err) =>
       log.warn('orphan attachment sweep failed', { err })
+    );
+    sweepVisionDiskCache().catch((err) =>
+      log.warn('vision disk cache sweep failed', { err })
     );
     sweepOrphanCompactionAllWorkspaces().catch((err) =>
       log.warn('orphan compaction sweep failed', { err })

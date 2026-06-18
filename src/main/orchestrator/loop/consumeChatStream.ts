@@ -87,6 +87,8 @@ export interface StreamConsumeResult {
   anthropicMessageId?: string;
   /** Anthropic cache-diagnostics miss reason when the beta header is enabled. */
   anthropicCacheMissReason?: string | null;
+  /** Generated images accumulated from `imageDelta` frames. */
+  generatedImages: Array<{ mime: string; base64: string }>;
 }
 
 /**
@@ -212,6 +214,7 @@ export async function consumeChatStream(
   // Empty string stays `undefined` on the result so non-Anthropic dialects
   // don't pollute downstream `ChatMessage.reasoning_signature`.
   let reasoningSignature = '';
+  const generatedImages: Array<{ mime: string; base64: string }> = [];
 
   // Inline-thinking router: reclassifies `<think>` / `<thinking>` blocks
   // emitted on the *content* channel into the reasoning channel. See
@@ -277,6 +280,12 @@ export async function consumeChatStream(
       // every signature; the orchestrator treats it as opaque bytes
       // regardless of structure.
       reasoningSignature += delta.reasoningSignature;
+    }
+    if (delta.imageDelta) {
+      generatedImages.push({
+        mime: delta.imageDelta.mime,
+        base64: delta.imageDelta.base64
+      });
     }
     if (delta.toolCallDelta) {
       maybeCloseReasoning();
@@ -363,6 +372,7 @@ export async function consumeChatStream(
     ...(finishReason !== undefined ? { finishReason } : {}),
     ...(usage !== undefined ? { usage } : {}),
     ...(anthropicMessageId !== undefined ? { anthropicMessageId } : {}),
-    ...(anthropicCacheMissReason !== undefined ? { anthropicCacheMissReason } : {})
+    ...(anthropicCacheMissReason !== undefined ? { anthropicCacheMissReason } : {}),
+    generatedImages
   };
 }

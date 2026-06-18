@@ -78,6 +78,9 @@ import {
 import { buildOrchestratorRequest } from './buildOrchestratorRequest.js';
 import { handleAssistantTurn } from './handleAssistantTurn.js';
 import { DiffStreamer } from '../diffStreamer.js';
+import { flushVisionQueue } from '../runVisionQueue.js';
+import { getPreparedMediaCache } from '../../attachments/preparedMediaCache.js';
+import { resolveInputModalitiesForSelection } from '../buildUserTurnMessage.js';
 import { DiffWorkerPool } from '../diffWorkerPool.js';
 import { createStreamingArgsTap } from '../streamingArgsTap.js';
 import { lockToolCallIds } from './lockToolCallIds.js';
@@ -547,6 +550,16 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             }
             : undefined;
 
+        const visionMsg = await flushVisionQueue({
+          runId: opts.input.runId,
+          workspacePath: opts.workspacePath,
+          selection: opts.input.selection,
+          inputModalities: await resolveInputModalitiesForSelection(opts.input.selection),
+          mediaCache: getPreparedMediaCache(opts.input.runId),
+          signal: opts.signal
+        });
+        if (visionMsg) messages.push(visionMsg);
+
         const fp = messagesSanitizeFingerprint(messages);
         const sanitized =
           fp === sanitizeFingerprint && sanitizeCached
@@ -630,7 +643,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         };
 
         const turn = await handleAssistantTurn(req, emit, argsDeltaTap, {
-          ...(retryAssistantMsgId ? { assistantMsgId: retryAssistantMsgId } : {})
+          ...(retryAssistantMsgId ? { assistantMsgId: retryAssistantMsgId } : {}),
+          workspacePath: opts.workspacePath,
+          runId: opts.input.runId
         });
 
         if (turn.error) {

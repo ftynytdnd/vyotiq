@@ -72,6 +72,7 @@ import { readSseFrames } from './sseFrameReader.js';
 import { safeText } from './errorBody.js';
 import { findProviderModel } from '@shared/providers/modelId.js';
 import { toAnthropicUserBlocks } from './multimodal/userContentWire.js';
+import { resolveFileRefsForUserContent } from './files/resolveFileReference.js';
 import {
   anthropicBetasForProvider,
   mapAnthropicThinking,
@@ -124,7 +125,7 @@ interface CumulativeUsage {
  * `tool_use` blocks also carry their `id` + `name` so we can mint
  * the matching `toolCallDelta` frames as JSON-arguments stream in.
  */
-type OpenBlockType = 'text' | 'thinking' | 'tool_use' | 'other';
+type OpenBlockType = 'text' | 'thinking' | 'tool_use' | 'image' | 'other';
 
 interface OpenBlock {
   type: OpenBlockType;
@@ -161,7 +162,7 @@ export async function* streamAnthropic(
   // of the messages list (Anthropic puts it at the top level, not in
   // the array) and every assistant `tool_calls` becomes a `tool_use`
   // content block.
-  const translated = toAnthropicMessages(req.messages);
+  const translated = await toAnthropicMessages(req.messages, provider);
   const body: Record<string, unknown> = {
     model: req.model,
     max_tokens: typeof req.maxTokens === 'number' ? req.maxTokens : DEFAULT_MAX_TOKENS,
@@ -433,8 +434,19 @@ export async function* streamAnthropic(
                 ? 'thinking'
                 : t === 'tool_use'
                   ? 'tool_use'
-                  : 'other'
+                  : t === 'image'
+                    ? 'image'
+                    : 'other'
         };
+        if (open.type === 'image') {
+          const source = block?.['source'] as Record<string, unknown> | undefined;
+          const mediaType =
+            typeof source?.['media_type'] === 'string' ? (source['media_type'] as string) : '';
+          const data = typeof source?.['data'] === 'string' ? (source['data'] as string) : '';
+          if (mediaType.startsWith('image/') && data.length > 0) {
+            yield { imageDelta: { mime: mediaType, base64: data } };
+          }
+        }
         if (open.type === 'tool_use') {
           open.toolUseId =
             typeof block?.['id'] === 'string' ? (block?.['id'] as string) : undefined;
@@ -698,7 +710,9 @@ interface AnthropicWireBlock {
   content?: string;
   thinking?: string;
   signature?: string;
-  source?: { type: 'base64'; media_type: string; data: string };
+  source?:
+    | { type: 'base64'; media_type: string; data: string }
+    | { type: 'file'; file_id: string };
 }
 
 interface AnthropicWireMessage {
@@ -706,9 +720,10 @@ interface AnthropicWireMessage {
   content: AnthropicWireBlock[];
 }
 
-function toAnthropicMessages(
-  messages: readonly ChatMessage[]
-): { system: string; messages: AnthropicWireMessage[] } {
+async function toAnthropicMessages(
+  messages: readonly ChatMessage[],
+  provider: ProviderWithKey
+): Promise<{ system: string; messages: AnthropicWireMessage[] }> {
   const systemParts: string[] = [];
   const wire: AnthropicWireMessage[] = [];
   for (const m of messages) {
@@ -735,7 +750,8 @@ function toAnthropicMessages(
       continue;
     }
     if (m.role === 'user') {
-      wire.push({ role: 'user', content: toAnthropicUserBlocks(m.content) });
+      const fileRefs = await resolveFileRefsForUserContent(provider, m.content);
+      wire.push({ role: 'user', content: toAnthropicUserBlocks(m.content, fileRefs) });
       continue;
     }
     // assistant — block ORDER matters: per Anthropic's docs, thinking

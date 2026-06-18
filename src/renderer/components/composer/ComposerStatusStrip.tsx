@@ -22,13 +22,16 @@ interface ComposerStatusStripProps {
   processingRun?: boolean;
   /** Images attached but selected model lacks vision. */
   visionWarning?: boolean;
+  /** Audio attached but selected model lacks native audio input. */
+  audioWarning?: boolean;
 }
 
 export const ComposerStatusStrip = memo(function ComposerStatusStrip({
   pendingAskUser = null,
   model = null,
   processingRun = false,
-  visionWarning = false
+  visionWarning = false,
+  audioWarning = false
 }: ComposerStatusStripProps) {
   const account = useProviderAccountStore((s) =>
     model ? s.snapshotFor(model.providerId) : undefined
@@ -77,6 +80,19 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip({
         title="Images will be sent as path references only — pick a vision-capable model to analyze pixels"
       >
         Model may not support vision — images sent as references only
+      </span>
+    );
+  }
+
+  if (audioWarning) {
+    return (
+      <span
+        className="vx-composer-status-strip min-w-0 flex-1 truncate px-0.5 text-meta text-warning"
+        role="status"
+        aria-live="polite"
+        title="Audio will be sent as path references only — pick an audio-capable model"
+      >
+        Model may not support audio — file sent as reference only
       </span>
     );
   }

@@ -26,6 +26,7 @@ import {
   resolveInputModalitiesForSelection
 } from './buildUserTurnMessage.js';
 import { clearPreparedMediaCache, getPreparedMediaCache } from '../attachments/preparedMediaCache.js';
+import { clearRunVisionQueue } from '../orchestrator/runVisionQueue.js';
 import {
   insertHistoryBeforeTail,
   seedCacheLayeredMessages
@@ -439,6 +440,7 @@ export async function startRun(
     deps.onError(msg);
   } finally {
     clearPreparedMediaCache(input.runId);
+    clearRunVisionQueue(input.runId);
     const stillPaused = isRunAwaitingUser(input.runId);
     if (!stillPaused) {
       removeActiveRunIfCurrent(input.runId, generation);

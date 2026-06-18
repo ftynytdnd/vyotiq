@@ -78,6 +78,20 @@ import { _resetForTests as resetRateGuard } from '@main/providers/providerRateGu
 
 const { toGeminiContents, mapFinishReason, toCanonicalUsage } = __geminiInternals;
 
+const geminiWireProvider = {
+  id: 'p',
+  name: 'Gemini',
+  baseUrl: 'https://generativelanguage.googleapis.com',
+  dialect: 'gemini-native' as const,
+  enabled: true,
+  models: [],
+  apiKey: 'AIza-test'
+};
+
+async function translateGemini(messages: ChatMessage[]) {
+  return toGeminiContents(messages, geminiWireProvider);
+}
+
 function encode(text: string): Uint8Array {
   return new TextEncoder().encode(text);
 }
@@ -211,6 +225,32 @@ describe('streamChat (Gemini native) — SSE parsing', () => {
     expect(reasoning?.reasoningDelta).toBe('Plan: …');
     const text = deltas.find((d) => d.contentDelta === 'Answer.');
     expect(text).toBeDefined();
+  });
+
+  it('yields imageDelta for inlineData image parts', async () => {
+    mockGeminiResponse([
+      frame({
+        candidates: [
+          {
+            content: {
+              role: 'model',
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: 'image/png',
+                    data: 'iVBORw0KGgo='
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      })
+    ]);
+    const deltas = await collect();
+    const image = deltas.find((d) => d.imageDelta !== undefined);
+    expect(image?.imageDelta?.mime).toBe('image/png');
+    expect(image?.imageDelta?.base64).toBe('iVBORw0KGgo=');
   });
 
   it('synthesizes a single toolCallDelta with thoughtSignature for a functionCall part', async () => {
@@ -446,8 +486,8 @@ describe('streamChat (Gemini native) — request URL', () => {
 // ────────────────────────────────────────────────────────────────────
 
 describe('toGeminiContents — body translation', () => {
-  it('hoists a single system message into systemInstruction.parts[0].text', () => {
-    const out = toGeminiContents([
+  it('hoists a single system message into systemInstruction.parts[0].text', async () => {
+    const out = await translateGemini([
       { role: 'system', content: 'You are V.' },
       { role: 'user', content: 'hi' }
     ]);
@@ -459,8 +499,8 @@ describe('toGeminiContents — body translation', () => {
     ]);
   });
 
-  it('concatenates multiple system messages with a blank line', () => {
-    const out = toGeminiContents([
+  it('concatenates multiple system messages with a blank line', async () => {
+    const out = await translateGemini([
       { role: 'system', content: 'You are V.' },
       { role: 'system', content: 'Be terse.' },
       { role: 'user', content: 'hi' }
@@ -470,8 +510,8 @@ describe('toGeminiContents — body translation', () => {
     });
   });
 
-  it('translates assistant tool_calls into model role + functionCall parts', () => {
-    const out = toGeminiContents([
+  it('translates assistant tool_calls into model role + functionCall parts', async () => {
+    const out = await translateGemini([
       { role: 'user', content: 'compute' },
       {
         role: 'assistant',
@@ -493,8 +533,8 @@ describe('toGeminiContents — body translation', () => {
     });
   });
 
-  it('round-trips thoughtSignature on persisted tool_calls[i] back onto functionCall part', () => {
-    const out = toGeminiContents([
+  it('round-trips thoughtSignature on persisted tool_calls[i] back onto functionCall part', async () => {
+    const out = await translateGemini([
       {
         role: 'assistant',
         content: '',
@@ -515,8 +555,8 @@ describe('toGeminiContents — body translation', () => {
     });
   });
 
-  it('translates tool messages into user role + functionResponse parts', () => {
-    const out = toGeminiContents([
+  it('translates tool messages into user role + functionResponse parts', async () => {
+    const out = await translateGemini([
       {
         role: 'tool',
         content: '{"answer":42}',
@@ -539,8 +579,8 @@ describe('toGeminiContents — body translation', () => {
     ]);
   });
 
-  it('wraps non-JSON tool output into {result: "..."} for the functionResponse', () => {
-    const out = toGeminiContents([
+  it('wraps non-JSON tool output into {result: "..."} for the functionResponse', async () => {
+    const out = await translateGemini([
       {
         role: 'tool',
         content: 'plain text answer',
@@ -555,8 +595,8 @@ describe('toGeminiContents — body translation', () => {
     });
   });
 
-  it('skips empty assistant turns (no content, no tool_calls)', () => {
-    const out = toGeminiContents([
+  it('skips empty assistant turns (no content, no tool_calls)', async () => {
+    const out = await translateGemini([
       { role: 'user', content: 'hi' },
       { role: 'assistant', content: '' },
       { role: 'user', content: 'still there?' }
@@ -565,8 +605,8 @@ describe('toGeminiContents — body translation', () => {
     expect(out.contents.every((c) => c.role === 'user')).toBe(true);
   });
 
-  it('emits no systemInstruction when there are no system messages', () => {
-    const out = toGeminiContents([{ role: 'user', content: 'hi' }]);
+  it('emits no systemInstruction when there are no system messages', async () => {
+    const out = await translateGemini([{ role: 'user', content: 'hi' }]);
     expect(out.systemInstruction).toBeNull();
   });
 });

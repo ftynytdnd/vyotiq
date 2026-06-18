@@ -56,6 +56,7 @@ import {
   isContextSummaryContent,
   summarizeHistory
 } from './contextSummarize.js';
+import { stripOldVisionParts } from './visionCompaction.js';
 
 const log = logger.child('orch/contextReduction');
 
@@ -151,7 +152,7 @@ export async function reduceContextIfNeeded(
   // Always evaluate first so the caller gets live usage telemetry even on the
   // no-op paths (disabled / no conversation / pre-cache-layered topology) —
   // this is the single budget evaluation per iteration (no duplicate tokenize).
-  const usage = await evaluateContextBudget({
+  let usage = await evaluateContextBudget({
     messages,
     modelId: opts.modelId,
     providerId: opts.providerId,
@@ -174,8 +175,27 @@ export async function reduceContextIfNeeded(
     return { messages: [...messages], usage };
   }
 
+  let workingMessages: readonly ChatMessage[] = messages;
+  const visionStrip = stripOldVisionParts(workingMessages);
+  if (visionStrip.didStrip) {
+    workingMessages = visionStrip.messages;
+    state.lastReductionAt = now;
+    emitReductionNotice(opts, state);
+    usage = await evaluateContextBudget({
+      messages: workingMessages,
+      modelId: opts.modelId,
+      providerId: opts.providerId,
+      settings,
+      tools,
+      ...(opts.calibrationRatio !== undefined ? { calibrationRatio: opts.calibrationRatio } : {})
+    });
+    if (!force && (usage.level === 'ok' || usage.level === 'warn')) {
+      return { messages: [...workingMessages], usage };
+    }
+  }
+
   const effectiveWindow = usage.effectiveWindow;
-  if (effectiveWindow <= 0) return { messages: [...messages], usage };
+  if (effectiveWindow <= 0) return { messages: [...workingMessages], usage };
   const { warnTokens: warnThreshold, triggerTokens: triggerThreshold } =
     resolveCompactionThresholds(effectiveWindow, {
       warnFraction: settings.warnFraction,
@@ -192,7 +212,7 @@ export async function reduceContextIfNeeded(
       ? warnThreshold
       : triggerThreshold;
 
-  const next = messages.map((m) => ({ ...m }));
+  const next = workingMessages.map((m) => ({ ...m }));
   const historyEnd = next.length - 2;
 
   // Index the tool rows in the history slice; the last `keepLastToolResults`

@@ -16,6 +16,7 @@ import { recallTool } from './recall.tool.js';
 import { finishTool } from './finish.tool.js';
 import { askUserTool } from './ask_user.tool.js';
 import { reportTool } from './report.tool.js';
+import { captureTool } from './capture.tool.js';
 // Internal registry. Kept module-private so the only legitimate access
 // paths are `listTools` / `getTool` / `isKnownToolName` / `toolSchemasFor`,
 // each of which already encodes the policy guarantees we want.
@@ -30,6 +31,7 @@ const TOOLS: Record<RegisteredToolName, Tool> = {
   memory: memoryTool,
   recall: recallTool,
   report: reportTool,
+  capture: captureTool,
   finish: finishTool,
   ask_user: askUserTool
 };

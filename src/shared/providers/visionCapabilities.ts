@@ -70,6 +70,28 @@ export function modelSupportsVideoNative(
   return modalities?.includes('video') === true;
 }
 
+export function modelSupportsAudioNative(
+  modalities: ModelInputModality[] | undefined
+): boolean {
+  return modalities?.includes('audio') === true;
+}
+
+/** Heuristic for models that can emit image output (Gemini image, OpenAI image gen). */
+export function modelSupportsImageOutput(modelId: string): boolean {
+  const id = modelId.toLowerCase();
+  const tail = id.includes('/') ? id.slice(id.lastIndexOf('/') + 1) : id;
+  const patterns = [
+    /imagen/,
+    /flash-image/,
+    /gemini-.*-image/,
+    /gpt-image/,
+    /dall-?e/,
+    /image-preview/,
+    /image-generation/
+  ];
+  return patterns.some((re) => re.test(tail) || re.test(id));
+}
+
 /** OpenRouter `architecture.input_modalities` on `/v1/models` rows. */
 export function inputModalitiesFromOpenRouterArchitecture(
   architecture: unknown
@@ -109,7 +131,10 @@ export function inputModalitiesFromModelId(modelId: string): ModelInputModality[
     modalities.push('file');
   }
   if (/gemini/i.test(tail) || /gemini/i.test(id)) {
-    modalities.push('video');
+    modalities.push('video', 'audio');
+  }
+  if (/gpt-audio/i.test(tail) || /gpt-audio/i.test(id)) {
+    return orderedInputModalities(['text', 'image', 'audio']);
   }
   return orderedInputModalities(modalities);
 }
@@ -142,7 +167,7 @@ export function inputModalitiesFromGeminiModel(model: {
   if (!Array.isArray(methods) || !methods.includes('generateContent')) return undefined;
   const id = (model.name ?? '').replace(/^models\//, '').toLowerCase();
   if (id.includes('embedding') || id.includes('aqa') || id.includes('tts')) return undefined;
-  return ['text', 'image', 'file', 'video'];
+  return ['text', 'image', 'file', 'video', 'audio'];
 }
 
 /** Ollama `/api/show` capabilities + model id. */

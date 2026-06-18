@@ -22,7 +22,7 @@
  */
 
 import { parentPort } from 'node:worker_threads';
-import { computeDiffHunks } from '@shared/text/diff/computeDiffHunks.js';
+import { computeDiffHunksBounded } from '@shared/text/diff/windowedDiffHunks.js';
 
 interface WorkerJob {
   jobId: string;
@@ -38,7 +38,7 @@ interface WorkerJob {
 if (parentPort) {
   parentPort.on('message', (job: WorkerJob) => {
     try {
-      const hunks = computeDiffHunks(job.before, job.after);
+      const hunks = computeDiffHunksBounded(job.before, job.after);
       parentPort!.postMessage({ jobId: job.jobId, hunks });
     } catch (err) {
       // Marshal errors back as a structured response so the pool

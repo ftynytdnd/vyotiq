@@ -18,6 +18,7 @@ import { MemoryInvocation } from './MemoryInvocation.js';
 import { RecallInvocation } from './RecallInvocation.js';
 import { UnknownInvocation } from './UnknownInvocation.js';
 import { ReportInvocation } from './report/ReportInvocation.js';
+import { CaptureInvocation } from './CaptureInvocation.js';
 
 interface ToolInvocationProps {
   call?: ToolCall;
@@ -47,6 +48,8 @@ interface ToolInvocationProps {
   retryCount?: number;
   /** When set, overrides the bespoke renderer's live auto-expand signal. */
   liveAutoExpand?: boolean;
+  /** Parent tool-group has only one child — suppress duplicate primary in dense bash rows. */
+  groupSingleChild?: boolean;
   groupExpanded?: boolean;
 }
 
@@ -60,7 +63,8 @@ export function ToolInvocation({
   liveOutput,
   retryCount,
   liveAutoExpand,
-  groupExpanded
+  groupExpanded,
+  groupSingleChild
 }: ToolInvocationProps) {
   // Default to the unknown sentinel rather than misclassifying as bash.
   const name: ToolName = (call?.name ?? result?.name ?? 'unknown') as ToolName;
@@ -75,6 +79,8 @@ export function ToolInvocation({
           partial={partial}
           {...(diffStream ? { diffStream } : {})}
           {...(liveOutput ? { liveOutput } : {})}
+          {...(groupSingleChild ? { groupSingleChild } : {})}
+          {...(groupExpanded ? { groupExpanded } : {})}
         />
       );
     case 'ls':
@@ -133,6 +139,8 @@ export function ToolInvocation({
           {...(diffStream ? { diffStream } : {})}
         />
       );
+    case 'capture':
+      return <CaptureInvocation call={call} result={result} dense={dense} rowKey={rowKey} />;
     case 'ask_user':
       // Interactive UI lives on dedicated `ask-user-prompt` rows only.
       return null;

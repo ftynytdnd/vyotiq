@@ -13,11 +13,14 @@ import {
   Columns2,
   Eraser,
   ExternalLink,
+  Camera,
   RotateCcw,
   RotateCw,
   Save,
   Search,
   ChevronsDown,
+  Plus,
+  TerminalSquare,
   X,
 } from "lucide-react";
 import {
@@ -38,7 +41,12 @@ import {
   SHELL_ROW_ICON_CLASS,
 } from "../../lib/shellIcons.js";
 import type { CompanionTab } from "./workbenchShared.js";
-import { closeEditorPanel, closeTerminalPanel, closeBrowserPanel } from "./workbenchShared.js";
+import {
+  closeEditorPanel,
+  closeTerminalPanel,
+  closeBrowserPanel,
+  shellBasename,
+} from "./workbenchShared.js";
 import { cn } from "../../lib/cn.js";
 import { revealFileInDockTree } from "../../lib/revealFileInDockTree.js";
 import { dockTreeRelativePath } from "../dock/dockFileTreeModel.js";
@@ -47,6 +55,7 @@ import {
   WORKBENCH_ACTION_GROUP_CLASS,
   WORKBENCH_ACTIONS_TRAY_CLASS,
   WORKBENCH_ICON_BTN_CLASS,
+  WORKBENCH_PANEL_HEADING_CLASS,
   WORKBENCH_TOOLBAR_CLASS,
   workbenchToolbarToggleClass,
 } from "./workbenchChrome.js";
@@ -221,12 +230,17 @@ function EditorToolbar() {
 
 function TerminalToolbar() {
   const activeSessionId = useTerminalStore((s) => s.activeSessionId);
+  const sessions = useTerminalStore((s) => s.sessions);
   const splitSessionId = useTerminalStore((s) => s.splitSessionId);
   const searchOpen = useTerminalStore((s) => s.searchOpen);
   const attaching = useTerminalStore((s) => s.attaching);
   const toggleSplit = useTerminalStore((s) => s.toggleSplit);
   const restart = useTerminalStore((s) => s.restart);
+  const createSession = useTerminalStore((s) => s.createSession);
   const setSearchOpen = useTerminalStore((s) => s.setSearchOpen);
+  const activeSession = sessions.find((session) => session.sessionId === activeSessionId);
+  const shellLabel = activeSession ? shellBasename(activeSession.shell) : null;
+  const showNewShellInToolbar = sessions.length <= 1;
 
   const withActiveEntry = useCallback(
     (fn: (entry: ReturnType<typeof getTerminalEntry>) => void) => {
@@ -245,8 +259,40 @@ function TerminalToolbar() {
   }, [withActiveEntry]);
 
   return (
-    <header className={cn(WORKBENCH_TOOLBAR_CLASS, "justify-end")}>
+    <header className={cn(WORKBENCH_TOOLBAR_CLASS, "justify-between gap-1")}>
+      <div className={WORKBENCH_PANEL_HEADING_CLASS} title="Terminal">
+        <TerminalSquare
+          className={SHELL_ROW_ICON_CLASS}
+          strokeWidth={SHELL_ACTION_ICON_STROKE}
+        />
+        <span>Terminal</span>
+        {shellLabel ? (
+          <>
+            <span className="text-text-faint/50" aria-hidden>
+              ·
+            </span>
+            <span className="truncate text-text-muted">{shellLabel}</span>
+          </>
+        ) : null}
+      </div>
       <div className="flex shrink-0 items-center gap-0.5">
+        {showNewShellInToolbar ? (
+          <div className={WORKBENCH_ACTION_GROUP_CLASS}>
+            <button
+              type="button"
+              className={WORKBENCH_ICON_BTN_CLASS}
+              title="New shell"
+              aria-label="New shell"
+              onClick={() => void createSession()}
+              disabled={attaching}
+            >
+              <Plus
+                className={SHELL_ROW_ICON_CLASS}
+                strokeWidth={SHELL_ACTION_ICON_STROKE}
+              />
+            </button>
+          </div>
+        ) : null}
         <div className={WORKBENCH_ACTION_GROUP_CLASS}>
           <button
             type="button"
@@ -377,6 +423,24 @@ function BrowserToolbar() {
     if (!editing) setDraft(url);
   }, [url, editing]);
 
+  const onCapture = useCallback(async () => {
+    const workspaceId = useWorkspaceStore.getState().activeId;
+    if (!workspaceId) {
+      useToastStore.getState().show("Open a workspace before capturing.", "danger");
+      return;
+    }
+    try {
+      const result = await vyotiq.capture.browser({ workspaceId });
+      useToastStore
+        .getState()
+        .show(`Browser capture saved → ${result.relPath}`, "success");
+    } catch (err) {
+      useToastStore
+        .getState()
+        .show(err instanceof Error ? err.message : String(err), "danger");
+    }
+  }, []);
+
   const onOpenExternal = useCallback(async () => {
     if (!url) return;
     try {
@@ -478,6 +542,19 @@ function BrowserToolbar() {
             disabled={!hasLoaded}
           >
             <Search
+              className={SHELL_ROW_ICON_CLASS}
+              strokeWidth={SHELL_ACTION_ICON_STROKE}
+            />
+          </button>
+          <button
+            type="button"
+            className={WORKBENCH_ICON_BTN_CLASS}
+            title="Capture page screenshot"
+            aria-label="Capture page screenshot"
+            onClick={() => void onCapture()}
+            disabled={!hasLoaded || loading}
+          >
+            <Camera
               className={SHELL_ROW_ICON_CLASS}
               strokeWidth={SHELL_ACTION_ICON_STROKE}
             />

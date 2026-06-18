@@ -63,6 +63,20 @@ import { _resetForTests as resetRateGuard } from '@main/providers/providerRateGu
 
 const { toAnthropicMessages, mapStopReason, toCanonicalUsage } = __anthropicInternals;
 
+const anthropicWireProvider = {
+  id: 'p',
+  name: 'Anthropic',
+  baseUrl: 'https://api.anthropic.com',
+  dialect: 'anthropic-native' as const,
+  enabled: true,
+  models: [],
+  apiKey: 'sk-ant-test'
+};
+
+async function translateAnthropic(messages: ChatMessage[]) {
+  return toAnthropicMessages(messages, anthropicWireProvider);
+}
+
 const anthropicAdaptive: ModelThinkingCapabilities = {
   supported: true,
   wireStyle: 'anthropic-adaptive',
@@ -480,8 +494,8 @@ describe('streamChat (Anthropic native) — stop reasons and errors', () => {
 // ────────────────────────────────────────────────────────────────────
 
 describe('toAnthropicMessages — body translation', () => {
-  it('hoists a single system message to the top-level system field', () => {
-    const result = toAnthropicMessages([
+  it('hoists a single system message to the top-level system field', async () => {
+    const result = await translateAnthropic([
       { role: 'system', content: 'You are V.' },
       { role: 'user', content: 'hi' }
     ]);
@@ -491,8 +505,8 @@ describe('toAnthropicMessages — body translation', () => {
     ]);
   });
 
-  it('concatenates multiple system messages with a blank line separator', () => {
-    const result = toAnthropicMessages([
+  it('concatenates multiple system messages with a blank line separator', async () => {
+    const result = await translateAnthropic([
       { role: 'system', content: 'You are V.' },
       { role: 'system', content: 'Be terse.' },
       { role: 'user', content: 'hi' }
@@ -500,8 +514,8 @@ describe('toAnthropicMessages — body translation', () => {
     expect(result.system).toBe('You are V.\n\nBe terse.');
   });
 
-  it('translates assistant tool_calls into tool_use blocks (text first when both present)', () => {
-    const result = toAnthropicMessages([
+  it('translates assistant tool_calls into tool_use blocks (text first when both present)', async () => {
+    const result = await translateAnthropic([
       { role: 'user', content: 'compute' },
       {
         role: 'assistant',
@@ -526,8 +540,8 @@ describe('toAnthropicMessages — body translation', () => {
     });
   });
 
-  it('translates tool messages into user role with tool_result blocks', () => {
-    const result = toAnthropicMessages([
+  it('translates tool messages into user role with tool_result blocks', async () => {
+    const result = await translateAnthropic([
       { role: 'tool', content: '{"answer":42}', tool_call_id: 'toolu_01', name: 'calc' }
     ]);
     expect(result.messages).toEqual([
@@ -540,12 +554,12 @@ describe('toAnthropicMessages — body translation', () => {
     ]);
   });
 
-  it('emits a {type:thinking, thinking, signature} block FIRST when both reasoning fields are present', () => {
+  it('emits a {type:thinking, thinking, signature} block FIRST when both reasoning fields are present', async () => {
     // Phase 8 round-trip: a replayed assistant message that carries
     // both reasoning_content and reasoning_signature must surface
     // back to Anthropic as a thinking block, BEFORE the text block.
     // Block order matters per the 2026 docs.
-    const result = toAnthropicMessages([
+    const result = await translateAnthropic([
       { role: 'user', content: 'hi' },
       {
         role: 'assistant',
@@ -563,13 +577,13 @@ describe('toAnthropicMessages — body translation', () => {
     expect(assistant.content[1]).toMatchObject({ type: 'text', text: 'OK.' });
   });
 
-  it('drops the thinking block when reasoning_content is present but signature is missing', () => {
+  it('drops the thinking block when reasoning_content is present but signature is missing', async () => {
     // Older transcripts (pre-Phase-8) only carry reasoning_content.
     // Anthropic rejects a thinking block without a signature, so we
     // skip the block entirely and keep just the text. The API
     // auto-filters legacy thinking blocks for older Sonnet/Haiku
     // model classes anyway, so dropping is backward-compatible.
-    const result = toAnthropicMessages([
+    const result = await translateAnthropic([
       {
         role: 'assistant',
         content: 'OK.',
@@ -582,11 +596,11 @@ describe('toAnthropicMessages — body translation', () => {
     expect(assistant.content[0]).toMatchObject({ type: 'text', text: 'OK.' });
   });
 
-  it('skips empty assistant turns (no content, no tool_calls)', () => {
+  it('skips empty assistant turns (no content, no tool_calls)', async () => {
     // Anthropic rejects an empty content array; an OpenAI-canonical
     // assistant turn with nothing to say (rare — pure pass-through)
     // must be dropped entirely.
-    const result = toAnthropicMessages([
+    const result = await translateAnthropic([
       { role: 'user', content: 'hi' },
       { role: 'assistant', content: '' },
       { role: 'user', content: 'still there?' }

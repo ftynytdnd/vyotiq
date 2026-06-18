@@ -38,8 +38,33 @@ import {
 } from '@shared/providers/thinkingEffort.js';
 import { applyOpenAiCacheHints } from './cacheHints/openaiCacheHints.js';
 import { normalizeWireTools } from './normalizeWireTools.js';
+import { toOpenAiUserContent } from './multimodal/userContentWire.js';
+import { parseDataUrl } from './multimodal/parseDataUrl.js';
+import { resolveFileRefsForUserContent } from './files/resolveFileReference.js';
+import { isChatContentPartArray } from '@shared/text/chatContent.js';
+import type { ChatMessage } from '@shared/types/chat.js';
 
 const log = logger.child('providers/chat/openai');
+
+/** Image output blocks from OpenAI-compatible image-generation stream deltas. */
+function* extractImageDeltas(delta: RawSseChoice['delta']): Generator<ChatStreamDelta> {
+  if (!delta) return;
+  const raw = delta as Record<string, unknown>;
+  const content = raw['content'];
+  if (!Array.isArray(content)) return;
+  for (const block of content) {
+    if (!block || typeof block !== 'object') continue;
+    const b = block as Record<string, unknown>;
+    if (b['type'] !== 'image_url') continue;
+    const imageUrl = b['image_url'];
+    if (!imageUrl || typeof imageUrl !== 'object') continue;
+    const url = (imageUrl as { url?: string }).url;
+    if (typeof url !== 'string' || url.length === 0) continue;
+    const parsed = parseDataUrl(url);
+    if (!parsed) continue;
+    yield { imageDelta: { mime: parsed.mime, base64: parsed.base64 } };
+  }
+}
 
 /** Reasoning text from OpenAI-compat / OpenRouter / DeepSeek stream deltas. */
 function extractReasoningDeltaText(delta: RawSseChoice['delta']): string | null {
@@ -130,6 +155,23 @@ interface RawSseChunk {
   error?: { message?: string; type?: string; code?: string | number; metadata?: unknown } | string;
 }
 
+async function openAiMessagesWithFileRefs(
+  provider: ProviderWithKey,
+  messages: readonly ChatMessage[]
+): Promise<ChatMessage[]> {
+  const out: ChatMessage[] = [];
+  for (const m of messages) {
+    if (m.role === 'user' && isChatContentPartArray(m.content)) {
+      const fileRefs = await resolveFileRefsForUserContent(provider, m.content);
+      const wireContent = toOpenAiUserContent(m.content, fileRefs);
+      out.push({ ...m, content: wireContent as ChatMessage['content'] });
+    } else {
+      out.push(m);
+    }
+  }
+  return out;
+}
+
 /**
  * Async-generator that yields deltas as they arrive. Caller is responsible for
  * accumulating them.
@@ -139,6 +181,7 @@ export async function* streamOpenAi(
   provider: ProviderWithKey
 ): AsyncGenerator<ChatStreamDelta> {
   const url = `${provider.baseUrl}/v1/chat/completions`;
+  const withFileRefs = await openAiMessagesWithFileRefs(provider, req.messages);
   const body: Record<string, unknown> = {
     model: req.model,
     // Strict-dialect sanitization at the transport edge. Two passes:
@@ -163,7 +206,7 @@ export async function* streamOpenAi(
     // copies for the (large) majority of conversations that need
     // neither sanitization.
     messages: stripReasoningContentForStrictDialects(
-      stripGeminiSignatures(req.messages),
+      stripGeminiSignatures(withFileRefs),
       provider.baseUrl,
       req.model
     ),
@@ -411,6 +454,7 @@ export async function* streamOpenAi(
     if (typeof delta.content === 'string' && delta.content.length > 0) {
       yield { contentDelta: delta.content };
     }
+    yield* extractImageDeltas(delta);
     if (Array.isArray(delta.tool_calls)) {
       for (const tc of delta.tool_calls) {
         const toolCallDelta: ChatStreamDelta['toolCallDelta'] = {

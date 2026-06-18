@@ -21,6 +21,7 @@ import { registerContextIpc } from './context.ipc.js';
 import { registerEditorIpc } from './editor.ipc.js';
 import { registerTerminalIpc } from './terminal.ipc.js';
 import { registerBrowserIpc } from './browser.ipc.js';
+import { registerCaptureIpc } from './capture.ipc.js';
 import { registerCompletionIpc } from './completion.ipc.js';
 import { registerLspIpc } from './lsp.ipc.js';
 import { registerMentionsIpc } from './mentions.ipc.js';
@@ -52,6 +53,7 @@ export function registerIpc(): void {
   registerEditorIpc();
   registerTerminalIpc();
   registerBrowserIpc();
+  registerCaptureIpc();
   registerCompletionIpc();
   registerLspIpc();
   registerMentionsIpc();

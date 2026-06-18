@@ -49,5 +49,10 @@ describe('userContentWire', () => {
     expect(
       userContentHasMultimodalParts([{ type: 'image_url', image_url: { url: PNG_DATA } }])
     ).toBe(true);
+    expect(
+      userContentHasMultimodalParts([
+        { type: 'input_audio', input_audio: { data: 'abc', format: 'wav' } }
+      ])
+    ).toBe(true);
   });
 });

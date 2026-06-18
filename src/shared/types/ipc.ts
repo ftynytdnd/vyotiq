@@ -1483,8 +1483,20 @@ export interface VyotiqApi {
     /** Open the current URL in the system default browser. */
     openExternal(input: import('./browser.js').BrowserOpenExternalInput): Promise<void>;
 
+    /** Capture the Globe browser page to workspace `.vyotiq/captures/`. */
+    capture(input: import('./capture.js').CaptureBrowserInput): Promise<import('./capture.js').CaptureResult>;
+
     onState(cb: (event: import('./browser.js').BrowserStateEvent) => void): () => void;
 
+  };
+
+  // ---- Screen / window capture ----
+
+  capture: {
+    listSources(): Promise<import('./capture.js').CaptureListSourcesResult>;
+    screen(input: import('./capture.js').CaptureScreenInput): Promise<import('./capture.js').CaptureResult>;
+    browser(input: import('./capture.js').CaptureBrowserInput): Promise<import('./capture.js').CaptureResult>;
+    window(input: import('./capture.js').CaptureWindowInput): Promise<import('./capture.js').CaptureResult>;
   };
 
 

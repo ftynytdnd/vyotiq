@@ -5,6 +5,7 @@ import type { FollowUpMessage } from '@shared/types/followUp.js';
 import { MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
 import { ComposerStatusStrip } from './ComposerStatusStrip.js';
 import { ComposerCacheStatPill } from './ComposerCacheStatPill.js';
+import { CaptureScreenButton } from './CaptureScreenButton.js';
 import { AttachmentButton } from './AttachmentButton.js';
 import { SendButton } from './SendButton.js';
 import { StopButton } from './StopButton.js';
@@ -14,7 +15,7 @@ import { TokenUsagePill } from './TokenUsagePill.js';
 import { ContextWindowMeter } from './ContextWindowMeter.js';
 import { PromptAttachmentCards } from './PromptAttachmentCards.js';
 import { mediaKindFromMeta } from '@shared/attachments/mediaKind.js';
-import { modelSupportsVision } from '@shared/providers/visionCapabilities.js';
+import { modelSupportsVision, modelSupportsAudioNative } from '@shared/providers/visionCapabilities.js';
 import { findProviderModel } from './modelPicker/modelPickerContext.js';
 import { useComposerAttachments } from './useComposerAttachments.js';
 import { useComposerHistory } from './useComposerHistory.js';
@@ -433,6 +434,15 @@ export function Composer({
     const info = provider ? findProviderModel(provider, model.modelId) : undefined;
     return !modelSupportsVision(info?.inputModalities);
   }, [attachments, model, providers]);
+  const audioWarning = useMemo(() => {
+    const hasAudio = attachments.some(
+      (m) => (m.mediaKind ?? mediaKindFromMeta(m)) === 'audio'
+    );
+    if (!hasAudio || !model) return false;
+    const provider = providers.find((p) => p.id === model.providerId);
+    const info = provider ? findProviderModel(provider, model.modelId) : undefined;
+    return !modelSupportsAudioNative(info?.inputModalities);
+  }, [attachments, model, providers]);
   const sendState: 'idle' | 'ready' | 'processing' =
     (canSendContent || awaitingAskUser) && model ? 'ready' : 'idle';
   const sendDisabled = !canSendContent && !awaitingAskUser;
@@ -510,6 +520,18 @@ export function Composer({
               onPickFromComputer={() => void pickFromComputer()}
               disabled={!canAttach}
             />
+            <CaptureScreenButton
+              disabled={!canAttach}
+              conversationId={conversationId}
+              onCaptured={(meta) =>
+                setAttachments((cur) =>
+                  [...cur.filter((a) => a.workspacePath !== meta.workspacePath), meta].slice(
+                    0,
+                    MAX_CHAT_ATTACHMENTS
+                  )
+                )
+              }
+            />
             {attachments.length > 0 ? (
               <PromptAttachmentCards
                 items={attachments}
@@ -528,6 +550,7 @@ export function Composer({
               model={model}
               processingRun={showProcessingRunHint}
               visionWarning={visionWarning}
+              audioWarning={audioWarning}
             />
             {showQueueBtn ? (
               <button

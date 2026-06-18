@@ -63,7 +63,9 @@ import { readSseFrames, pickSseDataLine } from './sseFrameReader.js';
 import { safeText } from './errorBody.js';
 import { redactUrlSecrets } from './redactUrlSecrets.js';
 import { findProviderModel } from '@shared/providers/modelId.js';
+import { modelSupportsImageOutput } from '@shared/providers/visionCapabilities.js';
 import { toGeminiUserParts } from './multimodal/userContentWire.js';
+import { resolveFileRefsForUserContent } from './files/resolveFileReference.js';
 import { recordProviderRateLimits } from './providerRateLimitCapture.js';
 import {
   resolveGeminiThinkingConfig,
@@ -191,7 +193,7 @@ export async function* streamGemini(
   // every assistant tool_call becomes a `functionCall` part, every
   // tool message becomes a `functionResponse` part on a `user`-role
   // turn (Gemini doesn't have a dedicated tool role).
-  const translated = toGeminiContents(req.messages);
+  const translated = await toGeminiContents(req.messages, provider);
   const wireTools = normalizeWireTools(req.tools);
 
   const body: Record<string, unknown> = { contents: translated.contents };
@@ -259,10 +261,9 @@ export async function* streamGemini(
     findProviderModel(provider, req.model)?.thinking
   );
   if (thinkingConfig !== null) generationConfig['thinkingConfig'] = thinkingConfig;
-  // `responseModalities` defaults to ["TEXT"] when omitted — the
-  // canonical text-only path. We never request image / audio output
-  // from this transport (vision INPUT is supported automatically;
-  // generation output is text-only by design).
+  if (modelSupportsImageOutput(req.model)) {
+    generationConfig['responseModalities'] = ['TEXT', 'IMAGE'];
+  }
   if (Object.keys(generationConfig).length > 0) {
     body['generationConfig'] = generationConfig;
   }
@@ -449,9 +450,22 @@ export async function* streamGemini(
         yield { contentDelta: part.text };
         continue;
       }
-      // `functionResponse` / image / audio parts — never legitimate
-      // on the assistant->client direction in our request shape.
-      // Ignore silently.
+      // 4. Generated image part (when responseModalities includes IMAGE).
+      if (
+        part.inlineData &&
+        typeof part.inlineData.mimeType === 'string' &&
+        part.inlineData.mimeType.startsWith('image/') &&
+        typeof part.inlineData.data === 'string' &&
+        part.inlineData.data.length > 0
+      ) {
+        yield {
+          imageDelta: {
+            mime: part.inlineData.mimeType,
+            base64: part.inlineData.data
+          }
+        };
+        continue;
+      }
     }
 
     if (cand.finishReason) {
@@ -591,10 +605,13 @@ interface GeminiContent {
  *
  * Pure / synchronous; exported as a test-only internal below.
  */
-function toGeminiContents(messages: readonly ChatMessage[]): {
+async function toGeminiContents(
+  messages: readonly ChatMessage[],
+  provider: ProviderWithKey
+): Promise<{
   systemInstruction: { parts: GeminiPart[] } | null;
   contents: GeminiContent[];
-} {
+}> {
   const layered = isCacheLayeredTopology(messages);
   const systemParts: string[] = [];
   const contents: GeminiContent[] = [];
@@ -635,7 +652,8 @@ function toGeminiContents(messages: readonly ChatMessage[]): {
       continue;
     }
     if (m.role === 'user') {
-      contents.push({ role: 'user', parts: toGeminiUserParts(m.content) });
+      const fileRefs = await resolveFileRefsForUserContent(provider, m.content);
+      contents.push({ role: 'user', parts: toGeminiUserParts(m.content, fileRefs) });
       continue;
     }
     // assistant

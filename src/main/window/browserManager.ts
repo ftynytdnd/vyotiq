@@ -175,6 +175,38 @@ export function browserOpenExternal(url: string): void {
   throw new Error('Only http(s) URLs can be opened externally');
 }
 
+export function browserIsVisible(): boolean {
+  return visible;
+}
+
+export function browserHasLoaded(): boolean {
+  const wc = view?.webContents;
+  if (!wc || wc.isDestroyed()) return false;
+  const url = wc.getURL();
+  return url.length > 0 && url !== 'about:blank' && !wc.isLoading();
+}
+
+/** Capture the visible Globe browser page as PNG bytes. */
+export async function browserCapturePage(): Promise<{
+  png: Buffer;
+  width: number;
+  height: number;
+  url: string;
+}> {
+  if (!visible) throw new Error('Browser panel is not visible — open Globe before capturing');
+  const v = ensureView();
+  const wc = v.webContents;
+  if (wc.isLoading()) throw new Error('Browser is still loading');
+  const image = await wc.capturePage();
+  const size = image.getSize();
+  return {
+    png: image.toPNG(),
+    width: size.width,
+    height: size.height,
+    url: wc.getURL()
+  };
+}
+
 export function browserDestroy(): void {
   if (!view) return;
   const win = getMainWindow();

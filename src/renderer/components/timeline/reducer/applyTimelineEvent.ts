@@ -581,6 +581,13 @@ export function applyTimelineEvent(
       };
     }
 
+    case 'assistant-image': {
+      return {
+        ...state,
+        events: appendTimelineEvent(state.events, event, mutate)
+      };
+    }
+
     default: {
       const _exhaustive: never = event;
       void _exhaustive;

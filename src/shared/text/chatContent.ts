@@ -23,6 +23,10 @@ export function chatContentToText(content: string | ChatContentPart[] | null | u
 export function messageHasVisionParts(content: string | ChatContentPart[] | null | undefined): boolean {
   if (!Array.isArray(content)) return false;
   return content.some(
-    (p) => p.type === 'image_url' || p.type === 'file' || p.type === 'video_url'
+    (p) =>
+      p.type === 'image_url' ||
+      p.type === 'file' ||
+      p.type === 'video_url' ||
+      p.type === 'input_audio'
   );
 }

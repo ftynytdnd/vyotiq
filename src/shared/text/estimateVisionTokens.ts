@@ -51,6 +51,8 @@ export function estimateVisionTokensFromContent(parts: ChatContentPart[]): numbe
         total += estimateVideoTokens(parsed?.bytes ?? 0);
         break;
       }
+      case 'input_audio':
+        break;
       default: {
         const _exhaustive: never = part;
         void _exhaustive;

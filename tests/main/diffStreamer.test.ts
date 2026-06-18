@@ -943,6 +943,40 @@ describe('DiffStreamer', () => {
     streamer.dispose();
   });
 
+  it('retries windowed body load when oldString arrives after the first large-file delta', async () => {
+    const workspacePath = await mkTempWorkspace();
+    const marker = 'ANCHOR_LINE_FOR_EDIT\n';
+    const padding = 'x'.repeat(1024 * 1024 + 1);
+    await writeFile(join(workspacePath, 'big.ts'), padding + marker + 'tail\n', 'utf8');
+    const { emit, events } = captureEmits();
+    const streamer = new DiffStreamer({
+      workspacePath,
+      runId: 'run-1',
+      emit
+    });
+    streamer.onArgsDelta({
+      callId: 'c1',
+      name: 'edit',
+      parsed: { path: 'big.ts', newString: 'ANCHOR_LINE_REPLACED\n' }
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(events.filter((e) => e.kind === 'diff-stream')).toHaveLength(0);
+
+    streamer.onArgsDelta({
+      callId: 'c1',
+      name: 'edit',
+      parsed: {
+        path: 'big.ts',
+        oldString: marker,
+        newString: 'ANCHOR_LINE_REPLACED\n'
+      }
+    });
+    await waitUntil(() => {
+      expect(events.filter((e) => e.kind === 'diff-stream').length).toBeGreaterThanOrEqual(1);
+    });
+    streamer.dispose();
+  });
+
   describe('report branch (HTML deliverable live preview)', () => {
     it('emits a diff-stream with all-`+` hunks for a streaming report body', async () => {
       const workspacePath = await mkTempWorkspace();

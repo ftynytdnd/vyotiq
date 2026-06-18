@@ -25,6 +25,7 @@ import type { ChatStreamRequest } from '../../providers/chatClient.js';
 import { streamChat } from '../../providers/chatClient.js';
 import { getProviderWithKey } from '../../providers/providerStore.js';
 import { consumeChatStream, type PartialToolCall } from './consumeChatStream.js';
+import { saveGeneratedImage } from '../../attachments/saveGeneratedImage.js';
 import { logger } from '../../logging/logger.js';
 
 const log = logger.child('orchestrator/assistant-turn');
@@ -69,6 +70,8 @@ export type ArgsDeltaTap = (
 export interface HandleAssistantTurnOpts {
   /** Reuse a timeline id on empty-turn retry so the UI stays one row. */
   assistantMsgId?: string;
+  workspacePath?: string;
+  runId?: string;
 }
 
 export interface AssistantTurnResult {
@@ -226,6 +229,34 @@ export async function handleAssistantTurn(
         });
       }
     });
+    if (
+      turnOpts?.workspacePath &&
+      turnOpts?.runId &&
+      consumed.generatedImages.length > 0
+    ) {
+      for (let i = 0; i < consumed.generatedImages.length; i++) {
+        const img = consumed.generatedImages[i]!;
+        try {
+          const saved = await saveGeneratedImage(
+            turnOpts.workspacePath,
+            turnOpts.runId,
+            i,
+            img.mime,
+            img.base64
+          );
+          emit({
+            kind: 'assistant-image',
+            id: randomUUID(),
+            ts: Date.now(),
+            mime: saved.mime,
+            storedPath: saved.storedPath,
+            runId: turnOpts.runId
+          });
+        } catch (err: unknown) {
+          log.warn('failed to save generated image', { err });
+        }
+      }
+    }
     // Closing markers are emitted by the caller once it knows whether the
     // text/reasoning is final or aborted.
     return { assistantMsgId, ...consumed };

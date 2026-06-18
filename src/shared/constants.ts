@@ -223,6 +223,21 @@ export const VISION_PDF_MAX_BYTES = 24 * 1024 * 1024;
 /** Native video wire cap (separate from text attachment cap). */
 export const VISION_VIDEO_MAX_BYTES = 25 * 1024 * 1024;
 
+/** Native audio wire cap (Gemini inline request budget ~20 MB). */
+export const VISION_AUDIO_MAX_BYTES = 20 * 1024 * 1024;
+
+/** Disk-backed prepared vision cache quota under userData. */
+export const VISION_DISK_CACHE_MAX_BYTES = 512 * 1024 * 1024;
+
+/** User turns with native vision parts kept in-flight during compaction. */
+export const VISION_COMPACTION_KEEP_TURNS = 3;
+
+/** Workspace-relative directory for screen/browser captures. */
+export const CAPTURE_DIR = '.vyotiq/captures';
+
+/** Workspace-relative directory for model-generated images. */
+export const GENERATED_IMAGE_DIR = '.vyotiq/generated';
+
 /** Tool execution. */
 export const BASH_TIMEOUT_MS = 30_000;
 /** Upper bound for per-invocation `timeoutMs` overrides from the model. */
@@ -459,6 +474,11 @@ export const IPC = {
   BROWSER_FIND: 'browser:find',
   BROWSER_STOP_FIND: 'browser:stop-find',
   BROWSER_OPEN_EXTERNAL: 'browser:open-external',
+  BROWSER_CAPTURE: 'browser:capture',
+  CAPTURE_LIST_SOURCES: 'capture:list-sources',
+  CAPTURE_SCREEN: 'capture:screen',
+  CAPTURE_BROWSER: 'capture:browser',
+  CAPTURE_WINDOW: 'capture:window',
   /** main → renderer: navigation / loading state for the embedded browser. */
   BROWSER_STATE: 'browser:state',
 

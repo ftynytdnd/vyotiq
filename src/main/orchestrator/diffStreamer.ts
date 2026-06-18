@@ -59,7 +59,11 @@ import { promises as fs } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type { TimelineEvent } from '@shared/types/chat.js';
 import type { DiffHunk } from '@shared/types/tool.js';
-import { computeDiffHunks } from '@shared/text/diff/computeDiffHunks.js';
+import {
+  computeDiffHunksBounded,
+  offsetDiffHunks
+} from '@shared/text/diff/windowedDiffHunks.js';
+import { loadWindowedBodyAroundAnchor, readFileWindow, sliceTextHeadWindow } from './diffStreamFileRead.js';
 import { synthesizeCreateHunks } from '@shared/text/diff/synthesizeCreateHunks.js';
 import {
   realpathInsideWorkspace,
@@ -140,6 +144,20 @@ interface CallState {
   pendingArgs: PendingArgs | null;
   /** Set on settlement so we ignore further deltas. */
   closed: boolean;
+  /** Absolute path on disk — retained for windowed large-file reads. */
+  absPath?: string;
+  /** Full file byte length when `windowed` is true. */
+  fileSize?: number;
+  /** When true, only a slice of the file is loaded into `body`. */
+  windowed?: boolean;
+  /** Line offset of `body` within the full file (windowed reads). */
+  bodyLineOffset?: number;
+  /**
+   * Large-file edit: anchor (`oldString`) was not yet findable on the
+   * first read. Keeps the call open for a later delta without caching
+   * an empty body (which would block reload).
+   */
+  bodyDeferred?: boolean;
 }
 
 interface PendingArgs {
@@ -199,9 +217,8 @@ export class DiffStreamer {
    * lifetime of this streamer (until `dispose()`) so a late delta
    * arriving after the authoritative `tool-call` event is silently
    * dropped instead of resurrecting a fresh state. The set is
-   * bounded by the number of distinct callIds in a single run,
-   * which has its own ceiling (`MAX_TOTAL_ITERATIONS` × parallel
-   * fan-out) so unbounded growth is not a concern.
+   * bounded by the number of distinct callIds in a single run, so
+   * unbounded growth is not a concern.
    */
   private readonly settledCallIds = new Set<string>();
 
@@ -652,18 +669,42 @@ export class DiffStreamer {
     });
   }
 
-  private async loadBody(callId: string, abs: string): Promise<string | null> {
+  private async loadBody(
+    callId: string,
+    abs: string,
+    parsed: Record<string, unknown> | null,
+    tool: 'edit' | 'delete' | 'bash'
+  ): Promise<string | null> {
     const reader = this.deps.readFile ?? ((p) => fs.readFile(p, 'utf8'));
     try {
-      // Stat first so we can bail out on oversized files without
-      // pulling them into memory.
       const stat = await fs.stat(abs).catch(() => null);
       if (stat && stat.size > MAX_DIFF_BODY_BYTES) {
-        log.debug('skipping diff stream — file exceeds cap', {
+        log.debug('diff stream — windowed read for large file', {
           callId,
           size: stat.size,
           cap: MAX_DIFF_BODY_BYTES
         });
+        const cur = this.states.get(callId);
+        if (cur) {
+          cur.windowed = true;
+          cur.absPath = abs;
+          cur.fileSize = stat.size;
+          cur.bodyLineOffset = 0;
+        }
+        const oldString = parsed?.['oldString'];
+        if (typeof oldString === 'string' && oldString.length > 0) {
+          const windowed = await loadWindowedBodyAroundAnchor(abs, stat.size, oldString);
+          if (windowed) {
+            if (cur) cur.bodyLineOffset = windowed.lineOffset;
+            return windowed.slice;
+          }
+        }
+        if (tool === 'delete' || tool === 'bash') {
+          const head = await readFileWindow(abs, stat.size, 0);
+          if (cur) cur.bodyLineOffset = head.lineOffset;
+          return head.slice;
+        }
+        if (cur) cur.bodyDeferred = true;
         return null;
       }
       return await reader(abs);
@@ -731,31 +772,48 @@ export class DiffStreamer {
 
     // Lazy body load. Coalesced via `loading` so multiple deltas
     // landing during the read share the same in-flight read.
-    if (cur.body === null) {
-      if (cur.loading === null) {
-        cur.loading = this.loadBody(callId, abs);
+    const bodyNeedsLoad =
+      cur.body === null || (cur.windowed && cur.body === '' && tool === 'edit');
+    if (bodyNeedsLoad) {
+      if (cur.windowed && cur.absPath && cur.fileSize !== undefined && tool === 'edit') {
+        const oldString = snapshot.parsed?.['oldString'];
+        if (typeof oldString === 'string' && oldString.length > 0) {
+          const reloaded = await loadWindowedBodyAroundAnchor(
+            cur.absPath,
+            cur.fileSize,
+            oldString
+          );
+          if (reloaded) {
+            cur.body = reloaded.slice;
+            cur.bodyLineOffset = reloaded.lineOffset;
+            cur.bodyDeferred = false;
+          }
+        }
       }
-      const body = await cur.loading;
-      // Re-fetch state in case `dispose()` ran during the await.
-      cur = this.states.get(callId);
-      if (!cur) return;
-      cur.loading = null;
-      if (body === null) {
-        // Soft-skip: file isn't readable (oversized / ENOENT / EACCES).
-        // Keep the state in place but mark it `closed` so the cheap
-        // top-level gate in `onArgsDelta` short-circuits any future
-        // deltas without paying another FS round-trip. Audit fix H2 —
-        // previously this path called `this.states.delete(callId)`
-        // which caused the next delta to recreate the state and re-stat
-        // the same unreadable file. Settled-set membership additionally
-        // belt-and-suspenders the early-return on `onArgsDelta:185`.
-        cur.body = null;
-        cur.closed = true;
-        cur.pendingArgs = null;
-        this.settledCallIds.add(callId);
-        return;
+      if (cur.body === null || (cur.windowed && cur.body === '' && tool === 'edit')) {
+        if (cur.loading === null) {
+          cur.loading = this.loadBody(callId, abs, snapshot.parsed, tool);
+        }
+        const body = await cur.loading;
+        // Re-fetch state in case `dispose()` ran during the await.
+        cur = this.states.get(callId);
+        if (!cur) return;
+        cur.loading = null;
+        if (body === null) {
+          if (cur.bodyDeferred) {
+            cur.loading = null;
+            return;
+          }
+          // Soft-skip: file isn't readable (ENOENT / EACCES).
+          cur.body = null;
+          cur.closed = true;
+          cur.pendingArgs = null;
+          this.settledCallIds.add(callId);
+          return;
+        }
+        cur.body = body;
+        cur.bodyDeferred = false;
       }
-      cur.body = body;
     }
 
     // Single-flight gate. If another compute is mid-flight, queue
@@ -774,6 +832,9 @@ export class DiffStreamer {
       } else if (tool === 'bash') {
         // Bash full-file write: the parsed op IS the new body.
         updated = bashOp!.newContent;
+        if (cur.windowed) {
+          updated = sliceTextHeadWindow(updated, cur.body!.length);
+        }
       } else {
         updated = ''; // delete → empty after-body
       }
@@ -785,25 +846,29 @@ export class DiffStreamer {
       // Route large bodies through the async worker when one is
       // configured; fall back to inline if the worker rejects so a
       // transient crash never loses the preview.
-      const bodyLen = cur.body!.length;
+      const body = cur.body!;
+      const bodyLen = body.length;
       let hunks: DiffHunk[];
+      const computeBounded = () => computeDiffHunksBounded(body, updated!);
       if (
         this.deps.computeHunksAsync &&
         (bodyLen >= WORKER_THRESHOLD_BYTES || updated.length >= WORKER_THRESHOLD_BYTES)
       ) {
         try {
-          hunks = await this.deps.computeHunksAsync(cur.body!, updated);
-          // Re-fetch state after the await — `dispose()` or a
-          // late `notifySettled` could have closed this call.
+          hunks = await this.deps.computeHunksAsync(body, updated);
           const post = this.states.get(callId);
           if (!post || post.closed) return;
           cur = post;
         } catch (err) {
           log.debug('worker LCS failed — falling back to inline', { callId, err });
-          hunks = computeDiffHunks(cur.body!, updated);
+          hunks = computeBounded();
         }
       } else {
-        hunks = computeDiffHunks(cur.body!, updated);
+        hunks = computeBounded();
+      }
+      const lineOffset = cur.bodyLineOffset ?? 0;
+      if (lineOffset > 0) {
+        hunks = offsetDiffHunks(hunks, lineOffset, lineOffset);
       }
       const stats = countHunkStats(hunks);
       // Content-aware dedup: hash on the full hunk shape so a
@@ -823,7 +888,7 @@ export class DiffStreamer {
       cur.lastTool = tool;
       cur.lastAdditions = stats.additions;
       cur.lastDeletions = stats.deletions;
-      cur.lastPostBody = updated;
+      cur.lastPostBody = cur.windowed ? null : updated;
       const event: TimelineEvent = {
         kind: 'diff-stream',
         id: randomUUID(),
@@ -834,7 +899,7 @@ export class DiffStreamer {
         hunks,
         additions: stats.additions,
         deletions: stats.deletions,
-        postBody: updated,
+        ...(cur.windowed || updated === null ? {} : { postBody: updated })
       };
       this.deps.emit(event);
     } catch (err) {

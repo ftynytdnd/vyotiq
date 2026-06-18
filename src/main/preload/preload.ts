@@ -248,10 +248,18 @@ const api: VyotiqApi = {
     find: (input) => ipcRenderer.invoke(IPC.BROWSER_FIND, input),
     stopFind: () => ipcRenderer.invoke(IPC.BROWSER_STOP_FIND),
     openExternal: (input) => ipcRenderer.invoke(IPC.BROWSER_OPEN_EXTERNAL, input),
+    capture: (input) => ipcRenderer.invoke(IPC.BROWSER_CAPTURE, input),
     onState: (cb) =>
       on<[import('@shared/types/browser.js').BrowserStateEvent]>(IPC.BROWSER_STATE, (event) =>
         cb(event)
       )
+  },
+
+  capture: {
+    listSources: () => ipcRenderer.invoke(IPC.CAPTURE_LIST_SOURCES),
+    screen: (input) => ipcRenderer.invoke(IPC.CAPTURE_SCREEN, input),
+    browser: (input) => ipcRenderer.invoke(IPC.CAPTURE_BROWSER, input),
+    window: (input) => ipcRenderer.invoke(IPC.CAPTURE_WINDOW, input)
   },
 
   completion: {

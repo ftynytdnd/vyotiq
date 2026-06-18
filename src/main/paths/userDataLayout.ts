@@ -76,6 +76,10 @@ export function attachmentsDir(): string {
   return vyotiqDataPath('attachments');
 }
 
+export function visionCacheDir(): string {
+  return vyotiqDataPath('vision-cache');
+}
+
 export function harnessOverridesDir(): string {
   return vyotiqDataPath('harness-overrides');
 }
