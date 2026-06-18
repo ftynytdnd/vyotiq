@@ -16,7 +16,24 @@ const baseProps = {
 };
 
 describe('DockToolbar', () => {
-  it('shows New chat label when dock is expanded (horizontal layout)', () => {
+  it('shows icon-only nav controls in titlebar mode', () => {
+    render(
+      <DockToolbar
+        layout="horizontal"
+        titlebarMode
+        dockExpanded
+        {...baseProps}
+        collapseIcon="left"
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Collapse navigation' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New chat' })).toBeInTheDocument();
+    expect(screen.queryByText('New chat')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Search chats and files' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument();
+  });
+
+  it('shows New chat label when dock is expanded (horizontal footer layout)', () => {
     render(<DockToolbar layout="horizontal" {...baseProps} collapseIcon="left" />);
     expect(screen.getByRole('button', { name: 'New chat' })).toBeInTheDocument();
     expect(screen.getByText('New chat')).toBeInTheDocument();
@@ -55,6 +72,21 @@ describe('DockToolbar', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
     expect(onOpenSettings).toHaveBeenCalledOnce();
+  });
+
+  it('shows only back in horizontal settings mode', () => {
+    render(
+      <DockToolbar
+        layout="horizontal"
+        settingsMode
+        onBackFromSettings={vi.fn()}
+        {...baseProps}
+        collapseIcon="right"
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Back to chat' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Expand navigation' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull();
   });
 
   it('shows only back in settings strip mode', () => {

@@ -2,10 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { TitleBar } from './components/titlebar/TitleBar.js';
 import { LeftDock } from './components/dock/index.js';
-import { dockMainPaddingLeft, DOCK_STRIP_WIDTH, beginNewChatFromDock } from './components/dock/dockShared.js';
+import { dockMainPaddingLeft, beginNewChatFromDock } from './components/dock/dockShared.js';
 import { WorkbenchShell } from './components/workbench/WorkbenchShell.js';
-import { RightWorkbenchRail } from './components/workbench/RightWorkbenchRail.js';
-import { WORKBENCH_EDGE_CONTAINER_CLASS } from './components/workbench/workbenchChrome.js';
 import {
   closeActiveWorkbenchFocus,
   cycleWorkbenchFocus,
@@ -426,23 +424,19 @@ export default function App() {
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <LeftDock
           settingsMode={settingsOpen}
-          onBackFromSettings={closeSettings}
-          onOpenSettings={() => openSettingsSection()}
           onOpenWorkspace={() => void pickWorkspace()}
           onSetWorkspacePath={openSetWorkspacePath}
         />
-        <TitleBar fileActions={fileActions} />
-        {!settingsOpen ? (
-          <div className={WORKBENCH_EDGE_CONTAINER_CLASS}>
-            <RightWorkbenchRail />
-          </div>
-        ) : null}
+        <TitleBar
+          fileActions={fileActions}
+          onOpenSettings={() => openSettingsSection()}
+          onBackFromSettings={closeSettings}
+        />
         <main
-          className="relative z-0 flex h-full min-h-0 w-full flex-col overflow-hidden bg-surface-base"
+          className="relative z-0 flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-surface-base"
           style={{
             paddingTop: 'var(--titlebar-h)',
             paddingLeft: mainPaddingLeft,
-            paddingRight: settingsOpen ? 0 : DOCK_STRIP_WIDTH,
             transition: 'padding-left 200ms ease-out'
           }}
         >

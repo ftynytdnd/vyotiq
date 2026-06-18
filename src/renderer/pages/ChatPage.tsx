@@ -20,6 +20,7 @@ import { LoadingHint } from '../components/ui/LoadingHint.js';
 import { RegionErrorBoundary } from '../components/RegionErrorBoundary.js';
 import { useProviderAccountPollSource } from '../lib/useProviderAccountPollSource.js';
 import { useWorkbenchActive } from '../components/workbench/useWorkbenchActive.js';
+import { useUiStore } from '../store/useUiStore.js';
 
 interface ChatPageProps {
   onOpenProviders: () => void;
@@ -39,6 +40,7 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
   );
   const isProcessing = useChatStore((s) => s.isProcessing);
   const workbenchActive = useWorkbenchActive();
+  const dockExpanded = useUiStore((s) => s.dockExpanded);
 
   useProviderAccountPollSource('agent-run', isProcessing);
 
@@ -147,8 +149,8 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
   );
   const hasWorkspace = Boolean(workspaceInfo.path);
   const needsSetup = !hasWorkspace || !hasProviders;
-  /** Empty chat — center the composer (setup CTAs above when blocked). */
-  const centerComposer = isFresh;
+  /** Empty chat — center the composer only when chat owns the full canvas. */
+  const centerComposer = isFresh && !workbenchActive && !dockExpanded;
   const [jumpOverlayHost, setJumpOverlayHost] = useState<HTMLElement | null>(null);
   const prevCenterComposerRef = useRef(centerComposer);
   const [dockingFromCenter, setDockingFromCenter] = useState(false);
@@ -212,7 +214,7 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
           ) : (
             <>
               <div
-                className="scrollbar-stealth vx-timeline-scroll-host flex-1 overflow-y-auto scroll-pb-6 px-4 pb-8 antialiased"
+                className="scrollbar-stealth vx-timeline-scroll-host min-h-0 flex-1 overflow-y-auto scroll-pb-6 px-4 pb-8 antialiased"
                 style={
                   {
                     '--timeline-agent-max-w': agentColumnMaxWidth

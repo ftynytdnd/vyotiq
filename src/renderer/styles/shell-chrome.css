@@ -21,3 +21,20 @@
 .vx-titlebar {
   min-height: var(--titlebar-h-fallback);
 }
+
+.vx-titlebar-workbench-btn--open {
+  background: color-mix(in oklch, var(--color-chrome-hover) 45%, transparent);
+}
+
+.vx-titlebar-workbench-btn--focused {
+  background: var(--color-chrome-hover-soft);
+  color: var(--color-text-primary);
+}
+
+.vx-titlebar-cluster {
+  background: color-mix(in oklch, var(--color-surface-sidebar) 55%, transparent);
+}
+
+.vx-titlebar-cluster--trailing {
+  border-radius: 0;
+}

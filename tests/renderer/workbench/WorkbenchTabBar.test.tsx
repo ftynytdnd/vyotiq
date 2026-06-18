@@ -128,7 +128,8 @@ describe('WorkbenchTabBar', () => {
 
     );
 
-    expect(tabLabels).toEqual(expect.arrayContaining(['Terminal', 'main.py']));
+    expect(tabLabels).toEqual(expect.arrayContaining(['main.py']));
+    expect(tabLabels).not.toEqual(expect.arrayContaining(['Terminal']));
 
     expect(screen.queryByRole('tab', { name: /^agent$/i })).toBeNull();
 
@@ -138,19 +139,19 @@ describe('WorkbenchTabBar', () => {
 
 
 
-  it('falls back to Terminal when no session shell label is available', () => {
+  it('omits single-session terminal tab — titlebar owns panel switching', () => {
 
     useTerminalStore.setState({ sessions: [], activeSessionId: null } as never);
 
     render(<WorkbenchTabBar />);
 
-    expect(screen.getByRole('tab', { name: /^terminal$/i })).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: /^terminal$/i })).toBeNull();
 
   });
 
 
 
-  it('shows closable Editor tab when editor panel is open without file tabs', () => {
+  it('omits empty editor tab — file tabs only', () => {
     useUiStore.setState({ workbenchTab: 'editor' });
     useEditorStore.setState({
       open: true,
@@ -160,8 +161,7 @@ describe('WorkbenchTabBar', () => {
       savingPaths: new Set()
     });
     render(<WorkbenchTabBar />);
-    expect(screen.getByRole('tab', { name: /^editor$/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /close editor/i })).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: /^editor$/i })).toBeNull();
   });
 
   it('renders closable per-session tabs in the scroll row when multiple sessions', () => {

@@ -4,17 +4,15 @@
  */
 
 import { useCallback, useState, type DragEvent, type ReactNode } from 'react';
-import { Globe, FileCode2, Image as ImageIcon, TerminalSquare, X } from 'lucide-react';
+import { Image as ImageIcon, TerminalSquare, X } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { basenameFromPath } from '@shared/text/languageFromPath.js';
 import { useEditorStore } from '../../store/useEditorStore.js';
 import { useTerminalStore } from '../../store/useTerminalStore.js';
-import { useBrowserStore } from '../../store/useBrowserStore.js';
 import { useAttachmentPreviewStore } from '../../store/useAttachmentPreviewStore.js';
 import { useUiStore } from '../../store/useUiStore.js';
 import { normalizePath } from '../../lib/normalizePath.js';
 import {
-  closeBrowserPanel,
   closeEditorPanel,
   closePreviewPanel,
   closeTerminalPanel,
@@ -35,16 +33,6 @@ import {
 import { cn } from '../../lib/cn.js';
 import { FileIconForPath } from '../../lib/fileIconForPath.js';
 import { EDITOR_TAB_DRAG_MIME } from '../dock/dockShared.js';
-
-function browserTabLabel(title: string, url: string): string {
-  if (title.trim()) return title;
-  try {
-    if (url) return new URL(url).hostname || 'Browser';
-  } catch {
-    /* not a URL yet */
-  }
-  return 'Browser';
-}
 
 function CompanionTabButton({
   active,
@@ -146,7 +134,6 @@ export function WorkbenchTabBar() {
   const activeTab = resolveCompanionTab(tab);
 
   const tabs = useEditorStore((s) => s.tabs);
-  const editorPanelOpen = useEditorStore((s) => s.open);
   const activeFilePath = useEditorStore((s) => s.activeFilePath);
   const setActiveTab = useEditorStore((s) => s.setActiveTab);
   const reorderWorkspaceTabs = useEditorStore((s) => s.reorderWorkspaceTabs);
@@ -160,14 +147,11 @@ export function WorkbenchTabBar() {
   const selectSession = useTerminalStore((s) => s.selectSession);
   const closeSession = useTerminalStore((s) => s.closeSession);
 
-  const browserOpen = useBrowserStore((s) => s.open);
-  const browserTitle = useBrowserStore((s) => s.title);
-  const browserUrl = useBrowserStore((s) => s.url);
-
   const previewAttachment = useAttachmentPreviewStore((s) => s.attachment);
   const previewOpen = previewAttachment !== null;
 
-  const toolTabOpen = terminalOpen || browserOpen || previewOpen || (editorPanelOpen && tabs.length === 0);
+  const showTerminalSessionTabs = terminalOpen && terminalSessions.length > 1;
+  const showPrimitiveTabs = showTerminalSessionTabs || previewOpen;
 
   const onSelectFileTab = useCallback(
     (filePath: string) => {
@@ -205,22 +189,8 @@ export function WorkbenchTabBar() {
         className="flex min-w-0 flex-1 items-stretch overflow-x-auto overflow-y-hidden scrollbar-stealth"
         data-workbench-tab-scroll
       >
-        {terminalOpen
-          ? terminalSessions.length <= 1
-            ? (
-              <CompanionTabButton
-                active={activeTab === 'terminal'}
-                label="Terminal"
-                tabId="vx-workbench-tab-terminal"
-                icon={
-                  <TerminalSquare className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
-                }
-                onSelect={() => setTab('terminal')}
-                onClose={closeTerminalPanel}
-                closeLabel="Close terminal"
-              />
-            )
-            : terminalSessions.map((session, i) => {
+        {showTerminalSessionTabs
+          ? terminalSessions.map((session, i) => {
                 const label = shellBasename(session.shell) || `Shell ${i + 1}`;
                 return (
                   <CompanionTabButton
@@ -247,17 +217,6 @@ export function WorkbenchTabBar() {
                 );
               })
           : null}
-        {browserOpen ? (
-          <CompanionTabButton
-            active={activeTab === 'browser'}
-            label={browserTabLabel(browserTitle, browserUrl)}
-            tabId="vx-workbench-tab-browser"
-            icon={<Globe className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />}
-            onSelect={() => setTab('browser')}
-            onClose={closeBrowserPanel}
-            closeLabel="Close browser"
-          />
-        ) : null}
         {previewOpen ? (
           <CompanionTabButton
             active={activeTab === 'preview'}
@@ -269,18 +228,7 @@ export function WorkbenchTabBar() {
             closeLabel="Close preview"
           />
         ) : null}
-        {editorPanelOpen && tabs.length === 0 ? (
-          <CompanionTabButton
-            active={activeTab === 'editor'}
-            label="Editor"
-            tabId="vx-workbench-tab-editor"
-            icon={<FileCode2 className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />}
-            onSelect={() => setTab('editor')}
-            onClose={closeEditorPanel}
-            closeLabel="Close editor"
-          />
-        ) : null}
-        {toolTabOpen && tabs.length > 0 ? <WorkbenchTabSeparator /> : null}
+        {showPrimitiveTabs && tabs.length > 0 ? <WorkbenchTabSeparator /> : null}
         {tabs.map((fileTab) => {
           const name = basenameFromPath(fileTab.filePath);
           const dirty = fileTab.content !== fileTab.savedContent;

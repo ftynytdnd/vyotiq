@@ -38,7 +38,7 @@ import {
   SHELL_ROW_ICON_CLASS,
 } from "../../lib/shellIcons.js";
 import type { CompanionTab } from "./workbenchShared.js";
-import { closeEditorPanel } from "./workbenchShared.js";
+import { closeEditorPanel, closeTerminalPanel, closeBrowserPanel } from "./workbenchShared.js";
 import { cn } from "../../lib/cn.js";
 import { revealFileInDockTree } from "../../lib/revealFileInDockTree.js";
 import { dockTreeRelativePath } from "../dock/dockFileTreeModel.js";
@@ -338,6 +338,18 @@ function TerminalToolbar() {
               strokeWidth={SHELL_ACTION_ICON_STROKE}
             />
           </button>
+          <button
+            type="button"
+            className={WORKBENCH_ICON_BTN_CLASS}
+            title="Close terminal (Ctrl+`)"
+            aria-label="Close terminal"
+            onClick={() => closeTerminalPanel()}
+          >
+            <X
+              className={SHELL_ROW_ICON_CLASS}
+              strokeWidth={SHELL_ACTION_ICON_STROKE}
+            />
+          </button>
         </div>
       </div>
     </header>
@@ -479,6 +491,18 @@ function BrowserToolbar() {
             disabled={!url}
           >
             <ExternalLink
+              className={SHELL_ROW_ICON_CLASS}
+              strokeWidth={SHELL_ACTION_ICON_STROKE}
+            />
+          </button>
+          <button
+            type="button"
+            className={WORKBENCH_ICON_BTN_CLASS}
+            title="Close browser (Ctrl+W)"
+            aria-label="Close browser"
+            onClick={() => closeBrowserPanel()}
+          >
+            <X
               className={SHELL_ROW_ICON_CLASS}
               strokeWidth={SHELL_ACTION_ICON_STROKE}
             />

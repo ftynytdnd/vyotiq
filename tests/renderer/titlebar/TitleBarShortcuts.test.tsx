@@ -14,13 +14,19 @@ const fileActions = {
   quit: () => {}
 };
 
+const titlebarProps = {
+  fileActions,
+  onOpenSettings: () => {},
+  onBackFromSettings: () => {}
+};
+
 describe('TitleBar — shell chrome', () => {
-  it('renders hamburger menu and window controls without duplicate settings affordances', () => {
-    render(<TitleBar fileActions={fileActions} />);
+  it('renders hamburger menu, dock chrome, and window controls', () => {
+    render(<TitleBar {...titlebarProps} />);
 
     expect(screen.getByRole('button', { name: 'Menu' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Minimize' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Keyboard shortcuts' })).toBeNull();
   });
 });

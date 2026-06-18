@@ -1,11 +1,9 @@
 /**
- * LeftDock — persistent edge strip + inline navigation panel.
- * Toolbar actions live on the strip; the panel holds search, lists, and resize.
+ * LeftDock — inline navigation flyout panel (toolbar lives in titlebar).
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DockSearchPopover } from './DockSearchPopover.js';
-import { DockToolbar } from './DockToolbar.js';
 import { DockWorkspaceTabs } from './DockWorkspaceTabs.js';
 import { DockWorkspacePanel } from './DockWorkspacePanel.js';
 import { DockSectionHeader } from './DockSectionHeader.js';
@@ -13,11 +11,9 @@ import {
   clampDockWidth,
   DOCK_INSET_CLASS,
   DOCK_EDGE_CONTAINER_CLASS,
-  DOCK_EDGE_STRIP_CLASS,
   DOCK_RESIZE_HANDLE_CLASS,
   dockFlyoutShellClassName,
   dockInlineActionClassName,
-  beginNewChatFromDock,
   workspacePanelClassName
 } from './dockShared.js';
 import { useDockShortcuts } from './useDockShortcuts.js';
@@ -29,31 +25,25 @@ import { useWorkbenchActive } from '../workbench/useWorkbenchActive.js';
 import { cn } from '../../lib/cn.js';
 
 export interface LeftDockProps {
-  onOpenSettings: () => void;
   onOpenWorkspace: () => void;
   onSetWorkspacePath: () => void;
-  /** Strip-only mode — flyout stays collapsed; gear becomes back. */
+  /** Flyout stays collapsed while settings is open. */
   settingsMode?: boolean;
-  onBackFromSettings?: () => void;
 }
 
 export function LeftDock({
-  onOpenSettings,
   onOpenWorkspace,
   onSetWorkspacePath,
-  settingsMode = false,
-  onBackFromSettings
+  settingsMode = false
 }: LeftDockProps) {
   useDockShortcuts();
   useWorkspaceTreeWatcher();
 
   const dockExpanded = useUiStore((s) => s.dockExpanded);
   const dockWidth = useUiStore((s) => s.dockWidth);
-  const toggleDock = useUiStore((s) => s.toggleDock);
   const setDockExpanded = useUiStore((s) => s.setDockExpanded);
   const setDockWidth = useUiStore((s) => s.setDockWidth);
 
-  const toggleSearch = useDockSearchStore((s) => s.toggle);
   const searchOpen = useDockSearchStore((s) => s.open);
 
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
@@ -65,22 +55,6 @@ export function LeftDock({
   const dragWidthRef = useRef<number | null>(null);
   const moveHandlerRef = useRef<((ev: MouseEvent) => void) | null>(null);
   const upHandlerRef = useRef<(() => void) | null>(null);
-
-  const handleToggleSearch = () => {
-    if (settingsMode) return;
-    if (!dockExpanded) setDockExpanded(true);
-    toggleSearch();
-  };
-
-  const handleToggleDock = () => {
-    if (settingsMode) return;
-    toggleDock();
-  };
-
-  const handleExpandDock = () => {
-    if (settingsMode) return;
-    setDockExpanded(true);
-  };
 
   useEffect(() => {
     if (!dockExpanded && searchOpen) {
@@ -147,19 +121,6 @@ export function LeftDock({
 
   const expandedWidthPx = liveWidth ?? dockWidth;
 
-  const toolbarProps = {
-    searchOpen,
-    onNewChat: () => {
-      if (settingsMode) return;
-      void beginNewChatFromDock();
-    },
-    onToggleSearch: handleToggleSearch,
-    onOpenSettings,
-    onCollapse: () => handleToggleDock(),
-    settingsMode,
-    onBackFromSettings
-  };
-
   const expandedPanel = (
     <nav
       aria-label="Workspace and session navigation"
@@ -209,25 +170,8 @@ export function LeftDock({
     </nav>
   );
 
-  const edgeStrip = (
-    <nav
-      aria-label="Workspace and session navigation rail"
-      aria-expanded={dockExpanded}
-      className={DOCK_EDGE_STRIP_CLASS}
-    >
-      <DockToolbar
-        layout="vertical"
-        dockStyle
-        {...toolbarProps}
-        collapseIcon={dockExpanded ? 'left' : 'right'}
-        onCollapse={() => (dockExpanded ? handleToggleDock() : handleExpandDock())}
-      />
-    </nav>
-  );
-
   return (
     <div className={DOCK_EDGE_CONTAINER_CLASS}>
-      {edgeStrip}
       {dockExpanded && !settingsMode ? expandedPanel : null}
     </div>
   );

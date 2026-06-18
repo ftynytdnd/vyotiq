@@ -6,7 +6,6 @@
  * modals (70).
  */
 
-import { DOCK_STRIP_WIDTH } from '@shared/dock/dockWidth.js';
 import { chromePopoverPanelClassName } from '../ui/SurfaceShell.js';
 import { cn } from '../../lib/cn.js';
 
@@ -19,13 +18,30 @@ export const TITLEBAR_ROOT_CLASS = cn(
 
 const TITLEBAR_ZONE_CLASS = 'app-no-drag flex items-center gap-0.5 py-1';
 
-/** Matches dock strip width so the hamburger centers on the rail axis. */
+/** Hamburger menu — compact leading zone. */
 export const TITLEBAR_MENUBAR_ZONE_CLASS = cn(
   TITLEBAR_ZONE_CLASS,
-  'shrink-0 justify-center px-0'
+  'shrink-0 justify-center pl-1.5 pr-0.5'
 );
 
-export const TITLEBAR_MENUBAR_ZONE_STYLE = { width: DOCK_STRIP_WIDTH } as const;
+/** Horizontal dock actions (new, search, settings, collapse). */
+export const TITLEBAR_NAV_ZONE_CLASS = cn(TITLEBAR_ZONE_CLASS, 'shrink-0 pr-1');
+
+/** Workbench panel launchers before window controls. */
+export const TITLEBAR_WORKBENCH_ZONE_CLASS = cn(
+  TITLEBAR_ZONE_CLASS,
+  'shrink-0 border-l border-border-subtle/12 pl-1'
+);
+
+/** Leading cluster — menu + navigation icons. */
+export const TITLEBAR_LEFT_CLUSTER_CLASS = cn(
+  'app-no-drag vx-titlebar-cluster flex shrink-0 items-stretch gap-0'
+);
+
+/** Trailing cluster — workbench launchers + window controls. */
+export const TITLEBAR_RIGHT_CLUSTER_CLASS = cn(
+  'app-no-drag vx-titlebar-cluster vx-titlebar-cluster--trailing flex shrink-0 items-stretch gap-0.5 pr-0.5'
+);
 
 /** Center drag region (empty — workspace/chat labels live in the dock). */
 export const TITLEBAR_BREADCRUMB_ZONE_CLASS = cn(

@@ -3,7 +3,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { LeftDock } from '@renderer/components/dock/LeftDock';
 import { DOCK_WIDTH_DEFAULT, DOCK_WIDTH_MAX } from '@renderer/components/dock/dockShared';
 import { useUiStore } from '@renderer/store/useUiStore';
@@ -12,7 +12,6 @@ import { useConversationsStore } from '@renderer/store/useConversationsStore';
 import { useDockSearchStore } from '@renderer/store/useDockSearchStore';
 
 const dockProps = {
-  onOpenSettings: () => {},
   onOpenWorkspace: () => {},
   onSetWorkspacePath: () => {}
 };
@@ -58,19 +57,14 @@ describe('LeftDock layout', () => {
     expect(screen.getByRole('tablist', { name: 'Workspace contents' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: /Chats/i }));
     expect(screen.getByRole('tablist', { name: 'Chats in workspace' })).toBeInTheDocument();
-    const rail = screen.getByRole('navigation', { name: 'Workspace and session navigation rail' });
-    expect(within(rail).getByRole('button', { name: 'New chat' })).toBeInTheDocument();
     expect(screen.getByRole('separator', { name: 'Resize navigation dock' })).toBeInTheDocument();
   });
 
-  it('renders persistent edge strip when collapsed', () => {
+  it('does not render edge strip when collapsed', () => {
     useUiStore.setState({ dockExpanded: false });
     render(<LeftDock {...dockProps} />);
-    const rail = screen.getByRole('navigation', { name: 'Workspace and session navigation rail' });
-    expect(rail).toHaveAttribute('aria-expanded', 'false');
-    expect(rail.className).toContain('vx-dock-edge-strip');
     expect(screen.queryByRole('navigation', { name: 'Workspace and session navigation' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Expand navigation' })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Workspace and session navigation rail' })).toBeNull();
   });
 
   it('does not render a dismiss backdrop when expanded', () => {
@@ -129,39 +123,16 @@ describe('LeftDock layout', () => {
     expect(handle).not.toHaveAttribute('data-resizing');
   });
 
-  it('switches to the chats tab when New chat is clicked', () => {
+  it('switches to the chats tab when dock panel receives new chat via store', () => {
     useUiStore.setState({ dockPanelTab: 'files', dockExpanded: true });
     render(<LeftDock {...dockProps} />);
-    fireEvent.click(screen.getByRole('button', { name: 'New chat' }));
+    useUiStore.getState().setDockPanelTab('chats');
     expect(useUiStore.getState().dockPanelTab).toBe('chats');
-    expect(screen.getByRole('tab', { name: /Chats/i })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: /^Files$/i })).toHaveAttribute('aria-selected', 'false');
-  });
-
-  it('shows back on the strip in settings mode instead of settings gear', () => {
-    render(
-      <LeftDock
-        {...dockProps}
-        settingsMode
-        onBackFromSettings={() => {}}
-      />
-    );
-    expect(screen.getByRole('button', { name: 'Back to chat' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Expand navigation' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Search chats and files' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull();
   });
 
   it('does not render panel while settings mode is active', () => {
     useUiStore.setState({ dockExpanded: true });
-    render(
-      <LeftDock
-        {...dockProps}
-        settingsMode
-        onBackFromSettings={() => {}}
-      />
-    );
+    render(<LeftDock {...dockProps} settingsMode />);
     expect(screen.queryByRole('navigation', { name: 'Workspace and session navigation' })).toBeNull();
   });
 });

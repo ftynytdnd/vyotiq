@@ -1,5 +1,5 @@
 /**
- * Workbench launchers — vertical activity icons in the right edge strip.
+ * Workbench launchers — open terminal, browser, and editor companion panels.
  */
 
 import { useCallback } from 'react';
@@ -9,15 +9,19 @@ import { useBrowserStore } from '../../store/useBrowserStore.js';
 import { useEditorStore } from '../../store/useEditorStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useUiStore } from '../../store/useUiStore.js';
-import { focusWorkbenchTab, resolveCompanionTab } from './workbenchShared.js';
+import { focusWorkbenchTab, resolveCompanionTab, closeTerminalPanel, closeBrowserPanel, closeEditorPanel } from './workbenchShared.js';
 import { WORKBENCH_RAIL_BTN_CLASS } from './workbenchChrome.js';
 import { DOCK_TAB_ICON_CLASS, DOCK_TAB_ICON_STROKE } from '../dock/dockShared.js';
+import { TITLEBAR_ICON_ACTION_CLASS } from '../titlebar/titlebarShared.js';
 import { cn } from '../../lib/cn.js';
 
 export interface WorkbenchLaunchersProps {
   terminalOpen: boolean;
   browserOpen: boolean;
   editorOpen: boolean;
+  layout?: 'vertical' | 'horizontal';
+  /** Titlebar tray — open panels stay visible with active/focus tiers. */
+  titlebarMode?: boolean;
 }
 
 type LauncherId = 'terminal' | 'browser' | 'editor';
@@ -25,7 +29,9 @@ type LauncherId = 'terminal' | 'browser' | 'editor';
 export function WorkbenchLaunchers({
   terminalOpen,
   browserOpen,
-  editorOpen
+  editorOpen,
+  layout = 'vertical',
+  titlebarMode = false
 }: WorkbenchLaunchersProps) {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
   const workspacePath = useWorkspaceStore((s) => s.info.path);
@@ -34,12 +40,16 @@ export function WorkbenchLaunchers({
 
   const openTerminal = useTerminalStore((s) => s.openPanel);
   const openBrowser = useBrowserStore((s) => s.openPanel);
-  const openEditor = useEditorStore((s) => s.openPanel);
 
   const onLauncher = useCallback(
     (id: LauncherId) => {
+      const focused = resolveCompanionTab(workbenchTab) === id;
       if (id === 'terminal') {
         if (terminalOpen) {
+          if (focused) {
+            closeTerminalPanel();
+            return;
+          }
           focusWorkbenchTab('terminal');
           return;
         }
@@ -48,6 +58,10 @@ export function WorkbenchLaunchers({
       }
       if (id === 'browser') {
         if (browserOpen) {
+          if (focused) {
+            closeBrowserPanel();
+            return;
+          }
           focusWorkbenchTab('browser');
           return;
         }
@@ -55,19 +69,24 @@ export function WorkbenchLaunchers({
         return;
       }
       if (editorOpen) {
+        if (focused) {
+          closeEditorPanel();
+          return;
+        }
         focusWorkbenchTab('editor');
         return;
       }
-      openEditor();
+      useUiStore.getState().setDockExpanded(true);
+      useUiStore.getState().setDockPanelTab('files');
     },
     [
       activeWorkspaceId,
       browserOpen,
       editorOpen,
       openBrowser,
-      openEditor,
       openTerminal,
-      terminalOpen
+      terminalOpen,
+      workbenchTab
     ]
   );
 
@@ -84,7 +103,9 @@ export function WorkbenchLaunchers({
       label: 'Terminal',
       title: activeWorkspaceId
         ? terminalOpen
-          ? 'Focus terminal'
+          ? activeCompanion === 'terminal'
+            ? 'Close terminal (Ctrl+`)'
+            : 'Focus terminal'
           : 'Open terminal (Ctrl+`)'
         : 'Choose a workspace to open a terminal',
       open: terminalOpen,
@@ -94,7 +115,12 @@ export function WorkbenchLaunchers({
     {
       id: 'browser',
       label: 'Browser',
-      title: browserOpen ? 'Focus browser' : 'Open browser',
+      title:
+        browserOpen
+          ? activeCompanion === 'browser'
+            ? 'Close browser (Ctrl+W)'
+            : 'Focus browser'
+          : 'Open browser',
       open: browserOpen,
       icon: Globe
     },
@@ -103,8 +129,10 @@ export function WorkbenchLaunchers({
       label: 'Editor',
       title: workspacePath
         ? editorOpen
-          ? 'Focus editor'
-          : 'Open editor'
+          ? activeCompanion === 'editor'
+            ? 'Close editor (Ctrl+W)'
+            : 'Focus editor'
+          : 'Open files in dock (Ctrl+B)'
         : 'Choose a workspace to edit files',
       open: editorOpen,
       disabled: !workspacePath && !editorOpen,
@@ -112,22 +140,52 @@ export function WorkbenchLaunchers({
     }
   ];
 
+  const btnClass =
+    layout === 'horizontal'
+      ? cn(
+          TITLEBAR_ICON_ACTION_CLASS,
+          'vx-btn vx-btn-quiet px-1 text-text-muted',
+          titlebarMode && 'vx-titlebar-workbench-btn'
+        )
+      : WORKBENCH_RAIL_BTN_CLASS;
+
   return (
-    <div className="flex flex-col items-center gap-1">
+    <div
+      className={cn(
+        layout === 'horizontal' ? 'flex items-center gap-0.5' : 'flex flex-col items-center gap-1'
+      )}
+    >
       {items.map((item) => {
         const Icon = item.icon;
-        const active = item.open && activeCompanion === item.id;
+        const focused = item.open && activeCompanion === item.id;
+        const open = item.open;
         return (
           <button
             key={item.id}
             type="button"
             className={cn(
-              WORKBENCH_RAIL_BTN_CLASS,
-              active && 'bg-chrome-hover-soft text-text-primary'
+              btnClass,
+              titlebarMode
+                ? focused
+                  ? 'vx-titlebar-workbench-btn--focused bg-chrome-hover-soft text-text-primary'
+                  : open
+                    ? 'vx-titlebar-workbench-btn--open text-text-secondary'
+                    : undefined
+                : focused && 'bg-chrome-hover-soft text-text-primary'
             )}
             title={item.title}
-            aria-label={item.open ? `Focus ${item.label.toLowerCase()}` : `Open ${item.label.toLowerCase()}`}
-            aria-pressed={item.open ? active : undefined}
+            aria-label={
+              item.open
+                ? focused
+                  ? `Close ${item.label.toLowerCase()}`
+                  : `Focus ${item.label.toLowerCase()}`
+                : item.id === 'editor'
+                  ? 'Open files to edit'
+                  : `Open ${item.label.toLowerCase()}`
+            }
+            aria-pressed={open ? focused : undefined}
+            data-open={open ? 'true' : undefined}
+            data-focused={focused ? 'true' : undefined}
             disabled={item.disabled}
             onClick={() => onLauncher(item.id)}
           >

@@ -21,9 +21,14 @@ const fileActions = {
 };
 
 const dockProps = {
-  onOpenSettings: () => {},
   onOpenWorkspace: () => {},
   onSetWorkspacePath: () => {}
+};
+
+const titlebarProps = {
+  fileActions,
+  onOpenSettings: () => {},
+  onBackFromSettings: () => {}
 };
 
 beforeEach(() => {
@@ -50,15 +55,15 @@ beforeEach(() => {
 
 describe('TitleBar', () => {
   it('does not duplicate workspace labels in the title bar drag region', () => {
-    render(<TitleBar fileActions={fileActions} />);
+    render(<TitleBar {...titlebarProps} />);
     expect(screen.queryByText('Codex')).not.toBeInTheDocument();
     expect(screen.queryByText('Chat')).not.toBeInTheDocument();
   });
 
-  it('shows the collapsed navigation rail without duplicating labels in the title bar', () => {
+  it('shows expand navigation in titlebar chrome when dock is collapsed', () => {
     render(
       <>
-        <TitleBar fileActions={fileActions} />
+        <TitleBar {...titlebarProps} />
         <LeftDock {...dockProps} />
       </>
     );
@@ -70,7 +75,7 @@ describe('TitleBar', () => {
     useUiStore.setState({ dockExpanded: true });
     render(
       <>
-        <TitleBar fileActions={fileActions} />
+        <TitleBar {...titlebarProps} />
         <LeftDock {...dockProps} />
       </>
     );
@@ -80,7 +85,7 @@ describe('TitleBar', () => {
 
   it('shows a settings breadcrumb in the title bar when settings is open', () => {
     useAppViewStore.setState({ view: 'settings', settingsSection: 'models-api', aboutOpen: false });
-    render(<TitleBar fileActions={fileActions} />);
+    render(<TitleBar {...titlebarProps} />);
     expect(screen.getByText('Models & API')).toBeInTheDocument();
   });
 });

@@ -172,7 +172,7 @@ describe('Workbench layout', () => {
     expect(screen.queryByRole('tablist', { name: /workbench/i })).toBeNull();
   });
 
-  it('keeps centered composer visible beside the workbench side pane', async () => {
+  it('docks the composer at the bottom when a companion panel is open', async () => {
     useTerminalStore.setState({
       open: true,
       workspaceId: 'ws-1',
@@ -187,7 +187,7 @@ describe('Workbench layout', () => {
 
     expect(container.querySelector(`.${WORKBENCH_SHELL_SPLIT_ROW_CLASS}`)).toBeTruthy();
     expect(screen.getByRole('tablist', { name: /workbench/i })).toBeTruthy();
-    expect(document.querySelector('[data-chat-footer-centered]')).toBeTruthy();
+    expect(document.querySelector('[data-chat-footer-centered]')).toBeNull();
     expect(document.querySelector('[data-workbench-agent-main] [role="textbox"]')).toBeTruthy();
     expect(document.querySelector('[data-workbench-agent-main]')).toBeTruthy();
     expect(document.querySelector('[data-workbench-pane]')).toBeTruthy();
@@ -218,10 +218,7 @@ describe('Workbench layout', () => {
 
     expect(document.querySelector('[data-workbench-agent-main]')).toBeTruthy();
     expect(document.querySelector('[data-workbench-agent-main] [role="textbox"]')).toBeTruthy();
-    const tabScroll = document.querySelector('[data-workbench-tab-scroll]');
-    expect(tabScroll).toBeTruthy();
-    expect(
-      tabScroll!.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim()
-    ).toMatch(/^terminal$/i);
+    expect(document.querySelector('[data-workbench-pane]')).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: /^terminal$/i })).toBeNull();
   });
 });

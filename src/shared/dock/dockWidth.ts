@@ -10,9 +10,9 @@ export const DOCK_WIDTH_MAX = 320;
 /** Persistent left edge strip width (px) — flyout expands to the right. */
 export const DOCK_STRIP_WIDTH = 44;
 
-/** Main content left inset: icon strip plus inline nav panel when expanded. */
+/** Main content left inset: inline nav flyout when expanded (no edge strip). */
 export function dockMainPaddingLeft(expanded: boolean, panelWidth: number): number {
-  return DOCK_STRIP_WIDTH + (expanded ? panelWidth : 0);
+  return expanded ? panelWidth : 0;
 }
 
 export function clampDockWidth(width: number): number {
