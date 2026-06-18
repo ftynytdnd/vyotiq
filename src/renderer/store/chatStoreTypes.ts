@@ -11,6 +11,11 @@ import type { AskUserSubmitInput } from '@shared/types/askUser.js';
 import type { ActiveRunInfo } from '@shared/types/ipc.js';
 import type { ModelSelection } from '@shared/types/provider.js';
 import type { MentionRef } from '@shared/types/mention.js';
+import type {
+  ConversationFollowUpState,
+  FollowUpKind
+} from '@shared/types/followUp.js';
+import { EMPTY_FOLLOW_UP_STATE } from '@shared/types/followUp.js';
 import type { ApplyEventOptions } from '../components/timeline/reducer/applyTimelineEvent.js';
 import {
   INITIAL_TIMELINE_STATE,
@@ -29,6 +34,8 @@ export interface ChatSlice extends TimelineState {
   attachmentDraft: PromptAttachmentMeta[];
   /** Non-null when only a tail slice of the JSONL is loaded. */
   transcriptPaging: TranscriptPaging | null;
+  /** Main-process follow-up queue mirror (steering + queued lanes). */
+  followUps: ConversationFollowUpState;
 }
 
 export function emptySlice(conversationId: string): ChatSlice {
@@ -41,7 +48,8 @@ export function emptySlice(conversationId: string): ChatSlice {
     runStartedAt: null,
     draft: '',
     attachmentDraft: [],
-    transcriptPaging: null
+    transcriptPaging: null,
+    followUps: { ...EMPTY_FOLLOW_UP_STATE }
   };
 }
 
@@ -56,6 +64,7 @@ export interface ActiveMirror extends TimelineState {
   attachmentDraft: PromptAttachmentMeta[];
   totalRunUsage?: TokenUsageAggregate;
   transcriptPaging: TranscriptPaging | null;
+  followUps: ConversationFollowUpState;
 }
 
 export const EMPTY_MIRROR: ActiveMirror = {
@@ -69,7 +78,8 @@ export const EMPTY_MIRROR: ActiveMirror = {
   runStartedAt: null,
   draft: '',
   attachmentDraft: [],
-  transcriptPaging: null
+  transcriptPaging: null,
+  followUps: { ...EMPTY_FOLLOW_UP_STATE }
 };
 
 export interface ChatStore extends ActiveMirror {
@@ -78,7 +88,11 @@ export interface ChatStore extends ActiveMirror {
   runIdToModel: Record<string, string>;
 
   applyEvent: (runId: string, event: TimelineEvent, opts?: ApplyEventOptions) => void;
-  applyConversationEvent: (conversationId: string, event: TimelineEvent) => void;
+  applyConversationEvent: (
+    conversationId: string,
+    event: TimelineEvent,
+    opts?: ApplyEventOptions
+  ) => void;
   finishRun: (runId: string) => void;
   errorRun: (runId: string, message: string) => void;
   setTranscript: (conversationId: string | null, events: TimelineEvent[], paging?: TranscriptPaging | null) => void;
@@ -112,4 +126,27 @@ export interface ChatStore extends ActiveMirror {
   prewarmSlice: (conversationId: string, events: TimelineEvent[], paging?: TranscriptPaging | null) => void;
   setDraft: (conversationId: string, text: string) => void;
   setAttachmentDraft: (conversationId: string, attachments: PromptAttachmentMeta[]) => void;
+  syncFollowUps: (conversationId: string, state: ConversationFollowUpState) => void;
+  loadFollowUps: (conversationId: string) => Promise<void>;
+  enqueueFollowUp: (
+    kind: FollowUpKind,
+    prompt: string,
+    selection: ModelSelection,
+    options?: {
+      attachmentMeta?: PromptAttachmentMeta[];
+      mentions?: MentionRef[];
+      promptEventId?: string;
+    }
+  ) => Promise<void>;
+  updateFollowUp: (
+    id: string,
+    patch: {
+      prompt?: string;
+      selection?: ModelSelection;
+      attachmentMeta?: PromptAttachmentMeta[];
+      mentions?: MentionRef[];
+    }
+  ) => Promise<void>;
+  removeFollowUp: (id: string) => Promise<void>;
+  sendFollowUpNow: (id: string) => Promise<void>;
 }

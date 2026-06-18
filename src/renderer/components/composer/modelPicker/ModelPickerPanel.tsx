@@ -5,7 +5,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Search } from 'lucide-react';
+import { ChevronDown, Search } from 'lucide-react';
 import type { ModelInfo, ModelSelection, ProviderConfig } from '@shared/types/provider.js';
 import { findProviderModel } from './modelPickerContext.js';
 import { useModelOptions } from './useModelOptions.js';
@@ -36,6 +36,8 @@ import { appPopoverPanelClassName } from '../../ui/SurfaceShell.js';
 import { Button } from '../../ui/Button.js';
 import { cn } from '../../../lib/cn.js';
 import { SHELL_ROW_ICON_CLASS, SHELL_ACTION_ICON_STROKE } from '../../../lib/shellIcons.js';
+import { useModelPickerLayout } from './useModelPickerLayout.js';
+import { rowDisplayModelId } from './modelPickerDisplay.js';
 
 interface ModelPickerPanelProps {
   value: ModelSelection | null;
@@ -70,16 +72,23 @@ export function ModelPickerPanel({
   onOpenProviders
 }: ModelPickerPanelProps) {
   const [query, setQuery] = useState('');
+  const [visionOnly, setVisionOnly] = useState(false);
   const [focusedIdx, setFocusedIdx] = useState(0);
   const [activeKey, setActiveKey] = useState<string | null>(() =>
     value ? modelKey(value.providerId, value.modelId) : null
   );
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const didSyncSelectionRef = useRef(false);
   const scrollFromKeyboardRef = useRef(false);
 
-  const { localGroups, remoteGroups, flat, totalEnabledProviders } = useModelOptions(query);
+  const { mode, detailsOpen, toggleDetails } = useModelPickerLayout(panelRef);
+
+  const { localGroups, remoteGroups, flat, totalEnabledProviders } = useModelOptions(
+    query,
+    visionOnly
+  );
   const favorites = useSettingsStore(
     (s) => s.settings.ui?.favoriteModels ?? EMPTY_FAVORITE_MODELS
   );
@@ -347,11 +356,13 @@ export function ModelPickerPanel({
 
   return (
     <div
+      ref={panelRef}
+      data-layout={mode}
       onKeyDown={onKeyDown}
       className={cn(
         appPopoverPanelClassName,
         'vx-model-picker-panel',
-        'flex h-full max-h-full min-h-0 w-full flex-col p-1'
+        'flex h-full max-h-full min-h-0 w-full min-w-0 flex-col p-1'
       )}
     >
       <div className="vx-model-picker-search flex flex-col gap-1">
@@ -378,6 +389,21 @@ export function ModelPickerPanel({
               {navOptions.length}
             </span>
           ) : null}
+          <button
+            type="button"
+            className={cn(
+              'vx-btn vx-btn-quiet shrink-0 px-1.5 py-0.5 text-meta',
+              visionOnly && 'text-accent'
+            )}
+            aria-pressed={visionOnly}
+            onClick={() => {
+              setVisionOnly((v) => !v);
+              setFocusedIdx(0);
+              syncActiveFromFocused(0);
+            }}
+          >
+            Vision
+          </button>
         </div>
         <ModelPickerHints />
       </div>
@@ -459,17 +485,55 @@ export function ModelPickerPanel({
           </div>
 
           {activeProvider && activeModelId ? (
-            <ModelPickerSidePanel
-              provider={activeProvider}
-              modelId={activeModelId}
-              model={activeModel}
-              selection={value}
-              isSelected={isActiveSelected}
-              onChange={onChange}
-              updateProvider={updateProvider}
-              makeSelection={makeSelection}
-              className="vx-model-picker-side scrollbar-stealth"
-            />
+            <div
+              className={cn(
+                'vx-model-picker-side',
+                mode === 'stacked' && !detailsOpen && 'vx-model-picker-side--collapsed'
+              )}
+            >
+              {mode === 'stacked' ? (
+                <button
+                  type="button"
+                  className="vx-model-picker-side-toggle"
+                  aria-expanded={detailsOpen}
+                  aria-controls="vx-model-picker-side-panel"
+                  onClick={toggleDetails}
+                >
+                  <span
+                    className="min-w-0 flex-1 truncate text-left font-mono text-meta text-text-secondary"
+                    title={activeModelId}
+                  >
+                    {rowDisplayModelId(activeModelId)}
+                  </span>
+                  <span className="shrink-0 text-meta text-text-faint">
+                    {detailsOpen ? 'Hide' : 'Details'}
+                  </span>
+                  <ChevronDown
+                    className={cn(
+                      SHELL_ROW_ICON_CLASS,
+                      'shrink-0 text-text-faint transition-transform duration-150',
+                      detailsOpen && 'rotate-180'
+                    )}
+                    strokeWidth={SHELL_ACTION_ICON_STROKE}
+                    aria-hidden
+                  />
+                </button>
+              ) : null}
+              {(mode === 'split' || detailsOpen) && (
+                <ModelPickerSidePanel
+                  id="vx-model-picker-side-panel"
+                  provider={activeProvider}
+                  modelId={activeModelId}
+                  model={activeModel}
+                  selection={value}
+                  isSelected={isActiveSelected}
+                  onChange={onChange}
+                  updateProvider={updateProvider}
+                  makeSelection={makeSelection}
+                  className="vx-model-picker-side-inner scrollbar-stealth"
+                />
+              )}
+            </div>
           ) : (
             <aside
               className="vx-model-picker-side vx-model-picker-side--empty flex flex-col justify-center px-2 py-2"
@@ -484,7 +548,7 @@ export function ModelPickerPanel({
       )}
 
       {!showEmptyState ? (
-        <footer className="vx-model-picker-footer flex shrink-0 items-center justify-between gap-2 border-t border-border-subtle/25 px-2 py-1">
+        <footer className="vx-model-picker-footer flex shrink-0 items-center justify-between gap-2 border-t border-border-subtle/25 px-2 py-1.5">
           <div className="min-w-0 flex flex-col gap-0.5">
             <span className="font-mono text-meta tabular-nums text-text-faint">
               {navOptions.length} model{navOptions.length === 1 ? '' : 's'}
@@ -507,7 +571,7 @@ export function ModelPickerPanel({
               onOpenProviders();
               onClose();
             }}
-            className="vx-btn vx-btn-quiet px-1.5 py-0.5 font-mono text-meta text-text-faint hover:text-text-secondary"
+            className="vx-btn vx-btn-quiet min-h-6 px-1.5 py-1 font-mono text-meta text-text-faint hover:text-text-secondary"
           >
             Manage providers
           </button>

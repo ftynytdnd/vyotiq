@@ -121,4 +121,48 @@ describe('ModelPickerPanel behavior', () => {
 
     expect(screen.getByRole('button', { name: 'Manage providers' })).toBeInTheDocument();
   });
+
+  it('shows stacked details toggle when panel is narrow', async () => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        private readonly target: HTMLElement;
+        constructor(private cb: ResizeObserverCallback) {
+          this.target = document.createElement('div');
+        }
+        observe(el: Element) {
+          this.cb(
+            [
+              {
+                contentRect: { width: 360, height: 0 } as DOMRectReadOnly,
+                contentBoxSize: [{ inlineSize: 360, blockSize: 0 }],
+                borderBoxSize: [{ inlineSize: 360, blockSize: 0 }],
+                devicePixelContentBoxSize: [{ inlineSize: 360, blockSize: 0 }],
+                target: el
+              } as ResizeObserverEntry
+            ],
+            this as unknown as ResizeObserver
+          );
+        }
+        disconnect() {}
+      }
+    );
+
+    render(
+      <ModelPickerPanel
+        value={{ providerId: 'remote', modelId: 'remote-model-0' }}
+        onChange={() => {}}
+        onClose={() => {}}
+        onOpenProviders={() => {}}
+      />
+    );
+
+    const toggle = await screen.findByRole('button', { name: /Details/i });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('side-panel')).toBeInTheDocument();
+
+    vi.unstubAllGlobals();
+  });
 });

@@ -10,6 +10,7 @@
  */
 
 import type { ChatMessage } from '@shared/types/chat.js';
+import { userContentHasMultimodalParts } from './multimodal/userContentWire.js';
 import type { ChatStreamRequest, ChatStreamDelta } from './chatClient.js';
 import type { ProviderWithKey } from '@shared/types/provider.js';
 import { logger } from '../logging/logger.js';
@@ -51,6 +52,7 @@ export function responsesApiUnsupportedForRequest(req: ChatStreamRequest): boole
   for (const m of req.messages) {
     if (m.role === 'tool') return true;
     if (m.tool_calls && m.tool_calls.length > 0) return true;
+    if (m.role === 'user' && userContentHasMultimodalParts(m.content)) return true;
   }
   return false;
 }

@@ -127,6 +127,24 @@ const api: VyotiqApi = {
     delete: (id) => ipcRenderer.invoke(IPC.SCHEDULED_RUNS_DELETE, id)
   },
 
+  followUps: {
+    list: (conversationId: string) => ipcRenderer.invoke(IPC.FOLLOW_UPS_LIST, conversationId),
+    enqueue: (input) => ipcRenderer.invoke(IPC.FOLLOW_UPS_ENQUEUE, input),
+    update: (input) => ipcRenderer.invoke(IPC.FOLLOW_UPS_UPDATE, input),
+    remove: (input) => ipcRenderer.invoke(IPC.FOLLOW_UPS_REMOVE, input),
+    sendNow: (input) => ipcRenderer.invoke(IPC.FOLLOW_UPS_SEND_NOW, input),
+    onUpdated: (cb) =>
+      on<[string, import('@shared/types/followUp.js').ConversationFollowUpState]>(
+        IPC.FOLLOW_UPS_UPDATED,
+        (conversationId, state) => cb(conversationId, state)
+      )
+  },
+
+  ui: {
+    onToast: (cb) =>
+      on<[import('@shared/types/uiToast.js').UiToastPayload]>(IPC.UI_TOAST, (payload) => cb(payload))
+  },
+
   tools: {
     openPath: (path, workspaceId) =>
       ipcRenderer.invoke(IPC.TOOLS_OPEN_PATH, path, workspaceId),

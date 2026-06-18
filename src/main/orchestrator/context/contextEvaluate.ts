@@ -12,8 +12,6 @@ import { refreshEnvelopes } from '../contextManager.js';
 import { replayTranscript } from '../replay/replayTranscript.js';
 import { readConversation } from '../../conversations/conversationStore.js';
 import { requireWorkspaceById } from '../../workspace/workspaceState.js';
-import { resolveAttachmentsForInline } from '../../attachments/resolveAttachmentsForInline.js';
-import { wrapXml } from '../envelope/index.js';
 import { toolSchemasFor } from '../../tools/registry.js';
 import { AGENT_TOOLS } from '../../tools/policy/index.js';
 import {
@@ -27,6 +25,11 @@ import {
   snapshotRunState
 } from '../loop/buildRunState.js';
 import { createSpinSignatureBuffer } from '../loop/toolSpinSignature.js';
+import {
+  buildUserTurnMessage,
+  enrichReplayedVisionMessages,
+  resolveInputModalitiesForSelection
+} from '../buildUserTurnMessage.js';
 import { evaluateContextBudget } from './contextBudget.js';
 
 export interface EvaluateConversationContextInput {
@@ -41,50 +44,34 @@ export interface EvaluateConversationContextInput {
   calibrationRatio?: number;
 }
 
-async function buildTurnEnvelope(
-  draftPrompt: string,
-  attachmentMeta: PromptAttachmentMeta[] | undefined,
-  workspacePath: string
-): Promise<string> {
-  const trimmed = draftPrompt.trim();
-  const userMessageXml = wrapXml(
-    'user_message',
-    trimmed.length > 0 ? trimmed : '',
-    undefined,
-    { escape: true }
-  );
-  const attachmentBlocks =
-    attachmentMeta && attachmentMeta.length > 0
-      ? await resolveAttachmentsForInline({
-          attachmentMeta,
-          workspacePath
-        })
-      : '';
-  const attachmentsXml =
-    attachmentBlocks.length > 0
-      ? wrapXml('attached_files', attachmentBlocks, undefined, { escape: true })
-      : '';
-  const turnBody = attachmentsXml ? `${userMessageXml}\n${attachmentsXml}` : userMessageXml;
-  return wrapXml('turn', turnBody);
-}
-
 async function buildProspectiveMessages(
   input: EvaluateConversationContextInput,
   workspacePath: string
 ): Promise<ChatMessage[]> {
+  const selection = { providerId: input.providerId, modelId: input.modelId };
+  const modalities = await resolveInputModalitiesForSelection(selection);
+
   let replayed: ChatMessage[] = [];
   if (input.conversationId) {
     const conv = await readConversation(input.conversationId);
     if (conv) {
       replayed = replayTranscript(conv.events);
+      replayed = await enrichReplayedVisionMessages(replayed, conv.events, {
+        selection,
+        workspacePath,
+        inputModalities: modalities
+      });
     }
   }
 
-  const turnEnvelope = await buildTurnEnvelope(
-    input.draftPrompt ?? '',
-    input.draftAttachmentMeta,
-    workspacePath
-  );
+  const built = await buildUserTurnMessage({
+    prompt: input.draftPrompt ?? '',
+    selection,
+    workspacePath,
+    attachmentMeta: input.draftAttachmentMeta,
+    inputModalities: modalities
+  });
+  const turnEnvelope = built.message.content ?? '';
   const messages = seedCacheLayeredMessages(replayed, turnEnvelope);
 
   const harness = buildOrchestratorSystemPrompt();

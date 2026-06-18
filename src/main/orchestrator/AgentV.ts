@@ -18,11 +18,14 @@ import type { AskUserSubmitInput } from '@shared/types/askUser.js';
 import { IPC } from '@shared/constants.js';
 import { formatAskUserReplyBubble, formatAskUserToolResult } from '@shared/text/formatAskUserAnswers.js';
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
-import { wrapXml } from './envelope/index.js';
-import { resolveAttachmentsForInline } from '../attachments/resolveAttachmentsForInline.js';
 import { seedCachedRead } from './seedCachedRead.js';
-import { resolveMentionsForInline } from '../attachments/resolveMentionsForInline.js';
 import { replayTranscript } from './replay/index.js';
+import {
+  buildUserTurnMessage,
+  enrichReplayedVisionMessages,
+  resolveInputModalitiesForSelection
+} from './buildUserTurnMessage.js';
+import { clearPreparedMediaCache, getPreparedMediaCache } from '../attachments/preparedMediaCache.js';
 import {
   insertHistoryBeforeTail,
   seedCacheLayeredMessages
@@ -435,6 +438,7 @@ export async function startRun(
     emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: msg });
     deps.onError(msg);
   } finally {
+    clearPreparedMediaCache(input.runId);
     const stillPaused = isRunAwaitingUser(input.runId);
     if (!stillPaused) {
       removeActiveRunIfCurrent(input.runId, generation);
@@ -705,29 +709,34 @@ async function buildInitialMessages(
       replayEvents.push(e);
     }
   }
-  const replayed = replayTranscript(replayEvents);
+  const replayed = await enrichReplayedVisionMessages(
+    replayTranscript(replayEvents),
+    replayEvents,
+    {
+      selection: input.selection,
+      workspacePath,
+      inputModalities: await resolveInputModalitiesForSelection(input.selection),
+      conversationId: input.conversationId,
+      runId: input.runId,
+      mediaCache: getPreparedMediaCache(input.runId),
+      signal
+    }
+  );
 
-  const userMessageXml = wrapXml('user_message', input.prompt, undefined, { escape: true });
-  const attachmentBlocks = await resolveAttachmentsForInline({
+  const { message: userMessage } = await buildUserTurnMessage({
+    prompt: input.prompt,
+    selection: input.selection,
+    workspacePath,
     attachmentMeta: input.attachmentMeta,
     legacyAttachments: input.attachments,
-    workspacePath,
-    signal
-  });
-  const mentionBlocks = await resolveMentionsForInline({
     mentions: input.mentions,
-    workspacePath,
+    conversationId: input.conversationId,
+    runId: input.runId,
+    mediaCache: getPreparedMediaCache(input.runId),
     signal
   });
-  const inlineBlocks = [mentionBlocks, attachmentBlocks].filter((p) => p.length > 0).join('\n\n');
-  const attachmentsXml =
-    inlineBlocks.length > 0
-      ? wrapXml('attached_files', inlineBlocks, undefined, { escape: true })
-      : '';
-  const turnBody = attachmentsXml ? `${userMessageXml}\n${attachmentsXml}` : userMessageXml;
-  const userEnvelope = wrapXml('turn', turnBody);
 
-  return seedCacheLayeredMessages(replayed, userEnvelope);
+  return seedCacheLayeredMessages(replayed, userMessage.content ?? '');
 }
 
 registerRunCrashDrain(abortAllActiveRunsWithError);

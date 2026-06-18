@@ -71,6 +71,7 @@ import { createInactivityWatch, isStreamInactivityError } from './streamInactivi
 import { readSseFrames } from './sseFrameReader.js';
 import { safeText } from './errorBody.js';
 import { findProviderModel } from '@shared/providers/modelId.js';
+import { toAnthropicUserBlocks } from './multimodal/userContentWire.js';
 import {
   anthropicBetasForProvider,
   mapAnthropicThinking,
@@ -688,7 +689,7 @@ function mapStopReason(stopReason: string): string {
  * `replayTranscript` plus the orchestrator's persistence layer).
  */
 interface AnthropicWireBlock {
-  type: 'text' | 'tool_use' | 'tool_result' | 'thinking';
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'image' | 'document';
   text?: string;
   id?: string;
   name?: string;
@@ -697,6 +698,7 @@ interface AnthropicWireBlock {
   content?: string;
   thinking?: string;
   signature?: string;
+  source?: { type: 'base64'; media_type: string; data: string };
 }
 
 interface AnthropicWireMessage {
@@ -733,8 +735,7 @@ function toAnthropicMessages(
       continue;
     }
     if (m.role === 'user') {
-      const text = typeof m.content === 'string' ? m.content : '';
-      wire.push({ role: 'user', content: [{ type: 'text', text }] });
+      wire.push({ role: 'user', content: toAnthropicUserBlocks(m.content) });
       continue;
     }
     // assistant — block ORDER matters: per Anthropic's docs, thinking

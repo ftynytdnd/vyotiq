@@ -31,6 +31,8 @@ import { acquire, markRateLimited, markSuccess } from './providerRateGuard.js';
 import { createInactivityWatch, isStreamInactivityError } from './streamInactivity.js';
 import { safeText } from './errorBody.js';
 import { findProviderModel } from '@shared/providers/modelId.js';
+import { isChatContentPartArray } from '@shared/text/chatContent.js';
+import { toOllamaUserWire } from './multimodal/userContentWire.js';
 import {
   mapOllamaThink,
   resolveStreamerThinkingEffort
@@ -506,6 +508,7 @@ function* framesToDeltas(
 interface OllamaWireMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
+  images?: string[];
   /**
    * Echo of the assistant's reasoning trace from the previous turn.
    *
@@ -575,9 +578,15 @@ function toOllamaMessages(messages: readonly ChatMessage[]): OllamaWireMessage[]
 }
 
 function toOllamaMessage(m: ChatMessage): OllamaWireMessage {
+  if (m.role === 'user' && isChatContentPartArray(m.content)) {
+    const wire = toOllamaUserWire(m.content);
+    const out: OllamaWireMessage = { role: 'user', content: wire.content };
+    if (wire.images && wire.images.length > 0) out.images = wire.images;
+    return out;
+  }
   const out: OllamaWireMessage = {
     role: m.role,
-    content: m.content ?? ''
+    content: typeof m.content === 'string' ? m.content : ''
   };
   if (m.tool_calls && m.tool_calls.length > 0) {
     out.tool_calls = m.tool_calls.map((tc) => ({

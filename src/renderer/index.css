@@ -454,6 +454,26 @@ textarea {
   transform: none;
 }
 
+.vx-jump-to-latest-chip--live {
+  border-color: color-mix(in oklch, var(--color-accent-gold) 38%, var(--color-border-shell));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .vx-jump-to-latest-chip--live {
+    animation: vx-jump-live-pulse 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes vx-jump-live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.82;
+  }
+}
+
 /* Focused composer variant — elev-2 plus a quiet inset edge. Swap in
    via the single `.elev-2-focused` class so the composer does not
    need to stack two separate shadow utilities. */
@@ -755,7 +775,8 @@ textarea {
 
 /* Timeline scroll host — clearance above the fixed composer footer. */
 .vx-timeline-scroll-host {
-  scroll-padding-bottom: 1.5rem;
+  scroll-padding-bottom: 2.5rem;
+  overscroll-behavior-y: contain;
 }
 
 /* ---------------------------------------------------------------------------
@@ -2086,6 +2107,42 @@ textarea {
   }
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes vyotiq-diff-handoff {
+    from {
+      opacity: 0.4;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  .vyotiq-diff-handoff {
+    animation: vyotiq-diff-handoff 220ms ease-out;
+  }
+}
+
+.vx-snippet-diff-intra-changed {
+  border-radius: 2px;
+  padding: 0 1px;
+  background: color-mix(in oklch, var(--color-accent) 18%, transparent);
+}
+
+.vx-snippet-diff-line--add .vx-snippet-diff-intra-changed {
+  background: color-mix(in oklch, var(--color-success) 28%, transparent);
+}
+
+.vx-snippet-diff-line--del .vx-snippet-diff-intra-changed {
+  background: color-mix(in oklch, var(--color-danger) 24%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vyotiq-diff-handoff {
+    animation: none;
+  }
+}
+
 .vx-file-change-card__header {
   background: color-mix(in oklch, var(--color-surface-raised) 88%, transparent);
 }
@@ -3339,6 +3396,119 @@ mark.vyotiq-timeline-find-mark-active {
     0 0 0 1px var(--color-composer-seam);
 }
 
+.vx-composer-followup-tray {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  border-bottom: 1px solid var(--color-border-subtle);
+  padding: 0.5rem 0.625rem 0.375rem;
+  max-height: 10.5rem;
+  overflow-y: auto;
+}
+
+.vx-composer-followup-section__label {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta-size);
+  line-height: 1.2;
+  color: var(--color-text-faint);
+  margin-bottom: 0.25rem;
+}
+
+.vx-composer-followup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vx-composer-followup-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-subtle);
+  background: color-mix(in oklch, var(--color-surface-raised) 70%, transparent);
+  padding: 0.375rem 0.5rem;
+}
+
+.vx-composer-followup-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.vx-composer-followup-source-badge {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-meta-size);
+  line-height: 1.2;
+  color: var(--color-text-faint);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 0 0.25rem;
+  text-transform: lowercase;
+}
+
+.vx-composer-followup-model-badge {
+  flex-shrink: 0;
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-meta-size);
+  line-height: 1.2;
+  color: var(--color-text-faint);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 0 0.25rem;
+}
+
+.vx-composer-followup-stale-badge {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-meta-size);
+  line-height: 1.2;
+  color: var(--color-text-secondary);
+  border: 1px solid color-mix(in oklch, var(--color-border-subtle) 70%, var(--color-text-faint));
+  border-radius: var(--radius-xs);
+  padding: 0 0.25rem;
+  text-transform: lowercase;
+}
+
+.vx-composer-followup-editing-badge {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-meta-size);
+  line-height: 1.2;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 0 0.25rem;
+  text-transform: lowercase;
+}
+
+.vx-composer-followup-row--editing {
+  border-color: color-mix(in oklch, var(--color-border-subtle) 60%, var(--color-text-faint));
+  opacity: 0.85;
+}
+
+.vx-composer-queue-btn {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta-size);
+  line-height: 1;
+  color: var(--color-text-secondary);
+}
+
+.vx-composer-send-cluster {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  grid-area: send;
+}
+
 .vx-composer-shell--drag-over {
   border-color: color-mix(in oklch, var(--color-composer-border-focus) 50%, var(--color-accent) 50%);
   background: color-mix(in oklch, var(--color-surface-input) 72%, var(--color-surface-hover) 28%);
@@ -3412,6 +3582,41 @@ mark.vyotiq-timeline-find-mark-active {
   user-select: none;
 }
 
+.vx-mention-picker {
+  overflow: hidden;
+}
+
+.vx-mention-picker-scroll {
+  min-height: 0;
+}
+
+.vx-mention-picker-section {
+  padding-block: 0.125rem;
+}
+
+.vx-mention-picker-section + .vx-mention-picker-section {
+  border-top: 1px solid color-mix(in oklch, var(--color-border-subtle) 18%, transparent);
+  margin-top: 0.0625rem;
+  padding-top: 0.0625rem;
+}
+
+.vx-mention-picker-row {
+  min-height: 1.625rem;
+}
+
+.vx-mention-picker-folder {
+  min-height: 1.5rem;
+  color: var(--color-text-muted);
+}
+
+.vx-mention-picker-folder:hover {
+  color: var(--color-text-primary);
+}
+
+.vx-mention-picker-empty {
+  line-height: 1.35;
+}
+
 .vx-mention-highlight {
   font-family: var(--font-mono);
   color: var(--color-accent);
@@ -3440,11 +3645,12 @@ button.vx-mention-highlight--open:focus-visible {
   display: grid;
   min-width: 0;
   flex: 1 1 auto;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  grid-template-rows: auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto;
   grid-template-areas:
-    'chips chips chips'
-    'editor token send';
+    'chips chips'
+    'editor send'
+    'metrics metrics';
   container-type: inline-size;
   container-name: vx-composer-input;
 }
@@ -3468,28 +3674,132 @@ button.vx-mention-highlight--open:focus-visible {
   padding: 0 0 0 0.375rem;
 }
 
-.vx-composer-token-slot {
-  grid-area: token;
+.vx-composer-metrics-row {
+  grid-area: metrics;
   display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
-  gap: 0.625rem;
-  padding-bottom: 0.375rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.125rem 0.375rem 0.3125rem;
+  border-top: 1px solid color-mix(in oklch, var(--color-border-subtle) 72%, transparent);
+}
+
+.vx-composer-metrics-row:not(:has(.vx-composer-token-pill, .vx-composer-cache-stat)) {
+  display: none;
+}
+
+.vx-composer-metrics-row__context,
+.vx-composer-metrics-row__usage {
+  display: flex;
+  align-items: center;
   min-width: 0;
 }
 
-.vx-composer-token-cluster {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
+.vx-composer-metrics-row__context {
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+  row-gap: 0.125rem;
+}
+
+.vx-composer-metrics-row__context > :not(:first-child) {
+  position: relative;
+  padding-left: 0.4375rem;
+}
+
+.vx-composer-metrics-row__context > :not(:first-child)::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 1px;
+  height: 0.75rem;
+  transform: translateY(-50%);
+  background: color-mix(in oklch, var(--color-border-subtle) 80%, transparent);
+}
+
+.vx-composer-cache-stat {
   min-width: 0;
   max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vx-composer-metrics-row__usage {
+  flex: 0 1 auto;
+  justify-content: flex-end;
+}
+
+/* During an active run, collapse verbose metrics until hover/focus. */
+.vx-composer-metrics-row--stream-compact .vx-composer-cache-stat,
+.vx-composer-metrics-row--stream-compact .vx-composer-turn-usage > svg,
+.vx-composer-metrics-row--stream-compact
+  .vx-composer-turn-usage__pill:not(.vx-composer-turn-usage__pill--cost) {
+  display: none;
+}
+
+.vx-composer-metrics-row--stream-compact:hover .vx-composer-cache-stat,
+.vx-composer-metrics-row--stream-compact:focus-within .vx-composer-cache-stat,
+.vx-composer-metrics-row--stream-compact:hover .vx-composer-turn-usage > svg,
+.vx-composer-metrics-row--stream-compact:focus-within .vx-composer-turn-usage > svg,
+.vx-composer-metrics-row--stream-compact:hover
+  .vx-composer-turn-usage__pill:not(.vx-composer-turn-usage__pill--cost),
+.vx-composer-metrics-row--stream-compact:focus-within
+  .vx-composer-turn-usage__pill:not(.vx-composer-turn-usage__pill--cost) {
+  display: inline-flex;
+}
+
+.vx-composer-metrics-row--stream-compact:hover .vx-composer-cache-stat,
+.vx-composer-metrics-row--stream-compact:focus-within .vx-composer-cache-stat {
+  display: inline;
+}
+
+.vx-composer-metrics-row .vx-composer-turn-usage {
+  cursor: default;
+}
+
+.vx-composer-metrics-row .vx-composer-turn-usage:hover {
+  background: transparent;
+}
+
+.vx-composer-metrics-row .vx-composer-turn-usage svg {
+  color: var(--color-text-faint);
 }
 
 /* Context-window meter — compact pill; breakdown opens in a popover. */
 .vx-context-meter-pill {
-  max-width: 4.25rem;
+  position: relative;
+  max-width: 5.5rem;
   padding-inline: 0.3125rem;
+}
+
+.vx-context-meter-pill__label {
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-faint);
+}
+
+.vx-context-meter-pill--noted {
+  padding-inline-end: 0.5rem;
+}
+
+.vx-context-meter-pill--pressure .vx-composer-token-pill__pct {
+  color: var(--color-warning);
+}
+
+.vx-context-meter-pill__note-dot {
+  position: absolute;
+  top: 0.1875rem;
+  right: 0.1875rem;
+  width: 0.3125rem;
+  height: 0.3125rem;
+  border-radius: 9999px;
+  background: var(--color-warning);
+  box-shadow: 0 0 0 1px var(--color-surface-raised);
 }
 
 .vx-context-meter-pill--open {
@@ -3719,6 +4029,31 @@ button.vx-mention-highlight--open:focus-visible {
 .vx-context-breakdown-popover__swatch--tools {
   background: color-mix(in oklch, var(--color-text-muted) 55%, var(--color-accent));
 }
+.vx-context-breakdown-popover__swatch--vision {
+  background: color-mix(in oklch, var(--color-success) 65%, var(--color-accent));
+}
+
+.vx-context-breakdown-popover__vision {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0.25rem 0 0;
+  padding: 0.125rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  line-height: 1.35;
+  color: var(--color-text-secondary);
+}
+
+.vx-context-breakdown-popover__vision-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.vx-context-breakdown-popover__vision-est {
+  color: var(--color-text-faint);
+  font-style: italic;
+}
 
 .vx-context-breakdown-popover__layer-label {
   overflow: hidden;
@@ -3745,8 +4080,8 @@ button.vx-mention-highlight--open:focus-visible {
 
 .vx-context-breakdown-popover__foot {
   display: flex;
-  align-items: center;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: stretch;
   gap: 0.375rem;
   min-height: 1rem;
   padding-top: 0.375rem;
@@ -3755,26 +4090,82 @@ button.vx-mention-highlight--open:focus-visible {
   font-size: var(--text-caption);
 }
 
+.vx-context-breakdown-popover__status {
+  margin: 0;
+  line-height: 1.35;
+  color: var(--color-text-faint);
+}
+
+.vx-context-breakdown-popover__manage-copy {
+  margin: 0;
+  line-height: 1.4;
+  color: var(--color-text-faint);
+}
+
+.vx-context-breakdown-popover__manage-copy strong {
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.vx-context-breakdown-popover__manage-hint {
+  margin: 0;
+  color: var(--color-warning);
+  font-size: var(--text-caption);
+  line-height: 1.35;
+}
+
+.vx-context-breakdown-popover__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.375rem;
+}
+
 .vx-context-breakdown-popover__foot-sep {
   color: var(--color-text-faint);
 }
 
 .vx-context-breakdown-popover__hint {
   color: var(--color-text-faint);
+  text-align: right;
 }
 
 .vx-context-breakdown-popover__action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.0625rem;
   cursor: pointer;
-  border: 0;
-  background: none;
-  padding: 0;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-inner);
+  background: var(--color-chrome-hover-soft);
+  padding: 0.3125rem 0.4375rem;
   font: inherit;
+  text-align: left;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.vx-context-breakdown-popover__action-label {
+  font-size: var(--text-chat-meta);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.vx-context-breakdown-popover__action-hint {
+  font-size: var(--text-caption);
+  line-height: 1.25;
   color: var(--color-text-faint);
-  transition: color 160ms ease;
 }
 
 .vx-context-breakdown-popover__action:hover:not(:disabled) {
-  color: var(--color-text-secondary);
+  border-color: color-mix(in oklch, var(--color-accent) 28%, var(--color-border-subtle));
+  background: color-mix(in oklch, var(--color-chrome-hover-soft) 72%, var(--color-accent) 8%);
+}
+
+.vx-context-breakdown-popover__action:hover:not(:disabled) .vx-context-breakdown-popover__action-label {
+  color: var(--color-text-primary);
 }
 
 .vx-context-breakdown-popover__action:disabled {
@@ -3845,15 +4236,22 @@ button.vx-mention-highlight--open:focus-visible {
 }
 
 /* Composer model picker — container-query layout (popover width, not viewport). */
+.vx-model-picker-popover {
+  min-width: min(100%, 16rem);
+}
+
 .vx-model-picker-panel {
   container-type: inline-size;
   container-name: vx-model-picker;
+  min-width: min(100%, 16rem);
+  width: 100%;
 }
 
 .vx-model-picker-search {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
+  flex-shrink: 0;
   margin: 0.0625rem 0.25rem 0;
   padding-bottom: 0.1875rem;
   background: var(--color-surface-overlay);
@@ -3895,18 +4293,58 @@ button.vx-mention-highlight--open:focus-visible {
   min-height: 0;
   min-width: 0;
   flex: 1 1 auto;
+  overflow-x: hidden;
   overflow-y: auto;
   padding-inline: 0.25rem;
   max-height: min(42vh, 22rem);
 }
 
 .vx-model-picker-side {
+  display: flex;
+  min-height: 0;
+  width: 100%;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-top: 1px solid color-mix(in oklch, var(--color-border-subtle) 30%, transparent);
+}
+
+.vx-model-picker-side--collapsed {
+  flex: 0 0 auto;
+}
+
+.vx-model-picker-side--collapsed .vx-model-picker-side-inner {
+  display: none;
+}
+
+.vx-model-picker-side-toggle {
+  display: flex;
   width: 100%;
   flex-shrink: 0;
-  border-top: 1px solid color-mix(in oklch, var(--color-border-subtle) 30%, transparent);
+  align-items: center;
+  gap: 0.375rem;
+  border: 0;
+  background: var(--color-surface-overlay);
+  padding: 0.375rem 0.5rem;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.vx-model-picker-side-toggle:hover {
+  background: var(--color-chrome-hover-soft);
+}
+
+.vx-model-picker-side-toggle:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--color-border-emphasis);
+}
+
+.vx-model-picker-side-inner {
   min-height: 0;
-  max-height: min(36vh, 14rem);
-  overflow: hidden;
+  flex: 1 1 auto;
+  max-height: min(40vh, 16rem);
 }
 
 .vx-model-picker-side--empty {
@@ -4035,6 +4473,10 @@ button.vx-mention-highlight--open:focus-visible {
 }
 
 .vx-model-picker-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  flex-shrink: 0;
   background: var(--color-surface-overlay);
 }
 
@@ -4047,6 +4489,39 @@ button.vx-mention-highlight--open:focus-visible {
   gap: 0.25rem;
 }
 
+.vx-model-picker-effort-chip {
+  min-height: 1.375rem;
+}
+
+/* Stacked — narrow popover: list first, collapsible details rail below. */
+@container vx-model-picker (max-width: 25.99rem) {
+  .vx-model-picker-row.vx-dropdown-item {
+    grid-template-columns: 0.75rem minmax(0, 1fr) 2.75rem 1.25rem;
+  }
+
+  .vx-model-picker-row-slot--price,
+  .vx-model-picker-row-slot--effort {
+    display: none;
+  }
+
+  .vx-model-picker-row-slot--ctx {
+    width: 2.75rem;
+  }
+
+  .vx-model-picker-hints .vx-model-picker-hints--nav {
+    display: none;
+  }
+
+  .vx-model-picker-list {
+    max-height: none;
+  }
+
+  .vx-model-picker-side-inner {
+    max-height: min(36vh, 14rem);
+  }
+}
+
+/* Split — list + side column. */
 @container vx-model-picker (min-width: 26rem) {
   .vx-model-picker-body {
     flex-direction: row;
@@ -4054,15 +4529,23 @@ button.vx-mention-highlight--open:focus-visible {
 
   .vx-model-picker-list {
     max-height: none;
-    flex: 1 1 62%;
+    flex: 1 1 58%;
   }
 
   .vx-model-picker-side {
-    width: 11rem;
+    width: clamp(10.5rem, 38%, 13.5rem);
     max-height: none;
-    flex: 0 0 11rem;
+    flex: 0 0 clamp(10.5rem, 38%, 13.5rem);
     border-top: none;
     border-left: 1px solid color-mix(in oklch, var(--color-border-subtle) 30%, transparent);
+  }
+
+  .vx-model-picker-side-toggle {
+    display: none;
+  }
+
+  .vx-model-picker-side-inner {
+    max-height: none;
   }
 
   .vx-model-picker-hints--compact {
@@ -4072,8 +4555,12 @@ button.vx-mention-highlight--open:focus-visible {
 
 @container vx-model-picker (min-width: 34rem) {
   .vx-model-picker-side {
-    width: 12rem;
-    flex-basis: 12rem;
+    width: clamp(11rem, 34%, 14rem);
+    flex-basis: clamp(11rem, 34%, 14rem);
+  }
+
+  .vx-model-picker-list {
+    flex-basis: 62%;
   }
 
   .vx-model-picker-row.vx-dropdown-item {
@@ -4081,41 +4568,40 @@ button.vx-mention-highlight--open:focus-visible {
   }
 }
 
-@container vx-model-picker (max-width: 25.99rem) {
-  .vx-model-picker-row.vx-dropdown-item {
-    grid-template-columns: 0.75rem minmax(0, 1fr) 2.75rem 2.75rem 1.25rem;
+@container vx-model-picker (min-width: 40rem) {
+  .vx-model-picker-list {
+    flex-basis: 64%;
   }
 
-  .vx-model-picker-row-slot--price {
-    display: none;
-  }
-
-  .vx-model-picker-row-slot--effort {
-    display: none;
-  }
-
-  .vx-model-picker-row-slot--ctx {
-    width: 2.75rem;
+  .vx-model-picker-side {
+    width: clamp(12rem, 32%, 15rem);
+    flex-basis: clamp(12rem, 32%, 15rem);
   }
 }
 
 .vx-composer-chip-row .vx-composer-status-strip {
   flex: 1 1 0%;
   min-width: 0;
+  /* Keep cache/account hints from wrapping under the model picker on mid widths. */
+  flex-basis: 6rem;
 }
 
 @container vx-composer-input (max-width: 22rem) {
   .vx-composer-input-zone {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
-      'chips send'
-      'editor editor'
-      'token token';
+      'chips chips'
+      'editor send'
+      'metrics metrics';
   }
 
-  .vx-composer-token-slot {
-    justify-content: flex-end;
+  .vx-composer-metrics-row {
     padding-inline: 0.375rem;
+  }
+
+  .vx-composer-turn-usage__rate,
+  .vx-composer-turn-usage__pill--cost {
+    display: none;
   }
 }
 
@@ -4211,6 +4697,43 @@ button.vx-mention-highlight--open:focus-visible {
 .vx-composer-status-strip {
   min-width: 0;
   flex: 1 1 auto;
+}
+
+.vx-composer-status-strip--run-hint {
+  font-family: var(--font-mono);
+}
+
+@container vx-composer-input (max-width: 24rem) {
+  .vx-composer-run-hint-secondary {
+    display: none;
+  }
+}
+
+.vx-bash-live-waiting {
+  font-family: var(--font-mono);
+  font-size: var(--text-row);
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.vx-bash-live-waiting--pulse {
+  animation: vx-bash-live-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes vx-bash-live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vx-bash-live-waiting--pulse {
+    animation: none;
+  }
 }
 
 .vx-attachment-card__thumb {
@@ -4786,8 +5309,8 @@ button.vx-mention-highlight--open:focus-visible {
   padding: 0.375rem 0.75rem 0.5rem;
 }
 
-.vx-composer-shell--landing .vx-composer-token-slot {
-  padding-bottom: 0.5rem;
+.vx-composer-shell--landing .vx-composer-metrics-row {
+  padding-bottom: 0.4375rem;
 }
 
 .vx-composer-shell--landing .vx-composer-send-slot {
@@ -4851,16 +5374,36 @@ button.vx-mention-highlight--open:focus-visible {
   flex-direction: column;
   gap: 0.35rem;
   margin-top: 0.25rem;
-  padding-top: 0.35rem;
-  background: linear-gradient(
-    to top,
-    var(--color-surface-base) 72%,
-    color-mix(in oklch, var(--color-surface-base) 88%, transparent) 100%
-  );
+  padding-top: 0;
+  background: transparent;
 }
 
 .vx-turn-sticky-footer__live {
-  padding-bottom: 0.125rem;
+  position: relative;
+  padding: 0.125rem 0 0.25rem;
+  background: var(--color-surface-base);
+}
+
+.vx-turn-sticky-footer__body {
+  position: relative;
+  background: var(--color-surface-base);
+}
+
+.vx-turn-sticky-footer:not(.vx-turn-sticky-footer--compact) .vx-turn-sticky-footer__live::before,
+.vx-turn-sticky-footer:not(.vx-turn-sticky-footer--compact) .vx-turn-sticky-footer__body::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 0.875rem;
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    var(--color-surface-base) 0%,
+    color-mix(in oklch, var(--color-surface-base) 55%, transparent) 55%,
+    transparent 100%
+  );
 }
 
 .vx-ask-user-inline--open {
@@ -4973,4 +5516,21 @@ button.vx-mention-highlight--open:focus-visible {
 .vx-titlebar-action:hover:not(:disabled) {
   background: var(--color-chrome-hover);
   color: var(--color-text-primary);
+}
+
+.vx-titlebar-workbench-btn--open {
+  background: color-mix(in oklch, var(--color-chrome-hover) 45%, transparent);
+}
+
+.vx-titlebar-workbench-btn--focused {
+  background: var(--color-chrome-hover-soft);
+  color: var(--color-text-primary);
+}
+
+.vx-titlebar-cluster {
+  background: color-mix(in oklch, var(--color-surface-sidebar) 55%, transparent);
+}
+
+.vx-titlebar-cluster--trailing {
+  border-radius: 0;
 }

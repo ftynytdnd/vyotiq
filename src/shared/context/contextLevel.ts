@@ -262,6 +262,8 @@ export interface ContextUsageSummary {
    * caller truly has no layer visibility (should be rare).
    */
   breakdown?: ContextUsageBreakdown;
+  /** Native vision media tokens (images/PDF/video) when non-zero. */
+  visionTokens?: number;
 }
 
 /** Build a full usage summary from raw inputs. */
@@ -271,6 +273,7 @@ export function summarizeContextUsage(opts: {
   thresholds: ContextLevelThresholds;
   exact: boolean;
   breakdown?: ContextUsageBreakdown;
+  visionTokens?: number;
 }): ContextUsageSummary {
   const effectiveWindow = resolveModelContextWindow(opts.advertisedWindow);
   const fractionUsed =
@@ -287,6 +290,9 @@ export function summarizeContextUsage(opts: {
     fractionUsed,
     level: applyHistoryCompactionPressure(baseLevel, opts.breakdown),
     exact: opts.exact,
-    ...(opts.breakdown ? { breakdown: opts.breakdown } : {})
+    ...(opts.breakdown ? { breakdown: opts.breakdown } : {}),
+    ...(opts.visionTokens != null && opts.visionTokens > 0
+      ? { visionTokens: opts.visionTokens }
+      : {})
   };
 }

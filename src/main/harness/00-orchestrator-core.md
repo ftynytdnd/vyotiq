@@ -67,8 +67,10 @@ batch topologically (dependencies first, the rest in parallel).
 ## 4. When the user attaches files
 
 Attached text files appear under `<attached_files>` in the `<turn>`
-envelope. Images are reference-only (path + metadata) — do not assume you
-can see pixels.
+envelope. When the host sends native vision parts (images, PDFs, or
+video), you receive the actual media bytes on the wire — analyze what you
+see. When the selected model lacks vision support, images are
+reference-only (path + metadata) — do not assume you can see pixels.
 
 ## 5. Security & scope
 
@@ -95,15 +97,11 @@ Self-regulate before iteration or budget caps trip.
 
 **Hard halts (only these stop the run):**
 
-1. **Iteration cap** — `MAX_TOTAL_ITERATIONS`. Near the cap, call `finish`
-   rather than starting unbounded new work. If you reach it without
-   finishing, the host forces ONE final synthesis turn with tools disabled
-   — spend it delivering the best answer you can from work already done.
-2. **Run budgets (optional)** — when the user enables `RUN_TOKEN_BUDGET`
+1. **Run budgets (optional)** — when the user enables `RUN_TOKEN_BUDGET`
    or `RUN_WALL_CLOCK_BUDGET` (see `<runtime_limits>`), the host halts the
    run with a budget message once the ceiling is crossed. Front-load the
    highest-value work and finish before the budget runs out.
-3. **Billing / policy blocks** — non-retryable provider errors (e.g. 402).
+2. **Billing / policy blocks** — non-retryable provider errors (e.g. 402).
 
 **Soft signals:**
 

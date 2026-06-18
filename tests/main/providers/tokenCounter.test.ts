@@ -108,6 +108,7 @@ describe('tokenCounter.tokenizeMessages (Phase 1)', () => {
   it('returns all zeros for empty inputs', () => {
     const r = tokenizeMessages('gpt-5', []);
     expect(r.total).toBe(0);
+    expect(r.visionTokens).toBe(0);
     expect(r.breakdown).toEqual({
       system: 0,
       fewShot: 0,
@@ -148,8 +149,46 @@ describe('tokenCounter.tokenizeMessages (Phase 1)', () => {
         r.breakdown.history +
         r.breakdown.runtime +
         r.breakdown.turn +
+        r.breakdown.tools +
+        r.visionTokens
+    );
+  });
+
+  it('adds vision token estimate for multimodal user content', () => {
+    const tinyPng =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const messages: ChatMessage[] = [
+      { role: 'system', content: '' },
+      { role: 'user', content: '' },
+      { role: 'user', content: '' },
+      {
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: tinyPng } },
+          { type: 'text', text: '<turn><user_message>hi</user_message></turn>' }
+        ]
+      },
+      { role: 'user', content: '' },
+      {
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: tinyPng } },
+          { type: 'text', text: '<turn><user_message>draft</user_message></turn>' }
+        ]
+      }
+    ];
+    const r = tokenizeMessages('gpt-5', messages);
+    expect(r.visionTokens).toBeGreaterThan(0);
+    expect(r.total).toBeGreaterThan(
+      r.breakdown.system +
+        r.breakdown.fewShot +
+        r.breakdown.workspace +
+        r.breakdown.history +
+        r.breakdown.runtime +
+        r.breakdown.turn +
         r.breakdown.tools
     );
+    expect(r.exact).toBe(false);
   });
 
   it('counts tool_calls arguments under history', () => {

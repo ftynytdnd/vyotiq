@@ -10,6 +10,7 @@
 import { useMemo } from 'react';
 import type { ModelInfo, ProviderConfig } from '@shared/types/provider.js';
 import { isLocalProvider } from '@shared/providers/isLocalProvider.js';
+import { modelSupportsVision } from '@shared/providers/visionCapabilities.js';
 import { useProviderStore } from '../../../store/useProviderStore.js';
 import { filterProviderModels } from './modelPickerCatalog.js';
 
@@ -32,29 +33,33 @@ export interface ModelOptions {
   totalEnabledProviders: number;
 }
 
-function buildGroups(enabled: ProviderConfig[], q: string): ModelOptionGroup[] {
+function buildGroups(enabled: ProviderConfig[], q: string, visionOnly: boolean): ModelOptionGroup[] {
   const sorted = [...enabled].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
   );
   const groups: ModelOptionGroup[] = [];
   for (const p of sorted) {
     const models = p.models ?? [];
-    const matched = filterProviderModels(p, models, q);
+    let matched = filterProviderModels(p, models, q);
+    if (visionOnly) {
+      matched = matched.filter((m) => modelSupportsVision(m.inputModalities));
+    }
     if (q && matched.length === 0) continue;
+    if (visionOnly && matched.length === 0) continue;
     groups.push({ provider: p, models: matched });
   }
   return groups;
 }
 
-export function useModelOptions(query: string): ModelOptions {
+export function useModelOptions(query: string, visionOnly = false): ModelOptions {
   const providers = useProviderStore((s) => s.providers);
   return useMemo(() => {
     const q = query.trim().toLowerCase();
     const enabled = providers.filter((p) => p.enabled);
     const localEnabled = enabled.filter((p) => isLocalProvider(p));
     const remoteEnabled = enabled.filter((p) => !isLocalProvider(p));
-    const localGroups = buildGroups(localEnabled, q);
-    const remoteGroups = buildGroups(remoteEnabled, q);
+    const localGroups = buildGroups(localEnabled, q, visionOnly);
+    const remoteGroups = buildGroups(remoteEnabled, q, visionOnly);
     const groups = [...localGroups, ...remoteGroups];
     const flat: FlatOption[] = [];
     let cursor = 0;
@@ -69,5 +74,5 @@ export function useModelOptions(query: string): ModelOptions {
       flat,
       totalEnabledProviders: enabled.length
     };
-  }, [providers, query]);
+  }, [providers, query, visionOnly]);
 }

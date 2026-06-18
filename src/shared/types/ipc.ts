@@ -12,6 +12,13 @@
 
 import type { ScheduledRun, ScheduledRunInput } from './scheduledRun.js';
 import type {
+  ConversationFollowUpState,
+  FollowUpEnqueueInput,
+  FollowUpRemoveInput,
+  FollowUpSendNowInput,
+  FollowUpUpdateInput
+} from './followUp.js';
+import type {
   ProviderConfig,
 
   AddProviderInput,
@@ -20,7 +27,9 @@ import type {
 
   ThinkingEffort,
 
-  ModelInfo
+  ModelInfo,
+
+  ModelSelection
 
 } from './provider.js';
 
@@ -174,6 +183,8 @@ export interface TokensEstimateInput {
   attachmentMeta?: PromptAttachmentMeta[];
 
   workspacePath?: string;
+
+  selection?: ModelSelection;
 
 }
 
@@ -1171,6 +1182,19 @@ export interface VyotiqApi {
     list(): Promise<ScheduledRun[]>;
     upsert(input: ScheduledRunInput): Promise<ScheduledRun>;
     delete(id: string): Promise<{ ok: boolean }>;
+  };
+
+  followUps: {
+    list(conversationId: string): Promise<ConversationFollowUpState>;
+    enqueue(input: FollowUpEnqueueInput): Promise<ConversationFollowUpState>;
+    update(input: FollowUpUpdateInput): Promise<ConversationFollowUpState>;
+    remove(input: FollowUpRemoveInput): Promise<ConversationFollowUpState>;
+    sendNow(input: FollowUpSendNowInput): Promise<ConversationFollowUpState>;
+    onUpdated(cb: (conversationId: string, state: ConversationFollowUpState) => void): () => void;
+  };
+
+  ui: {
+    onToast(cb: (payload: import('./uiToast.js').UiToastPayload) => void): () => void;
   };
 
   // ---- Reports (in-app browser) ----

@@ -19,7 +19,7 @@
  *      memory).
  */
 
-import type { AskUserStructuredPayload } from '@shared/types/askUser.js';
+import { serializeAskUserToolArguments } from '@shared/text/parseAskUser.js';
 import type { ChatMessage, TimelineEvent } from '@shared/types/chat.js';
 import { truncateToolOutputForContext } from '@shared/text/truncateUtf8Safe.js';
 import { stableStringify } from '@shared/json/stableStringify.js';
@@ -73,13 +73,6 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
     if (!deferredUserAfterTools) return;
     messages.push(deferredUserAfterTools);
     deferredUserAfterTools = null;
-  }
-
-  function askUserArgsFromPayload(payload: AskUserStructuredPayload): Record<string, unknown> {
-    return {
-      ...(payload.title && payload.title.length > 0 ? { title: payload.title } : {}),
-      questions: payload.questions
-    };
   }
 
   const flushAssistant = (opts?: { dropUnpairedToolCalls?: boolean }) => {
@@ -236,13 +229,12 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
       case 'ask-user-prompt': {
         flushAssistant({ dropUnpairedToolCalls: true });
         pendingCallIds = [];
-        const askArgs = askUserArgsFromPayload(e.payload);
         const askTc: NonNullable<ChatMessage['tool_calls']>[number] = {
           id: e.toolCallId,
           type: 'function',
           function: {
             name: 'ask_user',
-            arguments: stableStringify(askArgs)
+            arguments: serializeAskUserToolArguments(e.payload, e.displayText)
           }
         };
         messages.push({

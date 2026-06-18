@@ -146,7 +146,6 @@ export const RUN_SETTLEMENT_TIMEOUT_MS = 120_000;
 export const MAX_SELF_CORRECTION_ATTEMPTS = 3;
 /** Harness recovery cycles before a sustained provider failure terminates the run. */
 export const MAX_PROVIDER_RECOVERY_ROUNDS = 1;
-export const MAX_TOTAL_ITERATIONS = 24;
 
 /** Backoff. */
 export const BASE_BACKOFF_MS = 250;
@@ -206,8 +205,23 @@ export const MAX_USER_PROMPT_BYTES = 1_048_576; // 1 MiB
 /** Max attachments per message (composer shows N/10). */
 export const MAX_CHAT_ATTACHMENTS = 10;
 
+/** Max items per follow-up lane (steering + queued) per conversation. */
+export const MAX_FOLLOW_UP_QUEUE_DEPTH = 10;
+
 /** Per-file size cap for external attachment ingest (10 MB). */
 export const MAX_ATTACHMENT_FILE_BYTES = 10 * 1024 * 1024;
+
+/** Vision image preprocess — long edge cap (Anthropic/OpenAI 2026 guidance). */
+export const VISION_IMAGE_MAX_LONG_EDGE = 1568;
+
+/** Post-compress vision image byte cap before base64 wire send. */
+export const VISION_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+
+/** Native PDF wire cap (request budget headroom). */
+export const VISION_PDF_MAX_BYTES = 24 * 1024 * 1024;
+
+/** Native video wire cap (separate from text attachment cap). */
+export const VISION_VIDEO_MAX_BYTES = 25 * 1024 * 1024;
 
 /** Tool execution. */
 export const BASH_TIMEOUT_MS = 30_000;
@@ -333,6 +347,18 @@ export const IPC = {
   /** Run paused on `ask_user`; renderer may submit answers to resume. */
   CHAT_AWAITING_USER: 'chat:awaiting-user',
   CHAT_SUBMIT_ASK_USER: 'chat:submit-ask-user',
+
+  // Composer follow-ups (steering + queued)
+  FOLLOW_UPS_LIST: 'follow-ups:list',
+  FOLLOW_UPS_ENQUEUE: 'follow-ups:enqueue',
+  FOLLOW_UPS_UPDATE: 'follow-ups:update',
+  FOLLOW_UPS_REMOVE: 'follow-ups:remove',
+  FOLLOW_UPS_SEND_NOW: 'follow-ups:send-now',
+  /** Push: follow-up state changed for a conversation (main → renderer). */
+  FOLLOW_UPS_UPDATED: 'follow-ups:updated',
+
+  /** Push: scoped toast notification (main → renderer). */
+  UI_TOAST: 'ui:toast',
 
   // Context window management (manual controls)
   /** renderer → main: force a reversible reduction pass on a conversation now. */

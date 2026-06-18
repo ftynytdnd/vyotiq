@@ -48,6 +48,8 @@ import {
   applyTimelineEvent,
   rebuildTimelineState
 } from '../components/timeline/reducer/applyTimelineEvent.js';
+import { EMPTY_FOLLOW_UP_STATE, FollowUpQueueFullError } from '@shared/types/followUp.js';
+import { MAX_FOLLOW_UP_QUEUE_DEPTH } from '@shared/constants.js';
 import {
   type ChatSlice,
   type ChatStore,
@@ -130,11 +132,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
   },
 
-  applyConversationEvent: (conversationId, event) => {
+  applyConversationEvent: (conversationId, event, opts) => {
     set((s) => {
       const nextSlices = updateSlice(s.slices, conversationId, (prev) => ({
         ...prev,
-        ...applyTimelineEvent(prev, event)
+        ...applyTimelineEvent(prev, event, opts ?? {})
       }));
       if (s.conversationId === conversationId) {
         return { ...s, slices: nextSlices, ...mirrorOf(nextSlices[conversationId]!) };
@@ -297,6 +299,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         runStartedAt: prior?.runStartedAt ?? null,
         draft: prior?.draft ?? '',
         attachmentDraft: prior?.attachmentDraft ?? [],
+        followUps: prior?.followUps ?? { steering: [], queued: [] },
         transcriptPaging: paging
       };
       const nextSlices = { ...s.slices, [conversationId]: nextSlice };
@@ -370,6 +373,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         (nextSlices) => set((s) => ({ ...s, slices: nextSlices }))
       );
     }
+    void get().loadFollowUps(conversationId);
   },
 
   dropConversation: (conversationId) => {
@@ -903,6 +907,98 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
   },
 
+  syncFollowUps: (conversationId, state) => {
+    set((s) => {
+      const nextSlices = updateSlice(s.slices, conversationId, (prev) => ({
+        ...prev,
+        followUps: {
+          steering: state.steering.map((m) => ({ ...m })),
+          queued: state.queued.map((m) => ({ ...m }))
+        }
+      }));
+      if (s.conversationId === conversationId) {
+        return { ...s, slices: nextSlices, followUps: nextSlices[conversationId]!.followUps };
+      }
+      return { ...s, slices: nextSlices };
+    });
+  },
+
+  loadFollowUps: async (conversationId) => {
+    if (!conversationId) return;
+    try {
+      const state = await vyotiq.followUps.list(conversationId);
+      get().syncFollowUps(conversationId, state);
+    } catch (err: unknown) {
+      log.warn('loadFollowUps failed', { conversationId, err });
+      const message = err instanceof Error ? err.message : String(err);
+      useToastStore.getState().show(`Could not load follow-ups: ${message}`, 'danger');
+    }
+  },
+
+  enqueueFollowUp: async (kind, prompt, selection, options) => {
+    const conversationId = get().conversationId;
+    if (!conversationId) return;
+    try {
+      const state = await vyotiq.followUps.enqueue({
+        conversationId,
+        kind,
+        prompt,
+        selection,
+        ...(options?.attachmentMeta && options.attachmentMeta.length > 0
+          ? { attachmentMeta: options.attachmentMeta }
+          : {}),
+        ...(options?.mentions && options.mentions.length > 0 ? { mentions: options.mentions } : {}),
+        ...(options?.promptEventId ? { promptEventId: options.promptEventId } : {})
+      });
+      get().syncFollowUps(conversationId, state);
+    } catch (err: unknown) {
+      if (err instanceof FollowUpQueueFullError || (err instanceof Error && err.name === 'FollowUpQueueFullError')) {
+        const maxDepth =
+          err instanceof FollowUpQueueFullError ? err.maxDepth : MAX_FOLLOW_UP_QUEUE_DEPTH;
+        useToastStore.getState().show(`Follow-up ${kind} lane is full (max ${maxDepth}).`, 'danger');
+        return;
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      useToastStore.getState().show(message, 'danger');
+    }
+  },
+
+  updateFollowUp: async (id, patch) => {
+    const conversationId = get().conversationId;
+    if (!conversationId) return;
+    try {
+      const state = await vyotiq.followUps.update({ conversationId, id, ...patch });
+      get().syncFollowUps(conversationId, state);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      useToastStore.getState().show(message, 'danger');
+    }
+  },
+
+  removeFollowUp: async (id) => {
+    const conversationId = get().conversationId;
+    if (!conversationId) return;
+    try {
+      const state = await vyotiq.followUps.remove({ conversationId, id });
+      get().syncFollowUps(conversationId, state);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      useToastStore.getState().show(message, 'danger');
+    }
+  },
+
+  sendFollowUpNow: async (id) => {
+    const conversationId = get().conversationId;
+    if (!conversationId) return;
+    try {
+      const state = await vyotiq.followUps.sendNow({ conversationId, id });
+      get().syncFollowUps(conversationId, state);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      useToastStore.getState().show(message, 'danger');
+    }
+  },
+
   prewarmSlice: (conversationId, events, paging = null) => {
     if (!conversationId) return;
     set((s) => {
@@ -941,6 +1037,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         runStartedAt: existing?.runStartedAt ?? null,
         draft: existing?.draft ?? '',
         attachmentDraft: existing?.attachmentDraft ?? [],
+        followUps: existing?.followUps ?? { ...EMPTY_FOLLOW_UP_STATE },
         transcriptPaging: paging
       };
       const nextSlices = { ...s.slices, [conversationId]: fresh };

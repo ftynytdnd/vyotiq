@@ -38,6 +38,8 @@ import {
   sumContextBreakdown,
   type ContextUsageBreakdown
 } from '@shared/context/contextLevel.js';
+import { chatContentToText, isChatContentPartArray } from '@shared/text/chatContent.js';
+import { estimateVisionTokensFromContent } from '@shared/text/estimateVisionTokens.js';
 import { logger } from '../logging/logger.js';
 import { escapeXmlAttr } from '../orchestrator/envelope/index.js';
 import {
@@ -48,6 +50,10 @@ import {
 } from '../orchestrator/context/buildContextLayers.js';
 import { realpathInsideWorkspace } from '../tools/sandbox.js';
 import { resolveAttachmentsForInline } from '../attachments/resolveAttachmentsForInline.js';
+import { prepareVisionParts } from '../attachments/prepareMediaForVision.js';
+import { resolveInputModalitiesForSelection } from '../orchestrator/buildUserTurnMessage.js';
+import { mediaKindFromMeta } from '@shared/attachments/mediaKind.js';
+import type { ModelSelection } from '@shared/types/provider.js';
 
 const log = logger.child('providers/tokenCounter');
 
@@ -61,6 +67,8 @@ export interface EstimateInput {
   attachmentMeta?: PromptAttachmentMeta[];
   /** Absolute workspace root; used to resolve attachment paths. */
   workspacePath?: string;
+  /** When set, vision token estimate uses model modalities. */
+  selection?: ModelSelection;
 }
 
 export interface EstimateResult {
@@ -183,20 +191,42 @@ export async function estimateTokens(input: EstimateInput): Promise<EstimateResu
   }
   const combined = inlined ? `${prompt}\n\n${inlined}` : prompt;
 
+  let visionTokens = 0;
+  if (
+    workspacePath &&
+    input.attachmentMeta &&
+    input.attachmentMeta.length > 0 &&
+    input.selection
+  ) {
+    const hasVisionable = input.attachmentMeta.some((m) => {
+      const kind = m.mediaKind ?? mediaKindFromMeta(m);
+      return kind === 'image' || kind === 'pdf' || kind === 'video';
+    });
+    if (hasVisionable) {
+      try {
+        const modalities = await resolveInputModalitiesForSelection(input.selection);
+        const prepared = await prepareVisionParts({
+          attachmentMeta: input.attachmentMeta,
+          workspacePath,
+          inputModalities: modalities
+        });
+        visionTokens = prepared.visionTokenEstimate;
+      } catch (err) {
+        log.debug('vision token estimate failed', { err });
+      }
+    }
+  }
+
   const enc = resolveEncoding(modelId);
   if (enc !== null) {
     try {
-      // `encodeChat` also captures the per-message framing overhead
-      // (role + separator tokens) that the real request will incur, so
-      // we use it when we have a plausible role shape. Fall back to raw
-      // `encode` if the chat encoder throws for any reason.
-      const tokens = encodeChatBytes(enc, [{ role: 'user', content: combined }]);
-      return { tokens, exact: true };
+      const tokens = encodeChatBytes(enc, [{ role: 'user', content: combined }]) + visionTokens;
+      return { tokens, exact: visionTokens === 0 };
     } catch (err) {
       log.debug('encodeChat failed, falling back to encode', { modelId, err });
       try {
-        const tokens = encodeText(enc, combined);
-        return { tokens, exact: true };
+        const tokens = encodeText(enc, combined) + visionTokens;
+        return { tokens, exact: visionTokens === 0 };
       } catch (err2) {
         log.debug('encode also failed, falling back to heuristic', { modelId, err: err2 });
       }
@@ -204,7 +234,7 @@ export async function estimateTokens(input: EstimateInput): Promise<EstimateResu
   }
 
   // Heuristic: 3.8 chars ≈ 1 token for English prose.
-  const tokens = Math.ceil(combined.length / 3.8);
+  const tokens = Math.ceil(combined.length / 3.8) + visionTokens;
   return { tokens, exact: false };
 }
 
@@ -264,6 +294,8 @@ export interface MessagesEstimateResult {
    * See `ContextUsageBreakdown` in `@shared/context/contextLevel`.
    */
   breakdown: ContextUsageBreakdown;
+  /** Native vision media tokens across all user messages (when non-zero). */
+  visionTokens: number;
 }
 
 /**
@@ -345,10 +377,13 @@ export function tokenizeMessages(
       turn: turnTokens.tokens,
       tools: toolsTokens.tokens
     };
+    const visionTokens = collectVisionTokensFromMessages(messages);
+    if (visionTokens > 0) exact = false;
     return {
-      total: sumContextBreakdown(breakdown),
+      total: sumContextBreakdown(breakdown) + visionTokens,
       exact,
-      breakdown
+      breakdown,
+      visionTokens
     };
   }
 
@@ -383,10 +418,13 @@ export function tokenizeMessages(
     turn: 0,
     tools: toolsTokens.tokens
   };
+  const visionTokens = collectVisionTokensFromMessages(messages);
+  if (visionTokens > 0) exact = false;
   return {
-    total: sumContextBreakdown(breakdown),
+    total: sumContextBreakdown(breakdown) + visionTokens,
     exact,
-    breakdown
+    breakdown,
+    visionTokens
   };
 }
 
@@ -436,6 +474,9 @@ function stringifyMessageBody(m: TokenizableMessage): string {
   const parts: string[] = [];
   if (typeof m.content === 'string' && m.content.length > 0) {
     parts.push(m.content);
+  } else if (isChatContentPartArray(m.content)) {
+    const text = chatContentToText(m.content);
+    if (text.length > 0) parts.push(text);
   }
   if (Array.isArray(m.tool_calls)) {
     for (const tc of m.tool_calls) {
@@ -447,6 +488,16 @@ function stringifyMessageBody(m: TokenizableMessage): string {
     parts.push(m.reasoning_content);
   }
   return parts.join('\n');
+}
+
+function collectVisionTokensFromMessages(messages: ReadonlyArray<TokenizableMessage>): number {
+  let total = 0;
+  for (const m of messages) {
+    if (isChatContentPartArray(m.content)) {
+      total += estimateVisionTokensFromContent(m.content);
+    }
+  }
+  return total;
 }
 
 /** Char-heuristic shared between `estimateTokens` and `tokenizeText`. */

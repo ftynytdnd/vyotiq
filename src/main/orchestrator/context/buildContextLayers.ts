@@ -3,7 +3,7 @@
  * volatile runtime data at the message tail (see project.md § caching).
  */
 
-import type { ChatMessage } from '@shared/types/chat.js';
+import type { ChatContentPart, ChatMessage } from '@shared/types/chat.js';
 import type { ContextLevel } from '@shared/context/contextLevel.js';
 import type { ContextEnvelopes } from '../contextManager.js';
 import { buildStaticFewShotXml } from '../../harness/harnessLoader.js';
@@ -179,7 +179,7 @@ export function applyCacheLayers(messages: ChatMessage[], opts: ApplyCacheLayers
  */
 export function seedCacheLayeredMessages(
   replayed: ChatMessage[],
-  turnEnvelope: string
+  turnEnvelope: string | ChatContentPart[]
 ): ChatMessage[] {
   return [
     { role: 'system', content: '' },

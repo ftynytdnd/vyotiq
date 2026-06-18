@@ -1,14 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import type { ModelSelection } from '@shared/types/provider.js';
+import type { FollowUpMessage } from '@shared/types/followUp.js';
 import { MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
 import { ComposerStatusStrip } from './ComposerStatusStrip.js';
+import { ComposerCacheStatPill } from './ComposerCacheStatPill.js';
 import { AttachmentButton } from './AttachmentButton.js';
 import { SendButton } from './SendButton.js';
+import { StopButton } from './StopButton.js';
+import { FollowUpTrayHost } from './followUps/index.js';
 import { ModelPicker } from './modelPicker/index.js';
 import { TokenUsagePill } from './TokenUsagePill.js';
 import { ContextWindowMeter } from './ContextWindowMeter.js';
-import { AttachmentChipRow } from './AttachmentChipRow.js';
+import { PromptAttachmentCards } from './PromptAttachmentCards.js';
+import { mediaKindFromMeta } from '@shared/attachments/mediaKind.js';
+import { modelSupportsVision } from '@shared/providers/visionCapabilities.js';
+import { findProviderModel } from './modelPicker/modelPickerContext.js';
 import { useComposerAttachments } from './useComposerAttachments.js';
 import { useComposerHistory } from './useComposerHistory.js';
 import { MentionComposer } from './mention/MentionComposer.js';
@@ -17,12 +24,16 @@ import {
   documentTrimmedPlain,
   extractMentions,
   hasComposerContent,
-  parseMentionDocument
+  parseMentionDocument,
+  serializeMentionDocument,
+  type MentionDocument,
+  type MentionSegment
 } from './mention/mentionDocument.js';
 import { appComposerShellClassName } from '../ui/SurfaceShell.js';
 import { useChatStore } from '../../store/useChatStore.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
+import { useProviderStore } from '../../store/useProviderStore.js';
 import { cn } from '../../lib/cn.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { findPendingAskUserEvent } from '../../lib/pendingAskUser.js';
@@ -31,12 +42,23 @@ import { useRevertPrompt } from '../timeline/revert/RevertPromptContext.js';
 import { useComposerTokenEstimate } from './useComposerTokenEstimate.js';
 import { resolveComposerPlaceholder } from './composerPlaceholder.js';
 import { useProviderAccountPollSource } from '../../lib/useProviderAccountPollSource.js';
+import { resolveKeybindings, isMacPlatform } from '../../lib/resolveKeybindings.js';
+import { eventMatchesCombo } from '@shared/keybindings/defaultKeybindings.js';
 import {
   resolveCompletionModelSelection,
   resolveInlineCompletionSettings
 } from '@shared/settings/inlineCompletionSettings.js';
 
 const TEXTAREA_MAX_HEIGHT = 168;
+
+function followUpToComposerDraft(item: FollowUpMessage): string {
+  if (!item.mentions?.length) return item.prompt;
+  const segments: MentionSegment[] = item.mentions.map((ref) => ({ type: 'mention', ref }));
+  const plain = item.prompt.trim();
+  if (plain) segments.push({ type: 'text', value: plain });
+  const doc: MentionDocument = { segments };
+  return serializeMentionDocument(doc);
+}
 
 interface ComposerProps {
   model: ModelSelection | null;
@@ -61,6 +83,7 @@ export function Composer({
   const [text, setText] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [composerFocused, setComposerFocused] = useState(false);
+  const [editingQueuedId, setEditingQueuedId] = useState<string | null>(null);
   const fromHistoryRef = useRef(false);
   const revertPrompt = useRevertPrompt();
   const {
@@ -77,7 +100,12 @@ export function Composer({
     setDraft,
     setAttachmentDraft,
     totalRunUsage,
-    orchestratorUsage
+    orchestratorUsage,
+    followUps,
+    enqueueFollowUp,
+    updateFollowUp,
+    removeFollowUp,
+    sendFollowUpNow
   } = useChatStore(
     useShallow((s) => ({
       isProcessing: s.isProcessing,
@@ -93,7 +121,12 @@ export function Composer({
       setDraft: s.setDraft,
       setAttachmentDraft: s.setAttachmentDraft,
       totalRunUsage: s.totalRunUsage,
-      orchestratorUsage: s.orchestratorUsage
+      orchestratorUsage: s.orchestratorUsage,
+      followUps: s.followUps,
+      enqueueFollowUp: s.enqueueFollowUp,
+      updateFollowUp: s.updateFollowUp,
+      removeFollowUp: s.removeFollowUp,
+      sendFollowUpNow: s.sendFollowUpNow
     }))
   );
   const activeWorkspaceIdForAttach = useWorkspaceStore((s) => s.activeId);
@@ -110,6 +143,7 @@ export function Composer({
   );
   const {
     attachments,
+    setAttachments,
     pickFromComputer,
     remove: removeAttachment,
     clearAttachments,
@@ -124,6 +158,10 @@ export function Composer({
     onAttachmentsChange: persistAttachmentDraft
   });
   const settings = useSettingsStore((s) => s.settings);
+  const composerKeybindings = useMemo(
+    () => resolveKeybindings(settings.ui?.keybindings, isMacPlatform()),
+    [settings.ui?.keybindings]
+  );
 
   const history = useComposerHistory(events);
 
@@ -165,6 +203,32 @@ export function Composer({
     };
   }, []);
 
+  useEffect(() => {
+    setEditingQueuedId(null);
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (!editingQueuedId) return;
+    const stillQueued = followUps.queued.some((m) => m.id === editingQueuedId);
+    if (!stillQueued) setEditingQueuedId(null);
+  }, [editingQueuedId, followUps.queued]);
+
+  const clearComposerAfterSubmit = useCallback(() => {
+    setText('');
+    clearAttachments();
+    fromHistoryRef.current = false;
+    history.reset();
+    if (conversationId) {
+      if (draftRafRef.current !== null) {
+        cancelAnimationFrame(draftRafRef.current);
+        draftRafRef.current = null;
+      }
+      selfDraftRef.current = '';
+      setDraft(conversationId, '');
+      setAttachmentDraft(conversationId, []);
+    }
+  }, [clearAttachments, conversationId, history, setAttachmentDraft, setDraft]);
+
   const showToast = useToastStore((s) => s.show);
 
   const pendingAskUser = useMemo(
@@ -202,10 +266,6 @@ export function Composer({
   ]);
 
   const handleSend = async () => {
-    if (isProcessing && !awaitingAskUser) {
-      await abort();
-      return;
-    }
     const doc = parseMentionDocument(text);
     const trimmed = documentTrimmedPlain(doc);
     const mentions = extractMentions(doc);
@@ -239,23 +299,31 @@ export function Composer({
     }
     if (!trimmed && attachments.length === 0) return;
     if (!model) return;
-    revertPrompt?.closeSession();
+
     const toSendMeta = attachments;
     const promptEventId =
       toSendMeta.length > 0 ? peekPendingMessageId() : undefined;
-    setText('');
-    clearAttachments();
-    fromHistoryRef.current = false;
-    history.reset();
-    if (conversationId) {
-      if (draftRafRef.current !== null) {
-        cancelAnimationFrame(draftRafRef.current);
-        draftRafRef.current = null;
+
+    if (isProcessing && !awaitingAskUser) {
+      revertPrompt?.closeSession();
+      clearComposerAfterSubmit();
+      const steerOpts: Parameters<typeof enqueueFollowUp>[3] = {};
+      if (toSendMeta.length > 0) {
+        steerOpts.attachmentMeta = toSendMeta;
+        if (promptEventId) steerOpts.promptEventId = promptEventId;
       }
-      selfDraftRef.current = '';
-      setDraft(conversationId, '');
-      setAttachmentDraft(conversationId, []);
+      if (mentions.length > 0) steerOpts.mentions = mentions;
+      await enqueueFollowUp(
+        'steering',
+        trimmed || 'See attached files.',
+        model,
+        steerOpts
+      );
+      return;
     }
+
+    revertPrompt?.closeSession();
+    clearComposerAfterSubmit();
     const sendOpts: Parameters<typeof send>[2] = {};
     if (toSendMeta.length > 0) {
       sendOpts.attachmentMeta = toSendMeta;
@@ -264,6 +332,64 @@ export function Composer({
     if (mentions.length > 0) sendOpts.mentions = mentions;
     await send(trimmed || 'See attached files.', model, sendOpts);
   };
+
+  const handleQueue = async () => {
+    const doc = parseMentionDocument(text);
+    const trimmed = documentTrimmedPlain(doc);
+    const mentions = extractMentions(doc);
+    if (!trimmed && attachments.length === 0) return;
+    if (!model) return;
+    if (!isProcessing && !awaitingAskUser) return;
+
+    const toSendMeta = attachments;
+    const promptEventId =
+      toSendMeta.length > 0 ? peekPendingMessageId() : undefined;
+
+    if (editingQueuedId) {
+      clearComposerAfterSubmit();
+      await updateFollowUp(editingQueuedId, {
+        prompt: trimmed || 'See attached files.',
+        selection: model,
+        attachmentMeta: toSendMeta,
+        ...(mentions.length > 0 ? { mentions } : { mentions: [] })
+      });
+      setEditingQueuedId(null);
+      return;
+    }
+
+    clearComposerAfterSubmit();
+    const queueOpts: Parameters<typeof enqueueFollowUp>[3] = {};
+    if (toSendMeta.length > 0) {
+      queueOpts.attachmentMeta = toSendMeta;
+      if (promptEventId) queueOpts.promptEventId = promptEventId;
+    }
+    if (mentions.length > 0) queueOpts.mentions = mentions;
+    await enqueueFollowUp('queue', trimmed || 'See attached files.', model, queueOpts);
+  };
+
+  const handleEditQueued = useCallback(
+    (item: FollowUpMessage) => {
+      const draft = followUpToComposerDraft(item);
+      setEditingQueuedId(item.id);
+      setText(draft);
+      if (conversationId) {
+        setDraft(conversationId, draft);
+        const nextAttachments = item.attachmentMeta ?? [];
+        setAttachmentDraft(conversationId, nextAttachments);
+        setAttachments(nextAttachments);
+      }
+      onModelChange(item.selection);
+    },
+    [conversationId, onModelChange, setAttachmentDraft, setAttachments, setDraft]
+  );
+
+  const handleRemoveFollowUp = useCallback(
+    (id: string) => {
+      if (editingQueuedId === id) setEditingQueuedId(null);
+      void removeFollowUp(id);
+    },
+    [editingQueuedId, removeFollowUp]
+  );
 
   const onTextChange = (next: string) => {
     setText(next);
@@ -293,27 +419,39 @@ export function Composer({
     hasComposerContent(composerDoc) ||
     attachments.length > 0 ||
     (awaitingAskUser && draftHasAnswer);
-  const sendState: 'idle' | 'ready' | 'processing' = isProcessing
-    ? 'processing'
-    : (canSendContent || awaitingAskUser) && model
-      ? 'ready'
-      : 'idle';
-  const sendDisabled =
-    !canSendContent && sendState !== 'processing' && !awaitingAskUser;
+  const showFollowUpTray =
+    followUps.steering.length > 0 || followUps.queued.length > 0;
+  const isRunActive = isProcessing || awaitingAskUser;
+  const showProcessingRunHint = isProcessing && !awaitingAskUser;
+  const providers = useProviderStore((s) => s.providers);
+  const visionWarning = useMemo(() => {
+    const hasImages = attachments.some(
+      (m) => (m.mediaKind ?? mediaKindFromMeta(m)) === 'image'
+    );
+    if (!hasImages || !model) return false;
+    const provider = providers.find((p) => p.id === model.providerId);
+    const info = provider ? findProviderModel(provider, model.modelId) : undefined;
+    return !modelSupportsVision(info?.inputModalities);
+  }, [attachments, model, providers]);
+  const sendState: 'idle' | 'ready' | 'processing' =
+    (canSendContent || awaitingAskUser) && model ? 'ready' : 'idle';
+  const sendDisabled = !canSendContent && !awaitingAskUser;
+  const showStop = isProcessing && !awaitingAskUser;
+  const showQueueBtn =
+    (isProcessing || awaitingAskUser) && canSendContent && Boolean(model);
+
+  const metricsStreamCompact = isRunActive && !composerFocused;
 
   const canAttach = Boolean(conversationId && activeWorkspaceIdForAttach);
-
-  const sendButtonProps = {
-    onClick: () => void handleSend(),
-    state: sendState,
-    disabled: sendDisabled
-  } as const;
 
   const placeholder = resolveComposerPlaceholder({
     landing,
     storeDraft,
     editorPlain: documentTrimmedPlain(composerDoc),
-    eventsLength: events.length
+    eventsLength: events.length,
+    isProcessing: isProcessing && !awaitingAskUser,
+    awaitingAskUser,
+    editingQueued: Boolean(editingQueuedId)
   });
 
   const shellRef = useRef<HTMLDivElement>(null);
@@ -349,6 +487,16 @@ export function Composer({
           onDrop(e);
         }}
       >
+        <FollowUpTrayHost
+          steering={followUps.steering}
+          queued={followUps.queued}
+          visible={showFollowUpTray}
+          isRunActive={isRunActive}
+          editingQueuedId={editingQueuedId}
+          onEditQueued={handleEditQueued}
+          onRemove={handleRemoveFollowUp}
+          onSendNow={(id) => void sendFollowUpNow(id)}
+        />
         <div className="vx-composer-input-zone">
           <div className="vx-composer-chip-row">
             <ModelPicker
@@ -362,13 +510,34 @@ export function Composer({
               onPickFromComputer={() => void pickFromComputer()}
               disabled={!canAttach}
             />
-            <AttachmentChipRow items={attachments} onRemove={removeAttachment} />
+            {attachments.length > 0 ? (
+              <PromptAttachmentCards
+                items={attachments}
+                editable
+                onRemove={removeAttachment}
+                className="min-w-0 flex-1"
+              />
+            ) : null}
             {attachments.length > 0 && (
               <span className="shrink-0 font-mono text-meta text-text-faint tabular-nums">
                 {attachments.length}/{MAX_CHAT_ATTACHMENTS}
               </span>
             )}
-            <ComposerStatusStrip pendingAskUser={pendingAskUser} model={model} />
+            <ComposerStatusStrip
+              pendingAskUser={pendingAskUser}
+              model={model}
+              processingRun={showProcessingRunHint}
+              visionWarning={visionWarning}
+            />
+            {showQueueBtn ? (
+              <button
+                type="button"
+                className="vx-btn vx-btn-quiet vx-composer-queue-btn shrink-0 px-2"
+                onClick={() => void handleQueue()}
+              >
+                {editingQueuedId ? 'Save' : 'Queue'}
+              </button>
+            ) : null}
           </div>
           <div className="vx-composer-editor-slot">
             <MentionComposer
@@ -392,10 +561,39 @@ export function Composer({
                   keyCode?: number;
                 };
                 if (ne.isComposing || ne.keyCode === 229) return;
+                if (
+                  eventMatchesCombo(e, composerKeybindings.composerQueue) &&
+                  showQueueBtn
+                ) {
+                  e.preventDefault();
+                  void handleQueue();
+                  return;
+                }
+                if (e.key === 'Escape' && editingQueuedId) {
+                  e.preventDefault();
+                  setEditingQueuedId(null);
+                  clearComposerAfterSubmit();
+                  return;
+                }
+                if (
+                  eventMatchesCombo(e, composerKeybindings.composerStop) &&
+                  showStop &&
+                  !editingQueuedId
+                ) {
+                  e.preventDefault();
+                  void abort();
+                  return;
+                }
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
+                  if (editingQueuedId) {
+                    if (!canSendContent || !model) return;
+                    void handleQueue();
+                    return;
+                  }
                   if (!canSendContent && !isProcessing && !awaitingAskUser) return;
-                  if (!isProcessing && !awaitingAskUser && !model) return;
+                  if (!awaitingAskUser && !model) return;
+                  if (isProcessing && !awaitingAskUser && !canSendContent) return;
                   void handleSend();
                   return;
                 }
@@ -417,26 +615,50 @@ export function Composer({
               }}
             />
           </div>
-          <div className="vx-composer-token-slot">
-            <div className="vx-composer-token-cluster">
+          <div className="vx-composer-send-cluster vx-composer-send-slot">
+            {showStop ? <StopButton onClick={() => void abort()} /> : null}
+            <SendButton
+              onClick={() => void (editingQueuedId ? handleQueue() : handleSend())}
+              state={sendState}
+              disabled={sendDisabled}
+              actionLabel={
+                editingQueuedId
+                  ? 'Save queued follow-up'
+                  : isProcessing && !awaitingAskUser
+                    ? 'Steer mid-run'
+                    : 'Send'
+              }
+            />
+          </div>
+          <div
+            className={cn(
+              'vx-composer-metrics-row',
+              metricsStreamCompact && 'vx-composer-metrics-row--stream-compact'
+            )}
+            title={metricsStreamCompact ? 'Hover or focus for full run metrics' : undefined}
+          >
+            <div className="vx-composer-metrics-row__context">
+              <ComposerCacheStatPill model={model} compact={metricsStreamCompact} />
               <ContextWindowMeter
-              model={model}
-              conversationId={conversationId}
-              workspaceId={activeWorkspaceIdForAttach}
-              draftPrompt={documentToPlainText(composerDoc)}
-              attachmentDraft={attachments}
-              disabled={isProcessing || awaitingAskUser}
-              isRunActive={isProcessing}
-            />
-            <TokenUsagePill
-              model={model}
-              total={totalRunUsage}
-              orchestrator={orchestratorUsage}
-              draftEstimate={draftTokenEstimate}
-            />
+                model={model}
+                conversationId={conversationId}
+                workspaceId={activeWorkspaceIdForAttach}
+                draftPrompt={documentToPlainText(composerDoc)}
+                attachmentDraft={attachments}
+                disabled={isProcessing || awaitingAskUser}
+                isRunActive={isProcessing}
+              />
+            </div>
+            <div className="vx-composer-metrics-row__usage">
+              <TokenUsagePill
+                model={model}
+                total={totalRunUsage}
+                orchestrator={orchestratorUsage}
+                draftEstimate={draftTokenEstimate}
+                compact={metricsStreamCompact}
+              />
             </div>
           </div>
-          <SendButton {...sendButtonProps} className="vx-composer-send-slot" />
         </div>
       </div>
     </div>

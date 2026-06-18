@@ -25,6 +25,11 @@
  */
 
 import type { TimelineEvent } from '@shared/types/chat.js';
+import { startTransition } from 'react';
+import {
+  redactParsedToolArgs,
+  redactTimelineEventForDisplay
+} from '@shared/text/redactLiveDiff.js';
 import { vyotiq } from '../lib/ipc.js';
 import { useChatStore } from './useChatStore.js';
 import { useConversationsStore } from './useConversationsStore.js';
@@ -78,6 +83,16 @@ interface ArgsDeltaQueueEntry {
 interface ToolOutputDeltaQueueEntry {
   runId: string;
   event: Extract<TimelineEvent, { kind: 'tool-output-delta' }>;
+}
+
+interface DiffStreamQueueEntry {
+  runId: string;
+  event: Extract<TimelineEvent, { kind: 'diff-stream' }>;
+}
+
+/** Defer store commits as non-urgent so scroll/input stay responsive. */
+function applyInTransition(fn: () => void): void {
+  startTransition(fn);
 }
 
 /**
@@ -601,6 +616,20 @@ export async function bootstrapChatChannel(): Promise<void> {
   // information is lost by collapsing.
   //
   // Pattern: "Streaming Backends & React" (sitepoint.com, 2026).
+  function dispatchTimelineEvent(
+    runId: string,
+    event: TimelineEvent,
+    opts?: { preParsedArgs?: Record<string, unknown> | null }
+  ): void {
+    const displayEvent = redactTimelineEventForDisplay(event);
+    if (runId.startsWith('manual:')) {
+      const conversationId = runId.slice('manual:'.length);
+      useChatStore.getState().applyConversationEvent(conversationId, displayEvent, opts);
+    } else {
+      useChatStore.getState().applyEvent(runId, displayEvent, opts);
+    }
+  }
+
   const argsDeltaBatcher = createRafBatcher<ArgsDeltaQueueEntry>((batch) => {
     // Collapse to the latest per (runId, callId).
     const latest = new Map<string, ArgsDeltaQueueEntry>();
@@ -608,20 +637,36 @@ export async function bootstrapChatChannel(): Promise<void> {
       const key = `${entry.runId}\u0000${entry.event.callId}`;
       latest.set(key, entry);
     }
-    const store = useChatStore.getState();
-    for (const entry of latest.values()) {
-      try {
-        // Phase 1.1: pre-parse the cumulative buffer through the
-        // long-lived per-callId parser so the reducer skips its own
-        // one-shot `safeParsePartial`. The parser carries `lastIndex`
-        // forward across feeds so each call costs O(delta) instead
-        // of O(buf).
-        const preParsedArgs = feedParser(entry.runId, entry.event);
-        store.applyEvent(entry.runId, entry.event, { preParsedArgs });
-      } catch (err) {
-        log.warn('args-delta drain threw', { runId: entry.runId, err });
+    applyInTransition(() => {
+      for (const entry of latest.values()) {
+        try {
+          const preParsedArgs = feedParser(entry.runId, entry.event);
+          const redactedArgs = redactParsedToolArgs(preParsedArgs);
+          dispatchTimelineEvent(entry.runId, entry.event, {
+            preParsedArgs: redactedArgs
+          });
+        } catch (err) {
+          log.warn('args-delta drain threw', { runId: entry.runId, err });
+        }
       }
+    });
+  });
+
+  const diffStreamBatcher = createRafBatcher<DiffStreamQueueEntry>((batch) => {
+    const latest = new Map<string, DiffStreamQueueEntry>();
+    for (const entry of batch) {
+      const key = `${entry.runId}\u0000${entry.event.callId}`;
+      latest.set(key, entry);
     }
+    applyInTransition(() => {
+      for (const entry of latest.values()) {
+        try {
+          dispatchTimelineEvent(entry.runId, entry.event);
+        } catch (err) {
+          log.warn('diff-stream drain threw', { runId: entry.runId, err });
+        }
+      }
+    });
   });
 
   const toolOutputDeltaBatcher = createRafBatcher<ToolOutputDeltaQueueEntry>((batch) => {
@@ -630,14 +675,15 @@ export async function bootstrapChatChannel(): Promise<void> {
       const key = `${entry.runId}\u0000${entry.event.callId}`;
       latest.set(key, entry);
     }
-    const store = useChatStore.getState();
-    for (const entry of latest.values()) {
-      try {
-        store.applyEvent(entry.runId, entry.event);
-      } catch (err) {
-        log.warn('tool-output-delta drain threw', { runId: entry.runId, err });
+    applyInTransition(() => {
+      for (const entry of latest.values()) {
+        try {
+          dispatchTimelineEvent(entry.runId, entry.event);
+        } catch (err) {
+          log.warn('tool-output-delta drain threw', { runId: entry.runId, err });
+        }
       }
-    }
+    });
   });
 
   // Every listener body is wrapped in try/catch. A throw from the
@@ -667,11 +713,16 @@ export async function bootstrapChatChannel(): Promise<void> {
           argsDeltaBatcher.push({ runId, event });
           return;
         }
+        if (event.kind === 'diff-stream') {
+          diffStreamBatcher.push({ runId, event });
+          return;
+        }
         if (event.kind === 'tool-output-delta') {
           toolOutputDeltaBatcher.push({ runId, event });
           return;
         }
         if (event.kind === 'tool-result' || event.kind === 'tool-call') {
+          diffStreamBatcher.flush();
           toolOutputDeltaBatcher.flush();
           argsDeltaBatcher.flush();
         }
@@ -741,14 +792,31 @@ export async function bootstrapChatChannel(): Promise<void> {
           // the parser pool stays in sync.
           dropAllParsersForRun(runId);
         }
-        if (runId.startsWith('manual:')) {
-          const conversationId = runId.slice('manual:'.length);
-          useChatStore.getState().applyConversationEvent(conversationId, event);
-        } else {
-          useChatStore.getState().applyEvent(runId, event);
-        }
+        dispatchTimelineEvent(runId, event);
       } catch (err) {
         log.warn('chat:event listener threw', { runId, err });
+      }
+    })
+  );
+  unsub.push(
+    vyotiq.followUps.onUpdated((conversationId, state) => {
+      try {
+        useChatStore.getState().syncFollowUps(conversationId, state);
+      } catch (err) {
+        log.warn('follow-ups:updated listener threw', { conversationId, err });
+      }
+    })
+  );
+  unsub.push(
+    vyotiq.ui.onToast((payload) => {
+      try {
+        if (payload.conversationId) {
+          const active = useChatStore.getState().conversationId;
+          if (active !== payload.conversationId) return;
+        }
+        useToastStore.getState().show(payload.message, payload.variant ?? 'info');
+      } catch (err) {
+        log.warn('ui:toast listener threw', { err });
       }
     })
   );
@@ -808,6 +876,7 @@ export async function bootstrapChatChannel(): Promise<void> {
   // same rationale as the boot guard.
   unsub.push(() => {
     argsDeltaBatcher.cancel();
+    diffStreamBatcher.cancel();
     toolOutputDeltaBatcher.cancel();
     if (textDeltaRafHandle !== null) {
       rafCancel(textDeltaRafHandle);

@@ -6,6 +6,7 @@
 
 import { readFile } from 'node:fs/promises';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
+import { mediaKindFromMeta } from '@shared/attachments/mediaKind.js';
 import { escapeXmlAttr } from '../orchestrator/envelope/index.js';
 import {
   inlineFiles,
@@ -17,8 +18,8 @@ const INLINE_FILE_CHAR_CAP = 32_000;
 const INLINE_ABORTED_MARKER = '(aborted before read)';
 
 function isImageAttachment(meta: PromptAttachmentMeta): boolean {
-  if (meta.mimeType?.startsWith('image/')) return true;
-  return /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif)$/i.test(meta.name);
+  const kind = meta.mediaKind ?? mediaKindFromMeta(meta);
+  return kind === 'image';
 }
 
 function imageReferenceBlock(meta: PromptAttachmentMeta): string {

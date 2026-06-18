@@ -40,6 +40,7 @@ vi.mock('@main/providers/tokenCounter', () => ({
   tokenizeMessages: vi.fn(() => ({
     total: 200_000,
     exact: true,
+    visionTokens: 0,
     breakdown: {
       system: 0,
       fewShot: 0,

@@ -28,6 +28,7 @@ import { randomUUID } from 'node:crypto';
 import type { ChatMessage, TimelineEvent } from '@shared/types/chat.js';
 import type { ContextManagementSettings } from '@shared/settings/agentBehaviorSettings.js';
 import { COMPACT_MIN_TOOL_INPUT_CHARS, COMPACT_MIN_TOOL_OUTPUT_CHARS } from '@shared/constants.js';
+import { chatContentToText } from '@shared/text/chatContent.js';
 import {
   resolveCompactionThresholds,
   scaleContextBreakdown,
@@ -374,7 +375,7 @@ export async function reduceContextIfNeeded(
   if (shouldSummarize) {
     const histSlice = next.slice(CACHE_LAYER_HISTORY_START, next.length - 2);
     const summarizable = histSlice.some(
-      (m) => !isContextSummaryContent(m.content)
+      (m) => !isContextSummaryContent(chatContentToText(m.content))
     );
     if (summarizable) {
       const summaryModel = settings.summaryModel;
@@ -504,7 +505,9 @@ export async function resetContextToSummary(
 
   const next = messages.map((m) => ({ ...m }));
   const histSlice = next.slice(CACHE_LAYER_HISTORY_START, next.length - 2);
-  const summarizable = histSlice.some((m) => !isContextSummaryContent(m.content));
+  const summarizable = histSlice.some(
+    (m) => !isContextSummaryContent(chatContentToText(m.content))
+  );
   if (!summarizable) return [...messages];
 
   const summaryModel = opts.settings.summaryModel;

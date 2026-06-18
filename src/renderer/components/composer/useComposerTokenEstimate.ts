@@ -48,7 +48,8 @@ export function useComposerTokenEstimate({
             modelId: model.modelId,
             prompt,
             attachmentMeta,
-            workspacePath: workspacePath || undefined
+            workspacePath: workspacePath || undefined,
+            selection: model
           });
           if (requestIdRef.current !== requestId) return;
           setEstimate({ tokens: result.tokens, exact: result.exact });

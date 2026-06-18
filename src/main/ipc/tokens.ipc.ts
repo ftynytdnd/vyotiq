@@ -4,6 +4,7 @@
 
 import { IPC } from '@shared/constants.js';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
+import type { ModelSelection } from '@shared/types/provider.js';
 import { estimateTokens } from '../providers/tokenCounter.js';
 import { getWorkspace } from '../workspace/workspaceState.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
@@ -19,6 +20,7 @@ interface TokensEstimatePayload {
   attachments?: string[];
   attachmentMeta?: PromptAttachmentMeta[];
   workspacePath?: string;
+  selection?: ModelSelection;
 }
 
 export function registerTokensIpc(): void {
@@ -46,7 +48,8 @@ export function registerTokensIpc(): void {
       prompt: input.prompt,
       attachments: input.attachments,
       attachmentMeta: input.attachmentMeta,
-      workspacePath
+      workspacePath,
+      selection: input.selection
     });
   });
 }

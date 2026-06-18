@@ -35,8 +35,17 @@ import {
   thinkingFromGeminiModel,
   thinkingFromOllamaShow,
   thinkingFromOpenAiExtendedFields,
-  thinkingFromSupportedParameters
+  thinkingFromSupportedParameters,
+  inputModalitiesFromOpenAiExtendedFields
 } from '@shared/providers/modelCapabilities.js';
+import {
+  inputModalitiesFromAnthropicModel,
+  inputModalitiesFromGeminiModel,
+  inputModalitiesFromModelId,
+  inputModalitiesFromOllamaShow,
+  inputModalitiesFromOpenRouterArchitecture,
+  mergeInputModalities
+} from '@shared/providers/visionCapabilities.js';
 import { attachModelPricing } from '@shared/providers/attachModelPricing.js';
 import { mergeModelPricing } from '@shared/providers/modelPricing.js';
 import { modelsFingerprint } from '@shared/providers/modelsFingerprint.js';
@@ -175,7 +184,8 @@ interface RawOpenAiModelsResponse {
     context_length?: number | null;
     supported_parameters?: string[];
     top_provider?: { context_length?: number | null };
-    /** OpenAI extended model rows (features / groups) when exposed. */
+    /** OpenRouter architecture metadata (input_modalities, etc.). */
+    architecture?: { input_modalities?: string[] };
     features?: string[];
     groups?: string[];
   }>;
@@ -472,8 +482,26 @@ function cachedModelsLackExpectedMetadata(
 ): boolean {
   return (
     cachedModelsLackExpectedContext(provider, models) ||
-    cachedModelsLackExpectedThinking(provider, models)
+    cachedModelsLackExpectedThinking(provider, models) ||
+    cachedModelsLackExpectedModalities(provider, models)
   );
+}
+
+function cachedModelsLackExpectedModalities(
+  provider: ProviderWithKey,
+  models: ModelInfo[]
+): boolean {
+  if (models.length === 0) return false;
+  if (models.some((m) => m.inputModalities !== undefined && m.inputModalities.length > 0)) {
+    return false;
+  }
+  const dialect = effectiveDialect(provider);
+  if (dialect === 'anthropic-native' || dialect === 'gemini-native') return true;
+  if (dialect === 'ollama-native') return true;
+  if (isOpenRouterHost(provider.baseUrl)) return true;
+  if (classifyProviderHost(provider) === 'openai') return true;
+  if (dialect === 'openai') return true;
+  return false;
 }
 
 function cachedModelsLackExpectedContext(
@@ -583,6 +611,7 @@ async function fetchOpenAiModels(provider: ProviderWithKey): Promise<ModelInfo[]
         max_context_length?: number | null;
         supported_parameters?: string[];
         top_provider?: { context_length?: number | null };
+        architecture?: { input_modalities?: string[] };
         features?: string[];
         groups?: string[];
         meta?: { context_size?: number | null; n_ctx_train?: number | null; context_length?: number | null };
@@ -610,6 +639,16 @@ async function fetchOpenAiModels(provider: ProviderWithKey): Promise<ModelInfo[]
         isDeepSeekApiHost(provider.baseUrl) ? thinkingForDeepSeekApiModel() : undefined
       );
       if (thinking) info.thinking = thinking;
+      const modalities = mergeInputModalities(
+        inputModalitiesFromOpenRouterArchitecture(entry.architecture),
+        inputModalitiesFromOpenAiExtendedFields({
+          features: entry.features,
+          groups: entry.groups,
+          id
+        }),
+        inputModalitiesFromModelId(id)
+      );
+      if (modalities) info.inputModalities = modalities;
       const pricing = attachModelPricing(provider, id, m);
       if (pricing) info.pricing = pricing;
       return info;
@@ -679,6 +718,7 @@ async function ollamaShowApiAvailable(provider: ProviderWithKey): Promise<boolea
 function parseOllamaShow(json: unknown): {
   contextWindow?: number;
   thinking?: ReturnType<typeof thinkingFromOllamaShow>;
+  inputModalities?: ReturnType<typeof inputModalitiesFromOllamaShow>;
 } {
   if (!json || typeof json !== 'object') return {};
   const rec = json as Record<string, unknown>;
@@ -695,16 +735,22 @@ function parseOllamaShow(json: unknown): {
       if (Number.isFinite(n) && n > 0) contextWindow = n;
     }
   }
+  const modelName = typeof rec.model === 'string' ? rec.model : undefined;
+  const capabilities = Array.isArray(rec.capabilities)
+    ? (rec.capabilities as string[])
+    : undefined;
   const thinking = thinkingFromOllamaShow({
-    capabilities: Array.isArray(rec.capabilities)
-      ? (rec.capabilities as string[])
-      : undefined,
+    capabilities,
     model_info:
       modelInfo && typeof modelInfo === 'object'
         ? (modelInfo as Record<string, unknown>)
         : undefined
   });
-  return { contextWindow, thinking };
+  const inputModalities = inputModalitiesFromOllamaShow({
+    capabilities,
+    model: modelName
+  });
+  return { contextWindow, thinking, inputModalities };
 }
 
 async function enrichOllamaModelsFromShow(
@@ -719,12 +765,19 @@ async function enrichOllamaModelsFromShow(
       slice.map(async (info) => {
         const needsContext = info.contextWindow === undefined;
         const needsThinking = info.thinking === undefined;
-        if (!needsContext && !needsThinking) return;
+        const needsModalities = info.inputModalities === undefined;
+        if (!needsContext && !needsThinking && !needsModalities) return;
         const show = await probeOllamaModelShow(provider, info.id);
         if (needsContext && show.contextWindow !== undefined) {
           info.contextWindow = show.contextWindow;
         }
         if (needsThinking && show.thinking) info.thinking = show.thinking;
+        if (needsModalities && show.inputModalities) {
+          info.inputModalities = show.inputModalities;
+        } else if (needsModalities) {
+          const fallback = inputModalitiesFromModelId(info.id);
+          if (fallback) info.inputModalities = fallback;
+        }
       })
     );
   }
@@ -1327,6 +1380,11 @@ async function fetchAnthropicModels(provider: ProviderWithKey): Promise<ModelInf
       }
       const thinking = thinkingFromAnthropicCapabilities(m.capabilities);
       if (thinking) info.thinking = thinking;
+      const modalities = mergeInputModalities(
+        inputModalitiesFromAnthropicModel(m),
+        inputModalitiesFromModelId(id)
+      );
+      if (modalities) info.inputModalities = modalities;
       const pricing = attachModelPricing(provider, id, m);
       if (pricing) info.pricing = pricing;
       return info;
@@ -1452,6 +1510,11 @@ async function fetchGeminiModels(provider: ProviderWithKey): Promise<ModelInfo[]
         version: m.version
       });
       if (thinking) info.thinking = thinking;
+      const modalities = mergeInputModalities(
+        inputModalitiesFromGeminiModel({ name: rawName, supportedGenerationMethods: methods }),
+        inputModalitiesFromModelId(id)
+      );
+      if (modalities) info.inputModalities = modalities;
       const pricing = attachModelPricing(provider, id, m);
       if (pricing) info.pricing = pricing;
       return info;

@@ -268,6 +268,9 @@ export interface ModelThinkingCapabilities {
   mapsXhighToMax?: boolean;
 }
 
+/** Input modalities a model can accept (discovery-normalized). */
+export type ModelInputModality = 'text' | 'image' | 'file' | 'video' | 'audio';
+
 /** As returned by GET /v1/models — minimal shape. */
 export interface ModelInfo {
   id: string;
@@ -293,6 +296,11 @@ export interface ModelInfo {
   supportedParameters?: string[];
   /** Parsed thinking/reasoning metadata from the provider's model list. */
   thinking?: ModelThinkingCapabilities;
+  /**
+   * Input modalities from provider discovery (OpenRouter `architecture`,
+   * Anthropic/Gemini/Ollama capabilities). Omitted on text-only models.
+   */
+  inputModalities?: ModelInputModality[];
 }
 
 /** Add-provider payload from the renderer. */

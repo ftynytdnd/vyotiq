@@ -43,6 +43,7 @@ import {
   awaitRunSettlement,
   settleRun
 } from './runSettlement.js';
+import { drainFollowUpsForConversation } from '../followUps/drainFollowUps.js';
 
 const log = logger.child('ipc/chat');
 
@@ -542,6 +543,12 @@ export function registerChatIpc(): void {
         })
         .finally(() => {
           settleRun(cid);
+          void drainFollowUpsForConversation(cid).catch((drainFollowUpErr: unknown) => {
+            log.warn('drainFollowUpsForConversation failed', {
+              conversationId: cid,
+              err: drainFollowUpErr
+            });
+          });
           const message =
             persistFailureMessage ?? (mode === 'error' ? runErrorMessage : undefined);
           if (mode === 'error' || message) {

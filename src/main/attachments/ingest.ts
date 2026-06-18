@@ -9,8 +9,10 @@ import { randomUUID } from 'node:crypto';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import {
   MAX_ATTACHMENT_FILE_BYTES,
-  MAX_CHAT_ATTACHMENTS
+  MAX_CHAT_ATTACHMENTS,
+  VISION_VIDEO_MAX_BYTES
 } from '@shared/constants.js';
+import { guessMimeFromName, mediaKindFromMeta } from '@shared/attachments/mediaKind.js';
 
 import { attachmentsDir } from '../paths/userDataLayout.js';
 
@@ -36,18 +38,22 @@ export async function ingestExternalFile(input: IngestFileInput): Promise<Prompt
   if (!st.isFile()) {
     throw new Error('Not a file');
   }
-  if (st.size > MAX_ATTACHMENT_FILE_BYTES) {
-    throw new Error(`File exceeds ${MAX_ATTACHMENT_FILE_BYTES / (1024 * 1024)} MB limit`);
-  }
 
   const name = basename(input.sourcePath);
-  const mimeType = guessMime(name);
+  const mimeType = guessMimeFromName(name);
+  const mediaKind = mediaKindFromMeta({ name, mimeType });
+  const sizeCap =
+    mediaKind === 'video' ? VISION_VIDEO_MAX_BYTES : MAX_ATTACHMENT_FILE_BYTES;
+  if (st.size > sizeCap) {
+    throw new Error(`File exceeds ${sizeCap / (1024 * 1024)} MB limit`);
+  }
 
   if (input.workspacePath) {
     return {
       id: randomUUID(),
       name,
       mimeType,
+      mediaKind,
       sizeBytes: st.size,
       workspacePath: input.workspacePath,
       external: false
@@ -64,6 +70,7 @@ export async function ingestExternalFile(input: IngestFileInput): Promise<Prompt
     id: randomUUID(),
     name,
     mimeType,
+    mediaKind,
     sizeBytes: st.size,
     storedPath: dest,
     external: true
@@ -74,17 +81,4 @@ export function assertAttachmentCount(count: number): void {
   if (count > MAX_CHAT_ATTACHMENTS) {
     throw new Error(`Maximum ${MAX_CHAT_ATTACHMENTS} attachments per message`);
   }
-}
-
-function guessMime(name: string): string {
-  const lower = name.toLowerCase();
-  if (lower.endsWith('.png')) return 'image/png';
-  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
-  if (lower.endsWith('.gif')) return 'image/gif';
-  if (lower.endsWith('.webp')) return 'image/webp';
-  if (lower.endsWith('.pdf')) return 'application/pdf';
-  if (lower.endsWith('.md')) return 'text/markdown';
-  if (lower.endsWith('.json')) return 'application/json';
-  if (lower.endsWith('.txt')) return 'text/plain';
-  return 'application/octet-stream';
 }

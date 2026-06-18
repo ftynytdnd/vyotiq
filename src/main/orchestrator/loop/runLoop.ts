@@ -14,13 +14,13 @@
  *   4. No tool calls at all → substantive prose ends the run; otherwise
  *      one retry, then a visible error.
  *
- * On the iteration cap (`MAX_TOTAL_ITERATIONS`) without a `finish`, one
- * final synthesis turn is issued with `tool_choice: 'none'` and its
- * prose is delivered as the final answer.
- *
  * On streaming error, retry with exponential backoff up to
  * `MAX_SELF_CORRECTION_ATTEMPTS` per burst. After `MAX_PROVIDER_RECOVERY_ROUNDS`
  * harness recovery cycles, emit `error` and abort the run.
+ *
+ * Runs continue until `finish`, `ask_user`, a budget halt, billing block,
+ * user abort, or another explicit terminal path — there is no fixed
+ * iteration ceiling.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -59,8 +59,7 @@ import {
   IMPLICIT_FINISH_MIN_CHARS,
   IMPLICIT_FINISH_MIN_SENTENCE_CHARS,
   MAX_PROVIDER_RECOVERY_ROUNDS,
-  MAX_SELF_CORRECTION_ATTEMPTS,
-  MAX_TOTAL_ITERATIONS
+  MAX_SELF_CORRECTION_ATTEMPTS
 } from '@shared/constants.js';
 import { AGENT_TOOLS } from '../../tools/policy/index.js';
 import { handleToolCalls } from './handleToolCalls.js';
@@ -96,6 +95,12 @@ import {
   toolCallSignature,
   type SpinSignatureBuffer
 } from './toolSpinSignature.js';
+import {
+  consumeSteeringFollowUps,
+  tryConsumeQueueBeforeFinish,
+  type FollowUpInjectResult,
+  type FollowUpLoopCtx
+} from '../followUps/followUpLoopHooks.js';
 import {
   buildRunStateXml,
   createRunStateAccumulator,
@@ -168,7 +173,7 @@ export function __test_resetRecentBillingBlock(): void {
  * Emit a block of text as the orchestrator's final user-facing answer,
  * rendered identically to a normal streamed assistant turn (a
  * `agent-text-delta` carrying the whole body + its `agent-text-end`
- * marker). Used for `finish.summary` and the iteration-cap synthesis
+ * marker). Used for `finish.summary` and other host-delivered final
  * fallback. A fresh `assistantMsgId` keeps it a clean, self-contained
  * row even when the model also streamed prose alongside the tool call.
  */
@@ -218,6 +223,31 @@ interface RunLoopResult {
   pausedForAskUser?: LoopCheckpoint;
   /** Set when the run-scoped signal aborted before a terminal error row. */
   aborted?: boolean;
+}
+
+function buildFollowUpLoopCtx(
+  opts: RunLoopOpts,
+  emit: (event: TimelineEvent) => void,
+  messages: ChatMessage[],
+  runStateAcc: RunStateAccumulator,
+  spin: SpinSignatureBuffer
+): FollowUpLoopCtx {
+  return {
+    runId: opts.input.runId,
+    conversationId: opts.input.conversationId ?? '',
+    workspacePath: opts.workspacePath,
+    workspaceId: opts.workspaceId,
+    emit,
+    messages,
+    signal: opts.signal,
+    runStateAcc,
+    spin
+  };
+}
+
+function applyFollowUpResult(result: FollowUpInjectResult, opts: RunLoopOpts): string {
+  opts.input.selection = { ...result.selection };
+  return clampQuery(result.query, opts.input.prompt);
 }
 
 export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopResult> {
@@ -332,8 +362,6 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
       goalAnchorBody.length > 0
         ? wrapXml('goal_anchor', `Original task (stay aligned to this): ${goalAnchorBody}`)
         : '';
-    const iterationCap =
-      MAX_TOTAL_ITERATIONS + (resume?.reportGateBonusIteration ? 1 : 0);
     let hostReportGatePendingTerminal = resume?.hostReportGate
       ? resume.pendingTerminal
       : undefined;
@@ -341,7 +369,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     let consecutiveSpinHotIterations = 0;
     let spinHotNudgeEmitted = false;
 
-    for (let iter = resume?.nextIteration ?? 0; iter < iterationCap; iter++) {
+    for (let iter = resume?.nextIteration ?? 0; ; iter++) {
       const abortedEarly = exitIfAborted(opts, emit, runHadLlmProgress);
       if (abortedEarly) return abortedEarly;
       if (
@@ -394,7 +422,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               id: randomUUID(),
               ts: Date.now(),
               content:
-                'The same tool pattern has repeated several times. Pivot strategy or ask the user before the iteration cap.',
+                'The same tool pattern has repeated several times. Pivot strategy or ask the user.',
               severity: 'warn'
             });
           }
@@ -902,6 +930,41 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           ms: Date.now() - iterStartedAt
         });
 
+        const assistantContent: string | null =
+          actionTools.length > 0 && turn.assistantText.length === 0 ? null : turn.assistantText;
+        insertHistoryBeforeTail(messages, {
+          role: 'assistant',
+          content: assistantContent,
+          ...(turn.reasoningText.length > 0 ? { reasoning_content: turn.reasoningText } : {}),
+          ...(typeof turn.reasoningSignature === 'string' && turn.reasoningSignature.length > 0
+            ? { reasoning_signature: turn.reasoningSignature }
+            : {}),
+          ...(actionTools.length > 0
+            ? {
+              tool_calls: actionTools.map((tc) => ({
+                id: tc.id!,
+                type: 'function' as const,
+                function: {
+                  name: tc.name ?? 'unknown',
+                  arguments: tc.argumentsBuf || '{}'
+                },
+                ...(typeof tc.thoughtSignature === 'string' && tc.thoughtSignature.length > 0
+                  ? { thoughtSignature: tc.thoughtSignature }
+                  : {})
+              }))
+            }
+            : {})
+        });
+
+        const followUpCtx = buildFollowUpLoopCtx(opts, emit, messages, runStateAcc, spin);
+        const steered = await consumeSteeringFollowUps(followUpCtx);
+        if (steered) {
+          query = applyFollowUpResult(steered, opts);
+          consecutiveEmptyTurns = 0;
+          runStateAcc.lastAction = 'none';
+          continue;
+        }
+
         if (finishCall) {
           if (actionTools.length > 0) {
             log.warn('finish deferred — running co-emitted tools first', {
@@ -920,6 +983,13 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               iteration: iter,
               summaryChars: summary.length
             });
+            const queued = await tryConsumeQueueBeforeFinish(followUpCtx);
+            if (queued) {
+              query = applyFollowUpResult(queued, opts);
+              consecutiveEmptyTurns = 0;
+              runStateAcc.lastAction = 'none';
+              continue;
+            }
             const gate = await maybeInterceptHostReportGate({
               runId: opts.input.runId,
               conversationId: opts.input.conversationId ?? '',
@@ -971,35 +1041,6 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             actionTools: actionTools.length
           });
         }
-
-        const assistantContent: string | null =
-          actionTools.length > 0 && turn.assistantText.length === 0 ? null : turn.assistantText;
-        insertHistoryBeforeTail(messages, {
-          role: 'assistant',
-          content: assistantContent,
-          ...(turn.reasoningText.length > 0 ? { reasoning_content: turn.reasoningText } : {}),
-          // Phase 8 (2026): persist the Anthropic thinking signature on
-          // the assistant turn so the next request echoes the
-          // `{type:'thinking', thinking, signature}` block back unchanged.
-          ...(typeof turn.reasoningSignature === 'string' && turn.reasoningSignature.length > 0
-            ? { reasoning_signature: turn.reasoningSignature }
-            : {}),
-          ...(actionTools.length > 0
-            ? {
-              tool_calls: actionTools.map((tc) => ({
-                id: tc.id!,
-                type: 'function' as const,
-                function: {
-                  name: tc.name ?? 'unknown',
-                  arguments: tc.argumentsBuf || '{}'
-                },
-                ...(typeof tc.thoughtSignature === 'string' && tc.thoughtSignature.length > 0
-                  ? { thoughtSignature: tc.thoughtSignature }
-                  : {})
-              }))
-            }
-            : {})
-        });
 
         let didWork = false;
 
@@ -1097,6 +1138,13 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             iteration: iter,
             summaryChars: summary.length
           });
+          const queuedAfterTools = await tryConsumeQueueBeforeFinish(followUpCtx);
+          if (queuedAfterTools) {
+            query = applyFollowUpResult(queuedAfterTools, opts);
+            consecutiveEmptyTurns = 0;
+            runStateAcc.lastAction = 'none';
+            continue;
+          }
           const gate = await maybeInterceptHostReportGate({
             runId: opts.input.runId,
             conversationId: opts.input.conversationId ?? '',
@@ -1141,6 +1189,14 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           });
         }
 
+        const steeredAfterTools = await consumeSteeringFollowUps(followUpCtx);
+        if (steeredAfterTools) {
+          query = applyFollowUpResult(steeredAfterTools, opts);
+          consecutiveEmptyTurns = 0;
+          runStateAcc.lastAction = 'none';
+          continue;
+        }
+
         if (didWork) continue;
 
         const proseText = turn.assistantText.trim();
@@ -1177,6 +1233,13 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             iteration: iter,
             textChars: proseText.length
           });
+          const queuedImplicit = await tryConsumeQueueBeforeFinish(followUpCtx);
+          if (queuedImplicit) {
+            query = applyFollowUpResult(queuedImplicit, opts);
+            consecutiveEmptyTurns = 0;
+            runStateAcc.lastAction = 'none';
+            continue;
+          }
           const gate = await maybeInterceptHostReportGate({
             runId: opts.input.runId,
             conversationId: opts.input.conversationId ?? '',
@@ -1225,98 +1288,6 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: USER_EMPTY_TURN_ERROR });
           return { terminalError: USER_EMPTY_TURN_ERROR };
         }
-    }
-
-    log.warn('iteration cap reached — forcing final synthesis turn', {
-      cap: MAX_TOTAL_ITERATIONS,
-      runId: opts.input.runId,
-      conversationId: opts.input.conversationId
-    });
-    const abortedBeforeSynth = exitIfAborted(opts, emit, runHadLlmProgress);
-    if (abortedBeforeSynth) return abortedBeforeSynth;
-    {
-      const synthMessages = sanitizeToolCallPairingWithStats(messages).messages;
-      let synthOmitToolChoice = omitToolChoice;
-      let synthTurn: Awaited<ReturnType<typeof handleAssistantTurn>> | null = null;
-      for (let synthAttempt = 0; synthAttempt < 2; synthAttempt++) {
-        const synthReq = buildOrchestratorRequest({
-          selection: opts.input.selection,
-          messages: synthMessages,
-          signal: opts.signal,
-          dialect: providerDialect,
-          wrapUp: true,
-          omitToolChoice: synthOmitToolChoice,
-          ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
-          ...(modelThinkingCaps !== undefined ? { modelThinkingCaps } : {}),
-          ...(opts.input.conversationId !== undefined
-            ? { conversationId: opts.input.conversationId }
-            : {}),
-          ...(opts.input.workspaceId !== undefined ? { workspaceId: opts.input.workspaceId } : {}),
-          ...(providerDialect === 'anthropic-native'
-            ? { previousAnthropicMessageId: lastAnthropicMessageId ?? null }
-            : {})
-        });
-        synthTurn = await handleAssistantTurn(synthReq, emit, argsDeltaTap);
-        if (
-          synthTurn.error &&
-          !synthOmitToolChoice &&
-          isPermanentToolChoiceRejection(synthTurn.error)
-        ) {
-          synthOmitToolChoice = true;
-          omitToolChoice = true;
-          log.warn('synthesis rejected tool_choice — retrying with the field omitted', {
-            runId: opts.input.runId,
-            conversationId: opts.input.conversationId
-          });
-          if (synthTurn.hadText || synthTurn.hadReasoning) {
-            emit({ kind: 'agent-text-aborted', id: synthTurn.assistantMsgId, ts: Date.now() });
-          }
-          continue;
-        }
-        break;
-      }
-      if (!synthTurn) return {};
-      if (synthTurn.error) {
-        if (isAbortError(synthTurn.error, opts.signal)) {
-          if (synthTurn.hadText || synthTurn.hadReasoning) {
-            emit({ kind: 'agent-text-aborted', id: synthTurn.assistantMsgId, ts: Date.now() });
-            runHadLlmProgress = true;
-          }
-          const aborted = exitIfAborted(opts, emit, runHadLlmProgress);
-          if (aborted) return aborted;
-          return {};
-        }
-        const msg = isProviderError(synthTurn.error)
-          ? synthTurn.error.friendlyMessage
-          : synthTurn.error instanceof Error
-            ? synthTurn.error.message
-            : String(synthTurn.error);
-        emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: msg });
-        return { terminalError: msg };
-      }
-      if (synthTurn.hadReasoning && !synthTurn.reasoningEndEmitted) {
-        emit({
-          kind: 'agent-reasoning-end',
-          id: synthTurn.assistantMsgId,
-          ts: Date.now(),
-          ...(typeof synthTurn.reasoningSignature === 'string' && synthTurn.reasoningSignature.length > 0
-            ? { signature: synthTurn.reasoningSignature }
-            : {})
-        });
-      }
-      if (synthTurn.hadText) {
-        emit({ kind: 'agent-text-end', id: synthTurn.assistantMsgId, ts: Date.now() });
-      } else if (synthTurn.assistantText.trim().length === 0) {
-        // Synthesis produced no prose (e.g. a non-forced dialect that
-        // still tried to call a tool). Deliver a minimal honest notice as
-        // the final answer so the run never ends silently.
-        emitFinalAnswer(
-          emit,
-          `Reached the ${MAX_TOTAL_ITERATIONS}-iteration limit without an explicit finish. ` +
-          'Stopping here — re-send to continue if more work is needed.'
-        );
-      }
-      return {};
     }
   } finally {
     opts.signal.removeEventListener('abort', disposeStreaming);

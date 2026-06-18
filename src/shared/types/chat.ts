@@ -104,6 +104,16 @@ type ChatRole = 'system' | 'user' | 'assistant' | 'tool';
  *   - Ollama native:
  *       no cache / no reasoning breakdown on the wire today
  */
+/** OpenAI-compatible multimodal content part (vision / PDF / video). */
+export type ChatContentPart =
+  | { type: 'text'; text: string }
+  | {
+      type: 'image_url';
+      image_url: { url: string; detail?: 'auto' | 'low' | 'high' };
+    }
+  | { type: 'file'; file: { filename: string; file_data: string } }
+  | { type: 'video_url'; video_url: { url: string } };
+
 export interface TokenUsage {
   promptTokens: number;
   completionTokens: number;
@@ -129,7 +139,7 @@ export interface ChatMessage {
    * providers (e.g. some Together / Groq routes) reject `""` paired with
    * `tool_calls`.
    */
-  content: string | null;
+  content: string | ChatContentPart[] | null;
   /** OpenAI-compat tool_calls (assistant messages may include them). */
   tool_calls?: Array<{
     id: string;
@@ -753,12 +763,17 @@ export type TimelineEvent =
 /** Phases for ephemeral `run-status` timeline events. */
 export type RunStatusPhase = Extract<TimelineEvent, { kind: 'run-status' }>['phase'];
 
+/** Classified attachment media kind (set at ingest). */
+export type AttachmentMediaKind = 'image' | 'pdf' | 'video' | 'text';
+
 /** Attachment descriptor on user-prompt events and send wire. */
 export interface PromptAttachmentMeta {
   id: string;
   name: string;
   mimeType?: string;
   sizeBytes?: number;
+  /** Derived at ingest from mime/extension. */
+  mediaKind?: AttachmentMediaKind;
   /** Absolute path under app userData when copied from external drop. */
   storedPath?: string;
   /** Workspace-relative path when picked inside the project. */

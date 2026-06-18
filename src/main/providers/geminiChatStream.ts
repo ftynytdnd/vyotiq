@@ -63,6 +63,7 @@ import { readSseFrames, pickSseDataLine } from './sseFrameReader.js';
 import { safeText } from './errorBody.js';
 import { redactUrlSecrets } from './redactUrlSecrets.js';
 import { findProviderModel } from '@shared/providers/modelId.js';
+import { toGeminiUserParts } from './multimodal/userContentWire.js';
 import { recordProviderRateLimits } from './providerRateLimitCapture.js';
 import {
   resolveGeminiThinkingConfig,
@@ -128,7 +129,14 @@ interface GeminiPartFunctionResponse {
   };
 }
 
-type GeminiPart = GeminiPartText & GeminiPartFunctionCall & GeminiPartFunctionResponse;
+interface GeminiPartInlineData {
+  inlineData?: { mimeType: string; data: string };
+}
+
+type GeminiPart = GeminiPartText &
+  GeminiPartFunctionCall &
+  GeminiPartFunctionResponse &
+  GeminiPartInlineData;
 
 interface GeminiCandidate {
   content?: { role?: string; parts?: GeminiPart[] };
@@ -627,8 +635,7 @@ function toGeminiContents(messages: readonly ChatMessage[]): {
       continue;
     }
     if (m.role === 'user') {
-      const text = typeof m.content === 'string' ? m.content : '';
-      contents.push({ role: 'user', parts: [{ text }] });
+      contents.push({ role: 'user', parts: toGeminiUserParts(m.content) });
       continue;
     }
     // assistant

@@ -27,8 +27,17 @@ interface ContextBreakdownPopoverProps {
   onCompact: () => void;
   onReset: () => void;
   controlsEnabled: boolean;
+  busy?: boolean;
+  busyMode?: 'compact' | 'reset' | null;
   hasConversation: boolean;
+  runActive?: boolean;
+  compactionNote?: string | null;
 }
+
+const COMPACT_ACTION_TITLE =
+  'Offload older tool outputs to workspace artifacts. Keeps recent turns intact.';
+const SUMMARIZE_ACTION_TITLE =
+  'Summarize the full conversation history into one lean note for the next run.';
 
 function StackedBar({
   breakdown,
@@ -67,7 +76,11 @@ export const ContextBreakdownPopover = memo(function ContextBreakdownPopover({
   onCompact,
   onReset,
   controlsEnabled,
-  hasConversation
+  busy = false,
+  busyMode = null,
+  hasConversation,
+  runActive = false,
+  compactionNote = null
 }: ContextBreakdownPopoverProps) {
   const titleId = useId();
   const breakdown = usage.breakdown;
@@ -79,6 +92,7 @@ export const ContextBreakdownPopover = memo(function ContextBreakdownPopover({
   const tierTitle = levelDetailTitle(usage);
   const activeLayers = breakdown ? activeBreakdownLayers(breakdown) : [];
   const emptyLabels = breakdown ? emptyBreakdownLabels(breakdown) : [];
+  const visionTokens = usage.visionTokens ?? 0;
   const omittedNote =
     breakdown && emptyLabels.length > 0
       ? formatOmittedLayerNote(emptyLabels, breakdown)
@@ -100,6 +114,7 @@ export const ContextBreakdownPopover = memo(function ContextBreakdownPopover({
         id={id}
         role="dialog"
         aria-labelledby={titleId}
+        aria-busy={busy}
         className="vx-context-breakdown-popover__inner"
       >
         <header className="vx-context-breakdown-popover__head">
@@ -223,32 +238,76 @@ export const ContextBreakdownPopover = memo(function ContextBreakdownPopover({
           )}
         </div>
 
+        {visionTokens > 0 ? (
+          <p
+            className="vx-context-breakdown-popover__vision"
+            title="Estimated tokens for attached images, PDFs, or video on the wire"
+          >
+            <span
+              className="vx-context-breakdown-popover__swatch vx-context-breakdown-popover__swatch--vision"
+              aria-hidden
+            />
+            <span className="vx-context-breakdown-popover__vision-label">Vision media</span>
+            <span className="vx-context-breakdown-popover__vision-tokens tabular-nums">
+              {formatTokenCount(visionTokens)}
+            </span>
+            <span className="vx-context-breakdown-popover__vision-est">est</span>
+          </p>
+        ) : null}
+
         {omittedNote ? (
           <p className="vx-context-breakdown-popover__omitted">{omittedNote}</p>
         ) : null}
 
         <footer className="vx-context-breakdown-popover__foot">
+          {compactionNote ? (
+            <p className="vx-context-breakdown-popover__status" role="status">
+              {compactionNote}
+            </p>
+          ) : null}
           {hasConversation ? (
             <>
+              <p className="vx-context-breakdown-popover__manage-copy">
+                <strong>Compact</strong> offloads old tool output to workspace files.{' '}
+                <strong>Summarize</strong> collapses all prior turns into one lean history note.
+                Automatic reduction also appears in the timeline as{' '}
+                <span className="text-text-secondary">Context reduced</span>.
+              </p>
+              {!controlsEnabled && runActive ? (
+                <p className="vx-context-breakdown-popover__manage-hint">
+                  Stop the active run before compacting or summarizing.
+                </p>
+              ) : null}
+              <div className="vx-context-breakdown-popover__actions">
               <button
                 type="button"
                 className="vx-context-breakdown-popover__action"
-                disabled={!controlsEnabled}
+                disabled={!controlsEnabled || busy}
                 onClick={onCompact}
+                title={COMPACT_ACTION_TITLE}
               >
-                Compact
+                <span className="vx-context-breakdown-popover__action-label">
+                  {busy && busyMode === 'compact' ? 'Working…' : 'Compact'}
+                </span>
+                <span className="vx-context-breakdown-popover__action-hint">
+                  Offload old tool bulk
+                </span>
               </button>
-              <span className="vx-context-breakdown-popover__foot-sep" aria-hidden>
-                ·
-              </span>
               <button
                 type="button"
                 className="vx-context-breakdown-popover__action"
-                disabled={!controlsEnabled}
+                disabled={!controlsEnabled || busy}
                 onClick={onReset}
+                title={SUMMARIZE_ACTION_TITLE}
               >
-                Reset
+                <span className="vx-context-breakdown-popover__action-label">
+                  {busy && busyMode === 'reset' ? 'Working…' : 'Summarize'}
+                </span>
+                <span className="vx-context-breakdown-popover__action-hint">
+                  Collapse full history
+                </span>
               </button>
+            </div>
             </>
           ) : (
             <span className="vx-context-breakdown-popover__hint">Start a chat to manage context</span>

@@ -3,6 +3,7 @@
  * @see https://platform.claude.com/docs/en/build-with-claude/prompt-caching
  */
 
+import { chatContentToText } from '@shared/text/chatContent.js';
 import type { ChatMessage } from '@shared/types/chat.js';
 import {
   CACHE_LAYER_FEW_SHOT_INDEX,
@@ -116,7 +117,7 @@ function wireMessageMatchesHistory(
   turnText: string
 ): boolean {
   if (hist.role === 'user') {
-    const text = typeof hist.content === 'string' ? hist.content : '';
+    const text = chatContentToText(hist.content);
     if (text === runtimeText || text === turnText) return false;
     const block = wire.content.find((b) => b['type'] === 'text');
     return block?.['text'] === text;
@@ -150,14 +151,8 @@ export function markHistoryCacheBreakpoint(
   if (!isCacheLayeredTopology(sourceMessages)) return;
   if (sourceMessages.length <= CACHE_LAYERED_MIN_MESSAGES) return;
 
-  const runtimeText =
-    typeof sourceMessages[sourceMessages.length - 2]?.content === 'string'
-      ? sourceMessages[sourceMessages.length - 2]!.content!
-      : '';
-  const turnText =
-    typeof sourceMessages[sourceMessages.length - 1]?.content === 'string'
-      ? sourceMessages[sourceMessages.length - 1]!.content!
-      : '';
+  const runtimeText = chatContentToText(sourceMessages[sourceMessages.length - 2]?.content);
+  const turnText = chatContentToText(sourceMessages[sourceMessages.length - 1]?.content);
   const lastHist = sourceMessages[sourceMessages.length - 3];
   if (!lastHist) return;
 

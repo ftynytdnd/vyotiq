@@ -21,6 +21,7 @@ import {
   type ContextUsageBreakdown,
   type ContextUsageSummary
 } from '@shared/context/contextLevel.js';
+import { chatContentToText } from '@shared/text/chatContent.js';
 import {
   CONTEXT_CALIBRATION_MAX,
   CONTEXT_CALIBRATION_MIN
@@ -60,7 +61,13 @@ function serializePromptText(
 ): string {
   const parts: string[] = [];
   for (const m of messages) {
-    if (typeof m.content === 'string' && m.content.length > 0) parts.push(m.content);
+    const text =
+      typeof m.content === 'string'
+        ? m.content
+        : m.content != null
+          ? chatContentToText(m.content)
+          : '';
+    if (text.length > 0) parts.push(text);
     if (Array.isArray(m.tool_calls)) {
       for (const tc of m.tool_calls) {
         parts.push(tc.function.name);
@@ -120,6 +127,7 @@ export async function evaluateContextBudget(
   // Anchoring to real provider tokens makes the local estimate trustworthy.
   let exact = base.exact || calibrated;
   let breakdown = scaleContextBreakdown(base.breakdown, base.total, usedTokens);
+  const visionTokens = base.visionTokens;
 
   // For heuristic-only models, prefer a fresh provider count when cached and
   // warm the cache in the background for the next turn. A fresh remote count is
@@ -128,9 +136,9 @@ export async function evaluateContextBudget(
     const text = serializePromptText(input.messages, tools);
     const remote = getCachedRemoteCount(provider.id, input.modelId, text);
     if (typeof remote === 'number' && remote > 0) {
-      usedTokens = remote;
+      usedTokens = remote + visionTokens;
       exact = true;
-      breakdown = scaleContextBreakdown(base.breakdown, base.total, remote);
+      breakdown = scaleContextBreakdown(base.breakdown, base.total, remote + visionTokens);
     } else if (!input.skipRemoteRefine) {
       refineRemoteCount(provider, input.modelId, text);
     }
@@ -144,7 +152,8 @@ export async function evaluateContextBudget(
       triggerFraction: input.settings.triggerFraction
     },
     exact,
-    breakdown
+    breakdown,
+    ...(visionTokens > 0 ? { visionTokens } : {})
   });
 }
 
@@ -160,6 +169,7 @@ export function buildUsageFromTokens(opts: {
   advertisedWindow: number;
   settings: ContextManagementSettings;
   breakdown?: ContextUsageBreakdown;
+  visionTokens?: number;
 }): ContextUsageSummary {
   return summarizeContextUsage({
     usedTokens: opts.usedTokens,
@@ -169,7 +179,10 @@ export function buildUsageFromTokens(opts: {
       triggerFraction: opts.settings.triggerFraction
     },
     exact: opts.exact,
-    ...(opts.breakdown ? { breakdown: opts.breakdown } : {})
+    ...(opts.breakdown ? { breakdown: opts.breakdown } : {}),
+    ...(opts.visionTokens != null && opts.visionTokens > 0
+      ? { visionTokens: opts.visionTokens }
+      : {})
   });
 }
 
@@ -182,7 +195,12 @@ export function estimatePromptTokensSync(
   modelId: string,
   messages: readonly ChatMessage[],
   tools: ReadonlyArray<TokenizableToolSchema> = []
-): { tokens: number; exact: boolean; breakdown: ContextUsageBreakdown } {
+): { tokens: number; exact: boolean; breakdown: ContextUsageBreakdown; visionTokens: number } {
   const base = tokenizeMessages(modelId, messages, tools);
-  return { tokens: base.total, exact: base.exact, breakdown: base.breakdown };
+  return {
+    tokens: base.total,
+    exact: base.exact,
+    breakdown: base.breakdown,
+    visionTokens: base.visionTokens
+  };
 }

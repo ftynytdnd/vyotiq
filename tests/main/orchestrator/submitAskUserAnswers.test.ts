@@ -15,6 +15,20 @@ vi.mock('@main/harness/harnessLoader.js', () => ({
 vi.mock('@main/orchestrator/replay/index.js', () => ({
   replayTranscript: vi.fn(() => [])
 }));
+vi.mock('@main/orchestrator/buildUserTurnMessage.js', () => ({
+  buildUserTurnMessage: vi.fn(async () => ({
+    message: { role: 'user', content: '<turn>test</turn>' },
+    turnXml: '<turn>test</turn>',
+    visionTokenEstimate: 0,
+    usedVisionParts: false
+  })),
+  enrichReplayedVisionMessages: vi.fn(async (messages: unknown[]) => messages),
+  resolveInputModalitiesForSelection: vi.fn(async () => ['text', 'image'])
+}));
+vi.mock('@main/attachments/preparedMediaCache.js', () => ({
+  getPreparedMediaCache: vi.fn(() => ({ get: vi.fn(), set: vi.fn(), clear: vi.fn() })),
+  clearPreparedMediaCache: vi.fn()
+}));
 vi.mock('@main/attachments/resolveAttachmentsForInline.js', () => ({
   resolveAttachmentsForInline: vi.fn(async () => [])
 }));

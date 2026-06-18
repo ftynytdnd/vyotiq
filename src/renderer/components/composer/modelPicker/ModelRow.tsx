@@ -6,6 +6,7 @@ import { memo } from 'react';
 import { Check, Star } from 'lucide-react';
 import type { ModelInfo, ModelSelection, ProviderConfig } from '@shared/types/provider.js';
 import { isThinkingCapableModel } from '@shared/providers/thinkingEffort.js';
+import { modelSupportsVision } from '@shared/providers/visionCapabilities.js';
 import { cn } from '../../../lib/cn.js';
 import {
   SHELL_ACTION_ICON_STROKE,
@@ -74,6 +75,7 @@ export const ModelRow = memo(function ModelRow({
       : null;
 
   const priceLabel = formatModelPricingBadge(model.pricing);
+  const visionCapable = modelSupportsVision(model.inputModalities);
 
   const highlighted = keyboardFocused || effortActive;
   const displayId = rowDisplayModelId(model.id);
@@ -134,6 +136,11 @@ export const ModelRow = memo(function ModelRow({
         className="vx-model-picker-row-slot vx-model-picker-row-slot--effort"
         title={effortLabel ? `Thinking effort: ${effortLabel}` : undefined}
       >
+        {visionCapable ? (
+          <span className="vx-model-picker-row-badge" title="Vision input supported">
+            Vision
+          </span>
+        ) : null}
         {effortLabel ? (
           <span className="vx-model-picker-row-badge tabular-nums">{effortLabel}</span>
         ) : null}

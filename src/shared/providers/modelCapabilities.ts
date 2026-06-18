@@ -10,7 +10,25 @@
  */
 
 import type { ModelThinkingCapabilities, ThinkingEffort, ThinkingWireStyle } from '../types/provider.js';
+import type { ModelInputModality } from '../types/provider.js';
 import { parseProviderHostname } from './providerHostname.js';
+import {
+  inputModalitiesFromModelId,
+  mergeInputModalities
+} from './visionCapabilities.js';
+
+export {
+  inputModalitiesFromAnthropicModel,
+  inputModalitiesFromGeminiModel,
+  inputModalitiesFromOllamaShow,
+  inputModalitiesFromOpenRouterArchitecture,
+  inputModalitiesFromModelId,
+  mergeInputModalities,
+  modelSupportsPdfNative,
+  modelSupportsVideoNative,
+  modelSupportsVision,
+  normalizeInputModalities
+} from './visionCapabilities.js';
 
 const REASONING_API_PARAMETERS = new Set([
   'reasoning',
@@ -213,6 +231,20 @@ export function contextWindowFromOllamaModelInfo(
 
 export function isDeepSeekApiHost(baseUrl: string): boolean {
   return parseProviderHostname(baseUrl).deepseek;
+}
+
+/** OpenAI-compatible `/v1/models` extended rows — vision via features/groups when exposed. */
+export function inputModalitiesFromOpenAiExtendedFields(model: {
+  features?: string[];
+  groups?: string[];
+  id?: string;
+}): ModelInputModality[] | undefined {
+  const features = model.features ?? [];
+  const groups = model.groups ?? [];
+  if (features.includes('vision') || groups.includes('vision')) {
+    return mergeInputModalities(['text', 'image', 'file'], inputModalitiesFromModelId(model.id ?? ''));
+  }
+  return inputModalitiesFromModelId(model.id ?? '');
 }
 
 export function mergeThinkingCapabilities(

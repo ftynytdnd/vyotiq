@@ -1,81 +1,35 @@
-import { ArrowUp, Square } from 'lucide-react';
-
+import { ArrowUp } from 'lucide-react';
 import { cn } from '../../lib/cn.js';
-
-import {
-
-  SHELL_CHROME_ICON_CLASS,
-
-  SHELL_CHROME_ICON_STROKE,
-
-  SHELL_MICRO_ICON_CLASS,
-
-  SHELL_MICRO_ICON_STROKE
-
-} from '../../lib/shellIcons.js';
-
-
+import { SHELL_CHROME_ICON_CLASS, SHELL_CHROME_ICON_STROKE } from '../../lib/shellIcons.js';
 
 interface SendButtonProps {
   onClick: () => void;
   state: 'idle' | 'ready' | 'processing';
   disabled?: boolean;
   className?: string;
+  /** Overrides default Send / Steer label when set. */
+  actionLabel?: string;
 }
 
-export function SendButton({ onClick, state, disabled, className }: SendButtonProps) {
-
-  const isProcessing = state === 'processing';
-
+export function SendButton({ onClick, state, disabled, className, actionLabel }: SendButtonProps) {
   const isReady = state === 'ready';
-
-
+  const label = actionLabel ?? 'Send';
 
   return (
-
     <button
-
       type="button"
-
       onClick={onClick}
-
       disabled={disabled}
-
-      aria-label={isProcessing ? 'Stop' : 'Send'}
-
-      title={isProcessing ? 'Stop' : 'Send'}
-
+      aria-label={label}
+      title={label}
       className={cn(
         'vx-btn app-no-drag h-6 w-6 shrink-0 px-0',
         'disabled:cursor-not-allowed',
         className,
-        isProcessing
-
-          ? 'vx-btn-primary bg-surface-overlay/60'
-
-          : isReady
-
-            ? 'vx-btn-accent-fill'
-
-            : 'vx-btn-quiet'
-
+        isReady ? 'vx-btn-accent-fill' : 'vx-btn-quiet'
       )}
-
     >
-
-      {isProcessing ? (
-
-        <Square className={cn(SHELL_MICRO_ICON_CLASS, 'fill-current')} strokeWidth={SHELL_MICRO_ICON_STROKE} />
-
-      ) : (
-
-        <ArrowUp className={SHELL_CHROME_ICON_CLASS} strokeWidth={SHELL_CHROME_ICON_STROKE} />
-
-      )}
-
+      <ArrowUp className={SHELL_CHROME_ICON_CLASS} strokeWidth={SHELL_CHROME_ICON_STROKE} />
     </button>
-
   );
-
 }
-
