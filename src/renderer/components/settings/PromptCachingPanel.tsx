@@ -91,9 +91,7 @@ export function PromptCachingPanel() {
       <ShellCaption>
         Reduces cost and latency when static prefixes repeat across turns. Static harness and
         workspace sit at the top; volatile runtime data stays at the tail. OpenAI routes with{' '}
-        <code className="font-mono text-meta">prompt_cache_key</code> (~15 req/min per prefix);
-        see <code className="font-mono text-meta">docs/prompt-caching-audit.md</code> for the
-        manual validation checklist.
+        <code className="font-mono text-meta">prompt_cache_key</code> (~15 req/min per prefix).
       </ShellCaption>
       <SettingsSwitchRow
         label="Anthropic cache diagnostics"

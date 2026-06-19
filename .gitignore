@@ -1,6 +1,8 @@
 node_modules
 out
 dist
+release/
+release-pnpm-test/
 .DS_Store
 .env
 .env.local

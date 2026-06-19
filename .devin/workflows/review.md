@@ -14,7 +14,7 @@ NOTE: Never assume, guess, or speculate. Always verify, confirm, and validate an
 ## Scope
 
 - **Default:** Git diff — changed files plus direct dependents (imports/callers, IPC pairs, store consumers).
-- **Full-repo audit:** Only when the user asks or for pre-release. Use [docs/audit-inventory.md](docs/audit-inventory.md) as the closed ledger of prior audit findings; do not duplicate a full-tree audit on every run.
+- **Full-repo audit:** Only when the user asks or for pre-release. Use `AGENTS.md` and `project.md` as the living architecture reference; do not duplicate a full-tree audit on every run.
 - **Architecture awareness:** Understand solo-agent orchestration, harness, and timeline UI paths from the diff and touched modules — not a mandatory full-tree scan every time.
 
 ## Deliverable format
@@ -83,10 +83,10 @@ This branch has **intentionally deleted** subsystems. Reviewers must **not** re-
 
 When you find imports, IPC channels, harness sections, renderer routes, tests, comments, or docs that still reference a removed module, **report the remnant** in review mode; in remediation mode, **delete or update the remnant** so the tree matches the current product. Prefer removal over stubbing.
 
-Canonical ledgers (do not resurrect listed removals):
+Canonical references (do not resurrect listed removals in `AGENTS.md`):
 
-- [docs/audit-inventory.md](docs/audit-inventory.md) — closed remediation items
-- [docs/full-app-audit-summary.md](docs/full-app-audit-summary.md) — latest full-app P0/P1 index
+- `AGENTS.md` — learned workspace facts and removed-feature rules
+- `docs/full-app-audit-summary.md` — latest full-app P0/P1 index (when present)
 
 ### Survivors (do not treat as removals)
 

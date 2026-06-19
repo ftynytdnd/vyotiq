@@ -301,7 +301,6 @@ Deeper design notes live in the `docs/` folder, including:
 
 - `context-management-design.md` — full design of the context-reduction system
 - `context-compaction-design.md` — compaction strategy details
-- `prompt-caching-audit.md` — how prompts are layered for provider caching
 - `supply-chain-security.md` — dependency and install hardening
 - `distribution.md` — packaging and release notes
 - `e2e-testing.md` — end-to-end testing guide
