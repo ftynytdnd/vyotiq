@@ -17,6 +17,7 @@ import type { RunStateAccumulator } from './buildRunState.js';
 import type { SpinSignatureBuffer } from './toolSpinSignature.js';
 import { insertHistoryBeforeTail } from '../context/buildContextLayers.js';
 import { logger } from '../../logging/logger.js';
+import { requestUserAttention } from '../../window/requestUserAttention.js';
 
 const log = logger.child('orch/hostReportGate');
 
@@ -152,6 +153,7 @@ export async function maybeInterceptHostReportGate(
     status: 'pending',
     source: 'host-report-gate'
   });
+  requestUserAttention('ask-user');
 
   ctx.runStateAcc.lastAction = 'clarify';
   log.info('host report gate — pausing before terminal finish', {

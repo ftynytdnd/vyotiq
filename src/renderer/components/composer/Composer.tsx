@@ -45,6 +45,7 @@ import { resolveComposerPlaceholder } from './composerPlaceholder.js';
 import { useProviderAccountPollSource } from '../../lib/useProviderAccountPollSource.js';
 import { resolveKeybindings, isMacPlatform } from '../../lib/resolveKeybindings.js';
 import { eventMatchesCombo } from '@shared/keybindings/defaultKeybindings.js';
+import { composerEditAriaKeyshortcuts } from './mention/composerEditShortcuts.js';
 import {
   resolveCompletionModelSelection,
   resolveInlineCompletionSettings
@@ -162,6 +163,10 @@ export function Composer({
   const composerKeybindings = useMemo(
     () => resolveKeybindings(settings.ui?.keybindings, isMacPlatform()),
     [settings.ui?.keybindings]
+  );
+  const composerAriaKeyshortcuts = useMemo(
+    () => composerEditAriaKeyshortcuts(composerKeybindings),
+    [composerKeybindings]
   );
 
   const history = useComposerHistory(events);
@@ -538,7 +543,8 @@ export function Composer({
             <CaptureScreenButton
               disabled={!canAttach}
               conversationId={conversationId}
-              onCaptured={(meta) =>
+              messageId={peekPendingMessageId()}
+              onIngested={(meta) =>
                 setAttachments((cur) =>
                   [...cur.filter((a) => a.workspacePath !== meta.workspacePath), meta].slice(
                     0,
@@ -587,7 +593,9 @@ export function Composer({
               requestFocus={requestFocus}
               focusSession={focusSession}
               inlineCompletion={composerInlineCompletion}
-              ariaKeyshortcuts="Enter Shift+Enter ArrowUp ArrowDown Escape Tab"
+              editKeybindings={composerKeybindings}
+              globalKeybindings={composerKeybindings}
+              ariaKeyshortcuts={composerAriaKeyshortcuts}
               placeholder={placeholder}
               className={cn(
                 'min-w-0 flex-1',
@@ -618,7 +626,8 @@ export function Composer({
                 if (
                   eventMatchesCombo(e, composerKeybindings.composerStop) &&
                   showStop &&
-                  !editingQueuedId
+                  !editingQueuedId &&
+                  !e.defaultPrevented
                 ) {
                   e.preventDefault();
                   void abort();

@@ -52,8 +52,11 @@ const UI_NESTED_OBJECT_KEYS = [
   'inlineCompletion',
   'vectorMemory',
   'editorLsp',
-  'agentBehavior'
+  'agentBehavior',
+  'capture'
 ] as const;
+
+const CAPTURE_BOOLEAN_KEYS = ['redactWindowTitles'] as const;
 
 const REPORTS_BOOLEAN_KEYS = [
   'autoOpenReports',
@@ -331,6 +334,20 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
     for (const k of REPORTS_BOOLEAN_KEYS) {
       if (k in reports && reports[k] !== undefined) {
         assertBoolean(channel, `patch.ui.reports.${k}`, reports[k]);
+      }
+    }
+  }
+  if ('capture' in ui && ui.capture !== undefined) {
+    assertObject(channel, 'patch.ui.capture', ui.capture);
+    const capture = ui.capture as Record<string, unknown>;
+    for (const key of Object.keys(capture)) {
+      if (!(CAPTURE_BOOLEAN_KEYS as readonly string[]).includes(key)) {
+        throw new Error(`${channel}: patch.ui.capture.${key} is not a recognized capture field`);
+      }
+    }
+    for (const k of CAPTURE_BOOLEAN_KEYS) {
+      if (k in capture && capture[k] !== undefined) {
+        assertBoolean(channel, `patch.ui.capture.${k}`, capture[k]);
       }
     }
   }

@@ -31,6 +31,7 @@ import { useAppViewStore, type SettingsSectionId } from './store/useAppViewStore
 import { vyotiq } from './lib/ipc.js';
 import { logger } from './lib/logger.js';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts.js';
+import { useCaptureFrameBridge } from './hooks/useCaptureFrameBridge.js';
 import {
   applyAppTheme,
   stopWatchSystemTheme,
@@ -44,6 +45,8 @@ import { useEditorAgentSync } from './hooks/useEditorAgentSync.js';
 import { useRestoreEditorTabs } from './hooks/useRestoreEditorTabs.js';
 import { resolveKeybindings, isMacPlatform } from './lib/resolveKeybindings.js';
 import { eventMatchesCombo } from '@shared/keybindings/defaultKeybindings.js';
+import { focusComposer } from './lib/focusComposer.js';
+import { registerEscapeLayer } from './lib/escapeLayerStack.js';
 
 const log = logger.child('app');
 
@@ -378,6 +381,7 @@ export default function App() {
   // devtools handlers go through the same `vyotiq.window.*` IPC the
   // `MenuItem` row does, so menu click and keyboard shortcut share
   // one wire path.
+  useCaptureFrameBridge();
   useGlobalShortcuts({
     newConversation: fileActions.newConversation,
     openWorkspace: fileActions.openWorkspace,
@@ -391,6 +395,10 @@ export default function App() {
       void editor.save();
     },
     blockSaveEditor: () => useAppViewStore.getState().view === 'settings',
+    focusComposer: () => {
+      focusComposer();
+    },
+    blockFocusComposer: () => useAppViewStore.getState().view === 'settings',
     blockWorkbenchTab: () =>
       useAppViewStore.getState().view === 'settings' || !workbenchIsActive(),
     closeWorkbenchTab: () => closeActiveWorkbenchFocus(),
@@ -400,10 +408,28 @@ export default function App() {
     toggleDevTools: () => void vyotiq.window.toggleDevTools()
   }, keybindings);
 
+  const closeSettingsBinding = keybindings.closeSettings;
+  const closeSettingsIsEscapeOnly = closeSettingsBinding === 'Escape';
+
   useEffect(() => {
+    if (!settingsOpen || !closeSettingsIsEscapeOnly) return;
+    return registerEscapeLayer('settings-close', 50, () => {
+      const target = document.activeElement;
+      if (
+        target instanceof HTMLElement &&
+        (target.closest('[role="dialog"]') || target.closest('[data-escape-dismiss="false"]'))
+      ) {
+        return false;
+      }
+      closeSettings();
+      return true;
+    });
+  }, [settingsOpen, closeSettings, closeSettingsIsEscapeOnly]);
+
+  useEffect(() => {
+    if (!settingsOpen || closeSettingsIsEscapeOnly) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      if (!settingsOpen) return;
       if (!eventMatchesCombo(e, keybindings.closeSettings)) return;
       const target = e.target;
       if (
@@ -417,7 +443,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [settingsOpen, closeSettings, keybindings]);
+  }, [settingsOpen, closeSettings, closeSettingsIsEscapeOnly, keybindings.closeSettings]);
 
   return (
     <div className="relative flex h-full flex-col bg-surface-base">

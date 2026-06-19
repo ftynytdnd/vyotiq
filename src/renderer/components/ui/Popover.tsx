@@ -2,9 +2,10 @@
  * Popover — portal-based anchored popover primitive.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../lib/cn.js';
+import { registerEscapeLayer } from '../../lib/escapeLayerStack.js';
 import {
   measurePopoverPosition,
   type PopoverAlign,
@@ -81,6 +82,7 @@ export function Popover({
   className,
   children
 }: PopoverProps) {
+  const popoverInstanceId = useId();
   const resolvedWidthMode = widthMode ?? (align === 'fit' ? 'panel' : 'content');
   const popoverRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<PopoverPosition | null>(null);
@@ -156,8 +158,15 @@ export function Popover({
       if (anchor?.contains(target)) return;
       onClose();
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
+    document.addEventListener('mousedown', onMouseDown);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+    };
+  }, [open, onClose, triggerRef, anchorRef]);
+
+  useEffect(() => {
+    if (!open) return;
+    return registerEscapeLayer(`popover:${popoverInstanceId}`, 80, () => {
       const active = document.activeElement;
       const insidePopover =
         active !== null &&
@@ -172,14 +181,9 @@ export function Popover({
         }
       }
       onClose();
-    };
-    document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open, onClose, triggerRef, anchorRef]);
+      return true;
+    });
+  }, [open, onClose, popoverInstanceId, triggerRef]);
 
   if (!open) return null;
 

@@ -63,6 +63,24 @@ function measurePlainOffset(
   return total;
 }
 
+export function getPlainSelectionRange(
+  root: HTMLElement | null,
+  knownMentions: MentionRef[]
+): { start: number; end: number; collapsed: boolean } | null {
+  if (!root) return null;
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const range = sel.getRangeAt(0);
+  if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return null;
+  const start = measurePlainOffset(root, range.startContainer, range.startOffset, knownMentions);
+  const end = measurePlainOffset(root, range.endContainer, range.endOffset, knownMentions);
+  return {
+    start: Math.min(start, end),
+    end: Math.max(start, end),
+    collapsed: range.collapsed
+  };
+}
+
 export function placeCaretAtPlainOffset(
   root: HTMLElement | null,
   offset: number,

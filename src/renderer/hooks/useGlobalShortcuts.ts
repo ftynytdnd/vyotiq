@@ -31,6 +31,8 @@ export interface GlobalShortcutActions {
   /** Save the active editor file when dirty. */
   saveEditor?: () => void;
   blockSaveEditor?: () => boolean;
+  focusComposer?: () => void;
+  blockFocusComposer?: () => boolean;
   reload?: () => void;
   toggleDevTools?: () => void;
 }
@@ -73,6 +75,12 @@ export function useGlobalShortcuts(
       if (eventMatchesCombo(e, b.openSettings)) {
         e.preventDefault();
         actionsRef.current.openSettings();
+        return;
+      }
+      if (eventMatchesCombo(e, b.focusComposer)) {
+        if (!actionsRef.current.focusComposer || actionsRef.current.blockFocusComposer?.()) return;
+        e.preventDefault();
+        actionsRef.current.focusComposer();
         return;
       }
       if (eventMatchesCombo(e, b.saveEditor)) {

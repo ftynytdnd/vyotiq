@@ -8,7 +8,11 @@
  */
 
 import { app, BrowserWindow } from 'electron';
+
+// Required for renderer getUserMedia desktop capture (chromeMediaSource) on Windows.
+app.commandLine.appendSwitch('enable-usermedia-screen-capturing');
 import { createMainWindow } from './window/createMainWindow.js';
+import { requestUserAttention } from './window/requestUserAttention.js';
 import { isBrowserWebContents } from './window/browserManager.js';
 import { migrateUserDataLayout } from './paths/migrateUserDataLayout.js';
 import { registerIpc } from './ipc/registerIpc.js';
@@ -86,16 +90,7 @@ if (!gotLock) {
   process.exit(0);
 }
 app.on('second-instance', () => {
-  // A user invoked Vyotiq while a prior instance was already running.
-  // Restore + focus the existing window so the click "wakes" the app
-  // instead of silently being swallowed. We deliberately ignore the
-  // event's `argv` / `workingDirectory` / `additionalData` slots —
-  // see the lock-acquisition comment above for the rationale.
-  const wins = BrowserWindow.getAllWindows();
-  const win = wins.find((w) => !w.isDestroyed());
-  if (!win) return;
-  if (win.isMinimized()) win.restore();
-  win.focus();
+  requestUserAttention('second-instance');
 });
 
 async function bootstrap() {

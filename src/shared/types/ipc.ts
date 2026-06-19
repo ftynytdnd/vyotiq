@@ -391,6 +391,16 @@ export interface AppSettings {
 
     };
 
+    /** Screen capture picker — privacy and display options. */
+
+    capture?: {
+
+      /** Redact sensitive-looking window titles in the capture picker (default false). */
+
+      redactWindowTitles?: boolean;
+
+    };
+
     /** Tab/ghost inline completion for editor + composer. */
 
     inlineCompletion?: {
@@ -1493,10 +1503,15 @@ export interface VyotiqApi {
   // ---- Screen / window capture ----
 
   capture: {
-    listSources(): Promise<import('./capture.js').CaptureListSourcesResult>;
+    listSources(
+      input?: import('./capture.js').CaptureListSourcesInput
+    ): Promise<import('./capture.js').CaptureListSourcesResult>;
     screen(input: import('./capture.js').CaptureScreenInput): Promise<import('./capture.js').CaptureResult>;
     browser(input: import('./capture.js').CaptureBrowserInput): Promise<import('./capture.js').CaptureResult>;
     window(input: import('./capture.js').CaptureWindowInput): Promise<import('./capture.js').CaptureResult>;
+    ingestFrame(input: import('./capture.js').CaptureIngestFrameInput): Promise<import('./capture.js').CaptureResult>;
+    submitFrameResult(input: import('./capture.js').CaptureFrameResultInput): Promise<{ ok: true }>;
+    onRequestFrame(cb: (event: import('./capture.js').CaptureFrameRequestEvent) => void): () => void;
   };
 
 
@@ -1635,6 +1650,13 @@ export interface VyotiqApi {
       conversationId: string;
       messageId: string;
     }): Promise<import('./chat.js').PromptAttachmentMeta | null>;
+
+    ingestClipboard(input: {
+      workspaceId: string;
+      conversationId: string;
+      messageId: string;
+      blobs?: Array<{ name: string; mimeType: string; data: Uint8Array }>;
+    }): Promise<import('./chat.js').PromptAttachmentMeta[]>;
 
     readText(
 

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { ChatMessage, TimelineEvent } from '@shared/types/chat.js';
 import { parseAskUserArgs, resolveAskUserPayload } from '@shared/text/parseAskUser.js';
 import { logger } from '../../logging/logger.js';
+import { requestUserAttention } from '../../window/requestUserAttention.js';
 import { cloneLoopCheckpoint } from '../pausedRunRegistry.js';
 import type { RunStateAccumulator } from './buildRunState.js';
 import type { PartialToolCall } from './handleAssistantTurn.js';
@@ -69,6 +70,7 @@ export function pauseRunForAskUser(input: AskUserPauseInput): {
     runId: input.runId,
     status: 'pending'
   });
+  requestUserAttention('ask-user');
   input.runStateAcc.lastAction = 'clarify';
   log.info(
     input.deferred

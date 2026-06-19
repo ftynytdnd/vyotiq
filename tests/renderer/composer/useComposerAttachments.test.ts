@@ -12,6 +12,8 @@ const ingestClipboardImage = vi.fn<[], Promise<PromptAttachmentMeta | null>>();
 const ingestPaths = vi.fn<[], Promise<PromptAttachmentMeta[]>>();
 const pick = vi.fn<[], Promise<PromptAttachmentMeta[]>>();
 
+const ingestClipboard = vi.fn<[], Promise<PromptAttachmentMeta[]>>();
+
 const clipboardAttach: PromptAttachmentMeta = {
   id: 'attach-clip',
   name: 'clip.png',
@@ -32,7 +34,11 @@ function makeClipboardPasteEvent(
 ): React.ClipboardEvent<HTMLElement> {
   const preventDefault = vi.fn();
   const types = itemTypes ?? files.map((f) => f.type);
-  const items = types.map((type) => ({ type, kind: 'file' as const }));
+  const items = types.map((type, index) => ({
+    type,
+    kind: 'file' as const,
+    getAsFile: () => files[index] ?? null
+  }));
   const fileList = Object.assign([...files], {
     item: (index: number) => files[index] ?? null
   });
@@ -40,7 +46,8 @@ function makeClipboardPasteEvent(
     preventDefault,
     clipboardData: {
       files: fileList as unknown as FileList,
-      items: items as unknown as DataTransferItemList
+      items: items as unknown as DataTransferItemList,
+      getData: (format: string) => (format === 'text/plain' ? '' : '')
     }
   } as unknown as React.ClipboardEvent<HTMLElement>;
 }
@@ -49,7 +56,9 @@ beforeEach(() => {
   ingestClipboardImage.mockReset();
   ingestPaths.mockReset();
   pick.mockReset();
+  ingestClipboard.mockReset();
   ingestClipboardImage.mockResolvedValue(clipboardAttach);
+  ingestClipboard.mockResolvedValue([pathAttach]);
   ingestPaths.mockResolvedValue([pathAttach]);
   pick.mockResolvedValue([]);
 
@@ -59,6 +68,7 @@ beforeEach(() => {
       collectFolder: vi.fn(async () => ({ paths: [], total: 0, truncated: false })),
       ingestPaths,
       ingestClipboardImage,
+      ingestClipboard,
       readText: vi.fn(async () => ''),
       fileUrl: vi.fn(async () => ''),
       open: vi.fn(async () => undefined)
@@ -82,13 +92,13 @@ describe('useComposerAttachments onPaste', () => {
     });
 
     await waitFor(() => {
-      expect(ingestClipboardImage).toHaveBeenCalledOnce();
+      expect(ingestClipboard).toHaveBeenCalledOnce();
     });
     expect(pick).not.toHaveBeenCalled();
     expect(ingestPaths).not.toHaveBeenCalled();
     expect(event.preventDefault).toHaveBeenCalled();
     await waitFor(() => {
-      expect(result.current.attachments).toEqual([clipboardAttach]);
+      expect(result.current.attachments).toEqual([pathAttach]);
     });
   });
 
@@ -102,22 +112,25 @@ describe('useComposerAttachments onPaste', () => {
     });
 
     await waitFor(() => {
-      expect(ingestClipboardImage).toHaveBeenCalledOnce();
+      expect(ingestClipboard).toHaveBeenCalledOnce();
     });
-    expect(ingestClipboardImage).toHaveBeenCalledWith({
-      workspaceId: 'ws-1',
-      conversationId: 'conv-1',
-      messageId: expect.any(String)
-    });
+    expect(ingestClipboard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'ws-1',
+        conversationId: 'conv-1',
+        messageId: expect.any(String),
+        blobs: expect.any(Array)
+      })
+    );
     expect(pick).not.toHaveBeenCalled();
     expect(ingestPaths).not.toHaveBeenCalled();
     expect(event.preventDefault).toHaveBeenCalled();
     await waitFor(() => {
-      expect(result.current.attachments).toEqual([clipboardAttach]);
+      expect(result.current.attachments).toEqual([pathAttach]);
     });
   });
 
-  it('opens the file picker when pasted file is non-image without host path', async () => {
+  it('ingests non-image clipboard blobs without host path', async () => {
     const { result } = renderHook(() => useComposerAttachments(session));
     const file = new File([new Uint8Array(8)], 'notes.txt', { type: 'text/plain' });
     const event = makeClipboardPasteEvent([file]);
@@ -127,8 +140,9 @@ describe('useComposerAttachments onPaste', () => {
     });
 
     await waitFor(() => {
-      expect(pick).toHaveBeenCalledOnce();
+      expect(ingestClipboard).toHaveBeenCalledOnce();
     });
+    expect(pick).not.toHaveBeenCalled();
     expect(ingestClipboardImage).not.toHaveBeenCalled();
     expect(ingestPaths).not.toHaveBeenCalled();
   });

@@ -790,6 +790,8 @@ export interface PromptAttachmentMeta {
   storedPath?: string;
   /** Workspace-relative path when picked inside the project. */
   workspacePath?: string;
+  /** HTTP(S) URL pasted as an attachment chip (no file ingest). */
+  sourceUrl?: string;
   external?: boolean;
   /** SHA-256 of preprocessed vision bytes in the disk cache (replay fast path). */
   preparedMediaHash?: string;

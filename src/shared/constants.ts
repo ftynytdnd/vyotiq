@@ -12,6 +12,9 @@ export const AGENT_NAME = 'Agent V';
  */
 export const MAX_TOOL_OUTPUT_CHARS = 8_000;
 
+/** Soft iteration reference for harness `<run_state>` prose (loop is unbounded). */
+export const MAX_TOTAL_ITERATIONS = 24;
+
 /** Host implicit-finish prose thresholds (mirrored in harness `<runtime_limits>`). */
 export const IMPLICIT_FINISH_MIN_CHARS = 28;
 export const IMPLICIT_FINISH_MIN_SENTENCE_CHARS = 10;
@@ -479,6 +482,12 @@ export const IPC = {
   CAPTURE_SCREEN: 'capture:screen',
   CAPTURE_BROWSER: 'capture:browser',
   CAPTURE_WINDOW: 'capture:window',
+  /** Renderer → main: full-fidelity frame bytes from getUserMedia capture. */
+  CAPTURE_INGEST_FRAME: 'capture:ingest-frame',
+  /** Main → renderer: request a desktop source frame via getUserMedia. */
+  CAPTURE_REQUEST_FRAME: 'capture:request-frame',
+  /** Renderer → main: response for `CAPTURE_REQUEST_FRAME`. */
+  CAPTURE_FRAME_RESULT: 'capture:frame-result',
   /** main → renderer: navigation / loading state for the embedded browser. */
   BROWSER_STATE: 'browser:state',
 
@@ -537,6 +546,8 @@ export const IPC = {
   ATTACHMENTS_PICK: 'attachments:pick',
   ATTACHMENTS_COLLECT_FOLDER: 'attachments:collect-folder',
   ATTACHMENTS_INGEST_PATHS: 'attachments:ingest-paths',
+  ATTACHMENTS_INGEST_CLIPBOARD_IMAGE: 'attachments:ingest-clipboard-image',
+  ATTACHMENTS_INGEST_CLIPBOARD: 'attachments:ingest-clipboard',
   ATTACHMENTS_READ_TEXT: 'attachments:read-text',
   ATTACHMENTS_FILE_URL: 'attachments:file-url',
   ATTACHMENTS_OPEN: 'attachments:open',

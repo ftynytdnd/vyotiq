@@ -3,6 +3,11 @@ import { pathToFileURL } from 'node:url';
 import { clipboard, dialog, shell } from 'electron';
 import { IPC, MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
+import {
+  looksLikeAbsoluteFilePath,
+  normalizeClipboardPath,
+  parseFileUriList
+} from '@shared/attachments/clipboardFilePaths.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 import { assertNumber, assertObject, assertOptionalString, assertString } from './validate.js';
 import { collectFolderFiles } from '../attachments/collectFolderFiles.js';
@@ -40,6 +45,90 @@ async function resolveAttachmentReadPath(input: AttachmentPathInput): Promise<st
     return realpathInsideWorkspace(workspacePath, input.path);
   }
   return realpathInsideAttachmentsRoot(input.path);
+}
+
+async function ingestClipboardAttachments(
+  _event: unknown,
+  input: {
+    workspaceId: string;
+    conversationId: string;
+    messageId: string;
+    blobs?: Array<{ name: string; mimeType: string; data: Uint8Array }>;
+  }
+): Promise<PromptAttachmentMeta[]> {
+  assertObject('attachments:ingestClipboard', 'input', input);
+  assertString('attachments:ingestClipboard', 'workspaceId', input.workspaceId);
+  assertString('attachments:ingestClipboard', 'conversationId', input.conversationId);
+  assertString('attachments:ingestClipboard', 'messageId', input.messageId);
+  await requireWorkspaceById(input.workspaceId);
+
+  const out: PromptAttachmentMeta[] = [];
+  const slots = () => MAX_CHAT_ATTACHMENTS - out.length;
+
+  if (Array.isArray(input.blobs)) {
+    for (const blob of input.blobs) {
+      if (slots() <= 0) break;
+      assertObject('attachments:ingestClipboard', 'blob', blob);
+      assertString('attachments:ingestClipboard', 'blob.name', blob.name);
+      assertString('attachments:ingestClipboard', 'blob.mimeType', blob.mimeType);
+      if (!(blob.data instanceof Uint8Array) || blob.data.byteLength === 0) continue;
+      out.push(
+        await ingestBuffer({
+          buffer: Buffer.from(blob.data),
+          suggestedName: blob.name,
+          mimeType: blob.mimeType,
+          workspaceId: input.workspaceId,
+          conversationId: input.conversationId,
+          messageId: input.messageId
+        })
+      );
+    }
+  }
+
+  if (out.length === 0) {
+    const pathCandidates = new Set<string>();
+    for (const p of parseFileUriList(clipboard.read('text/uri-list'))) {
+      pathCandidates.add(p);
+    }
+    const textPath = clipboard.readText().trim();
+    if (looksLikeAbsoluteFilePath(textPath)) {
+      pathCandidates.add(normalizeClipboardPath(textPath));
+    }
+    for (const p of pathCandidates) {
+      if (slots() <= 0) break;
+      try {
+        out.push(
+          await ingestExternalFile({
+            sourcePath: p,
+            workspaceId: input.workspaceId,
+            conversationId: input.conversationId,
+            messageId: input.messageId
+          })
+        );
+      } catch {
+        /* skip missing or blocked paths */
+      }
+    }
+  }
+
+  if (out.length === 0) {
+    const image = clipboard.readImage();
+    if (!image.isEmpty()) {
+      const png = image.toPNG();
+      out.push(
+        await ingestBuffer({
+          buffer: png,
+          suggestedName: `clipboard-${Date.now()}.png`,
+          mimeType: 'image/png',
+          workspaceId: input.workspaceId,
+          conversationId: input.conversationId,
+          messageId: input.messageId
+        })
+      );
+    }
+  }
+
+  return out;
 }
 
 export function registerAttachmentsIpc(): void {
@@ -151,25 +240,25 @@ export function registerAttachmentsIpc(): void {
       _event,
       input: { workspaceId: string; conversationId: string; messageId: string }
     ): Promise<PromptAttachmentMeta | null> => {
-      assertObject('attachments:ingestClipboardImage', 'input', input);
-      assertString('attachments:ingestClipboardImage', 'workspaceId', input.workspaceId);
-      assertString('attachments:ingestClipboardImage', 'conversationId', input.conversationId);
-      assertString('attachments:ingestClipboardImage', 'messageId', input.messageId);
-      await requireWorkspaceById(input.workspaceId);
-
-      const image = clipboard.readImage();
-      if (image.isEmpty()) return null;
-
-      const png = image.toPNG();
-      return ingestBuffer({
-        buffer: png,
-        suggestedName: `clipboard-${Date.now()}.png`,
-        mimeType: 'image/png',
-        workspaceId: input.workspaceId,
-        conversationId: input.conversationId,
-        messageId: input.messageId
+      const batch = await ingestClipboardAttachments(_event, {
+        ...input,
+        blobs: undefined
       });
+      return batch[0] ?? null;
     }
+  );
+
+  wrapIpcHandler(
+    IPC.ATTACHMENTS_INGEST_CLIPBOARD,
+    async (
+      _event,
+      input: {
+        workspaceId: string;
+        conversationId: string;
+        messageId: string;
+        blobs?: Array<{ name: string; mimeType: string; data: Uint8Array }>;
+      }
+    ): Promise<PromptAttachmentMeta[]> => ingestClipboardAttachments(_event, input)
   );
 
   wrapIpcHandler(IPC.ATTACHMENTS_READ_TEXT, async (_event, input: unknown): Promise<string> => {

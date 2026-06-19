@@ -19,6 +19,7 @@ import type { AskUserSubmitInput } from '@shared/types/askUser.js';
 import { IPC } from '@shared/constants.js';
 import { formatAskUserReplyBubble, formatAskUserToolResult } from '@shared/text/formatAskUserAnswers.js';
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
+import { requestUserAttention } from '../window/requestUserAttention.js';
 import { seedCachedRead } from './seedCachedRead.js';
 import { replayTranscript } from './replay/index.js';
 import {
@@ -507,8 +508,10 @@ async function runLoopBody(opts: RunLoopBodyOpts): Promise<void> {
 
   if (loopResult.terminalError) {
     opts.deps.onError(loopResult.terminalError);
+    requestUserAttention('run-settled');
   } else {
     opts.deps.onDone();
+    requestUserAttention('run-settled');
   }
 }
 

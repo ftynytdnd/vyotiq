@@ -3,7 +3,11 @@
  */
 
 export const WORKBENCH_TOOLBAR_CLASS =
-  'vx-workbench-toolbar app-no-drag flex h-8 shrink-0 items-center gap-2 border-b border-border-subtle/20 px-2';
+  'vx-workbench-toolbar app-no-drag flex h-9 shrink-0 items-center gap-2 border-b border-border-subtle/25 bg-surface-base px-2';
+
+/** Leading companion label when the tab strip is hidden (single terminal, etc.). */
+export const WORKBENCH_PANEL_HEADING_CLASS =
+  'flex min-w-0 flex-1 items-center gap-1.5 truncate font-mono text-meta text-text-secondary';
 
 export const WORKBENCH_ICON_BTN_CLASS =
   'vx-workbench-icon-btn app-no-drag flex items-center justify-center rounded p-1 text-text-muted transition-colors hover:bg-chrome-hover-soft hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40';
@@ -19,6 +23,10 @@ export const WORKBENCH_EDGE_CONTAINER_CLASS =
 
 export const WORKBENCH_EDGE_STRIP_CLASS =
   'vx-workbench-edge-strip vx-dock-shell app-no-drag pointer-events-auto flex w-11 shrink-0 flex-col items-center justify-start gap-1 bg-surface-base pt-[var(--dock-strip-pt)] pb-2';
+
+/** Collapsed launcher column when no companion panel is open. */
+export const WORKBENCH_LAUNCHER_PANE_CLASS =
+  'vx-workbench-launcher-pane vx-dock-shell app-no-drag pointer-events-auto flex w-11 shrink-0 flex-col items-center gap-1 bg-surface-base pt-[var(--dock-strip-pt)] pb-2';
 
 /** Icon slot in the right workbench rail — matches dock rail sizing. */
 export const WORKBENCH_RAIL_BTN_CLASS =

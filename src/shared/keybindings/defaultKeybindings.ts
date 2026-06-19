@@ -22,7 +22,15 @@ export type KeybindingId =
   | 'timelineFind'
   | 'closeSettings'
   | 'composerQueue'
-  | 'composerStop';
+  | 'composerStop'
+  | 'focusComposer'
+  | 'composerPaste'
+  | 'composerCopy'
+  | 'composerCut'
+  | 'composerSelectAll'
+  | 'composerUndo'
+  | 'composerRedo'
+  | 'composerRedoAlt';
 
 export interface KeybindingDefinition {
   id: KeybindingId;
@@ -74,7 +82,25 @@ export const KEYBINDING_DEFINITIONS: readonly KeybindingDefinition[] = [
     label: 'Stop active run (composer focus)',
     defaultCombo: 'Escape',
     group: 'Composer'
-  }
+  },
+  { id: 'focusComposer', label: 'Focus composer', defaultCombo: 'Mod+J', group: 'Composer' },
+  { id: 'composerPaste', label: 'Paste in composer', defaultCombo: 'Mod+V', group: 'Composer' },
+  { id: 'composerCopy', label: 'Copy in composer', defaultCombo: 'Mod+C', group: 'Composer' },
+  { id: 'composerCut', label: 'Cut in composer', defaultCombo: 'Mod+X', group: 'Composer' },
+  {
+    id: 'composerSelectAll',
+    label: 'Select all in composer',
+    defaultCombo: 'Mod+A',
+    group: 'Composer'
+  },
+  { id: 'composerUndo', label: 'Undo in composer', defaultCombo: 'Mod+Z', group: 'Composer' },
+  {
+    id: 'composerRedo',
+    label: 'Redo in composer',
+    defaultCombo: 'Mod+Shift+Z',
+    group: 'Composer'
+  },
+  { id: 'composerRedoAlt', label: 'Redo in composer (alternate)', defaultCombo: 'Mod+Y', group: 'Composer' }
 ];
 
 export function defaultKeybindingsRecord(isMac: boolean): Record<KeybindingId, string> {

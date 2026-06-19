@@ -32,8 +32,6 @@ import { ToolGroupRow } from './rows/ToolGroupRow.js';
 import { FileEditGroupRow } from './rows/FileEditGroupRow.js';
 import { RunCompleteRow } from './rows/RunCompleteRow.js';
 import type { RunCompleteMetaProps } from './rows/RunCompleteMeta.js';
-import { PhaseLogRow } from './rows/PhaseLogRow.js';
-import { PhaseLedgerRow } from './rows/PhaseLedgerRow.js';
 import { ContextReductionRow } from './rows/ContextReductionRow.js';
 import type { DisplayRow } from './shared/displayRowTypes.js';
 import { RowAnchor } from './shared/RowAnchor.js';
@@ -794,25 +792,6 @@ function renderRow(
           key={r.key}
           hideMeta={opts?.hideRunCompleteMeta}
           {...runCompleteMetaFromRow(r)}
-        />
-      );
-    case 'phase-log':
-      return (
-        <PhaseLogRow
-          key={r.key}
-          label={r.label}
-          {...(r.tooltip ? { tooltip: r.tooltip } : {})}
-          {...(r.gateDecision ? { gateDecision: r.gateDecision } : {})}
-        />
-      );
-    case 'phase-ledger':
-      return (
-        <PhaseLedgerRow
-          key={r.key}
-          subtaskId={r.subtaskId}
-          phase={r.phase}
-          summary={r.summary}
-          collapsedDefault={r.collapsedDefault}
         />
       );
     case 'context-reduction':

@@ -12,6 +12,7 @@ import type { ScheduledRun } from '@shared/types/scheduledRun.js';
 import { FollowUpQueueFullError } from '@shared/types/followUp.js';
 import { MAX_FOLLOW_UP_QUEUE_DEPTH } from '@shared/constants.js';
 import { notifyUiToast } from '../ui/uiToast.js';
+import { requestUserAttention } from '../window/requestUserAttention.js';
 
 const log = logger.child('scheduler/service');
 
@@ -49,6 +50,7 @@ async function tick(): Promise<void> {
           });
           await touchScheduledRun(run.id, now);
           queueFullToastNotified.delete(run.id);
+          requestUserAttention('scheduled-enqueue');
           log.info('scheduled run enqueued — conversation busy', {
             id: run.id,
             label: run.label

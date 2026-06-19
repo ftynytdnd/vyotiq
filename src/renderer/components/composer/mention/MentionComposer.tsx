@@ -8,6 +8,7 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
+  useState,
   type ClipboardEvent,
   type KeyboardEvent,
   type RefObject
@@ -32,13 +33,23 @@ import {
   insertPlainTextAtOffset,
   parseMentionDocument,
   serializeMentionDocument,
+  splicePlainTextRange,
   type MentionDocument
 } from './mentionDocument.js';
-import { getPlainCaretOffset, placeCaretAtPlainOffset } from './mentionCaret.js';
+import { getPlainCaretOffset, getPlainSelectionRange, placeCaretAtPlainOffset } from './mentionCaret.js';
 import { MentionPicker } from './MentionPicker.js';
 import { useMentionPicker, type MentionPickerRow } from './useMentionPicker.js';
 import { removeComposerGhost, renderComposerGhost } from './composerGhost.js';
 import { useInlineCompletion } from '../../../lib/useInlineCompletion.js';
+import { isMacPlatform } from '../../../lib/resolveKeybindings.js';
+import { defaultKeybindingsRecord, type KeybindingId } from '@shared/keybindings/defaultKeybindings.js';
+import {
+  handleComposerEditKeyDown,
+  tryExecCommand,
+  type ComposerEditKeybindings
+} from './composerEditShortcuts.js';
+import { sanitizeComposerHtml } from '../sanitizeComposerHtml.js';
+import { buildClipboardDataTransfer } from '../buildClipboardDataTransfer.js';
 
 const TEXTAREA_MAX_HEIGHT = 168;
 const TEXTAREA_MIN_HEIGHT = 28;
@@ -65,6 +76,8 @@ export interface MentionComposerProps {
     model: ModelSelection | null;
     workspaceId?: string | null;
   };
+  editKeybindings?: ComposerEditKeybindings;
+  globalKeybindings?: Record<KeybindingId, string>;
 }
 
 export function MentionComposer({
@@ -79,8 +92,14 @@ export function MentionComposer({
   onKeyDown,
   requestFocus,
   focusSession,
-  inlineCompletion
+  inlineCompletion,
+  editKeybindings,
+  globalKeybindings
 }: MentionComposerProps) {
+  const resolvedEditKeybindings =
+    editKeybindings ?? defaultKeybindingsRecord(isMacPlatform());
+  const resolvedGlobalKeybindings =
+    globalKeybindings ?? defaultKeybindingsRecord(isMacPlatform());
   const editorRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<MentionDocument>(emptyMentionDocument());
   const atTokenRef = useRef<{ start: number; query: string } | null>(null);
@@ -94,7 +113,13 @@ export function MentionComposer({
   const plainForToken = documentToPlainText(parsed);
   const caret = getPlainCaretOffset(editorRef.current, extractMentions(parsed));
   const atToken = caret !== null ? detectAtToken(plainForToken, caret) : null;
-  const pickerOpen = atToken !== null;
+  const [pickerDismissed, setPickerDismissed] = useState(false);
+  const pickerOpen = atToken !== null && !pickerDismissed;
+
+  const atTokenKey = atToken ? `${atToken.start}:${atToken.query}` : null;
+  useEffect(() => {
+    setPickerDismissed(false);
+  }, [atTokenKey]);
 
   const {
     rows,
@@ -332,6 +357,7 @@ export function MentionComposer({
     if (!pickerOpen) return false;
     if (e.key === 'Escape') {
       e.preventDefault();
+      setPickerDismissed(true);
       return true;
     }
     if (e.key === 'ArrowDown') {
@@ -353,6 +379,68 @@ export function MentionComposer({
     return false;
   };
 
+  const applyPlainTextPaste = useCallback(
+    (text: string) => {
+      const root = editorRef.current;
+      const mentions = extractMentions(docRef.current);
+      const range = root ? getPlainSelectionRange(root, mentions) : null;
+      const start = range?.start ?? documentToPlainText(docRef.current).length;
+      const end = range?.end ?? start;
+      const next = splicePlainTextRange(docRef.current, start, end, text);
+      docRef.current = next;
+      syncDomFromDoc(next);
+      emitChange(next);
+      const caret = start + text.length;
+      requestAnimationFrame(() => {
+        placeCaretAtPlainOffset(editorRef.current, caret, next);
+      });
+    },
+    [emitChange, syncDomFromDoc]
+  );
+
+  const applySanitizedHtmlPaste = useCallback(
+    (html: string) => {
+      const safe = sanitizeComposerHtml(html);
+      if (!safe) return false;
+      if (tryExecCommand('insertHTML', safe)) {
+        requestAnimationFrame(updateFromDom);
+        return true;
+      }
+      const plain = safe.replace(/<[^>]+>/g, ' ');
+      applyPlainTextPaste(plain);
+      return true;
+    },
+    [applyPlainTextPaste, updateFromDom]
+  );
+
+  const runPasteFallback = useCallback(async () => {
+    if (onPaste) {
+      const clipboardData = await buildClipboardDataTransfer();
+      if (clipboardData) {
+        const event = new ClipboardEvent('paste', {
+          clipboardData,
+          bubbles: true,
+          cancelable: true
+        });
+        onPaste(event as ClipboardEvent<HTMLDivElement>);
+        if (event.defaultPrevented) {
+          requestAnimationFrame(updateFromDom);
+          return;
+        }
+        const html = clipboardData.getData('text/html');
+        if (html && applySanitizedHtmlPaste(html)) return;
+        const plain = clipboardData.getData('text/plain');
+        if (plain) {
+          applyPlainTextPaste(plain);
+          return;
+        }
+      }
+    }
+    if (tryExecCommand('paste')) {
+      requestAnimationFrame(updateFromDom);
+    }
+  }, [applyPlainTextPaste, applySanitizedHtmlPaste, onPaste, updateFromDom]);
+
   const editorTriggerRef = editorRef as RefObject<HTMLElement | null>;
 
   return (
@@ -360,7 +448,7 @@ export function MentionComposer({
       <Popover
         open={pickerOpen}
         onClose={() => {
-          /* closes when @ token ends */
+          setPickerDismissed(true);
         }}
         triggerRef={editorTriggerRef}
         preferSide="top"
@@ -377,7 +465,7 @@ export function MentionComposer({
           onActiveIndexChange={setActiveIndex}
           onPick={handlePickerPick}
           onClose={() => {
-            /* picker closes when @ token ends */
+            setPickerDismissed(true);
           }}
         />
       </Popover>
@@ -388,6 +476,7 @@ export function MentionComposer({
       ) : null}
       <div
         ref={editorRef}
+        data-composer-editor
         role="textbox"
         aria-multiline="true"
         aria-label={`Message ${AGENT_NAME}`}
@@ -405,6 +494,22 @@ export function MentionComposer({
         onInput={updateFromDom}
         onPaste={(e) => {
           onPaste?.(e);
+          if (e.defaultPrevented) {
+            requestAnimationFrame(updateFromDom);
+            return;
+          }
+          const html = e.clipboardData.getData('text/html');
+          if (html.trim()) {
+            e.preventDefault();
+            applySanitizedHtmlPaste(html);
+            return;
+          }
+          const text = e.clipboardData.getData('text/plain');
+          if (text) {
+            e.preventDefault();
+            applyPlainTextPaste(text);
+            return;
+          }
           requestAnimationFrame(updateFromDom);
         }}
         onKeyUp={updateFromDom}
@@ -419,6 +524,29 @@ export function MentionComposer({
           if (e.key === 'Escape') {
             clearCompletionGhost();
             removeComposerGhost(editorRef.current);
+          }
+          if (
+            handleComposerEditKeyDown({
+              e,
+              root: editorRef.current,
+              doc: docRef.current,
+              bindings: resolvedEditKeybindings,
+              globalBindings: resolvedGlobalKeybindings,
+              disabled,
+              onAfterEdit: updateFromDom,
+              onPasteFallback: runPasteFallback,
+              onCutFallback: ({ start, end }) => {
+                const next = splicePlainTextRange(docRef.current, start, end);
+                docRef.current = next;
+                syncDomFromDoc(next);
+                emitChange(next);
+                requestAnimationFrame(() => {
+                  placeCaretAtPlainOffset(editorRef.current, start, next);
+                });
+              }
+            })
+          ) {
+            return;
           }
           if (handlePickerKey(e)) return;
           onKeyDown?.(e);

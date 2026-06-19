@@ -256,10 +256,17 @@ const api: VyotiqApi = {
   },
 
   capture: {
-    listSources: () => ipcRenderer.invoke(IPC.CAPTURE_LIST_SOURCES),
+    listSources: (input) => ipcRenderer.invoke(IPC.CAPTURE_LIST_SOURCES, input),
     screen: (input) => ipcRenderer.invoke(IPC.CAPTURE_SCREEN, input),
     browser: (input) => ipcRenderer.invoke(IPC.CAPTURE_BROWSER, input),
-    window: (input) => ipcRenderer.invoke(IPC.CAPTURE_WINDOW, input)
+    window: (input) => ipcRenderer.invoke(IPC.CAPTURE_WINDOW, input),
+    ingestFrame: (input) => ipcRenderer.invoke(IPC.CAPTURE_INGEST_FRAME, input),
+    submitFrameResult: (input) => ipcRenderer.invoke(IPC.CAPTURE_FRAME_RESULT, input),
+    onRequestFrame: (cb) =>
+      on<[import('../../shared/types/capture.js').CaptureFrameRequestEvent]>(
+        IPC.CAPTURE_REQUEST_FRAME,
+        (event) => cb(event)
+      )
   },
 
   completion: {
@@ -300,6 +307,7 @@ const api: VyotiqApi = {
     ingestPaths: (input) => ipcRenderer.invoke(IPC.ATTACHMENTS_INGEST_PATHS, input),
     ingestClipboardImage: (input) =>
       ipcRenderer.invoke(IPC.ATTACHMENTS_INGEST_CLIPBOARD_IMAGE, input),
+    ingestClipboard: (input) => ipcRenderer.invoke(IPC.ATTACHMENTS_INGEST_CLIPBOARD, input),
     readText: (input) => ipcRenderer.invoke(IPC.ATTACHMENTS_READ_TEXT, input),
     fileUrl: (input) => ipcRenderer.invoke(IPC.ATTACHMENTS_FILE_URL, input),
     open: (input) => ipcRenderer.invoke(IPC.ATTACHMENTS_OPEN, input)

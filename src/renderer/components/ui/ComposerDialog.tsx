@@ -35,6 +35,7 @@ import {
 } from 'react';
 import { cn } from '../../lib/cn.js';
 import { bindFocusTrap, focusFirstFocusable } from '../../lib/focusTrap.js';
+import { registerEscapeLayer } from '../../lib/escapeLayerStack.js';
 import { useAttachmentPreviewStore } from '../../store/useAttachmentPreviewStore.js';
 import { PanelHeader } from './PanelHeader.js';
 
@@ -125,16 +126,24 @@ export function ComposerDialog({
     if (!open) return;
     return bindFocusTrap({
       getRoot: () => dialogRef.current,
-      disableEscape,
-      onEscape: () => {
-        if (size === 'expanded' && onEscapeFromExpanded) {
-          onEscapeFromExpanded();
-          return;
-        }
-        onClose();
-      }
+      disableEscape: true
     });
-  }, [open, onClose, disableEscape, size, onEscapeFromExpanded]);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    return registerEscapeLayer(`composer-dialog:${titleId}`, 90, () => {
+      if (disableEscape) return false;
+      const root = dialogRef.current;
+      if (root && !root.contains(document.activeElement)) return false;
+      if (size === 'expanded' && onEscapeFromExpanded) {
+        onEscapeFromExpanded();
+        return true;
+      }
+      onClose();
+      return true;
+    });
+  }, [open, onClose, disableEscape, size, onEscapeFromExpanded, titleId]);
 
   // Enter → click the wired primary action (skipped when the user is
   // typing in a multi-line textarea so newline insertion still works).

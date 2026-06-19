@@ -3,6 +3,7 @@
  */
 
 import { useEffect, useRef } from 'react';
+import { scrollMentionRowIntoView } from './scrollMentionRowIntoView.js';
 import { File, Hash, MessageSquare } from 'lucide-react';
 import { appPopoverPanelClassName, chromeNoMatchesClassName } from '../../ui/SurfaceShell.js';
 import { cn } from '../../../lib/cn.js';
@@ -47,11 +48,11 @@ export function MentionPicker({
   onClose
 }: MentionPickerProps) {
   const listRef = useRef<HTMLUListElement>(null);
+  const activeRowRef = useRef<HTMLLIElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    const el = listRef.current?.children[activeIndex] as HTMLElement | undefined;
-    el?.scrollIntoView({ block: 'nearest' });
+    scrollMentionRowIntoView(listRef.current, activeRowRef.current);
   }, [open, activeIndex]);
 
   if (!open) return null;
@@ -81,7 +82,7 @@ export function MentionPicker({
                   const Icon = KIND_ICON[row.kind];
                   const active = i === activeIndex;
                   return (
-                    <li key={row.id}>
+                    <li key={row.id} ref={active ? activeRowRef : undefined}>
                       <button
                         type="button"
                         role="option"

@@ -13,6 +13,7 @@ import { ContextManagementPanel } from './ContextManagementPanel.js';
 import { CheckpointsPanel } from './CheckpointsPanel.js';
 import { HarnessPanel } from './HarnessPanel.js';
 import { InlineCompletionPanel } from './InlineCompletionPanel.js';
+import { CapturePanel } from './CapturePanel.js';
 import { ScheduledRunsPanel } from './ScheduledRunsPanel.js';
 import { LeftSubnav, type LeftSubnavItem } from '../ui/LeftSubnav.js';
 import { ShellStack } from '../ui/ShellSection.js';
@@ -28,7 +29,8 @@ export type AgentBehaviorSectionId =
   | 'checkpoints'
   | 'prompt-caching'
   | 'reports'
-  | 'scheduled-runs';
+  | 'scheduled-runs'
+  | 'capture';
 
 const SECTION_ITEMS: LeftSubnavItem<AgentBehaviorSectionId>[] = [
   { id: 'memory', label: 'Memory', tabId: 'agent-tab-memory', panelId: 'agent-panel-memory' },
@@ -66,6 +68,12 @@ const SECTION_ITEMS: LeftSubnavItem<AgentBehaviorSectionId>[] = [
     label: 'Scheduled runs',
     tabId: 'agent-tab-scheduled',
     panelId: 'agent-panel-scheduled'
+  },
+  {
+    id: 'capture',
+    label: 'Screen capture',
+    tabId: 'agent-tab-capture',
+    panelId: 'agent-panel-capture'
   }
 ];
 
@@ -93,6 +101,8 @@ function AgentBehaviorSectionPanel({ section }: { section: AgentBehaviorSectionI
       return <ReportsPanel />;
     case 'scheduled-runs':
       return <ScheduledRunsPanel />;
+    case 'capture':
+      return <CapturePanel />;
     default: {
       const _exhaustive: never = section;
       return _exhaustive;

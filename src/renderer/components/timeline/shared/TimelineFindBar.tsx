@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { Search } from 'lucide-react';
 import { cn } from '../../../lib/cn.js';
+import { registerEscapeLayer } from '../../../lib/escapeLayerStack.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/shellIcons.js';
 import { appPopoverPanelClassName } from '../../ui/SurfaceShell.js';
 import { FindBarShell } from '../../ui/FindBarShell.js';
@@ -56,6 +57,14 @@ export function TimelineFindBar({
     },
     [focusMatch, matchCount, rootRef]
   );
+
+  useEffect(() => {
+    if (!open) return;
+    return registerEscapeLayer('timeline-find', 70, () => {
+      onClose();
+      return true;
+    });
+  }, [open, onClose]);
 
   useEffect(() => {
     if (open) {

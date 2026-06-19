@@ -249,3 +249,83 @@ export function insertPlainTextAtOffset(
 
   return normalizeDocument({ segments });
 }
+
+/** Replace plain-text range `[start, end)` with `insertText`, preserving mention chips outside the range. */
+export function splicePlainTextRange(
+  doc: MentionDocument,
+  start: number,
+  end: number,
+  insertText = ''
+): MentionDocument {
+  const s = Math.max(0, Math.min(start, end));
+  const e = Math.max(s, Math.max(start, end));
+  if (s === e && insertText.length === 0) return doc;
+
+  if (extractMentions(doc).length === 0) {
+    const plain = documentToPlainText(doc);
+    return mentionDocumentFromText(plain.slice(0, s) + insertText + plain.slice(e));
+  }
+
+  const segments: MentionSegment[] = [];
+  let cursor = 0;
+  let inserted = insertText.length === 0;
+
+  const pushText = (value: string) => {
+    if (!value) return;
+    const last = segments[segments.length - 1];
+    if (last?.type === 'text') last.value += value;
+    else segments.push({ type: 'text', value });
+  };
+
+  for (const seg of doc.segments) {
+    const segLen = seg.type === 'text' ? seg.value.length : `@${seg.ref.label}`.length;
+    const segStart = cursor;
+    const segEnd = cursor + segLen;
+
+    if (segEnd <= s || segStart >= e) {
+      if (!inserted && insertText && segStart >= e) {
+        pushText(insertText);
+        inserted = true;
+      }
+      segments.push(seg);
+      cursor = segEnd;
+      continue;
+    }
+
+    if (seg.type === 'mention') {
+      cursor = segEnd;
+      continue;
+    }
+
+    const localStart = Math.max(0, s - segStart);
+    const localEnd = Math.min(seg.value.length, e - segStart);
+    const keepBefore = seg.value.slice(0, localStart);
+    const keepAfter = seg.value.slice(localEnd);
+
+    if (!inserted && s <= segStart && e >= segEnd) {
+      pushText(keepBefore);
+      pushText(insertText);
+      inserted = true;
+      pushText(keepAfter);
+    } else if (!inserted && localStart === 0 && insertText) {
+      pushText(insertText);
+      inserted = true;
+      pushText(keepAfter);
+    } else {
+      pushText(keepBefore);
+      if (!inserted && insertText) {
+        pushText(insertText);
+        inserted = true;
+      }
+      pushText(keepAfter);
+    }
+    cursor = segEnd;
+  }
+
+  if (!inserted && insertText) {
+    pushText(insertText);
+  }
+
+  if (segments.length === 0) return emptyMentionDocument();
+  return normalizeDocument({ segments });
+}

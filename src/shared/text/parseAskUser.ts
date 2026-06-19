@@ -114,3 +114,16 @@ export function formatAskUserDisplayText(payload: AskUserStructuredPayload): str
   }
   return lines.join('\n').trim();
 }
+
+/** Serialize structured ask_user payload back into tool-call arguments for replay. */
+export function serializeAskUserToolArguments(
+  payload: AskUserStructuredPayload,
+  displayText?: string
+): string {
+  const text = displayText ?? formatAskUserDisplayText(payload);
+  return JSON.stringify({
+    ...(payload.title && payload.title.length > 0 ? { title: payload.title } : {}),
+    questions: payload.questions,
+    displayText: text
+  });
+}
