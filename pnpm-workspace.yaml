@@ -1,0 +1,21 @@
+packages:
+  - .
+
+minimumReleaseAge: 10080
+blockExoticSubdeps: true
+minimumReleaseAgeExclude:
+  - '@playwright/test'
+  - playwright
+  - playwright-core
+  - tailwindcss
+  - '@tailwindcss/*'
+  - '@emnapi/runtime'
+  - form-data
+allowBuilds:
+  '@ast-grep/cli': true
+  electron: true
+  esbuild: true
+  electron-winstaller: true
+  node-pty: true
+  fsevents: true
+  lzma-native: false

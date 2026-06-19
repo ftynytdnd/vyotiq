@@ -41,9 +41,11 @@ Vyotiq is an orchestrator first, not a full IDE — but selective surfaces suppo
 
 ## Getting started
 
+Requires **Node.js ≥ 22** and **pnpm ≥ 11**. See [`docs/supply-chain-security.md`](docs/supply-chain-security.md) for dependency hardening details.
+
 ```bash
-npm install
-npm run dev
+pnpm run install:hardened
+pnpm run dev
 ```
 
 This launches Electron with hot-reload for the renderer and a watching build for main + preload.

@@ -106,7 +106,7 @@ try {
   fusesModule = await import('@electron/fuses');
 } catch (err) {
   console.error('[flipFuses] @electron/fuses is not installed.');
-  console.error('[flipFuses] Run `npm install --save-dev @electron/fuses` then retry.');
+  console.error('[flipFuses] Run `pnpm add -D @electron/fuses` then retry.');
   console.error(`[flipFuses] Underlying error: ${err instanceof Error ? err.message : String(err)}`);
   exit(1);
 }

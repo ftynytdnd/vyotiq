@@ -12,17 +12,19 @@ Vyotiq ships a minimal **Playwright + Electron** smoke suite under `tests/e2e/`.
 
 | Script | What it does |
 |--------|----------------|
-| `npm run smoketest` | Build if `out/main/index.js` is missing, then run Playwright |
-| `npm run smoketest-no-compile` | Run Playwright without forcing a rebuild (still builds when `out/` is absent unless `VYOTIQ_E2E_SKIP_BUILD=1`) |
-| `npm run test:e2e` | Alias for `smoketest` |
-| `npm run test:e2e:ui` | Playwright UI mode (debug) |
+| `pnpm run smoketest` | Build if `out/main/index.js` is missing, then run Playwright |
+| `pnpm run smoketest-no-compile` | Run Playwright without forcing a rebuild (still builds when `out/` is absent unless `VYOTIQ_E2E_SKIP_BUILD=1`) |
+| `pnpm run test:e2e` | Alias for `smoketest` |
+| `pnpm run test:e2e:ui` | Playwright UI mode (debug) |
 
-First-time setup after `npm install`:
+First-time setup (Node.js ≥ 22, pnpm ≥ 11):
 
 ```bash
-npm install
-npm run smoketest
+pnpm run install:hardened
+pnpm run smoketest
 ```
+
+See [`supply-chain-security.md`](supply-chain-security.md) for install hardening.
 
 ## What the smoke tests assert
 
@@ -39,7 +41,7 @@ npm run smoketest
 ```
 playwright.config.ts          # workers: 1 (single-instance lock)
 tests/e2e/
-  global-setup.ts             # npm run build when out/ missing
+  global-setup.ts             # pnpm run build when out/ missing
   fixtures/electron.fixture.ts
   helpers/paths.ts            # repo root, out/main/index.js, temp userData
   helpers/stubDialogs.ts      # mock native dialogs in main process
@@ -63,8 +65,8 @@ tests/e2e/
 
 ## CI notes
 
-- **Windows / macOS:** run `npm run smoketest` after unit tests.
-- **Linux headless:** may require a virtual display (`xvfb-run npm run smoketest`) depending on the runner image.
+- **Windows / macOS:** run `pnpm run smoketest` after unit tests.
+- **Linux headless:** may require a virtual display (`xvfb-run pnpm run smoketest`) depending on the runner image.
 - Set `CI=1` for GitHub reporter + one retry.
 - Artifacts: `test-results/`, `playwright-report/` (gitignored).
 

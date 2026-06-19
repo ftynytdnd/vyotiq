@@ -4,26 +4,34 @@ Vyotiq ships distributables via **electron-builder** on top of the electron-vite
 
 ## Build
 
+Install dependencies first (frozen lockfile):
+
 ```bash
-npm run build          # electron-vite → out/
-npm run dist           # build + package (current OS)
-npm run dist:win       # Windows NSIS installer
-npm run dist:mac       # macOS DMG + zip
-npm run dist:linux     # Linux AppImage
+pnpm run install:hardened
+```
+
+Then package:
+
+```bash
+pnpm run build          # electron-vite → out/
+pnpm run dist           # build + package (current OS)
+pnpm run dist:win       # Windows NSIS installer
+pnpm run dist:mac       # macOS DMG + zip
+pnpm run dist:linux     # Linux AppImage
 ```
 
 Artifacts land in `release/`.
 
 ### Windows native modules
 
-`node-pty`, `@ast-grep/napi`, `@ast-grep/cli`, and `@photostructure/sqlite-vec` ship **prebuilt binaries**. `electron-builder.yml` sets `npmRebuild: false` so packaging does not invoke `node-gyp` (which on Windows often requires **MSVC Spectre-mitigated libraries** from the Visual Studio installer). If you change Electron major versions, run `npx electron-rebuild` locally with a full C++ toolchain before `dist`.
+`node-pty`, `@ast-grep/napi`, `@ast-grep/cli`, and `@photostructure/sqlite-vec` ship **prebuilt binaries**. `electron-builder.yml` sets `npmRebuild: false` so packaging does not invoke `node-gyp` (which on Windows often requires **MSVC Spectre-mitigated libraries** from the Visual Studio installer). If you change Electron major versions, run `pnpm exec --no-install electron-rebuild` locally with a full C++ toolchain before `dist` (`electron-rebuild` is a committed devDependency).
 
 ## Fuse hardening
 
 `scripts/afterPackFlipFuses.cjs` runs automatically as an **afterPack** hook (before signing). To harden a binary manually:
 
 ```bash
-npm run flip-fuses -- path/to/Vyotiq.exe
+pnpm run flip-fuses -- path/to/Vyotiq.exe
 ```
 
 Re-sign after a manual fuse flip if you signed first.
@@ -32,14 +40,14 @@ Re-sign after a manual fuse flip if you signed first.
 
 ### Windows
 
-Set in CI or locally before `npm run dist:win`:
+Set in CI or locally before `pnpm run dist:win`:
 
 | Variable | Purpose |
 |----------|---------|
 | `CSC_LINK` | Path to `.pfx` or base64-encoded certificate |
 | `CSC_KEY_PASSWORD` | PFX password |
 
-CI release workflow passes `--config.forceCodeSigning=true` so unsigned production builds fail when `CSC_LINK` is missing. Local `npm run dist` / `dist:dir` omits this flag for unsigned dev packages.
+CI release workflow passes `--config.forceCodeSigning=true` so unsigned production builds fail when `CSC_LINK` is missing. Local `pnpm run dist` / `dist:dir` omits this flag for unsigned dev packages.
 
 ### macOS
 
@@ -69,7 +77,7 @@ Upload `release/*` artifacts from CI to that bucket or GitHub Releases. Users se
 [`.github/workflows/release.yml`](../.github/workflows/release.yml) builds on **tag push** (`v*`) or **workflow_dispatch**:
 
 1. Matrix: `windows-latest`, `macos-latest`, `ubuntu-latest`.
-2. Each job runs `npm ci` then `npm run dist:publish` (electron-vite build + electron-builder `--publish always`).
+2. Each job runs `pnpm run install:hardened`, then `pnpm run dist:publish` (electron-vite build + electron-builder `--publish always`).
 3. Artifacts upload to the workflow run for download; the generic publish URL comes from `UPDATE_BASE_URL`.
 
 ### Required repository secrets
@@ -92,7 +100,7 @@ The workflow includes a commented **scp/rsync placeholder** after artifact uploa
 ## Local smoke (unsigned)
 
 ```bash
-npm run dist:dir
+pnpm run dist:dir
 ```
 
 Produces an unpacked app in `release/win-unpacked` (or `release/mac` / `release/linux-unpacked`) without an installer. Updater checks are no-ops in dev (`!app.isPackaged`).
