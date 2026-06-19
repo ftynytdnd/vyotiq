@@ -123,7 +123,12 @@ export const readTool: Tool = {
     }
 
     const visionKind = mediaKindFromWorkspacePath(a.path);
-    if (visionKind === 'image' || visionKind === 'pdf') {
+    if (
+      visionKind === 'image' ||
+      visionKind === 'pdf' ||
+      visionKind === 'video' ||
+      visionKind === 'audio'
+    ) {
       queueWorkspaceVision(ctx.runId, {
         path: a.path,
         kind: visionKind,
@@ -136,6 +141,10 @@ export const readTool: Tool = {
       } catch {
         /* best-effort */
       }
+      const wireHint =
+        visionKind === 'image'
+          ? 'You will receive pixels on the wire — use this path reference meanwhile.'
+          : 'You will receive native media on the wire when the model supports it — use this path reference meanwhile.';
       return {
         id,
         name: 'read',
@@ -143,7 +152,7 @@ export const readTool: Tool = {
         output:
           `[vision] Queued ${visionKind} file "${a.path}"` +
           (sizeBytes > 0 ? ` (${sizeBytes} bytes)` : '') +
-          ' for native model vision on the next assistant turn. You will receive pixels on the wire — use this path reference meanwhile.',
+          ` for native model input on the next assistant turn. ${wireHint}`,
         durationMs: Date.now() - started
       };
     }

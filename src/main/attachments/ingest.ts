@@ -3,7 +3,7 @@
  * `attachments/{workspaceId}/{conversationId}/{messageId}/` under `<userData>/vyotiq/attachments/`.
  */
 
-import { copyFile, mkdir, stat } from 'node:fs/promises';
+import { copyFile, mkdir, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
@@ -81,4 +81,40 @@ export function assertAttachmentCount(count: number): void {
   if (count > MAX_CHAT_ATTACHMENTS) {
     throw new Error(`Maximum ${MAX_CHAT_ATTACHMENTS} attachments per message`);
   }
+}
+
+export interface IngestBufferInput {
+  buffer: Buffer;
+  suggestedName: string;
+  mimeType: string;
+  workspaceId: string;
+  conversationId: string;
+  messageId: string;
+}
+
+/** Write in-memory bytes into the conversation attachment store. */
+export async function ingestBuffer(input: IngestBufferInput): Promise<PromptAttachmentMeta> {
+  const name = input.suggestedName.replace(/[^\w.\-()+ ]/g, '_').slice(0, 180) || 'file';
+  const mimeType = input.mimeType;
+  const mediaKind = mediaKindFromMeta({ name, mimeType });
+  const sizeCap =
+    mediaKind === 'video' ? VISION_VIDEO_MAX_BYTES : MAX_ATTACHMENT_FILE_BYTES;
+  if (input.buffer.length > sizeCap) {
+    throw new Error(`File exceeds ${sizeCap / (1024 * 1024)} MB limit`);
+  }
+
+  const dir = messageDir(input.workspaceId, input.conversationId, input.messageId);
+  await mkdir(dir, { recursive: true });
+  const dest = join(dir, `${randomUUID().slice(0, 8)}-${name}`);
+  await writeFile(dest, input.buffer);
+
+  return {
+    id: randomUUID(),
+    name,
+    mimeType,
+    mediaKind,
+    sizeBytes: input.buffer.length,
+    storedPath: dest,
+    external: true
+  };
 }

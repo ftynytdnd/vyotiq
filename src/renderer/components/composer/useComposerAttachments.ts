@@ -209,18 +209,49 @@ export function useComposerAttachments(input: {
   const onPaste = useCallback(
     (e: React.ClipboardEvent) => {
       const files = Array.from(e.clipboardData.files);
-      if (files.length === 0) return;
-      e.preventDefault();
-      const paths = files
-        .map((f) => (f as File & { path?: string }).path)
-        .filter((p): p is string => typeof p === 'string' && p.length > 0);
-      if (paths.length > 0) {
-        void addPaths(paths);
-        return;
+      const hasClipboardImage =
+        Array.from(e.clipboardData.items).some((item) => item.type.startsWith('image/')) ||
+        files.some((file) => file.type.startsWith('image/'));
+      if (files.length > 0) {
+        e.preventDefault();
+        const paths = files
+          .map((f) => (f as File & { path?: string }).path)
+          .filter((p): p is string => typeof p === 'string' && p.length > 0);
+        if (paths.length > 0) {
+          void addPaths(paths);
+          return;
+        }
+        if (!hasClipboardImage) {
+          void pickFromComputer();
+          return;
+        }
+        // Image bytes on the clipboard (Snipping Tool, OS screenshot) — ingest below.
       }
-      void pickFromComputer();
+
+      if (!hasClipboardImage) return;
+
+      const { conversationId, workspaceId } = input;
+      if (!conversationId || !workspaceId) return;
+      const remaining = MAX_CHAT_ATTACHMENTS - attachments.length;
+      if (remaining <= 0) return;
+
+      e.preventDefault();
+      void (async () => {
+        try {
+          const ingested = await vyotiq.attachments.ingestClipboardImage({
+            workspaceId,
+            conversationId,
+            messageId: ensureMessageId()
+          });
+          if (ingested) {
+            mergeAttachments([ingested]);
+          }
+        } catch (err) {
+          showToast(err instanceof Error ? err.message : 'Could not paste image.', 'danger');
+        }
+      })();
     },
-    [addPaths, pickFromComputer]
+    [addPaths, attachments.length, ensureMessageId, input, mergeAttachments, pickFromComputer, showToast]
   );
 
   return {

@@ -5,7 +5,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import sharp from 'sharp';
-import type { ChatContentPart, PromptAttachmentMeta } from '@shared/types/chat.js';
+import type { AttachmentMediaKind, ChatContentPart, PromptAttachmentMeta } from '@shared/types/chat.js';
 import type { ModelInputModality } from '@shared/types/provider.js';
 import {
   VISION_IMAGE_MAX_BYTES,
@@ -41,6 +41,7 @@ export interface PreparedVisionMedia {
   height?: number;
   encodedBytes: number;
   imageTokenEstimate?: number;
+  hash: string;
 }
 
 export interface PrepareVisionPartsInput {
@@ -151,7 +152,8 @@ async function prepareImagePart(
     height,
     encodedBytes: buffer.length,
     imageTokenEstimate:
-      width && height ? estimateImageTokensFromDimensions(width, height) : undefined
+      width && height ? estimateImageTokensFromDimensions(width, height) : undefined,
+    hash
   };
 
   await putPreparedMediaOnDisk(hash, buffer, prepared);
@@ -182,7 +184,8 @@ async function preparePdfPart(
       file: { filename: meta.name, file_data: url }
     },
     encodedBytes: bytes.length,
-    imageTokenEstimate: estimatePdfTokens(bytes.length)
+    imageTokenEstimate: estimatePdfTokens(bytes.length),
+    hash
   };
   await putPreparedMediaOnDisk(hash, bytes, prepared);
   return prepared;
@@ -212,7 +215,8 @@ async function prepareVideoPart(
   const prepared: PreparedVisionMedia = {
     part: { type: 'video_url', video_url: { url } },
     encodedBytes: bytes.length,
-    imageTokenEstimate: estimateVideoTokens(bytes.length)
+    imageTokenEstimate: estimateVideoTokens(bytes.length),
+    hash
   };
   await putPreparedMediaOnDisk(hash, bytes, prepared);
   return prepared;
@@ -253,10 +257,27 @@ async function prepareAudioPart(
   const base64 = bytes.toString('base64');
   const prepared: PreparedVisionMedia = {
     part: { type: 'input_audio', input_audio: { data: base64, format } },
-    encodedBytes: bytes.length
+    encodedBytes: bytes.length,
+    hash
   };
   await putPreparedMediaOnDisk(hash, bytes, prepared);
   return prepared;
+}
+
+function attachmentPathKey(meta: PromptAttachmentMeta): string {
+  return meta.workspacePath ?? meta.storedPath ?? meta.id;
+}
+
+function supportsMediaKindForModalities(
+  kind: AttachmentMediaKind,
+  modalities: ModelInputModality[] | undefined
+): boolean {
+  if (kind === 'text') return false;
+  if (kind === 'image') return modelSupportsVision(modalities);
+  if (kind === 'pdf') return modelSupportsPdfNative(modalities);
+  if (kind === 'video') return modelSupportsVideoNative(modalities);
+  if (kind === 'audio') return modelSupportsAudioNative(modalities);
+  return false;
 }
 
 async function prepareOne(
@@ -267,10 +288,16 @@ async function prepareOne(
   const modalities = input.inputModalities;
 
   if (kind === 'text') return null;
-  if (kind === 'image' && !modelSupportsVision(modalities)) return null;
-  if (kind === 'pdf' && !modelSupportsPdfNative(modalities)) return null;
-  if (kind === 'video' && !modelSupportsVideoNative(modalities)) return null;
-  if (kind === 'audio' && !modelSupportsAudioNative(modalities)) return null;
+  if (!supportsMediaKindForModalities(kind, modalities)) return null;
+
+  if (meta.preparedMediaHash) {
+    const diskHit = await getPreparedMediaFromDisk(meta.preparedMediaHash);
+    if (diskHit) {
+      const cacheKey = `${input.cacheKeyPrefix ?? ''}:${attachmentPathKey(meta)}:${kind}`;
+      input.cache?.set(cacheKey, diskHit);
+      return diskHit;
+    }
+  }
 
   const absPath = await resolveAttachmentAbsPath(meta, input.workspacePath);
   const cacheKey = `${input.cacheKeyPrefix ?? ''}:${absPath}:${kind}`;
@@ -300,20 +327,28 @@ async function prepareOne(
  */
 export async function prepareVisionParts(
   input: PrepareVisionPartsInput
-): Promise<{ parts: ChatContentPart[]; visionTokenEstimate: number; preparedWorkspacePaths: string[] }> {
+): Promise<{
+  parts: ChatContentPart[];
+  visionTokenEstimate: number;
+  preparedWorkspacePaths: string[];
+  preparedAttachmentHashes: Record<string, string>;
+}> {
   const images: ChatContentPart[] = [];
   const pdfs: ChatContentPart[] = [];
   const videos: ChatContentPart[] = [];
   const audios: ChatContentPart[] = [];
   const preparedWorkspacePaths: string[] = [];
+  const preparedAttachmentHashes: Record<string, string> = {};
   let visionTokenEstimate = 0;
 
   for (const meta of input.attachmentMeta) {
     try {
       const prepared = await prepareOne(meta, input);
       if (!prepared) continue;
+      const pathKey = attachmentPathKey(meta);
       const workspacePath = meta.workspacePath ?? meta.storedPath;
       if (workspacePath) preparedWorkspacePaths.push(workspacePath);
+      preparedAttachmentHashes[pathKey] = prepared.hash;
       if (prepared.imageTokenEstimate) visionTokenEstimate += prepared.imageTokenEstimate;
       const kind = meta.mediaKind ?? mediaKindFromMeta(meta);
       if (kind === 'image') images.push(prepared.part);
@@ -330,7 +365,8 @@ export async function prepareVisionParts(
   return {
     parts: [...images, ...pdfs, ...videos, ...audios],
     visionTokenEstimate,
-    preparedWorkspacePaths
+    preparedWorkspacePaths,
+    preparedAttachmentHashes
   };
 }
 

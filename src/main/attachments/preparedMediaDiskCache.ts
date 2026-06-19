@@ -86,7 +86,8 @@ export async function getPreparedMediaFromDisk(
       width: meta.width,
       height: meta.height,
       encodedBytes: meta.encodedBytes,
-      imageTokenEstimate: meta.imageTokenEstimate
+      imageTokenEstimate: meta.imageTokenEstimate,
+      hash
     };
   } catch {
     return undefined;

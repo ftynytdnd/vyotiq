@@ -20,7 +20,9 @@ export type KeybindingId =
   | 'reload'
   | 'toggleDevTools'
   | 'timelineFind'
-  | 'closeSettings';
+  | 'closeSettings'
+  | 'composerQueue'
+  | 'composerStop';
 
 export interface KeybindingDefinition {
   id: KeybindingId;
@@ -29,7 +31,7 @@ export interface KeybindingDefinition {
   defaultCombo: string;
   /** macOS default when different. */
   macCombo?: string;
-  group: 'Navigation' | 'Workspace' | 'Window' | 'Timeline' | 'Settings';
+  group: 'Navigation' | 'Workspace' | 'Window' | 'Timeline' | 'Settings' | 'Composer';
 }
 
 export const KEYBINDING_DEFINITIONS: readonly KeybindingDefinition[] = [
@@ -60,7 +62,19 @@ export const KEYBINDING_DEFINITIONS: readonly KeybindingDefinition[] = [
   { id: 'reload', label: 'Reload', defaultCombo: 'Mod+R', group: 'Window' },
   { id: 'toggleDevTools', label: 'Toggle DevTools', defaultCombo: 'Mod+Shift+I', group: 'Window' },
   { id: 'timelineFind', label: 'Find in timeline', defaultCombo: 'Mod+F', group: 'Timeline' },
-  { id: 'closeSettings', label: 'Close settings', defaultCombo: 'Escape', group: 'Settings' }
+  { id: 'closeSettings', label: 'Close settings', defaultCombo: 'Escape', group: 'Settings' },
+  {
+    id: 'composerQueue',
+    label: 'Queue follow-up (while run active)',
+    defaultCombo: 'Mod+Shift+Enter',
+    group: 'Composer'
+  },
+  {
+    id: 'composerStop',
+    label: 'Stop active run (composer focus)',
+    defaultCombo: 'Escape',
+    group: 'Composer'
+  }
 ];
 
 export function defaultKeybindingsRecord(isMac: boolean): Record<KeybindingId, string> {
@@ -92,7 +106,13 @@ export function parseCombo(combo: string): {
   return { mod, shift, alt, key: key.toLowerCase() };
 }
 
-export function eventMatchesCombo(e: KeyboardEvent, combo: string | undefined): boolean {
+/** Minimal key surface — accepts DOM and React synthetic keyboard events. */
+export type KeyComboEvent = Pick<
+  KeyboardEvent,
+  'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey' | 'key'
+>;
+
+export function eventMatchesCombo(e: KeyComboEvent, combo: string | undefined): boolean {
   if (!combo) return false;
   const { mod, shift, alt, key } = parseCombo(combo);
   const eventMod = e.ctrlKey || e.metaKey;

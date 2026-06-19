@@ -40,7 +40,11 @@ export async function injectFollowUp(opts: InjectFollowUpOpts): Promise<InjectFo
   const { followUp, runId, conversationId, workspacePath, emit, messages, signal } = opts;
   const promptEventId = followUp.promptEventId ?? randomUUID();
 
-  const { message: userMessage, turnXml: userEnvelope } = await buildUserTurnMessage({
+  const {
+    message: userMessage,
+    turnXml: userEnvelope,
+    persistedAttachments
+  } = await buildUserTurnMessage({
     prompt: followUp.prompt,
     selection: followUp.selection,
     workspacePath,
@@ -53,6 +57,13 @@ export async function injectFollowUp(opts: InjectFollowUpOpts): Promise<InjectFo
     signal
   });
 
+  const attachmentsForEvent =
+    persistedAttachments && persistedAttachments.length > 0
+      ? persistedAttachments
+      : followUp.attachmentMeta && followUp.attachmentMeta.length > 0
+        ? followUp.attachmentMeta
+        : undefined;
+
   const userPromptEvent: TimelineEvent = {
     kind: 'user-prompt',
     id: promptEventId,
@@ -61,9 +72,7 @@ export async function injectFollowUp(opts: InjectFollowUpOpts): Promise<InjectFo
     runId,
     providerId: followUp.selection.providerId,
     modelId: followUp.selection.modelId,
-    ...(followUp.attachmentMeta && followUp.attachmentMeta.length > 0
-      ? { attachments: followUp.attachmentMeta }
-      : {}),
+    ...(attachmentsForEvent ? { attachments: attachmentsForEvent } : {}),
     ...(followUp.mentions && followUp.mentions.length > 0 ? { mentions: followUp.mentions } : {})
   };
 

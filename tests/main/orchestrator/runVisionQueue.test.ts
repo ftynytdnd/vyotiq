@@ -26,7 +26,9 @@ vi.mock('@main/attachments/prepareMediaForVision.js', () => ({
 
       .map((m) => m.workspacePath)
 
-      .filter((p): p is string => typeof p === 'string')
+      .filter((p): p is string => typeof p === 'string'),
+
+    preparedAttachmentHashes: {}
 
   }))
 
@@ -52,7 +54,9 @@ describe('runVisionQueue', () => {
 
         .map((m) => m.workspacePath)
 
-        .filter((p): p is string => typeof p === 'string')
+        .filter((p): p is string => typeof p === 'string'),
+
+      preparedAttachmentHashes: {}
 
     }));
 
@@ -166,7 +170,9 @@ describe('runVisionQueue', () => {
 
       visionTokenEstimate: 0,
 
-      preparedWorkspacePaths: ['ready.png']
+      preparedWorkspacePaths: ['ready.png'],
+
+      preparedAttachmentHashes: { 'ready.png': 'abc123' }
 
     });
 
@@ -214,6 +220,28 @@ describe('runVisionQueue', () => {
 
     expect(retry?.content).toBeDefined();
 
+  });
+
+  it('flushes queued video and audio when model supports those modalities', async () => {
+    vi.mocked(prepareVisionParts).mockResolvedValueOnce({
+      parts: [{ type: 'video_url', video_url: { url: 'data:video/mp4;base64,abc' } }],
+      visionTokenEstimate: 0,
+      preparedWorkspacePaths: ['clip.mp4'],
+      preparedAttachmentHashes: { 'clip.mp4': 'vidhash' }
+    });
+    queueWorkspaceVision('run-1', { path: 'clip.mp4', kind: 'video', source: 'read' });
+
+    const msg = await flushVisionQueue({
+      runId: 'run-1',
+      workspacePath: '/ws',
+      selection: { providerId: 'p', modelId: 'm' },
+      inputModalities: ['text', 'video']
+    });
+    const textPart = (msg!.content as Array<{ type: string; text?: string }>).find(
+      (p) => p.type === 'text'
+    );
+    expect(textPart?.text).toContain('clip.mp4');
+    expect(textPart?.text).toContain('kind="video"');
   });
 
 });

@@ -226,9 +226,14 @@ function verbFor(name: ToolName, pending = false): string {
       case 'memory': return 'Memory';
       case 'recall': return 'Recalling';
       case 'report': return 'Writing';
+      case 'capture': return 'Capturing';
       case 'ask_user': return 'Asking';
       case 'finish': return '';
       case 'unknown': return 'Running';
+      default: {
+        const _exhaustive: never = name;
+        return _exhaustive;
+      }
     }
   }
   switch (name) {
@@ -242,9 +247,14 @@ function verbFor(name: ToolName, pending = false): string {
     case 'memory': return 'Memory';
     case 'recall': return 'Recalled';
     case 'report': return 'Wrote';
+    case 'capture': return 'Captured';
     case 'ask_user': return 'Asked';
     case 'finish': return '';
     case 'unknown': return 'Unknown tool';
+    default: {
+      const _exhaustive: never = name;
+      return _exhaustive;
+    }
   }
 }
 
@@ -260,9 +270,14 @@ function unitFor(name: ToolName, singular: boolean): string {
     case 'memory': return singular ? 'note' : 'notes';
     case 'recall': return singular ? 'conversation' : 'conversations';
     case 'report': return singular ? 'report' : 'reports';
+    case 'capture': return singular ? 'screenshot' : 'screenshots';
     case 'ask_user': return singular ? 'question' : 'questions';
     case 'finish': return singular ? 'answer' : 'answers';
     case 'unknown': return singular ? 'invocation' : 'invocations';
+    default: {
+      const _exhaustive: never = name;
+      return _exhaustive;
+    }
   }
 }
 
@@ -394,6 +409,10 @@ function extractPrimary(name: ToolName, child: ToolGroupChild): string {
             : '';
       return title;
     }
+    case 'capture': {
+      const target = typeof args['target'] === 'string' ? (args['target'] as string) : '';
+      return target;
+    }
     case 'ask_user':
       return typeof args['question'] === 'string' ? (args['question'] as string) : '';
     case 'finish':
@@ -406,6 +425,10 @@ function extractPrimary(name: ToolName, child: ToolGroupChild): string {
       if (callName && callName !== 'unknown') return callName;
       if (resultName && resultName !== 'unknown') return resultName;
       return '';
+    }
+    default: {
+      const _exhaustive: never = name;
+      return _exhaustive;
     }
   }
 }

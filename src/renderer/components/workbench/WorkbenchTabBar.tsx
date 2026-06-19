@@ -15,7 +15,6 @@ import { normalizePath } from '../../lib/normalizePath.js';
 import {
   closeEditorPanel,
   closePreviewPanel,
-  closeTerminalPanel,
   resolveCompanionTab,
   shellBasename
 } from './workbenchShared.js';
@@ -152,6 +151,7 @@ export function WorkbenchTabBar() {
 
   const showTerminalSessionTabs = terminalOpen && terminalSessions.length > 1;
   const showPrimitiveTabs = showTerminalSessionTabs || previewOpen;
+  const hasTabStripContent = showPrimitiveTabs || tabs.length > 0;
 
   const onSelectFileTab = useCallback(
     (filePath: string) => {
@@ -178,6 +178,8 @@ export function WorkbenchTabBar() {
     },
     [activeFilePath, activeTab, setActiveTab, tabs]
   );
+
+  if (!hasTabStripContent) return null;
 
   return (
     <div
@@ -279,7 +281,7 @@ export function WorkbenchTabBar() {
           );
         })}
       </div>
-      {activeTab === 'terminal' && terminalOpen ? <TerminalSessionStrip /> : null}
+      {showTerminalSessionTabs ? <TerminalSessionStrip /> : null}
     </div>
   );
 }

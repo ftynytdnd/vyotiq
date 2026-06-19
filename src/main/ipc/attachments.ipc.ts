@@ -1,12 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { dialog, shell } from 'electron';
+import { clipboard, dialog, shell } from 'electron';
 import { IPC, MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 import { assertNumber, assertObject, assertOptionalString, assertString } from './validate.js';
 import { collectFolderFiles } from '../attachments/collectFolderFiles.js';
-import { ingestExternalFile, assertAttachmentCount } from '../attachments/ingest.js';
+import { ingestExternalFile, ingestBuffer, assertAttachmentCount } from '../attachments/ingest.js';
 import { resolveAttachmentInWorkspace } from '../attachments/resolveInWorkspace.js';
 import { realpathInsideAttachmentsRoot } from '../attachments/sandbox.js';
 import { requireWorkspaceById } from '../workspace/workspaceState.js';
@@ -142,6 +142,33 @@ export function registerAttachmentsIpc(): void {
         );
       }
       return out;
+    }
+  );
+
+  wrapIpcHandler(
+    IPC.ATTACHMENTS_INGEST_CLIPBOARD_IMAGE,
+    async (
+      _event,
+      input: { workspaceId: string; conversationId: string; messageId: string }
+    ): Promise<PromptAttachmentMeta | null> => {
+      assertObject('attachments:ingestClipboardImage', 'input', input);
+      assertString('attachments:ingestClipboardImage', 'workspaceId', input.workspaceId);
+      assertString('attachments:ingestClipboardImage', 'conversationId', input.conversationId);
+      assertString('attachments:ingestClipboardImage', 'messageId', input.messageId);
+      await requireWorkspaceById(input.workspaceId);
+
+      const image = clipboard.readImage();
+      if (image.isEmpty()) return null;
+
+      const png = image.toPNG();
+      return ingestBuffer({
+        buffer: png,
+        suggestedName: `clipboard-${Date.now()}.png`,
+        mimeType: 'image/png',
+        workspaceId: input.workspaceId,
+        conversationId: input.conversationId,
+        messageId: input.messageId
+      });
     }
   );
 

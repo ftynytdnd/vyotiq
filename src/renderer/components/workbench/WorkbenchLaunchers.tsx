@@ -6,7 +6,6 @@ import { useCallback } from 'react';
 import { FileCode2, Globe, TerminalSquare } from 'lucide-react';
 import { useTerminalStore } from '../../store/useTerminalStore.js';
 import { useBrowserStore } from '../../store/useBrowserStore.js';
-import { useEditorStore } from '../../store/useEditorStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useUiStore } from '../../store/useUiStore.js';
 import { focusWorkbenchTab, resolveCompanionTab, closeTerminalPanel, closeBrowserPanel, closeEditorPanel } from './workbenchShared.js';
@@ -144,7 +143,7 @@ export function WorkbenchLaunchers({
     layout === 'horizontal'
       ? cn(
           TITLEBAR_ICON_ACTION_CLASS,
-          'vx-btn vx-btn-quiet px-1 text-text-muted',
+          'vx-btn vx-btn-quiet text-text-muted',
           titlebarMode && 'vx-titlebar-workbench-btn'
         )
       : WORKBENCH_RAIL_BTN_CLASS;
@@ -167,9 +166,9 @@ export function WorkbenchLaunchers({
               btnClass,
               titlebarMode
                 ? focused
-                  ? 'vx-titlebar-workbench-btn--focused bg-chrome-hover-soft text-text-primary'
+                  ? 'vx-titlebar-workbench-btn--focused'
                   : open
-                    ? 'vx-titlebar-workbench-btn--open text-text-secondary'
+                    ? 'vx-titlebar-workbench-btn--open'
                     : undefined
                 : focused && 'bg-chrome-hover-soft text-text-primary'
             )}

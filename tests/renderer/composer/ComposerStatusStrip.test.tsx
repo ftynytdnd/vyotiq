@@ -74,6 +74,16 @@ describe('ComposerStatusStrip', () => {
     expect(hint).toHaveTextContent('Send steers mid-run · Queue before finish');
   });
 
+  it('shows PDF modality warning', () => {
+    render(<ComposerStatusStrip pdfWarning />);
+    expect(screen.getByText(/may not support PDF/i)).toBeInTheDocument();
+  });
+
+  it('shows video modality warning', () => {
+    render(<ComposerStatusStrip videoWarning />);
+    expect(screen.getByText(/may not support video/i)).toBeInTheDocument();
+  });
+
   it('does not show run phase labels', () => {
     useChatStore.setState({
       isProcessing: true,

@@ -11,7 +11,8 @@ export function modelsFingerprint(models: ModelInfo[]): string {
       contextWindow: m.contextWindow,
       contextEstimated: m.contextEstimated,
       pricing: m.pricing,
-      thinking: m.thinking
+      thinking: m.thinking,
+      inputModalities: m.inputModalities
     }))
   );
 }

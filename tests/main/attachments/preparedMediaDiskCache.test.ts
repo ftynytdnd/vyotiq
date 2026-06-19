@@ -39,11 +39,13 @@ describe('preparedMediaDiskCache', () => {
       encodedBytes: buffer.length,
       width: 10,
       height: 10,
-      imageTokenEstimate: 42
+      imageTokenEstimate: 42,
+      hash
     };
     await putPreparedMediaOnDisk(hash, buffer, prepared);
     const loaded = await getPreparedMediaFromDisk(hash);
     expect(loaded?.part.type).toBe('image_url');
+    expect(loaded?.hash).toBe(hash);
     expect(loaded?.width).toBe(10);
     expect(loaded?.imageTokenEstimate).toBe(42);
   });

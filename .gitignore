@@ -17,8 +17,17 @@ knip-clean.json
 knip-current.json
 knip-post-audit.json
 
+# Playwright E2E artifacts
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
 # Local llama.cpp binaries and GGUF weights (dev-only; not shipped)
 local-models/
 
 # Shell layout prototypes — separate Vite app, not part of the Electron build
 mockups/
+
+# Workspace-local Vyotiq runtime data (vector index, memory, reports, compaction)
+.vyotiq/

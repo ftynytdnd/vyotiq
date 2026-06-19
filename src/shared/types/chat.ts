@@ -791,6 +791,8 @@ export interface PromptAttachmentMeta {
   /** Workspace-relative path when picked inside the project. */
   workspacePath?: string;
   external?: boolean;
+  /** SHA-256 of preprocessed vision bytes in the disk cache (replay fast path). */
+  preparedMediaHash?: string;
 }
 
 /** Sent from renderer to main to start an agent run. */

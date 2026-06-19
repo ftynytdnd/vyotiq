@@ -80,6 +80,43 @@ describe('resolveAttachmentsForInline', () => {
     expect(out).not.toContain('external-file-body');
   });
 
+  it('emits pdf-reference blocks for workspace PDFs instead of inlining bytes', async () => {
+    inlineFiles.mockClear();
+    const { resolveAttachmentsForInline } = await import(
+      '@main/attachments/resolveAttachmentsForInline.js'
+    );
+    const meta: PromptAttachmentMeta[] = [
+      { name: 'spec.pdf', mimeType: 'application/pdf', workspacePath: 'docs/spec.pdf' }
+    ];
+    const out = await resolveAttachmentsForInline({
+      attachmentMeta: meta,
+      workspacePath: '/proj'
+    });
+    expect(inlineFiles).not.toHaveBeenCalled();
+    expect(out).toContain('kind="pdf-reference"');
+    expect(out).toContain('path="docs/spec.pdf"');
+  });
+
+  it('omits attachments already sent as native vision parts', async () => {
+    inlineFiles.mockClear();
+    const { resolveAttachmentsForInline } = await import(
+      '@main/attachments/resolveAttachmentsForInline.js'
+    );
+    const meta: PromptAttachmentMeta[] = [
+      {
+        name: 'shot.png',
+        mimeType: 'image/png',
+        workspacePath: 'assets/shot.png'
+      }
+    ];
+    const out = await resolveAttachmentsForInline({
+      attachmentMeta: meta,
+      workspacePath: '/proj',
+      skipVisionPreparedPaths: new Set(['assets/shot.png'])
+    });
+    expect(out).toBe('');
+  });
+
   it('falls back to legacy attachments string array', async () => {
     inlineFiles.mockClear();
     const { resolveAttachmentsForInline } = await import(

@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import type {
   ChatSendInput,
   ChatMessage,
+  PromptAttachmentMeta,
   TimelineEvent
 } from '@shared/types/chat.js';
 import type { ActiveRunInfo } from '@shared/types/ipc.js';
@@ -282,27 +283,6 @@ export async function startRun(
   // down to `buildInitialMessages` for precise replay-deduplication
   // (filter by id, not by content — see §3.6 in the audit).
   const promptEventId = input.promptEventId ?? randomUUID();
-  emit({
-    kind: 'user-prompt',
-    id: promptEventId,
-    ts: Date.now(),
-    content: input.prompt,
-    attachments:
-      input.attachmentMeta && input.attachmentMeta.length > 0
-        ? input.attachmentMeta
-        : undefined,
-    mentions:
-      input.mentions && input.mentions.length > 0 ? input.mentions : undefined,
-    // Pin the prompt to its run so the inline per-prompt Revert
-    // affordance (and the `rewindToPrompt` IPC) can resolve the
-    // matching checkpoint manifest in O(1). Older transcripts that
-    // lack this field fall back to a `manifest.startedAt ≈ event.ts`
-    // heuristic — see `resolveRunIdForPrompt` in
-    // `src/main/checkpoints/rewindToPrompt.ts`.
-    runId: input.runId,
-    providerId: input.selection.providerId,
-    modelId: input.selection.modelId
-  });
 
   let workspacePath: string;
   try {
@@ -394,7 +374,7 @@ export async function startRun(
   }
 
   try {
-    const initialMessages = await buildInitialMessages(
+    const { messages: initialMessages, persistedAttachments } = await buildInitialMessages(
       input,
       workspacePath,
       priorTranscript,
@@ -404,6 +384,23 @@ export async function startRun(
       // stops paying FS cost during the `inlineFiles` step.
       abort.signal
     );
+    emit({
+      kind: 'user-prompt',
+      id: promptEventId,
+      ts: Date.now(),
+      content: input.prompt,
+      attachments:
+        persistedAttachments && persistedAttachments.length > 0
+          ? persistedAttachments
+          : input.attachmentMeta && input.attachmentMeta.length > 0
+            ? input.attachmentMeta
+            : undefined,
+      mentions:
+        input.mentions && input.mentions.length > 0 ? input.mentions : undefined,
+      runId: input.runId,
+      providerId: input.selection.providerId,
+      modelId: input.selection.modelId
+    });
     // Surface the replay shape for triage. A non-fresh conversation MUST
     // produce `priorEventCount > 0` AND `replayedMessageCount > 0`; a
     // zero on either when the conversation has prior turns is the
@@ -695,7 +692,7 @@ async function buildInitialMessages(
    * keep the legacy four-arg shape.
    */
   signal?: AbortSignal
-): Promise<ChatMessage[]> {
+): Promise<{ messages: ChatMessage[]; persistedAttachments?: PromptAttachmentMeta[] }> {
   const source = priorTranscript ?? [];
   const replayEvents: TimelineEvent[] = [];
   for (const e of source) {
@@ -725,7 +722,7 @@ async function buildInitialMessages(
     }
   );
 
-  const { message: userMessage } = await buildUserTurnMessage({
+  const { message: userMessage, persistedAttachments } = await buildUserTurnMessage({
     prompt: input.prompt,
     selection: input.selection,
     workspacePath,
@@ -738,7 +735,10 @@ async function buildInitialMessages(
     signal
   });
 
-  return seedCacheLayeredMessages(replayed, userMessage.content ?? '');
+  return {
+    messages: seedCacheLayeredMessages(replayed, userMessage.content ?? ''),
+    persistedAttachments
+  };
 }
 
 registerRunCrashDrain(abortAllActiveRunsWithError);

@@ -5,7 +5,7 @@
  */
 
 import { readFile } from 'node:fs/promises';
-import type { PromptAttachmentMeta } from '@shared/types/chat.js';
+import type { AttachmentMediaKind, PromptAttachmentMeta } from '@shared/types/chat.js';
 import { mediaKindFromMeta } from '@shared/attachments/mediaKind.js';
 import { escapeXmlAttr } from '../orchestrator/envelope/index.js';
 import {
@@ -17,21 +17,49 @@ import { realpathInsideAttachmentsRoot } from './sandbox.js';
 const INLINE_FILE_CHAR_CAP = 32_000;
 const INLINE_ABORTED_MARKER = '(aborted before read)';
 
-function isImageAttachment(meta: PromptAttachmentMeta): boolean {
-  const kind = meta.mediaKind ?? mediaKindFromMeta(meta);
-  return kind === 'image';
+function attachmentMediaKind(meta: PromptAttachmentMeta): AttachmentMediaKind {
+  return meta.mediaKind ?? mediaKindFromMeta(meta);
 }
 
-function imageReferenceBlock(meta: PromptAttachmentMeta): string {
+function attachmentPathKey(meta: PromptAttachmentMeta): string {
+  return meta.workspacePath ?? meta.storedPath ?? meta.id;
+}
+
+function isBinaryMediaKind(kind: AttachmentMediaKind): boolean {
+  return kind === 'image' || kind === 'pdf' || kind === 'video' || kind === 'audio';
+}
+
+const MEDIA_REFERENCE_NOTES: Record<'image' | 'pdf' | 'video' | 'audio', string> = {
+  image:
+    'Reference only — image bytes are not inlined. The user sees a thumbnail in Vyotiq; you receive path and metadata.',
+  pdf:
+    'Reference only — PDF bytes are not inlined. Native PDF may be on the wire when the model supports file input.',
+  video:
+    'Reference only — video bytes are not inlined. Native video may be on the wire when the model supports video input.',
+  audio:
+    'Reference only — audio bytes are not inlined. Native audio may be on the wire when the model supports audio input.'
+};
+
+function mediaReferenceBlock(
+  meta: PromptAttachmentMeta,
+  kind: 'image' | 'pdf' | 'video' | 'audio'
+): string {
   const displayPath = meta.workspacePath ?? meta.name;
   const safePath = escapeXmlAttr(displayPath);
-  const attrs = [`path="${safePath}"`, 'kind="image-reference"'];
+  const attrs = [`path="${safePath}"`, `kind="${kind}-reference"`];
   if (meta.mimeType) attrs.push(`mime="${escapeXmlAttr(meta.mimeType)}"`);
   if (meta.sizeBytes !== undefined) attrs.push(`size="${String(meta.sizeBytes)}"`);
-  attrs.push(
-    'note="Reference only — image bytes are not inlined. The user sees a thumbnail in Vyotiq; you receive path and metadata."'
-  );
+  attrs.push(`note="${escapeXmlAttr(MEDIA_REFERENCE_NOTES[kind])}"`);
   return `<file ${attrs.join(' ')} />`;
+}
+
+function shouldSkipForVisionPrepared(
+  meta: PromptAttachmentMeta,
+  skipVisionPreparedPaths?: ReadonlySet<string>
+): boolean {
+  if (!skipVisionPreparedPaths || skipVisionPreparedPaths.size === 0) return false;
+  const key = attachmentPathKey(meta);
+  return skipVisionPreparedPaths.has(key);
 }
 
 function buildInlineTruncationMarker(shownChars: number, totalChars: number): string {
@@ -45,9 +73,11 @@ async function inlineExternalOne(
   meta: PromptAttachmentMeta,
   signal?: AbortSignal
 ): Promise<string> {
-  if (isImageAttachment(meta)) {
-    return imageReferenceBlock(meta);
-  }
+  const kind = attachmentMediaKind(meta);
+  if (kind === 'image') return mediaReferenceBlock(meta, 'image');
+  if (kind === 'pdf') return mediaReferenceBlock(meta, 'pdf');
+  if (kind === 'video') return mediaReferenceBlock(meta, 'video');
+  if (kind === 'audio') return mediaReferenceBlock(meta, 'audio');
   const displayPath = meta.workspacePath ?? meta.name;
   const safePath = escapeXmlAttr(displayPath);
   if (signal?.aborted) {
@@ -99,6 +129,8 @@ export interface ResolveAttachmentsInput {
   workspacePath: string;
   cache?: InlineFileCache;
   signal?: AbortSignal;
+  /** Workspace/stored paths already sent as native vision parts — omit from XML. */
+  skipVisionPreparedPaths?: ReadonlySet<string>;
 }
 
 /**
@@ -108,16 +140,19 @@ export interface ResolveAttachmentsInput {
 export async function resolveAttachmentsForInline(
   input: ResolveAttachmentsInput
 ): Promise<string> {
-  const { attachmentMeta, legacyAttachments, workspacePath, cache, signal } = input;
+  const { attachmentMeta, legacyAttachments, workspacePath, cache, signal, skipVisionPreparedPaths } =
+    input;
 
   if (attachmentMeta && attachmentMeta.length > 0) {
     const workspaceTextPaths: string[] = [];
-    const workspaceImageMetas: PromptAttachmentMeta[] = [];
+    const workspaceMediaRefs: PromptAttachmentMeta[] = [];
     const external: PromptAttachmentMeta[] = [];
     for (const meta of attachmentMeta) {
+      if (shouldSkipForVisionPrepared(meta, skipVisionPreparedPaths)) continue;
       if (meta.workspacePath) {
-        if (isImageAttachment(meta)) {
-          workspaceImageMetas.push(meta);
+        const kind = attachmentMediaKind(meta);
+        if (isBinaryMediaKind(kind)) {
+          workspaceMediaRefs.push(meta);
         } else {
           workspaceTextPaths.push(meta.workspacePath);
         }
@@ -129,8 +164,20 @@ export async function resolveAttachmentsForInline(
     if (workspaceTextPaths.length > 0) {
       parts.push(await inlineFiles(workspacePath, workspaceTextPaths, cache, signal));
     }
-    if (workspaceImageMetas.length > 0) {
-      parts.push(workspaceImageMetas.map((meta) => imageReferenceBlock(meta)).join('\n\n'));
+    if (workspaceMediaRefs.length > 0) {
+      parts.push(
+        workspaceMediaRefs
+          .map((meta) => {
+            const kind = attachmentMediaKind(meta);
+            if (kind === 'image') return mediaReferenceBlock(meta, 'image');
+            if (kind === 'pdf') return mediaReferenceBlock(meta, 'pdf');
+            if (kind === 'video') return mediaReferenceBlock(meta, 'video');
+            if (kind === 'audio') return mediaReferenceBlock(meta, 'audio');
+            return '';
+          })
+          .filter((block) => block.length > 0)
+          .join('\n\n')
+      );
     }
     if (external.length > 0) {
       parts.push(await inlineExternalAttachments(external, signal));

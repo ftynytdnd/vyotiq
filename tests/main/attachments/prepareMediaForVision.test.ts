@@ -30,7 +30,7 @@ describe('prepareVisionParts', () => {
   });
 
   it('resizes and encodes workspace images for vision-capable models', async () => {
-    const { parts, visionTokenEstimate } = await prepareVisionParts({
+    const { parts, visionTokenEstimate, preparedAttachmentHashes } = await prepareVisionParts({
       attachmentMeta: [
         {
           id: 'a1',
@@ -49,6 +49,7 @@ describe('prepareVisionParts', () => {
     if (parts[0]?.type !== 'image_url') return;
     expect(parts[0].image_url.url).toMatch(/^data:image\/(jpeg|png|webp);base64,/);
     expect(visionTokenEstimate).toBeGreaterThan(0);
+    expect(preparedAttachmentHashes['assets/wide.png']).toMatch(/^[a-f0-9]{64}$/);
 
     const meta = await sharp(
       Buffer.from(parts[0].image_url.url.split(',')[1] ?? '', 'base64')
@@ -74,5 +75,40 @@ describe('prepareVisionParts', () => {
     });
     expect(parts).toHaveLength(0);
     expect(visionTokenEstimate).toBe(0);
+  });
+
+  it('reuses disk cache via preparedMediaHash without re-reading the file', async () => {
+    const first = await prepareVisionParts({
+      attachmentMeta: [
+        {
+          id: 'a1',
+          name: 'wide.png',
+          mimeType: 'image/png',
+          workspacePath: 'assets/wide.png',
+          mediaKind: 'image'
+        }
+      ],
+      workspacePath: workspace,
+      inputModalities: ['text', 'image']
+    });
+    const hash = first.preparedAttachmentHashes['assets/wide.png'];
+    expect(hash).toMatch(/^[a-f0-9]{64}$/);
+
+    const second = await prepareVisionParts({
+      attachmentMeta: [
+        {
+          id: 'a2',
+          name: 'wide.png',
+          mimeType: 'image/png',
+          workspacePath: 'assets/wide.png',
+          mediaKind: 'image',
+          preparedMediaHash: hash
+        }
+      ],
+      workspacePath: workspace,
+      inputModalities: ['text', 'image']
+    });
+    expect(second.parts).toHaveLength(1);
+    expect(second.parts[0]).toEqual(first.parts[0]);
   });
 });

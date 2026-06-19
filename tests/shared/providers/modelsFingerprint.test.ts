@@ -18,4 +18,10 @@ describe('modelsFingerprint', () => {
     ];
     expect(modelsFingerprint(authoritative)).not.toBe(modelsFingerprint(estimated));
   });
+
+  it('changes when inputModalities are added', () => {
+    const textOnly: ModelInfo[] = [{ id: 'gpt-4o' }];
+    const withVision: ModelInfo[] = [{ id: 'gpt-4o', inputModalities: ['text', 'image'] }];
+    expect(modelsFingerprint(textOnly)).not.toBe(modelsFingerprint(withVision));
+  });
 });

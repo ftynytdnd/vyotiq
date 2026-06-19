@@ -1630,6 +1630,12 @@ export interface VyotiqApi {
 
     }): Promise<import('./chat.js').PromptAttachmentMeta[]>;
 
+    ingestClipboardImage(input: {
+      workspaceId: string;
+      conversationId: string;
+      messageId: string;
+    }): Promise<import('./chat.js').PromptAttachmentMeta | null>;
+
     readText(
 
       input: string | { path: string; workspaceId?: string }

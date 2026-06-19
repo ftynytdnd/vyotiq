@@ -43,6 +43,20 @@ export interface BuildUserTurnMessageResult {
   turnXml: string;
   visionTokenEstimate: number;
   usedVisionParts: boolean;
+  /** Attachment metadata with `preparedMediaHash` when native vision parts were encoded. */
+  persistedAttachments?: PromptAttachmentMeta[];
+}
+
+function mergePreparedHashes(
+  attachmentMeta: PromptAttachmentMeta[] | undefined,
+  hashes: Record<string, string>
+): PromptAttachmentMeta[] | undefined {
+  if (!attachmentMeta?.length) return attachmentMeta;
+  return attachmentMeta.map((meta) => {
+    const key = meta.workspacePath ?? meta.storedPath ?? meta.id;
+    const hash = hashes[key];
+    return hash ? { ...meta, preparedMediaHash: hash } : meta;
+  });
 }
 
 export async function resolveInputModalitiesForSelection(
@@ -82,11 +96,35 @@ export async function buildUserTurnMessage(
   }
 
   const userMessageXml = wrapXml('user_message', input.prompt, undefined, { escape: true });
+
+  let visionParts: ChatContentPart[] = [];
+  let visionTokenEstimate = 0;
+  let skipVisionPreparedPaths: ReadonlySet<string> | undefined;
+  let preparedAttachmentHashes: Record<string, string> = {};
+
+  if (mergedAttachmentMeta.length) {
+    const prepared = await prepareVisionParts({
+      attachmentMeta: mergedAttachmentMeta,
+      workspacePath: input.workspacePath,
+      inputModalities: modalities,
+      cache: input.mediaCache,
+      cacheKeyPrefix: input.runId,
+      signal: input.signal
+    });
+    visionParts = prepared.parts;
+    visionTokenEstimate = prepared.visionTokenEstimate;
+    preparedAttachmentHashes = prepared.preparedAttachmentHashes;
+    if (prepared.preparedWorkspacePaths.length > 0) {
+      skipVisionPreparedPaths = new Set(prepared.preparedWorkspacePaths);
+    }
+  }
+
   const attachmentBlocks = await resolveAttachmentsForInline({
     attachmentMeta: input.attachmentMeta,
     legacyAttachments: input.legacyAttachments,
     workspacePath: input.workspacePath,
-    signal: input.signal
+    signal: input.signal,
+    skipVisionPreparedPaths
   });
   const mentionBlocks = await resolveMentionsForInline({
     mentions: input.mentions,
@@ -100,22 +138,6 @@ export async function buildUserTurnMessage(
       : '';
   const turnBody = attachmentsXml ? `${userMessageXml}\n${attachmentsXml}` : userMessageXml;
   const turnXml = wrapXml('turn', turnBody);
-
-  let visionParts: ChatContentPart[] = [];
-  let visionTokenEstimate = 0;
-
-  if (mergedAttachmentMeta.length) {
-    const prepared = await prepareVisionParts({
-      attachmentMeta: mergedAttachmentMeta,
-      workspacePath: input.workspacePath,
-      inputModalities: modalities,
-      cache: input.mediaCache,
-      cacheKeyPrefix: input.runId,
-      signal: input.signal
-    });
-    visionParts = prepared.parts;
-    visionTokenEstimate = prepared.visionTokenEstimate;
-  }
 
   const hasImages = mergedAttachmentMeta.some(
     (m) => (m.mediaKind ?? mediaKindFromMeta(m)) === 'image'
@@ -137,7 +159,12 @@ export async function buildUserTurnMessage(
       }
     : { role: 'user', content: turnXml };
 
-  return { message, turnXml, visionTokenEstimate, usedVisionParts };
+  const persistedAttachments = mergePreparedHashes(
+    input.attachmentMeta,
+    preparedAttachmentHashes
+  );
+
+  return { message, turnXml, visionTokenEstimate, usedVisionParts, persistedAttachments };
 }
 
 /**

@@ -15,7 +15,7 @@ import { TokenUsagePill } from './TokenUsagePill.js';
 import { ContextWindowMeter } from './ContextWindowMeter.js';
 import { PromptAttachmentCards } from './PromptAttachmentCards.js';
 import { mediaKindFromMeta } from '@shared/attachments/mediaKind.js';
-import { modelSupportsVision, modelSupportsAudioNative } from '@shared/providers/visionCapabilities.js';
+import { modelSupportsVision, modelSupportsAudioNative, modelSupportsPdfNative, modelSupportsVideoNative } from '@shared/providers/visionCapabilities.js';
 import { findProviderModel } from './modelPicker/modelPickerContext.js';
 import { useComposerAttachments } from './useComposerAttachments.js';
 import { useComposerHistory } from './useComposerHistory.js';
@@ -443,6 +443,20 @@ export function Composer({
     const info = provider ? findProviderModel(provider, model.modelId) : undefined;
     return !modelSupportsAudioNative(info?.inputModalities);
   }, [attachments, model, providers]);
+  const pdfWarning = useMemo(() => {
+    const hasPdf = attachments.some((m) => (m.mediaKind ?? mediaKindFromMeta(m)) === 'pdf');
+    if (!hasPdf || !model) return false;
+    const provider = providers.find((p) => p.id === model.providerId);
+    const info = provider ? findProviderModel(provider, model.modelId) : undefined;
+    return !modelSupportsPdfNative(info?.inputModalities);
+  }, [attachments, model, providers]);
+  const videoWarning = useMemo(() => {
+    const hasVideo = attachments.some((m) => (m.mediaKind ?? mediaKindFromMeta(m)) === 'video');
+    if (!hasVideo || !model) return false;
+    const provider = providers.find((p) => p.id === model.providerId);
+    const info = provider ? findProviderModel(provider, model.modelId) : undefined;
+    return !modelSupportsVideoNative(info?.inputModalities);
+  }, [attachments, model, providers]);
   const sendState: 'idle' | 'ready' | 'processing' =
     (canSendContent || awaitingAskUser) && model ? 'ready' : 'idle';
   const sendDisabled = !canSendContent && !awaitingAskUser;
@@ -470,6 +484,7 @@ export function Composer({
     <div className="relative w-full">
       <div
         ref={shellRef}
+        data-e2e-can-attach={canAttach ? 'true' : 'false'}
         className={cn(
           appComposerShellClassName,
           'flex flex-col overflow-hidden transition-[background] duration-150',
@@ -550,6 +565,8 @@ export function Composer({
               model={model}
               processingRun={showProcessingRunHint}
               visionWarning={visionWarning}
+              pdfWarning={pdfWarning}
+              videoWarning={videoWarning}
               audioWarning={audioWarning}
             />
             {showQueueBtn ? (

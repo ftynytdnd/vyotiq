@@ -22,6 +22,10 @@ interface ComposerStatusStripProps {
   processingRun?: boolean;
   /** Images attached but selected model lacks vision. */
   visionWarning?: boolean;
+  /** PDF attached but selected model lacks native PDF input. */
+  pdfWarning?: boolean;
+  /** Video attached but selected model lacks native video input. */
+  videoWarning?: boolean;
   /** Audio attached but selected model lacks native audio input. */
   audioWarning?: boolean;
 }
@@ -31,6 +35,8 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip({
   model = null,
   processingRun = false,
   visionWarning = false,
+  pdfWarning = false,
+  videoWarning = false,
   audioWarning = false
 }: ComposerStatusStripProps) {
   const account = useProviderAccountStore((s) =>
@@ -80,6 +86,32 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip({
         title="Images will be sent as path references only — pick a vision-capable model to analyze pixels"
       >
         Model may not support vision — images sent as references only
+      </span>
+    );
+  }
+
+  if (pdfWarning) {
+    return (
+      <span
+        className="vx-composer-status-strip min-w-0 flex-1 truncate px-0.5 text-meta text-warning"
+        role="status"
+        aria-live="polite"
+        title="PDF will be sent as a path reference only — pick a model with native PDF input"
+      >
+        Model may not support PDF — file sent as reference only
+      </span>
+    );
+  }
+
+  if (videoWarning) {
+    return (
+      <span
+        className="vx-composer-status-strip min-w-0 flex-1 truncate px-0.5 text-meta text-warning"
+        role="status"
+        aria-live="polite"
+        title="Video will be sent as a path reference only — pick a model with native video input"
+      >
+        Model may not support video — file sent as reference only
       </span>
     );
   }
