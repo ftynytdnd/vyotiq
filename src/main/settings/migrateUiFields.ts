@@ -78,6 +78,27 @@ export function stripRemovedContextManagementFields(
   };
 }
 
+/** Strip removed reflective-autonomy fields from persisted agent behavior. */
+export function stripRemovedReflectiveAutonomyFields(
+  agentBehavior: Record<string, unknown> | undefined
+): { agentBehavior: Record<string, unknown> | undefined; changed: boolean } {
+  if (!agentBehavior || typeof agentBehavior !== 'object') {
+    return { agentBehavior, changed: false };
+  }
+  let changed = false;
+  let next: Record<string, unknown> = agentBehavior;
+  for (const key of ['reflection', 'autonomy'] as const) {
+    if (key in next) {
+      const { [key]: _removed, ...rest } = next;
+      void _removed;
+      next = rest;
+      changed = true;
+    }
+  }
+  if (!changed) return { agentBehavior, changed: false };
+  return { agentBehavior: next, changed: true };
+}
+
 /** Strip removed right-dock fields from persisted settings. */
 export function stripRemovedUiFields<T extends UiRecord>(ui: T): { ui: T; changed: boolean } {
   let changed = false;
@@ -101,10 +122,13 @@ export function normalizeSettingsPatch(patch: Partial<AppSettings>): Partial<App
   ui = stripped.ui;
   changed = changed || stripped.changed;
   if (ui.agentBehavior && typeof ui.agentBehavior === 'object') {
+    const agentRaw = ui.agentBehavior as Record<string, unknown>;
     const { agentBehavior: cmStripped, changed: cmChanged } =
-      stripRemovedContextManagementFields(ui.agentBehavior as Record<string, unknown>);
-    if (cmChanged && cmStripped) {
-      ui = { ...ui, agentBehavior: cmStripped };
+      stripRemovedContextManagementFields(agentRaw);
+    const { agentBehavior: raStripped, changed: raChanged } =
+      stripRemovedReflectiveAutonomyFields(cmStripped ?? agentRaw);
+    if ((cmChanged || raChanged) && raStripped) {
+      ui = { ...ui, agentBehavior: raStripped };
       changed = true;
     }
   }

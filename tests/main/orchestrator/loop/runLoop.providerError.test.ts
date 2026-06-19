@@ -62,11 +62,13 @@ vi.mock('@main/providers/providerStore', () => ({
     name: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api',
     dialect: 'openai'
-  }))
+  })),
+  listProviders: vi.fn(async () => [])
 }));
 
 import { handleAssistantTurn } from '@main/orchestrator/loop/handleAssistantTurn';
 import { runOrchestratorLoop, __test_resetRecentBillingBlock } from '@main/orchestrator/loop/runLoop';
+import { setRecentBillingBlock } from '@main/orchestrator/loop/recentBillingBlock';
 
 beforeEach(() => {
   vi.mocked(handleAssistantTurn).mockReset();
@@ -123,6 +125,61 @@ describe('runOrchestratorLoop — ProviderError handling', () => {
       (e) => e.kind === 'agent-thought' && (e as { severity?: string }).severity === 'warn'
     );
     expect(retries).toHaveLength(0);
+  });
+
+  it('billing preflight blocks only the same provider+model pair', async () => {
+    setRecentBillingBlock(
+      { providerId: 'p', modelId: 'blocked-model' },
+      'DeepSeek: Insufficient balance. Top up at your provider dashboard.'
+    );
+
+    const events: TimelineEvent[] = [];
+    const blocked = await runOrchestratorLoop({
+      input: {
+        ...baseInput,
+        conversationId: 'c-billing-blocked',
+        selection: { providerId: 'p', modelId: 'blocked-model' }
+      },
+      workspacePath: '/tmp/ws',
+      workspaceId: 'ws-test',
+      signal: new AbortController().signal,
+      emit: (e) => events.push(e),
+      initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
+      initialQuery: 'hi',
+      strictApprovals: false
+    });
+
+    expect(blocked.terminalError).toMatch(/Insufficient balance/);
+    expect(handleAssistantTurn).not.toHaveBeenCalled();
+
+    vi.mocked(handleAssistantTurn).mockResolvedValue({
+      assistantMsgId: 'msg-ok',
+      assistantText:
+        'Here is a complete answer after switching to a sibling model on the same provider.',
+      reasoningText: '',
+      partialToolCalls: [],
+      hadText: true,
+      hadReasoning: false,
+      reasoningEndEmitted: false
+    });
+
+    const sibling = await runOrchestratorLoop({
+      input: {
+        ...baseInput,
+        conversationId: 'c-billing-sibling',
+        selection: { providerId: 'p', modelId: 'other-model' }
+      },
+      workspacePath: '/tmp/ws',
+      workspaceId: 'ws-test',
+      signal: new AbortController().signal,
+      emit: () => {},
+      initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'hi' }],
+      initialQuery: 'hi',
+      strictApprovals: false
+    });
+
+    expect(sibling.terminalError).toBeUndefined();
+    expect(handleAssistantTurn).toHaveBeenCalled();
   });
 
   it('still retries transient server errors up to the budget', async () => {

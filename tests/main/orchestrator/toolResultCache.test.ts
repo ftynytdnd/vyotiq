@@ -5,9 +5,9 @@
  *   1. Read-shaped calls (ls/read/search/recall + memory list/read) are
  *      memoized and the second hit short-circuits tool execution with a
  *      "you already did this" banner prepended.
- *   2. Write-shaped calls (edit/delete/bash/report, memory write/append)
- *      invalidate the entire per-signal cache so subsequent reads see
- *      fresh state.
+ *   2. Write-shaped calls (edit/delete/bash/report/capture, sg apply,
+ *      memory write/append) invalidate the entire per-signal cache so
+ *      subsequent reads see fresh state.
  *   3. Failed results are NEVER cached — a transient failure must not
  *      poison the cache.
  *   4. Different AbortSignals (= different runs) do not share entries.
@@ -201,6 +201,42 @@ describe('toolResultCache', () => {
     );
 
     expect(lookupCachedResult(sig, 'ls', { path: '.vyotiq/reports' })).toBeNull();
+  });
+
+  it('invalidates the cache when capture writes a screenshot file', () => {
+    const sig = new AbortController().signal;
+    recordToolResult(sig, 'read', { path: '.vyotiq/captures/shot.png' }, okResult('(missing)'));
+    expect(lookupCachedResult(sig, 'read', { path: '.vyotiq/captures/shot.png' })).not.toBeNull();
+
+    recordToolResult(
+      sig,
+      'capture',
+      { target: 'screen' },
+      { id: 'tc', name: 'capture', ok: true, output: 'saved capture', durationMs: 1 }
+    );
+
+    expect(lookupCachedResult(sig, 'read', { path: '.vyotiq/captures/shot.png' })).toBeNull();
+  });
+
+  it('invalidates the cache when sg runs with apply: true but not for dry runs', () => {
+    const sig = new AbortController().signal;
+    recordToolResult(sig, 'read', { path: 'src/index.ts' }, okResult('before sg'));
+
+    recordToolResult(
+      sig,
+      'sg',
+      { action: 'run', pattern: 'foo', rewrite: 'bar', apply: false },
+      { id: 'tc', name: 'sg', ok: true, output: 'dry run', durationMs: 1 }
+    );
+    expect(lookupCachedResult(sig, 'read', { path: 'src/index.ts' })).not.toBeNull();
+
+    recordToolResult(
+      sig,
+      'sg',
+      { action: 'run', pattern: 'foo', rewrite: 'bar', apply: true },
+      { id: 'tc2', name: 'sg', ok: true, output: 'applied', durationMs: 1 }
+    );
+    expect(lookupCachedResult(sig, 'read', { path: 'src/index.ts' })).toBeNull();
   });
 
   it('treats memory write/append as invalidating but memory read/list as cacheable', () => {

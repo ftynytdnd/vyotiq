@@ -4,6 +4,9 @@
  * Fails fast before `toolRunner` (and dedupe counters) so repeated
  * malformed calls surface the real validation error instead of
  * `duplicate_tool_call` on the third identical attempt.
+ *
+ * Prose-emitted tool JSON is not recovered here — only native `tool_calls`
+ * from the provider stream are dispatched by the orchestrator loop.
  */
 
 import { logger } from '../../logging/logger.js';
@@ -135,6 +138,90 @@ export function validateToolArgs(
           ok: false,
           output: 'Error: `action` and `scope` are required.',
           error: 'invalid args'
+        };
+      }
+      return { ok: true };
+    }
+    case 'capture': {
+      const target = args['target'];
+      if (target !== 'browser' && target !== 'screen' && target !== 'window') {
+        log.warn('required tool argument missing', {
+          tool: toolName,
+          field: 'target',
+          argKeys: Object.keys(args)
+        });
+        return {
+          ok: false,
+          output: 'Error: `target` must be browser, screen, or window.',
+          error: 'invalid target'
+        };
+      }
+      if (target === 'screen' && !requireNonEmptyString(args, 'sourceId')) {
+        log.warn('required tool argument missing', {
+          tool: toolName,
+          field: 'sourceId',
+          argKeys: Object.keys(args)
+        });
+        return {
+          ok: false,
+          output: 'Error: `sourceId` is required when target is screen.',
+          error: 'missing sourceId'
+        };
+      }
+      return { ok: true };
+    }
+    case 'report': {
+      if (!requireNonEmptyString(args, 'title')) {
+        log.warn('required tool argument missing', {
+          tool: toolName,
+          field: 'title',
+          argKeys: Object.keys(args)
+        });
+        return {
+          ok: false,
+          output: 'Error: `title` is required.',
+          error: 'missing title'
+        };
+      }
+      const body = args['body'];
+      if (typeof body !== 'string' || body.length === 0) {
+        log.warn('required tool argument missing', {
+          tool: toolName,
+          field: 'body',
+          argKeys: Object.keys(args)
+        });
+        return {
+          ok: false,
+          output: 'Error: `body` is required.',
+          error: 'missing body'
+        };
+      }
+      return { ok: true };
+    }
+    case 'recall': {
+      const action = args['action'];
+      if (action !== 'list' && action !== 'read') {
+        log.warn('required tool argument missing', {
+          tool: toolName,
+          field: 'action',
+          argKeys: Object.keys(args)
+        });
+        return {
+          ok: false,
+          output: 'Error: `action` must be "list" or "read".',
+          error: 'invalid action'
+        };
+      }
+      if (action === 'read' && !requireNonEmptyString(args, 'conversationId')) {
+        log.warn('required tool argument missing', {
+          tool: toolName,
+          field: 'conversationId',
+          argKeys: Object.keys(args)
+        });
+        return {
+          ok: false,
+          output: 'Error: `conversationId` is required for action="read".',
+          error: 'missing conversationId'
         };
       }
       return { ok: true };

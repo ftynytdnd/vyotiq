@@ -60,4 +60,22 @@ describe('normalizeSettingsPatch', () => {
     expect(cm).not.toHaveProperty('absoluteCeilingTokens');
     expect(cm).not.toHaveProperty('effectiveWindowFraction');
   });
+
+  it('strips removed reflective-autonomy fields from patches', () => {
+    const patch = normalizeSettingsPatch({
+      ui: {
+        agentBehavior: {
+          reflection: { verifyAfterEdits: true, selfReviewAfterEdits: true, verifyCommands: [] },
+          autonomy: { maxConsecutiveAutoContinuations: 6, maxAutonomyTokens: 2_000_000 },
+          runTokenBudget: { enabled: false }
+        }
+      }
+    });
+    const ab = patch.ui as {
+      agentBehavior?: Record<string, unknown>;
+    };
+    expect(ab.agentBehavior?.runTokenBudget).toEqual({ enabled: false });
+    expect(ab.agentBehavior).not.toHaveProperty('reflection');
+    expect(ab.agentBehavior).not.toHaveProperty('autonomy');
+  });
 });

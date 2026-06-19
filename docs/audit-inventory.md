@@ -39,6 +39,9 @@ Ledger of remediation items closed in the 2026-06 full-app pass. Do not resurrec
 - Orphans: `AttachmentPicker`, `AboutOverlay`, `useMentionComputerPick`, `synthesizeReportPreview`, `emitToolValidationFailure`, `endpointWarning`, `settingsGroups`, `parseUnifiedPatch`, unused barrel indexes.
 - **`FloatingPanel` / `usePersistedPanelWidth`** — dead UI; deleted in 2026-06 remediation pass.
 - **Phased execution engine** — `phase_gate` tool, `src/main/orchestrator/phased/`, settings panel, harness `05-phased-execution.md`, and runtime state machine removed; legacy `phase` / `phase-gate` / `phase-ledger-entry` transcript rows still replay in the timeline.
+- **Reflective autonomy** — terminal gates (`runTerminalGates`, verify/self-review/goal continuation), `plan` tool, goal-mode store/IPC, `ReflectionAutonomyPanel`, harness `05-reflection-autonomy.md`, and `docs/reflective-autonomy-design.md` removed; persisted `agentBehavior.reflection` / `autonomy` keys stripped on settings load.
+- **Phased-execution orphans** — `phaseGateIntercept.ts`, `phasedEscapeResolve.ts`, `PhasedExecutionPanel.tsx`, and phased-engine tests removed (legacy `phase` transcript rows still replay).
+- **Unwired timeline/tool UI** — `useToolRerun.ts`, `PlanInvocation.tsx`, `ToolCallChip.tsx` removed; `plan` tool not registered.
 - **Redundant IPC** — `APP_DOWNLOAD_UPDATE`, `terminal.list`, `browser.destroy` removed from public preload/API (internal teardown paths retained).
 - **Dead store exports** — `requestScrollToTail` / `timelineAtTail`, `selectRunRecoveryState`, `recordWorkspaceSpendForPrompt`.
 - Mention picker "Coming soon" stub rows.

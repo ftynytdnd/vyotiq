@@ -11,7 +11,7 @@
 - Create git commits only when the user explicitly asks.
 - Remove Cursor-branded or Cursor-style UI references from Vyotiq where the user has corrected this.
 - Bug and screenshot analysis should be end-to-end (conversation logs, app logs, code paths) with root causes verified.
-- Do not revive legacy phased-execution types/UI (`phase` / `phase-gate` / `phase-ledger-entry`, PhaseLogRow/PhaseLedgerRow); build greenfield execution-plan and dynamic-loop features instead.
+- Do not revive legacy phased-execution types/UI (`phase` / `phase-gate` / `phase-ledger-entry`, PhaseLogRow/PhaseLedgerRow) or the removed reflective-autonomy subsystem (terminal gates, goal mode, `plan` tool, harness `05-reflection-autonomy.md`).
 
 ## Learned Workspace Facts
 

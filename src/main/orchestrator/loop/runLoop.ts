@@ -163,14 +163,13 @@ const GOAL_ANCHOR_MAX_CHARS = 600;
 const USER_EMPTY_TURN_ERROR =
   "The assistant didn't produce a complete answer. Try Retry below, switch models, or lower thinking effort.";
 
-/** Recent billing failures per provider — skip immediate re-hit within TTL. */
-const recentBillingBlock = new Map<string, { at: number; message: string }>();
-const BILLING_BLOCK_TTL_MS = 5 * 60 * 1000;
+import {
+  getRecentBillingBlock,
+  setRecentBillingBlock,
+  __test_resetRecentBillingBlock
+} from './recentBillingBlock.js';
 
-/** Test-only: clear billing preflight cache between cases. */
-export function __test_resetRecentBillingBlock(): void {
-  recentBillingBlock.clear();
-}
+export { __test_resetRecentBillingBlock };
 
 /**
  * Emit a block of text as the orchestrator's final user-facing answer,
@@ -323,8 +322,8 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     /** Anthropic cache-diagnostics: prior turn `msg_…` id for prefix comparison. */
     let lastAnthropicMessageId: string | undefined;
 
-    const billingBlock = recentBillingBlock.get(opts.input.selection.providerId);
-    if (billingBlock && Date.now() - billingBlock.at < BILLING_BLOCK_TTL_MS) {
+    const billingBlock = getRecentBillingBlock(opts.input.selection);
+    if (billingBlock) {
       emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: billingBlock.message });
       return { terminalError: billingBlock.message };
     }
@@ -700,7 +699,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               msg
             });
             if (turn.error.kind === 'billing') {
-              recentBillingBlock.set(opts.input.selection.providerId, { at: Date.now(), message: msg });
+              setRecentBillingBlock(opts.input.selection, msg);
             }
             if (turn.hadText || turn.hadReasoning) {
               emit({ kind: 'agent-text-aborted', id: turn.assistantMsgId, ts: Date.now() });

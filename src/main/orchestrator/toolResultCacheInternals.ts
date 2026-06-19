@@ -34,7 +34,12 @@ export function readCacheKey(args: Record<string, unknown>): string | null {
 }
 
 export function isWriteShaped(name: ToolName, args: Record<string, unknown>): boolean {
-  if (name === 'edit' || name === 'delete' || name === 'bash' || name === 'report') return true;
+  if (name === 'edit' || name === 'delete' || name === 'bash' || name === 'report' || name === 'capture') {
+    return true;
+  }
+  if (name === 'sg') {
+    return args.apply === true;
+  }
   if (name === 'memory') {
     const action = typeof args.action === 'string' ? args.action : '';
     return action === 'write' || action === 'append';
