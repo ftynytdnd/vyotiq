@@ -13,7 +13,7 @@
  */
 
 import { create } from 'zustand';
-import { vyotiq } from '../lib/ipc.js';
+import { persistSettingsPatch } from '../lib/persistSettingsPatch.js';
 
 const DEBOUNCE_MS = 400;
 
@@ -94,7 +94,7 @@ function persistLater(expanded: Record<string, Set<string>>): void {
     persistTimer = null;
     const snapshot = pendingExpanded ?? expanded;
     pendingExpanded = null;
-    void vyotiq.settings.set({ ui: { expandedRows: buildPayload(snapshot) } }).catch(() => {
+    void persistSettingsPatch({ ui: { expandedRows: buildPayload(snapshot) } }).catch(() => {
       /* swallow: non-critical, fire-and-forget */
     });
   }, DEBOUNCE_MS);
@@ -106,13 +106,13 @@ function persistLater(expanded: Record<string, Set<string>>): void {
  * down. Best-effort: the IPC call itself is fire-and-forget because the
  * page is unloading.
  */
-export function flushTimelineUiPersistence(): void {
-  if (persistTimer === null || pendingExpanded === null) return;
+export function flushTimelineUiPersistence(): Promise<void> {
+  if (persistTimer === null || pendingExpanded === null) return Promise.resolve();
   clearTimeout(persistTimer);
   const snapshot = pendingExpanded;
   persistTimer = null;
   pendingExpanded = null;
-  void vyotiq.settings.set({ ui: { expandedRows: buildPayload(snapshot) } }).catch(() => {
+  return persistSettingsPatch({ ui: { expandedRows: buildPayload(snapshot) } }).catch(() => {
     /* noop */
   });
 }

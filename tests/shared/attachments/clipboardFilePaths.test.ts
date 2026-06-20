@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   looksLikeAbsoluteFilePath,
   normalizeClipboardPath,
+  normalizePathComparisonKey,
   parseFileUriList
 } from '@shared/attachments/clipboardFilePaths.js';
 
@@ -21,5 +22,10 @@ describe('clipboardFilePaths', () => {
     expect(normalizeClipboardPath('file:///C:/Users/me/shot.png')).toBe(
       'C:/Users/me/shot.png'
     );
+  });
+
+  it('dedupes host paths and plain-text paths case-insensitively', () => {
+    expect(normalizePathComparisonKey('C:\\review-bugbot')).toBe('c:/review-bugbot');
+    expect(normalizePathComparisonKey('C:/Review-Bugbot')).toBe('c:/review-bugbot');
   });
 });

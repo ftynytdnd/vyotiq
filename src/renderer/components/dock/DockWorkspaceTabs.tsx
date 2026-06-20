@@ -219,7 +219,7 @@ function WorkspaceTab({
           void moveConversation(conversationId, workspace.id);
         }}
         className={cn(
-          dockTabRowClassName(active, 'workspace'),
+          dockTabRowClassName(),
           horizontal && 'vx-dock-tab--horizontal',
           !horizontal &&
             (removeStep === 'confirm' || removeStep === 'choice') &&

@@ -3,6 +3,7 @@
  */
 
 import type {
+  AttachmentMediaKind,
   ChatContentPart,
   ChatMessage,
   PromptAttachmentMeta,
@@ -13,6 +14,9 @@ import type { ModelInputModality, ModelSelection } from '@shared/types/provider.
 import { mediaKindFromMeta } from '@shared/attachments/mediaKind.js';
 import {
   inputModalitiesFromModelId,
+  modelSupportsAudioNative,
+  modelSupportsPdfNative,
+  modelSupportsVideoNative,
   modelSupportsVision
 } from '@shared/providers/visionCapabilities.js';
 import { findProviderModel } from '@shared/providers/modelId.js';
@@ -59,6 +63,48 @@ function mergePreparedHashes(
   });
 }
 
+function modelSupportsNativeMedia(
+  kind: AttachmentMediaKind,
+  modalities: ModelInputModality[] | undefined
+): boolean {
+  switch (kind) {
+    case 'image':
+      return modelSupportsVision(modalities);
+    case 'pdf':
+      return modelSupportsPdfNative(modalities);
+    case 'video':
+      return modelSupportsVideoNative(modalities);
+    case 'audio':
+      return modelSupportsAudioNative(modalities);
+    default:
+      return true;
+  }
+}
+
+const NATIVE_MEDIA_LABEL: Partial<Record<AttachmentMediaKind, string>> = {
+  image: 'images',
+  pdf: 'PDFs',
+  video: 'video',
+  audio: 'audio'
+};
+
+function unsupportedNativeMediaLabel(
+  attachmentMeta: PromptAttachmentMeta[],
+  modalities: ModelInputModality[] | undefined
+): string | null {
+  const unsupported = new Set<string>();
+  for (const meta of attachmentMeta) {
+    const kind = meta.mediaKind ?? mediaKindFromMeta(meta);
+    if (kind === 'text') continue;
+    if (!modelSupportsNativeMedia(kind, modalities)) {
+      const label = NATIVE_MEDIA_LABEL[kind] ?? kind;
+      unsupported.add(label);
+    }
+  }
+  if (unsupported.size === 0) return null;
+  return [...unsupported].join(', ');
+}
+
 export async function resolveInputModalitiesForSelection(
   selection: ModelSelection
 ): Promise<ModelInputModality[] | undefined> {
@@ -68,7 +114,8 @@ export async function resolveInputModalitiesForSelection(
     return inputModalitiesFromModelId(selection.modelId);
   }
   const model = findProviderModel(provider, selection.modelId);
-  return model?.inputModalities ?? inputModalitiesFromModelId(selection.modelId);
+  if (model) return model.inputModalities;
+  return inputModalitiesFromModelId(selection.modelId);
 }
 
 export async function buildUserTurnMessage(
@@ -139,13 +186,10 @@ export async function buildUserTurnMessage(
   const turnBody = attachmentsXml ? `${userMessageXml}\n${attachmentsXml}` : userMessageXml;
   const turnXml = wrapXml('turn', turnBody);
 
-  const hasImages = mergedAttachmentMeta.some(
-    (m) => (m.mediaKind ?? mediaKindFromMeta(m)) === 'image'
-  );
-  if (hasImages && !modelSupportsVision(modalities) && input.conversationId) {
+  const unsupportedMedia = unsupportedNativeMediaLabel(mergedAttachmentMeta, modalities);
+  if (unsupportedMedia && input.conversationId) {
     notifyUiToast({
-      message:
-        'Selected model may not support vision — images sent as path references only.',
+      message: `Selected model may not support ${unsupportedMedia} — attachments sent as path references only.`,
       variant: 'info',
       conversationId: input.conversationId
     });

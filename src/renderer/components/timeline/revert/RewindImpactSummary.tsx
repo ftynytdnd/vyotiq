@@ -89,7 +89,7 @@ export function RewindImpactSummary({
         </span>
       )}
       {legacyBlobCount > 0 && (
-        <span className="text-warning/90">
+        <span className="text-warning-strong">
           {legacyBlobCount} legacy snapshot{legacyBlobCount === 1 ? '' : 's'} missing — git
           fallback may apply
         </span>

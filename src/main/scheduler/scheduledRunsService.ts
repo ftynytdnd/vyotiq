@@ -89,7 +89,6 @@ async function tick(): Promise<void> {
           id: run.id,
           err: err instanceof Error ? err.message : String(err)
         });
-        await touchScheduledRun(run.id, now);
         queueFullToastNotified.delete(run.id);
       }
     }

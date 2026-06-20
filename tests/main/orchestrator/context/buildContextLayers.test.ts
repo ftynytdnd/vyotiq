@@ -54,6 +54,16 @@ describe('buildContextLayers', () => {
     expect(messages[CACHE_LAYER_FEW_SHOT_INDEX]?.content).toContain('static_examples');
   });
 
+  it('migrates minimal legacy system + turn layout in place', () => {
+    const messages = [
+      { role: 'system' as const, content: 'legacy system' },
+      { role: 'user' as const, content: '<turn>only</turn>' }
+    ];
+    migrateToCacheLayeredInPlace(messages);
+    expect(isCacheLayeredTopology(messages)).toBe(true);
+    expect(messages.length).toBeGreaterThanOrEqual(5);
+  });
+
   it('migrates legacy single-system layout in place', () => {
     const messages = [
       { role: 'system' as const, content: 'legacy system' },

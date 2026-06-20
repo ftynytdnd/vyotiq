@@ -72,8 +72,8 @@ export function DiffLine({
       }
       className={cn(
         'flex items-stretch px-1',
-        line.kind === '+' && (intra ? 'bg-success/[0.05] text-success' : 'bg-success/10 text-success'),
-        line.kind === '-' && (intra ? 'bg-danger/[0.05] text-danger' : 'bg-danger/10 text-danger'),
+        line.kind === '+' && (intra ? 'bg-success-faint text-success' : 'bg-success-soft text-success'),
+        line.kind === '-' && (intra ? 'bg-danger-faint text-danger' : 'bg-danger-soft text-danger'),
         line.kind === ' ' && 'text-text-secondary',
         pickable && 'vx-diff-line-pickable',
         highlighted && 'vx-diff-line-highlighted'
@@ -88,7 +88,7 @@ export function DiffLine({
             {intra.prefix}
             <span className={cn(
               'rounded-[2px] px-px',
-              line.kind === '+' ? 'bg-success/25' : 'bg-danger/25'
+              line.kind === '+' ? 'bg-success-emphasis' : 'bg-danger-emphasis'
             )}>
               {intra.changed}
             </span>

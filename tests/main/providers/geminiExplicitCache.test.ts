@@ -1,8 +1,10 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
   _resetGeminiExplicitCacheForTests,
-  resolveGeminiExplicitCacheName
+  resolveGeminiExplicitCacheName,
+  shouldUseGeminiExplicitCache
 } from '@main/providers/cacheHints/geminiExplicitCache.js';
+import { syncPromptCachingFromSettings } from '@main/settings/promptCachingRuntime.js';
 
 describe('resolveGeminiExplicitCacheName', () => {
   const prev = process.env['VYOTIQ_GEMINI_EXPLICIT_CACHE'];
@@ -108,5 +110,27 @@ describe('resolveGeminiExplicitCacheName', () => {
     });
     expect(name).toBeUndefined();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('shouldUseGeminiExplicitCache', () => {
+  const prev = process.env['VYOTIQ_GEMINI_EXPLICIT_CACHE'];
+
+  afterEach(() => {
+    if (prev === undefined) delete process.env['VYOTIQ_GEMINI_EXPLICIT_CACHE'];
+    else process.env['VYOTIQ_GEMINI_EXPLICIT_CACHE'] = prev;
+    syncPromptCachingFromSettings({ ui: {} });
+  });
+
+  it('returns false for large prefixes when the setting is off and env is unset', () => {
+    delete process.env['VYOTIQ_GEMINI_EXPLICIT_CACHE'];
+    syncPromptCachingFromSettings({ ui: { promptCaching: { geminiExplicitCache: false } } });
+    expect(shouldUseGeminiExplicitCache(10_000)).toBe(false);
+  });
+
+  it('returns true for large prefixes when the setting is on', () => {
+    delete process.env['VYOTIQ_GEMINI_EXPLICIT_CACHE'];
+    syncPromptCachingFromSettings({ ui: { promptCaching: { geminiExplicitCache: true } } });
+    expect(shouldUseGeminiExplicitCache(10_000)).toBe(true);
   });
 });

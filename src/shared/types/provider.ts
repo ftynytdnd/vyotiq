@@ -301,6 +301,11 @@ export interface ModelInfo {
    * Anthropic/Gemini/Ollama capabilities). Omitted on text-only models.
    */
   inputModalities?: ModelInputModality[];
+  /**
+   * True when `inputModalities` came from model-id heuristics rather than
+   * provider API or models.dev catalog metadata.
+   */
+  inputModalitiesEstimated?: boolean;
 }
 
 /** Add-provider payload from the renderer. */

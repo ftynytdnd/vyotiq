@@ -40,6 +40,15 @@ describe('tokenCounter.estimateTokens', () => {
     expect(r.tokens).toBeGreaterThan(0);
   });
 
+  it('routes vendor-prefixed openai ids using the model tail', async () => {
+    const r = await estimateTokens({
+      modelId: 'openai/gpt-4o',
+      prompt: 'Hello, world.'
+    });
+    expect(r.exact).toBe(true);
+    expect(r.tokens).toBeGreaterThan(0);
+  });
+
   it('routes legacy gpt-3.5-turbo to cl100k (exact)', async () => {
     const r = await estimateTokens({
       modelId: 'gpt-3.5-turbo',

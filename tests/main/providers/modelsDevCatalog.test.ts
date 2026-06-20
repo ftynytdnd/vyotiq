@@ -9,7 +9,7 @@ vi.mock('@main/secrets/safeStore', () => ({
   writePlainJson: vi.fn(async () => undefined)
 }));
 
-import { enrichModelsFromModelsDev } from '@main/providers/modelsDevCatalog.js';
+import { enrichModelsFromModelsDev, _resetModelsDevCatalogForTests } from '@main/providers/modelsDevCatalog.js';
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -20,6 +20,7 @@ function jsonResponse(body: unknown): Response {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  _resetModelsDevCatalogForTests();
 });
 
 describe('enrichModelsFromModelsDev', () => {
@@ -54,5 +55,31 @@ describe('enrichModelsFromModelsDev', () => {
     expect(models[0]?.pricing?.inputPerMillion).toBe(0);
     expect(models[0]?.thinking?.supported).toBe(true);
     expect(models[0]?.supportedParameters).toContain('reasoning');
+  });
+
+  it('applies inputModalities from models.dev modalities.input', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({
+        openai: {
+          models: {
+            'gpt-4o': {
+              modalities: { input: ['text', 'image'], output: ['text'] }
+            }
+          }
+        }
+      })
+    );
+
+    const provider = {
+      id: 'p1',
+      name: 'OpenAI',
+      baseUrl: 'https://api.openai.com',
+      dialect: 'openai' as const,
+      enabled: true,
+      apiKey: 'k'
+    };
+
+    const models = await enrichModelsFromModelsDev(provider, [{ id: 'gpt-4o' }]);
+    expect(models[0]?.inputModalities).toEqual(['text', 'image']);
   });
 });

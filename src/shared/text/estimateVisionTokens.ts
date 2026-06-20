@@ -51,8 +51,12 @@ export function estimateVisionTokensFromContent(parts: ChatContentPart[]): numbe
         total += estimateVideoTokens(parsed?.bytes ?? 0);
         break;
       }
-      case 'input_audio':
+      case 'input_audio': {
+        const data = part.input_audio.data;
+        const bytes = data ? Math.floor((data.length * 3) / 4) : 0;
+        total += estimateAudioTokens(bytes);
         break;
+      }
       default: {
         const _exhaustive: never = part;
         void _exhaustive;
@@ -75,6 +79,12 @@ export function estimateImageTokensFromDimensions(width: number, height: number)
 export function estimatePdfTokens(byteLength: number): number {
   const pages = Math.max(1, Math.ceil(byteLength / (200 * 1024)));
   return pages * 2_000;
+}
+
+/** Rough audio token heuristic (~1 token per 8 encoded bytes, floor 100). */
+export function estimateAudioTokens(byteLength: number): number {
+  if (!Number.isFinite(byteLength) || byteLength <= 0) return 100;
+  return Math.max(100, Math.round(byteLength / 8));
 }
 
 /** Rough video frame-equivalent heuristic. */

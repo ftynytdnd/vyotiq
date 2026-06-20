@@ -13,7 +13,7 @@ export function gitStatusNameClass(status: GitPathStatus | null | undefined): st
     case 'A':
       return 'text-success';
     case 'D':
-      return 'text-danger/80 line-through';
+      return 'text-danger-strong line-through';
     case 'U':
       return 'text-danger';
     case '?':

@@ -31,18 +31,47 @@ const pool = new Map<string, TerminalPoolEntry>();
 let listenersBound = false;
 let themeObserver: MutationObserver | null = null;
 
+interface TerminalPoolGlobals {
+  __vyotiqTerminalPoolUnsub?: Array<() => void>;
+}
+const globalsRef = globalThis as unknown as TerminalPoolGlobals;
+
+function teardownTerminalPoolListeners(): void {
+  if (Array.isArray(globalsRef.__vyotiqTerminalPoolUnsub)) {
+    for (const fn of globalsRef.__vyotiqTerminalPoolUnsub) {
+      try {
+        fn();
+      } catch {
+        /* noop */
+      }
+    }
+  }
+  globalsRef.__vyotiqTerminalPoolUnsub = undefined;
+  themeObserver?.disconnect();
+  themeObserver = null;
+  listenersBound = false;
+}
+
 function bindGlobalListeners(): void {
   if (listenersBound) return;
+
+  // Tear down any previous subscriptions (HMR).
+  teardownTerminalPoolListeners();
+
+  const unsub: Array<() => void> = [];
+  unsub.push(
+    vyotiq.terminal.onData((event) => {
+      pool.get(event.sessionId)?.term.write(event.data);
+    })
+  );
+  unsub.push(
+    vyotiq.terminal.onExit((event) => {
+      const entry = pool.get(event.sessionId);
+      entry?.term.writeln(`\r\n\x1b[38;5;245m[shell exited ${event.exitCode}]\x1b[0m`);
+    })
+  );
+  globalsRef.__vyotiqTerminalPoolUnsub = unsub;
   listenersBound = true;
-
-  vyotiq.terminal.onData((event) => {
-    pool.get(event.sessionId)?.term.write(event.data);
-  });
-
-  vyotiq.terminal.onExit((event) => {
-    const entry = pool.get(event.sessionId);
-    entry?.term.writeln(`\r\n\x1b[38;5;245m[shell exited ${event.exitCode}]\x1b[0m`);
-  });
 
   if (typeof MutationObserver !== 'undefined') {
     themeObserver = new MutationObserver(() => {

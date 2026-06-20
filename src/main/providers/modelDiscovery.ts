@@ -21,7 +21,7 @@
  * as unreachable (same behavior as any other broken endpoint).
  */
 
-import type { ModelInfo, ProviderDialect, ProviderWithKey } from '@shared/types/provider.js';
+import type { ModelInfo, ModelInputModality, ProviderDialect, ProviderWithKey } from '@shared/types/provider.js';
 import { MODEL_DISCOVERY_TIMEOUT_MS, MODEL_DISCOVERY_TTL_MS } from '@shared/constants.js';
 import {
   contextWindowFromOllamaModelInfo,
@@ -41,10 +41,9 @@ import {
 import {
   inputModalitiesFromAnthropicModel,
   inputModalitiesFromGeminiModel,
-  inputModalitiesFromModelId,
   inputModalitiesFromOllamaShow,
   inputModalitiesFromOpenRouterArchitecture,
-  mergeInputModalities
+  resolveInputModalitiesFromDiscovery
 } from '@shared/providers/visionCapabilities.js';
 import { attachModelPricing } from '@shared/providers/attachModelPricing.js';
 import { mergeModelPricing } from '@shared/providers/modelPricing.js';
@@ -53,6 +52,16 @@ import { attachModelContext } from '@shared/providers/attachModelContext.js';
 import { contextWindowFromModelId } from '@shared/providers/contextFromModelId.js';
 import { dialectHintFromHostname } from '@shared/providers/providerHostname.js';
 import { DEFAULT_ANTHROPIC_BETAS } from '@shared/providers/thinkingEffort.js';
+
+function applyResolvedInputModalities(
+  info: ModelInfo,
+  modelId: string,
+  ...apiSources: Array<ModelInputModality[] | undefined>
+): void {
+  const resolved = resolveInputModalitiesFromDiscovery(modelId, ...apiSources);
+  if (resolved.inputModalities) info.inputModalities = resolved.inputModalities;
+  if (resolved.inputModalitiesEstimated) info.inputModalitiesEstimated = true;
+}
 import { isLocalProvider } from '@shared/providers/isLocalProvider.js';
 import { isNvidiaIntegrateHost } from '@shared/providers/isNvidiaIntegrateHost.js';
 import { classifyProviderHost } from '@shared/providers/providerHostKind.js';
@@ -617,7 +626,8 @@ async function fetchOpenAiModels(provider: ProviderWithKey): Promise<ModelInfo[]
         meta?: { context_size?: number | null; n_ctx_train?: number | null; context_length?: number | null };
       };
       const fromApi = contextWindowFromOpenAiModelRow(entry);
-      const ctx = mergeContextWindows(fromApi, attachModelContext(provider, id, fromApi));
+      const attached = attachModelContext(provider, id, fromApi);
+      const ctx = mergeContextWindows(fromApi, attached.contextWindow);
       const info: ModelInfo = { id };
       if (
         typeof nameCandidate === 'string' &&
@@ -627,6 +637,9 @@ async function fetchOpenAiModels(provider: ProviderWithKey): Promise<ModelInfo[]
         info.label = nameCandidate;
       }
       if (ctx !== undefined) info.contextWindow = ctx;
+      if (fromApi === undefined && attached.contextEstimated) {
+        info.contextEstimated = true;
+      }
       if (Array.isArray(entry.supported_parameters) && entry.supported_parameters.length > 0) {
         info.supportedParameters = entry.supported_parameters;
       }
@@ -639,16 +652,16 @@ async function fetchOpenAiModels(provider: ProviderWithKey): Promise<ModelInfo[]
         isDeepSeekApiHost(provider.baseUrl) ? thinkingForDeepSeekApiModel() : undefined
       );
       if (thinking) info.thinking = thinking;
-      const modalities = mergeInputModalities(
+      applyResolvedInputModalities(
+        info,
+        id,
         inputModalitiesFromOpenRouterArchitecture(entry.architecture),
         inputModalitiesFromOpenAiExtendedFields({
           features: entry.features,
           groups: entry.groups,
           id
-        }),
-        inputModalitiesFromModelId(id)
+        })
       );
-      if (modalities) info.inputModalities = modalities;
       const pricing = attachModelPricing(provider, id, m);
       if (pricing) info.pricing = pricing;
       return info;
@@ -775,8 +788,7 @@ async function enrichOllamaModelsFromShow(
         if (needsModalities && show.inputModalities) {
           info.inputModalities = show.inputModalities;
         } else if (needsModalities) {
-          const fallback = inputModalitiesFromModelId(info.id);
-          if (fallback) info.inputModalities = fallback;
+          applyResolvedInputModalities(info, info.id);
         }
       })
     );
@@ -1044,16 +1056,29 @@ async function enrichModelsMetadata(
   models: ModelInfo[]
 ): Promise<ModelInfo[]> {
   let next = models;
-  if (next.some((m) => m.contextWindow === undefined || m.pricing === undefined)) {
+  if (
+    next.some(
+      (m) =>
+        m.contextWindow === undefined ||
+        m.pricing === undefined ||
+        m.inputModalities === undefined
+    )
+  ) {
     next = await enrichModelsFromModelsDev(provider, next);
   }
   return next.map((model) => {
     let contextWindow = model.contextWindow;
     let contextEstimated = model.contextEstimated;
     let pricing = model.pricing;
+    let inputModalities = model.inputModalities;
+    let inputModalitiesEstimated = model.inputModalitiesEstimated;
 
     if (contextWindow === undefined) {
-      contextWindow = attachModelContext(provider, model.id, undefined);
+      const attached = attachModelContext(provider, model.id, undefined);
+      if (attached.contextWindow !== undefined) {
+        contextWindow = attached.contextWindow;
+        if (attached.contextEstimated) contextEstimated = true;
+      }
     }
     if (contextWindow === undefined) {
       const inferred = contextWindowFromModelId(model.id);
@@ -1068,15 +1093,29 @@ async function enrichModelsMetadata(
       const hostPricing = attachModelPricing(provider, model.id, undefined);
       pricing = mergeModelPricing(pricing, hostPricing);
     }
+    if (inputModalities === undefined) {
+      const inferred = resolveInputModalitiesFromDiscovery(model.id);
+      inputModalities = inferred.inputModalities;
+      inputModalitiesEstimated = inferred.inputModalitiesEstimated;
+    }
 
     if (
       contextWindow === model.contextWindow &&
       pricing === model.pricing &&
-      contextEstimated === model.contextEstimated
+      contextEstimated === model.contextEstimated &&
+      inputModalities === model.inputModalities &&
+      inputModalitiesEstimated === model.inputModalitiesEstimated
     ) {
       return model;
     }
-    return { ...model, contextWindow, pricing, contextEstimated };
+    return {
+      ...model,
+      contextWindow,
+      pricing,
+      contextEstimated,
+      inputModalities,
+      inputModalitiesEstimated
+    };
   });
 }
 
@@ -1380,11 +1419,7 @@ async function fetchAnthropicModels(provider: ProviderWithKey): Promise<ModelInf
       }
       const thinking = thinkingFromAnthropicCapabilities(m.capabilities);
       if (thinking) info.thinking = thinking;
-      const modalities = mergeInputModalities(
-        inputModalitiesFromAnthropicModel(m),
-        inputModalitiesFromModelId(id)
-      );
-      if (modalities) info.inputModalities = modalities;
+      applyResolvedInputModalities(info, id, inputModalitiesFromAnthropicModel(m));
       const pricing = attachModelPricing(provider, id, m);
       if (pricing) info.pricing = pricing;
       return info;
@@ -1510,11 +1545,11 @@ async function fetchGeminiModels(provider: ProviderWithKey): Promise<ModelInfo[]
         version: m.version
       });
       if (thinking) info.thinking = thinking;
-      const modalities = mergeInputModalities(
-        inputModalitiesFromGeminiModel({ name: rawName, supportedGenerationMethods: methods }),
-        inputModalitiesFromModelId(id)
+      applyResolvedInputModalities(
+        info,
+        id,
+        inputModalitiesFromGeminiModel({ name: rawName, supportedGenerationMethods: methods })
       );
-      if (modalities) info.inputModalities = modalities;
       const pricing = attachModelPricing(provider, id, m);
       if (pricing) info.pricing = pricing;
       return info;

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { applyOpenAiCacheHints } from '@main/providers/cacheHints/openaiCacheHints';
 import type { ProviderWithKey } from '@shared/types/provider';
+import { syncPromptCachingFromSettings } from '@main/settings/promptCachingRuntime.js';
 
 describe('applyOpenAiCacheHints', () => {
   const openAiProvider: ProviderWithKey = {
@@ -24,6 +25,7 @@ describe('applyOpenAiCacheHints', () => {
   });
 
   it('sets 24h retention for GPT-5 models on OpenAI host', () => {
+    syncPromptCachingFromSettings({ ui: { promptCaching: { openaiExtendedCacheRetention: true } } });
     const body: Record<string, unknown> = {};
     applyOpenAiCacheHints(body, openAiProvider, {
       modelId: 'gpt-5.2',
@@ -31,6 +33,17 @@ describe('applyOpenAiCacheHints', () => {
       conversationId: 'c'
     });
     expect(body['prompt_cache_retention']).toBe('24h');
+  });
+
+  it('omits retention when the setting is disabled', () => {
+    syncPromptCachingFromSettings({ ui: { promptCaching: { openaiExtendedCacheRetention: false } } });
+    const body: Record<string, unknown> = {};
+    applyOpenAiCacheHints(body, openAiProvider, {
+      modelId: 'gpt-5.2',
+      workspaceId: 'ws',
+      conversationId: 'c'
+    });
+    expect(body['prompt_cache_retention']).toBeUndefined();
   });
 });
 

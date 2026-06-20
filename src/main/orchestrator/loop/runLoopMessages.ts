@@ -49,6 +49,34 @@ export function formatToolStrikeError(
 }
 
 /** Harness-driven recovery copy — run continues after sustained tool failures. */
+function buildToolRecoveryHints(lastFailure?: string, rootFailure?: string): string {
+  const combined = `${rootFailure ?? ''} ${lastFailure ?? ''}`.toLowerCase();
+  const hints: string[] = [];
+
+  if (combined.includes('timed out')) {
+    hints.push(
+      'For slow build/test/install, rerun bash with a higher timeoutMs (up to 30 min) and shared:false — do not probe outside the workspace.'
+    );
+  }
+  if (combined.includes('workspace escape')) {
+    hints.push(
+      'Stay inside the workspace: use relative paths, `read`/`ls` for project files, and `ask_user` for host paths — never `../`, drive letters, `$env:USERPROFILE`, or `~`.'
+    );
+  }
+  if (combined.includes('powershell syntax') || combined.includes(' rejects `&`')) {
+    hints.push('On Windows PowerShell, chain commands with `;` not `&`.');
+  }
+  if (combined.includes('long-running server')) {
+    hints.push('Do not start dev servers in bash — probe with curl/Invoke-RestMethod or ask the user to start the service.');
+  }
+  if (hints.length === 0) {
+    hints.push(
+      'Re-read affected files with `read` before `edit`. Run `ls` to verify paths. Use `ask_user` if blocked.'
+    );
+  }
+  return hints.join(' ');
+}
+
 export function formatToolRecoveryThought(
   strikeCount: number,
   lastFailure?: string,
@@ -63,9 +91,7 @@ export function formatToolRecoveryThought(
         ? sentenceEnd(last)
         : 'Repeated tool failures.';
   return (
-    `Tool recovery (${strikeCount} failed rounds): ${detail} ` +
-    'Re-read affected files with `read` before `edit`. On Windows PowerShell use `;` not `&` to chain commands. ' +
-    'Run `ls` to verify paths. Use `ask_user` if blocked.'
+    `Tool recovery (${strikeCount} failed rounds): ${detail} ${buildToolRecoveryHints(lastFailure, rootFailure)}`
   );
 }
 

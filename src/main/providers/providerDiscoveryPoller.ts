@@ -28,7 +28,6 @@ const log = logger.child('providers/discovery-poller');
 let timer: ReturnType<typeof setInterval> | null = null;
 let tickInFlight = false;
 let currentIntervalMs = PROVIDER_ACCOUNT_POLL_IDLE_MS;
-let discoveryPollerEverStarted = false;
 const lastFingerprintByProvider = new Map<string, string>();
 
 function effectiveIntervalMs(): number {
@@ -58,7 +57,6 @@ function rescheduleTimer(): void {
     clearInterval(timer);
     timer = null;
   }
-  if (!hasActivePollSources()) return;
   timer = setInterval(() => {
     void pollOnce();
   }, currentIntervalMs);
@@ -67,7 +65,6 @@ function rescheduleTimer(): void {
 }
 
 async function pollOnce(): Promise<void> {
-  if (!hasActivePollSources()) return;
   if (tickInFlight) return;
   tickInFlight = true;
 
@@ -142,33 +139,22 @@ async function pollOnce(): Promise<void> {
 }
 
 export function notifyProviderPollSourcesChanged(): void {
-  if (!hasActivePollSources()) {
-    if (timer) {
-      clearInterval(timer);
-      timer = null;
-    }
-    return;
-  }
   if (!timer) {
-    currentIntervalMs = effectiveIntervalMs();
-    void pollOnce();
-    timer = setInterval(() => {
-      void pollOnce();
-    }, currentIntervalMs);
-    timer.unref();
-    if (discoveryPollerEverStarted) {
-      log.debug('provider discovery poller resumed', { intervalMs: currentIntervalMs });
-    } else {
-      discoveryPollerEverStarted = true;
-      log.info('provider discovery poller started', { intervalMs: currentIntervalMs });
-    }
+    startProviderDiscoveryPoller();
     return;
   }
   rescheduleTimer();
 }
 
 export function startProviderDiscoveryPoller(): void {
-  notifyProviderPollSourcesChanged();
+  if (timer) return;
+  currentIntervalMs = effectiveIntervalMs();
+  void pollOnce();
+  timer = setInterval(() => {
+    void pollOnce();
+  }, currentIntervalMs);
+  timer.unref();
+  log.info('provider discovery poller started', { intervalMs: currentIntervalMs });
 }
 
 export function stopProviderDiscoveryPoller(): void {
@@ -178,5 +164,4 @@ export function stopProviderDiscoveryPoller(): void {
   }
   tickInFlight = false;
   lastFingerprintByProvider.clear();
-  discoveryPollerEverStarted = false;
 }

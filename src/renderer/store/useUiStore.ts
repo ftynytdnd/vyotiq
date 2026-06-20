@@ -10,7 +10,7 @@
  */
 
 import { create } from 'zustand';
-import { vyotiq } from '../lib/ipc.js';
+import { persistSettingsPatch } from '../lib/persistSettingsPatch.js';
 import { clampDockWidth, DOCK_WIDTH_DEFAULT } from '@shared/dock/dockWidth.js';
 import {
   clampWorkbenchPaneWidth,
@@ -37,81 +37,79 @@ let pendingCollapsed: Set<string> | null = null;
 let filesExpandedPersistTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingFilesExpanded: Set<string> | null = null;
 
-function flushDockExpandedNow(): void {
+function flushDockExpandedNow(): Promise<void> {
   if (dockPersistTimer !== null) {
     clearTimeout(dockPersistTimer);
     dockPersistTimer = null;
   }
-  if (pendingDockExpanded === null) return;
+  if (pendingDockExpanded === null) return Promise.resolve();
   const next = pendingDockExpanded;
   pendingDockExpanded = null;
-  void vyotiq.settings.set({ ui: { dockExpanded: next } }).catch(() => {
+  return persistSettingsPatch({ ui: { dockExpanded: next } }).catch(() => {
     /* noop */
   });
 }
 
-function flushDockWidthNow(): void {
+function flushDockWidthNow(): Promise<void> {
   if (dockWidthPersistTimer !== null) {
     clearTimeout(dockWidthPersistTimer);
     dockWidthPersistTimer = null;
   }
-  if (pendingDockWidth === null) return;
+  if (pendingDockWidth === null) return Promise.resolve();
   const next = pendingDockWidth;
   pendingDockWidth = null;
-  void vyotiq.settings.set({ ui: { dockWidth: next } }).catch(() => {
+  return persistSettingsPatch({ ui: { dockWidth: next } }).catch(() => {
     /* noop */
   });
 }
 
-function flushWorkbenchPaneWidthNow(): void {
+function flushWorkbenchPaneWidthNow(): Promise<void> {
   if (workbenchPaneWidthPersistTimer !== null) {
     clearTimeout(workbenchPaneWidthPersistTimer);
     workbenchPaneWidthPersistTimer = null;
   }
-  if (pendingWorkbenchPaneWidth === null) return;
+  if (pendingWorkbenchPaneWidth === null) return Promise.resolve();
   const next = pendingWorkbenchPaneWidth;
   pendingWorkbenchPaneWidth = null;
-  void vyotiq.settings.set({ ui: { workbenchPaneWidth: next } }).catch(() => {
+  return persistSettingsPatch({ ui: { workbenchPaneWidth: next } }).catch(() => {
     /* noop */
   });
 }
 
-function flushCollapsedNow(): void {
+function flushCollapsedNow(): Promise<void> {
   if (collapsedPersistTimer !== null) {
     clearTimeout(collapsedPersistTimer);
     collapsedPersistTimer = null;
   }
-  if (pendingCollapsed === null) return;
+  if (pendingCollapsed === null) return Promise.resolve();
   const next = pendingCollapsed;
   pendingCollapsed = null;
-  void vyotiq.settings
-    .set({ ui: { collapsedWorkspaces: Array.from(next) } })
-    .catch(() => {
-      /* noop */
-    });
+  return persistSettingsPatch({ ui: { collapsedWorkspaces: Array.from(next) } }).catch(() => {
+    /* noop */
+  });
 }
 
-function flushFilesExpandedNow(): void {
+function flushFilesExpandedNow(): Promise<void> {
   if (filesExpandedPersistTimer !== null) {
     clearTimeout(filesExpandedPersistTimer);
     filesExpandedPersistTimer = null;
   }
-  if (pendingFilesExpanded === null) return;
+  if (pendingFilesExpanded === null) return Promise.resolve();
   const next = pendingFilesExpanded;
   pendingFilesExpanded = null;
-  void vyotiq.settings
-    .set({ ui: { filesExpandedWorkspaces: Array.from(next) } })
-    .catch(() => {
-      /* noop */
-    });
+  return persistSettingsPatch({ ui: { filesExpandedWorkspaces: Array.from(next) } }).catch(() => {
+    /* noop */
+  });
 }
 
-export function flushUiPersistence(): void {
-  flushDockExpandedNow();
-  flushDockWidthNow();
-  flushWorkbenchPaneWidthNow();
-  flushCollapsedNow();
-  flushFilesExpandedNow();
+export function flushUiPersistence(): Promise<void> {
+  return Promise.all([
+    flushDockExpandedNow(),
+    flushDockWidthNow(),
+    flushWorkbenchPaneWidthNow(),
+    flushCollapsedNow(),
+    flushFilesExpandedNow()
+  ]).then(() => {});
 }
 
 export type { DockPanelTab } from '../components/dock/dockShared.js';

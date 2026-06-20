@@ -101,7 +101,7 @@
 .vx-dock-folder-row--active,
 .vx-dock-session-row[data-active='true'],
 .vx-dock-file-tree-row-active {
-  background: color-mix(in oklch, var(--color-chrome-hover-soft) 42%, transparent);
+  background: var(--color-dock-selection);
 }
 
 /* Hover — lighter than selection, never on selected rows. */
@@ -287,7 +287,8 @@
 }
 
 .vx-dock-file-tree-row-selected {
-  background: color-mix(in oklch, var(--color-chrome-hover-soft) 24%, transparent);
+  background: var(--color-dock-selection);
+  color: var(--color-text-primary);
 }
 
 .vx-dock-workspace-pending {

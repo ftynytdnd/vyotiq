@@ -10,6 +10,7 @@ import type {
   ProviderDiscoveryPollHint
 } from '@shared/types/provider.js';
 import { vyotiq } from '../lib/ipc.js';
+import { useToastStore } from '../store/useToastStore.js';
 
 interface ProviderStore {
   providers: ProviderConfig[];
@@ -75,25 +76,37 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
   },
 
   update: async (id, patch) => {
-    const updated = await vyotiq.providers.update(id, patch);
-    const clearPollHint = patch.baseUrl !== undefined || patch.dialect !== undefined;
-    set({
-      providers: get().providers.map((p) => (p.id === id ? updated : p)),
-      ...(clearPollHint
-        ? {
-            discoveryPollHints: (() => {
-              const next = { ...get().discoveryPollHints };
-              delete next[id];
-              return next;
-            })()
-          }
-        : {})
-    });
+    try {
+      const updated = await vyotiq.providers.update(id, patch);
+      const clearPollHint = patch.baseUrl !== undefined || patch.dialect !== undefined;
+      set({
+        providers: get().providers.map((p) => (p.id === id ? updated : p)),
+        ...(clearPollHint
+          ? {
+              discoveryPollHints: (() => {
+                const next = { ...get().discoveryPollHints };
+                delete next[id];
+                return next;
+              })()
+            }
+          : {})
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      useToastStore.getState().show(`Could not update provider: ${msg}`, 'danger');
+      throw err;
+    }
   },
 
   remove: async (id) => {
-    await vyotiq.providers.remove(id);
-    set({ providers: get().providers.filter((p) => p.id !== id) });
+    try {
+      await vyotiq.providers.remove(id);
+      set({ providers: get().providers.filter((p) => p.id !== id) });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      useToastStore.getState().show(`Could not remove provider: ${msg}`, 'danger');
+      throw err;
+    }
   },
 
   discover: async (id) => {

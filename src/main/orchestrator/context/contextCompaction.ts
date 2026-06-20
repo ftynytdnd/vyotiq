@@ -38,7 +38,7 @@ import { logger } from '../../logging/logger.js';
 import {
   type TokenizableToolSchema
 } from '../../providers/tokenCounter.js';
-import { CACHE_LAYER_HISTORY_START, isCacheLayeredTopology } from './buildContextLayers.js';
+import { CACHE_LAYER_HISTORY_START, isCacheLayeredTopology, migrateToCacheLayeredInPlace } from './buildContextLayers.js';
 import {
   buildCompactionBanner,
   buildToolInputBanner,
@@ -149,11 +149,14 @@ export async function reduceContextIfNeeded(
   const tools = opts.tools ?? [];
   const force = opts.force === true;
 
+  const layeredMessages = messages.map((m) => ({ ...m }));
+  migrateToCacheLayeredInPlace(layeredMessages);
+
   // Always evaluate first so the caller gets live usage telemetry even on the
-  // no-op paths (disabled / no conversation / pre-cache-layered topology) —
+  // no-op paths (disabled / no conversation / unmigratable topology) —
   // this is the single budget evaluation per iteration (no duplicate tokenize).
   let usage = await evaluateContextBudget({
-    messages,
+    messages: layeredMessages,
     modelId: opts.modelId,
     providerId: opts.providerId,
     settings,
@@ -161,21 +164,23 @@ export async function reduceContextIfNeeded(
     ...(opts.calibrationRatio !== undefined ? { calibrationRatio: opts.calibrationRatio } : {})
   });
 
-  if (!settings.enabled) return { messages: [...messages], usage };
-  if (!opts.conversationId) return { messages: [...messages], usage };
-  if (!isCacheLayeredTopology(messages)) return { messages: [...messages], usage };
+  if (!settings.enabled) return { messages: layeredMessages, usage };
+  if (!opts.conversationId) return { messages: layeredMessages, usage };
+  if (!isCacheLayeredTopology(layeredMessages)) {
+    return { messages: layeredMessages, usage };
+  }
 
   if (!force && (usage.level === 'ok' || usage.level === 'warn')) {
-    return { messages: [...messages], usage };
+    return { messages: layeredMessages, usage };
   }
 
   const critical = usage.level === 'critical';
   const now = Date.now();
   if (!force && !critical && now - state.lastReductionAt < settings.cooldownMs) {
-    return { messages: [...messages], usage };
+    return { messages: layeredMessages, usage };
   }
 
-  let workingMessages: readonly ChatMessage[] = messages;
+  let workingMessages: readonly ChatMessage[] = layeredMessages;
   const visionStrip = stripOldVisionParts(workingMessages);
   if (visionStrip.didStrip) {
     workingMessages = visionStrip.messages;
@@ -521,9 +526,10 @@ export async function resetContextToSummary(
   state: ContextReductionState
 ): Promise<ChatMessage[]> {
   if (!opts.conversationId) return [...messages];
-  if (!isCacheLayeredTopology(messages)) return [...messages];
 
   const next = messages.map((m) => ({ ...m }));
+  migrateToCacheLayeredInPlace(next);
+  if (!isCacheLayeredTopology(next)) return [...messages];
   const histSlice = next.slice(CACHE_LAYER_HISTORY_START, next.length - 2);
   const summarizable = histSlice.some(
     (m) => !isContextSummaryContent(chatContentToText(m.content))

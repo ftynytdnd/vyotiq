@@ -53,8 +53,14 @@ function fingerprint(text: string): string {
   return `${(h >>> 0).toString(36)}:${text.length}`;
 }
 
-function cacheKey(providerId: string, modelId: string, text: string): string {
-  return `${providerId}::${modelId}::${fingerprint(text)}`;
+function cacheKey(
+  providerId: string,
+  modelId: string,
+  text: string,
+  visionTokens = 0
+): string {
+  const visionSuffix = visionTokens > 0 ? `::v${visionTokens}` : '';
+  return `${providerId}::${modelId}::${fingerprint(text)}${visionSuffix}`;
 }
 
 function readCache(key: string): number | undefined {
@@ -88,13 +94,17 @@ export function providerSupportsRemoteCount(provider: ProviderWithKey): boolean 
  * Synchronously read a cached remote count for this exact text, if fresh.
  * Returns `undefined` when there is no fresh cached value (caller should use
  * the local heuristic and may call `refineRemoteCount` to warm the cache).
+ *
+ * `visionTokens` is folded into the cache key only — provider count endpoints
+ * receive text-only payloads; callers add native media estimates separately.
  */
 export function getCachedRemoteCount(
   providerId: string,
   modelId: string,
-  text: string
+  text: string,
+  visionTokens = 0
 ): number | undefined {
-  return readCache(cacheKey(providerId, modelId, text));
+  return readCache(cacheKey(providerId, modelId, text, visionTokens));
 }
 
 async function fetchAnthropicCount(
@@ -154,15 +164,19 @@ async function fetchGeminiCount(
  * every evaluation — it no-ops when a fresh value already exists, when a
  * count for the same key is already in flight, when the text is short, or
  * when the provider has no count endpoint. Never throws.
+ *
+ * `visionTokens` distinguishes multimodal prompts in the cache key; it is not
+ * sent to the provider count API (text-only). Callers add it to `usedTokens`.
  */
 export function refineRemoteCount(
   provider: ProviderWithKey,
   modelId: string,
-  text: string
+  text: string,
+  visionTokens = 0
 ): void {
   if (!providerSupportsRemoteCount(provider)) return;
   if (text.length < MIN_CHARS_FOR_REMOTE) return;
-  const key = cacheKey(provider.id, modelId, text);
+  const key = cacheKey(provider.id, modelId, text, visionTokens);
   if (inFlight.has(key)) return;
   if (readCache(key) !== undefined) return;
   inFlight.add(key);

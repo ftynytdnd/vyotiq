@@ -5,7 +5,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { resolveEditorLspSettings } from '@shared/settings/editorLspSettings.js';
 import { useSettingsPatch } from '../../hooks/useSettingsPatch.js';
-import { fetchLspStatus, invalidateLspClients } from '../../lib/lspWorkspaceClient.js';
+import {
+  fetchLspStatus,
+  hasActiveLspClients,
+  invalidateLspClients
+} from '../../lib/lspWorkspaceClient.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { ShellCaption, ShellFieldLabel, ShellRow, ShellSection } from '../ui/ShellSection.js';
@@ -67,6 +71,7 @@ export function EditorLspPanel() {
       return;
     }
     let cancelled = false;
+    let connectedByPanel = false;
 
     const poll = () => {
       void fetchLspStatus(activeWorkspaceId, 'python').then((st) => {
@@ -82,6 +87,9 @@ export function EditorLspPanel() {
 
     void vyotiq.lsp
       .connect({ workspaceId: activeWorkspaceId, languageId: 'python' })
+      .then(() => {
+        connectedByPanel = true;
+      })
       .finally(() => {
         if (!cancelled) poll();
       });
@@ -90,6 +98,13 @@ export function EditorLspPanel() {
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      if (
+        connectedByPanel &&
+        activeWorkspaceId &&
+        !hasActiveLspClients(activeWorkspaceId)
+      ) {
+        void vyotiq.lsp.disconnect({ workspaceId: activeWorkspaceId });
+      }
     };
   }, [resolved.enabled, configFingerprint, activeWorkspaceId, workspaceKnown]);
 

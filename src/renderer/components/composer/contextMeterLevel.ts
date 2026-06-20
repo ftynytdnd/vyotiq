@@ -1,5 +1,6 @@
 import {
   summarizeContextUsage,
+  summarizeContextUsageUnknownWindow,
   type ContextLevel,
   type ContextLevelThresholds,
   type ContextUsageSummary
@@ -73,13 +74,30 @@ export function summarizeLiveContextUsage(
     thresholds: ContextLevelThresholds;
   }
 ): ContextUsageSummary {
+  if (opts.advertisedWindow <= 0) {
+    return summarizeContextUsageUnknownWindow({
+      usedTokens: event.usedTokens,
+      exact: event.exact,
+      ...(event.breakdown ? { breakdown: event.breakdown } : {}),
+      ...(event.visionTokens != null && event.visionTokens > 0
+        ? { visionTokens: event.visionTokens }
+        : {})
+    });
+  }
   return summarizeContextUsage({
     usedTokens: event.usedTokens,
     advertisedWindow: opts.advertisedWindow,
     thresholds: opts.thresholds,
     exact: event.exact,
-    ...(event.breakdown ? { breakdown: event.breakdown } : {})
+    ...(event.breakdown ? { breakdown: event.breakdown } : {}),
+    ...(event.visionTokens != null && event.visionTokens > 0
+      ? { visionTokens: event.visionTokens }
+      : {})
   });
+}
+
+export function isUnknownContextWindow(usage: ContextUsageSummary): boolean {
+  return usage.effectiveWindow <= 0;
 }
 
 export function contextPercent(usage: ContextUsageSummary): number {
@@ -131,6 +149,9 @@ export function isContextReducing(level: ContextMeterLevel): boolean {
 export function levelDetailTitle(usage: ContextUsageSummary): string | undefined {
   const label = levelLabel(usage.level);
   if (!label) return undefined;
+  if (isUnknownContextWindow(usage)) {
+    return `Compaction ${label} — context window unknown`;
+  }
   const pct = contextPercent(usage);
   return `Compaction ${label} — ${pct}% of model context window`;
 }

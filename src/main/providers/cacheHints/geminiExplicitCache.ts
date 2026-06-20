@@ -49,8 +49,7 @@ export function shouldUseGeminiExplicitCache(staticSize: number): boolean {
   const env = geminiExplicitCacheEnvFlag();
   if (env === false) return false;
   if (staticSize < MIN_STATIC_CHARS) return false;
-  if (env === true || getPromptCachingSettings().geminiExplicitCache) return true;
-  return true;
+  return env === true || getPromptCachingSettings().geminiExplicitCache;
 }
 
 function staticFingerprint(

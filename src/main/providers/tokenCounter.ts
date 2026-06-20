@@ -84,8 +84,13 @@ export interface EstimateResult {
 
 type Encoding = 'o200k' | 'cl100k';
 
-function resolveEncoding(modelId: string): Encoding | null {
+function modelIdTailForEncoding(modelId: string): string {
   const id = modelId.toLowerCase();
+  return id.includes('/') ? id.slice(id.lastIndexOf('/') + 1) : id;
+}
+
+function resolveEncoding(modelId: string): Encoding | null {
+  const id = modelIdTailForEncoding(modelId);
   // o200k family — GPT-4o, o1, o3, o4, GPT-5, DeepSeek v3/v4, xAI Grok 4.x.
   // Grok's tokenizer is closely related to OpenAI's; the public docs
   // and the wire usage frames line up to within a few percent against
@@ -101,7 +106,7 @@ function resolveEncoding(modelId: string): Encoding | null {
     id.startsWith('o4') ||
     id.includes('deepseek') ||
     id.includes('grok') ||
-    id.startsWith('xai')
+    id.startsWith('grok-')
   ) {
     return 'o200k';
   }
@@ -200,7 +205,7 @@ export async function estimateTokens(input: EstimateInput): Promise<EstimateResu
   ) {
     const hasVisionable = input.attachmentMeta.some((m) => {
       const kind = m.mediaKind ?? mediaKindFromMeta(m);
-      return kind === 'image' || kind === 'pdf' || kind === 'video';
+      return kind === 'image' || kind === 'pdf' || kind === 'video' || kind === 'audio';
     });
     if (hasVisionable) {
       try {

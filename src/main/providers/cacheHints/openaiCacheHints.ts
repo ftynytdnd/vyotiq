@@ -5,6 +5,7 @@
 
 import type { ProviderWithKey } from '@shared/types/provider.js';
 import { classifyProviderHost } from '@shared/providers/providerHostKind.js';
+import { getPromptCachingSettings } from '../../settings/promptCachingRuntime.js';
 
 export interface OpenAiCacheHintOpts {
   workspaceId?: string;
@@ -41,7 +42,10 @@ export function applyOpenAiCacheHints(
   }
 
   const hostKind = classifyProviderHost(provider);
-  if (supportsExtendedPromptCacheRetention(opts.modelId, hostKind)) {
+  if (
+    getPromptCachingSettings().openaiExtendedCacheRetention &&
+    supportsExtendedPromptCacheRetention(opts.modelId, hostKind)
+  ) {
     body['prompt_cache_retention'] = '24h';
   }
 }

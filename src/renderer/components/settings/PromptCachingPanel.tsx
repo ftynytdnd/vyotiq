@@ -41,8 +41,10 @@ export function PromptCachingPanel() {
   const [runtimeStatus, setRuntimeStatus] = useState<PromptCacheRuntimeStatus | null>(null);
 
   const refreshRuntime = useCallback(() => {
-    void vyotiq.promptCache.getStatus().then(setRuntimeStatus).catch(() => {
+    void vyotiq.promptCache.getStatus().then(setRuntimeStatus).catch((err) => {
       setRuntimeStatus(null);
+      const msg = err instanceof Error ? err.message : String(err);
+      useToastStore.getState().show(`Could not load prompt cache status: ${msg}`, 'danger');
     });
   }, []);
 
@@ -118,9 +120,15 @@ export function PromptCachingPanel() {
       </label>
       <SettingsSwitchRow
         label="Gemini explicit cache"
-        description="Force named cachedContents; large static prefixes also auto-enable without this toggle."
+        description="Opt in to named cachedContents when the static prefix is large enough."
         value={promptCaching.geminiExplicitCache}
         onChange={(v) => apply({ geminiExplicitCache: v })}
+      />
+      <SettingsSwitchRow
+        label="OpenAI extended cache retention"
+        description="Send 24h prompt_cache_retention for GPT-5, o3, and o4 on the direct OpenAI host."
+        value={promptCaching.openaiExtendedCacheRetention}
+        onChange={(v) => apply({ openaiExtendedCacheRetention: v })}
       />
       <div className="mt-3 space-y-1 border-t border-border-subtle pt-3">
         <p className="text-meta font-medium text-text-secondary">Active session</p>

@@ -91,6 +91,35 @@ export function classifyCompactionLevel(
   return 'ok';
 }
 
+/**
+ * Summarize usage when the model context window is unknown (undiscovered).
+ * Uses absolute compaction thresholds and history pressure only — no % fill.
+ */
+export function summarizeContextUsageUnknownWindow(opts: {
+  usedTokens: number;
+  exact: boolean;
+  breakdown?: ContextUsageBreakdown;
+  visionTokens?: number;
+}): ContextUsageSummary {
+  const absLevel = classifyCompactionLevel(
+    opts.usedTokens,
+    CONTEXT_ABSOLUTE_COMPACTION_WARN_TOKENS,
+    CONTEXT_ABSOLUTE_COMPACTION_TRIGGER_TOKENS
+  );
+  return {
+    usedTokens: opts.usedTokens,
+    advertisedWindow: 0,
+    effectiveWindow: 0,
+    fractionUsed: 0,
+    level: applyHistoryCompactionPressure(absLevel, opts.breakdown),
+    exact: opts.exact,
+    ...(opts.breakdown ? { breakdown: opts.breakdown } : {}),
+    ...(opts.visionTokens != null && opts.visionTokens > 0
+      ? { visionTokens: opts.visionTokens }
+      : {})
+  };
+}
+
 const LEVEL_RANK: Record<ContextLevel, number> = {
   ok: 0,
   warn: 1,

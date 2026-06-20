@@ -22,6 +22,7 @@ import { rowContextTokens } from './modelPickerContext.js';
 import {
   rowContextBadgeLabel,
   rowDisplayModelId,
+  rowModalityBadgeLabel,
   shouldShowEffortBadge
 } from './modelPickerDisplay.js';
 import { formatModelPricingBadge } from '@shared/providers/modelPricing.js';
@@ -75,6 +76,7 @@ export const ModelRow = memo(function ModelRow({
       : null;
 
   const priceLabel = formatModelPricingBadge(model.pricing);
+  const modalitiesEstimated = model.inputModalitiesEstimated === true;
   const visionCapable = modelSupportsVision(model.inputModalities);
   const audioCapable = modelSupportsAudioNative(model.inputModalities);
 
@@ -138,13 +140,27 @@ export const ModelRow = memo(function ModelRow({
         title={effortLabel ? `Thinking effort: ${effortLabel}` : undefined}
       >
         {visionCapable ? (
-          <span className="vx-model-picker-row-badge" title="Vision input supported">
-            Vision
+          <span
+            className="vx-model-picker-row-badge"
+            title={
+              modalitiesEstimated
+                ? 'Vision input likely supported (estimated from model id)'
+                : 'Vision input supported'
+            }
+          >
+            {rowModalityBadgeLabel('Vision', modalitiesEstimated)}
           </span>
         ) : null}
         {audioCapable ? (
-          <span className="vx-model-picker-row-badge" title="Audio input supported">
-            Audio
+          <span
+            className="vx-model-picker-row-badge"
+            title={
+              modalitiesEstimated
+                ? 'Audio input likely supported (estimated from model id)'
+                : 'Audio input supported'
+            }
+          >
+            {rowModalityBadgeLabel('Audio', modalitiesEstimated)}
           </span>
         ) : null}
         {effortLabel ? (

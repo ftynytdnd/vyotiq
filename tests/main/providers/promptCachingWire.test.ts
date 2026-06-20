@@ -10,10 +10,7 @@ import {
 import { buildOrchestratorRequest } from '@main/orchestrator/loop/buildOrchestratorRequest';
 import { buildHostEnvironmentXml } from '@main/orchestrator/loop/buildHostEnvironment';
 import { wrapXml } from '@main/orchestrator/envelope';
-import {
-  markFewShotUserCache,
-  markHistoryCacheBreakpoint
-} from '@main/providers/cacheHints/anthropicCacheHints';
+import { markFewShotUserCache } from '@main/providers/cacheHints/anthropicCacheHints';
 import { __geminiInternals } from '@main/providers/geminiChatStream';
 import { messagesToResponsesInput } from '@main/providers/openaiResponsesStream';
 import type { ModelSelection } from '@shared/types/provider';
@@ -153,37 +150,6 @@ describe('Anthropic few-shot cache breakpoint', () => {
 
     const fewShotBlock = wireMessages[0]?.content[0] as { cache_control?: unknown };
     expect(fewShotBlock?.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
-  });
-
-  it('markHistoryCacheBreakpoint still targets transcript rows when invoked', () => {
-    const runtime = wrapXml('runtime_context', 'runtime');
-    const turn = '<turn>current</turn>';
-    const historyAssistant = 'assistant history';
-    const wireMessages = [
-      { role: 'user', content: [{ type: 'text', text: wrapXml('static_examples', 'ex') }] },
-      {
-        role: 'user',
-        content: [{ type: 'text', text: wrapXml('workspace_context', 'ws') }]
-      },
-      {
-        role: 'assistant',
-        content: [{ type: 'text', text: historyAssistant }]
-      },
-      { role: 'user', content: [{ type: 'text', text: runtime }] },
-      { role: 'user', content: [{ type: 'text', text: turn }] }
-    ];
-    const sourceMessages = seedCacheLayeredMessages(
-      [{ role: 'assistant', content: historyAssistant }],
-      turn
-    );
-    sourceMessages[sourceMessages.length - 2] = { role: 'user', content: runtime };
-
-    markHistoryCacheBreakpoint(wireMessages, sourceMessages);
-
-    const histBlock = wireMessages[2]?.content[0] as { cache_control?: unknown };
-    expect(histBlock?.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
-    const runtimeBlock = wireMessages[3]?.content[0] as { cache_control?: unknown };
-    expect(runtimeBlock?.cache_control).toBeUndefined();
   });
 });
 

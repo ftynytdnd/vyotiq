@@ -118,7 +118,7 @@ export const ToolGroupRow = memo(function ToolGroupRow({ rowKey, toolName, items
               running
                 ? 'text-text-secondary'
                 : failed
-                  ? 'text-danger/80'
+                  ? 'text-danger-strong'
                   : 'text-text-muted'
             )}
             {...(primaryTitle ? { title: primaryTitle } : {})}

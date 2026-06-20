@@ -19,7 +19,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ModelSelection } from '@shared/types/provider.js';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 
-import { summarizeContextUsage, type ContextUsageSummary } from '@shared/context/contextLevel.js';
+import { summarizeContextUsage, summarizeContextUsageUnknownWindow, type ContextUsageSummary } from '@shared/context/contextLevel.js';
 
 import { resolveAgentBehaviorSettings } from '@shared/settings/agentBehaviorSettings.js';
 
@@ -165,7 +165,7 @@ export function useContextWindowUsage({
 
   const liveUsage = useMemo((): ContextUsageSummary | null => {
 
-    if (!latest || latest.effectiveWindow <= 0 || !model) return null;
+    if (!latest || !model) return null;
 
     if (!liveUsageMatchesModel(latest, model, isRunActive)) return null;
 
@@ -176,6 +176,8 @@ export function useContextWindowUsage({
       !isRunActive &&
 
       currentAdvertised !== undefined &&
+
+      currentAdvertised > 0 &&
 
       !liveUsageWindowMatchesDiscovered(latest, currentAdvertised)
 
@@ -347,8 +349,6 @@ export function useContextWindowUsage({
 
       evaluated &&
 
-      evaluated.effectiveWindow > 0 &&
-
       evaluationScope !== null &&
 
       evaluatedScopeRef.current === evaluationScope
@@ -375,7 +375,11 @@ export function useContextWindowUsage({
 
     const advertised = info ? rowContextTokens(info, provider) : undefined;
 
-    if (!advertised || advertised <= 0) return null;
+    if (!advertised || advertised <= 0) {
+
+      return summarizeContextUsageUnknownWindow({ usedTokens: 0, exact: false });
+
+    }
 
 
 

@@ -1,7 +1,7 @@
 @import "tailwindcss";
 @import "@fontsource-variable/geist/wght.css";
 @import "@fontsource-variable/geist-mono/wght.css";
-@import "highlight.js/styles/github-dark.css";
+@import "./styles/hljs-shell-mono.css";
 
 /* ---------------------------------------------------------------------------
    Tailwind v4 — CSS-First Theme Tokens
@@ -64,8 +64,12 @@
   --color-warning-strong: oklch(0.82 0.15 80 / 0.90);
   --color-danger-soft: oklch(0.70 0.20 25 / 0.10);
   --color-danger-strong: oklch(0.70 0.20 25 / 0.90);
+  --color-danger-faint: oklch(0.70 0.20 25 / 0.05);
+  --color-danger-emphasis: oklch(0.70 0.20 25 / 0.25);
   --color-success-soft: oklch(0.78 0.16 150 / 0.12);
   --color-success-strong: oklch(0.78 0.16 150 / 0.85);
+  --color-success-faint: oklch(0.78 0.16 150 / 0.05);
+  --color-success-emphasis: oklch(0.78 0.16 150 / 0.25);
 
   /* Editor syntax (Shell Mono — muted but distinguishable) */
   --color-syntax-keyword: oklch(0.74 0.12 285);
@@ -98,6 +102,8 @@
   --color-chrome-hover: oklch(0.30 0.007 260 / 0.35);
   --color-chrome-hover-soft: oklch(0.30 0.007 260 / 0.22);
   --color-chrome-hover-strong: oklch(0.30 0.007 260 / 0.40);
+  /* Dock row selection — shared tint for tabs, chats, files, search hits */
+  --color-dock-selection: color-mix(in oklch, var(--color-chrome-hover-soft) 42%, transparent);
 
   /* Panel / dock separation */
   --color-panel-edge: oklch(0.30 0.005 260 / 0.15);
@@ -5156,7 +5162,7 @@ button.vx-mention-highlight--open:focus-visible {
 }
 
 .vx-dock-tab[data-active='true']:not(.vx-dock-session-row) {
-  background: var(--color-chrome-hover-soft);
+  background: var(--color-dock-selection);
   font-weight: 400;
   color: var(--color-text-primary);
 }
@@ -5521,18 +5527,13 @@ button.vx-mention-highlight--open:focus-visible {
   z-index: 2;
 }
 
-.vx-dock-file-tree-row-selected {
-  color: var(--color-text-primary);
-  background: color-mix(in oklch, var(--color-chrome-hover-soft) 24%, transparent);
-}
-
 /* ComposerDialog — mini FloatingPanel anchored above the chat
    composer. No backdrop, no full-width banner: the dialog floats with
    shadow only and inherits the composer column's width via its mount
    slot (.vx-composer-dialog-slot). */
 .vx-composer-dialog {
   border-radius: var(--radius-inner);
-  border: 1px solid var(--color-border-primary, var(--color-border-subtle));
+  border: 1px solid var(--color-border-subtle);
   background: var(--color-surface-raised);
   /* Border carries elevation; keep shadow minimal (round 3 polish). */
   box-shadow: 0 1px 0 var(--color-shadow-ambient-deep);

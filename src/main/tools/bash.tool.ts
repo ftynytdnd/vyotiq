@@ -22,12 +22,12 @@ import type { ToolContext } from './types.js';
 import type { ToolResult } from '@shared/types/tool.js';
 import type { CheckpointChangeKind } from '@shared/types/checkpoint.js';
 import {
+  bashEscapeRemediation,
   bashNeedsEscapeConfirm,
   findSymlinksEscapingWorkspace,
   isDestructiveCommand
 } from './sandbox.js';
 import {
-  BASH_TIMEOUT_MS,
   BASH_MAX_TIMEOUT_MS,
   BASH_SNAPSHOT_MAX_ENTRIES,
   BASH_SNAPSHOT_MAX_BYTES_PER_FILE,
@@ -39,6 +39,7 @@ import { computeDiffHunks } from '@shared/text/diff/computeDiffHunks.js';
 import { buildBashEnv } from '../terminal/bashEnv.js';
 import { ensureWorkspacePty, runAgentCommandInPty } from '../terminal/ptyManager.js';
 import { resolveBashLongRunning } from './bashLongRunning.js';
+import { formatBashTimeoutHint, resolveBashDefaultTimeout } from './bashDefaultTimeout.js';
 import { BashOutputCapture } from './bashOutputCapture.js';
 import { PtyAgentLiveStdoutTracker } from '@shared/terminal/ptyAgentStream.js';
 import { logger } from '../logging/logger.js';
@@ -773,7 +774,8 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
         name: 'bash',
         ok: false,
         output:
-          `Bash blocked: command may reach outside the workspace.\n\n${command}\n\n${escapeConfirm.reason}`,
+          `Bash blocked: command may reach outside the workspace.\n\n${command}\n\n` +
+          `${escapeConfirm.reason}\n\n${bashEscapeRemediation(escapeConfirm.category)}`,
         error: 'workspace escape',
         durationMs: Date.now() - started
       };
@@ -848,25 +850,37 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
       });
     }
 
-    const { cmd, args: argsFor } = platformShell();
-    const requested =
-      typeof a.timeoutMs === 'number' && a.timeoutMs > 0 ? a.timeoutMs : BASH_TIMEOUT_MS;
+    const explicitTimeoutMs =
+      typeof a.timeoutMs === 'number' && a.timeoutMs > 0 ? a.timeoutMs : undefined;
+    const defaultTimeout = resolveBashDefaultTimeout(command);
+    if (!forceIsolated && defaultTimeout.isolated) {
+      forceIsolated = true;
+    }
+    const requested = explicitTimeoutMs ?? defaultTimeout.timeoutMs;
     const timeoutMs = Math.min(requested, timeoutCap);
+    const timeoutCategory = explicitTimeoutMs ? undefined : defaultTimeout.category;
     const isWin = process.platform === 'win32';
+
+    const emptyPreSnap = (): PreSnapshot => ({
+      entries: new Map<string, PreSnapshotEntry>(),
+      truncated: false,
+      capturedBytes: 0
+    });
 
     // Pre-snapshot BEFORE the spawn so we can recover (or audit) file
     // mutations bash performed (rm / mv / `> file` / sed -i / etc.).
-    // The scanner walks the workspace once, captures UTF-8 bodies for
-    // every text file inside the per-file / aggregate caps, and
-    // returns mtimes for the rest. Best-effort — a scan failure must
-    // never block the command; we fall back to an empty pre-snapshot,
-    // which simply means every post-exit mutation lands as audit-only.
-    const preSnap: PreSnapshot = await scanWorkspaceForBash(ctx.workspacePath, ctx.signal).catch((err) => {
-      log.debug('pre-bash scan failed; falling back to audit-only', {
-        err: err instanceof Error ? err.message : String(err)
-      });
-      return { entries: new Map<string, PreSnapshotEntry>(), truncated: false, capturedBytes: 0 };
-    });
+    // Read-only commands skip the walk — it can take seconds on large
+    // workspaces and provides no revert value when the shell does not mutate.
+    const preSnap: PreSnapshot = bashCommandLikelyMutates(command)
+      ? await scanWorkspaceForBash(ctx.workspacePath, ctx.signal).catch((err) => {
+          log.debug('pre-bash scan failed; falling back to audit-only', {
+            err: err instanceof Error ? err.message : String(err)
+          });
+          return emptyPreSnap();
+        })
+      : emptyPreSnap();
+
+    const { cmd, args: argsFor } = platformShell();
 
     const outputCapture =
       ctx.toolCallId && ctx.toolCallId.length > 0
@@ -901,8 +915,13 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
           ? '--- exit: TIMEOUT ---'
           : `--- exit: ${ptyRun.exitCode} ---`;
         const stdoutTail = stdoutTruncated ? '\n…[truncated]' : '';
+        const timeoutHint = ptyRun.timedOut
+          ? formatBashTimeoutHint(timeoutMs, timeoutCategory)
+          : '';
         const merged =
-          (stdout ? `--- stdout ---\n${stdout}${stdoutTail}\n` : '') + exitLine;
+          (stdout ? `--- stdout ---\n${stdout}${stdoutTail}\n` : '') +
+          exitLine +
+          (timeoutHint ? `\n\n${timeoutHint}` : '');
         const ok = !ptyRun.timedOut && ptyRun.exitCode === 0;
         const errorField = ptyRun.timedOut
           ? `timed out after ${timeoutMs}ms`
@@ -1165,10 +1184,12 @@ If you need bash-flavor commands specifically, prefix with \`bash -c '...'\` and
             : `--- exit: ${code} ---`;
         const stdoutTail = stdoutTruncated ? `\n…[truncated, ${stdoutDropped} more chars]` : '';
         const stderrTail = stderrTruncated ? `\n…[truncated, ${stderrDropped} more chars]` : '';
+        const timeoutHint = timedOut ? formatBashTimeoutHint(timeoutMs, timeoutCategory) : '';
         const merged =
           (stdout ? `--- stdout ---\n${stdout}${stdoutTail}\n` : '') +
           (stderr ? `--- stderr ---\n${stderr}${stderrTail}\n` : '') +
-          exitLine;
+          exitLine +
+          (timeoutHint ? `\n\n${timeoutHint}` : '');
         const ok = !timedOut && code === 0;
         const errorField = timedOut
           ? `timed out after ${timeoutMs}ms`

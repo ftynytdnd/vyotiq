@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, ArchiveRestore, ChevronDown, ChevronRight, Download, Plus, Trash2, MessageSquare } from 'lucide-react';
+import { Archive, ArchiveRestore, ChevronDown, ChevronRight, Download, Pin, PinOff, Plus, Trash2, MessageSquare } from 'lucide-react';
 import type { ConversationMeta } from '@shared/types/chat.js';
 import { Button } from '../ui/Button.js';
 import { DestructiveConfirm } from '../ui/DestructiveConfirm.js';
@@ -18,6 +18,13 @@ import {
 } from '../../lib/shellIcons.js';
 import { DockChatMoveMenu } from './DockChatMoveMenu.js';
 import { filterDockChats } from './filterDockChats.js';
+import {
+  isConversationPinned,
+  sortDockChatsByPins,
+  togglePinnedConversationId
+} from '@shared/dock/pinnedConversations.js';
+import { persistSettingsPatch } from '../../lib/persistSettingsPatch.js';
+import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { chromeNoMatchesClassName, chromePillClassName } from '../ui/SurfaceShell.js';
 import {
   CONV_DRAG_MIME,
@@ -76,10 +83,18 @@ export function DockChatStrip({ workspaceId, nested = false }: DockChatStripProp
   const runningIds = useChatStore(
     useShallow((s) => runningChatIdsFromSlices(s.slices))
   );
+  const pinnedConversationIds = useSettingsStore((s) => s.settings.ui?.pinnedConversationIds);
+
+  const togglePin = (conversationId: string) => {
+    const next = togglePinnedConversationId(pinnedConversationIds, conversationId);
+    void persistSettingsPatch({ ui: { pinnedConversationIds: next } }).catch(() => {
+      useToastStore.getState().show('Could not update pinned chats.', 'danger');
+    });
+  };
 
   const entries = useMemo(() => {
     if (!workspaceId) return [];
-    return filterDockChats(
+    const filtered = filterDockChats(
       list,
       workspaceId,
       query,
@@ -88,7 +103,8 @@ export function DockChatStrip({ workspaceId, nested = false }: DockChatStripProp
       activeIdByWorkspace[workspaceId] ?? null,
       { archivedOnly: false }
     );
-  }, [list, workspaceId, query, searchOpen, runningIds, activeIdByWorkspace]);
+    return sortDockChatsByPins(filtered, pinnedConversationIds);
+  }, [list, workspaceId, query, searchOpen, runningIds, activeIdByWorkspace, pinnedConversationIds]);
 
   const archivedEntries = useMemo(() => {
     if (!workspaceId) return [];
@@ -170,10 +186,12 @@ export function DockChatStrip({ workspaceId, nested = false }: DockChatStripProp
                 entry={runningEntry}
                 displayTitle={displayTitles.get(runningEntry.id) ?? runningEntry.title}
                 active={runningEntry.id === activeId}
+                pinned={isConversationPinned(runningEntry.id, pinnedConversationIds)}
                 onSelect={() => selectChat(runningEntry.id)}
                 onRename={(title) => void rename(runningEntry.id, title)}
                 onRemove={() => void remove(runningEntry.id)}
                 onArchive={() => void archive(runningEntry.id)}
+                onTogglePin={() => togglePin(runningEntry.id)}
               />
               <RunStopButton
                 runId={runningRunId}
@@ -259,10 +277,12 @@ export function DockChatStrip({ workspaceId, nested = false }: DockChatStripProp
           displayTitle={displayTitles.get(entry.id) ?? entry.title}
           active={entry.id === activeId}
           nested={nested}
+          pinned={isConversationPinned(entry.id, pinnedConversationIds)}
           onSelect={() => selectChat(entry.id)}
           onRename={(title) => void rename(entry.id, title)}
           onRemove={() => void remove(entry.id)}
           onArchive={() => void archive(entry.id)}
+          onTogglePin={() => togglePin(entry.id)}
         />
       ))}
       {hiddenCount > 0 ? (
@@ -339,10 +359,12 @@ interface ChatTabProps {
   active: boolean;
   archived?: boolean;
   nested?: boolean;
+  pinned?: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
   onRemove: () => void;
   onArchive: () => void;
+  onTogglePin?: () => void;
 }
 
 function ChatTab({
@@ -351,10 +373,12 @@ function ChatTab({
   active,
   archived = false,
   nested = false,
+  pinned = false,
   onSelect,
   onRename,
   onRemove,
-  onArchive
+  onArchive,
+  onTogglePin
 }: ChatTabProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(entry.title);
@@ -415,7 +439,7 @@ function ChatTab({
           e.dataTransfer.effectAllowed = 'move';
         }}
         className={cn(
-          dockTabRowClassName(active, 'chat'),
+          dockTabRowClassName(),
           nested ? 'vx-dock-session-row' : DOCK_CHAT_TAB_STACK_CLASS
         )}
         data-active={dockTabActiveAttr(active)}
@@ -512,6 +536,28 @@ function ChatTab({
                 <RunStopButton runId={runId} conversationTitle={entry.title} />
               ) : nested ? (
                 <>
+                  {!archived && onTogglePin ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={pinned ? 'Unpin chat' : 'Pin chat'}
+                      aria-pressed={pinned}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onTogglePin();
+                      }}
+                      className={cn(
+                        'h-4 w-4 px-0',
+                        pinned ? 'text-accent' : 'text-text-faint hover:text-text-secondary'
+                      )}
+                    >
+                      {pinned ? (
+                        <PinOff className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+                      ) : (
+                        <Pin className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+                      )}
+                    </Button>
+                  ) : null}
                   <Button
                     size="sm"
                     variant="ghost"
@@ -559,6 +605,28 @@ function ChatTab({
                       currentWorkspaceId={entry.workspaceId}
                     />
                   )}
+                  {onTogglePin ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={pinned ? 'Unpin chat' : 'Pin chat'}
+                      aria-pressed={pinned}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onTogglePin();
+                      }}
+                      className={cn(
+                        'h-4 w-4 px-0',
+                        pinned ? 'text-accent' : 'text-text-faint hover:text-text-secondary'
+                      )}
+                    >
+                      {pinned ? (
+                        <PinOff className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+                      ) : (
+                        <Pin className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+                      )}
+                    </Button>
+                  ) : null}
                   <Button
                     size="sm"
                     variant="ghost"

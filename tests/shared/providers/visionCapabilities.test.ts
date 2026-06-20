@@ -3,7 +3,8 @@ import {
   inputModalitiesFromModelId,
   inputModalitiesFromOpenRouterArchitecture,
   modelSupportsVision,
-  normalizeInputModalities
+  normalizeInputModalities,
+  resolveInputModalitiesFromDiscovery
 } from '@shared/providers/visionCapabilities.js';
 
 describe('visionCapabilities', () => {
@@ -24,5 +25,17 @@ describe('visionCapabilities', () => {
 
   it('normalizeInputModalities always includes text', () => {
     expect(normalizeInputModalities(['image'])).toEqual(['text', 'image']);
+  });
+
+  it('resolveInputModalitiesFromDiscovery prefers API sources over model-id heuristics', () => {
+    expect(
+      resolveInputModalitiesFromDiscovery('vendor/gpt-4o', ['text'], undefined)
+    ).toEqual({ inputModalities: ['text'] });
+    expect(
+      resolveInputModalitiesFromDiscovery('vendor/gpt-4o')
+    ).toEqual({
+      inputModalities: ['text', 'image', 'file'],
+      inputModalitiesEstimated: true
+    });
   });
 });

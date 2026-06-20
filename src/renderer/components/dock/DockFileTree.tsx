@@ -136,12 +136,16 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
           next.set(normDir, entries);
           return next;
         });
-      } catch {
+      } catch (err) {
         setChildrenByDir((prev) => {
           const next = new Map(prev);
           next.set(normDir, []);
           return next;
         });
+        if (normDir === '') {
+          const msg = err instanceof Error ? err.message : String(err);
+          useToastStore.getState().show(`Could not load workspace files: ${msg}`, 'danger');
+        }
       } finally {
         setLoadingDirs((prev) => {
           const next = new Set(prev);
@@ -191,11 +195,13 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
         setFilterTotal(result.total);
         mergeExpanded(expandFoldersForFilter(result.entries, q));
       })
-      .catch(() => {
+      .catch((err) => {
         if (!cancelled) {
           setFilterPaths([]);
           setFilterTruncated(false);
           setFilterTotal(0);
+          const msg = err instanceof Error ? err.message : String(err);
+          useToastStore.getState().show(`Could not load workspace files: ${msg}`, 'danger');
         }
       })
       .finally(() => {

@@ -137,14 +137,12 @@ export const DOCK_CHAT_TAB_INNER_CLASS = cn(
   'flex w-full min-w-0 items-center gap-1'
 );
 
-export function dockTabRowClassName(
-  _active: boolean,
-  _kind: 'chat' | 'workspace'
-): string {
+/** Base row class for dock tabs; pair with {@link dockTabActiveAttr} for selection styling. */
+export function dockTabRowClassName(): string {
   return DOCK_TAB_ROW_CLASS;
 }
 
-/** data-active attribute value for {@link dockTabRowClassName} rows. */
+/** `data-active` attribute value for {@link dockTabRowClassName} rows. */
 export function dockTabActiveAttr(active: boolean): 'true' | 'false' {
   return active ? 'true' : 'false';
 }

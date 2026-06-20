@@ -49,7 +49,7 @@ function DockSearchInput() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [activeIndex, setActiveIndex] = useState(-1);
 
-  const { chats, files, flat, loadingFiles, isFiltering } = useDockUnifiedSearch(
+  const { chats, files, flat, loadingFiles, filesLoadError, isFiltering } = useDockUnifiedSearch(
     query,
     true,
     activeWs
@@ -155,7 +155,10 @@ function DockSearchInput() {
           aria-label="Search results"
           className="mt-1 max-h-56 overflow-y-auto rounded-inner bg-surface-input/40 px-0.5 py-0.5"
         >
-          {flat.length === 0 && !loadingFiles && (
+          {flat.length === 0 && !loadingFiles && filesLoadError && (
+            <div className={cn(chromeNoMatchesClassName, 'py-2')}>Could not load workspace files.</div>
+          )}
+          {flat.length === 0 && !loadingFiles && !filesLoadError && (
             <div className={cn(chromeNoMatchesClassName, 'py-2')}>No matches.</div>
           )}
           {loadingFiles && flat.length === 0 && (
@@ -243,7 +246,7 @@ function SearchRow({
       onClick={onSelect}
       className={cn(
         'vx-dropdown-item flex w-full items-center gap-2 px-2 py-1 text-left text-row',
-        active && 'bg-chrome-hover-soft/80'
+        active && 'bg-dock-selection'
       )}
     >
       <span className="text-text-faint">{icon}</span>

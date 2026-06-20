@@ -4,8 +4,11 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import type { PanelId } from '@shared/panels/panelWidths.js';
 import { cn } from '../../lib/cn.js';
 import { escapeFocusInRoots, registerEscapeLayer } from '../../lib/escapeLayerStack.js';
+import { usePersistedPanelWidth } from '../../lib/usePersistedPanelWidth.js';
+import { PanelWidthResizeHandle } from './PanelWidthResizeHandle.js';
 import {
   measurePopoverNaturalHeight,
   measurePopoverPosition,
@@ -37,6 +40,8 @@ interface PopoverProps {
    * `panel` — stretch to `maxWidth` (`align` fit / wide panels).
    */
   widthMode?: 'content' | 'panel';
+  /** Persist and restore width via `ui.panelWidths` when set. */
+  panelId?: PanelId;
   /** When true, root clips height and defers scrolling to panel children. */
   containScroll?: boolean;
   className?: string;
@@ -86,6 +91,7 @@ export function Popover({
   anchorStrict = false,
   fitMaxWidth = 640,
   widthMode,
+  panelId,
   containScroll = false,
   className,
   children
@@ -94,6 +100,9 @@ export function Popover({
   const resolvedWidthMode = widthMode ?? (align === 'fit' ? 'panel' : 'content');
   const popoverRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<PopoverPosition | null>(null);
+  const [liveWidth, setLiveWidth] = useState<number | null>(null);
+  const { width: persistedWidth, persistWidth } = usePersistedPanelWidth(panelId, fitMaxWidth);
+  const effectiveFitMaxWidth = liveWidth ?? persistedWidth;
 
   const reposition = useCallback(() => {
     const next = measure(
@@ -105,7 +114,7 @@ export function Popover({
       collisionPadding,
       preferSide,
       anchorStrict,
-      fitMaxWidth,
+      effectiveFitMaxWidth,
       containScroll
     );
     if (next) setPos(next);
@@ -117,7 +126,7 @@ export function Popover({
     collisionPadding,
     preferSide,
     anchorStrict,
-    fitMaxWidth,
+    effectiveFitMaxWidth,
     containScroll
   ]);
 
@@ -234,9 +243,20 @@ export function Popover({
         flexDirection: 'column',
         minHeight: 0
       }}
-      className={cn('app-no-drag', resolvedWidthMode === 'content' && 'w-max', className)}
+      className={cn(
+        'app-no-drag relative',
+        resolvedWidthMode === 'content' && 'w-max',
+        className
+      )}
     >
       {children}
+      {panelId && resolvedWidthMode === 'panel' ? (
+        <PanelWidthResizeHandle
+          width={effectiveFitMaxWidth}
+          onLiveWidth={setLiveWidth}
+          onCommit={persistWidth}
+        />
+      ) : null}
     </div>,
     document.body
   );

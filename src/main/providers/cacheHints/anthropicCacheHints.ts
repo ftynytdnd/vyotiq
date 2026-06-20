@@ -3,12 +3,10 @@
  * @see https://platform.claude.com/docs/en/build-with-claude/prompt-caching
  */
 
-import { chatContentToText } from '@shared/text/chatContent.js';
 import type { ChatMessage } from '@shared/types/chat.js';
 import {
   CACHE_LAYER_FEW_SHOT_INDEX,
   CACHE_LAYER_WORKSPACE_INDEX,
-  CACHE_LAYERED_MIN_MESSAGES,
   extractStaticSystemForWire,
   isCacheLayeredTopology
 } from '../../orchestrator/context/buildContextLayers.js';
@@ -97,70 +95,4 @@ export function markAnthropicToolCache(tools: Record<string, unknown>[]): void {
 /** Top-level automatic rolling breakpoint for growing history. */
 export function applyAnthropicAutomaticCache(body: Record<string, unknown>): void {
   body['cache_control'] = resolveAnthropicCacheControl();
-}
-
-function markHistoryBlockCache(msg: WireMessage): void {
-  for (let i = msg.content.length - 1; i >= 0; i--) {
-    const block = msg.content[i];
-    const type = block?.['type'];
-    if (type === 'text' || type === 'tool_use' || type === 'tool_result') {
-      block['cache_control'] = resolveAnthropicCacheControl();
-      return;
-    }
-  }
-}
-
-function wireMessageMatchesHistory(
-  wire: WireMessage,
-  hist: ChatMessage,
-  runtimeText: string,
-  turnText: string
-): boolean {
-  if (hist.role === 'user') {
-    const text = chatContentToText(hist.content);
-    if (text === runtimeText || text === turnText) return false;
-    const block = wire.content.find((b) => b['type'] === 'text');
-    return block?.['text'] === text;
-  }
-  if (hist.role === 'assistant') {
-    const text = typeof hist.content === 'string' ? hist.content : '';
-    const textBlock = wire.content.find((b) => b['type'] === 'text');
-    if (text.length > 0 && textBlock?.['text'] === text) return true;
-    if (hist.tool_calls && hist.tool_calls.length > 0) {
-      const toolBlock = wire.content.find((b) => b['type'] === 'tool_use');
-      return toolBlock?.['name'] === hist.tool_calls[0]?.function.name;
-    }
-  }
-  if (hist.role === 'tool') {
-    const block = wire.content.find((b) => b['type'] === 'tool_result');
-    const content = typeof hist.content === 'string' ? hist.content : '';
-    return block?.['content'] === content;
-  }
-  return false;
-}
-
-/**
- * Explicit breakpoint on the last stable history message before runtime/turn.
- * Not used on the wire path — Anthropic allows ≤4 explicit breakpoints; we
- * reserve them for system, few-shot, workspace, and tools (rolling via top-level auto).
- */
-export function markHistoryCacheBreakpoint(
-  wireMessages: WireMessage[],
-  sourceMessages: readonly ChatMessage[]
-): void {
-  if (!isCacheLayeredTopology(sourceMessages)) return;
-  if (sourceMessages.length <= CACHE_LAYERED_MIN_MESSAGES) return;
-
-  const runtimeText = chatContentToText(sourceMessages[sourceMessages.length - 2]?.content);
-  const turnText = chatContentToText(sourceMessages[sourceMessages.length - 1]?.content);
-  const lastHist = sourceMessages[sourceMessages.length - 3];
-  if (!lastHist) return;
-
-  for (let i = wireMessages.length - 1; i >= 0; i--) {
-    const wm = wireMessages[i];
-    if (wireMessageMatchesHistory(wm, lastHist, runtimeText, turnText)) {
-      markHistoryBlockCache(wm);
-      return;
-    }
-  }
 }

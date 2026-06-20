@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ScheduledRun } from '@shared/types/scheduledRun.js';
 import { vyotiq } from '../../lib/ipc.js';
+import { useToastStore } from '../../store/useToastStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
@@ -31,7 +32,10 @@ const INTERVAL_PRESETS = [
 ] as const;
 
 function persistRun(run: ScheduledRun, refresh: () => Promise<void>): void {
-  void vyotiq.scheduledRuns.upsert(run).then(refresh);
+  void vyotiq.scheduledRuns.upsert(run).then(refresh).catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    useToastStore.getState().show(`Could not save scheduled run: ${msg}`, 'danger');
+  });
 }
 
 interface ScheduledRunCardProps {
@@ -215,6 +219,9 @@ export function ScheduledRunsPanel() {
     setLoading(true);
     try {
       setRuns(await vyotiq.scheduledRuns.list());
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      useToastStore.getState().show(`Could not load scheduled runs: ${msg}`, 'danger');
     } finally {
       setLoading(false);
     }
@@ -290,7 +297,15 @@ export function ScheduledRunsPanel() {
               modelOptions={modelOptions}
               onChange={(next) => updateRun(run.id, next)}
               onPersist={(next) => persistRun(next, refresh)}
-              onDelete={() => void vyotiq.scheduledRuns.delete(run.id).then(refresh)}
+              onDelete={() =>
+                void vyotiq.scheduledRuns
+                  .delete(run.id)
+                  .then(refresh)
+                  .catch((err: unknown) => {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    useToastStore.getState().show(`Could not delete scheduled run: ${msg}`, 'danger');
+                  })
+              }
             />
           ))
         )}

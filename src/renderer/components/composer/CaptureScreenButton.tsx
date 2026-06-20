@@ -12,6 +12,7 @@ import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import { CapturePickerPanel } from './capture/CapturePickerPanel.js';
 import { useCapturePicker } from './capture/useCapturePicker.js';
 import { useModelPickerCollisionPadding } from './modelPicker/useModelPickerCollisionPadding.js';
+import { PANEL_IDS } from '@shared/panels/panelWidths.js';
 
 const CAPTURE_PICKER_FIT_MAX_WIDTH_PX = 360;
 
@@ -93,6 +94,7 @@ export function CaptureScreenButton({
         revision={popoverRevision}
         fitMaxWidth={CAPTURE_PICKER_FIT_MAX_WIDTH_PX}
         widthMode="panel"
+        panelId={PANEL_IDS.CAPTURE_PICKER}
         containScroll
         className="vx-capture-picker-popover"
       >

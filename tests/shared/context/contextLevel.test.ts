@@ -13,7 +13,8 @@ import {
   resolveModelContextWindow,
   scaleContextBreakdown,
   sumContextBreakdown,
-  summarizeContextUsage
+  summarizeContextUsage,
+  summarizeContextUsageUnknownWindow
 } from '@shared/context/contextLevel';
 import {
   CONTEXT_ABSOLUTE_COMPACTION_TRIGGER_TOKENS,
@@ -210,5 +211,24 @@ describe('contextLevel', () => {
     const fixed = reconcileContextBreakdown(drifted, 120);
     expect(sumContextBreakdown(fixed)).toBe(120);
     expect(fixed.history).toBe(103);
+  });
+
+  it('summarizeContextUsageUnknownWindow uses absolute thresholds and zero window', () => {
+    const s = summarizeContextUsageUnknownWindow({
+      usedTokens: CONTEXT_ABSOLUTE_COMPACTION_TRIGGER_TOKENS + 1,
+      exact: false,
+      breakdown: {
+        system: 100,
+        fewShot: 0,
+        workspace: 0,
+        history: CONTEXT_ABSOLUTE_COMPACTION_TRIGGER_TOKENS,
+        runtime: 0,
+        turn: 0,
+        tools: 0
+      }
+    });
+    expect(s.effectiveWindow).toBe(0);
+    expect(s.fractionUsed).toBe(0);
+    expect(s.level).toBe('trigger');
   });
 });

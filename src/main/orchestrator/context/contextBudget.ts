@@ -129,18 +129,17 @@ export async function evaluateContextBudget(
   let breakdown = scaleContextBreakdown(base.breakdown, base.total, usedTokens);
   const visionTokens = base.visionTokens;
 
-  // For heuristic-only models, prefer a fresh provider count when cached and
-  // warm the cache in the background for the next turn. A fresh remote count is
-  // already authoritative, so it supersedes the calibrated heuristic.
+  // Provider count endpoints are text-only; native media tokens are tracked
+  // separately via `tokenizeMessages().visionTokens` and added below.
   if (!base.exact && provider && providerSupportsRemoteCount(provider)) {
     const text = serializePromptText(input.messages, tools);
-    const remote = getCachedRemoteCount(provider.id, input.modelId, text);
+    const remote = getCachedRemoteCount(provider.id, input.modelId, text, visionTokens);
     if (typeof remote === 'number' && remote > 0) {
       usedTokens = remote + visionTokens;
       exact = true;
       breakdown = scaleContextBreakdown(base.breakdown, base.total, remote + visionTokens);
     } else if (!input.skipRemoteRefine) {
-      refineRemoteCount(provider, input.modelId, text);
+      refineRemoteCount(provider, input.modelId, text, visionTokens);
     }
   }
 

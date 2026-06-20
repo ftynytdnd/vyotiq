@@ -30,4 +30,21 @@ describe('ingestExternalFiles', () => {
       formatAttachmentSizeLimitError('big.png', MAX_ATTACHMENT_IMAGE_BYTES)
     );
   });
+
+  it('returns friendly ENOENT reasons for missing paths', async () => {
+    const { ingested, rejected } = await ingestExternalFiles(
+      ['C:\\missing\\review-bugbot.png'],
+      {
+        workspaceId: 'ws-1',
+        conversationId: 'conv-1',
+        messageId: 'msg-1'
+      }
+    );
+
+    expect(ingested).toHaveLength(0);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.reason).toBe(
+      'Could not find that file to attach. Try capturing or attaching again.'
+    );
+  });
 });

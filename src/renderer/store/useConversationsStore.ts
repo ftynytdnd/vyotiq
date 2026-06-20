@@ -38,6 +38,8 @@ import { useSettingsStore } from './useSettingsStore.js';
 // statically import it), so the dynamic-only edge created a vite
 // chunking warning without yielding a real bundle savings.
 import { useToastStore } from './useToastStore.js';
+import { persistSettingsPatch } from '../lib/persistSettingsPatch.js';
+import { prunePinnedConversationIds } from '@shared/dock/pinnedConversations.js';
 
 const log = logger.child('conversations');
 
@@ -645,6 +647,13 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
     useTimelineUiStore.getState().clearConversation(id);
     // Drop the slice + any dangling runId mappings.
     useChatStore.getState().dropConversation(id);
+    const pinned = useSettingsStore.getState().settings.ui?.pinnedConversationIds;
+    const nextPinned = prunePinnedConversationIds(pinned, id);
+    if (nextPinned !== pinned) {
+      void persistSettingsPatch({ ui: { pinnedConversationIds: nextPinned } }).catch((err) => {
+        log.error('pinnedConversationIds prune failed', { err, id });
+      });
+    }
   },
 
   move: async (id, targetWorkspaceId) => {

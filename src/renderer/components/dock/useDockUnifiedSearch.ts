@@ -10,6 +10,7 @@ import { collectRunningChatIds } from './collectRunningChatIds.js';
 import { getWorkspaceTree } from '../../lib/workspaceTreeCache.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
+import { useToastStore } from '../../store/useToastStore.js';
 
 const MAX_FILE_RESULTS = 40;
 
@@ -32,6 +33,7 @@ export interface DockUnifiedSearchResults {
   /** Chats first, then files — for keyboard navigation. */
   flat: DockSearchHit[];
   loadingFiles: boolean;
+  filesLoadError: boolean;
   isFiltering: boolean;
 }
 
@@ -54,6 +56,7 @@ export function useDockUnifiedSearch(
 
   const [fileEntries, setFileEntries] = useState<string[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
+  const [filesLoadError, setFilesLoadError] = useState(false);
 
   const q = query.trim().toLowerCase();
   const isFiltering = searchOpen && q.length > 0;
@@ -62,16 +65,23 @@ export function useDockUnifiedSearch(
     if (!isFiltering || !workspacePath) {
       setFileEntries([]);
       setLoadingFiles(false);
+      setFilesLoadError(false);
       return;
     }
     let cancelled = false;
     setLoadingFiles(true);
+    setFilesLoadError(false);
     void getWorkspaceTree(workspacePath, 5, workspaceId ?? undefined)
       .then((result) => {
         if (!cancelled) setFileEntries(result.entries);
       })
-      .catch(() => {
-        if (!cancelled) setFileEntries([]);
+      .catch((err) => {
+        if (!cancelled) {
+          setFileEntries([]);
+          setFilesLoadError(true);
+          const msg = err instanceof Error ? err.message : String(err);
+          useToastStore.getState().show(`Could not load workspace files: ${msg}`, 'danger');
+        }
       })
       .finally(() => {
         if (!cancelled) setLoadingFiles(false);
@@ -88,6 +98,7 @@ export function useDockUnifiedSearch(
         files: [],
         flat: [],
         loadingFiles: false,
+        filesLoadError: false,
         isFiltering: false
       };
     }
@@ -116,12 +127,14 @@ export function useDockUnifiedSearch(
       files,
       flat: [...chats, ...files],
       loadingFiles,
+      filesLoadError,
       isFiltering: true
     };
   }, [
     activeIdByWorkspace,
     conversations,
     fileEntries,
+    filesLoadError,
     isFiltering,
     loadingFiles,
     q,

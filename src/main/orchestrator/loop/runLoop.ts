@@ -19,8 +19,7 @@
  * harness recovery cycles, emit `error` and abort the run.
  *
  * Runs continue until `finish`, `ask_user`, a budget halt, billing block,
- * user abort, or another explicit terminal path — there is no fixed
- * iteration ceiling.
+ * user abort, iteration cap wrap-up, or another explicit terminal path.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -59,7 +58,8 @@ import {
   IMPLICIT_FINISH_MIN_CHARS,
   IMPLICIT_FINISH_MIN_SENTENCE_CHARS,
   MAX_PROVIDER_RECOVERY_ROUNDS,
-  MAX_SELF_CORRECTION_ATTEMPTS
+  MAX_SELF_CORRECTION_ATTEMPTS,
+  MAX_TOTAL_ITERATIONS
 } from '@shared/constants.js';
 import { AGENT_TOOLS } from '../../tools/policy/index.js';
 import { handleToolCalls } from './handleToolCalls.js';
@@ -374,6 +374,12 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     for (let iter = resume?.nextIteration ?? 0; ; iter++) {
       const abortedEarly = exitIfAborted(opts, emit, runHadLlmProgress);
       if (abortedEarly) return abortedEarly;
+      if (iter > MAX_TOTAL_ITERATIONS) {
+        const capMsg = `Run stopped after ${MAX_TOTAL_ITERATIONS} iterations without a final answer.`;
+        emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: capMsg });
+        return { terminalError: capMsg };
+      }
+      const wrapUp = iter === MAX_TOTAL_ITERATIONS;
       if (
         isRunWallClockBudgetExceeded(Date.now() - runStartedAtMs, agentBehaviorSettings)
       ) {
@@ -596,6 +602,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           signal: opts.signal,
           dialect: providerDialect,
           omitToolChoice,
+          ...(wrapUp ? { wrapUp: true } : {}),
           ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
           ...(modelThinkingCaps !== undefined ? { modelThinkingCaps } : {}),
           ...(opts.input.conversationId !== undefined
@@ -1239,6 +1246,26 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         }
 
         consecutiveReasoningOnlyTurns = 0;
+
+        if (wrapUp && proseText.length > 0) {
+          retryAssistantMsgId = null;
+          runStateAcc.lastAction = 'answer';
+          if (!turn.hadText) {
+            emitFinalAnswer(emit, proseText);
+          }
+          log.info('iteration-cap wrap-up — accepting prose as final answer', {
+            iteration: iter,
+            textChars: proseText.length
+          });
+          return {};
+        }
+
+        if (wrapUp) {
+          const wrapMsg =
+            'Run stopped at the iteration limit without a final answer from the model.';
+          emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: wrapMsg });
+          return { terminalError: wrapMsg };
+        }
 
         if (isImplicitFinish(proseText)) {
           retryAssistantMsgId = null;

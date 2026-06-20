@@ -1,6 +1,7 @@
 /**
  * On transcript load, normalize timelines recorded before the solo-agent model.
  * - Drops legacy worker lifecycle rows (pending/spawn/status/result).
+ * - Drops legacy phased-execution rows (phase / phase-gate / phase-ledger-entry).
  * - Strips legacy `subagentId` / `subagentTurnId` fields from surviving events.
  */
 
@@ -11,6 +12,12 @@ const LEGACY_WORKER_LIFECYCLE_KINDS = new Set<string>([
   'subagent-spawn',
   'subagent-status',
   'subagent-result'
+]);
+
+const LEGACY_PHASE_KINDS = new Set<string>([
+  'phase',
+  'phase-gate',
+  'phase-ledger-entry'
 ]);
 
 function stripLegacyWorkerIds<T extends TimelineEvent>(e: T): T {
@@ -27,7 +34,7 @@ export function normalizeLegacyTranscript(events: TimelineEvent[]): TimelineEven
   const out: TimelineEvent[] = [];
   for (const e of events) {
     const kind = (e as { kind: string }).kind;
-    if (LEGACY_WORKER_LIFECYCLE_KINDS.has(kind)) {
+    if (LEGACY_WORKER_LIFECYCLE_KINDS.has(kind) || LEGACY_PHASE_KINDS.has(kind)) {
       changed = true;
       continue;
     }

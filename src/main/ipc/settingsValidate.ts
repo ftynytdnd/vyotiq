@@ -68,7 +68,8 @@ const REPORTS_BOOLEAN_KEYS = [
 
 const PROMPT_CACHING_BOOLEAN_KEYS = [
   'anthropicCacheDiagnostics',
-  'geminiExplicitCache'
+  'geminiExplicitCache',
+  'openaiExtendedCacheRetention'
 ] as const;
 
 const PROMPT_CACHING_TTL_VALUES = ['5m', '1h'] as const;

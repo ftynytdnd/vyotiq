@@ -169,8 +169,33 @@ async function realpathWorkspaceRoot(workspaceRoot: string): Promise<string> {
  * Walk the workspace tree and return workspace-relative paths of symlinks
  * whose target resolves outside the real workspace root. Used to block bash
  * before the shell can follow escape links at runtime.
+ *
+ * Results are cached briefly per workspace root — the walk is expensive on
+ * large trees and runs before every bash invocation.
  */
+const SYMLINK_ESCAPE_CACHE_TTL_MS = 60_000;
+const symlinkEscapeCache = new Map<string, { at: number; escapes: string[] }>();
+
+export function clearSymlinkEscapeCache(workspaceRoot?: string): void {
+  if (workspaceRoot) symlinkEscapeCache.delete(resolve(workspaceRoot));
+  else symlinkEscapeCache.clear();
+}
+
 export async function findSymlinksEscapingWorkspace(
+  workspaceRoot: string,
+  opts?: { maxHits?: number }
+): Promise<string[]> {
+  const root = resolve(workspaceRoot);
+  const cached = symlinkEscapeCache.get(root);
+  if (cached && Date.now() - cached.at < SYMLINK_ESCAPE_CACHE_TTL_MS) {
+    return cached.escapes;
+  }
+  const escapes = await findSymlinksEscapingWorkspaceUncached(root, opts);
+  symlinkEscapeCache.set(root, { at: Date.now(), escapes });
+  return escapes;
+}
+
+async function findSymlinksEscapingWorkspaceUncached(
   workspaceRoot: string,
   opts?: { maxHits?: number }
 ): Promise<string[]> {
@@ -382,6 +407,27 @@ export function hasEnvPathEscape(command: string): boolean {
 export interface BashEscapeConfirm {
   needed: boolean;
   reason?: string;
+  /** Machine-readable category for recovery hints. */
+  category?: 'parent-read' | 'parent-write' | 'absolute-path' | 'env-path';
+}
+
+/** User-facing remediation appended to workspace-escape blocks. */
+export function bashEscapeRemediation(category?: BashEscapeConfirm['category']): string {
+  const base =
+    'Commands must stay inside the workspace root. Use relative paths (e.g. `./src/foo.ts`), ' +
+    'the `read` and `ls` tools for project files, and `ask_user` only when host paths outside the project are truly required.';
+  switch (category) {
+    case 'parent-read':
+      return `${base} Do not use \`../\` or parent segments — stay under the workspace cwd.`;
+    case 'parent-write':
+      return `${base} Redirect output to a workspace-relative path (e.g. \`./out.log\`), not \`../\`.`;
+    case 'absolute-path':
+      return `${base} Do not reference drive-letter or root paths (e.g. \`C:\\…\`, \`/etc/…\`).`;
+    case 'env-path':
+      return `${base} Do not expand \`$env:USERPROFILE\`, \`$HOME\`, \`~\`, or \`%APPDATA%\` — they resolve outside the sandbox.`;
+    default:
+      return base;
+  }
 }
 
 /**
@@ -393,6 +439,7 @@ export function bashNeedsEscapeConfirm(command: string): BashEscapeConfirm {
   if (RELATIVE_PARENT_READ.test(command) || PS_PARENT_READ.test(command)) {
     return {
       needed: true,
+      category: 'parent-read',
       reason:
         'Command reads via a parent path (../) that may escape the workspace. Confirm only if you intend to read outside the project folder.'
     };
@@ -400,6 +447,7 @@ export function bashNeedsEscapeConfirm(command: string): BashEscapeConfirm {
   if (RELATIVE_REDIRECT_ESCAPE.test(command) || PS_PARENT_WRITE.test(command)) {
     return {
       needed: true,
+      category: 'parent-write',
       reason:
         'Command redirects output outside the workspace via a parent path (../). Confirm only if you intend to write outside the project folder.'
     };
@@ -407,6 +455,7 @@ export function bashNeedsEscapeConfirm(command: string): BashEscapeConfirm {
   if (ABSOLUTE_PATH_REF.test(command) || WINDOWS_DRIVE_REF.test(command)) {
     return {
       needed: true,
+      category: 'absolute-path',
       reason:
         'Command references an absolute filesystem path outside the workspace sandbox. Confirm only if you intend to read or write outside the project folder.'
     };
@@ -414,6 +463,7 @@ export function bashNeedsEscapeConfirm(command: string): BashEscapeConfirm {
   if (hasEnvPathEscape(command)) {
     return {
       needed: true,
+      category: 'env-path',
       reason:
         'Command references a home or temp directory via an environment variable or tilde (~) that may resolve outside the workspace. Confirm only if you intend to read or write outside the project folder.'
     };

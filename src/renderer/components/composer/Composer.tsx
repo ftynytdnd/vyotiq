@@ -275,7 +275,7 @@ export function Composer({
     if (needsAskUserReply && pendingAskUser && conversationId && runId) {
       const draftReady = useAskUserDraftStore
         .getState()
-        .canSubmit(pendingAskUser.id, pendingAskUser.payload, trimmed);
+        .hasAnyAnswer(pendingAskUser.id, pendingAskUser.payload, trimmed);
       if (!draftReady && !trimmed && attachments.length === 0) {
         showToast('Select answers in the prompt or type a reply before submitting.', 'danger');
         return;
@@ -415,7 +415,7 @@ export function Composer({
   });
   const draftHasAnswer = useAskUserDraftStore((s) =>
     pendingAskUser
-      ? s.canSubmit(
+      ? s.hasAnyAnswer(
           pendingAskUser.id,
           pendingAskUser.payload,
           documentTrimmedPlain(composerDoc)

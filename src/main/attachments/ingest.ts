@@ -15,6 +15,7 @@ import {
   formatAttachmentSizeLimitError,
   maxBytesForAttachment
 } from '@shared/attachments/attachmentSizeLimits.js';
+import { formatAttachmentErrorReason } from '@shared/attachments/formatAttachmentError.js';
 
 import { attachmentsDir } from '../paths/userDataLayout.js';
 
@@ -36,9 +37,18 @@ export interface IngestFileInput {
 }
 
 export async function ingestExternalFile(input: IngestFileInput): Promise<PromptAttachmentMeta> {
-  const st = await stat(input.sourcePath);
+  let st;
+  try {
+    st = await stat(input.sourcePath);
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === 'ENOENT') {
+      throw new Error(formatAttachmentErrorReason('ENOENT: no such file'));
+    }
+    throw err;
+  }
   if (!st.isFile()) {
-    throw new Error('Not a file');
+    throw new Error(formatAttachmentErrorReason('Not a file'));
   }
 
   const name = basename(input.sourcePath);

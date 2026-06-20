@@ -248,4 +248,107 @@ describe('setSettings — legacy keys are stripped on first write', () => {
     expect(onDisk?.ui?.dockWidth).toBe(240);
     expect(onDisk?.ui).not.toHaveProperty('sidebarVisible');
   });
+
+  it('deep-merges partial inlineCompletion without clobbering sibling keys', async () => {
+    vi.doMock('@main/secrets/safeStore', () => safeStore);
+    const seed = (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed;
+    const peek = (safeStore as unknown as { __peek: (f: string) => unknown }).__peek;
+    seed(SETTINGS_FILE, {
+      ui: {
+        inlineCompletion: {
+          enabled: true,
+          providerId: 'openai',
+          modelId: 'gpt-4',
+          debounceMs: 400
+        }
+      }
+    });
+    const { setSettings } = await import('@main/settings/settingsStore');
+    await setSettings({ ui: { inlineCompletion: { enabled: false } } });
+
+    const onDisk = peek(SETTINGS_FILE) as {
+      ui?: {
+        inlineCompletion?: {
+          enabled?: boolean;
+          providerId?: string;
+          modelId?: string;
+          debounceMs?: number;
+        };
+      };
+    } | null;
+    expect(onDisk?.ui?.inlineCompletion).toEqual({
+      enabled: false,
+      providerId: 'openai',
+      modelId: 'gpt-4',
+      debounceMs: 400
+    });
+  });
+
+  it('deep-merges partial editorLsp.languages without clobbering other languages', async () => {
+    vi.doMock('@main/secrets/safeStore', () => safeStore);
+    const seed = (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed;
+    const peek = (safeStore as unknown as { __peek: (f: string) => unknown }).__peek;
+    seed(SETTINGS_FILE, {
+      ui: {
+        editorLsp: {
+          enabled: true,
+          languages: {
+            python: { command: 'pyright-langserver', args: ['--stdio'] },
+            typescript: { command: 'typescript-language-server', args: ['--stdio'] }
+          }
+        }
+      }
+    });
+    const { setSettings } = await import('@main/settings/settingsStore');
+    await setSettings({
+      ui: {
+        editorLsp: {
+          languages: {
+            python: { command: 'custom-pyright' }
+          }
+        }
+      }
+    });
+
+    const onDisk = peek(SETTINGS_FILE) as {
+      ui?: {
+        editorLsp?: {
+          enabled?: boolean;
+          languages?: Record<string, { command: string; args?: string[] }>;
+        };
+      };
+    } | null;
+    expect(onDisk?.ui?.editorLsp?.enabled).toBe(true);
+    expect(onDisk?.ui?.editorLsp?.languages?.python).toEqual({
+      command: 'custom-pyright'
+    });
+    expect(onDisk?.ui?.editorLsp?.languages?.typescript).toEqual({
+      command: 'typescript-language-server',
+      args: ['--stdio']
+    });
+  });
+
+  it('deep-merges panelWidths without clobbering other panel ids', async () => {
+    vi.doMock('@main/secrets/safeStore', () => safeStore);
+    const seed = (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed;
+    const peek = (safeStore as unknown as { __peek: (f: string) => unknown }).__peek;
+    seed(SETTINGS_FILE, {
+      ui: {
+        panelWidths: {
+          'model-picker': 640,
+          'mention-picker': 480
+        }
+      }
+    });
+    const { setSettings } = await import('@main/settings/settingsStore');
+    await setSettings({ ui: { panelWidths: { 'model-picker': 560 } } });
+
+    const onDisk = peek(SETTINGS_FILE) as {
+      ui?: { panelWidths?: Record<string, number> };
+    } | null;
+    expect(onDisk?.ui?.panelWidths).toEqual({
+      'model-picker': 560,
+      'mention-picker': 480
+    });
+  });
 });

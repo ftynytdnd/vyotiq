@@ -19,4 +19,11 @@ describe('estimateVisionTokens', () => {
     ]);
     expect(tokens).toBeGreaterThanOrEqual(85);
   });
+
+  it('estimates audio tokens from input_audio parts', () => {
+    const tokens = estimateVisionTokensFromContent([
+      { type: 'input_audio', input_audio: { data: 'a'.repeat(800), format: 'wav' } }
+    ]);
+    expect(tokens).toBeGreaterThanOrEqual(100);
+  });
 });

@@ -160,28 +160,6 @@ export type Row =
     children: FileEditGroupChild[];
   }
   | {
-    kind: 'phase-log';
-    key: string;
-    id: string;
-    label: string;
-    tooltip?: string;
-    gateDecision?: {
-      kind: 'passed' | 'looped_back' | 'blocked';
-      reason: string;
-      targetPhase?: string;
-      citeLedgerEntryId?: string;
-    };
-  }
-  | {
-    kind: 'phase-ledger';
-    key: string;
-    id: string;
-    subtaskId: string;
-    phase: string;
-    summary: string;
-    collapsedDefault: boolean;
-  }
-  | {
     kind: 'run-complete';
     key: string;
     promptId: string;
@@ -474,45 +452,9 @@ export function deriveRows(
 
       case 'agent-text-end':
       case 'agent-reasoning-end':
-        break;
-
       case 'phase':
-        closeGroups();
-        out.push({
-          kind: 'phase-log',
-          key: e.id,
-          id: e.id,
-          label: e.label,
-          ...(e.tooltip ? { tooltip: e.tooltip } : {})
-        });
-        break;
-
-      case 'phase-gate': {
-        closeGroups();
-        for (let i = out.length - 1; i >= 0; i--) {
-          const row = out[i];
-          if (row?.kind === 'phase-log') {
-            out[i] = {
-              ...row,
-              gateDecision: e.gateDecision
-            };
-            break;
-          }
-        }
-        break;
-      }
-
+      case 'phase-gate':
       case 'phase-ledger-entry':
-        closeGroups();
-        out.push({
-          kind: 'phase-ledger',
-          key: e.id,
-          id: e.id,
-          subtaskId: e.subtaskId,
-          phase: e.phase,
-          summary: e.artifactSummary ?? e.exitCriteria ?? e.phase,
-          collapsedDefault: true
-        });
         break;
 
       case 'tool-call': {

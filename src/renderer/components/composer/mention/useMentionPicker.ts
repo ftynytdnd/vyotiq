@@ -9,6 +9,7 @@ import { useWorkspaceStore } from '../../../store/useWorkspaceStore.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import { useConversationsStore } from '../../../store/useConversationsStore.js';
 import { useDockFileTreeRefreshStore } from '../../../store/useDockFileTreeRefreshStore.js';
+import { useToastStore } from '../../../store/useToastStore.js';
 import {
   buildMentionFileTreeRows,
   initialMentionFolderExpansion,
@@ -73,6 +74,8 @@ export function useMentionPicker(input: UseMentionPickerInput) {
   >([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [loadingSymbols, setLoadingSymbols] = useState(false);
+  const [filesLoadError, setFilesLoadError] = useState(false);
+  const [symbolsLoadError, setSymbolsLoadError] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [folderExpanded, setFolderExpanded] = useState<Set<string> | null>(null);
   const activeRowIdRef = useRef<string | null>(null);
@@ -110,16 +113,20 @@ export function useMentionPicker(input: UseMentionPickerInput) {
     }
     let cancelled = false;
     setLoadingFiles((prev) => prev || tree === null);
+    setFilesLoadError(false);
     void getWorkspaceTree(workspacePath, 5, workspaceIdForTree ?? undefined)
       .then((result) => {
         if (cancelled) return;
         setTree(result.entries);
         setTreeTruncated(result.truncated);
       })
-      .catch(() => {
+      .catch((err) => {
         if (!cancelled) {
           setTree([]);
           setTreeTruncated(false);
+          setFilesLoadError(true);
+          const msg = err instanceof Error ? err.message : String(err);
+          useToastStore.getState().show(`Could not load workspace files: ${msg}`, 'danger');
         }
       })
       .finally(() => {
@@ -143,14 +150,20 @@ export function useMentionPicker(input: UseMentionPickerInput) {
     }
     let cancelled = false;
     setLoadingSymbols(true);
+    setSymbolsLoadError(false);
     const handle = window.setTimeout(() => {
       void vyotiq.mentions
         .searchSymbols({ workspaceId: workspaceIdForTree, query })
         .then((result) => {
           if (!cancelled) setSymbols(result.hits);
         })
-        .catch(() => {
-          if (!cancelled) setSymbols([]);
+        .catch((err) => {
+          if (!cancelled) {
+            setSymbols([]);
+            setSymbolsLoadError(true);
+            const msg = err instanceof Error ? err.message : String(err);
+            useToastStore.getState().show(`Could not search symbols: ${msg}`, 'danger');
+          }
         })
         .finally(() => {
           if (!cancelled) setLoadingSymbols(false);
@@ -205,19 +218,23 @@ export function useMentionPicker(input: UseMentionPickerInput) {
 
     const workspaceEmptyHint = !hasWorkspace
       ? 'Open a workspace to mention files'
-      : loadingFiles && fileRows.length === 0
-        ? 'Loading workspace files…'
-        : q.length > 0 && fileRows.length === 0
-          ? 'No matching files or folders'
-          : undefined;
+      : filesLoadError
+        ? 'Could not load workspace files'
+        : loadingFiles && fileRows.length === 0
+          ? 'Loading workspace files…'
+          : q.length > 0 && fileRows.length === 0
+            ? 'No matching files or folders'
+            : undefined;
 
     const symbolEmptyHint = !hasWorkspace
       ? 'Open a workspace to search symbols'
-      : q.length < 2
-        ? 'Type 2+ characters to search symbols'
-        : loadingSymbols
-          ? 'Searching symbols…'
-          : 'No matching symbols';
+      : symbolsLoadError
+        ? 'Could not search symbols'
+        : q.length < 2
+          ? 'Type 2+ characters to search symbols'
+          : loadingSymbols
+            ? 'Searching symbols…'
+            : 'No matching symbols';
 
     const convEmptyHint =
       q.length > 0 ? 'No matching chats' : 'No other chats in this workspace';
@@ -260,7 +277,9 @@ export function useMentionPicker(input: UseMentionPickerInput) {
     convWorkspaceId,
     hasWorkspace,
     loadingFiles,
-    loadingSymbols
+    loadingSymbols,
+    filesLoadError,
+    symbolsLoadError
   ]);
 
   const loading = loadingFiles && tree === null;

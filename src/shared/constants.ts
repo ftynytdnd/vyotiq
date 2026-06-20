@@ -12,7 +12,7 @@ export const AGENT_NAME = 'Agent V';
  */
 export const MAX_TOOL_OUTPUT_CHARS = 8_000;
 
-/** Soft iteration reference for harness `<run_state>` prose (loop is unbounded). */
+/** Maximum orchestrator loop iterations before a wrap-up synthesis turn. */
 export const MAX_TOTAL_ITERATIONS = 24;
 
 /** Host implicit-finish prose thresholds (mirrored in harness `<runtime_limits>`). */
@@ -246,6 +246,12 @@ export const GENERATED_IMAGE_DIR = '.vyotiq/generated';
 
 /** Tool execution. */
 export const BASH_TIMEOUT_MS = 30_000;
+/** Default timeout when bash runs tests, lint, or typecheck without an explicit override. */
+export const BASH_TEST_TIMEOUT_MS = 120_000;
+/** Default timeout when bash runs build/compile without an explicit override. */
+export const BASH_BUILD_TIMEOUT_MS = 300_000;
+/** Default timeout when bash runs package install without an explicit override. */
+export const BASH_INSTALL_TIMEOUT_MS = 600_000;
 /** Upper bound for per-invocation `timeoutMs` overrides from the model. */
 export const BASH_MAX_TIMEOUT_MS = 30 * 60 * 1000;
 /**

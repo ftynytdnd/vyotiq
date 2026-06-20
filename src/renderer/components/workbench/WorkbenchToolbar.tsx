@@ -205,7 +205,7 @@ function EditorToolbar() {
               WORKBENCH_ICON_BTN_CLASS,
               "relative",
               dirty &&
-                "bg-warning/12 text-warning hover:bg-warning/18 hover:text-warning",
+                "bg-warning-soft text-warning hover:bg-warning-soft hover:text-warning",
             )}
             onClick={() => void save()}
             disabled={!dirty || saving || loading}
@@ -254,8 +254,11 @@ function TerminalToolbar() {
   const onCopy = useCallback(() => {
     withActiveEntry((entry) => {
       const selection = entry.term.getSelection();
-      if (selection)
-        void navigator.clipboard.writeText(selection).catch(() => {});
+      if (selection) {
+        void navigator.clipboard.writeText(selection).catch(() => {
+          useToastStore.getState().show('Could not copy to clipboard', 'danger');
+        });
+      }
     });
   }, [withActiveEntry]);
 

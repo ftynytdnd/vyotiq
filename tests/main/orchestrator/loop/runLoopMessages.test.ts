@@ -3,6 +3,7 @@ import {
   formatProviderStrikeError,
   formatRetryThought,
   formatRunTokenBudgetError,
+  formatToolRecoveryThought,
   formatToolStrikeError,
   sentenceEnd
 } from '@main/orchestrator/loop/runLoopMessages';
@@ -45,5 +46,18 @@ describe('runLoopMessages', () => {
     );
     expect(msg).toContain('Root cause: read — missing path');
     expect(msg).toContain('Last error: read — duplicate_tool_call');
+  });
+
+  it('formatToolRecoveryThought gives timeout and escape hints from failure chain', () => {
+    const msg = formatToolRecoveryThought(
+      3,
+      'bash — workspace escape',
+      'bash — timed out after 30000ms'
+    );
+    expect(msg).toContain('timed out after 30000ms');
+    expect(msg).toContain('workspace escape');
+    expect(msg).toContain('timeoutMs');
+    expect(msg).toContain('$env:USERPROFILE');
+    expect(msg).not.toContain('Re-read affected files with `read` before `edit`');
   });
 });

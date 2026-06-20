@@ -26,6 +26,11 @@ export function normalizeClipboardPath(text: string): string {
   }
 }
 
+/** Case-insensitive path key for deduping clipboard host paths vs plain-text paths. */
+export function normalizePathComparisonKey(path: string): string {
+  return normalizeClipboardPath(path.trim()).replace(/\\/g, '/').toLowerCase();
+}
+
 export function parseFileUriList(text: string): string[] {
   const out: string[] = [];
   for (const line of text.split(/\r?\n/)) {

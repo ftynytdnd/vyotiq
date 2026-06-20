@@ -17,6 +17,7 @@ import {
 import { mediaKindFromMeta } from '@shared/attachments/mediaKind.js';
 import {
   estimateImageTokensFromDimensions,
+  estimateAudioTokens,
   estimatePdfTokens,
   estimateVideoTokens
 } from '@shared/text/estimateVisionTokens.js';
@@ -258,6 +259,7 @@ async function prepareAudioPart(
   const prepared: PreparedVisionMedia = {
     part: { type: 'input_audio', input_audio: { data: base64, format } },
     encodedBytes: bytes.length,
+    imageTokenEstimate: estimateAudioTokens(bytes.length),
     hash
   };
   await putPreparedMediaOnDisk(hash, bytes, prepared);

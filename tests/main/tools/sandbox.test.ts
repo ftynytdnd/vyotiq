@@ -13,7 +13,9 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { mkdtemp, rm, mkdir, writeFile, symlink } from 'node:fs/promises';
 import {
+  bashEscapeRemediation,
   bashNeedsEscapeConfirm,
+  clearSymlinkEscapeCache,
   hasEnvPathEscape,
   isDestructiveCommand,
   isInsideWorkspace,
@@ -329,5 +331,25 @@ describe('bashNeedsEscapeConfirm', () => {
     'findstr /s /i pattern *.md'
   ])('does not flag %s', (cmd) => {
     expect(bashNeedsEscapeConfirm(cmd).needed).toBe(false);
+  });
+
+  it('bashEscapeRemediation is category-specific', () => {
+    expect(bashEscapeRemediation('env-path')).toContain('$env:USERPROFILE');
+    expect(bashEscapeRemediation('parent-read')).toContain('../');
+  });
+});
+
+describe('findSymlinksEscapingWorkspace cache', () => {
+  it('reuses cached results within TTL', async () => {
+    clearSymlinkEscapeCache();
+    const workspace = await mkdtemp(join(tmpdir(), 'vyotiq-sandbox-cache-'));
+    try {
+      const first = await findSymlinksEscapingWorkspace(workspace);
+      const second = await findSymlinksEscapingWorkspace(workspace);
+      expect(second).toEqual(first);
+    } finally {
+      clearSymlinkEscapeCache(workspace);
+      await rm(workspace, { recursive: true, force: true });
+    }
   });
 });

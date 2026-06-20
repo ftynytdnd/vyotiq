@@ -18,6 +18,5 @@ export function setMainWindow(win: BrowserWindow | null): void {
 
 export function getMainWindow(): BrowserWindow | null {
   if (mainWindowRef && !mainWindowRef.isDestroyed()) return mainWindowRef;
-  const wins = BrowserWindow.getAllWindows();
-  return wins.find((w) => !w.isDestroyed()) ?? null;
+  return null;
 }

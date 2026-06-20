@@ -29,6 +29,7 @@ import { useUiStore } from './store/useUiStore.js';
 import { useTimelineUiStore } from './store/useTimelineUiStore.js';
 import { useAppViewStore, type SettingsSectionId } from './store/useAppViewStore.js';
 import { vyotiq } from './lib/ipc.js';
+import { persistSettingsPatch } from './lib/persistSettingsPatch.js';
 import { logger } from './lib/logger.js';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts.js';
 import { useCaptureFrameBridge } from './hooks/useCaptureFrameBridge.js';
@@ -140,7 +141,7 @@ export default function App() {
       settings.ui?.sidebarOpen !== undefined &&
       settings.ui?.dockExpanded === undefined
     ) {
-      void vyotiq.settings.set({ ui: { dockExpanded } });
+      void persistSettingsPatch({ ui: { dockExpanded } });
     }
   }, [settings, settingsReady, uiHydrated, hydrateUi]);
 
@@ -156,7 +157,7 @@ export default function App() {
     if (!settingsReady) return;
     if (settings.ui?.firstLaunch) {
       openSettings('appearance');
-      void vyotiq.settings.set({
+      void persistSettingsPatch({
         ui: { firstLaunch: false, lastSettingsTab: 'appearance' }
       });
     }

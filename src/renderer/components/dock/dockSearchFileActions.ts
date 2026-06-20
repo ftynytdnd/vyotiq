@@ -10,9 +10,11 @@ import { randomId } from '../../lib/ids.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { openAttachment } from '../../lib/openAttachment.js';
 import { openWorkspaceFileInEditor } from '../../lib/openWorkspaceFileInEditor.js';
+import { formatAttachmentIngestError } from '../composer/formatAttachmentIngestError.js';
 import { useChatStore } from '../../store/useChatStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
+import { resolveWorkspacePickPath } from '../../lib/resolveWorkspacePickPath.js';
 
 function workspaceFileMeta(path: string): PromptAttachmentMeta {
   return {
@@ -66,10 +68,7 @@ export async function attachDockWorkspaceFile(path: string): Promise<boolean> {
   }
 
   const workspaceRoot = useWorkspaceStore.getState().info.path;
-  const resolved =
-    workspaceRoot && !/^[a-zA-Z]:[\\/]/.test(path) && !path.startsWith('/')
-      ? `${workspaceRoot.replace(/[/\\]+$/, '')}${workspaceRoot.includes('\\') ? '\\' : '/'}${path.replace(/^[/\\]+/, '')}`
-      : path;
+  const resolved = resolveWorkspacePickPath(path, workspaceRoot);
 
   try {
     const ingested = await vyotiq.attachments.ingestPaths({
@@ -81,7 +80,7 @@ export async function attachDockWorkspaceFile(path: string): Promise<boolean> {
     mergeAttachmentDraft(conversationId, ingested);
     return true;
   } catch (err) {
-    showToast(err instanceof Error ? err.message : 'Could not attach file.', 'danger');
+    showToast(formatAttachmentIngestError(err), 'danger');
     return false;
   }
 }

@@ -13,6 +13,7 @@ import { useUiStore } from '../../../store/useUiStore.js';
 import { DOCK_STRIP_WIDTH } from '../../dock/dockShared.js';
 import { useModelPickerCollisionPadding } from './useModelPickerCollisionPadding.js';
 import { useProviderAccountPollSource } from '../../../lib/useProviderAccountPollSource.js';
+import { PANEL_IDS } from '@shared/panels/panelWidths.js';
 
 interface ModelPickerProps {
   value: ModelSelection | null;
@@ -75,6 +76,7 @@ export function ModelPicker({
         revision={revision}
         fitMaxWidth={640}
         widthMode="panel"
+        panelId={PANEL_IDS.MODEL_PICKER}
       >
         <ModelPickerPanel
           value={value}

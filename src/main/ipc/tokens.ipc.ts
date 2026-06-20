@@ -3,8 +3,7 @@
  */
 
 import { IPC } from '@shared/constants.js';
-import type { PromptAttachmentMeta } from '@shared/types/chat.js';
-import type { ModelSelection } from '@shared/types/provider.js';
+import type { TokensEstimateInput } from '@shared/types/ipc.js';
 import { estimateTokens } from '../providers/tokenCounter.js';
 import { getWorkspace } from '../workspace/workspaceState.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
@@ -14,17 +13,8 @@ import {
   assertOptionalString
 } from './validate.js';
 
-interface TokensEstimatePayload {
-  modelId: string;
-  prompt: string;
-  attachments?: string[];
-  attachmentMeta?: PromptAttachmentMeta[];
-  workspacePath?: string;
-  selection?: ModelSelection;
-}
-
 export function registerTokensIpc(): void {
-  wrapIpcHandler(IPC.TOKENS_ESTIMATE, async (_event, input: TokensEstimatePayload) => {
+  wrapIpcHandler(IPC.TOKENS_ESTIMATE, async (_event, input: TokensEstimateInput) => {
     assertObject('tokens:estimate', 'input', input);
     assertString('tokens:estimate', 'input.modelId', input.modelId, { maxBytes: 512 });
     assertString('tokens:estimate', 'input.prompt', input.prompt, {

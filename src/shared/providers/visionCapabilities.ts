@@ -5,7 +5,7 @@
  * UI gates and orchestrator send paths from that metadata.
  */
 
-import type { ModelInputModality } from '../types/provider.js';
+import type { ModelInputModality, ModelInfo } from '../types/provider.js';
 
 const MODALITY_ORDER: readonly ModelInputModality[] = [
   'text',
@@ -50,6 +50,23 @@ export function mergeInputModalities(
   }
   if (set.size === 0) return undefined;
   return orderedInputModalities(set);
+}
+
+/**
+ * Prefer discovery/API modality lists; fall back to model-id heuristics only
+ * when every API source is absent.
+ */
+export function resolveInputModalitiesFromDiscovery(
+  modelId: string,
+  ...apiSources: Array<ModelInputModality[] | undefined>
+): Pick<ModelInfo, 'inputModalities' | 'inputModalitiesEstimated'> {
+  const fromApi = mergeInputModalities(...apiSources);
+  if (fromApi) {
+    return { inputModalities: fromApi };
+  }
+  const fallback = inputModalitiesFromModelId(modelId);
+  if (!fallback) return {};
+  return { inputModalities: fallback, inputModalitiesEstimated: true };
 }
 
 export function modelSupportsVision(
@@ -150,10 +167,6 @@ export function inputModalitiesFromAnthropicModel(model: {
     if (vision?.supported === true) {
       return ['text', 'image', 'file'];
     }
-  }
-  const id = model.id ?? '';
-  if (/claude/i.test(id)) {
-    return inputModalitiesFromModelId(id) ?? ['text', 'image', 'file'];
   }
   return undefined;
 }

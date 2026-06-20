@@ -109,6 +109,32 @@ describe('contextCompaction', () => {
     expect(out.messages).toEqual(messages);
   });
 
+  it('migrates legacy topology before attempting reduction', async () => {
+    const legacy = [
+      { role: 'system' as const, content: '<system_instructions>x</system_instructions>' },
+      { role: 'user' as const, content: '<turn/>' }
+    ];
+
+    const out = await reduceContextIfNeeded(
+      legacy,
+      {
+        conversationId: 'conv-legacy',
+        runId: 'run-legacy',
+        workspacePath,
+        modelId: 'gpt-4o',
+        providerId: 'openai',
+        settings: cmSettings({ enabled: true, summarizationEnabled: false }),
+        force: true,
+        emit: () => {}
+      },
+      createContextReductionState()
+    );
+
+    expect(out.messages.length).toBeGreaterThanOrEqual(5);
+    expect(out.messages[0]?.role).toBe('system');
+    expect(out.messages[out.messages.length - 1]?.role).toBe('user');
+  });
+
   it('reduces on 1M-window models at the absolute compaction trigger (~200k)', async () => {
     vi.mocked(getProviderWithKey).mockResolvedValueOnce({
       id: 'deepseek',

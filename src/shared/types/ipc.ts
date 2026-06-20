@@ -319,7 +319,7 @@ export interface AppSettings {
 
     reducedMotion?: boolean;
 
-    /** Starred models in the composer picker (`providerId:modelId`). */
+    /** Starred models in the composer picker (`providerId::modelId`). */
 
     favoriteModels?: string[];
 
@@ -394,9 +394,13 @@ export interface AppSettings {
 
       anthropicCacheTtl?: '5m' | '1h';
 
-      /** Force Gemini explicit `cachedContents` (large prefixes also auto-enable). */
+      /** Opt-in Gemini explicit `cachedContents` for large static prefixes. */
 
       geminiExplicitCache?: boolean;
+
+      /** Send `prompt_cache_retention: 24h` for GPT-5/o3/o4 on the direct OpenAI host. */
+
+      openaiExtendedCacheRetention?: boolean;
 
     };
 
@@ -1501,9 +1505,6 @@ export interface VyotiqApi {
 
     /** Open the current URL in the system default browser. */
     openExternal(input: import('./browser.js').BrowserOpenExternalInput): Promise<void>;
-
-    /** Capture the Globe browser page to workspace `.vyotiq/captures/`. */
-    capture(input: import('./capture.js').CaptureBrowserInput): Promise<import('./capture.js').CaptureResult>;
 
     onState(cb: (event: import('./browser.js').BrowserStateEvent) => void): () => void;
 

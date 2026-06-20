@@ -124,3 +124,8 @@ export async function fetchLspStatus(workspaceId: string, languageId?: string | 
 export function invalidateLspClients(workspaceId: string): void {
   disposeLspClient(workspaceId);
 }
+
+/** True when the in-app editor holds an active LSP client for this workspace. */
+export function hasActiveLspClients(workspaceId: string): boolean {
+  return [...clients.keys()].some((key) => key.startsWith(`${workspaceId}\0`));
+}

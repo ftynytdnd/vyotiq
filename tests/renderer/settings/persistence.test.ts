@@ -115,66 +115,75 @@ describe('AppSettings.ui — debounced fields persist via useUiStore + flush', (
   it('dockExpanded: toggleDock schedules a flush, flushUiPersistence drains it', async () => {
     useUiStore.getState().toggleDock();
     useUiStore.getState().toggleDock();
-    flushUiPersistence();
+    await flushUiPersistence();
 
     expect(setSpy()).toHaveBeenCalledTimes(1);
     expect(setSpy()).toHaveBeenCalledWith({ ui: { dockExpanded: true } });
+    expect(useSettingsStore.getState().settings.ui?.dockExpanded).toBe(true);
   });
 
-  it('dockWidth: setDockWidth schedules a flush, flushUiPersistence drains it', () => {
+  it('dockWidth: setDockWidth schedules a flush, flushUiPersistence drains it', async () => {
     useUiStore.getState().setDockWidth(300);
-    flushUiPersistence();
+    await flushUiPersistence();
 
     expect(setSpy()).toHaveBeenCalledTimes(1);
     expect(setSpy()).toHaveBeenCalledWith({ ui: { dockWidth: 300 } });
+    expect(useSettingsStore.getState().settings.ui?.dockWidth).toBe(300);
   });
 
-  it('collapsedWorkspaces: toggleWorkspaceCollapsed schedules a flush, flushUiPersistence drains it', () => {
+  it('collapsedWorkspaces: toggleWorkspaceCollapsed schedules a flush, flushUiPersistence drains it', async () => {
     useUiStore.getState().toggleWorkspaceCollapsed('ws-A');
-    flushUiPersistence();
+    await flushUiPersistence();
 
     expect(setSpy()).toHaveBeenCalledTimes(1);
     expect(setSpy()).toHaveBeenCalledWith({
       ui: { collapsedWorkspaces: ['ws-A'] }
     });
+    expect(useSettingsStore.getState().settings.ui?.collapsedWorkspaces).toEqual(['ws-A']);
 
     // Toggle back off — the flusher writes the empty array.
     setSpy().mockClear();
     useUiStore.getState().toggleWorkspaceCollapsed('ws-A');
-    flushUiPersistence();
+    await flushUiPersistence();
     expect(setSpy()).toHaveBeenCalledTimes(1);
     expect(setSpy()).toHaveBeenCalledWith({
       ui: { collapsedWorkspaces: [] }
     });
+    expect(useSettingsStore.getState().settings.ui?.collapsedWorkspaces).toEqual([]);
   });
 
-  it('filesExpandedWorkspaces: setWorkspaceFilesExpanded schedules a flush, flushUiPersistence drains it', () => {
+  it('filesExpandedWorkspaces: setWorkspaceFilesExpanded schedules a flush, flushUiPersistence drains it', async () => {
     useUiStore.getState().setWorkspaceFilesExpanded('ws-A', true);
-    flushUiPersistence();
+    await flushUiPersistence();
 
     expect(setSpy()).toHaveBeenCalledTimes(1);
     expect(setSpy()).toHaveBeenCalledWith({
       ui: { filesExpandedWorkspaces: ['ws-A'] }
     });
+    expect(useSettingsStore.getState().settings.ui?.filesExpandedWorkspaces).toEqual(['ws-A']);
 
     setSpy().mockClear();
     useUiStore.getState().setWorkspaceFilesExpanded('ws-A', false);
-    flushUiPersistence();
+    await flushUiPersistence();
     expect(setSpy()).toHaveBeenCalledTimes(1);
     expect(setSpy()).toHaveBeenCalledWith({
       ui: { filesExpandedWorkspaces: [] }
     });
+    expect(useSettingsStore.getState().settings.ui?.filesExpandedWorkspaces).toEqual([]);
   });
 });
 
 describe('AppSettings.ui — debounced fields persist via useTimelineUiStore + flush', () => {
-  it('expandedRows: toggle schedules a flush, flushTimelineUiPersistence drains it', () => {
+  it('expandedRows: toggle schedules a flush, flushTimelineUiPersistence drains it', async () => {
     useTimelineUiStore.getState().toggle('conv-1', 'tool-group:abc');
-    flushTimelineUiPersistence();
+    await flushTimelineUiPersistence();
 
     expect(setSpy()).toHaveBeenCalledTimes(1);
     expect(setSpy()).toHaveBeenCalledWith({
       ui: { expandedRows: { 'conv-1': ['tool-group:abc'] } }
+    });
+    expect(useSettingsStore.getState().settings.ui?.expandedRows).toEqual({
+      'conv-1': ['tool-group:abc']
     });
   });
 });

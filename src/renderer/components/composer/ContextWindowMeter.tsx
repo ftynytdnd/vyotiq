@@ -19,6 +19,7 @@ import { ContextBreakdownPopover } from './ContextBreakdownPopover.js';
 import {
   contextPercent,
   isContextReducing,
+  isUnknownContextWindow,
   levelClasses,
   levelDetailTitle,
   levelLabel
@@ -40,9 +41,10 @@ function breakdownTitle(
   tierLabel: string | null
 ): string {
   const approx = usage.exact ? '' : ' (approximate)';
-  const base =
-    `Context: ${formatTokenCountWithUnit(usage.usedTokens)} of ` +
-    `${formatTokenCountWithUnit(usage.effectiveWindow)}${approx} — ${percent}%`;
+  const base = isUnknownContextWindow(usage)
+    ? `Context: ${formatTokenCountWithUnit(usage.usedTokens)}${approx} — window unknown`
+    : `Context: ${formatTokenCountWithUnit(usage.usedTokens)} of ` +
+      `${formatTokenCountWithUnit(usage.effectiveWindow)}${approx} — ${percent}%`;
   const compactionDetail = levelDetailTitle(usage);
   if (compactionDetail) return `${base} · ${compactionDetail}`;
   return tierLabel ? `${base} (${tierLabel})` : base;
@@ -143,9 +145,10 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
     [conversationId, model, busy, providers]
   );
 
-  if (!usage || usage.effectiveWindow <= 0) return null;
+  if (!usage) return null;
 
-  const percent = contextPercent(usage);
+  const unknownWindow = isUnknownContextWindow(usage);
+  const percent = unknownWindow ? 0 : contextPercent(usage);
   const { text, bar } = levelClasses(usage.level);
   const tierLabel = levelLabel(usage.level);
   const reducing = isContextReducing(usage.level);
@@ -173,19 +176,27 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-controls={panelId}
-        aria-label={`Context window ${percent}% full. Show breakdown.`}
+        aria-label={
+          unknownWindow
+            ? `Context ${formatTokenCountWithUnit(usage.usedTokens)} used. Window unknown. Show breakdown.`
+            : `Context window ${percent}% full. Show breakdown.`
+        }
         title={breakdownTitle(usage, percent, tierLabel)}
       >
         <span className="vx-composer-token-pill__track" aria-hidden>
-          <span
-            className={cn('vx-composer-token-pill__bar', bar, reducing && 'vx-context-meter__bar--active')}
-            style={{ width: `${percent}%` }}
-          />
+          {unknownWindow ? null : (
+            <span
+              className={cn('vx-composer-token-pill__bar', bar, reducing && 'vx-context-meter__bar--active')}
+              style={{ width: `${percent}%` }}
+            />
+          )}
         </span>
         <span className="vx-composer-token-pill__ctx text-text-faint" aria-hidden>
           ctx
         </span>
-        <span className={cn('vx-composer-token-pill__pct tabular-nums', text)}>{percent}%</span>
+        <span className={cn('vx-composer-token-pill__pct tabular-nums', text)}>
+          {unknownWindow ? '—' : `${percent}%`}
+        </span>
       </button>
       <ContextBreakdownPopover
         id={panelId}

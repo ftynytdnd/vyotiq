@@ -54,6 +54,7 @@ import {
 import { sanitizeComposerHtml } from '../sanitizeComposerHtml.js';
 import { buildClipboardDataTransfer } from '../buildClipboardDataTransfer.js';
 import { scheduleDomFocus } from '../../../lib/focusComposer.js';
+import { PANEL_IDS } from '@shared/panels/panelWidths.js';
 
 const TEXTAREA_MAX_HEIGHT = 168;
 const TEXTAREA_MIN_HEIGHT = 28;
@@ -531,6 +532,7 @@ export function MentionComposer({
         zIndex={60}
         fitMaxWidth={480}
         widthMode="panel"
+        panelId={PANEL_IDS.MENTION_PICKER}
         containScroll
         className="vx-mention-picker-popover"
       >

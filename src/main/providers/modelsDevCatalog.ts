@@ -7,7 +7,8 @@ import { MODEL_DISCOVERY_TIMEOUT_MS } from '@shared/constants.js';
 import { modelsDevProviderId } from '@shared/providers/providerHostname.js';
 import type { ModelPricing } from '@shared/providers/modelPricing.js';
 import { mergeModelPricing } from '@shared/providers/modelPricing.js';
-import type { ModelInfo, ModelThinkingCapabilities, ProviderWithKey, ThinkingEffort } from '@shared/types/provider.js';
+import { normalizeInputModalities } from '@shared/providers/visionCapabilities.js';
+import type { ModelInfo, ModelInputModality, ModelThinkingCapabilities, ProviderWithKey, ThinkingEffort } from '@shared/types/provider.js';
 import { readPlainJson, writePlainJson } from '../secrets/safeStore.js';
 import { logger } from '../logging/logger.js';
 
@@ -43,6 +44,7 @@ type ModelsDevModelRow = {
   reasoning?: boolean;
   tool_call?: boolean;
   reasoning_options?: ModelsDevReasoningOption[];
+  modalities?: { input?: unknown[]; output?: unknown[] };
 };
 
 type ModelsDevProviderRow = {
@@ -57,6 +59,7 @@ type CatalogEntry = {
   pricing?: ModelPricing;
   thinking?: ModelThinkingCapabilities;
   supportedParameters?: string[];
+  inputModalities?: ModelInputModality[];
   providerId: string;
 };
 
@@ -141,6 +144,10 @@ function supportedParametersFromModelsDevRow(row: ModelsDevModelRow): string[] |
   return params.length > 0 ? params : undefined;
 }
 
+function inputModalitiesFromModelsDevRow(row: ModelsDevModelRow): ModelInputModality[] | undefined {
+  return normalizeInputModalities(row.modalities?.input);
+}
+
 function indexCatalog(root: ModelsDevApiRoot): Map<string, CatalogEntry> {
   const byKey = new Map<string, CatalogEntry>();
   for (const [providerId, providerRow] of Object.entries(root)) {
@@ -151,11 +158,13 @@ function indexCatalog(root: ModelsDevApiRoot): Map<string, CatalogEntry> {
       const pricing = pricingFromCost(row.cost);
       const thinking = thinkingFromModelsDevRow(row);
       const supportedParameters = supportedParametersFromModelsDevRow(row);
+      const inputModalities = inputModalitiesFromModelsDevRow(row);
       if (
         context === undefined &&
         !pricing &&
         !thinking &&
-        !supportedParameters
+        !supportedParameters &&
+        !inputModalities
       ) {
         continue;
       }
@@ -164,7 +173,8 @@ function indexCatalog(root: ModelsDevApiRoot): Map<string, CatalogEntry> {
         context,
         pricing,
         thinking,
-        supportedParameters
+        supportedParameters,
+        inputModalities
       };
       for (const key of catalogKeysForModelId(modelId)) {
         if (!byKey.has(key)) byKey.set(key, entry);
@@ -281,7 +291,8 @@ export async function enrichModelsFromModelsDev(
       m.pricing === undefined ||
       pricingNeedsFallback(m.pricing) ||
       !m.thinking?.supported ||
-      !m.supportedParameters?.length
+      !m.supportedParameters?.length ||
+      m.inputModalities === undefined
   );
   if (!needsEnrichment) return models;
 
@@ -300,6 +311,7 @@ export async function enrichModelsFromModelsDev(
     let pricing = model.pricing;
     let thinking = model.thinking;
     let supportedParameters = model.supportedParameters;
+    let inputModalities = model.inputModalities;
 
     if (contextWindow === undefined && hit.context !== undefined) {
       contextWindow = hit.context;
@@ -320,10 +332,14 @@ export async function enrichModelsFromModelsDev(
       supportedParameters = hit.supportedParameters;
       changed = true;
     }
+    if (inputModalities === undefined && hit.inputModalities) {
+      inputModalities = hit.inputModalities;
+      changed = true;
+    }
 
     if (!changed) return model;
     enriched += 1;
-    return { ...model, contextWindow, pricing, thinking, supportedParameters };
+    return { ...model, contextWindow, pricing, thinking, supportedParameters, inputModalities };
   });
 
   if (enriched > 0) {
@@ -333,7 +349,11 @@ export async function enrichModelsFromModelsDev(
   return next;
 }
 
-const HOURLY_REFRESH_MS = 60 * 60 * 1000;
+/** Test-only reset. */
+export function _resetModelsDevCatalogForTests(): void {
+  memoryCache = null;
+  loadInFlight = null;
+}
 
 /** Refresh models.dev catalog at most once per hour during active UI polling. */
 export async function refreshModelsDevCatalogIfStale(): Promise<void> {

@@ -15,7 +15,8 @@ import {
   formatOmittedLayerNote,
   layerCompositionShare
 } from './contextBreakdownLayers.js';
-import { contextPercent, levelClasses, levelDetailTitle, levelLabel } from './contextMeterLevel.js';
+import { contextPercent, isUnknownContextWindow, levelClasses, levelDetailTitle, levelLabel } from './contextMeterLevel.js';
+import { PANEL_IDS } from '@shared/panels/panelWidths.js';
 
 interface ContextBreakdownPopoverProps {
   id: string;
@@ -86,7 +87,8 @@ export const ContextBreakdownPopover = memo(function ContextBreakdownPopover({
   const breakdown = usage.breakdown;
   const usedTokens = usage.usedTokens > 0 ? usage.usedTokens : 0;
   const contextWindow = usage.effectiveWindow;
-  const percent = contextPercent(usage);
+  const unknownWindow = isUnknownContextWindow(usage);
+  const percent = unknownWindow ? 0 : contextPercent(usage);
   const tierLabel = levelLabel(usage.level);
   const tierClass = levelClasses(usage.level).text;
   const tierTitle = levelDetailTitle(usage);
@@ -108,6 +110,7 @@ export const ContextBreakdownPopover = memo(function ContextBreakdownPopover({
       collisionPadding={{ top: 8, bottom: 8, left: 8, right: 8 }}
       fitMaxWidth={352}
       widthMode="panel"
+      panelId={PANEL_IDS.CONTEXT_BREAKDOWN}
       className="vx-context-breakdown-popover"
     >
       <div
@@ -140,12 +143,14 @@ export const ContextBreakdownPopover = memo(function ContextBreakdownPopover({
                 /
               </span>
               <span className="vx-context-breakdown-popover__metrics-window">
-                {formatTokenCount(contextWindow)}
+                {unknownWindow ? 'unknown' : formatTokenCount(contextWindow)}
               </span>
               <span className="vx-context-breakdown-popover__metrics-sep" aria-hidden>
                 ·
               </span>
-              <span className="vx-context-breakdown-popover__metrics-pct">{percent}%</span>
+              <span className="vx-context-breakdown-popover__metrics-pct">
+                {unknownWindow ? '—' : `${percent}%`}
+              </span>
               {!usage.exact ? (
                 <>
                   <span className="vx-context-breakdown-popover__metrics-sep" aria-hidden>

@@ -95,7 +95,7 @@ export function EditorStatusBar({
         </span>
         <span className={cn('inline-flex items-center gap-1', dirty ? 'text-warning' : 'text-text-faint')}>
           <span
-            className={cn('h-1.5 w-1.5 rounded-full', dirty ? 'bg-warning' : 'bg-success/70')}
+            className={cn('h-1.5 w-1.5 rounded-full', dirty ? 'bg-warning' : 'bg-success-strong')}
             aria-hidden
           />
           {dirty ? 'Unsaved' : 'Saved'}

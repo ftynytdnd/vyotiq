@@ -3,7 +3,8 @@ import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import { MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
 import {
   looksLikeAbsoluteFilePath,
-  normalizeClipboardPath
+  normalizeClipboardPath,
+  normalizePathComparisonKey
 } from '@shared/attachments/clipboardFilePaths.js';
 import { filterClipboardBlobsWithinLimits } from '@shared/attachments/clipboardBlobLimits.js';
 import {
@@ -20,13 +21,8 @@ import {
   readClipboardFileBlobs
 } from './collectClipboardFiles.js';
 import { formatAttachmentIngestError } from './formatAttachmentIngestError.js';
-
-function resolvePickPath(path: string, workspaceRoot: string | null): string {
-  if (!workspaceRoot) return path;
-  if (/^[a-zA-Z]:[\\/]/.test(path) || path.startsWith('/')) return path;
-  const sep = workspaceRoot.includes('\\') ? '\\' : '/';
-  return `${workspaceRoot.replace(/[/\\]+$/, '')}${sep}${path.replace(/^[/\\]+/, '')}`;
-}
+import { ATTACHMENT_ERROR_PASTE_FAILED } from '@shared/attachments/formatAttachmentError.js';
+import { resolveWorkspacePickPath } from '../../lib/resolveWorkspacePickPath.js';
 
 function attachmentPathKey(meta: PromptAttachmentMeta): string {
   return meta.sourceUrl ?? meta.workspacePath ?? meta.storedPath ?? meta.id;
@@ -185,7 +181,7 @@ export function useComposerAttachments(input: {
           );
         }
         const workspaceRoot = useWorkspaceStore.getState().info.path;
-        const resolved = collected.paths.map((p) => resolvePickPath(p, workspaceRoot));
+        const resolved = collected.paths.map((p) => resolveWorkspacePickPath(p, workspaceRoot));
         const ingested = await withIngesting(() =>
           vyotiq.attachments.ingestPaths({
             paths: resolved,
@@ -220,7 +216,7 @@ export function useComposerAttachments(input: {
         showToast(`Only ${remaining} more attachment(s) allowed (max ${MAX_CHAT_ATTACHMENTS}).`, 'danger');
       }
       const workspaceRoot = useWorkspaceStore.getState().info.path;
-      const resolved = slice.map((p) => resolvePickPath(p, workspaceRoot));
+      const resolved = slice.map((p) => resolveWorkspacePickPath(p, workspaceRoot));
       try {
         const ingested = await withIngesting(() =>
           vyotiq.attachments.ingestPaths({
@@ -243,9 +239,15 @@ export function useComposerAttachments(input: {
   const ingestDataTransferFiles = useCallback(
     async (data: DataTransfer) => {
       const { conversationId, workspaceId } = input;
-      if (!conversationId || !workspaceId) return false;
+      if (!conversationId || !workspaceId) {
+        showToast('Open a workspace and conversation before attaching files.', 'danger');
+        return false;
+      }
       const remaining = MAX_CHAT_ATTACHMENTS - attachments.length;
-      if (remaining <= 0) return false;
+      if (remaining <= 0) {
+        showToast(`Maximum ${MAX_CHAT_ATTACHMENTS} attachments per message.`, 'danger');
+        return false;
+      }
 
       const clipboardFiles = collectClipboardFiles(data);
       const hostPaths = clipboardFiles
@@ -340,9 +342,15 @@ export function useComposerAttachments(input: {
   const onPaste = useCallback(
     (e: React.ClipboardEvent) => {
       const { conversationId, workspaceId } = input;
-      if (!conversationId || !workspaceId) return;
+      if (!conversationId || !workspaceId) {
+        showToast('Open a workspace and conversation before attaching files.', 'danger');
+        return;
+      }
       const remaining = MAX_CHAT_ATTACHMENTS - attachments.length;
-      if (remaining <= 0) return;
+      if (remaining <= 0) {
+        showToast(`Maximum ${MAX_CHAT_ATTACHMENTS} attachments per message.`, 'danger');
+        return;
+      }
 
       const plainText = e.clipboardData.getData('text/plain').trim();
       const clipboardFiles = collectClipboardFiles(e.clipboardData);
@@ -377,30 +385,37 @@ export function useComposerAttachments(input: {
 
       void (async () => {
         try {
+          const triedPathKeys = new Set<string>();
+
           if (hostPaths.length > 0) {
             const slice = hostPaths.slice(0, remaining);
+            for (const p of slice) triedPathKeys.add(normalizePathComparisonKey(p));
             if (slice.length < hostPaths.length) {
               showToast(
                 `Only ${remaining} more attachment(s) allowed (max ${MAX_CHAT_ATTACHMENTS}).`,
                 'danger'
               );
             }
-            await addPaths(slice);
-            return;
+            const added = await addPaths(slice);
+            if (added > 0) return;
           }
 
           if (hasFilePathText) {
-            const ingested = await withIngesting(() =>
-              vyotiq.attachments.ingestPaths({
-                paths: [normalizeClipboardPath(plainText)],
-                workspaceId,
-                conversationId,
-                messageId: ensureMessageId()
-              })
-            );
-            if (ingested.length > 0) {
-              mergeAttachments(ingested);
-              return;
+            const pathKey = normalizePathComparisonKey(plainText);
+            if (!triedPathKeys.has(pathKey)) {
+              triedPathKeys.add(pathKey);
+              const ingested = await withIngesting(() =>
+                vyotiq.attachments.ingestPaths({
+                  paths: [normalizeClipboardPath(plainText)],
+                  workspaceId,
+                  conversationId,
+                  messageId: ensureMessageId()
+                })
+              );
+              if (ingested.length > 0) {
+                mergeAttachments(ingested);
+                return;
+              }
             }
           }
 
@@ -437,7 +452,7 @@ export function useComposerAttachments(input: {
             return;
           }
 
-          showToast('Could not paste file from clipboard.', 'danger');
+          showToast(ATTACHMENT_ERROR_PASTE_FAILED, 'danger');
         } catch (err) {
           showToast(formatAttachmentIngestError(err), 'danger');
         }

@@ -269,7 +269,7 @@ function FolderRow({
       data-mention-id={row.id}
       className={cn(
         'vx-mention-picker-folder vx-dropdown-item flex w-full items-center gap-1 rounded-md py-1 pr-2 text-left',
-        active && 'bg-chrome-hover-soft/80'
+        active && 'bg-dock-selection'
       )}
       style={{ paddingLeft: `${indent}px` }}
       onMouseEnter={() => {
@@ -324,7 +324,7 @@ function MentionPickerRowButton({
       disabled={row.disabled || navIndex < 0}
       className={cn(
         'vx-mention-picker-row vx-dropdown-item flex w-full items-center gap-2 rounded-md py-1 pr-2 text-left',
-        active && 'bg-chrome-hover-soft/80',
+        active && 'bg-dock-selection',
         row.disabled && 'cursor-not-allowed opacity-50'
       )}
       style={{ paddingLeft: `${indent}px` }}

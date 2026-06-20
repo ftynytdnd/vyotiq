@@ -16,6 +16,7 @@ import { resolveSettingsSectionId } from '@shared/settings/settingsSection.js';
 import { readBlob, updateBlob, type SettingsBlob } from './blob.js';
 import { normalizeDockWidthInUi } from '@shared/dock/dockWidth.js';
 import { normalizeWorkbenchPaneWidthInUi } from '@shared/workbench/workbenchPaneWidth.js';
+import { normalizePanelWidthsInUi } from '@shared/panels/panelWidths.js';
 import {
   migrateLegacyDockUi,
   normalizeSettingsPatch,
@@ -184,6 +185,11 @@ function normalizeBlobForPersistence(blob: SettingsBlob): { blob: SettingsBlob; 
     const pane = normalizeWorkbenchPaneWidthInUi(ui);
     if (pane.changed) {
       ui = pane.ui;
+      uiChanged = true;
+    }
+    const panels = normalizePanelWidthsInUi(ui);
+    if (panels.changed) {
+      ui = panels.ui;
       uiChanged = true;
     }
     if (uiChanged) {
@@ -389,6 +395,42 @@ export async function setSettings(patch: Partial<AppSettings>): Promise<AppSetti
       const { agentBehavior: raStripped, changed: raChanged } =
         stripRemovedReflectiveAutonomyFields(cmStripped ?? nextAgent);
       mergedUi.agentBehavior = (cmChanged || raChanged) && raStripped ? raStripped : nextAgent;
+    }
+    if (patchUi?.inlineCompletion) {
+      mergedUi.inlineCompletion = {
+        ...(currentUi.inlineCompletion as Record<string, unknown> | undefined),
+        ...patchUi.inlineCompletion
+      };
+    }
+    if (patchUi?.capture) {
+      mergedUi.capture = {
+        ...(currentUi.capture as Record<string, unknown> | undefined),
+        ...patchUi.capture
+      };
+    }
+    if (patchUi?.vectorMemory) {
+      mergedUi.vectorMemory = {
+        ...(currentUi.vectorMemory as Record<string, unknown> | undefined),
+        ...patchUi.vectorMemory
+      };
+    }
+    if (patchUi?.editorLsp) {
+      const editorPatch = patchUi.editorLsp as NonNullable<AppSettings['ui']>['editorLsp'];
+      const prev = (currentUi.editorLsp as Record<string, unknown> | undefined) ?? {};
+      const nextEditor = { ...prev, ...editorPatch } as Record<string, unknown>;
+      if (editorPatch?.languages) {
+        nextEditor.languages = {
+          ...(prev.languages as Record<string, unknown> | undefined),
+          ...editorPatch.languages
+        };
+      }
+      mergedUi.editorLsp = nextEditor;
+    }
+    if (patchUi?.panelWidths) {
+      mergedUi.panelWidths = {
+        ...(currentUi.panelWidths as Record<string, number> | undefined),
+        ...patchUi.panelWidths
+      };
     }
 
     const { permissions: _patchPerms, ...normalizedSansPerms } = normalized as Partial<AppSettings> & {

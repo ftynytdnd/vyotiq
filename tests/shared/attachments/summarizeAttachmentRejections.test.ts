@@ -12,6 +12,17 @@ describe('summarizeAttachmentRejections', () => {
     ).toBe('huge.zip exceeds 10 MB limit');
   });
 
+  it('formats ENOENT rejections for display', () => {
+    expect(
+      summarizeAttachmentRejections([
+        {
+          name: 'review-bugbot',
+          reason: "ENOENT: no such file or directory, stat 'C:\\review-bugbot'"
+        }
+      ])
+    ).toBe('Could not find that file to attach. Try capturing or attaching again.');
+  });
+
   it('summarizes multiple size-limit rejections', () => {
     expect(
       summarizeAttachmentRejections([

@@ -13,6 +13,11 @@ export function rowContextBadgeLabel(tokens: number, estimated = false): string 
   return `${prefix}${formatTokenCount(tokens)}`;
 }
 
+/** Compact modality badge label for model rows. */
+export function rowModalityBadgeLabel(label: string, estimated = false): string {
+  return estimated ? `~${label}` : label;
+}
+
 /** Whether effort should appear as a row badge (hide default/off). */
 export function shouldShowEffortBadge(
   effort: ThinkingEffort | undefined,

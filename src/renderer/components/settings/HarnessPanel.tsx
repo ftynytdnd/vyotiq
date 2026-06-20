@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { HarnessSectionId, HarnessSectionInfo } from '@shared/types/harness.js';
 import { HARNESS_SECTION_IDS } from '@shared/types/harness.js';
 import { vyotiq } from '../../lib/ipc.js';
+import { useToastStore } from '../../store/useToastStore.js';
 import { ShellCaption, ShellRow, ShellSection, ShellStack } from '../ui/ShellSection.js';
 import { Button } from '../ui/Button.js';
 import { LoadingHint } from '../ui/LoadingHint.js';
@@ -29,8 +30,13 @@ export function HarnessPanel() {
   const [busy, setBusy] = useState(false);
 
   const refreshSections = useCallback(async () => {
-    const rows = await vyotiq.harness.listSections();
-    setSections(rows);
+    try {
+      const rows = await vyotiq.harness.listSections();
+      setSections(rows);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      useToastStore.getState().show(`Could not load harness sections: ${msg}`, 'danger');
+    }
   }, []);
 
   const loadSection = useCallback(async (sectionId: HarnessSectionId) => {
@@ -41,6 +47,9 @@ export function HarnessPanel() {
       setBundled(row.bundled);
       setHasOverride(row.override !== null);
       setDirty(false);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      useToastStore.getState().show(`Could not load harness section: ${msg}`, 'danger');
     } finally {
       setLoading(false);
     }
@@ -60,6 +69,9 @@ export function HarnessPanel() {
       await vyotiq.harness.writeSection(activeId, draft);
       await refreshSections();
       await loadSection(activeId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      useToastStore.getState().show(`Could not save harness section: ${msg}`, 'danger');
     } finally {
       setBusy(false);
     }
@@ -71,6 +83,9 @@ export function HarnessPanel() {
       await vyotiq.harness.resetSection(activeId);
       await refreshSections();
       await loadSection(activeId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      useToastStore.getState().show(`Could not reset harness section: ${msg}`, 'danger');
     } finally {
       setBusy(false);
     }

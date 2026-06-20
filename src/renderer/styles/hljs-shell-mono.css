@@ -1,0 +1,86 @@
+/**
+ * highlight.js theme mapped to Shell Mono `@theme` syntax tokens.
+ * Replaces `highlight.js/styles/github-dark.css` (hardcoded hex).
+ */
+
+.hljs {
+  color: var(--color-syntax-name);
+  background: transparent;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--color-syntax-comment);
+  font-style: italic;
+}
+
+.hljs-doctag,
+.hljs-keyword,
+.hljs-formula,
+.hljs-selector-tag {
+  color: var(--color-syntax-keyword);
+}
+
+.hljs-string,
+.hljs-regexp {
+  color: var(--color-syntax-string);
+}
+
+.hljs-number,
+.hljs-literal,
+.hljs-symbol,
+.hljs-bullet {
+  color: var(--color-syntax-number);
+}
+
+.hljs-title,
+.hljs-title.function_,
+.hljs-section {
+  color: var(--color-syntax-function);
+  font-weight: 500;
+}
+
+.hljs-title.class_,
+.hljs-type,
+.hljs-built_in,
+.hljs-class .hljs-title {
+  color: var(--color-syntax-type);
+}
+
+.hljs-variable,
+.hljs-template-variable,
+.hljs-attribute,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-selector-attr,
+.hljs-selector-pseudo,
+.hljs-subst {
+  color: var(--color-syntax-property);
+}
+
+.hljs-meta,
+.hljs-meta .hljs-keyword {
+  color: var(--color-syntax-comment);
+}
+
+.hljs-link {
+  color: var(--color-syntax-link);
+  text-decoration: underline;
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 600;
+}
+
+.hljs-addition {
+  color: var(--color-diff-add);
+}
+
+.hljs-deletion {
+  color: var(--color-diff-del);
+}
