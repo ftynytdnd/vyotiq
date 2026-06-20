@@ -89,4 +89,35 @@ describe('measurePopoverPosition', () => {
     expect((pos.maxWidth ?? 0) + pos.left).toBeLessThanOrEqual(window.innerWidth - 56);
     expect(pos.left).toBeGreaterThanOrEqual(56);
   });
+
+  it('uses naturalHeight override instead of locked offsetHeight', () => {
+    const anchor = mockAnchor(new DOMRect(200, 520, 600, 140));
+    const lockedPopover = mockPopover(120, 400);
+
+    const compact = measurePopoverPosition(
+      anchor,
+      lockedPopover,
+      8,
+      'fit',
+      { bottom: 56, top: 46, left: 56, right: 56 },
+      'top',
+      true
+    );
+
+    const expanded = measurePopoverPosition(
+      anchor,
+      lockedPopover,
+      8,
+      'fit',
+      { bottom: 56, top: 46, left: 56, right: 56 },
+      'top',
+      true,
+      768,
+      480
+    );
+
+    expect(compact.maxHeight ?? 0).toBeLessThanOrEqual(120);
+    expect(expanded.maxHeight).toBeGreaterThan(compact.maxHeight ?? 0);
+    expect(expanded.maxHeight).toBeLessThanOrEqual(480);
+  });
 });

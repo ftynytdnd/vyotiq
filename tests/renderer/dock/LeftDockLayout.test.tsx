@@ -20,7 +20,8 @@ beforeEach(() => {
   useUiStore.setState({
     dockExpanded: true,
     dockWidth: DOCK_WIDTH_DEFAULT,
-    dockPanelTab: 'files',
+    dockPanelTab: 'chats',
+    filesExpandedWorkspaces: new Set<string>(),
     collapsedWorkspaces: new Set<string>(),
     hydrated: true
   });
@@ -47,15 +48,13 @@ beforeEach(() => {
 });
 
 describe('LeftDock layout', () => {
-  it('renders expanded inline panel width and workspace/chat tablists', () => {
+  it('renders expanded inline panel with workspace tree and session list', () => {
     render(<LeftDock {...dockProps} />);
     const nav = screen.getByRole('navigation', { name: 'Workspace and session navigation' });
     expect(nav).toHaveStyle({ width: `${DOCK_WIDTH_DEFAULT}px` });
     expect(nav.className).toContain('vx-dock-panel');
-    expect(screen.getByText('Workspaces')).toBeInTheDocument();
-    expect(screen.getByRole('tablist', { name: 'Workspaces' })).toBeInTheDocument();
-    expect(screen.getByRole('tablist', { name: 'Workspace contents' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('tab', { name: /Chats/i }));
+    expect(screen.getByRole('heading', { name: 'Workspaces' })).toBeInTheDocument();
+    expect(screen.getByRole('tree', { name: 'Workspaces' })).toBeInTheDocument();
     expect(screen.getByRole('tablist', { name: 'Chats in workspace' })).toBeInTheDocument();
     expect(screen.getByRole('separator', { name: 'Resize navigation dock' })).toBeInTheDocument();
   });
@@ -123,11 +122,16 @@ describe('LeftDock layout', () => {
     expect(handle).not.toHaveAttribute('data-resizing');
   });
 
-  it('switches to the chats tab when dock panel receives new chat via store', () => {
-    useUiStore.setState({ dockPanelTab: 'files', dockExpanded: true });
+  it('collapses files for the active workspace when chats are focused via store', () => {
+    useUiStore.setState({
+      dockPanelTab: 'files',
+      filesExpandedWorkspaces: new Set(['ws-1']),
+      dockExpanded: true
+    });
     render(<LeftDock {...dockProps} />);
     useUiStore.getState().setDockPanelTab('chats');
     expect(useUiStore.getState().dockPanelTab).toBe('chats');
+    expect(useUiStore.getState().filesExpandedWorkspaces.has('ws-1')).toBe(false);
   });
 
   it('does not render panel while settings mode is active', () => {

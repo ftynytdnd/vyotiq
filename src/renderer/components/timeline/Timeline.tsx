@@ -738,6 +738,7 @@ function renderRow(
           key={r.key}
           content={r.content}
           {...(r.severity ? { severity: r.severity } : {})}
+          {...(r.variant ? { variant: r.variant } : {})}
           live={liveTurn}
         />
       );

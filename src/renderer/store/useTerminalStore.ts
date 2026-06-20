@@ -13,6 +13,7 @@ import {
   focusWorkbenchTab,
   syncWorkbenchTabAfterClose
 } from '../components/workbench/workbenchShared.js';
+import { focusActiveWorkbenchDom } from '../lib/workbenchFocusDom.js';
 import { useUiStore } from './useUiStore.js';
 import { disposeTerminalEntry } from '../components/terminal/terminalPool.js';
 
@@ -61,6 +62,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
         return;
       }
       focusWorkbenchTab('terminal');
+      focusActiveWorkbenchDom('terminal');
       return;
     }
     void get().openPanel(workspaceId);
@@ -82,6 +84,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
         sessions,
         activeSessionId: activeStillValid ? current : primary?.sessionId ?? null
       });
+      focusActiveWorkbenchDom('terminal');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       set({ attaching: false, error: msg, open: false, workspaceId: null, sessions: [] });

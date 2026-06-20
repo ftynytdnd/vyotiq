@@ -14,12 +14,10 @@ import { useConversationsStore } from '../../../store/useConversationsStore.js';
 import { useProviderStore } from '../../../store/useProviderStore.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import { formatDuration, formatWallClock } from './runCompleteFormat.js';
-
-/** Turns at or above this duration get a warning tone on the elapsed label. */
-const LONG_TURN_WARN_MS = 120_000;
-
-/** Turns at or above this duration get a stronger warning + tooltip. */
-const VERY_LONG_TURN_WARN_MS = 480_000;
+import {
+  LONG_TURN_WARN_MS,
+  VERY_LONG_TURN_WARN_MS
+} from '@shared/timeline/longTurnThresholds.js';
 
 export interface RunCompleteMetaProps {
   promptId: string;

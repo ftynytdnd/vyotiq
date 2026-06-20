@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { filterClipboardBlobsWithinLimits } from '@shared/attachments/clipboardBlobLimits.js';
-import { MAX_ATTACHMENT_FILE_BYTES } from '@shared/constants.js';
+import { MAX_ATTACHMENT_IMAGE_BYTES } from '@shared/constants.js';
 
 describe('clipboardBlobLimits', () => {
   it('rejects blobs over the cap before IPC', () => {
-    const big = new ArrayBuffer(MAX_ATTACHMENT_FILE_BYTES + 1);
+    const big = new ArrayBuffer(MAX_ATTACHMENT_IMAGE_BYTES + 1);
     const small = new ArrayBuffer(8);
     const { accepted, rejected } = filterClipboardBlobsWithinLimits([
       { name: 'big.png', mimeType: 'image/png', data: big },

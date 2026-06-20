@@ -19,6 +19,8 @@
  */
 
 import type { PromptAttachmentMeta, TimelineEvent } from '@shared/types/chat.js';
+import { attachmentPreReadCopy } from '@shared/attachments/attachmentPreReadCopy.js';
+import { shouldUseAskUserOverlay } from '@shared/askUser/askUserOverlay.js';
 import type { MentionRef } from '@shared/types/mention.js';
 import type { ToolCall, ToolName, ToolResult, DiffHunk } from '@shared/types/tool.js';
 import type { DiffStreamSnapshot, PartialToolCallArgs, TokenUsageAggregate } from './types.js';
@@ -115,7 +117,14 @@ export type Row =
       storedPath: string;
     }
   | { kind: 'reasoning-line'; key: string; id: string }
-  | { kind: 'agent-thought'; key: string; content: string; severity?: 'info' | 'warn' }
+  | {
+    kind: 'agent-thought';
+    key: string;
+    content: string;
+    severity?: 'info' | 'warn';
+    /** Slightly stronger contrast for user-facing host notices (e.g. attachments). */
+    variant?: 'caption' | 'notice';
+  }
   | {
     kind: 'ask-user-prompt';
     key: string;
@@ -374,8 +383,9 @@ export function deriveRows(
         out.push({
           kind: 'agent-thought',
           key: e.id,
-          content: `Attachment inlined — \`${e.path}\` pre-read for this run`,
-          severity: 'info'
+          content: attachmentPreReadCopy(e.path, e.mediaKind),
+          severity: 'info',
+          variant: 'notice'
         });
         break;
 
@@ -383,6 +393,15 @@ export function deriveRows(
         closeGroups();
         // Answers land on the user-prompt row — no post-submit status bar.
         if (e.status === 'submitted') break;
+        // Overlay prompts (3+ questions or host gate) render above the composer only.
+        if (
+          shouldUseAskUserOverlay({
+            payload: e.payload,
+            ...(e.source ? { source: e.source } : {})
+          })
+        ) {
+          break;
+        }
         out.push({
           kind: 'ask-user-prompt',
           key: e.id,

@@ -92,6 +92,7 @@ export function useComposerAttachments(input: {
   const [attachments, setAttachmentsState] = useState<PromptAttachmentMeta[]>(
     () => input.initialAttachments ?? []
   );
+  const [ingestCount, setIngestCount] = useState(0);
   const pendingMessageIdRef = useRef(randomId());
   const showToast = useToastStore((s) => s.show);
   const hydratedConvRef = useRef<string | null>(null);
@@ -113,6 +114,15 @@ export function useComposerAttachments(input: {
     },
     [input.onAttachmentsChange]
   );
+
+  const withIngesting = useCallback(async <T,>(fn: () => Promise<T>): Promise<T> => {
+    setIngestCount((c) => c + 1);
+    try {
+      return await fn();
+    } finally {
+      setIngestCount((c) => c - 1);
+    }
+  }, []);
 
   const ensureMessageId = useCallback(() => {
     if (!pendingMessageIdRef.current) {
@@ -176,32 +186,34 @@ export function useComposerAttachments(input: {
         }
         const workspaceRoot = useWorkspaceStore.getState().info.path;
         const resolved = collected.paths.map((p) => resolvePickPath(p, workspaceRoot));
-        const ingested = await vyotiq.attachments.ingestPaths({
-          paths: resolved,
-          workspaceId,
-          conversationId,
-          messageId: ensureMessageId()
-        });
+        const ingested = await withIngesting(() =>
+          vyotiq.attachments.ingestPaths({
+            paths: resolved,
+            workspaceId,
+            conversationId,
+            messageId: ensureMessageId()
+          })
+        );
         mergeAttachments(ingested);
       } catch (err) {
         showToast(formatAttachmentIngestError(err), 'danger');
       }
     },
-    [attachments.length, ensureMessageId, input, mergeAttachments, showToast]
+    [attachments.length, ensureMessageId, input, mergeAttachments, showToast, withIngesting]
   );
 
   const addPaths = useCallback(
-    async (paths: string[]) => {
-      if (paths.length === 0) return;
+    async (paths: string[]): Promise<number> => {
+      if (paths.length === 0) return 0;
       const { conversationId, workspaceId } = input;
       if (!conversationId || !workspaceId) {
         showToast('Open a workspace and conversation before attaching files.', 'danger');
-        return;
+        return 0;
       }
       const remaining = MAX_CHAT_ATTACHMENTS - attachments.length;
       if (remaining <= 0) {
         showToast(`Maximum ${MAX_CHAT_ATTACHMENTS} attachments per message.`, 'danger');
-        return;
+        return 0;
       }
       const slice = paths.slice(0, remaining);
       if (slice.length < paths.length) {
@@ -210,18 +222,22 @@ export function useComposerAttachments(input: {
       const workspaceRoot = useWorkspaceStore.getState().info.path;
       const resolved = slice.map((p) => resolvePickPath(p, workspaceRoot));
       try {
-        const ingested = await vyotiq.attachments.ingestPaths({
-          paths: resolved,
-          workspaceId,
-          conversationId,
-          messageId: ensureMessageId()
-        });
+        const ingested = await withIngesting(() =>
+          vyotiq.attachments.ingestPaths({
+            paths: resolved,
+            workspaceId,
+            conversationId,
+            messageId: ensureMessageId()
+          })
+        );
         mergeAttachments(ingested);
+        return ingested.length;
       } catch (err) {
         showToast(formatAttachmentIngestError(err), 'danger');
+        return 0;
       }
     },
-    [attachments.length, ensureMessageId, input, mergeAttachments, showToast]
+    [attachments.length, ensureMessageId, input, mergeAttachments, showToast, withIngesting]
   );
 
   const ingestDataTransferFiles = useCallback(
@@ -237,17 +253,19 @@ export function useComposerAttachments(input: {
         .filter((p): p is string => typeof p === 'string' && p.length > 0);
 
       if (hostPaths.length > 0) {
-        await addPaths(hostPaths.slice(0, remaining));
-        return true;
+        const added = await addPaths(hostPaths.slice(0, remaining));
+        return added > 0;
       }
 
       const blobs = await readClipboardFileBlobs(data);
       if (blobs.length > 0) {
-        const ingested = await ingestClipboardBlobs(
-          { conversationId, workspaceId, messageId: ensureMessageId() },
-          blobs,
-          remaining,
-          showToast
+        const ingested = await withIngesting(() =>
+          ingestClipboardBlobs(
+            { conversationId, workspaceId, messageId: ensureMessageId() },
+            blobs,
+            remaining,
+            showToast
+          )
         );
         if (ingested.length > 0) {
           mergeAttachments(ingested);
@@ -257,7 +275,7 @@ export function useComposerAttachments(input: {
 
       return false;
     },
-    [addPaths, attachments.length, ensureMessageId, input, mergeAttachments, showToast]
+    [addPaths, attachments.length, ensureMessageId, input, mergeAttachments, showToast, withIngesting]
   );
 
   const pickFromComputer = useCallback(async () => {
@@ -272,18 +290,20 @@ export function useComposerAttachments(input: {
       return;
     }
     try {
-      const ingested = await vyotiq.attachments.pick({
-        workspaceId,
-        conversationId,
-        messageId: ensureMessageId(),
-        maxCount: remaining
-      });
+      const ingested = await withIngesting(() =>
+        vyotiq.attachments.pick({
+          workspaceId,
+          conversationId,
+          messageId: ensureMessageId(),
+          maxCount: remaining
+        })
+      );
       if (ingested.length === 0) return;
       mergeAttachments(ingested);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Could not attach files.', 'danger');
+      showToast(formatAttachmentIngestError(err), 'danger');
     }
-  }, [attachments.length, ensureMessageId, input, mergeAttachments, showToast]);
+  }, [attachments.length, ensureMessageId, input, mergeAttachments, showToast, withIngesting]);
 
   const remove = useCallback(
     (id: string) => {
@@ -300,8 +320,11 @@ export function useComposerAttachments(input: {
       if (files.length === 0) return;
 
       void (async () => {
+        const hostPaths = files
+          .map((f) => (f as File & { path?: string }).path)
+          .filter((p): p is string => typeof p === 'string' && p.length > 0);
         const attached = await ingestDataTransferFiles(e.dataTransfer);
-        if (!attached) {
+        if (!attached && hostPaths.length === 0) {
           showToast('Could not attach dropped files.', 'danger');
         }
       })();
@@ -367,12 +390,14 @@ export function useComposerAttachments(input: {
           }
 
           if (hasFilePathText) {
-            const ingested = await vyotiq.attachments.ingestPaths({
-              paths: [normalizeClipboardPath(plainText)],
-              workspaceId,
-              conversationId,
-              messageId: ensureMessageId()
-            });
+            const ingested = await withIngesting(() =>
+              vyotiq.attachments.ingestPaths({
+                paths: [normalizeClipboardPath(plainText)],
+                workspaceId,
+                conversationId,
+                messageId: ensureMessageId()
+              })
+            );
             if (ingested.length > 0) {
               mergeAttachments(ingested);
               return;
@@ -381,11 +406,13 @@ export function useComposerAttachments(input: {
 
           if (clipboardFiles.length > 0 || hasImagePayload) {
             const blobs = await readClipboardFileBlobs(e.clipboardData);
-            const ingested = await ingestClipboardBlobs(
-              { conversationId, workspaceId, messageId: ensureMessageId() },
-              blobs,
-              remaining,
-              showToast
+            const ingested = await withIngesting(() =>
+              ingestClipboardBlobs(
+                { conversationId, workspaceId, messageId: ensureMessageId() },
+                blobs,
+                remaining,
+                showToast
+              )
             );
             if (ingested.length > 0) {
               mergeAttachments(ingested);
@@ -398,11 +425,13 @@ export function useComposerAttachments(input: {
             return;
           }
 
-          const ingested = await vyotiq.attachments.ingestClipboard({
-            workspaceId,
-            conversationId,
-            messageId: ensureMessageId()
-          });
+          const ingested = await withIngesting(() =>
+            vyotiq.attachments.ingestClipboard({
+              workspaceId,
+              conversationId,
+              messageId: ensureMessageId()
+            })
+          );
           if (ingested.length > 0) {
             mergeAttachments(ingested);
             return;
@@ -421,7 +450,8 @@ export function useComposerAttachments(input: {
       ensureMessageId,
       input,
       mergeAttachments,
-      showToast
+      showToast,
+      withIngesting
     ]
   );
 
@@ -437,6 +467,7 @@ export function useComposerAttachments(input: {
     onDragOver,
     onPaste,
     ingestDataTransferFiles,
+    isIngesting: ingestCount > 0,
     pendingMessageId: pendingMessageIdRef,
     peekPendingMessageId: ensureMessageId
   };

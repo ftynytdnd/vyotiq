@@ -33,6 +33,7 @@ interface AskUserDraftStore {
   skipQuestion: (promptEventId: string, questionId: string) => void;
   setFreeText: (promptEventId: string, questionId: string, text: string, allowMultiple?: boolean) => void;
   buildAnswers: (promptEventId: string, payload: AskUserStructuredPayload) => AskUserAnswer[];
+  countAnswered: (promptEventId: string, payload: AskUserStructuredPayload) => number;
   hasAnyAnswer: (
     promptEventId: string,
     payload: AskUserStructuredPayload,
@@ -140,6 +141,22 @@ export const useAskUserDraftStore = create<AskUserDraftStore>((set, get) => ({
         ...(d.freeText.trim().length > 0 ? { freeText: d.freeText.trim() } : {})
       };
     });
+  },
+
+  countAnswered: (promptEventId, payload) => {
+    const sheet = get().byPromptId[promptEventId];
+    if (!sheet) return 0;
+    let count = 0;
+    for (const q of payload.questions) {
+      const d = sheet[q.id];
+      if (!d) continue;
+      if (d.skipped) {
+        count += 1;
+        continue;
+      }
+      if (d.selected.size > 0 || d.freeText.trim().length > 0) count += 1;
+    }
+    return count;
   },
 
   hasAnyAnswer: (promptEventId, payload, supplementText) => {

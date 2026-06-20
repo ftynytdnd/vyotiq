@@ -49,6 +49,18 @@ export function registerEscapeLayer(
   };
 }
 
+/** True when focus is inside any of the given roots (not bare `body`). */
+export function escapeFocusInRoots(
+  active: Element | null,
+  roots: readonly (HTMLElement | null | undefined)[]
+): boolean {
+  if (!active || active === document.body) return false;
+  for (const root of roots) {
+    if (root?.contains(active)) return true;
+  }
+  return false;
+}
+
 /** Whether any registered layer would run before the given priority threshold. */
 export function escapeHandledAbovePriority(minPriority: number): boolean {
   for (const layer of layers.values()) {

@@ -55,7 +55,7 @@ const baseGroups: MentionPickerGroup[] = [
   }
 ];
 
-const flatRows: MentionPickerRow[] = [fileRow, baseGroups[2]!.rows[0]!];
+const flatRows: MentionPickerRow[] = [folderRow, fileRow, baseGroups[2]!.rows[0]!];
 
 describe('MentionPicker', () => {
   it('renders workspace tree with folders and categorized sections', () => {
@@ -65,7 +65,7 @@ describe('MentionPicker', () => {
         query=""
         groups={baseGroups}
         rows={flatRows}
-        activeRow={fileRow}
+        activeRow={folderRow}
         loading={false}
         activeIndex={0}
         onActiveIndexChange={vi.fn()}
@@ -75,7 +75,7 @@ describe('MentionPicker', () => {
       />
     );
 
-    expect(screen.getByText('Workspace')).toBeTruthy();
+    expect(screen.getByText(/Workspace · 1/)).toBeTruthy();
     expect(screen.getByText('Symbols')).toBeTruthy();
     expect(screen.getByText(/Chats · 1/)).toBeTruthy();
     expect(screen.getByText('src')).toBeTruthy();
@@ -92,7 +92,7 @@ describe('MentionPicker', () => {
         query=""
         groups={baseGroups}
         rows={flatRows}
-        activeRow={fileRow}
+        activeRow={folderRow}
         loading={false}
         activeIndex={0}
         onActiveIndexChange={vi.fn()}
@@ -117,7 +117,7 @@ describe('MentionPicker', () => {
         rows={flatRows}
         activeRow={fileRow}
         loading={false}
-        activeIndex={0}
+        activeIndex={1}
         onActiveIndexChange={vi.fn()}
         onPick={onPick}
         onToggleFolder={vi.fn()}

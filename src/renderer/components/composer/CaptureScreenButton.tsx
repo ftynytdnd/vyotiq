@@ -2,7 +2,7 @@
  * Screen capture button — opens a portaled capture picker anchored to the camera icon.
  */
 
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Camera, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/cn.js';
 import { chromeToolbarButtonClassName } from '../ui/SurfaceShell.js';
@@ -31,6 +31,25 @@ export function CaptureScreenButton({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const collisionPadding = useModelPickerCollisionPadding();
   const picker = useCapturePicker({ disabled, conversationId, messageId, onIngested });
+  const [popoverRevision, setPopoverRevision] = useState(0);
+
+  useEffect(() => {
+    if (!picker.open) return;
+    let frame = 0;
+    let pass = 0;
+    const remeasure = () => {
+      setPopoverRevision((r) => r + 1);
+      pass += 1;
+      if (pass < 3) frame = requestAnimationFrame(remeasure);
+    };
+    frame = requestAnimationFrame(remeasure);
+    return () => cancelAnimationFrame(frame);
+  }, [
+    picker.open,
+    picker.loading,
+    picker.showSkeleton,
+    picker.sources.length
+  ]);
 
   return (
     <>
@@ -63,7 +82,7 @@ export function CaptureScreenButton({
         )}
       </button>
       <Popover
-        open={picker.open}
+        open={picker.pickerVisible}
         onClose={() => picker.closePicker()}
         triggerRef={triggerRef}
         preferSide="auto"
@@ -71,6 +90,7 @@ export function CaptureScreenButton({
         offset={8}
         zIndex={80}
         collisionPadding={collisionPadding}
+        revision={popoverRevision}
         fitMaxWidth={CAPTURE_PICKER_FIT_MAX_WIDTH_PX}
         widthMode="panel"
         containScroll

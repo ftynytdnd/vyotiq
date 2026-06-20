@@ -11,13 +11,24 @@ import {
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 import { assertNumber, assertObject, assertOptionalString, assertString } from './validate.js';
 import { collectFolderFiles } from '../attachments/collectFolderFiles.js';
-import { ingestExternalFile, ingestBuffer, assertAttachmentCount } from '../attachments/ingest.js';
+import { ingestExternalFile, ingestExternalFiles, ingestBuffer, assertAttachmentCount } from '../attachments/ingest.js';
+import { summarizeAttachmentRejections } from '@shared/attachments/summarizeAttachmentRejections.js';
+import { notifyUiToast } from '../ui/uiToast.js';
 import { resolveAttachmentInWorkspace } from '../attachments/resolveInWorkspace.js';
 import { realpathInsideAttachmentsRoot } from '../attachments/sandbox.js';
 import { requireWorkspaceById } from '../workspace/workspaceState.js';
 import { realpathInsideWorkspace } from '../tools/sandbox.js';
 
 const MAX_ATTACHMENT_IO_PATH_BYTES = 4096;
+
+function notifyAttachmentIngestRejections(
+  rejected: Array<{ name: string; reason: string }>,
+  conversationId?: string
+): void {
+  const message = summarizeAttachmentRejections(rejected);
+  if (!message) return;
+  notifyUiToast({ message, variant: 'danger', ...(conversationId ? { conversationId } : {}) });
+}
 
 interface AttachmentPathInput {
   path: string;
@@ -63,6 +74,7 @@ async function ingestClipboardAttachments(
   await requireWorkspaceById(input.workspaceId);
 
   const out: PromptAttachmentMeta[] = [];
+  const rejected: Array<{ name: string; reason: string }> = [];
   const slots = () => MAX_CHAT_ATTACHMENTS - out.length;
 
   if (Array.isArray(input.blobs)) {
@@ -72,16 +84,21 @@ async function ingestClipboardAttachments(
       assertString('attachments:ingestClipboard', 'blob.name', blob.name);
       assertString('attachments:ingestClipboard', 'blob.mimeType', blob.mimeType);
       if (!(blob.data instanceof Uint8Array) || blob.data.byteLength === 0) continue;
-      out.push(
-        await ingestBuffer({
-          buffer: Buffer.from(blob.data),
-          suggestedName: blob.name,
-          mimeType: blob.mimeType,
-          workspaceId: input.workspaceId,
-          conversationId: input.conversationId,
-          messageId: input.messageId
-        })
-      );
+      try {
+        out.push(
+          await ingestBuffer({
+            buffer: Buffer.from(blob.data),
+            suggestedName: blob.name,
+            mimeType: blob.mimeType,
+            workspaceId: input.workspaceId,
+            conversationId: input.conversationId,
+            messageId: input.messageId
+          })
+        );
+      } catch (err: unknown) {
+        const reason = err instanceof Error ? err.message : String(err);
+        rejected.push({ name: blob.name, reason });
+      }
     }
   }
 
@@ -94,20 +111,15 @@ async function ingestClipboardAttachments(
     if (looksLikeAbsoluteFilePath(textPath)) {
       pathCandidates.add(normalizeClipboardPath(textPath));
     }
-    for (const p of pathCandidates) {
-      if (slots() <= 0) break;
-      try {
-        out.push(
-          await ingestExternalFile({
-            sourcePath: p,
-            workspaceId: input.workspaceId,
-            conversationId: input.conversationId,
-            messageId: input.messageId
-          })
-        );
-      } catch {
-        /* skip missing or blocked paths */
-      }
+    const paths = [...pathCandidates].slice(0, MAX_CHAT_ATTACHMENTS);
+    if (paths.length > 0) {
+      const batch = await ingestExternalFiles(paths, {
+        workspaceId: input.workspaceId,
+        conversationId: input.conversationId,
+        messageId: input.messageId
+      });
+      out.push(...batch.ingested.slice(0, MAX_CHAT_ATTACHMENTS));
+      rejected.push(...batch.rejected);
     }
   }
 
@@ -115,19 +127,25 @@ async function ingestClipboardAttachments(
     const image = clipboard.readImage();
     if (!image.isEmpty()) {
       const png = image.toPNG();
-      out.push(
-        await ingestBuffer({
-          buffer: png,
-          suggestedName: `clipboard-${Date.now()}.png`,
-          mimeType: 'image/png',
-          workspaceId: input.workspaceId,
-          conversationId: input.conversationId,
-          messageId: input.messageId
-        })
-      );
+      try {
+        out.push(
+          await ingestBuffer({
+            buffer: png,
+            suggestedName: `clipboard-${Date.now()}.png`,
+            mimeType: 'image/png',
+            workspaceId: input.workspaceId,
+            conversationId: input.conversationId,
+            messageId: input.messageId
+          })
+        );
+      } catch (err: unknown) {
+        const reason = err instanceof Error ? err.message : String(err);
+        rejected.push({ name: 'clipboard image', reason });
+      }
     }
   }
 
+  notifyAttachmentIngestRejections(rejected, input.conversationId);
   return out;
 }
 
@@ -159,18 +177,13 @@ export function registerAttachmentsIpc(): void {
       assertAttachmentCount(paths.length);
 
       await requireWorkspaceById(input.workspaceId);
-      const out: PromptAttachmentMeta[] = [];
-      for (const p of paths) {
-        out.push(
-          await ingestExternalFile({
-            sourcePath: p,
-            workspaceId: input.workspaceId,
-            conversationId: input.conversationId,
-            messageId: input.messageId
-          })
-        );
-      }
-      return out;
+      const { ingested, rejected } = await ingestExternalFiles(paths, {
+        workspaceId: input.workspaceId,
+        conversationId: input.conversationId,
+        messageId: input.messageId
+      });
+      notifyAttachmentIngestRejections(rejected, input.conversationId);
+      return ingested;
     }
   );
 
@@ -217,19 +230,26 @@ export function registerAttachmentsIpc(): void {
       assertAttachmentCount(input.paths.length);
       const workspaceRoot = await requireWorkspaceById(input.workspaceId);
       const out: PromptAttachmentMeta[] = [];
+      const rejected: Array<{ name: string; reason: string }> = [];
       for (const p of input.paths) {
         assertString('attachments:ingest', 'path', p, { maxBytes: MAX_ATTACHMENT_IO_PATH_BYTES });
         const ws = await resolveAttachmentInWorkspace(workspaceRoot, p);
-        out.push(
-          await ingestExternalFile({
-            sourcePath: p,
-            workspaceId: input.workspaceId,
-            conversationId: input.conversationId,
-            messageId: input.messageId,
-            workspacePath: ws.inWorkspace ? ws.workspacePath : undefined
-          })
-        );
+        try {
+          out.push(
+            await ingestExternalFile({
+              sourcePath: ws.inWorkspace ? ws.absPath : p,
+              workspaceId: input.workspaceId,
+              conversationId: input.conversationId,
+              messageId: input.messageId,
+              workspacePath: ws.inWorkspace ? ws.workspacePath : undefined
+            })
+          );
+        } catch (err: unknown) {
+          const reason = err instanceof Error ? err.message : String(err);
+          rejected.push({ name: p.split(/[/\\]/).pop() ?? p, reason });
+        }
       }
+      notifyAttachmentIngestRejections(rejected, input.conversationId);
       return out;
     }
   );

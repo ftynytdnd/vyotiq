@@ -8,11 +8,13 @@ import { basename, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import {
-  MAX_ATTACHMENT_FILE_BYTES,
-  MAX_CHAT_ATTACHMENTS,
-  VISION_VIDEO_MAX_BYTES
+  MAX_CHAT_ATTACHMENTS
 } from '@shared/constants.js';
 import { guessMimeFromName, mediaKindFromMeta } from '@shared/attachments/mediaKind.js';
+import {
+  formatAttachmentSizeLimitError,
+  maxBytesForAttachment
+} from '@shared/attachments/attachmentSizeLimits.js';
 
 import { attachmentsDir } from '../paths/userDataLayout.js';
 
@@ -42,10 +44,9 @@ export async function ingestExternalFile(input: IngestFileInput): Promise<Prompt
   const name = basename(input.sourcePath);
   const mimeType = guessMimeFromName(name);
   const mediaKind = mediaKindFromMeta({ name, mimeType });
-  const sizeCap =
-    mediaKind === 'video' ? VISION_VIDEO_MAX_BYTES : MAX_ATTACHMENT_FILE_BYTES;
+  const sizeCap = maxBytesForAttachment({ name, mimeType });
   if (st.size > sizeCap) {
-    throw new Error(`File exceeds ${sizeCap / (1024 * 1024)} MB limit`);
+    throw new Error(formatAttachmentSizeLimitError(name, sizeCap));
   }
 
   if (input.workspacePath) {
@@ -77,6 +78,41 @@ export async function ingestExternalFile(input: IngestFileInput): Promise<Prompt
   };
 }
 
+export interface IngestFileBatchContext {
+  workspaceId: string;
+  conversationId: string;
+  messageId: string;
+}
+
+export interface IngestFileBatchResult {
+  ingested: PromptAttachmentMeta[];
+  rejected: Array<{ name: string; reason: string }>;
+}
+
+/** Ingest many paths; oversize / invalid files are skipped instead of failing the batch. */
+export async function ingestExternalFiles(
+  paths: string[],
+  ctx: IngestFileBatchContext
+): Promise<IngestFileBatchResult> {
+  const ingested: PromptAttachmentMeta[] = [];
+  const rejected: Array<{ name: string; reason: string }> = [];
+  for (const sourcePath of paths) {
+    const name = basename(sourcePath);
+    try {
+      ingested.push(
+        await ingestExternalFile({
+          sourcePath,
+          ...ctx
+        })
+      );
+    } catch (err: unknown) {
+      const reason = err instanceof Error ? err.message : String(err);
+      rejected.push({ name, reason });
+    }
+  }
+  return { ingested, rejected };
+}
+
 export function assertAttachmentCount(count: number): void {
   if (count > MAX_CHAT_ATTACHMENTS) {
     throw new Error(`Maximum ${MAX_CHAT_ATTACHMENTS} attachments per message`);
@@ -97,10 +133,9 @@ export async function ingestBuffer(input: IngestBufferInput): Promise<PromptAtta
   const name = input.suggestedName.replace(/[^\w.\-()+ ]/g, '_').slice(0, 180) || 'file';
   const mimeType = input.mimeType;
   const mediaKind = mediaKindFromMeta({ name, mimeType });
-  const sizeCap =
-    mediaKind === 'video' ? VISION_VIDEO_MAX_BYTES : MAX_ATTACHMENT_FILE_BYTES;
+  const sizeCap = maxBytesForAttachment({ name, mimeType });
   if (input.buffer.length > sizeCap) {
-    throw new Error(`File exceeds ${sizeCap / (1024 * 1024)} MB limit`);
+    throw new Error(formatAttachmentSizeLimitError(name, sizeCap));
   }
 
   const dir = messageDir(input.workspaceId, input.conversationId, input.messageId);

@@ -27,6 +27,11 @@ End the run with:
 - `ask_user` when you need clarification, or
 - substantive prose that fully answers the user (implicit finish).
 
+**`ask_user` discipline:** Ask before a long analysis when architectural forks
+would change the implementation path. Cap at **three** questions per call — prioritize
+the decisions that unblock the rest. Prefer a sensible default over interrupting for
+minor ambiguity.
+
 **Implicit finish includes short but complete replies** — greetings,
 confirmations, and single-sentence answers count when they fully address
 the user. Do not pad answers artificially to satisfy length gates.

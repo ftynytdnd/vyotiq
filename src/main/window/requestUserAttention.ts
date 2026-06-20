@@ -3,7 +3,6 @@
  */
 
 import { app, BrowserWindow } from 'electron';
-import { getSettings } from '../settings/settingsStore.js';
 import { getMainWindow } from './getMainWindow.js';
 
 export type UserAttentionReason =
@@ -15,11 +14,6 @@ export type UserAttentionReason =
 const DEBOUNCE_MS = 2_000;
 const lastFiredAt = new Map<UserAttentionReason, number>();
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-function wakeOnAgentEventsEnabled(): boolean {
-  const ui = getSettings().ui as { focus?: { wakeOnAgentEvents?: boolean } } | undefined;
-  return ui?.focus?.wakeOnAgentEvents !== false;
-}
 
 function focusMainWindow(): void {
   const win = getMainWindow();
@@ -48,7 +42,6 @@ function focusMainWindow(): void {
 
 /** Request OS focus for the main window (debounced per reason). */
 export function requestUserAttention(reason: UserAttentionReason): void {
-  if (!wakeOnAgentEventsEnabled()) return;
   const now = Date.now();
   const last = lastFiredAt.get(reason) ?? 0;
   if (now - last < DEBOUNCE_MS) return;

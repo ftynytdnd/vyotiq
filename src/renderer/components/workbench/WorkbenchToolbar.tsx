@@ -4,7 +4,7 @@
  * terminal actions, browser chrome, attachment preview.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -48,6 +48,7 @@ import {
   shellBasename,
 } from "./workbenchShared.js";
 import { cn } from "../../lib/cn.js";
+import { registerBrowserUrlDomFocus } from "../../lib/workbenchFocusDom.js";
 import { revealFileInDockTree } from "../../lib/revealFileInDockTree.js";
 import { dockTreeRelativePath } from "../dock/dockFileTreeModel.js";
 
@@ -418,6 +419,14 @@ function BrowserToolbar() {
 
   const [draft, setDraft] = useState(url);
   const [editing, setEditing] = useState(false);
+  const urlInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    return registerBrowserUrlDomFocus(() => {
+      urlInputRef.current?.focus();
+      urlInputRef.current?.select();
+    });
+  }, []);
 
   useEffect(() => {
     if (!editing) setDraft(url);
@@ -514,6 +523,7 @@ function BrowserToolbar() {
           }}
         >
           <input
+            ref={urlInputRef}
             type="text"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}

@@ -5,6 +5,7 @@ import { useChatStore } from '@renderer/store/useChatStore';
 import { emptySlice } from '@renderer/store/chatStoreTypes';
 import { INITIAL_TIMELINE_STATE } from '@renderer/components/timeline/reducer/types';
 import type { TimelineEvent } from '@shared/types/chat';
+import { ASK_USER_OVERLAY_MIN_QUESTIONS } from '@shared/askUser/askUserOverlay.js';
 
 const askEvent = {
   kind: 'ask-user-prompt',
@@ -39,9 +40,31 @@ describe('AskUserOverlayHost', () => {
     });
   });
 
-  it('does not render overlay for agent ask_user (inline in timeline)', () => {
+  it('does not render overlay for single-question agent ask_user (inline in timeline)', () => {
     render(<AskUserOverlayHost />);
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('renders floating overlay for multi-question agent ask_user', () => {
+    const multiEvent = {
+      ...askEvent,
+      id: 'prompt-multi',
+      displayText: 'Refinement',
+      payload: {
+        title: 'Implementation Refinement Questions',
+        questions: Array.from({ length: ASK_USER_OVERLAY_MIN_QUESTIONS }, (_, i) => ({
+          id: `q${i}`,
+          prompt: `Question ${i + 1}?`,
+          options: [{ id: 'a', label: 'Alpha' }]
+        }))
+      }
+    } satisfies TimelineEvent;
+    useChatStore.setState({
+      slices: { 'conv-1': { ...emptySlice('conv-1'), events: [multiEvent] } },
+      events: [multiEvent]
+    });
+    render(<AskUserOverlayHost />);
+    expect(screen.getByRole('dialog', { name: 'Implementation Refinement Questions' })).toBeTruthy();
   });
 
   it('renders floating overlay for host report gate', () => {

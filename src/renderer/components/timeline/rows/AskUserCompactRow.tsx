@@ -1,9 +1,9 @@
 /**
- * Inline `ask_user` row — interactive form expands in the timeline.
+ * Inline `ask_user` row — interactive form for 1–2 questions; overlay handles 3+.
  */
 
-import { useShallow } from 'zustand/react/shallow';
 import type { AskUserStructuredPayload } from '@shared/types/askUser.js';
+import { resolveAskUserPlacement, resolveAskUserTitle } from '@shared/askUser/askUserCopy.js';
 import { findPendingAskUserEvent } from '../../../lib/pendingAskUser.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import { cn } from '../../../lib/cn.js';
@@ -14,22 +14,26 @@ interface AskUserCompactRowProps {
   displayText: string;
   promptEventId: string;
   status?: 'pending' | 'submitted';
+  source?: 'host-report-gate';
 }
 
 export function AskUserCompactRow({
   payload,
   displayText,
   promptEventId,
-  status
+  status,
+  source
 }: AskUserCompactRowProps) {
-  const { awaitingAskUser, events } = useChatStore(
-    useShallow((s) => ({
-      awaitingAskUser: s.awaitingAskUser,
-      events: s.events
-    }))
-  );
-  const title = payload.title?.trim() || 'Clarifying questions';
+  const events = useChatStore((s) => s.events);
+  const awaitingAskUser = useChatStore((s) => s.awaitingAskUser);
   const pending = findPendingAskUserEvent(events, awaitingAskUser);
+  const title = resolveAskUserTitle(payload);
+  const placement = resolveAskUserPlacement({ payload, ...(source ? { source } : {}) });
+
+  if (placement === 'overlay' && status !== 'submitted') {
+    return null;
+  }
+
   const showInline =
     status !== 'submitted' &&
     pending !== null &&
@@ -48,7 +52,7 @@ export function AskUserCompactRow({
     >
       <div className="flex items-baseline justify-between gap-2">
         <p className="text-row font-medium text-text-primary">{title}</p>
-        {showInline && questionCount > 1 ? (
+        {questionCount > 1 ? (
           <span className="shrink-0 font-mono text-meta text-text-faint tabular-nums">
             {questionCount} questions
           </span>

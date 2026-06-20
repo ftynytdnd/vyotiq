@@ -33,7 +33,8 @@ describe('ModelPickerTrigger', () => {
 
     expect(screen.getByText('gemma4:31b')).toBeInTheDocument();
     expect(document.querySelector('.vx-provider-logo')).toBeNull();
-    expect(document.querySelector('.vx-composer-model-trigger')).not.toBeNull();
+    const trigger = document.querySelector('.vx-composer-model-trigger');
+    expect(trigger).not.toBeNull();
     expect(screen.queryByText('Ollama Cloud')).toBeNull();
   });
 

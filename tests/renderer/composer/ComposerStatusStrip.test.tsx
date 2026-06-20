@@ -1,15 +1,12 @@
 /**
- * ComposerStatusStrip — ask-user reply hint and low-balance warnings.
+ * ComposerStatusStrip — ask-user reply hint and mid-run guidance.
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { ComposerStatusStrip } from '@renderer/components/composer/ComposerStatusStrip';
 import { useChatStore } from '@renderer/store/useChatStore';
-import { useProviderStore } from '@renderer/store/useProviderStore';
 import { INITIAL_TIMELINE_STATE } from '@renderer/components/timeline/reducer/types';
-
-const OPENAI_PROVIDER_ID = 'prov-openai';
 
 beforeEach(() => {
   useChatStore.setState({
@@ -18,30 +15,10 @@ beforeEach(() => {
     orchestratorUsage: undefined,
     events: []
   });
-  useProviderStore.setState({
-    providers: [
-      {
-        id: OPENAI_PROVIDER_ID,
-        name: 'OpenAI',
-        baseUrl: 'https://api.openai.com/v1',
-        dialect: 'openai',
-        enabled: true,
-        models: []
-      },
-      {
-        id: 'prov-ollama',
-        name: 'Ollama Cloud',
-        baseUrl: 'https://ollama.com',
-        dialect: 'ollama-native',
-        enabled: true,
-        models: []
-      }
-    ]
-  } as never);
 });
 
 describe('ComposerStatusStrip', () => {
-  it('renders nothing when idle with no ask-user, cache hint, or account line', () => {
+  it('renders nothing when idle with no ask-user or cache hint', () => {
     useChatStore.setState({
       events: [{ kind: 'user-prompt', id: 'p1', ts: 1, content: 'Hi' }]
     });
@@ -50,7 +27,7 @@ describe('ComposerStatusStrip', () => {
     expect(container.querySelector('.vx-composer-status-strip')).toBeNull();
   });
 
-  it('shows ask-user hint when pending', () => {
+  it('shows ask-user hint when pending inline', () => {
     render(
       <ComposerStatusStrip
         pendingAskUser={{
@@ -58,13 +35,47 @@ describe('ComposerStatusStrip', () => {
           id: 'q1',
           ts: 1,
           status: 'pending',
-          payload: { title: 'Choose one', questions: [] }
+          displayText: 'Q',
+          toolCallId: 'tc-1',
+          runId: 'run-1',
+          payload: {
+            title: 'Choose one',
+            questions: [{ id: 'q1', prompt: 'Q', options: [{ id: 'a', label: 'A' }] }]
+          }
         }}
       />
     );
 
     expect(screen.getByText(/Reply needed/i)).toBeInTheDocument();
     expect(screen.getByText(/"Choose one"/i)).toBeInTheDocument();
+    expect(screen.getByText(/Submit answers/i)).toBeInTheDocument();
+  });
+
+  it('shows only Reply needed when overlay handles the form', () => {
+    render(
+      <ComposerStatusStrip
+        pendingAskUser={{
+          kind: 'ask-user-prompt',
+          id: 'q1',
+          ts: 1,
+          status: 'pending',
+          displayText: 'Q',
+          toolCallId: 'tc-1',
+          runId: 'run-1',
+          payload: {
+            title: 'Refinement',
+            questions: [
+              { id: 'q1', prompt: 'Q1', options: [{ id: 'a', label: 'A' }] },
+              { id: 'q2', prompt: 'Q2', options: [{ id: 'b', label: 'B' }] },
+              { id: 'q3', prompt: 'Q3', options: [{ id: 'c', label: 'C' }] }
+            ]
+          }
+        }}
+      />
+    );
+
+    expect(screen.getByRole('status')).toHaveTextContent('Reply needed');
+    expect(screen.queryByText(/prompt below/i)).toBeNull();
   });
 
   it('shows mid-run Send/Queue guidance when processingRun is set', () => {
@@ -72,16 +83,6 @@ describe('ComposerStatusStrip', () => {
     const hint = screen.getByRole('status', { name: /Send steers mid-run/i });
     expect(hint).toHaveAttribute('title', 'Send steers mid-run · Queue before finish');
     expect(hint).toHaveTextContent('Send steers mid-run · Queue before finish');
-  });
-
-  it('shows PDF modality warning', () => {
-    render(<ComposerStatusStrip pdfWarning />);
-    expect(screen.getByText(/may not support PDF/i)).toBeInTheDocument();
-  });
-
-  it('shows video modality warning', () => {
-    render(<ComposerStatusStrip videoWarning />);
-    expect(screen.getByText(/may not support video/i)).toBeInTheDocument();
   });
 
   it('does not show run phase labels', () => {

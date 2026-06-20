@@ -44,6 +44,24 @@ describe('buildDisplayChatTitles', () => {
     expect(map.get('b')).toBe('Triage');
   });
 
+  it('renders placeholder titles as Untitled in the dock', () => {
+    const entries = [meta('a', 'New conversation')];
+    const map = buildDisplayChatTitles(entries);
+    expect(map.get('a')).toBe('Untitled');
+  });
+
+  it('disambiguates multiple placeholder chats as Untitled (n)', () => {
+    const entries = [
+      meta('a', 'New conversation'),
+      meta('b', 'New conversation'),
+      meta('c', 'New conversation')
+    ];
+    const map = buildDisplayChatTitles(entries);
+    expect(map.get('a')).toBe('Untitled (1)');
+    expect(map.get('b')).toBe('Untitled (2)');
+    expect(map.get('c')).toBe('Untitled (3)');
+  });
+
   it('only adds disambiguation suffixes for duplicate titles', () => {
     const prompt = 'Summarize this repo and list the main entry points.';
     const entries = [meta('a', prompt), meta('b', prompt)];

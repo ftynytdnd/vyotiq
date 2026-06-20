@@ -1,5 +1,5 @@
 /**
- * ModelPickerTrigger — pill button that opens the picker.
+ * ModelPickerTrigger — composer-styled button that opens the picker.
  * Shows shortened tail model id; full id + provider in tooltip.
  */
 

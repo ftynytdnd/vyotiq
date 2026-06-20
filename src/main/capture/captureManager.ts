@@ -21,6 +21,7 @@ import { realpathInsideWorkspace } from '../tools/sandbox.js';
 import { getMainWindow } from '../window/getMainWindow.js';
 import { browserCapturePage } from '../window/browserManager.js';
 import { getSettings } from '../settings/settingsStore.js';
+import type { AppSettings } from '@shared/types/ipc.js';
 import { requestCaptureFramebuffer } from './captureFramebufferBridge.js';
 import { logger } from '../logging/logger.js';
 
@@ -120,9 +121,10 @@ function ensureAppWindowSource(sources: CaptureSourceInfo[]): CaptureSourceInfo[
 
 function finalizeSourceList(
   sources: Electron.DesktopCapturerSource[],
-  includeThumbnails: boolean
+  includeThumbnails: boolean,
+  ui: AppSettings['ui'] | undefined
 ): CaptureSourceInfo[] {
-  const { redactWindowTitles } = resolveCaptureSettings(getSettings().ui);
+  const { redactWindowTitles } = resolveCaptureSettings(ui);
   const appId = appWindowSourceId();
   const mapped = mapDesktopSources(sources, includeThumbnails, redactWindowTitles);
   const deduped = dedupeVyotiqWindowSources(mapped, appId);
@@ -163,7 +165,8 @@ export async function listCaptureSources(
     fetchWindowIcons: false
   });
 
-  const mapped = finalizeSourceList(sources, includeThumbnails);
+  const settings = await getSettings();
+  const mapped = finalizeSourceList(sources, includeThumbnails, settings.ui);
 
   if (!includeThumbnails) {
     fastListCache = {

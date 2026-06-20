@@ -39,7 +39,8 @@ import { useConversationsStore } from './useConversationsStore.js';
 import { useSettingsStore } from './useSettingsStore.js';
 import { useWorkspaceStore } from './useWorkspaceStore.js';
 import { useToastStore } from './useToastStore.js';
-import { useCheckpointsStore } from './useCheckpointsStore.js';
+import { useCheckpointsStore, ensureTranscriptRewoundSubscription } from './useCheckpointsStore.js';
+import { useUiStore } from './useUiStore.js';
 import { useAskUserDraftStore } from './askUserDraft.js';
 import { findPendingAskUserEvent } from '../lib/pendingAskUser.js';
 import { buildAskUserSubmitInput } from '../lib/buildAskUserSubmitInput.js';
@@ -702,11 +703,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const convId = get().runIdToConv[runId];
     if (!convId) return;
     set((s) => {
-      const nextSlices = updateSlice(s.slices, convId, (prev) =>
-        prev.runId === runId
-          ? { ...prev, isProcessing: false, awaitingAskUser: true }
-          : prev
-      );
+      const nextSlices = updateSlice(s.slices, convId, (prev) => {
+        if (prev.runId !== runId) return prev;
+        return clearStreamingToolPreview({
+          ...prev,
+          isProcessing: false,
+          awaitingAskUser: true
+        });
+      });
       if (s.conversationId === convId) {
         return { ...s, slices: nextSlices, ...mirrorOf(nextSlices[convId]!) };
       }
@@ -728,8 +732,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         isProcessing: true,
         awaitingAskUser: false,
         draft: '',
-        attachmentDraft: [],
-        events: markPromptSubmitted(prev.events)
+        attachmentDraft: []
       }));
       if (s.conversationId === convId) {
         return { ...s, slices: nextSlices, ...mirrorOf(nextSlices[convId]!) };
@@ -754,6 +757,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           return { ...s, slices: nextSlices };
         });
       } else {
+        set((s) => {
+          const nextSlices = updateSlice(s.slices, convId, (prev) => ({
+            ...prev,
+            events: markPromptSubmitted(prev.events)
+          }));
+          if (s.conversationId === convId) {
+            return { ...s, slices: nextSlices, ...mirrorOf(nextSlices[convId]!) };
+          }
+          return { ...s, slices: nextSlices };
+        });
         useAskUserDraftStore.getState().clearDraft(input.promptEventId);
       }
     } catch (err) {

@@ -41,7 +41,7 @@ interface SettingsStore {
    * One-shot cascade triggered by `workspace.remove`. Strips the
    * given workspace id from every per-workspace UI map at once
    * (`activeConversationByWorkspace`, `lastModelByWorkspace`, and
-   * `collapsedWorkspaces`) so removed workspaces don't leave orphaned
+   * `collapsedWorkspaces`, `filesExpandedWorkspaces`) so removed workspaces don't leave orphaned
    * entries in `settings.json` forever.
    */
   purgeWorkspaceFromUi: (workspaceId: string) => Promise<void>;
@@ -113,6 +113,7 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     const active = ui.activeConversationByWorkspace ?? {};
     const lastModel = ui.lastModelByWorkspace ?? {};
     const collapsed = ui.collapsedWorkspaces ?? [];
+    const filesExpanded = ui.filesExpandedWorkspaces ?? [];
     const spend = ui.workspaceSpendUsd ?? {};
     const fileTreeExpanded = ui.fileTreeExpandedByWorkspace ?? {};
     const editorTabs = ui.editorTabsByWorkspace ?? {};
@@ -122,7 +123,8 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
       workspaceId in spend ||
       workspaceId in fileTreeExpanded ||
       workspaceId in editorTabs ||
-      collapsed.includes(workspaceId);
+      collapsed.includes(workspaceId) ||
+      filesExpanded.includes(workspaceId);
     if (!inAny) return;
     // Build cleaned copies. Spread + delete keeps the other entries
     // intact so a parallel `setActiveConversationByWorkspace(...)` for a
@@ -137,6 +139,7 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
     const nextSpend = { ...spend };
     delete nextSpend[workspaceId];
     const nextCollapsed = collapsed.filter((id) => id !== workspaceId);
+    const nextFilesExpanded = filesExpanded.filter((id) => id !== workspaceId);
     const nextFileTreeExpanded = { ...fileTreeExpanded };
     delete nextFileTreeExpanded[workspaceId];
     const nextEditorTabs = { ...editorTabs };
@@ -147,6 +150,7 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
         lastModelByWorkspace: nextLastModel,
         workspaceSpendUsd: nextSpend,
         collapsedWorkspaces: nextCollapsed,
+        filesExpandedWorkspaces: nextFilesExpanded,
         fileTreeExpandedByWorkspace: nextFileTreeExpanded,
         editorTabsByWorkspace: nextEditorTabs
       }

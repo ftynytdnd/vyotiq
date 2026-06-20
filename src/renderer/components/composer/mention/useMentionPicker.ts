@@ -76,6 +76,7 @@ export function useMentionPicker(input: UseMentionPickerInput) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [folderExpanded, setFolderExpanded] = useState<Set<string> | null>(null);
   const activeRowIdRef = useRef<string | null>(null);
+  const scrollFromKeyboardRef = useRef(false);
 
   const treeRefreshVersion = useDockFileTreeRefreshStore((s) => s.version);
 
@@ -309,6 +310,7 @@ export function useMentionPicker(input: UseMentionPickerInput) {
   const moveActive = useCallback(
     (delta: number) => {
       if (navRows.length === 0) return;
+      scrollFromKeyboardRef.current = true;
       setActiveIndex((i) => {
         let next = i + delta;
         if (next < 0) next = navRows.length - 1;
@@ -357,6 +359,7 @@ export function useMentionPicker(input: UseMentionPickerInput) {
     activateRow,
     toggleFolder,
     setFolderExpandedState,
+    scrollFromKeyboardRef,
     workspacePath,
     hasWorkspace
   };

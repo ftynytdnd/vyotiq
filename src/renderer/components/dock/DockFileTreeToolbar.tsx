@@ -12,9 +12,10 @@ export interface DockFileTreeToolbarProps {
   onExpandAll: () => void;
   onCollapseAll: () => void;
   onRefresh: () => void;
-  onDeleteSelection?: () => void;
   selectionCount?: number;
+  onDeleteSelection?: () => void;
   disabled?: boolean;
+  className?: string;
 }
 
 function toolbarButtonClassName(): string {
@@ -32,15 +33,19 @@ export function DockFileTreeToolbar({
   onExpandAll,
   onCollapseAll,
   onRefresh,
-  onDeleteSelection,
   selectionCount = 0,
-  disabled = false
+  onDeleteSelection,
+  disabled = false,
+  className
 }: DockFileTreeToolbarProps) {
   const hasSelection = selectionCount > 0;
 
   return (
     <div
-      className="vx-dock-file-tree-toolbar flex shrink-0 items-center gap-0.5 px-1.5 pb-1 pt-0"
+      className={cn(
+        'vx-dock-file-tree-toolbar flex min-w-0 items-center gap-0.5',
+        className
+      )}
       role="toolbar"
       aria-label="File explorer actions"
     >
@@ -96,7 +101,7 @@ export function DockFileTreeToolbar({
       </button>
       {hasSelection ? (
         <>
-          <span className="vx-dock-file-tree-toolbar__selection ml-auto truncate font-mono text-[10px] text-text-faint">
+          <span className="vx-dock-file-tree-toolbar__selection ml-auto shrink-0 font-mono text-meta text-text-faint">
             {selectionCount} selected
           </span>
           <button

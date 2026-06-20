@@ -90,6 +90,24 @@ function resolveHorizontal(
   return { left, maxWidth };
 }
 
+/** Content height before containScroll inline height locks shrink offsetHeight. */
+export function measurePopoverNaturalHeight(popover: HTMLElement): number {
+  const prevHeight = popover.style.height;
+  const prevMaxHeight = popover.style.maxHeight;
+  popover.style.height = 'auto';
+  popover.style.maxHeight = 'none';
+
+  const panel = popover.firstElementChild;
+  const natural =
+    panel instanceof HTMLElement && panel.offsetHeight > 0
+      ? panel.offsetHeight
+      : popover.offsetHeight;
+
+  popover.style.height = prevHeight;
+  popover.style.maxHeight = prevMaxHeight;
+  return natural;
+}
+
 export function measurePopoverPosition(
   anchor: HTMLElement,
   popover: HTMLElement | null,
@@ -98,7 +116,8 @@ export function measurePopoverPosition(
   collisionPadding: PopoverCollisionPadding = {},
   preferSide: PopoverSide | 'auto' = 'auto',
   anchorStrict = false,
-  fitMaxWidth = MAX_MODEL_PICKER_WIDTH
+  fitMaxWidth = MAX_MODEL_PICKER_WIDTH,
+  naturalHeight?: number
 ): PopoverPosition {
   const rect = anchor.getBoundingClientRect();
   const viewportH = window.innerHeight;
@@ -108,7 +127,7 @@ export function measurePopoverPosition(
   const padLeft = collisionPadding.left ?? 8;
   const padRight = collisionPadding.right ?? 8;
 
-  const popH = popover?.offsetHeight ?? 0;
+  const popH = naturalHeight ?? popover?.offsetHeight ?? 0;
   const popW = popover?.offsetWidth ?? 0;
 
   const side = pickSide(preferSide, rect, viewportH, padTop, padBottom, offset);

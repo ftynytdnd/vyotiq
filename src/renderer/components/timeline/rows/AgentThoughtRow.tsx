@@ -17,6 +17,7 @@ import { timelineLogRowClassName, timelinePhaseHeadingClassName } from '../share
 interface AgentThoughtRowProps {
   content: string;
   severity?: 'info' | 'warn';
+  variant?: 'caption' | 'notice';
   live?: boolean;
 }
 
@@ -25,6 +26,7 @@ const COLLAPSED_LEN = 160;
 export function AgentThoughtRow({
   content,
   severity = 'info',
+  variant = 'caption',
   live = false
 }: AgentThoughtRowProps) {
   const [expanded, setExpanded] = useState(false);
@@ -66,7 +68,9 @@ export function AgentThoughtRow({
             'min-w-0 flex-1',
             live
               ? cn(timelinePhaseHeadingClassName(true), 'text-meta italic')
-              : cn('text-meta italic vx-caption')
+              : variant === 'notice'
+                ? 'vx-timeline-meta text-text-secondary'
+                : cn('text-meta italic vx-caption')
           )}
         >
           {shown}

@@ -214,7 +214,7 @@ describe('setSettings — legacy keys are stripped on first write', () => {
     expect(onDisk?.ui?.collapsedWorkspaces).toEqual(['ws-X']);
   });
 
-  it('clamps legacy dockWidth below 220 on getSettings', async () => {
+  it('clamps legacy dockWidth below 240 on getSettings', async () => {
     vi.doMock('@main/secrets/safeStore', () => safeStore);
     const seed = (safeStore as unknown as { __seed: (f: string, v: unknown) => void }).__seed;
     const peek = (safeStore as unknown as { __peek: (f: string) => unknown }).__peek;
@@ -223,10 +223,10 @@ describe('setSettings — legacy keys are stripped on first write', () => {
     });
     const { getSettings } = await import('@main/settings/settingsStore');
     const got = await getSettings();
-    expect(got.ui?.dockWidth).toBe(220);
+    expect(got.ui?.dockWidth).toBe(240);
 
     const onDisk = peek(SETTINGS_FILE) as { ui?: { dockWidth?: number } } | null;
-    expect(onDisk?.ui?.dockWidth).toBe(220);
+    expect(onDisk?.ui?.dockWidth).toBe(240);
   });
 
   it('migrates sidebarVisible on disk to dockExpanded on getSettings', async () => {
@@ -239,13 +239,13 @@ describe('setSettings — legacy keys are stripped on first write', () => {
     const { getSettings } = await import('@main/settings/settingsStore');
     const got = await getSettings();
     expect(got.ui?.dockExpanded).toBe(true);
-    expect(got.ui?.dockWidth).toBe(220);
+    expect(got.ui?.dockWidth).toBe(240);
     expect(got.ui).not.toHaveProperty('sidebarVisible');
     expect(got.ui).not.toHaveProperty('sidebarWidth');
 
     const onDisk = peek(SETTINGS_FILE) as { ui?: Record<string, unknown> } | null;
     expect(onDisk?.ui?.dockExpanded).toBe(true);
-    expect(onDisk?.ui?.dockWidth).toBe(220);
+    expect(onDisk?.ui?.dockWidth).toBe(240);
     expect(onDisk?.ui).not.toHaveProperty('sidebarVisible');
   });
 });

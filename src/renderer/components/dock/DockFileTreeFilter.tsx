@@ -11,9 +11,9 @@ export interface DockFileTreeFilterProps {
   onChange: (value: string) => void;
 }
 
-export function DockFileTreeFilter({ value, onChange }: DockFileTreeFilterProps) {
+export function DockFileTreeFilter({ value, onChange, className }: DockFileTreeFilterProps & { className?: string }) {
   return (
-    <div className="vx-dock-file-tree-filter flex min-w-0 items-center gap-1.5 px-1.5 py-1">
+    <div className={cn('vx-dock-file-tree-filter flex w-full min-w-0 items-center gap-1', className)}>
       <Search
         className={cn(SHELL_ROW_ICON_CLASS, 'shrink-0 text-text-faint')}
         strokeWidth={SHELL_ROW_ICON_STROKE}
@@ -23,11 +23,11 @@ export function DockFileTreeFilter({ value, onChange }: DockFileTreeFilterProps)
         type="search"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Filter files…"
+        placeholder="Filter…"
         aria-label="Filter files"
         autoComplete="off"
         spellCheck={false}
-        className="vx-input vx-dock-file-tree-filter__input min-w-0 flex-1 py-0.5 font-mono text-row"
+        className="vx-input vx-dock-file-tree-filter__input min-w-0 flex-1 py-0.5 pl-0 font-mono text-row"
       />
       {value ? (
         <button

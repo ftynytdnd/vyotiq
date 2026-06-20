@@ -1,5 +1,5 @@
 /**
- * Preview canvas — dedicated attachment preview tab (image / PDF / text).
+ * Preview canvas — dedicated attachment preview tab (image / PDF / video / audio / text).
  * Non-previewable files open in the OS default app via PreviewZone.
  */
 
@@ -28,7 +28,8 @@ export function PreviewCanvas() {
       <div className="max-w-sm space-y-1">
         <p className="text-section font-medium text-text-primary">Preview</p>
         <p className="text-row text-text-muted">
-          Image, PDF, and text attachments open here. Other files launch in your default app.
+          Image, PDF, video, audio, and text attachments open here. Other files launch in your
+          default app.
         </p>
       </div>
     </div>

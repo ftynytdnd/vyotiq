@@ -1243,7 +1243,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         if (isImplicitFinish(proseText)) {
           retryAssistantMsgId = null;
           runStateAcc.lastAction = 'answer';
-          log.info('implicit finish — substantive prose accepted as answer', {
+          log.info('implicit finish - substantive prose accepted as answer', {
             iteration: iter,
             textChars: proseText.length
           });

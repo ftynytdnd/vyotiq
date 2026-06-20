@@ -10,4 +10,13 @@ describe('formatAttachmentIngestError', () => {
     );
     expect(msg).toBe('Could not find that file to attach. Try capturing or attaching again.');
   });
+
+  it('unwraps size-limit errors from IPC wrappers', () => {
+    const msg = formatAttachmentIngestError(
+      new Error(
+        "Error invoking remote method 'attachments:pick': Error: huge.zip exceeds 10 MB limit"
+      )
+    );
+    expect(msg).toBe('huge.zip exceeds 10 MB limit');
+  });
 });

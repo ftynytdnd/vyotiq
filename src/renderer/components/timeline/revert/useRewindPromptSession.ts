@@ -7,6 +7,7 @@ import type { RewindPreview, RewindPreviewResult } from '@shared/types/checkpoin
 import type { ModelSelection } from '@shared/types/provider.js';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import type { MentionRef } from '@shared/types/mention.js';
+import { defaultAttachmentPrompt } from '@shared/attachments/defaultAttachmentPrompt.js';
 import {
   documentTrimmedPlain,
   hasComposerContent,
@@ -152,7 +153,7 @@ export function useRewindPromptSession({
         trimmedEdit.length > 0
           ? trimmedEdit
           : hasAttachments || hasMentions
-            ? 'See attached files.'
+            ? defaultAttachmentPrompt(attachmentMeta ?? [])
             : trimmedEdit;
       const sendOpts: Parameters<typeof send>[2] = {};
       if (meta?.length) {

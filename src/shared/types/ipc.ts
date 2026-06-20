@@ -53,7 +53,10 @@ import type {
 
 import type { WorkspaceSpendEntry, TurnUsageStatsDelta } from './usageStats.js';
 
-import type { AskUserSubmitInput, AskUserSubmitReply } from './askUser.js';
+import type {
+  AskUserSubmitInput,
+  AskUserSubmitReply
+} from './askUser.js';
 
 import type {
   RewindPreviewResult,
@@ -232,7 +235,7 @@ export interface AppSettings {
 
     /**
 
-     * Expanded left dock width in px. Default 260; clamped 220–320.
+     * Expanded left dock width in px. Default 300; clamped 240–320.
 
      */
 
@@ -283,6 +286,12 @@ export interface AppSettings {
      */
 
     collapsedWorkspaces?: string[];
+
+    /**
+     * Per-workspace dock Files panel expand state, keyed by `WorkspaceEntry.id`.
+     * Absence means collapsed (chats-only view for that workspace).
+     */
+    filesExpandedWorkspaces?: string[];
 
     /**
 

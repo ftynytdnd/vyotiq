@@ -81,4 +81,15 @@ describe('useAskUserDraftStore allow_multiple', () => {
     expect(sheet.freeText).toBe('');
     expect(sheet.selected).toEqual(new Set(['a']));
   });
+
+  it('countAnswered includes selections, free text, and skips', () => {
+    const store = useAskUserDraftStore.getState();
+    expect(store.countAnswered('prompt-1', payload)).toBe(0);
+    store.toggleOption('prompt-1', 'frameworks', 'react', true);
+    expect(store.countAnswered('prompt-1', payload)).toBe(1);
+    store.setFreeText('prompt-1', 'frameworks', 'other', true);
+    expect(store.countAnswered('prompt-1', payload)).toBe(1);
+    store.skipQuestion('prompt-1', 'frameworks');
+    expect(store.countAnswered('prompt-1', payload)).toBe(1);
+  });
 });

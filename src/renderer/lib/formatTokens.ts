@@ -29,6 +29,13 @@ export function formatTokenCount(n: number): string {
   return formatCompactCount(n);
 }
 
+/** Cumulative run tokens for sticky footer while awaiting `ask_user`. */
+export function formatTokenCountUsed(n: number): string {
+  const core = formatTokenCount(n);
+  if (core === '—') return core;
+  return `${core} tok used`;
+}
+
 /** Same as {@link formatTokenCount} with an optional unit suffix (`tok`). */
 export function formatTokenCountWithUnit(n: number, unit = 'tok'): string {
   const core = formatTokenCount(n);

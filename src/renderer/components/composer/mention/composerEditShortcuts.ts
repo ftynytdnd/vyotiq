@@ -3,10 +3,12 @@
  */
 
 import {
+  defaultKeybindingsRecord,
   eventMatchesCombo,
   type KeybindingId,
   type KeyComboEvent
 } from '@shared/keybindings/defaultKeybindings.js';
+import { isMacPlatform } from '../../../lib/resolveKeybindings.js';
 import type { MentionDocument } from './mentionDocument.js';
 import { documentToPlainText, extractMentions } from './mentionDocument.js';
 import { getPlainSelectionRange } from './mentionCaret.js';
@@ -68,6 +70,16 @@ export function tryExecCommand(command: string, value?: string): boolean {
   }
 }
 
+/** True when the resolved binding still matches the platform default combo. */
+export function composerBindingIsDefault(
+  bindings: ComposerEditKeybindings,
+  id: ComposerEditKeybindingId,
+  isMac: boolean = isMacPlatform()
+): boolean {
+  const defaults = defaultKeybindingsRecord(isMac);
+  return bindings[id] === defaults[id];
+}
+
 export function copyPlainSelection(root: HTMLElement, doc: MentionDocument): boolean {
   const range = getPlainSelectionRange(root, extractMentions(doc));
   if (!range || range.collapsed) return false;
@@ -85,6 +97,7 @@ export interface ComposerEditKeyDownInput {
   bindings: ComposerEditKeybindings;
   globalBindings?: Record<KeybindingId, string>;
   disabled?: boolean;
+  isMac?: boolean;
   onAfterEdit?: () => void;
   onCutFallback?: (range: { start: number; end: number }) => void;
   /** Keydown fallback when the native paste event does not fire (remapped Mod+V). */
@@ -100,6 +113,7 @@ export function handleComposerEditKeyDown(input: ComposerEditKeyDownInput): bool
     bindings,
     globalBindings,
     disabled,
+    isMac = isMacPlatform(),
     onAfterEdit,
     onCutFallback,
     onPasteFallback
@@ -114,7 +128,11 @@ export function handleComposerEditKeyDown(input: ComposerEditKeyDownInput): bool
     onAfterEdit?.();
   };
 
+  const deferToNative = (id: ComposerEditKeybindingId): boolean =>
+    composerBindingIsDefault(bindings, id, isMac);
+
   if (eventMatchesCombo(e, bindings.composerCopy)) {
+    if (deferToNative('composerCopy')) return false;
     e.preventDefault();
     if (!tryExecCommand('copy')) {
       copyPlainSelection(root, doc);
@@ -123,6 +141,7 @@ export function handleComposerEditKeyDown(input: ComposerEditKeyDownInput): bool
   }
 
   if (eventMatchesCombo(e, bindings.composerCut)) {
+    if (deferToNative('composerCut')) return false;
     e.preventDefault();
     if (!tryExecCommand('cut')) {
       const range = getPlainSelectionRange(root, extractMentions(doc));
@@ -137,6 +156,7 @@ export function handleComposerEditKeyDown(input: ComposerEditKeyDownInput): bool
   }
 
   if (eventMatchesCombo(e, bindings.composerSelectAll)) {
+    if (deferToNative('composerSelectAll')) return false;
     e.preventDefault();
     if (!tryExecCommand('selectAll')) {
       const sel = window.getSelection();
@@ -149,16 +169,23 @@ export function handleComposerEditKeyDown(input: ComposerEditKeyDownInput): bool
   }
 
   if (eventMatchesCombo(e, bindings.composerUndo)) {
+    if (deferToNative('composerUndo')) return false;
     e.preventDefault();
     tryExecCommand('undo');
     finish();
     return true;
   }
 
-  if (
-    eventMatchesCombo(e, bindings.composerRedo) ||
-    eventMatchesCombo(e, bindings.composerRedoAlt)
-  ) {
+  if (eventMatchesCombo(e, bindings.composerRedo)) {
+    if (deferToNative('composerRedo')) return false;
+    e.preventDefault();
+    tryExecCommand('redo');
+    finish();
+    return true;
+  }
+
+  if (eventMatchesCombo(e, bindings.composerRedoAlt)) {
+    if (deferToNative('composerRedoAlt')) return false;
     e.preventDefault();
     tryExecCommand('redo');
     finish();
@@ -166,6 +193,7 @@ export function handleComposerEditKeyDown(input: ComposerEditKeyDownInput): bool
   }
 
   if (eventMatchesCombo(e, bindings.composerPaste)) {
+    if (deferToNative('composerPaste')) return false;
     e.preventDefault();
     if (onPasteFallback) {
       void onPasteFallback();

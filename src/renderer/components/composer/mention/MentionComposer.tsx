@@ -11,6 +11,7 @@ import {
   useState,
   type ClipboardEvent,
   type KeyboardEvent,
+  type MouseEvent,
   type RefObject
 } from 'react';
 import type { ModelSelection } from '@shared/types/provider.js';
@@ -41,6 +42,8 @@ import { MentionPicker } from './MentionPicker.js';
 import { useMentionPicker, type MentionPickerRow } from './useMentionPicker.js';
 import { removeComposerGhost, renderComposerGhost } from './composerGhost.js';
 import { useInlineCompletion } from '../../../lib/useInlineCompletion.js';
+import { useModelPickerCollisionPadding } from '../modelPicker/useModelPickerCollisionPadding.js';
+import { useUiStore } from '../../../store/useUiStore.js';
 import { isMacPlatform } from '../../../lib/resolveKeybindings.js';
 import { defaultKeybindingsRecord, type KeybindingId } from '@shared/keybindings/defaultKeybindings.js';
 import {
@@ -50,6 +53,7 @@ import {
 } from './composerEditShortcuts.js';
 import { sanitizeComposerHtml } from '../sanitizeComposerHtml.js';
 import { buildClipboardDataTransfer } from '../buildClipboardDataTransfer.js';
+import { scheduleDomFocus } from '../../../lib/focusComposer.js';
 
 const TEXTAREA_MAX_HEIGHT = 168;
 const TEXTAREA_MIN_HEIGHT = 28;
@@ -78,6 +82,9 @@ export interface MentionComposerProps {
   };
   editKeybindings?: ComposerEditKeybindings;
   globalKeybindings?: Record<KeybindingId, string>;
+  /** Composer shell — sizes the mention popover to the chat column. */
+  anchorRef?: RefObject<HTMLElement | null>;
+  landing?: boolean;
 }
 
 export function MentionComposer({
@@ -94,7 +101,9 @@ export function MentionComposer({
   focusSession,
   inlineCompletion,
   editKeybindings,
-  globalKeybindings
+  globalKeybindings,
+  anchorRef,
+  landing = false
 }: MentionComposerProps) {
   const resolvedEditKeybindings =
     editKeybindings ?? defaultKeybindingsRecord(isMacPlatform());
@@ -123,11 +132,18 @@ export function MentionComposer({
 
   const {
     rows,
+    groups,
     loading,
+    treeTruncated,
     activeIndex,
+    activeRow,
     setActiveIndex,
     moveActive,
-    selectActive
+    selectActive,
+    activateRow,
+    toggleFolder,
+    setFolderExpandedState,
+    scrollFromKeyboardRef
   } = useMentionPicker({
     open: pickerOpen,
     query: atToken?.query ?? '',
@@ -135,6 +151,24 @@ export function MentionComposer({
   });
 
   atTokenRef.current = atToken;
+
+  const collisionPadding = useModelPickerCollisionPadding();
+  const dockExpanded = useUiStore((s) => s.dockExpanded);
+  const dockWidth = useUiStore((s) => s.dockWidth);
+  const [popoverRevision, setPopoverRevision] = useState(0);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    let frame = 0;
+    let pass = 0;
+    const remeasure = () => {
+      setPopoverRevision((r) => r + 1);
+      pass += 1;
+      if (pass < 3) frame = requestAnimationFrame(remeasure);
+    };
+    frame = requestAnimationFrame(remeasure);
+    return () => cancelAnimationFrame(frame);
+  }, [pickerOpen, dockExpanded, dockWidth, landing, rows.length, groups.length]);
 
   const completion = useInlineCompletion({
     kind: 'composer',
@@ -191,12 +225,20 @@ export function MentionComposer({
     clearCompletionGhost();
   }, [clearCompletionGhost, inlineCompletion?.enabled]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!requestFocus || disabled) return;
     const el = editorRef.current;
     if (!el) return;
-    el.focus({ preventScroll: true });
+    return scheduleDomFocus(el, { caretAtEnd: true });
   }, [requestFocus, disabled, focusSession]);
+
+  const focusEditorFromPointer = useCallback((e: MouseEvent<HTMLDivElement>) => {
+    if (disabled) return;
+    const el = editorRef.current;
+    if (!el || document.activeElement === el) return;
+    if (e.button !== 0) return;
+    el.focus({ preventScroll: true });
+  }, [disabled]);
 
   const syncDomFromDoc = useCallback((doc: MentionDocument) => {
     const el = editorRef.current;
@@ -280,9 +322,20 @@ export function MentionComposer({
       (domPlain !== propPlain ||
         (!value && domPlain.length > 0 && currentSerialized === value));
     if (currentSerialized === value && !domDrifted) return;
+    const hadFocus = el === document.activeElement;
+    const caret =
+      hadFocus && el
+        ? getPlainCaretOffset(el, extractMentions(docRef.current))
+        : null;
     docRef.current = next;
     removeComposerGhost(editorRef.current);
     syncDomFromDoc(next);
+    if (hadFocus && el) {
+      scheduleDomFocus(el);
+      if (caret !== null) {
+        placeCaretAtPlainOffset(el, caret, docRef.current);
+      }
+    }
   }, [value, syncDomFromDoc]);
 
   useLayoutEffect(() => {
@@ -370,10 +423,27 @@ export function MentionComposer({
       moveActive(-1);
       return true;
     }
+    if (activeRow?.kind === 'workspace-folder' && activeRow.path) {
+      if (e.key === 'ArrowRight' && !activeRow.isExpanded) {
+        e.preventDefault();
+        scrollFromKeyboardRef.current = true;
+        setFolderExpandedState(activeRow.path, true);
+        return true;
+      }
+      if (e.key === 'ArrowLeft' && activeRow.isExpanded) {
+        e.preventDefault();
+        scrollFromKeyboardRef.current = true;
+        setFolderExpandedState(activeRow.path, false);
+        return true;
+      }
+    }
     if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
-      const row = selectActive();
-      if (row) handlePickerPick(row);
+      const action = activateRow();
+      if (action === 'picked') {
+        const row = selectActive();
+        if (row) handlePickerPick(row);
+      }
       return true;
     }
     return false;
@@ -451,19 +521,32 @@ export function MentionComposer({
           setPickerDismissed(true);
         }}
         triggerRef={editorTriggerRef}
-        preferSide="top"
-        align="start"
+        anchorRef={anchorRef}
+        preferSide={landing ? 'auto' : 'top'}
+        align={anchorRef ? 'fit' : 'start'}
+        anchorStrict={Boolean(anchorRef)}
+        collisionPadding={collisionPadding}
+        revision={popoverRevision}
         offset={6}
         zIndex={60}
+        fitMaxWidth={480}
+        widthMode="panel"
+        containScroll
+        className="vx-mention-picker-popover"
       >
         <MentionPicker
           open={pickerOpen}
           query={atToken?.query ?? ''}
+          groups={groups}
           rows={rows}
+          activeRow={activeRow}
           loading={loading}
+          treeTruncated={treeTruncated}
           activeIndex={activeIndex}
+          scrollFromKeyboardRef={scrollFromKeyboardRef}
           onActiveIndexChange={setActiveIndex}
           onPick={handlePickerPick}
+          onToggleFolder={toggleFolder}
           onClose={() => {
             setPickerDismissed(true);
           }}
@@ -491,6 +574,7 @@ export function MentionComposer({
           className
         )}
         style={style}
+        onMouseDown={focusEditorFromPointer}
         onInput={updateFromDom}
         onPaste={(e) => {
           onPaste?.(e);
@@ -510,6 +594,12 @@ export function MentionComposer({
             applyPlainTextPaste(text);
             return;
           }
+          requestAnimationFrame(updateFromDom);
+        }}
+        onCopy={() => {
+          requestAnimationFrame(updateFromDom);
+        }}
+        onCut={() => {
           requestAnimationFrame(updateFromDom);
         }}
         onKeyUp={updateFromDom}

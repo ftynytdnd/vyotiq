@@ -2,8 +2,7 @@
  * DOM focus callbacks for open workbench companion panes.
  */
 
-import { useUiStore } from '../store/useUiStore.js';
-import { resolveCompanionTab } from '../components/workbench/workbenchShared.js';
+import type { CompanionTab } from '../components/workbench/workbenchShared.js';
 
 let terminalFocus: (() => void) | null = null;
 let editorFocus: (() => void) | null = null;
@@ -31,8 +30,7 @@ export function registerBrowserUrlDomFocus(fn: () => void): () => void {
 }
 
 /** Focus the DOM surface for the active workbench companion tab. */
-export function focusActiveWorkbenchDom(): void {
-  const tab = resolveCompanionTab(useUiStore.getState().workbenchTab);
+export function focusActiveWorkbenchDom(tab: CompanionTab): void {
   const run = () => {
     switch (tab) {
       case 'terminal':
@@ -45,8 +43,6 @@ export function focusActiveWorkbenchDom(): void {
         browserUrlFocus?.();
         break;
       case 'preview':
-      case 'agent':
-      case 'globe':
         break;
       default: {
         const _exhaustive: never = tab;

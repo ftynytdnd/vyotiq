@@ -14,6 +14,7 @@ import { vyotiq } from '../../../lib/ipc.js';
 import { useWorkspaceStore } from '../../../store/useWorkspaceStore.js';
 import { useToastStore } from '../../../store/useToastStore.js';
 import { openCapturePermissionSettings } from '../../../lib/openCapturePermissionSettings.js';
+import { waitForCompositorPaint } from '../../../lib/waitForCompositorPaint.js';
 import { captureDesktopSourceFrame } from '../captureDesktopStream.js';
 import { formatAttachmentIngestError } from '../formatAttachmentIngestError.js';
 import { isStaleCaptureSourceError } from './capturePickerModel.js';
@@ -40,6 +41,7 @@ export function useCapturePicker({
   const [capturingRowId, setCapturingRowId] = useState<string | null>(null);
   const [activeNavId, setActiveNavId] = useState<string>('app-window');
   const [query, setQuery] = useState('');
+  const [suppressPickerUi, setSuppressPickerUi] = useState(false);
 
   const showToast = useToastStore((s) => s.show);
   const listGenerationRef = useRef(0);
@@ -78,6 +80,7 @@ export function useCapturePicker({
     setLoadingThumbnails(false);
     setQuery('');
     setActiveNavId('app-window');
+    setSuppressPickerUi(false);
   }, [abortCapture, abortListLoad]);
 
   const showCapturePermissionToast = useCallback(() => {
@@ -92,19 +95,25 @@ export function useCapturePicker({
         showToast('Open a workspace and conversation first.', 'danger');
         return false;
       }
-      const ingested = await vyotiq.attachments.ingestPaths({
-        paths: [relPath],
-        workspaceId,
-        conversationId,
-        messageId
-      });
-      if (ingested.length === 0) {
-        throw new Error('Capture could not be attached.');
+      try {
+        const ingested = await vyotiq.attachments.ingestPaths({
+          paths: [relPath],
+          workspaceId,
+          conversationId,
+          messageId
+        });
+        if (ingested.length === 0) {
+          showToast('Capture could not be attached.', 'danger');
+          return false;
+        }
+        onIngested(ingested[0]!);
+        setOpen(false);
+        showToast('Capture attached.', 'success');
+        return true;
+      } catch (err) {
+        showToast(formatAttachmentIngestError(err), 'danger');
+        return false;
       }
-      onIngested(ingested[0]!);
-      setOpen(false);
-      showToast('Capture attached.', 'success');
-      return true;
     },
     [conversationId, messageId, onIngested, showToast]
   );
@@ -227,6 +236,11 @@ export function useCapturePicker({
     else openPicker();
   }, [closePicker, open, openPicker]);
 
+  const hidePickerForCapture = useCallback(async () => {
+    setSuppressPickerUi(true);
+    await waitForCompositorPaint();
+  }, []);
+
   const captureAppWindow = useCallback(async () => {
     const workspaceId = useWorkspaceStore.getState().activeId;
     if (!workspaceId || !conversationId) {
@@ -239,11 +253,14 @@ export function useCapturePicker({
     setCapturing(true);
     setCapturingRowId('app-window');
     try {
+      await hidePickerForCapture();
+      if (abort.signal.aborted) return;
       const result = await vyotiq.capture.window({ workspaceId });
       if (abort.signal.aborted) return;
       await ingestCapturePath(result.relPath);
     } catch (err) {
       if (abort.signal.aborted) return;
+      setSuppressPickerUi(false);
       showToast(formatAttachmentIngestError(err), 'danger');
     } finally {
       if (captureAbortRef.current === abort) {
@@ -252,7 +269,7 @@ export function useCapturePicker({
         setCapturingRowId(null);
       }
     }
-  }, [abortCapture, conversationId, ingestCapturePath, showToast]);
+  }, [abortCapture, conversationId, hidePickerForCapture, ingestCapturePath, showToast]);
 
   const captureSource = useCallback(
     async (sourceId: string, rowId: string) => {
@@ -262,11 +279,14 @@ export function useCapturePicker({
       setCapturing(true);
       setCapturingRowId(rowId);
       try {
+        await hidePickerForCapture();
+        if (abort.signal.aborted) return;
         const frame = await captureDesktopSourceFrame(sourceId, abort.signal);
         if (abort.signal.aborted) return;
         await ingestCaptureFrame(frame.png, frame.width, frame.height, 'screen');
       } catch (err) {
         if (abort.signal.aborted) return;
+        setSuppressPickerUi(false);
         const msg = err instanceof Error ? err.message : 'Capture failed.';
         if (/permission|denied|not allowed/i.test(msg)) {
           showCapturePermissionToast();
@@ -288,6 +308,7 @@ export function useCapturePicker({
     },
     [
       abortCapture,
+      hidePickerForCapture,
       ingestCaptureFrame,
       loadSources,
       showCapturePermissionToast,
@@ -297,6 +318,7 @@ export function useCapturePicker({
 
   return {
     open,
+    pickerVisible: open && !suppressPickerUi,
     sources,
     loading,
     showSkeleton,

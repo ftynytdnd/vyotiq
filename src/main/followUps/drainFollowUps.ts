@@ -9,11 +9,12 @@ import {
   restoreQueuedFollowUpAtHead,
   takeQueuedFollowUp
 } from './followUpQueueService.js';
-import { findAllActiveRunsForConversation } from '../orchestrator/AgentV.js';
+import { abortRun, findAllActiveRunsForConversation } from '../orchestrator/AgentV.js';
 import { conversationHasActiveRun } from '../orchestrator/conversationHasActiveRun.js';
 import { followUpToChatSendInput } from '../orchestrator/followUps/injectFollowUp.js';
 import { dispatchChatSend } from '../ipc/chat.ipc.js';
-import { getConversationMeta } from '../conversations/conversationStore.js';
+import { awaitRunSettlement } from '../ipc/runSettlement.js';
+import { drainAppendChain, getConversationMeta } from '../conversations/conversationStore.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child('follow-ups/drain');
@@ -82,9 +83,6 @@ export async function sendQueuedFollowUpNow(conversationId: string, id: string):
   suppressDrain.add(conversationId);
   try {
     const activeRunIds = findAllActiveRunsForConversation(conversationId);
-    const { abortRun } = await import('../orchestrator/AgentV.js');
-    const { awaitRunSettlement } = await import('../ipc/runSettlement.js');
-    const { drainAppendChain } = await import('../conversations/conversationStore.js');
 
     for (const rid of activeRunIds) abortRun(rid);
     if (activeRunIds.length > 0) {

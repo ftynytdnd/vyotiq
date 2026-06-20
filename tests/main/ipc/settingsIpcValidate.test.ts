@@ -62,14 +62,14 @@ describe('registerSettingsIpc — SETTINGS_SET payload validation', () => {
     expect(setSettingsMock).not.toHaveBeenCalled();
   });
 
-  it('accepts dockWidth within 220–320', async () => {
+  it('accepts dockWidth within 240–320', async () => {
     await mockIpc.__invoke(IPC.SETTINGS_SET, { ui: { dockWidth: 300 } });
     expect(setSettingsMock).toHaveBeenCalledOnce();
   });
 
-  it('clamps legacy dockWidth below 220 before validation', async () => {
+  it('clamps legacy dockWidth below 240 before validation', async () => {
     await mockIpc.__invoke(IPC.SETTINGS_SET, { ui: { dockWidth: 200, theme: 'dark' } });
-    expect(setSettingsMock).toHaveBeenCalledWith({ ui: { dockWidth: 220, theme: 'dark' } });
+    expect(setSettingsMock).toHaveBeenCalledWith({ ui: { dockWidth: 240, theme: 'dark' } });
   });
 
   it('clamps dockWidth above 320 before validation', async () => {

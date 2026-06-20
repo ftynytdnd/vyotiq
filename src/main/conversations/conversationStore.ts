@@ -1001,6 +1001,11 @@ async function rewriteTranscriptEvents(
   await next;
 }
 
+/** Replace on-disk transcript with an explicit event list (used by ask_user amend). */
+export async function replaceTranscriptEvents(id: string, events: TimelineEvent[]): Promise<void> {
+  await rewriteTranscriptEvents(id, events, 0);
+}
+
 /**
  * Highest orchestrator prompt-token count in a transcript slice.
  * Ignores duplicate `token-usage` rows when persisting (same rule as `appendEvent`).

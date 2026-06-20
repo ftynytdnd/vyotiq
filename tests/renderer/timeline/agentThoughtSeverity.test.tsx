@@ -44,6 +44,19 @@ describe('AgentThoughtRow severity', () => {
     expect(span?.className).toMatch(/vx-timeline-phase-live/);
     expect(span?.className).not.toMatch(/vyotiq-shimmer-text/);
   });
+
+  it('renders notice variant with stronger timeline meta styling', () => {
+    const { container } = render(
+      <AgentThoughtRow
+        content="Screenshot attached — `.vyotiq/captures/a.png` sent to vision for this run"
+        variant="notice"
+      />
+    );
+    const span = container.querySelector('span');
+    expect(span?.className).toMatch(/vx-timeline-meta/);
+    expect(span?.className).toMatch(/text-text-secondary/);
+    expect(span?.className).not.toMatch(/italic/);
+  });
 });
 
 describe('deriveRows agent-thought severity passthrough', () => {

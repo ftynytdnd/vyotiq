@@ -26,7 +26,20 @@ describe('resolveAttachmentInWorkspace', () => {
 
   it('tags a file inside the workspace', async () => {
     const result = await resolveAttachmentInWorkspace(workspace, insideFile);
-    expect(result).toEqual({ inWorkspace: true, workspacePath: 'src/note.txt' });
+    expect(result).toEqual({
+      inWorkspace: true,
+      workspacePath: 'src/note.txt',
+      absPath: insideFile
+    });
+  });
+
+  it('resolves workspace-relative paths to an absolute read path', async () => {
+    const result = await resolveAttachmentInWorkspace(workspace, 'src/note.txt');
+    expect(result).toEqual({
+      inWorkspace: true,
+      workspacePath: 'src/note.txt',
+      absPath: insideFile
+    });
   });
 
   it('rejects a path that only shares a string prefix with the root', async () => {

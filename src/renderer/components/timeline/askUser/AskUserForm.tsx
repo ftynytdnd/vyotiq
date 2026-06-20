@@ -3,6 +3,12 @@
  */
 
 import { useEffect, type FormEvent, type KeyboardEvent } from 'react';
+import {
+  ASK_USER_HOST_GATE_SUBTITLE,
+  ASK_USER_SUBMIT_LABEL,
+  formatAskUserAnsweredProgress,
+  resolveAskUserTitle
+} from '@shared/askUser/askUserCopy.js';
 import { cn } from '../../../lib/cn.js';
 import { useAskUserDraftStore } from '../../../store/askUserDraft.js';
 import { useChatStore } from '../../../store/useChatStore.js';
@@ -24,6 +30,7 @@ export function AskUserForm({ pending, variant = 'inline' }: AskUserFormProps) {
   const skipQuestion = useAskUserDraftStore((s) => s.skipQuestion);
   const setFreeText = useAskUserDraftStore((s) => s.setFreeText);
   const hasAnyAnswer = useAskUserDraftStore((s) => s.hasAnyAnswer);
+  const countAnswered = useAskUserDraftStore((s) => s.countAnswered);
   const composerDraft = useChatStore((s) => s.draft) ?? '';
   const submitPendingAskUser = useChatStore((s) => s.submitPendingAskUser);
   const isProcessing = useChatStore((s) => s.isProcessing);
@@ -77,18 +84,16 @@ export function AskUserForm({ pending, variant = 'inline' }: AskUserFormProps) {
                 </span>
               ) : null}
               <p className="text-row font-medium text-text-primary">
-                {payload.title?.trim() || 'Your input needed'}
+                {resolveAskUserTitle(payload)}
               </p>
             </div>
-            <p className="text-meta text-text-faint">
-              {isHostGate
-                ? 'Uses agent tokens only if you choose Yes — No completes the run immediately'
-                : 'Reply here or type in the composer and press Send'}
-            </p>
+            {isHostGate ? (
+              <p className="text-meta text-text-faint">{ASK_USER_HOST_GATE_SUBTITLE}</p>
+            ) : null}
           </div>
-          {!isHostGate ? (
+          {!isHostGate && questionCount > 1 ? (
             <span className="shrink-0 font-mono text-meta text-accent tabular-nums">
-              {questionCount}Q
+              {formatAskUserAnsweredProgress(countAnswered(pending.id, payload), questionCount)}
             </span>
           ) : null}
         </header>
@@ -184,7 +189,11 @@ export function AskUserForm({ pending, variant = 'inline' }: AskUserFormProps) {
           inline ? 'pt-2' : 'border-t border-border-subtle/30 px-3 py-2'
         )}
       >
-        {inline ? (
+        {!inline && questionCount > 1 ? (
+          <p className="mr-auto font-mono text-chat-meta text-text-faint tabular-nums">
+            {formatAskUserAnsweredProgress(countAnswered(pending.id, payload), questionCount)}
+          </p>
+        ) : inline ? (
           <p className="mr-auto hidden font-mono text-chat-meta text-text-faint sm:block">
             Enter to submit
           </p>
@@ -199,7 +208,7 @@ export function AskUserForm({ pending, variant = 'inline' }: AskUserFormProps) {
               : 'cursor-not-allowed bg-surface-raised text-text-faint'
           )}
         >
-          {isProcessing ? 'Submitting…' : isHostGate ? 'Continue' : 'Submit answers'}
+          {isProcessing ? 'Submitting…' : isHostGate ? 'Continue' : ASK_USER_SUBMIT_LABEL}
         </button>
       </footer>
     </form>

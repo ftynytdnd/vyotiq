@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { Search } from 'lucide-react';
 import { cn } from '../../../lib/cn.js';
-import { registerEscapeLayer } from '../../../lib/escapeLayerStack.js';
+import { escapeFocusInRoots, registerEscapeLayer } from '../../../lib/escapeLayerStack.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../lib/shellIcons.js';
 import { appPopoverPanelClassName } from '../../ui/SurfaceShell.js';
 import { FindBarShell } from '../../ui/FindBarShell.js';
@@ -35,6 +35,7 @@ export function TimelineFindBar({
   const [matchCount, setMatchCount] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
 
   const focusMatch = useCallback((root: HTMLElement, index: number) => {
     const marks = root.querySelectorAll<HTMLElement>(`mark.${MARK_CLASS}`);
@@ -61,10 +62,13 @@ export function TimelineFindBar({
   useEffect(() => {
     if (!open) return;
     return registerEscapeLayer('timeline-find', 70, () => {
+      if (!escapeFocusInRoots(document.activeElement, [shellRef.current, rootRef.current])) {
+        return false;
+      }
       onClose();
       return true;
     });
-  }, [open, onClose]);
+  }, [open, onClose, rootRef]);
 
   useEffect(() => {
     if (open) {
@@ -121,7 +125,8 @@ export function TimelineFindBar({
         : '—';
 
   return (
-    <FindBarShell
+    <div ref={shellRef} data-timeline-find>
+      <FindBarShell
       placeholder="Find in conversation…"
       value={query}
       onChange={setQuery}
@@ -143,6 +148,7 @@ export function TimelineFindBar({
       )}
       role="search"
     />
+    </div>
   );
 }
 

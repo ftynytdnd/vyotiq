@@ -2,6 +2,7 @@
 
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
 import { useUiStore } from '../../store/useUiStore.js';
+import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { cn } from '../../lib/cn.js';
 import {
@@ -72,8 +73,20 @@ export const DOCK_EDGE_STRIP_CLASS = cn(
   'bg-surface-base pt-[var(--dock-strip-pt)] pb-2'
 );
 
-export function workspacePanelClassName(_workspaceCount: number): string {
+export function workspacePanelClassName(workspaceCount: number): string {
+  if (workspaceCount <= 2) {
+    return 'flex shrink-0 flex-col overflow-hidden';
+  }
   return 'flex max-h-[9.5rem] min-h-0 shrink-0 flex-col overflow-hidden';
+}
+
+/** Show filesystem path under workspace label when it adds information. */
+export function workspacePathVisible(label: string, path: string): boolean {
+  if (!path.trim()) return false;
+  const normalized = path.trim().replace(/[\\/]+$/, '');
+  const segments = normalized.split(/[\\/]/);
+  const base = segments[segments.length - 1] ?? '';
+  return base.toLowerCase() !== label.trim().toLowerCase();
 }
 
 /** Flat region for the active workspace files/chats panel (no card chrome). */
@@ -93,13 +106,16 @@ export function dismissDockSearchAfterSelection(): void {
 export function prepareDockForNewChat(): void {
   const ui = useUiStore.getState();
   ui.setDockExpanded(true);
-  ui.setDockPanelTab('chats');
+  const activeId = useWorkspaceStore.getState().activeId;
+  if (activeId) ui.setWorkspaceFilesExpanded(activeId, false);
 }
 
 /** When the nav panel is open, show chats after a conversation is created in the background. */
 export function showDockChatsWhenExpanded(): void {
   const ui = useUiStore.getState();
-  if (ui.dockExpanded) ui.setDockPanelTab('chats');
+  if (!ui.dockExpanded) return;
+  const activeId = useWorkspaceStore.getState().activeId;
+  if (activeId) ui.setWorkspaceFilesExpanded(activeId, false);
 }
 
 /** Rail / menu / shortcut entry — expand nav, create chat, select it, show Chats tab. */
@@ -108,7 +124,8 @@ export async function beginNewChatFromDock(): Promise<void> {
   const convs = useConversationsStore.getState();
   const meta = await convs.newConversation();
   if (!meta) return;
-  useUiStore.getState().setDockPanelTab('chats');
+  const activeId = useWorkspaceStore.getState().activeId;
+  if (activeId) useUiStore.getState().setWorkspaceFilesExpanded(activeId, false);
   await convs.select(meta.id);
 }
 

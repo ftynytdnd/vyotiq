@@ -5,8 +5,9 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../lib/cn.js';
-import { registerEscapeLayer } from '../../lib/escapeLayerStack.js';
+import { escapeFocusInRoots, registerEscapeLayer } from '../../lib/escapeLayerStack.js';
 import {
+  measurePopoverNaturalHeight,
   measurePopoverPosition,
   type PopoverAlign,
   type PopoverCollisionPadding,
@@ -36,6 +37,8 @@ interface PopoverProps {
    * `panel` — stretch to `maxWidth` (`align` fit / wide panels).
    */
   widthMode?: 'content' | 'panel';
+  /** When true, root clips height and defers scrolling to panel children. */
+  containScroll?: boolean;
   className?: string;
   children: React.ReactNode;
 }
@@ -49,10 +52,13 @@ function measure(
   collisionPadding: PopoverCollisionPadding | undefined,
   preferSide: PopoverSide | 'auto',
   anchorStrict: boolean,
-  fitMaxWidth: number
+  fitMaxWidth: number,
+  containScroll: boolean
 ): PopoverPosition | null {
   const anchor = anchorRef?.current ?? triggerRef.current;
   if (!anchor) return null;
+  const naturalHeight =
+    containScroll && popover ? measurePopoverNaturalHeight(popover) : undefined;
   return measurePopoverPosition(
     anchor,
     popover,
@@ -61,7 +67,8 @@ function measure(
     collisionPadding,
     preferSide,
     anchorStrict,
-    fitMaxWidth
+    fitMaxWidth,
+    naturalHeight
   );
 }
 
@@ -79,6 +86,7 @@ export function Popover({
   anchorStrict = false,
   fitMaxWidth = 640,
   widthMode,
+  containScroll = false,
   className,
   children
 }: PopoverProps) {
@@ -97,7 +105,8 @@ export function Popover({
       collisionPadding,
       preferSide,
       anchorStrict,
-      fitMaxWidth
+      fitMaxWidth,
+      containScroll
     );
     if (next) setPos(next);
   }, [
@@ -108,7 +117,8 @@ export function Popover({
     collisionPadding,
     preferSide,
     anchorStrict,
-    fitMaxWidth
+    fitMaxWidth,
+    containScroll
   ]);
 
   useLayoutEffect(() => {
@@ -133,19 +143,27 @@ export function Popover({
     const anchor = anchorRef?.current ?? triggerRef.current;
     if (!anchor) return;
 
+    const onScroll = (e: Event) => {
+      const target = e.target;
+      if (target instanceof Node && popoverRef.current?.contains(target)) return;
+      reposition();
+    };
     window.addEventListener('resize', reposition);
-    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('scroll', onScroll, true);
     const ro = new ResizeObserver(reposition);
     ro.observe(anchor);
-    const pop = popoverRef.current;
-    if (pop) ro.observe(pop);
+    // containScroll panels size from content; observing the portal root retriggers on height locks.
+    if (!containScroll) {
+      const pop = popoverRef.current;
+      if (pop) ro.observe(pop);
+    }
 
     return () => {
       window.removeEventListener('resize', reposition);
-      window.removeEventListener('scroll', reposition, true);
+      window.removeEventListener('scroll', onScroll, true);
       ro.disconnect();
     };
-  }, [open, reposition, triggerRef, anchorRef]);
+  }, [open, reposition, triggerRef, anchorRef, containScroll]);
 
   useEffect(() => {
     if (!open) return;
@@ -168,6 +186,12 @@ export function Popover({
     if (!open) return;
     return registerEscapeLayer(`popover:${popoverInstanceId}`, 80, () => {
       const active = document.activeElement;
+      const anchor = anchorRef?.current ?? triggerRef.current;
+      if (
+        !escapeFocusInRoots(active, [popoverRef.current, triggerRef.current, anchor])
+      ) {
+        return false;
+      }
       const insidePopover =
         active !== null &&
         popoverRef.current !== null &&
@@ -183,12 +207,14 @@ export function Popover({
       onClose();
       return true;
     });
-  }, [open, onClose, popoverInstanceId, triggerRef]);
+  }, [open, onClose, popoverInstanceId, triggerRef, anchorRef]);
 
   if (!open) return null;
 
   const ready = pos !== null;
   const panelWidth = resolvedWidthMode === 'panel' ? pos?.maxWidth : undefined;
+  const boundedHeight =
+    containScroll && pos?.maxHeight !== undefined ? pos.maxHeight : undefined;
   return createPortal(
     <div
       ref={popoverRef}
@@ -200,7 +226,8 @@ export function Popover({
         width: panelWidth,
         maxWidth: pos?.maxWidth,
         maxHeight: pos?.maxHeight,
-        overflowY: pos?.maxHeight ? 'auto' : undefined,
+        height: boundedHeight,
+        overflowY: containScroll ? 'hidden' : pos?.maxHeight ? 'auto' : undefined,
         visibility: ready ? 'visible' : 'hidden',
         zIndex,
         display: 'flex',

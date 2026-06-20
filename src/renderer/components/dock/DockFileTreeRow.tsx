@@ -108,13 +108,13 @@ export const DockFileTreeRow = memo(function DockFileTreeRow({
       aria-label={isDir ? `${name} folder` : name}
       aria-selected={focused || isActive || selected}
       tabIndex={focused ? 0 : -1}
-      className={cn(
-        'vx-dock-file-tree-row group relative flex w-full min-w-0 items-center gap-1 rounded-md py-1 pr-2 text-left font-mono text-row transition-colors hover:bg-chrome-hover-soft',
+        className={cn(
+        'vx-dock-file-tree-row group relative flex w-full min-w-0 items-center gap-1 text-left font-mono text-row',
         isDir ? 'text-text-secondary' : 'text-text-primary',
-        isActive && 'vx-dock-file-tree-row-active bg-accent/10 text-text-primary',
-        selected && !isActive && 'vx-dock-file-tree-row-selected bg-accent/5 ring-1 ring-inset ring-accent/25',
-        isContextTarget && 'bg-chrome-hover-soft ring-1 ring-inset ring-border-strong/50',
-        focused && !isActive && 'bg-chrome-hover-soft/60',
+        isActive && 'vx-dock-file-tree-row-active text-text-primary',
+        selected && !isActive && 'vx-dock-file-tree-row-selected text-text-primary',
+        isContextTarget && 'ring-1 ring-inset ring-border-strong/40',
+        focused && !isActive && !isContextTarget && 'text-text-primary',
         !isActive && gitStatusNameClass(gitStatus)
       )}
       style={{
@@ -153,9 +153,12 @@ export const DockFileTreeRow = memo(function DockFileTreeRow({
       ) : (
         <FileIconForPath filePath={path} isDir={isDir} isExpanded={isDir && isExpanded} />
       )}
-      <span className="min-w-0 flex-1 truncate">{name}</span>
+      <span className="min-w-0 flex-1 truncate pr-1">{name}</span>
       {gitStatus ? (
-        <span className={gitStatusBadgeCn(gitStatus)} aria-label={gitStatusAriaLabel(gitStatus)}>
+        <span
+          className={cn(gitStatusBadgeCn(gitStatus), 'ml-auto shrink-0')}
+          aria-label={gitStatusAriaLabel(gitStatus)}
+        >
           {gitStatus}
         </span>
       ) : null}

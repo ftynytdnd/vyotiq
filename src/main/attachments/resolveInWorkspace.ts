@@ -1,7 +1,7 @@
 import { realpathInsideWorkspace, workspaceRelative } from '../tools/sandbox.js';
 
 export type AttachmentInWorkspace =
-  | { inWorkspace: true; workspacePath: string }
+  | { inWorkspace: true; workspacePath: string; absPath: string }
   | { inWorkspace: false };
 
 /**
@@ -16,7 +16,8 @@ export async function resolveAttachmentInWorkspace(
     const abs = await realpathInsideWorkspace(workspaceRoot, sourcePath);
     return {
       inWorkspace: true,
-      workspacePath: workspaceRelative(workspaceRoot, abs)
+      workspacePath: workspaceRelative(workspaceRoot, abs),
+      absPath: abs
     };
   } catch {
     return { inWorkspace: false };

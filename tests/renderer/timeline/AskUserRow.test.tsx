@@ -5,6 +5,7 @@ import { useChatStore } from '@renderer/store/useChatStore';
 import { INITIAL_TIMELINE_STATE } from '@renderer/components/timeline/reducer/types';
 import { emptySlice } from '@renderer/store/chatStoreTypes';
 import type { TimelineEvent } from '@shared/types/chat';
+import { ASK_USER_OVERLAY_MIN_QUESTIONS } from '@shared/askUser/askUserOverlay.js';
 
 const askEvent = {
   kind: 'ask-user-prompt',
@@ -50,5 +51,27 @@ describe('AskUserRow', () => {
     expect(screen.getByRole('button', { name: 'Submit answers' })).toBeTruthy();
     expect(container.querySelector('[data-ask-user-form]')).not.toBeNull();
     expect(container.querySelector('[data-ask-user-overlay]')).toBeNull();
+  });
+
+  it('renders nothing for multi-question overlay prompts', () => {
+    const multiPayload = {
+      title: 'Implementation Refinement Questions',
+      questions: Array.from({ length: ASK_USER_OVERLAY_MIN_QUESTIONS }, (_, i) => ({
+        id: `q${i}`,
+        prompt: `Question ${i + 1}?`,
+        options: [{ id: 'a', label: 'Alpha' }]
+      }))
+    };
+    const { container } = render(
+      <AskUserRow
+        payload={multiPayload}
+        displayText="Questions"
+        promptEventId="prompt-multi"
+        toolCallId="tc-1"
+        runId="run-1"
+        status="pending"
+      />
+    );
+    expect(container.firstChild).toBeNull();
   });
 });

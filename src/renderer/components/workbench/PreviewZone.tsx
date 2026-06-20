@@ -1,5 +1,5 @@
 /**
- * Attachment preview body for the Globe workbench tab.
+ * Attachment preview body for the workbench Preview tab.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -7,6 +7,11 @@ import { LoadingHint } from '../ui/LoadingHint.js';
 import { vyotiq } from '../../lib/ipc.js';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
+import {
+  attachmentPreviewKind,
+  attachmentPreviewUsesFileUrl,
+  isTextPreviewAttachment
+} from '../../lib/attachmentPreview.js';
 import {
   attachmentPreviewPathInput,
   canPreviewAttachmentInApp,
@@ -20,16 +25,21 @@ export interface PreviewZoneProps {
   attachment: PromptAttachmentMeta;
 }
 
+type LoadPhase = 'idle' | 'loading' | 'done';
+
 export function PreviewZone({ attachment }: PreviewZoneProps) {
   const workspaceId = useWorkspaceStore((s) => s.activeId);
   const close = useAttachmentPreviewStore((s) => s.close);
   const [text, setText] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [textPhase, setTextPhase] = useState<LoadPhase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
-  const [fileUrlLoading, setFileUrlLoading] = useState(false);
+  const [fileUrlPhase, setFileUrlPhase] = useState<LoadPhase>('idle');
   const fallbackAttemptedRef = useRef(false);
 
+  const previewKind = attachmentPreviewKind(attachment);
+  const needsFileUrl = attachmentPreviewUsesFileUrl(previewKind);
+  const needsText = previewKind === 'text' && isTextPreviewAttachment(attachment);
   const pathInput = useMemo(
     () => attachmentPreviewPathInput(attachment, workspaceId),
     [attachment, workspaceId]
@@ -40,42 +50,48 @@ export function PreviewZone({ attachment }: PreviewZoneProps) {
   }, [attachment.id]);
 
   useEffect(() => {
-    if (!pathInput) {
+    if (!pathInput || !needsFileUrl) {
       setFileUrl(null);
-      setFileUrlLoading(false);
+      setFileUrlPhase('idle');
       return;
     }
     let cancelled = false;
-    setFileUrlLoading(true);
+    setFileUrl(null);
+    setFileUrlPhase('loading');
+    setError(null);
     void vyotiq.attachments
       .fileUrl(pathInput)
       .then((url) => {
-        if (!cancelled) setFileUrl(url);
+        if (cancelled) return;
+        if (!url) {
+          setFileUrl(null);
+          setError('Could not resolve a preview URL for this file.');
+          return;
+        }
+        setFileUrl(url);
       })
-      .catch(() => {
-        if (!cancelled) setFileUrl(null);
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setFileUrl(null);
+        setError(err instanceof Error ? err.message : String(err));
       })
       .finally(() => {
-        if (!cancelled) setFileUrlLoading(false);
+        if (!cancelled) setFileUrlPhase('done');
       });
     return () => {
       cancelled = true;
     };
-  }, [pathInput]);
+  }, [needsFileUrl, pathInput]);
 
   useEffect(() => {
-    const mime = attachment.mimeType ?? '';
-    const isText =
-      mime.startsWith('text/') ||
-      /\.(txt|md|json|ya?ml|xml|csv|log|ts|tsx|js|jsx|mjs|cjs|py|rs|go|java|kt|cs|cpp|c|h|css|html?)$/i.test(
-        attachment.name
-      );
-    if (!isText || !pathInput) {
+    if (!needsText || !pathInput) {
       setText(null);
+      setTextPhase('idle');
       return;
     }
     let cancelled = false;
-    setLoading(true);
+    setText(null);
+    setTextPhase('loading');
     setError(null);
     void vyotiq.attachments
       .readText(pathInput)
@@ -86,35 +102,32 @@ export function PreviewZone({ attachment }: PreviewZoneProps) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setTextPhase('done');
       });
     return () => {
       cancelled = true;
     };
-  }, [attachment, pathInput]);
+  }, [attachment, needsText, pathInput]);
 
   useEffect(() => {
     if (fallbackAttemptedRef.current) return;
 
-    const mime = attachment.mimeType ?? '';
-    const isImage = mime.startsWith('image/');
-    const isPdf = mime === 'application/pdf';
     const previewable = canPreviewAttachmentInApp(attachment);
+    if (!previewable || pathInput === null) {
+      fallbackAttemptedRef.current = true;
+      void openAttachmentExternal(attachment, workspaceId).then((ok) => {
+        if (ok) close();
+      });
+      return;
+    }
+
+    if (needsFileUrl && fileUrlPhase !== 'done') return;
+    if (needsText && textPhase !== 'done') return;
+
     const hasRenderablePreview =
-      (isImage && fileUrl) ||
-      (isPdf && fileUrl) ||
-      text !== null;
+      (needsFileUrl && fileUrl !== null) || (needsText && text !== null);
 
-    if (loading || fileUrlLoading || hasRenderablePreview) return;
-
-    const shouldFallback =
-      !previewable ||
-      pathInput === null ||
-      error !== null ||
-      ((isImage || isPdf) && !fileUrl) ||
-      (previewable && !isImage && !isPdf && text === null);
-
-    if (!shouldFallback) return;
+    if (hasRenderablePreview) return;
 
     fallbackAttemptedRef.current = true;
     void openAttachmentExternal(attachment, workspaceId).then((ok) => {
@@ -123,53 +136,72 @@ export function PreviewZone({ attachment }: PreviewZoneProps) {
   }, [
     attachment,
     close,
-    error,
     fileUrl,
-    fileUrlLoading,
-    loading,
+    fileUrlPhase,
+    needsFileUrl,
+    needsText,
     pathInput,
     text,
+    textPhase,
     workspaceId
   ]);
 
-  const mime = attachment.mimeType ?? '';
-  const isImage = mime.startsWith('image/');
-  const src = fileUrl;
+  const isLoading =
+    (needsFileUrl && fileUrlPhase === 'loading') || (needsText && textPhase === 'loading');
   const canPreview = pathInput !== null;
 
   return (
     <div className={cn(WORKBENCH_BODY_CLASS, 'vx-preview-zone scrollbar-stealth overflow-y-auto')}>
-      {loading && <LoadingHint message="Loading preview…" />}
+      {isLoading && <LoadingHint message="Loading preview…" />}
       {error && <p className="p-3 text-row text-danger">{error}</p>}
-      {isImage && src && (
+      {previewKind === 'image' && fileUrl && (
         <div className="flex items-center justify-center p-4">
           <img
-            src={src}
+            src={fileUrl}
             alt={attachment.name}
             className="max-h-full max-w-full rounded-lg object-contain"
           />
         </div>
       )}
-      {mime === 'application/pdf' && src && (
-        <iframe title={attachment.name} src={src} className="min-h-[20rem] flex-1 w-full border-0" />
+      {previewKind === 'pdf' && fileUrl && (
+        <iframe title={attachment.name} src={fileUrl} className="min-h-[20rem] flex-1 w-full border-0" />
       )}
-      {text !== null && (
+      {previewKind === 'video' && fileUrl && (
+        <div className="flex items-center justify-center p-4">
+          <video
+            src={fileUrl}
+            controls
+            playsInline
+            preload="metadata"
+            className="max-h-full max-w-full rounded-lg"
+          >
+            <track kind="captions" />
+          </video>
+        </div>
+      )}
+      {previewKind === 'audio' && fileUrl && (
+        <div className="flex flex-col items-center justify-center gap-3 p-6">
+          <p className="max-w-full truncate font-mono text-meta text-text-secondary">{attachment.name}</p>
+          <audio src={fileUrl} controls preload="metadata" className="w-full max-w-md">
+            <track kind="captions" />
+          </audio>
+        </div>
+      )}
+      {previewKind === 'text' && text !== null && (
         <pre className="overflow-auto p-3 font-mono text-log whitespace-pre-wrap text-text-secondary">
           {text}
         </pre>
       )}
-      {!loading &&
+      {!isLoading &&
         !error &&
         !canPreview &&
         fallbackAttemptedRef.current && (
           <p className="p-3 text-row text-text-muted">Opening in your default app…</p>
         )}
-      {!loading &&
+      {!isLoading &&
         !error &&
         canPreview &&
-        !isImage &&
-        mime !== 'application/pdf' &&
-        text === null &&
+        previewKind === 'none' &&
         !fallbackAttemptedRef.current && (
           <p className="p-3 text-row text-text-muted">Preview not available for this file type.</p>
         )}

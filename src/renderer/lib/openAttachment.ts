@@ -9,6 +9,17 @@ import { openWorkspaceFileInEditor } from './openWorkspaceFileInEditor.js';
 import { openWorkspaceFile } from './openPath.js';
 import { useToastStore } from '../store/useToastStore.js';
 import { useAttachmentPreviewStore } from '../store/useAttachmentPreviewStore.js';
+import {
+  attachmentPreviewKind,
+  canPreviewAttachmentInApp as canPreviewAttachmentInAppKind
+} from './attachmentPreview.js';
+
+export {
+  attachmentMediaKind,
+  attachmentPreviewKind,
+  attachmentPreviewUsesFileUrl,
+  canPreviewAttachmentInApp
+} from './attachmentPreview.js';
 
 export function attachmentPreviewPathInput(
   attachment: PromptAttachmentMeta,
@@ -19,18 +30,6 @@ export function attachmentPreviewPathInput(
     return { path: attachment.workspacePath, workspaceId };
   }
   return null;
-}
-
-export function canPreviewAttachmentInApp(attachment: PromptAttachmentMeta): boolean {
-  const mime = attachment.mimeType ?? '';
-  if (mime.startsWith('image/')) return true;
-  if (mime === 'application/pdf') return true;
-  return (
-    mime.startsWith('text/') ||
-    /\.(txt|md|json|ya?ml|xml|csv|log|ts|tsx|js|jsx|mjs|cjs|py|rs|go|java|kt|cs|cpp|c|h|css|html?)$/i.test(
-      attachment.name
-    )
-  );
 }
 
 export async function openAttachmentExternal(
@@ -72,7 +71,7 @@ export async function openAttachment(
     if (opened) return;
   }
 
-  if (!canPreviewAttachmentInApp(attachment)) {
+  if (!canPreviewAttachmentInAppKind(attachment)) {
     await openAttachmentExternal(attachment, workspaceId);
     return;
   }

@@ -41,8 +41,20 @@ import {
 import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { formatWorkspaceSpend } from '../../lib/workspaceSpend.js';
 import { handleDockVerticalTablistKeyDown } from './dockVerticalTablistKeyboard.js';
+import type { WorkspacePendingAction } from './WorkspacePendingBanner.js';
 
-export function DockWorkspaceTabs() {
+export interface DockWorkspaceTabsProps {
+  /** Horizontal scroll strip (default) or legacy vertical stack. */
+  layout?: 'horizontal' | 'vertical';
+  pendingWorkspaceId?: string | null;
+  onRequestPending?: (action: WorkspacePendingAction) => void;
+}
+
+export function DockWorkspaceTabs({
+  layout = 'horizontal',
+  pendingWorkspaceId = null,
+  onRequestPending
+}: DockWorkspaceTabsProps) {
   const workspaces = useWorkspaceStore((s) => s.list);
   const activeId = useWorkspaceStore((s) => s.activeId);
   const setActive = useWorkspaceStore((s) => s.setActive);
@@ -72,68 +84,74 @@ export function DockWorkspaceTabs() {
 
   if (workspaces.length === 0) {
     return (
-      <div className={DOCK_EMPTY_STATE_CLASS}>
-        <span className="text-row text-text-faint">No workspaces.</span>
-        <button
-          type="button"
-          onClick={() => void addWorkspace()}
-          className={dockInlineActionClassName()}
-        >
-          Add workspace
-        </button>
+      <div className={cn(DOCK_EMPTY_STATE_CLASS, 'px-0 py-0.5')}>
+        <span className="text-row text-text-faint">No workspaces</span>
       </div>
     );
   }
+
+  const horizontal = layout === 'horizontal';
+  const useDockBanner = horizontal && onRequestPending !== undefined;
 
   return (
     <div
       ref={scrollRef}
       role="tablist"
       aria-label="Workspaces"
-      className="scrollbar-stealth flex min-h-0 flex-col gap-0.5 overflow-y-auto px-1 pb-1"
-      onKeyDown={(e) => {
-        handleDockVerticalTablistKeyDown({
-          e,
-          ids: workspaces.map((ws) => ws.id),
-          activeId,
-          onActivate: (id) => {
-            void setActive(id);
-            dismissDockSearchAfterSelection();
-          },
-          focusTarget: (id) =>
-            scrollRef.current?.querySelector<HTMLElement>(`[data-workspace-id="${id}"]`)
-        });
-      }}
-    >
-      {workspaces.map((ws) => (
-        <WorkspaceTab
-          key={ws.id}
-          workspace={ws}
-          active={ws.id === activeId}
-          onActivate={() => {
-            void setActive(ws.id);
-            dismissDockSearchAfterSelection();
-          }}
-        />
-      ))}
-      {activeSpendLabel ? (
-        <div
-          className="px-2 py-0.5 font-mono text-meta tabular-nums text-text-faint"
-          title="Vyotiq-estimated API spend for this workspace"
-        >
-          {activeSpendLabel}
-        </div>
-      ) : null}
-      <button
-        type="button"
-        aria-label="Add workspace"
-        title="Add workspace"
-        onClick={() => void addWorkspace()}
-        className="vx-btn vx-btn-quiet gap-1 self-start px-1.5 text-row"
+      className={cn(
+        'scrollbar-stealth vx-dock-workspace-tabs flex min-h-0 gap-0.5',
+        horizontal
+          ? 'vx-dock-workspace-tabs--horizontal flex-row overflow-x-auto overflow-y-hidden py-0.5'
+          : 'flex-col overflow-y-auto px-1 pb-1'
+      )}
+        onKeyDown={(e) => {
+          handleDockVerticalTablistKeyDown({
+            e,
+            ids: workspaces.map((ws) => ws.id),
+            activeId,
+            onActivate: (id) => {
+              void setActive(id);
+              dismissDockSearchAfterSelection();
+            },
+            focusTarget: (id) =>
+              scrollRef.current?.querySelector<HTMLElement>(`[data-workspace-id="${id}"]`)
+          });
+        }}
       >
-        <Plus className={DOCK_TAB_ICON_CLASS} strokeWidth={DOCK_TAB_ICON_STROKE} />
-        <span>Add workspace</span>
-      </button>
+        {workspaces.map((ws) => (
+          <WorkspaceTab
+            key={ws.id}
+            workspace={ws}
+            active={ws.id === activeId}
+            horizontal={horizontal}
+            pending={pendingWorkspaceId === ws.id}
+            onActivate={() => {
+              void setActive(ws.id);
+              dismissDockSearchAfterSelection();
+            }}
+            onRequestPending={useDockBanner ? onRequestPending : undefined}
+          />
+        ))}
+        {activeSpendLabel && !horizontal ? (
+          <div
+            className="px-2 py-0.5 font-mono text-meta tabular-nums text-text-faint"
+            title="Vyotiq-estimated API spend for this workspace"
+          >
+            {activeSpendLabel}
+          </div>
+        ) : null}
+        {!horizontal ? (
+          <button
+            type="button"
+            aria-label="Add workspace"
+            title="Add workspace"
+            onClick={() => void addWorkspace()}
+            className="vx-btn vx-btn-quiet gap-1 self-start px-1.5 text-row"
+          >
+            <Plus className={DOCK_TAB_ICON_CLASS} strokeWidth={DOCK_TAB_ICON_STROKE} />
+            <span>Add workspace</span>
+          </button>
+        ) : null}
     </div>
   );
 }
@@ -141,10 +159,20 @@ export function DockWorkspaceTabs() {
 interface WorkspaceTabProps {
   workspace: WorkspaceEntry;
   active: boolean;
+  horizontal?: boolean;
+  pending?: boolean;
   onActivate: () => void;
+  onRequestPending?: (action: WorkspacePendingAction) => void;
 }
 
-function WorkspaceTab({ workspace, active, onActivate }: WorkspaceTabProps) {
+function WorkspaceTab({
+  workspace,
+  active,
+  horizontal = false,
+  pending = false,
+  onActivate,
+  onRequestPending
+}: WorkspaceTabProps) {
   const renameWorkspace = useWorkspaceStore((s) => s.rename);
   const removeWorkspace = useWorkspaceStore((s) => s.remove);
   const retryReachability = useWorkspaceStore((s) => s.retryReachability);
@@ -192,15 +220,88 @@ function WorkspaceTab({ workspace, active, onActivate }: WorkspaceTabProps) {
         }}
         className={cn(
           dockTabRowClassName(active, 'workspace'),
-          (removeStep === 'confirm' || removeStep === 'choice') &&
-            'h-auto flex-col items-stretch gap-1 py-1',
+          horizontal && 'vx-dock-tab--horizontal',
+          !horizontal &&
+            (removeStep === 'confirm' || removeStep === 'choice') &&
+            'h-auto w-full flex-col items-stretch gap-1 py-1',
+          pending && horizontal && 'ring-1 ring-danger/35',
           hasActiveRun && 'vyotiq-shimmer-pill',
           dragOver && 'bg-chrome-hover-strong ring-1 ring-border-subtle/70'
         )}
         data-active={dockTabActiveAttr(active)}
         aria-busy={hasActiveRun || undefined}
       >
-        {removeStep === 'confirm' ? (
+        {horizontal ? (
+          editing ? (
+            <input
+              ref={inputRef}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  commitRename();
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setDraft(workspace.label);
+                  setEditing(false);
+                }
+              }}
+              className="min-w-0 flex-1 bg-transparent text-row outline-none"
+              aria-label="Rename workspace"
+            />
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={onActivate}
+                className={DOCK_TAB_TRIGGER_CLASS}
+                title={workspace.path ?? workspace.label}
+              >
+                {active ? (
+                  <FolderOpen className={DOCK_TAB_ICON_CLASS} strokeWidth={DOCK_TAB_ICON_STROKE} />
+                ) : (
+                  <Folder className={DOCK_TAB_ICON_CLASS} strokeWidth={DOCK_TAB_ICON_STROKE} />
+                )}
+                <span className={DOCK_TAB_LABEL_CLASS}>{workspace.label}</span>
+              </button>
+              {isUnreachable && (
+                <button
+                  type="button"
+                  aria-label="Workspace unreachable"
+                  title="Path unreachable — click to retry"
+                  onClick={() => onRequestPending?.({ kind: 'retry', workspace })}
+                  className="shrink-0 text-warning focus-visible:opacity-100"
+                >
+                  <AlertTriangle className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+                </button>
+              )}
+              <span className={cn('flex shrink-0 items-center gap-0.5', DOCK_HOVER_ACTIONS)}>
+                <button
+                  type="button"
+                  aria-label="Rename workspace"
+                  onClick={() => {
+                    setEditing(true);
+                    queueMicrotask(() => inputRef.current?.select());
+                  }}
+                  className="vx-btn vx-btn-quiet inline-flex h-4 w-4 items-center justify-center px-0 text-text-faint hover:text-text-primary focus-visible:opacity-100"
+                >
+                  <Pencil className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Remove workspace"
+                  onClick={() => onRequestPending?.({ kind: 'remove-confirm', workspace })}
+                  className="vx-btn vx-btn-quiet inline-flex h-4 w-4 items-center justify-center px-0 text-text-faint hover:text-danger focus-visible:opacity-100"
+                >
+                  <Trash2 className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+                </button>
+              </span>
+            </>
+          )
+        ) : removeStep === 'confirm' ? (
           <div className="mx-1 my-0.5 w-[calc(100%-0.5rem)]">
             <DestructiveConfirm
               variant="inline"

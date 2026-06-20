@@ -5,6 +5,10 @@
 
 import { memo } from 'react';
 import type { ModelSelection } from '@shared/types/provider.js';
+import {
+  ASK_USER_REPLY_NEEDED,
+  resolveAskUserStatusDetail
+} from '@shared/askUser/askUserCopy.js';
 import type { PendingAskUserEvent } from '../../lib/pendingAskUser.js';
 import {
   formatProviderAccountLine,
@@ -47,20 +51,23 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip({
   const toolCacheHint = useChatStore((s) => s.toolCacheHint);
 
   if (pendingAskUser) {
-    const isHostGate = pendingAskUser.source === 'host-report-gate';
-    const title =
-      pendingAskUser.payload.title?.trim() || 'Clarifying questions';
+    const detail = resolveAskUserStatusDetail({
+      payload: pendingAskUser.payload,
+      ...(pendingAskUser.source ? { source: pendingAskUser.source } : {})
+    });
     return (
       <span
         className="vx-composer-status-strip min-w-0 flex-1 truncate px-0.5 text-meta text-text-secondary"
         role="status"
         aria-live="polite"
       >
-        <span className="font-medium text-accent">Reply needed</span>
-        {' — '}
-        {isHostGate
-          ? 'Answer in the prompt below, or type here and press Send'
-          : `Answer in ${title === 'Clarifying questions' ? 'the card above' : `"${title}"`}, or type below and press Send`}
+        <span className="font-medium text-accent">{ASK_USER_REPLY_NEEDED}</span>
+        {detail ? (
+          <>
+            {' — '}
+            {detail}
+          </>
+        ) : null}
       </span>
     );
   }

@@ -15,7 +15,13 @@ describe('WorkbenchLaunchers', () => {
       activeId: 'ws-1',
       info: { path: 'C:\\proj' }
     } as never);
-    useUiStore.setState({ dockExpanded: false, dockPanelTab: 'files', workbenchTab: 'terminal' });
+    useUiStore.setState({
+      dockExpanded: false,
+      dockPanelTab: 'files',
+      filesExpandedWorkspaces: new Set(['ws-1']),
+      workbenchTab: 'terminal',
+      hydrated: true
+    });
     useTerminalStore.setState({ open: false } as never);
   });
 
@@ -46,6 +52,7 @@ describe('WorkbenchLaunchers', () => {
     fireEvent.click(screen.getByRole('button', { name: /open files to edit/i }));
     expect(useUiStore.getState().dockExpanded).toBe(true);
     expect(useUiStore.getState().dockPanelTab).toBe('files');
+    expect(useUiStore.getState().filesExpandedWorkspaces.has('ws-1')).toBe(true);
   });
 
   it('closes the focused terminal when its titlebar launcher is clicked again', () => {

@@ -33,7 +33,7 @@ describe('normalizeSettingsPatch', () => {
 
   it('clamps legacy dockWidth values before IPC validation', () => {
     const patch = normalizeSettingsPatch({ ui: { dockWidth: 200, theme: 'dark' } });
-    expect(patch.ui).toEqual({ dockWidth: 220, theme: 'dark' });
+    expect(patch.ui).toEqual({ dockWidth: 240, theme: 'dark' });
   });
 
   it('strips removed right-dock fields before IPC validation', () => {

@@ -2,12 +2,10 @@
  * Pre-IPC size checks for pasted file blobs (renderer → main).
  */
 
-import { mediaKindFromMeta } from './mediaKind.js';
-import { MAX_ATTACHMENT_FILE_BYTES, VISION_VIDEO_MAX_BYTES } from '../constants.js';
+import { maxBytesForAttachment } from './attachmentSizeLimits.js';
 
 export function maxBytesForMime(mimeType: string, name: string): number {
-  const kind = mediaKindFromMeta({ name, mimeType });
-  return kind === 'video' ? VISION_VIDEO_MAX_BYTES : MAX_ATTACHMENT_FILE_BYTES;
+  return maxBytesForAttachment({ name, mimeType });
 }
 
 export function filterClipboardBlobsWithinLimits<

@@ -8,9 +8,10 @@ export type PendingAskUserEvent = Extract<TimelineEvent, { kind: 'ask-user-promp
 
 export function findPendingAskUserEvent(
   events: TimelineEvent[],
-  awaitingAskUser: boolean
+  awaitingAskUser?: boolean
 ): PendingAskUserEvent | null {
-  if (!awaitingAskUser || events.length === 0) return null;
+  if (awaitingAskUser === false) return null;
+  if (events.length === 0) return null;
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i];
     if (e?.kind !== 'ask-user-prompt') continue;

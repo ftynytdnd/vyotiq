@@ -5,7 +5,11 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useChatStore } from '../../../store/useChatStore.js';
-import { formatTokenCountWithUnit } from '../../../lib/formatTokens.js';
+import { formatTokenCountUsed, formatTokenCountWithUnit } from '../../../lib/formatTokens.js';
+import {
+  LONG_TURN_WARN_MS,
+  VERY_LONG_TURN_WARN_MS
+} from '@shared/timeline/longTurnThresholds.js';
 import {
   formatLiveTokenRate,
   resolveLiveCompletionTokens
@@ -80,9 +84,18 @@ export function TurnStickyFooter({
     liveTokenRate !== null && liveTokenRate > 0 ? formatLiveTokenRate(liveTokenRate) : null;
   const tokenLabel =
     showLive && usage && usage.cumulative.totalTokens > 0
-      ? formatTokenCountWithUnit(usage.cumulative.totalTokens)
+      ? awaitingAskUser
+        ? formatTokenCountUsed(usage.cumulative.totalTokens)
+        : formatTokenCountWithUnit(usage.cumulative.totalTokens)
       : null;
   const throughputLabel = liveTokenRateLabel ?? tokenLabel;
+
+  const elapsedWarn =
+    showLive && !awaitingAskUser && elapsedMs >= LONG_TURN_WARN_MS
+      ? elapsedMs >= VERY_LONG_TURN_WARN_MS
+        ? 'very-long'
+        : 'long'
+      : null;
 
   const activity = useMemo(
     () =>
@@ -149,7 +162,22 @@ export function TurnStickyFooter({
               <span aria-hidden className="text-text-faint/70">
                 {' · '}
               </span>
-              <span className={cn(i === 0 && 'tabular-nums', i > 0 && 'font-mono tabular-nums')}>
+              <span
+                className={cn(
+                  i === 0 && 'tabular-nums',
+                  i > 0 && 'font-mono tabular-nums',
+                  i === 0 &&
+                    elapsedWarn === 'long' &&
+                    'text-text-faint/90',
+                  i === 0 && elapsedWarn === 'very-long' && 'text-warning'
+                )}
+                {...(i === 0 && elapsedWarn === 'very-long'
+                  ? {
+                      title:
+                        'This turn is taking unusually long — approval waits or connection delays may be involved'
+                    }
+                  : {})}
+              >
                 {part}
               </span>
             </span>

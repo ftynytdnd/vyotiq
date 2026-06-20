@@ -14,9 +14,7 @@ import { ModelPicker } from './modelPicker/index.js';
 import { TokenUsagePill } from './TokenUsagePill.js';
 import { ContextWindowMeter } from './ContextWindowMeter.js';
 import { PromptAttachmentCards } from './PromptAttachmentCards.js';
-import { mediaKindFromMeta } from '@shared/attachments/mediaKind.js';
-import { modelSupportsVision, modelSupportsAudioNative, modelSupportsPdfNative, modelSupportsVideoNative } from '@shared/providers/visionCapabilities.js';
-import { findProviderModel } from './modelPicker/modelPickerContext.js';
+import { defaultAttachmentPrompt } from '@shared/attachments/defaultAttachmentPrompt.js';
 import { useComposerAttachments } from './useComposerAttachments.js';
 import { useComposerHistory } from './useComposerHistory.js';
 import { MentionComposer } from './mention/MentionComposer.js';
@@ -34,10 +32,10 @@ import { appComposerShellClassName } from '../ui/SurfaceShell.js';
 import { useChatStore } from '../../store/useChatStore.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
-import { useProviderStore } from '../../store/useProviderStore.js';
 import { cn } from '../../lib/cn.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { findPendingAskUserEvent } from '../../lib/pendingAskUser.js';
+import { ASK_USER_SUBMIT_LABEL } from '@shared/askUser/askUserCopy.js';
 import { useAskUserDraftStore } from '../../store/askUserDraft.js';
 import { useRevertPrompt } from '../timeline/revert/RevertPromptContext.js';
 import { useComposerTokenEstimate } from './useComposerTokenEstimate.js';
@@ -152,7 +150,8 @@ export function Composer({
     peekPendingMessageId,
     onDrop,
     onDragOver,
-    onPaste
+    onPaste,
+    isIngesting
   } = useComposerAttachments({
     conversationId,
     workspaceId: activeWorkspaceIdForAttach,
@@ -237,10 +236,8 @@ export function Composer({
 
   const showToast = useToastStore((s) => s.show);
 
-  const pendingAskUser = useMemo(
-    () => findPendingAskUserEvent(events, awaitingAskUser),
-    [events, awaitingAskUser]
-  );
+  const pendingAskUser = useMemo(() => findPendingAskUserEvent(events), [events]);
+  const needsAskUserReply = awaitingAskUser || pendingAskUser !== null;
 
   useProviderAccountPollSource(
     'composer',
@@ -255,7 +252,7 @@ export function Composer({
       ic.composerEnabled &&
       composerFocused &&
       !isProcessing &&
-      !awaitingAskUser;
+      !needsAskUserReply;
     return {
       enabled,
       debounceMs: ic.debounceMs,
@@ -264,7 +261,7 @@ export function Composer({
     };
   }, [
     activeWorkspaceIdForAttach,
-    awaitingAskUser,
+    needsAskUserReply,
     composerFocused,
     isProcessing,
     model,
@@ -275,12 +272,12 @@ export function Composer({
     const doc = parseMentionDocument(text);
     const trimmed = documentTrimmedPlain(doc);
     const mentions = extractMentions(doc);
-    if (awaitingAskUser && pendingAskUser && conversationId && runId) {
+    if (needsAskUserReply && pendingAskUser && conversationId && runId) {
       const draftReady = useAskUserDraftStore
         .getState()
-        .hasAnyAnswer(pendingAskUser.id, pendingAskUser.payload, trimmed);
+        .canSubmit(pendingAskUser.id, pendingAskUser.payload, trimmed);
       if (!draftReady && !trimmed && attachments.length === 0) {
-        showToast('Select answers in the panel above or type a reply before sending.', 'danger');
+        showToast('Select answers in the prompt or type a reply before submitting.', 'danger');
         return;
       }
       const toSendMeta = attachments;
@@ -307,6 +304,8 @@ export function Composer({
     if (!model) return;
 
     const toSendMeta = attachments;
+    const promptText =
+      trimmed || (toSendMeta.length > 0 ? defaultAttachmentPrompt(toSendMeta) : '');
     const promptEventId =
       toSendMeta.length > 0 ? peekPendingMessageId() : undefined;
 
@@ -321,7 +320,7 @@ export function Composer({
       if (mentions.length > 0) steerOpts.mentions = mentions;
       await enqueueFollowUp(
         'steering',
-        trimmed || 'See attached files.',
+        promptText,
         model,
         steerOpts
       );
@@ -336,7 +335,7 @@ export function Composer({
       if (promptEventId) sendOpts.promptEventId = promptEventId;
     }
     if (mentions.length > 0) sendOpts.mentions = mentions;
-    await send(trimmed || 'See attached files.', model, sendOpts);
+    await send(promptText, model, sendOpts);
   };
 
   const handleQueue = async () => {
@@ -348,13 +347,15 @@ export function Composer({
     if (!isProcessing && !awaitingAskUser) return;
 
     const toSendMeta = attachments;
+    const promptText =
+      trimmed || (toSendMeta.length > 0 ? defaultAttachmentPrompt(toSendMeta) : '');
     const promptEventId =
       toSendMeta.length > 0 ? peekPendingMessageId() : undefined;
 
     if (editingQueuedId) {
       clearComposerAfterSubmit();
       await updateFollowUp(editingQueuedId, {
-        prompt: trimmed || 'See attached files.',
+        prompt: promptText,
         selection: model,
         attachmentMeta: toSendMeta,
         ...(mentions.length > 0 ? { mentions } : { mentions: [] })
@@ -370,7 +371,7 @@ export function Composer({
       if (promptEventId) queueOpts.promptEventId = promptEventId;
     }
     if (mentions.length > 0) queueOpts.mentions = mentions;
-    await enqueueFollowUp('queue', trimmed || 'See attached files.', model, queueOpts);
+    await enqueueFollowUp('queue', promptText, model, queueOpts);
   };
 
   const handleEditQueued = useCallback(
@@ -410,11 +411,11 @@ export function Composer({
     prompt: documentToPlainText(composerDoc),
     attachmentMeta: attachments,
     workspacePath,
-    enabled: !isProcessing && !awaitingAskUser
+    enabled: !isProcessing && !needsAskUserReply
   });
   const draftHasAnswer = useAskUserDraftStore((s) =>
     pendingAskUser
-      ? s.hasAnyAnswer(
+      ? s.canSubmit(
           pendingAskUser.id,
           pendingAskUser.payload,
           documentTrimmedPlain(composerDoc)
@@ -424,62 +425,29 @@ export function Composer({
   const canSendContent =
     hasComposerContent(composerDoc) ||
     attachments.length > 0 ||
-    (awaitingAskUser && draftHasAnswer);
+    (needsAskUserReply && draftHasAnswer);
   const showFollowUpTray =
     followUps.steering.length > 0 || followUps.queued.length > 0;
-  const isRunActive = isProcessing || awaitingAskUser;
-  const showProcessingRunHint = isProcessing && !awaitingAskUser;
-  const providers = useProviderStore((s) => s.providers);
-  const visionWarning = useMemo(() => {
-    const hasImages = attachments.some(
-      (m) => (m.mediaKind ?? mediaKindFromMeta(m)) === 'image'
-    );
-    if (!hasImages || !model) return false;
-    const provider = providers.find((p) => p.id === model.providerId);
-    const info = provider ? findProviderModel(provider, model.modelId) : undefined;
-    return !modelSupportsVision(info?.inputModalities);
-  }, [attachments, model, providers]);
-  const audioWarning = useMemo(() => {
-    const hasAudio = attachments.some(
-      (m) => (m.mediaKind ?? mediaKindFromMeta(m)) === 'audio'
-    );
-    if (!hasAudio || !model) return false;
-    const provider = providers.find((p) => p.id === model.providerId);
-    const info = provider ? findProviderModel(provider, model.modelId) : undefined;
-    return !modelSupportsAudioNative(info?.inputModalities);
-  }, [attachments, model, providers]);
-  const pdfWarning = useMemo(() => {
-    const hasPdf = attachments.some((m) => (m.mediaKind ?? mediaKindFromMeta(m)) === 'pdf');
-    if (!hasPdf || !model) return false;
-    const provider = providers.find((p) => p.id === model.providerId);
-    const info = provider ? findProviderModel(provider, model.modelId) : undefined;
-    return !modelSupportsPdfNative(info?.inputModalities);
-  }, [attachments, model, providers]);
-  const videoWarning = useMemo(() => {
-    const hasVideo = attachments.some((m) => (m.mediaKind ?? mediaKindFromMeta(m)) === 'video');
-    if (!hasVideo || !model) return false;
-    const provider = providers.find((p) => p.id === model.providerId);
-    const info = provider ? findProviderModel(provider, model.modelId) : undefined;
-    return !modelSupportsVideoNative(info?.inputModalities);
-  }, [attachments, model, providers]);
+  const isRunActive = isProcessing || needsAskUserReply;
+  const showProcessingRunHint = isProcessing && !needsAskUserReply;
   const sendState: 'idle' | 'ready' | 'processing' =
-    (canSendContent || awaitingAskUser) && model ? 'ready' : 'idle';
-  const sendDisabled = !canSendContent && !awaitingAskUser;
-  const showStop = isProcessing && !awaitingAskUser;
+    (canSendContent || needsAskUserReply) && model ? 'ready' : 'idle';
+  const sendDisabled = !canSendContent;
+  const showStop = isProcessing || needsAskUserReply;
   const showQueueBtn =
-    (isProcessing || awaitingAskUser) && canSendContent && Boolean(model);
+    (isProcessing || needsAskUserReply) && canSendContent && Boolean(model);
 
   const metricsStreamCompact = isRunActive && !composerFocused;
 
-  const canAttach = Boolean(conversationId && activeWorkspaceIdForAttach);
+  const canAttach = Boolean(conversationId && activeWorkspaceIdForAttach) && !isIngesting;
 
   const placeholder = resolveComposerPlaceholder({
     landing,
     storeDraft,
     editorPlain: documentTrimmedPlain(composerDoc),
     eventsLength: events.length,
-    isProcessing: isProcessing && !awaitingAskUser,
-    awaitingAskUser,
+    isProcessing: isProcessing && !needsAskUserReply,
+    needsAskUserReply,
     editingQueued: Boolean(editingQueuedId)
   });
 
@@ -489,7 +457,9 @@ export function Composer({
     <div className="relative w-full">
       <div
         ref={shellRef}
+        data-composer-shell
         data-e2e-can-attach={canAttach ? 'true' : 'false'}
+        aria-busy={isIngesting || undefined}
         className={cn(
           appComposerShellClassName,
           'flex flex-col overflow-hidden transition-[background] duration-150',
@@ -522,13 +492,19 @@ export function Composer({
           queued={followUps.queued}
           visible={showFollowUpTray}
           isRunActive={isRunActive}
+          awaitingAskUser={needsAskUserReply}
           editingQueuedId={editingQueuedId}
           onEditQueued={handleEditQueued}
           onRemove={handleRemoveFollowUp}
           onSendNow={(id) => void sendFollowUpNow(id)}
         />
         <div className="vx-composer-input-zone">
-          <div className="vx-composer-chip-row">
+          <div
+            className={cn(
+              'vx-composer-chip-row',
+              attachments.length > 0 && 'vx-composer-chip-row--has-attachments'
+            )}
+          >
             <ModelPicker
               value={model}
               onChange={onModelChange}
@@ -554,26 +530,26 @@ export function Composer({
               }
             />
             {attachments.length > 0 ? (
-              <PromptAttachmentCards
-                items={attachments}
-                editable
-                onRemove={removeAttachment}
-                className="min-w-0 flex-1"
-              />
+              <div
+                className="vx-composer-attach-zone"
+                aria-label={`${attachments.length} attached file${attachments.length === 1 ? '' : 's'}`}
+              >
+                <div className="vx-composer-attach-chips">
+                  <PromptAttachmentCards
+                    items={attachments}
+                    editable
+                    variant="chip"
+                    onRemove={removeAttachment}
+                  />
+                </div>
+                <span className="vx-composer-attachment-count" aria-hidden>
+                  {attachments.length}/{MAX_CHAT_ATTACHMENTS}
+                </span>
+              </div>
             ) : null}
-            {attachments.length > 0 && (
-              <span className="shrink-0 font-mono text-meta text-text-faint tabular-nums">
-                {attachments.length}/{MAX_CHAT_ATTACHMENTS}
-              </span>
-            )}
             <ComposerStatusStrip
               pendingAskUser={pendingAskUser}
-              model={model}
               processingRun={showProcessingRunHint}
-              visionWarning={visionWarning}
-              pdfWarning={pdfWarning}
-              videoWarning={videoWarning}
-              audioWarning={audioWarning}
             />
             {showQueueBtn ? (
               <button
@@ -593,6 +569,8 @@ export function Composer({
               requestFocus={requestFocus}
               focusSession={focusSession}
               inlineCompletion={composerInlineCompletion}
+              anchorRef={shellRef}
+              landing={landing}
               editKeybindings={composerKeybindings}
               globalKeybindings={composerKeybindings}
               ariaKeyshortcuts={composerAriaKeyshortcuts}
@@ -640,9 +618,9 @@ export function Composer({
                     void handleQueue();
                     return;
                   }
-                  if (!canSendContent && !isProcessing && !awaitingAskUser) return;
-                  if (!awaitingAskUser && !model) return;
-                  if (isProcessing && !awaitingAskUser && !canSendContent) return;
+                  if (!canSendContent && !isProcessing && !needsAskUserReply) return;
+                  if (!needsAskUserReply && !model) return;
+                  if (isProcessing && !needsAskUserReply && !canSendContent) return;
                   void handleSend();
                   return;
                 }
@@ -673,9 +651,11 @@ export function Composer({
               actionLabel={
                 editingQueuedId
                   ? 'Save queued follow-up'
-                  : isProcessing && !awaitingAskUser
-                    ? 'Steer mid-run'
-                    : 'Send'
+                  : needsAskUserReply
+                    ? ASK_USER_SUBMIT_LABEL
+                    : isProcessing
+                      ? 'Steer mid-run'
+                      : 'Send'
               }
             />
           </div>
@@ -694,8 +674,8 @@ export function Composer({
                 workspaceId={activeWorkspaceIdForAttach}
                 draftPrompt={documentToPlainText(composerDoc)}
                 attachmentDraft={attachments}
-                disabled={isProcessing || awaitingAskUser}
-                isRunActive={isProcessing}
+                disabled={isProcessing}
+                isRunActive={isProcessing || needsAskUserReply}
               />
             </div>
             <div className="vx-composer-metrics-row__usage">

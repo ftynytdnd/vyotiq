@@ -10,6 +10,7 @@ import {
   getTerminalEntry,
   openTerminalEntry
 } from './terminalPool.js';
+import { registerTerminalDomFocus } from '../../lib/workbenchFocusDom.js';
 
 export interface XtermViewProps {
   sessionId: string;
@@ -58,6 +59,13 @@ export function XtermView({ sessionId, active }: XtermViewProps) {
         mount.removeChild(entry.host);
       }
     };
+  }, [active, sessionId]);
+
+  useEffect(() => {
+    if (!active) return;
+    return registerTerminalDomFocus(() => {
+      getTerminalEntry(sessionId).term.focus();
+    });
   }, [active, sessionId]);
 
   return <div ref={mountRef} className="vx-xterm-mount h-full min-h-0 w-full" />;

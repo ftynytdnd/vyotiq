@@ -211,8 +211,11 @@ export const MAX_CHAT_ATTACHMENTS = 10;
 /** Max items per follow-up lane (steering + queued) per conversation. */
 export const MAX_FOLLOW_UP_QUEUE_DEPTH = 10;
 
-/** Per-file size cap for external attachment ingest (10 MB). */
+/** Default per-file ingest cap for text and generic binary attachments. */
 export const MAX_ATTACHMENT_FILE_BYTES = 10 * 1024 * 1024;
+
+/** Ingest cap for images before vision downscale/compress (wire cap is {@link VISION_IMAGE_MAX_BYTES}). */
+export const MAX_ATTACHMENT_IMAGE_BYTES = 20 * 1024 * 1024;
 
 /** Vision image preprocess — long edge cap (Anthropic/OpenAI 2026 guidance). */
 export const VISION_IMAGE_MAX_LONG_EDGE = 1568;

@@ -182,6 +182,9 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
             style={{ width: `${percent}%` }}
           />
         </span>
+        <span className="vx-composer-token-pill__ctx text-text-faint" aria-hidden>
+          ctx
+        </span>
         <span className={cn('vx-composer-token-pill__pct tabular-nums', text)}>{percent}%</span>
       </button>
       <ContextBreakdownPopover

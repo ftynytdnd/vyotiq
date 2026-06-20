@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { formatTokenCount, formatTokenCountWithUnit, parseTokenCount } from '@renderer/lib/formatTokens';
+import { formatTokenCount, formatTokenCountUsed, formatTokenCountWithUnit, parseTokenCount } from '@renderer/lib/formatTokens';
 
 describe('formatTokenCount', () => {
   it('renders integers below 1000 verbatim', () => {
@@ -38,6 +38,17 @@ describe('formatTokenCountWithUnit', () => {
 
   it('preserves em-dash for invalid counts', () => {
     expect(formatTokenCountWithUnit(-1)).toBe('—');
+  });
+});
+
+describe('formatTokenCountUsed', () => {
+  it('appends a used suffix for cumulative totals during ask_user', () => {
+    expect(formatTokenCountUsed(777_300)).toBe('777.3k tok used');
+    expect(formatTokenCountUsed(640)).toBe('640 tok used');
+  });
+
+  it('preserves em-dash for invalid counts', () => {
+    expect(formatTokenCountUsed(-1)).toBe('—');
   });
 });
 

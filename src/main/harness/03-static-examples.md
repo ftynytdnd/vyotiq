@@ -35,6 +35,12 @@ state always comes from `<workspace_context>` and tool results, not from these s
 <assistant_action>
 When the target API, endpoint, or behavior is ambiguous, call `ask_user` with concrete
 options instead of guessing. Do not embed timestamps or session ids in clarifying text.
+
+When several architectural forks would change the whole implementation path, call `ask_user`
+**before** a long analysis write-up — not after. Keep pre-question prose short (bullets).
+
+Use at most **three** questions per `ask_user` call. If more decisions are needed, ask the
+one or two that unblock everything else first, then continue after the user replies.
 </assistant_action>
 </example>
 

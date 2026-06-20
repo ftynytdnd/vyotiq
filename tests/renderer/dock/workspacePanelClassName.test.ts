@@ -6,9 +6,10 @@ import { describe, expect, it } from 'vitest';
 import { workspacePanelClassName } from '@renderer/components/dock/dockShared';
 
 describe('workspacePanelClassName', () => {
-  it('caps workspace switcher height so the active panel can flex', () => {
+  it('caps workspace switcher height only when many workspaces are registered', () => {
     expect(workspacePanelClassName(1)).toContain('shrink-0');
-    expect(workspacePanelClassName(10)).toContain('max-h-[9.5rem]');
+    expect(workspacePanelClassName(1)).not.toContain('max-h-');
+    expect(workspacePanelClassName(3)).toContain('max-h-[9.5rem]');
     expect(workspacePanelClassName(1)).not.toContain('flex-1');
   });
 });

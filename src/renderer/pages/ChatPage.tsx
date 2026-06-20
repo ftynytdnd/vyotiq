@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useShallow } from 'zustand/react/shallow';
+import { focusComposer } from '../lib/focusComposer.js';
 import { Timeline } from '../components/timeline/Timeline.js';
 import { RevertPromptProvider } from '../components/timeline/revert/RevertPromptContext.js';
 import { ChatFooter } from './ChatFooter.js';
@@ -155,7 +156,13 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
   const prevCenterComposerRef = useRef(centerComposer);
   const [dockingFromCenter, setDockingFromCenter] = useState(false);
 
-  const focusSession = centerComposer ? (activeConversationId ?? 'landing') : null;
+  const focusSession = activeConversationId ?? 'landing';
+  const requestComposerFocus = !selecting && !needsSetup;
+
+  useEffect(() => {
+    if (!requestComposerFocus) return;
+    focusComposer();
+  }, [requestComposerFocus, focusSession]);
 
   useLandingConversationPrewarm({
     enabled: centerComposer,
@@ -207,7 +214,7 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
               onModelChange={handleModelChange}
               onOpenProviders={onOpenProviders}
               jumpOverlayHostRef={setJumpOverlayHost}
-              requestFocus={!selecting && !needsSetup}
+              requestFocus={requestComposerFocus}
               focusSession={focusSession}
             />
             </RegionErrorBoundary>
@@ -245,6 +252,8 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
                   onOpenProviders={onOpenProviders}
                   jumpOverlayHostRef={setJumpOverlayHost}
                   dockingFromCenter={dockingFromCenter}
+                  requestFocus={requestComposerFocus}
+                  focusSession={focusSession}
                 />
               </RegionErrorBoundary>
             </>

@@ -103,7 +103,7 @@ describe('DockFileTree', () => {
   it('shows truncation banner when filter tree is capped', async () => {
     const user = userEvent.setup();
     render(<DockFileTree workspaceId={WS} />);
-    await user.type(screen.getByPlaceholderText('Filter files…'), 'a');
+    await user.type(screen.getByPlaceholderText('Filter…'), 'a');
     await waitFor(() => {
       expect(screen.getByText(/Showing .* of 1200 files/)).toBeInTheDocument();
     });
@@ -114,7 +114,7 @@ describe('DockFileTree', () => {
     await waitFor(() => {
       expect(screen.getByText('readme.md')).toBeInTheDocument();
     });
-    const filter = screen.getByPlaceholderText('Filter files…');
+    const filter = screen.getByPlaceholderText('Filter…');
     fireEvent.change(filter, { target: { value: 'readme' } });
     await waitFor(() => {
       expect(screen.getByText('readme.md')).toBeInTheDocument();
@@ -147,7 +147,7 @@ describe('DockFileTree', () => {
     await waitFor(() => {
       const row = screen.getByRole('treeitem', { name: 'main.ts' });
       expect(row.className).toMatch(/vx-dock-file-tree-row-active/);
-      expect(row.className).toMatch(/bg-accent\/10/);
+      expect(row.className).toMatch(/text-text-primary/);
     });
   });
 

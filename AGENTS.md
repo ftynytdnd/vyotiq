@@ -1,9 +1,26 @@
+## Non-Negotiable Constraints
+
+- Implement real features, real workflows, real methods, and real UI/UX. Do not leave placeholder behavior, stub handlers, or TODO-only paths in user-facing flows.
+- Avoid unnecessary complexity and AI slop: minimal correct diffs, no over-abstraction, no duplicate modules, no speculative fallbacks.
+- Apply zero-memory-leak practices suitable for an always-on desktop agent: remove IPC/renderer listeners on unmount, clear timers/intervals, null window refs on `closed`, avoid accumulating `webContents` subscriptions; prefer `invoke`/`handle` over ad-hoc listener pairs; profile RSS + heap in production-like builds when investigating leaks.
+- Preserve Shell Mono styling, layout, UX patterns, features, and behavior across the entire codebase when fixing bugs or adding features — do not redesign unrelated surfaces. Match surrounding components (tokens in `src/renderer/index.css`, `vx-*` / `chrome*` utilities, `SurfaceShell`, feature-local CSS like `dock-flyout.css`); reuse and extend existing abstractions instead of one-off styles; keep selection, spacing, and interaction patterns consistent within a surface and with adjacent surfaces.
+- Never remove existing features or functionalities unless the user explicitly requests removal.
+- Every feature and UI surface must live in structured, modular files and folders — extend existing modules before creating new ones.
+
+## Implementation Workflow (before coding)
+
+1. **Analyze first** — read relevant code paths, `AGENTS.md`, `project.md`, and adjacent components; understand architecture (main/renderer/shared IPC, Zustand stores, harness + orchestrator loop, Shell Mono UI).
+2. **Search before creating** — grep/glob for overlapping functionality; extend or modify existing files rather than duplicating.
+3. **Integrate fully** — wire IPC, stores, settings persistence, tests, and styling tokens; run `pnpm build` and targeted Vitest after changes.
+4. **Research when needed** — for provider APIs, Electron lifecycle, security, or performance, use current (2026) docs rather than assumptions.
+5. **Ask brief questions** when requirements, behavior, or formatting are ambiguous — grounded in what the codebase already does.
+
 ## Learned User Preferences
 
 - Never assume, guess, or speculate — verify, confirm, and validate with codebase evidence, logs, screenshots, root or terminal output before reporting or fixing issues.
 - When implementing attached plans: do not edit the plan file; use existing todos (do not recreate); mark items in progress; finish all todos; then re-check the plan for missed items, gaps, duplications, and dead code.
 - Before large features or refactors: analyze the full codebase and ask brief, concise clarifying questions first.
-- Preserve existing Shell Mono styling, layout, and UX patterns when fixing bugs or adding features — do not redesign unrelated surfaces.
+- Preserve existing Shell Mono styling, layout, UX patterns, features, and behavior across the entire codebase when fixing bugs or adding features — do not redesign unrelated surfaces. (See **Non-Negotiable Constraints** above.)
 - Do not hardcode provider or model capabilities; dynamically discover models, context windows, and thinking/reasoning support via provider APIs.
 - When implementing provider or model features, research current (2026) docs and APIs online rather than relying on stale assumptions.
 - Model picker UX: group providers into categories, left-align model IDs, and place thinking-effort controls inline next to each model (not a separate dropdown).
@@ -27,3 +44,4 @@
 - HTML reports: Settings → Agent behavior → Reports (`settings.ui.reports`) — auto-open, in-app BrowserWindow, host ask_user gate after large edits, token-costing AI footer; free Quick summary via `reports:generate-run-summary`. Auto-open only for live settlements, not transcript replay.
 - Editor LSP: optional stdio bridge for in-app CodeMirror (Pyright + TS LS via Electron-as-Node); Settings → Editor LSP; not wired to agent `search`/`read`. Vector re-index: Settings → Vector memory; embedder changes trigger `reindexAllWorkspacesIfVectorMemoryChanged`. Memory append: `memory:write` mode `append` + Settings → Memory UI. `read`/`edit`/editor preserve BOM/EOL via `decodeDiskText.ts`.
 - Legacy phased execution removed: engine, harness `05-phased-execution.md`, and timeline rows purged; `normalizeLegacyTranscript.ts` strips `phase` / `phase-gate` / `phase-ledger-entry` on load. Tool re-run and tool permissions removed entirely. Supply chain: pnpm 11 with `minimumReleaseAge` (7 days), `blockExoticSubdeps`, `allowBuilds` in `pnpm-workspace.yaml`; hoisted `node-linker`; frozen `pnpm install --frozen-lockfile` in CI/release (`docs/supply-chain-security.md`); avoid `pnpm dlx` / `npx` for installs.
+- Left dock navigator (`DockNavigator`, `DockWorkspaceFolder`, `DockChatStrip`, `DockFilesPanel`): inline Repositories-style tree (workspaces → nested chats → files); per-workspace Files expand state in `useUiStore.filesExpandedWorkspaces`; placeholder chats display as **Untitled** via `displayChatTitles.ts`; selection uses subtle shared row tint in `dock-flyout.css` (no inset bars); workspace ⋯ actions inline on the folder row.

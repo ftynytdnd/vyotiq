@@ -16,7 +16,7 @@ const baseProps = {
 };
 
 describe('DockToolbar', () => {
-  it('shows icon-only nav controls in titlebar mode', () => {
+  it('hides new chat and search in titlebar while dock is expanded', () => {
     render(
       <DockToolbar
         layout="horizontal"
@@ -27,10 +27,24 @@ describe('DockToolbar', () => {
       />
     );
     expect(screen.getByRole('button', { name: 'Collapse navigation' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'New chat' })).toBeInTheDocument();
-    expect(screen.queryByText('New chat')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Search chats and files' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Search chats and files' })).toBeNull();
+  });
+
+  it('shows new chat and search in titlebar when dock is collapsed', () => {
+    render(
+      <DockToolbar
+        layout="horizontal"
+        titlebarMode
+        dockExpanded={false}
+        {...baseProps}
+        collapseIcon="right"
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Expand navigation' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New chat' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Search chats and files' })).toBeInTheDocument();
   });
 
   it('shows New chat label when dock is expanded (horizontal footer layout)', () => {

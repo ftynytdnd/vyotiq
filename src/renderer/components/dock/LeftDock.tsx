@@ -3,25 +3,19 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { DockNavigator } from './DockNavigator.js';
 import { DockSearchPopover } from './DockSearchPopover.js';
-import { DockWorkspaceTabs } from './DockWorkspaceTabs.js';
-import { DockWorkspacePanel } from './DockWorkspacePanel.js';
-import { DockSectionHeader } from './DockSectionHeader.js';
 import {
   clampDockWidth,
   DOCK_INSET_CLASS,
   DOCK_EDGE_CONTAINER_CLASS,
   DOCK_RESIZE_HANDLE_CLASS,
-  dockFlyoutShellClassName,
-  dockInlineActionClassName,
-  workspacePanelClassName
+  dockFlyoutShellClassName
 } from './dockShared.js';
 import { useDockShortcuts } from './useDockShortcuts.js';
 import { useWorkspaceTreeWatcher } from '../../hooks/useWorkspaceTreeWatcher.js';
 import { useUiStore } from '../../store/useUiStore.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
-import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
-import { useWorkbenchActive } from '../workbench/useWorkbenchActive.js';
 import { cn } from '../../lib/cn.js';
 
 export interface LeftDockProps {
@@ -45,10 +39,6 @@ export function LeftDock({
   const setDockWidth = useUiStore((s) => s.setDockWidth);
 
   const searchOpen = useDockSearchStore((s) => s.open);
-
-  const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
-  const workspaces = useWorkspaceStore((s) => s.list);
-  const workbenchActive = useWorkbenchActive();
 
   const [liveWidth, setLiveWidth] = useState<number | null>(null);
   const [isResizing, setIsResizing] = useState(false);
@@ -128,36 +118,12 @@ export function LeftDock({
       className={dockFlyoutShellClassName(isResizing)}
       style={{ width: `${expandedWidthPx}px` }}
     >
-      <div className={cn(DOCK_INSET_CLASS, 'h-full gap-1.5 py-1 pr-2')}>
+      <div className={cn(DOCK_INSET_CLASS, 'vx-dock-inset h-full py-1 pr-2')}>
         <DockSearchPopover />
-        <div className={workspacePanelClassName(workspaces.length)}>
-          <DockSectionHeader
-            label="Workspaces"
-            compact={workbenchActive}
-            actions={
-              <>
-                <button
-                  type="button"
-                  className={dockInlineActionClassName()}
-                  title="Open workspace folder (Ctrl+O)"
-                  onClick={onOpenWorkspace}
-                >
-                  Open…
-                </button>
-                <button
-                  type="button"
-                  className={dockInlineActionClassName()}
-                  title="Set workspace folder by path"
-                  onClick={onSetWorkspacePath}
-                >
-                  Set path…
-                </button>
-              </>
-            }
-          />
-          <DockWorkspaceTabs />
-        </div>
-        <DockWorkspacePanel workspaceId={activeWorkspaceId} />
+        <DockNavigator
+          onOpenWorkspace={onOpenWorkspace}
+          onSetWorkspacePath={onSetWorkspacePath}
+        />
       </div>
       <div
         role="separator"

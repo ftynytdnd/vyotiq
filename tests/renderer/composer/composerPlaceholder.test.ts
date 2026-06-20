@@ -56,17 +56,18 @@ describe('resolveComposerPlaceholder', () => {
     expect(COMPOSER_PROCESSING_PLACEHOLDER).toBe('@ to mention files…');
   });
 
-  it('returns ask-user copy when awaiting interactive answers', () => {
+  it('returns ask-user supplement copy for any pending reply', () => {
     expect(
       resolveComposerPlaceholder({
         landing: false,
         storeDraft: '',
         editorPlain: '',
         eventsLength: 2,
-        awaitingAskUser: true
+        needsAskUserReply: true
       })
     ).toBe(COMPOSER_ASK_USER_PLACEHOLDER);
-    expect(COMPOSER_ASK_USER_PLACEHOLDER).toMatch(/Queue/i);
+    expect(COMPOSER_ASK_USER_PLACEHOLDER).toMatch(/Optional prose/i);
+    expect(COMPOSER_ASK_USER_PLACEHOLDER).toMatch(/Queue defers/i);
   });
 
   it('returns edit-queued copy when a queued follow-up is open in the composer', () => {
@@ -90,7 +91,7 @@ describe('resolveComposerPlaceholder', () => {
         editorPlain: '',
         eventsLength: 2,
         isProcessing: true,
-        awaitingAskUser: true
+        needsAskUserReply: true
       })
     ).toBe(COMPOSER_ASK_USER_PLACEHOLDER);
   });

@@ -2,7 +2,7 @@
  * Capture picker — grouped displays/windows with preview thumbnails.
  */
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useLayoutEffect, useRef } from 'react';
 import { AppWindow, Loader2, Monitor } from 'lucide-react';
 import type { CaptureSourceInfo } from '@shared/types/capture.js';
 import {
@@ -59,6 +59,22 @@ export function CapturePickerPanel({
   const panelRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const scrollFromKeyboardRef = useRef(false);
+  const didAutofocusRef = useRef(false);
+
+  useLayoutEffect(() => {
+    if (didAutofocusRef.current) return;
+    didAutofocusRef.current = true;
+    const firstRow = panelRef.current?.querySelector<HTMLElement>('[role="menuitem"]');
+    if (!firstRow) return;
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLElement &&
+      (panelRef.current?.contains(active) || firstRow.contains(active))
+    ) {
+      return;
+    }
+    firstRow.focus();
+  }, []);
 
   const { screens: allScreens, windows: allWindows } = groupCaptureSources(sources);
   const { screens, windows } = filterGroupedCaptureSources(allScreens, allWindows, query);

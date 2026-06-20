@@ -35,7 +35,7 @@ describe('DockWorkspaceTabs', () => {
     const remove = vi.fn(async () => {});
     useWorkspaceStore.setState({ remove } as never);
 
-    render(<DockWorkspaceTabs />);
+    render(<DockWorkspaceTabs layout="vertical" />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove workspace' }));
     expect(screen.getByText('Remove this workspace?')).toBeInTheDocument();
@@ -52,7 +52,7 @@ describe('DockWorkspaceTabs', () => {
     const remove = vi.fn(async () => {});
     useWorkspaceStore.setState({ remove } as never);
 
-    render(<DockWorkspaceTabs />);
+    render(<DockWorkspaceTabs layout="vertical" />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove workspace' }));
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
@@ -68,7 +68,7 @@ describe('DockWorkspaceTabs', () => {
       retryReachability
     } as never);
 
-    render(<DockWorkspaceTabs />);
+    render(<DockWorkspaceTabs layout="vertical" />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Workspace unreachable' }));
     expect(screen.getByText('Retry path?')).toBeInTheDocument();

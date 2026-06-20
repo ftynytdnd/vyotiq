@@ -17,6 +17,8 @@ import type {
 import type { ActiveRunInfo } from '@shared/types/ipc.js';
 import type { AskUserSubmitInput } from '@shared/types/askUser.js';
 import { IPC } from '@shared/constants.js';
+import { defaultAttachmentPrompt } from '@shared/attachments/defaultAttachmentPrompt.js';
+import { mediaKindFromMeta } from '@shared/attachments/mediaKind.js';
 import { formatAskUserReplyBubble, formatAskUserToolResult } from '@shared/text/formatAskUserAnswers.js';
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import { requestUserAttention } from '../window/requestUserAttention.js';
@@ -323,20 +325,6 @@ export async function startRun(
     setActiveWorkspaceForRun(abort.signal, input.workspaceId);
   }
 
-  if (input.attachmentMeta) {
-    for (const meta of input.attachmentMeta) {
-      if (!meta.workspacePath) continue;
-      seedCachedRead(abort.signal, meta.workspacePath);
-      emit({
-        kind: 'attachment-pre-read',
-        id: randomUUID(),
-        ts: Date.now(),
-        path: meta.workspacePath,
-        runId: input.runId
-      });
-    }
-  }
-
   let resolvedWorkspaceId = input.workspaceId ?? '';
 
   // Open the run's checkpoint manifest BEFORE the loop body so any
@@ -375,7 +363,8 @@ export async function startRun(
   }
 
   try {
-    const { messages: initialMessages, persistedAttachments } = await buildInitialMessages(
+    const { messages: initialMessages, persistedAttachments, replayedMessageCount } =
+      await buildInitialMessages(
       input,
       workspacePath,
       priorTranscript,
@@ -402,21 +391,37 @@ export async function startRun(
       providerId: input.selection.providerId,
       modelId: input.selection.modelId
     });
+    if (input.attachmentMeta) {
+      for (const meta of input.attachmentMeta) {
+        if (!meta.workspacePath) continue;
+        const mediaKind =
+          meta.mediaKind ?? mediaKindFromMeta({ name: meta.name, mimeType: meta.mimeType });
+        if (mediaKind === 'text') {
+          seedCachedRead(abort.signal, meta.workspacePath);
+        }
+        emit({
+          kind: 'attachment-pre-read',
+          id: randomUUID(),
+          ts: Date.now(),
+          path: meta.workspacePath,
+          mediaKind,
+          runId: input.runId
+        });
+      }
+    }
     // Surface the replay shape for triage. A non-fresh conversation MUST
     // produce `priorEventCount > 0` AND `replayedMessageCount > 0`; a
     // zero on either when the conversation has prior turns is the
     // smoking gun for the "agent has no memory" race we hardened
-    // against in `readTranscript` + `drainAppendChain`. The subtraction
-    // accounts for the system placeholder + the just-built user
-    // envelope so the count reflects ONLY messages reconstructed from
-    // history.
+    // against in `readTranscript` + `drainAppendChain`.
     log.info('orchestrator run start', {
       runId: input.runId,
       conversationId: input.conversationId,
       providerId: input.selection.providerId,
       modelId: input.selection.modelId,
       priorEventCount: priorTranscript?.length ?? 0,
-      replayedMessageCount: Math.max(0, initialMessages.length - 2)
+      replayedMessageCount,
+      promptMessageCount: initialMessages.length
     });
     await runLoopBody({
       input,
@@ -584,7 +589,10 @@ export async function submitAskUserAnswers(input: AskUserSubmitInput): Promise<b
       kind: 'user-prompt',
       id: userPromptId,
       ts,
-      content: displayText.length > 0 ? displayText : 'See attached files.',
+      content:
+        displayText.length > 0
+          ? displayText
+          : defaultAttachmentPrompt(input.attachmentMeta ?? []),
       runId: input.runId,
       ...(input.attachmentMeta?.length ? { attachments: input.attachmentMeta } : {})
     });
@@ -695,7 +703,11 @@ async function buildInitialMessages(
    * keep the legacy four-arg shape.
    */
   signal?: AbortSignal
-): Promise<{ messages: ChatMessage[]; persistedAttachments?: PromptAttachmentMeta[] }> {
+): Promise<{
+  messages: ChatMessage[];
+  persistedAttachments?: PromptAttachmentMeta[];
+  replayedMessageCount: number;
+}> {
   const source = priorTranscript ?? [];
   const replayEvents: TimelineEvent[] = [];
   for (const e of source) {
@@ -740,7 +752,8 @@ async function buildInitialMessages(
 
   return {
     messages: seedCacheLayeredMessages(replayed, userMessage.content ?? ''),
-    persistedAttachments
+    persistedAttachments,
+    replayedMessageCount: replayed.length
   };
 }
 

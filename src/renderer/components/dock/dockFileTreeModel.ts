@@ -10,7 +10,7 @@ export interface DockTreeNode {
 }
 
 export const DOCK_TREE_INDENT_PX = 16;
-export const DOCK_TREE_ROW_HEIGHT_PX = 28;
+export const DOCK_TREE_ROW_HEIGHT_PX = 30;
 
 export interface FlatTreeRow {
   path: string;

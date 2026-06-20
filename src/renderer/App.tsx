@@ -125,6 +125,7 @@ export default function App() {
   useEffect(() => {
     if (!settingsReady || uiHydrated) return;
     const collapsed = settings.ui?.collapsedWorkspaces;
+    const filesExpanded = settings.ui?.filesExpandedWorkspaces;
     const dockExpanded =
       settings.ui?.dockExpanded ??
       (settings.ui?.sidebarOpen !== undefined ? settings.ui.sidebarOpen : false);
@@ -132,7 +133,8 @@ export default function App() {
       dockExpanded,
       dockWidth: settings.ui?.dockWidth,
       workbenchPaneWidth: settings.ui?.workbenchPaneWidth,
-      collapsedWorkspaces: collapsed
+      collapsedWorkspaces: collapsed,
+      filesExpandedWorkspaces: filesExpanded
     });
     if (
       settings.ui?.sidebarOpen !== undefined &&

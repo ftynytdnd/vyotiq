@@ -5,7 +5,7 @@
 import type { ToolCall, ToolResult, DiffHunk } from './tool.js';
 import type { ModelSelection, ThinkingEffort } from './provider.js';
 import type { CheckpointChangeKind } from './checkpoint.js';
-import type { AskUserStructuredPayload } from './askUser.js';
+import type { AskUserAnswer, AskUserStructuredPayload } from './askUser.js';
 import type { MentionRef } from './mention.js';
 import type { ContextUsageBreakdown } from '../context/contextLevel.js';
 
@@ -367,6 +367,7 @@ export type TimelineEvent =
     id: string;
     ts: number;
     path: string;
+    mediaKind?: AttachmentMediaKind;
     runId?: string;
   }
   /**

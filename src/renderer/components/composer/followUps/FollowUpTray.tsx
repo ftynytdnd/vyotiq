@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pencil, Trash2, ArrowUp } from 'lucide-react';
 import type { FollowUpMessage, FollowUpSource } from '@shared/types/followUp.js';
 import type { ModelSelection } from '@shared/types/provider.js';
+import { defaultAttachmentPrompt } from '@shared/attachments/defaultAttachmentPrompt.js';
 import { PromptAttachmentCards } from '../PromptAttachmentCards.js';
 import { cn } from '../../../lib/cn.js';
 import {
@@ -59,7 +60,11 @@ interface FollowUpRowBodyProps {
 }
 
 function FollowUpRowBody({ item, editing = false, stale = false }: FollowUpRowBodyProps) {
-  const promptText = item.prompt || 'See attached files.';
+  const promptText =
+    item.prompt ||
+    (item.attachmentMeta && item.attachmentMeta.length > 0
+      ? defaultAttachmentPrompt(item.attachmentMeta)
+      : 'See attached files.');
   return (
     <div className="vx-composer-followup-row__body min-w-0 flex-1">
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -83,6 +88,7 @@ function FollowUpRowBody({ item, editing = false, stale = false }: FollowUpRowBo
 interface QueuedFollowUpListProps {
   items: FollowUpMessage[];
   editingQueuedId?: string | null;
+  awaitingAskUser?: boolean;
   onEdit: (item: FollowUpMessage) => void;
   onRemove: (id: string) => void;
   onSendNow: (id: string) => void;
@@ -91,6 +97,7 @@ interface QueuedFollowUpListProps {
 export function QueuedFollowUpList({
   items,
   editingQueuedId = null,
+  awaitingAskUser = false,
   onEdit,
   onRemove,
   onSendNow
@@ -133,9 +140,14 @@ export function QueuedFollowUpList({
                 </button>
                 <button
                   type="button"
-                  className={cn('vx-btn vx-btn-quiet h-6 px-2 text-meta')}
+                  className={cn('vx-btn vx-btn-quiet h-6 px-2 text-meta', awaitingAskUser && 'opacity-50')}
                   aria-label="Send now"
-                  title="Send now"
+                  title={
+                    awaitingAskUser
+                      ? 'Reply to clarifying questions before sending a queued follow-up'
+                      : 'Send now'
+                  }
+                  disabled={awaitingAskUser}
                   onClick={() => void onSendNow(item.id)}
                 >
                   Send now
@@ -207,6 +219,7 @@ interface FollowUpTrayHostProps {
   queued: FollowUpMessage[];
   visible: boolean;
   isRunActive: boolean;
+  awaitingAskUser?: boolean;
   editingQueuedId?: string | null;
   onEditQueued: (item: FollowUpMessage) => void;
   onRemove: (id: string) => void;
@@ -218,6 +231,7 @@ export function FollowUpTrayHost({
   queued,
   visible,
   isRunActive,
+  awaitingAskUser = false,
   editingQueuedId = null,
   onEditQueued,
   onRemove,
@@ -257,6 +271,7 @@ export function FollowUpTrayHost({
       <QueuedFollowUpList
         items={queued}
         editingQueuedId={editingQueuedId}
+        awaitingAskUser={awaitingAskUser}
         onEdit={onEditQueued}
         onRemove={onRemove}
         onSendNow={onSendNow}

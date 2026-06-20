@@ -4,6 +4,7 @@
  */
 
 import { Plus } from 'lucide-react';
+import { attachmentIngestLimitHint } from '@shared/attachments/attachmentSizeLimits.js';
 import { cn } from '../../lib/cn.js';
 import { chromeToolbarButtonClassName } from '../ui/SurfaceShell.js';
 import { SHELL_CHROME_ICON_CLASS, SHELL_CHROME_ICON_STROKE } from '../../lib/shellIcons.js';
@@ -19,7 +20,8 @@ export function AttachmentButton({
 }: AttachmentButtonProps) {
   const title = disabled
     ? 'Start a chat before attaching files'
-    : 'Attach file from computer';
+    : attachmentIngestLimitHint();
+  const ariaLabel = disabled ? title : 'Attach file from computer';
 
   return (
     <button
@@ -28,7 +30,7 @@ export function AttachmentButton({
         if (disabled) return;
         onPickFromComputer();
       }}
-      aria-label={title}
+      aria-label={ariaLabel}
       title={title}
       disabled={disabled}
       className={cn(

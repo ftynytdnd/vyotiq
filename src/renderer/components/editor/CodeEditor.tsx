@@ -24,6 +24,7 @@ import { lspDiagnosticsExtension } from './codemirrorDiagnostics.js';
 import { lspClientExtensions, type LspEditorBridge } from './codemirrorLsp.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { useEditorStore } from '../../store/useEditorStore.js';
+import { registerEditorDomFocus } from '../../lib/workbenchFocusDom.js';
 
 export interface CodeEditorInlineCompletionConfig {
   enabled: boolean;
@@ -246,6 +247,13 @@ export function CodeEditor({
     // Remeasure after tab switch — hidden/invisible panes can report wrong layout.
     requestAnimationFrame(() => view.requestMeasure());
   }, [filePath, lspBridge, active]);
+
+  useEffect(() => {
+    if (!active) return;
+    return registerEditorDomFocus(() => {
+      viewRef.current?.focus();
+    });
+  }, [active, filePath]);
 
   return (
     <div

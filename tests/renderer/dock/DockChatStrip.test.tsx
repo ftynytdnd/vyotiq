@@ -69,4 +69,11 @@ describe('DockChatStrip', () => {
     await userEvent.click(screen.getByRole('button', { name: /Archived \(1\)/i }));
     expect(screen.getByRole('tab', { name: /Old chat/i })).toBeInTheDocument();
   });
+
+  it('exposes delete on hover for nested session rows', async () => {
+    render(<DockChatStrip workspaceId={WS} nested />);
+    const tab = screen.getByRole('tab', { name: /Alpha/i });
+    await userEvent.hover(tab);
+    expect(screen.getByRole('button', { name: 'Delete chat' })).toBeInTheDocument();
+  });
 });

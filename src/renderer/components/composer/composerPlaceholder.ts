@@ -1,5 +1,7 @@
 /** Composer placeholder copy — landing, active run, ask_user, and follow-up lanes. */
 
+import { ASK_USER_COMPOSER_PLACEHOLDER, ASK_USER_QUEUE_DEFERRAL } from '@shared/askUser/askUserCopy.js';
+
 export const COMPOSER_LANDING_PLACEHOLDER =
   '@ to mention files, or describe what Agent V should work on…';
 
@@ -15,9 +17,8 @@ export const COMPOSER_PROCESSING_PLACEHOLDER = '@ to mention files…';
 export const COMPOSER_PROCESSING_RUN_HINT =
   'Send steers mid-run · Queue before finish';
 
-/** ask_user overlay — Send submits answers; Queue still available. */
-export const COMPOSER_ASK_USER_PLACEHOLDER =
-  'Answer above · Queue defers until after you reply…';
+/** ask_user pause — composer is for optional supplement text only. */
+export const COMPOSER_ASK_USER_PLACEHOLDER = `${ASK_USER_COMPOSER_PLACEHOLDER} · ${ASK_USER_QUEUE_DEFERRAL}…`;
 
 /** Queued follow-up open in the composer for in-place edit. */
 export const COMPOSER_EDIT_QUEUED_PLACEHOLDER =
@@ -29,11 +30,11 @@ export function resolveComposerPlaceholder(opts: {
   editorPlain: string;
   eventsLength: number;
   isProcessing?: boolean;
-  awaitingAskUser?: boolean;
+  needsAskUserReply?: boolean;
   editingQueued?: boolean;
 }): string {
   if (opts.editingQueued) return COMPOSER_EDIT_QUEUED_PLACEHOLDER;
-  if (opts.awaitingAskUser) return COMPOSER_ASK_USER_PLACEHOLDER;
+  if (opts.needsAskUserReply) return COMPOSER_ASK_USER_PLACEHOLDER;
   if (opts.isProcessing) return COMPOSER_PROCESSING_PLACEHOLDER;
 
   if (!opts.landing) return COMPOSER_DEFAULT_PLACEHOLDER;

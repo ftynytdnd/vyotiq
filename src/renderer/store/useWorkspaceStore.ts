@@ -172,6 +172,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((setState, getState) => 
     maybeInvalidate(prev.info, info);
     if (prev.activeId) disposeLspClient(prev.activeId);
     setState({ activeId: id, info });
+    const filesExpanded = useUiStore.getState().filesExpandedWorkspaces.has(id);
+    useUiStore.setState({ dockPanelTab: filesExpanded ? 'files' : 'chats' });
     try {
       const next = await vyotiq.workspace.setActive(id);
       // Reconcile against main's authoritative response. The optimistic

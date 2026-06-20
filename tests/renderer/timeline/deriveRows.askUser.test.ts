@@ -59,4 +59,27 @@ describe('deriveRows — ask_user', () => {
     expect(rows.some((r) => r.kind === 'tool-group' && r.toolName === 'ask_user')).toBe(false);
     expect(rows.some((r) => r.kind === 'ask-user-prompt')).toBe(true);
   });
+
+  it('omits overlay ask-user-prompt rows from the timeline', () => {
+    const events: TimelineEvent[] = [
+      {
+        kind: 'ask-user-prompt',
+        id: 'prompt-multi',
+        ts: 1,
+        displayText: 'Refinement',
+        toolCallId: 'tc-1',
+        runId: 'run-1',
+        payload: {
+          title: 'Implementation Refinement Questions',
+          questions: [
+            { id: 'q1', prompt: 'Q1', options: [{ id: 'a', label: 'A' }] },
+            { id: 'q2', prompt: 'Q2', options: [{ id: 'b', label: 'B' }] },
+            { id: 'q3', prompt: 'Q3', options: [{ id: 'c', label: 'C' }] }
+          ]
+        }
+      }
+    ];
+    const rows = deriveRows(events);
+    expect(rows.some((r) => r.kind === 'ask-user-prompt')).toBe(false);
+  });
 });

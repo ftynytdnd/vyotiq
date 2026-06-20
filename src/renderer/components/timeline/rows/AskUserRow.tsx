@@ -12,15 +12,17 @@ interface AskUserRowProps {
   toolCallId: string;
   runId: string;
   status?: 'pending' | 'submitted';
+  source?: 'host-report-gate';
 }
 
-export function AskUserRow({ payload, displayText, promptEventId, status }: AskUserRowProps) {
+export function AskUserRow({ payload, displayText, promptEventId, status, source }: AskUserRowProps) {
   return (
     <AskUserCompactRow
       payload={payload}
       displayText={displayText}
       promptEventId={promptEventId}
       {...(status ? { status } : {})}
+      {...(source ? { source } : {})}
     />
   );
 }

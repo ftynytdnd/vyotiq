@@ -3,8 +3,8 @@
  * settings validation / migration so stale on-disk values cannot block saves.
  */
 
-export const DOCK_WIDTH_DEFAULT = 260;
-export const DOCK_WIDTH_MIN = 220;
+export const DOCK_WIDTH_DEFAULT = 300;
+export const DOCK_WIDTH_MIN = 240;
 export const DOCK_WIDTH_MAX = 320;
 
 /** Persistent left edge strip width (px) — flyout expands to the right. */

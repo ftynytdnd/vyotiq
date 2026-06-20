@@ -1,4 +1,4 @@
-﻿/**
+/**
  * DockToolbar — footer / collapsed-rail actions (composer-aligned h-6 pills).
  */
 
@@ -106,7 +106,9 @@ export function DockToolbar({
     titlebarMode && layout === 'horizontal'
       ? settingsMode
         ? ['back']
-        : ['collapse', 'new', 'search', 'settings']
+        : dockExpanded
+          ? ['collapse', 'settings']
+          : ['collapse', 'new', 'search', 'settings']
       : layout === 'horizontal'
         ? settingsMode
           ? ['back']

@@ -9,6 +9,7 @@ import { useEditorStore } from '../../store/useEditorStore.js';
 import { useTerminalStore } from '../../store/useTerminalStore.js';
 import { useUiStore } from '../../store/useUiStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
+import { focusActiveWorkbenchDom } from '../../lib/workbenchFocusDom.js';
 
 /** Workbench pane tabs — agent chat stays in the left column. */
 export type CompanionTab = 'editor' | 'terminal' | 'browser' | 'preview';
@@ -157,11 +158,13 @@ function focusWorkbenchFocusTarget(target: WorkbenchFocusTarget): void {
       void terminal.openPanel(workspaceId);
     } else {
       focusWorkbenchTab('terminal');
+      focusActiveWorkbenchDom('terminal');
     }
     return;
   }
   if (target === 'browser') {
     focusWorkbenchTab('browser');
+    focusActiveWorkbenchDom('browser');
     return;
   }
   if (target === 'preview') {
@@ -170,6 +173,7 @@ function focusWorkbenchFocusTarget(target: WorkbenchFocusTarget): void {
   }
   useEditorStore.getState().setActiveTab(target.editor);
   focusWorkbenchTab('editor');
+  focusActiveWorkbenchDom('editor');
 }
 
 export function cycleWorkbenchFocus(direction: 'prev' | 'next'): void {
