@@ -14,6 +14,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { useWorkspaceStore } from '@renderer/store/useWorkspaceStore';
 import { useSettingsStore } from '@renderer/store/useSettingsStore';
+import { useUiStore } from '@renderer/store/useUiStore';
 import type { AppSettings } from '@shared/types/ipc';
 
 beforeEach(async () => {
@@ -34,9 +35,14 @@ beforeEach(async () => {
           'ws-A': { providerId: 'p', modelId: 'm' },
           'ws-B': { providerId: 'p', modelId: 'm2' }
         },
+        filesExpandedWorkspaces: ['ws-A']
       }
     },
     loading: false
+  });
+  useUiStore.setState({
+    filesExpandedWorkspaces: new Set(['ws-A']),
+    hydrated: true
   });
   // Stub IPCs touched by `workspace.remove`.
   window.vyotiq.workspace.remove = vi.fn(async () => ({
@@ -108,5 +114,7 @@ describe('workspace.remove — settings cascade', () => {
       providerId: 'p',
       modelId: 'm2'
     });
+    expect(ui.filesExpandedWorkspaces ?? []).not.toContain('ws-A');
+    expect(useUiStore.getState().filesExpandedWorkspaces.has('ws-A')).toBe(false);
   });
 });

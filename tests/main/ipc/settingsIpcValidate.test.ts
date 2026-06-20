@@ -86,6 +86,15 @@ describe('registerSettingsIpc — SETTINGS_SET payload validation', () => {
     expect(setSettingsMock).not.toHaveBeenCalled();
   });
 
+  it('accepts filesExpandedWorkspaces', async () => {
+    await mockIpc.__invoke(IPC.SETTINGS_SET, {
+      ui: { filesExpandedWorkspaces: ['ws-1', 'ws-2'] }
+    });
+    expect(setSettingsMock).toHaveBeenCalledWith({
+      ui: { filesExpandedWorkspaces: ['ws-1', 'ws-2'] }
+    });
+  });
+
   it('accepts fileTreeExpandedByWorkspace', async () => {
     await mockIpc.__invoke(IPC.SETTINGS_SET, {
       ui: { fileTreeExpandedByWorkspace: { 'ws-1': ['src', 'docs'] } }

@@ -37,6 +37,7 @@ const UI_RECORD_KEYS = [
   'expandedRows',
   'activeConversationByWorkspace',
   'collapsedWorkspaces',
+  'filesExpandedWorkspaces',
   'lastModelByWorkspace',
   'panelWidths',
   'pinnedConversationIds',
@@ -199,6 +200,11 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
   }
   if ('collapsedWorkspaces' in ui && ui.collapsedWorkspaces !== undefined) {
     assertStringArray(channel, 'patch.ui.collapsedWorkspaces', ui.collapsedWorkspaces, {
+      maxItems: UI_RECORD_MAX_KEYS
+    });
+  }
+  if ('filesExpandedWorkspaces' in ui && ui.filesExpandedWorkspaces !== undefined) {
+    assertStringArray(channel, 'patch.ui.filesExpandedWorkspaces', ui.filesExpandedWorkspaces, {
       maxItems: UI_RECORD_MAX_KEYS
     });
   }

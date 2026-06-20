@@ -137,6 +137,7 @@ interface UiStore {
   setWorkbenchTab: (tab: WorkbenchTab) => void;
   toggleWorkspaceCollapsed: (workspaceId: string) => void;
   clearWorkspaceCollapsed: (workspaceId: string) => void;
+  clearWorkspaceFilesExpanded: (workspaceId: string) => void;
   hydrate: (init: {
     dockExpanded: boolean;
     dockWidth?: number;
@@ -259,6 +260,14 @@ export const useUiStore = create<UiStore>((set, get) => ({
     next.delete(workspaceId);
     set({ collapsedWorkspaces: next });
     if (get().hydrated) persistCollapsedWorkspaces(next);
+  },
+  clearWorkspaceFilesExpanded: (workspaceId) => {
+    const current = get().filesExpandedWorkspaces;
+    if (!current.has(workspaceId)) return;
+    const next = new Set(current);
+    next.delete(workspaceId);
+    set({ filesExpandedWorkspaces: next });
+    if (get().hydrated) persistFilesExpandedWorkspaces(next);
   },
   hydrate: ({ dockExpanded, dockWidth, workbenchPaneWidth, collapsedWorkspaces, filesExpandedWorkspaces }) => {
     const filesExpanded = new Set(filesExpandedWorkspaces ?? []);

@@ -18,7 +18,7 @@
  *
  * Notes on coverage scope:
  *   - The debounced `ui.dockExpanded` / `ui.collapsedWorkspaces` /
- *     `ui.expandedRows` writers are flushed explicitly via the
+ *     `ui.filesExpandedWorkspaces` / `ui.expandedRows` writers are flushed explicitly via the
  *     `flushUiPersistence` / `flushTimelineUiPersistence` exports so we
  *     can assert against the IPC mock without sleeping.
  */
@@ -48,6 +48,7 @@ beforeEach(() => {
     dockExpanded: true,
     dockWidth: 260,
     collapsedWorkspaces: new Set<string>(),
+    filesExpandedWorkspaces: new Set<string>(),
     hydrated: true
   });
   useTimelineUiStore.setState({
@@ -146,6 +147,24 @@ describe('AppSettings.ui — debounced fields persist via useUiStore + flush', (
       ui: { collapsedWorkspaces: [] }
     });
   });
+
+  it('filesExpandedWorkspaces: setWorkspaceFilesExpanded schedules a flush, flushUiPersistence drains it', () => {
+    useUiStore.getState().setWorkspaceFilesExpanded('ws-A', true);
+    flushUiPersistence();
+
+    expect(setSpy()).toHaveBeenCalledTimes(1);
+    expect(setSpy()).toHaveBeenCalledWith({
+      ui: { filesExpandedWorkspaces: ['ws-A'] }
+    });
+
+    setSpy().mockClear();
+    useUiStore.getState().setWorkspaceFilesExpanded('ws-A', false);
+    flushUiPersistence();
+    expect(setSpy()).toHaveBeenCalledTimes(1);
+    expect(setSpy()).toHaveBeenCalledWith({
+      ui: { filesExpandedWorkspaces: [] }
+    });
+  });
 });
 
 describe('AppSettings.ui — debounced fields persist via useTimelineUiStore + flush', () => {
@@ -167,7 +186,8 @@ describe('purgeWorkspaceFromUi: single IPC sweeps every per-workspace map', () =
         ui: {
           activeConversationByWorkspace: { 'ws-A': 'c1' },
           lastModelByWorkspace: { 'ws-A': { providerId: 'p', modelId: 'm' } },
-          collapsedWorkspaces: ['ws-A']
+          collapsedWorkspaces: ['ws-A'],
+          filesExpandedWorkspaces: ['ws-A']
         }
       },
       loading: false
@@ -181,5 +201,42 @@ describe('purgeWorkspaceFromUi: single IPC sweeps every per-workspace map', () =
     expect('ws-A' in (ui.activeConversationByWorkspace ?? {})).toBe(false);
     expect('ws-A' in (ui.lastModelByWorkspace ?? {})).toBe(false);
     expect(ui.collapsedWorkspaces ?? []).not.toContain('ws-A');
+    expect(ui.filesExpandedWorkspaces ?? []).not.toContain('ws-A');
+  });
+});
+
+describe('filesExpandedWorkspaces: removed workspace id must not repersist on later toggle', () => {
+  it('clearWorkspaceFilesExpanded + purge prevents stale in-memory id from flushing back', async () => {
+    useUiStore.setState({
+      filesExpandedWorkspaces: new Set(['ws-removed', 'ws-keep']),
+      hydrated: true
+    });
+    useSettingsStore.setState({
+      settings: {
+        ui: { filesExpandedWorkspaces: ['ws-removed', 'ws-keep'] }
+      },
+      loading: false
+    });
+
+    useUiStore.getState().clearWorkspaceFilesExpanded('ws-removed');
+    await useSettingsStore.getState().purgeWorkspaceFromUi('ws-removed');
+    setSpy().mockClear();
+
+    useUiStore.getState().toggleWorkspaceFilesExpanded('ws-keep');
+    flushUiPersistence();
+
+    expect(setSpy()).toHaveBeenCalledTimes(1);
+    expect(setSpy()).toHaveBeenCalledWith({
+      ui: { filesExpandedWorkspaces: [] }
+    });
+
+    setSpy().mockClear();
+    useUiStore.getState().toggleWorkspaceFilesExpanded('ws-keep');
+    flushUiPersistence();
+
+    expect(setSpy()).toHaveBeenCalledTimes(1);
+    expect(setSpy()).toHaveBeenCalledWith({
+      ui: { filesExpandedWorkspaces: ['ws-keep'] }
+    });
   });
 });

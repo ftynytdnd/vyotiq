@@ -236,6 +236,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((setState, getState) => 
       }
       useDockFileTreeSelectionStore.getState().clearWorkspaceSelection(id);
       useUiStore.getState().clearWorkspaceCollapsed(id);
+      useUiStore.getState().clearWorkspaceFilesExpanded(id);
       cancelFileTreeExpandedPersist(id);
       cancelEditorTabsPersist(id);
       await useConversationsStore.getState().reconcileWithMain();

@@ -24,7 +24,8 @@ describe('purgeWorkspaceFromUi', () => {
             'ws-A': { providerId: 'p', modelId: 'm' },
             'ws-B': { providerId: 'p', modelId: 'm2' }
           },
-          collapsedWorkspaces: ['ws-A', 'ws-B']
+          collapsedWorkspaces: ['ws-A', 'ws-B'],
+          filesExpandedWorkspaces: ['ws-A', 'ws-B']
         }
       },
       loading: false
@@ -40,6 +41,7 @@ describe('purgeWorkspaceFromUi', () => {
     expect('ws-A' in (ui.activeConversationByWorkspace ?? {})).toBe(false);
     expect('ws-A' in (ui.lastModelByWorkspace ?? {})).toBe(false);
     expect(ui.collapsedWorkspaces ?? []).not.toContain('ws-A');
+    expect(ui.filesExpandedWorkspaces ?? []).not.toContain('ws-A');
     expect((ui.activeConversationByWorkspace ?? {})['ws-B']).toBe('c2');
     expect(ui.collapsedWorkspaces ?? []).toContain('ws-B');
   });
