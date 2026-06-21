@@ -17,7 +17,7 @@ export interface BashDefaultTimeout {
   timeoutMs: number;
   /** Prefer an isolated shell so long test/build runs do not block the shared PTY. */
   isolated: boolean;
-  category?: 'test' | 'build' | 'install';
+  category?: 'test' | 'build' | 'install' | 'search';
 }
 
 const INSTALL_RE =
@@ -32,6 +32,10 @@ const TEST_RE =
   /\b(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?(?:test|vitest|jest|check|lint|typecheck|type-check)\b/i;
 
 const OTHER_TEST_RE = /\b(?:npx\s+(?:vitest|jest)|cargo\s+(?:test|check)|go\s+test|pytest)\b/i;
+
+/** Recursive workspace walks — often exceed 30 s on large trees. */
+const RECURSIVE_SEARCH_RE =
+  /\bGet-ChildItem\b[^\n;|&]*-Recurse\b|\b(?:Select-String|rg|grep)\b[^\n;|&]*-(?:r|Recurse)\b|\bfind\s+\S+/i;
 
 /**
  * Resolve the default timeout when the model omits `timeoutMs`.
@@ -50,6 +54,9 @@ export function resolveBashDefaultTimeout(command: string): BashDefaultTimeout {
   }
   if (TEST_RE.test(c) || OTHER_TEST_RE.test(c)) {
     return { timeoutMs: BASH_TEST_TIMEOUT_MS, isolated: true, category: 'test' };
+  }
+  if (RECURSIVE_SEARCH_RE.test(c)) {
+    return { timeoutMs: BASH_TEST_TIMEOUT_MS, isolated: true, category: 'search' };
   }
   return { timeoutMs: BASH_TIMEOUT_MS, isolated: false };
 }
@@ -75,6 +82,12 @@ export function formatBashTimeoutHint(
     return (
       `Command timed out after ${timeoutMs} ms. Tests and checks often need more than 30 s — retry with ` +
       `timeoutMs up to ${BASH_TEST_TIMEOUT_MS} (or higher, max 30 min) and shared:false.`
+    );
+  }
+  if (category === 'search') {
+    return (
+      `Command timed out after ${timeoutMs} ms. Recursive directory searches can be slow — retry with ` +
+      `timeoutMs up to ${BASH_TEST_TIMEOUT_MS} (or higher, max 30 min) and shared:false, or prefer the \`search\` / \`ls\` tools.`
     );
   }
   return (

@@ -108,6 +108,52 @@ const FILE_TREE_EXPANDED_MAX_PER_WS = 512;
 
 const EDITOR_TABS_MAX_PER_WS = 20;
 
+const USAGE_INCREMENT_FIELDS = new Set([
+  'spendUsd',
+  'netCacheSavingsUsd',
+  'cachedTokens',
+  'reasoningTokens',
+  'lastCacheHitPct'
+]);
+
+function assertTurnUsageStatsDelta(
+  channel: string,
+  prefix: string,
+  delta: Record<string, unknown>
+): void {
+  for (const key of Object.keys(delta)) {
+    if (!USAGE_INCREMENT_FIELDS.has(key)) {
+      throw new Error(`${channel}: ${prefix}.${key} is not a recognized usage increment field`);
+    }
+  }
+  if ('netCacheSavingsUsd' in delta && delta.netCacheSavingsUsd !== undefined) {
+    assertNumber(channel, `${prefix}.netCacheSavingsUsd`, delta.netCacheSavingsUsd, {
+      min: -1_000_000,
+      max: 1_000_000
+    });
+  }
+  if ('cachedTokens' in delta && delta.cachedTokens !== undefined) {
+    assertNumber(channel, `${prefix}.cachedTokens`, delta.cachedTokens, {
+      integer: true,
+      min: 0,
+      max: 1_000_000_000
+    });
+  }
+  if ('reasoningTokens' in delta && delta.reasoningTokens !== undefined) {
+    assertNumber(channel, `${prefix}.reasoningTokens`, delta.reasoningTokens, {
+      integer: true,
+      min: 0,
+      max: 1_000_000_000
+    });
+  }
+  if ('lastCacheHitPct' in delta && delta.lastCacheHitPct !== undefined) {
+    assertNumber(channel, `${prefix}.lastCacheHitPct`, delta.lastCacheHitPct, {
+      min: 0,
+      max: 100
+    });
+  }
+}
+
 function assertRecordKeyCount(
   channel: string,
   field: string,
@@ -266,6 +312,11 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
         min: 0,
         max: 1_000_000
       });
+      assertTurnUsageStatsDelta(
+        channel,
+        `patch.ui.workspaceUsageIncrement[${wsId}]`,
+        d
+      );
     }
   }
   if ('pinnedConversationIds' in ui && ui.pinnedConversationIds !== undefined) {

@@ -310,6 +310,45 @@ describe('listActiveRuns / abort surfaces', () => {
     await settleActiveRuns();
   });
 
+  it('abortRun on a paused ask_user run finalizes immediately', async () => {
+    const onError = vi.fn();
+    const deps = { emit: vi.fn(), onDone: vi.fn(), onError };
+
+    void startRun(
+      makeInput({
+        runId: 'rp-stop',
+        conversationId: 'cStop',
+        workspaceId: 'wStop',
+        selection: { providerId: 'pStop', modelId: 'm1' }
+      }),
+      deps
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    storePausedRun('rp-stop', {
+      generation: 1,
+      input: makeInput({ runId: 'rp-stop', conversationId: 'cStop' }),
+      workspacePath: '/tmp/ws',
+      workspaceId: 'wStop',
+      checkpoint: {} as unknown as PausedRunEntry['checkpoint'],
+      reportsSettings: {} as unknown as PausedRunEntry['reportsSettings'],
+      agentBehaviorSettings: {} as unknown as PausedRunEntry['agentBehaviorSettings'],
+      callbacks: {
+        emit: vi.fn(),
+        onDone: vi.fn(),
+        onError
+      }
+    });
+    expect(listActiveRuns().map((r) => r.runId)).toContain('rp-stop');
+
+    abortRun('rp-stop');
+
+    expect(isRunAwaitingUser('rp-stop')).toBe(false);
+    expect(listActiveRuns()).toEqual([]);
+    expect(onError).toHaveBeenCalledWith('Run stopped.');
+  });
+
   it('abortRunsForProvider clears paused checkpoints for the deleted provider', async () => {
     const deps = { emit: vi.fn(), onDone: vi.fn(), onError: vi.fn() };
     void startRun(

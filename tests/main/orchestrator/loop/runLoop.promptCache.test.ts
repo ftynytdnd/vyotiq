@@ -7,11 +7,18 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { TimelineEvent } from '@shared/types/chat';
 import type { ProviderDialect } from '@shared/types/provider';
 
-const { logWarn, getProviderWithKey } = vi.hoisted(() => ({
+const { logWarn, getProviderWithKey, listProviders } = vi.hoisted(() => ({
   logWarn: vi.fn(),
   getProviderWithKey: vi.fn<
     () => Promise<{ dialect: ProviderDialect } | undefined>
-  >()
+  >(),
+  listProviders: vi.fn(async () => [
+    {
+      id: 'p',
+      enabled: true,
+      models: [{ id: 'm', inputModalities: ['text'] as const }]
+    }
+  ])
 }));
 
 vi.mock('@main/logging/logger.js', () => ({
@@ -71,7 +78,8 @@ vi.mock('@main/orchestrator/loop/buildOrchestratorRequest', () => ({
 }));
 
 vi.mock('@main/providers/providerStore', () => ({
-  getProviderWithKey: (...args: unknown[]) => getProviderWithKey(...args)
+  getProviderWithKey: (...args: unknown[]) => getProviderWithKey(...args),
+  listProviders: (...args: unknown[]) => listProviders(...args)
 }));
 
 import { handleAssistantTurn } from '@main/orchestrator/loop/handleAssistantTurn';
@@ -87,31 +95,35 @@ const listDirTurn = {
   assistantMsgId: 'msg-tool',
   assistantText: '',
   reasoningText: '',
-  partialToolCalls: [
-    { id: 'tc-1', name: 'list_dir', argumentsBuf: '{"path":"."}' }
-  ],
+  partialToolCalls: [{ id: 'tc-1', name: 'ls', argumentsBuf: '{"path":"."}' }],
   hadText: false,
   hadReasoning: false,
   reasoningEndEmitted: false,
   finishReason: 'tool_calls' as const
 };
 
-const finishTurn = (usage: { promptTokens: number; cachedPromptTokens?: number }) => ({
+const finishToolTurn = (usage: { promptTokens: number; cachedPromptTokens?: number }) => ({
   assistantMsgId: 'msg-done',
-  assistantText: 'Here are the files in the workspace root directory.',
+  assistantText: '',
   reasoningText: '',
-  partialToolCalls: [],
-  hadText: true,
+  partialToolCalls: [
+    {
+      id: 'tc-finish',
+      name: 'finish',
+      argumentsBuf: JSON.stringify({ summary: 'Here are the files in the workspace root directory.' })
+    }
+  ],
+  hadText: false,
   hadReasoning: false,
   reasoningEndEmitted: false,
-  finishReason: 'stop' as const,
+  finishReason: 'tool_calls' as const,
   usage: {
     promptTokens: usage.promptTokens,
     completionTokens: 12,
     totalTokens: usage.promptTokens + 12,
-  ...(usage.cachedPromptTokens !== undefined
-    ? { cachedPromptTokens: usage.cachedPromptTokens }
-    : {})
+    ...(usage.cachedPromptTokens !== undefined
+      ? { cachedPromptTokens: usage.cachedPromptTokens }
+      : {})
   }
 });
 
@@ -120,7 +132,7 @@ async function runTwoTurnLoop(dialect: ProviderDialect): Promise<void> {
   vi.mocked(handleAssistantTurn)
     .mockResolvedValueOnce(listDirTurn)
     .mockResolvedValueOnce(
-      finishTurn({ promptTokens: 4096, cachedPromptTokens: 0 })
+      finishToolTurn({ promptTokens: 4096, cachedPromptTokens: 0 })
     );
 
   const events: TimelineEvent[] = [];

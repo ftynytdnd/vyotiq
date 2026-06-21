@@ -28,10 +28,16 @@ export function parseDependsOnIds(args: Record<string, unknown>): string[] {
   return coerceStringList(args['depends_on'] ?? args['dependsOn']);
 }
 
+export interface DependencyBatchPlan {
+  batches: number[][];
+  /** Indices that cannot run due to a cycle or missing dependency id. */
+  deadlockIndices: number[];
+}
+
 export function batchIndicesByDependencies(
   items: ReadonlyArray<{ id: string; dependsOn: readonly string[] }>
-): number[][] {
-  if (items.length === 0) return [];
+): DependencyBatchPlan {
+  if (items.length === 0) return { batches: [], deadlockIndices: [] };
   const idToIndex = new Map<string, number>();
   for (let i = 0; i < items.length; i++) {
     const id = items[i]!.id;
@@ -41,6 +47,7 @@ export function batchIndicesByDependencies(
   const remaining = new Set(items.map((_, i) => i));
   const satisfied = new Set<string>();
   const batches: number[][] = [];
+  const deadlockIndices: number[] = [];
 
   while (remaining.size > 0) {
     const batch: number[] = [];
@@ -50,10 +57,10 @@ export function batchIndicesByDependencies(
       if (ready) batch.push(i);
     }
     if (batch.length === 0) {
-      log.warn('dependency cycle or unsatisfied deps; flushing remaining in one batch', {
+      log.warn('dependency cycle or unsatisfied deps; synthetic-fail remaining', {
         remaining: remaining.size
       });
-      batches.push([...remaining].sort((a, b) => a - b));
+      deadlockIndices.push(...[...remaining].sort((a, b) => a - b));
       break;
     }
     batch.sort((a, b) => a - b);
@@ -61,5 +68,5 @@ export function batchIndicesByDependencies(
     for (const i of batch) satisfied.add(items[i]!.id);
     batches.push(batch);
   }
-  return batches;
+  return { batches, deadlockIndices };
 }

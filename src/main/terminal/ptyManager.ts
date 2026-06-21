@@ -40,6 +40,8 @@ interface PtySession {
    * avoids interrupting the user's foreground job on a shared PTY.
    */
   agentInterruptPending: boolean;
+  /** Per-capture handlers for concurrent agent bash in the same session. */
+  agentCaptureHandlers: Set<(data: string) => void>;
 }
 
 const sessions = new Map<string, PtySession>();
@@ -72,6 +74,12 @@ export function setPtyEventHandlers(handlers: {
 
 function emitData(event: PtyDataEvent): void {
   onData?.(event);
+  const session = sessions.get(event.sessionId);
+  if (session) {
+    for (const handler of session.agentCaptureHandlers) {
+      handler(event.data);
+    }
+  }
 }
 
 function emitExit(event: PtyExitEvent): void {
@@ -112,10 +120,15 @@ function buildWindowsAgentScript(command: string): string {
 
 function wrapAgentCommand(command: string): string {
   if (process.platform === 'win32') {
-    // Run via a short EncodedCommand line so PSReadLine never soft-wraps a
-    // long injected script into `>>` continuation (breaks Invoke-Expression).
+    // Evaluate in the current PTY shell (already PowerShell). Nesting another
+    // `powershell -EncodedCommand` child adds startup latency and can yield
+    // empty captures until the child exits on slow recursive listings.
     const encoded = Buffer.from(buildWindowsAgentScript(command), 'utf16le').toString('base64');
-    return `powershell -NoProfile -EncodedCommand ${encoded}`;
+    return (
+      `$__vyotiqSb = [ScriptBlock]::Create(` +
+      `[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encoded}'))); ` +
+      `& $__vyotiqSb; Remove-Variable __vyotiqSb`
+    );
   }
   const escaped = escapeBashSingle(command);
   return (
@@ -170,7 +183,8 @@ function spawnSession(
     primary,
     agentBusy: false,
     agentWaiters: [],
-    agentInterruptPending: false
+    agentInterruptPending: false,
+    agentCaptureHandlers: new Set()
   };
   attachProcHandlers(session);
   sessions.set(session.sessionId, session);
@@ -234,12 +248,14 @@ export function getSessionMeta(sessionId: string): TerminalSessionMeta | null {
 }
 
 export function writeSession(sessionId: string, data: string): void {
-  sessions.get(sessionId)?.proc.write(data);
+  const session = sessions.get(sessionId);
+  if (!session) throw new Error(`Unknown terminal session: ${sessionId}`);
+  session.proc.write(data);
 }
 
 export function resizeSession(sessionId: string, cols: number, rows: number): void {
   const session = sessions.get(sessionId);
-  if (!session) return;
+  if (!session) throw new Error(`Unknown terminal session: ${sessionId}`);
   session.cols = cols;
   session.rows = rows;
   try {
@@ -341,11 +357,7 @@ export async function runAgentCommandInPty(
     }
   };
 
-  const prevOnData = onData;
-  onData = (event) => {
-    if (event.sessionId === session.sessionId) onChunk(event.data);
-    prevOnData?.(event);
-  };
+  session.agentCaptureHandlers.add(onChunk);
 
   const wrapped = wrapAgentCommand(command);
   if (session.agentInterruptPending) {
@@ -397,7 +409,7 @@ export async function runAgentCommandInPty(
       poll();
     });
   } finally {
-    onData = prevOnData;
+    session.agentCaptureHandlers.delete(onChunk);
     releaseAgentLock(session);
   }
 
@@ -413,3 +425,6 @@ export async function runAgentCommandInPty(
     truncated
   };
 }
+
+/** Test-only: inspect agent command wrapping for the shared PTY path. */
+export const __test_wrapAgentCommand = wrapAgentCommand;

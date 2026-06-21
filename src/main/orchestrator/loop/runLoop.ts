@@ -299,6 +299,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     let lastToolRoundFailure: string | undefined;
     let rootToolRoundFailure: string | undefined;
     let runCumulativeTokens = resume?.runCumulativeTokens ?? 0;
+    /** One retry when prose would implicit-finish after prior tool rounds. */
+    let suppressedImplicitFinishAfterTools = false;
+    const iterationCapBonus = resume?.reportGateBonusIteration ? 1 : 0;
     const runStateAcc: RunStateAccumulator = resume
       ? { ...resume.runStateAcc }
      : createRunStateAccumulator();
@@ -374,12 +377,12 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     for (let iter = resume?.nextIteration ?? 0; ; iter++) {
       const abortedEarly = exitIfAborted(opts, emit, runHadLlmProgress);
       if (abortedEarly) return abortedEarly;
-      if (iter > MAX_TOTAL_ITERATIONS) {
-        const capMsg = `Run stopped after ${MAX_TOTAL_ITERATIONS} iterations without a final answer.`;
+      if (iter > MAX_TOTAL_ITERATIONS + iterationCapBonus) {
+        const capMsg = `Run stopped after ${MAX_TOTAL_ITERATIONS + iterationCapBonus} iterations without a final answer.`;
         emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: capMsg });
         return { terminalError: capMsg };
       }
-      const wrapUp = iter === MAX_TOTAL_ITERATIONS;
+      const wrapUp = iter === MAX_TOTAL_ITERATIONS + iterationCapBonus;
       if (
         isRunWallClockBudgetExceeded(Date.now() - runStartedAtMs, agentBehaviorSettings)
       ) {
@@ -913,13 +916,17 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           emit({ kind: 'agent-text-end', id: turn.assistantMsgId, ts: Date.now() });
         }
 
-        const finishedToolCalls = turn.partialToolCalls.filter((tc) => tc?.name);
+        const finishedToolCalls = turn.partialToolCalls.filter((tc) => tc);
         lockToolCallIds(finishedToolCalls);
 
         let finishCall: (typeof finishedToolCalls)[number] | undefined;
         let askUserCall: (typeof finishedToolCalls)[number] | undefined;
         const actionTools: typeof finishedToolCalls = [];
         for (const tc of finishedToolCalls) {
+          if (!tc.name) {
+            actionTools.push(tc);
+            continue;
+          }
           const canonical = normalizeRegisteredToolName(tc.name);
           if (canonical) tc.name = canonical;
           if (canonical === 'finish' && !finishCall) finishCall = tc;
@@ -953,6 +960,33 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
 
         const assistantContent: string | null =
           actionTools.length > 0 && turn.assistantText.length === 0 ? null : turn.assistantText;
+        const askUserOnly = askUserCall && actionTools.length === 0;
+        if (askUserOnly && !askUserCall.id) askUserCall.id = randomUUID();
+        const toolCallsForHistory = [
+          ...actionTools.map((tc) => ({
+            id: tc.id!,
+            type: 'function' as const,
+            function: {
+              name: tc.name ?? 'unknown',
+              arguments: tc.argumentsBuf || '{}'
+            },
+            ...(typeof tc.thoughtSignature === 'string' && tc.thoughtSignature.length > 0
+              ? { thoughtSignature: tc.thoughtSignature }
+              : {})
+          })),
+          ...(askUserOnly && askUserCall
+            ? [
+                {
+                  id: askUserCall.id!,
+                  type: 'function' as const,
+                  function: {
+                    name: 'ask_user',
+                    arguments: askUserCall.argumentsBuf || '{}'
+                  }
+                }
+              ]
+            : [])
+        ];
         insertHistoryBeforeTail(messages, {
           role: 'assistant',
           content: assistantContent,
@@ -960,21 +994,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           ...(typeof turn.reasoningSignature === 'string' && turn.reasoningSignature.length > 0
             ? { reasoning_signature: turn.reasoningSignature }
             : {}),
-          ...(actionTools.length > 0
-            ? {
-              tool_calls: actionTools.map((tc) => ({
-                id: tc.id!,
-                type: 'function' as const,
-                function: {
-                  name: tc.name ?? 'unknown',
-                  arguments: tc.argumentsBuf || '{}'
-                },
-                ...(typeof tc.thoughtSignature === 'string' && tc.thoughtSignature.length > 0
-                  ? { thoughtSignature: tc.thoughtSignature }
-                  : {})
-              }))
-            }
-            : {})
+          ...(toolCallsForHistory.length > 0 ? { tool_calls: toolCallsForHistory } : {})
         });
 
         const followUpCtx = buildFollowUpLoopCtx(opts, emit, messages, runStateAcc, spin);
@@ -1137,12 +1157,11 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
                   (tc) => normalizeRegisteredToolName(tc.name) === 'report'
                 )
               ) {
-                log.info('pending terminal — ending run after host report gate report', {
+                log.info('host report gate — report succeeded; awaiting terminal finish', {
                   iteration: iter,
                   pendingTerminal: hostReportGatePendingTerminal
                 });
                 hostReportGatePendingTerminal = undefined;
-                return {};
               }
             }
           }
@@ -1268,6 +1287,21 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         }
 
         if (isImplicitFinish(proseText)) {
+          if (shouldSuppressImplicitFinishAfterTools(runStateAcc.toolRoundsTotal, suppressedImplicitFinishAfterTools)) {
+            suppressedImplicitFinishAfterTools = true;
+            log.warn('implicit finish suppressed after tool rounds — retrying for explicit finish', {
+              iteration: iter,
+              textChars: proseText.length,
+              toolRoundsTotal: runStateAcc.toolRoundsTotal
+            });
+            popProseOnlyAssistant(messages);
+            if (turn.hadText || turn.hadReasoning) {
+              emit({ kind: 'agent-text-aborted', id: turn.assistantMsgId, ts: Date.now() });
+            }
+            retryAssistantMsgId = turn.assistantMsgId;
+            runStateAcc.lastAction = 'retry';
+            continue;
+          }
           retryAssistantMsgId = null;
           runStateAcc.lastAction = 'answer';
           log.info('implicit finish - substantive prose accepted as answer', {
@@ -1498,6 +1532,18 @@ export function endsWithQuestionMark(s: string): boolean {
 /** True when prose ends with `.` / `!` (ASCII or common CJK/fullwidth forms). */
 function endsWithSentenceEnd(s: string): boolean {
   return endsWithMeaningfulCodePoint(s, SENTENCE_END_CODEPOINTS);
+}
+
+/**
+ * After any tool round, prose-only turns must not end the run on the
+ * first implicit-finish probe — the model should call `finish` or keep
+ * using tools. One retry is allowed before accepting implicit finish.
+ */
+export function shouldSuppressImplicitFinishAfterTools(
+  toolRoundsTotal: number,
+  alreadySuppressedOnce: boolean
+): boolean {
+  return toolRoundsTotal > 0 && !alreadySuppressedOnce;
 }
 
 /**

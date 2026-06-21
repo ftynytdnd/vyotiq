@@ -11,20 +11,31 @@ describe('toolDependencyBatches', () => {
   });
 
   it('batches independent calls in one group', () => {
-    const batches = batchIndicesByDependencies([
+    const plan = batchIndicesByDependencies([
       { id: '1', dependsOn: [] },
       { id: '2', dependsOn: [] },
       { id: '3', dependsOn: [] }
     ]);
-    expect(batches).toEqual([[0, 1, 2]]);
+    expect(plan.batches).toEqual([[0, 1, 2]]);
+    expect(plan.deadlockIndices).toEqual([]);
   });
 
   it('respects depends_on ordering', () => {
-    const batches = batchIndicesByDependencies([
+    const plan = batchIndicesByDependencies([
       { id: 'a', dependsOn: [] },
       { id: 'b', dependsOn: ['a'] },
       { id: 'c', dependsOn: ['b'] }
     ]);
-    expect(batches).toEqual([[0], [1], [2]]);
+    expect(plan.batches).toEqual([[0], [1], [2]]);
+    expect(plan.deadlockIndices).toEqual([]);
+  });
+
+  it('returns deadlock indices instead of flushing a parallel batch', () => {
+    const plan = batchIndicesByDependencies([
+      { id: 'a', dependsOn: ['b'] },
+      { id: 'b', dependsOn: ['a'] }
+    ]);
+    expect(plan.batches).toEqual([]);
+    expect(plan.deadlockIndices).toEqual([0, 1]);
   });
 });

@@ -63,6 +63,19 @@ describe('resolveBashDefaultTimeout', () => {
       category: 'install'
     });
   });
+
+  it('extends timeout and isolates recursive directory searches', () => {
+    expect(resolveBashDefaultTimeout('Get-ChildItem -Recurse -Filter "*.ts"')).toEqual({
+      timeoutMs: BASH_TEST_TIMEOUT_MS,
+      isolated: true,
+      category: 'search'
+    });
+    expect(resolveBashDefaultTimeout('rg -r pattern .')).toMatchObject({
+      timeoutMs: BASH_TEST_TIMEOUT_MS,
+      isolated: true,
+      category: 'search'
+    });
+  });
 });
 
 describe('formatBashTimeoutHint', () => {

@@ -64,6 +64,24 @@ describe('handleToolCalls allowlist', () => {
     expect(summary.attempted).toBe(0);
     expect(messages).toHaveLength(1);
     expect(messages[0]?.role).toBe('tool');
+    expect(emit.mock.calls.some((c) => c[0]?.kind === 'tool-call')).toBe(true);
+    expect(emit.mock.calls.some((c) => c[0]?.kind === 'tool-result')).toBe(true);
     expect(onToolCallSettled).toHaveBeenCalledTimes(1);
+  });
+
+  it('synthetic-fails cyclic depends_on instead of running tools', async () => {
+    const calls: PartialToolCall[] = [
+      { id: 'a', name: 'read', argumentsBuf: '{"path":"a.ts","depends_on":["b"]}' },
+      { id: 'b', name: 'read', argumentsBuf: '{"path":"b.ts","depends_on":["a"]}' }
+    ];
+    const summary = await handleToolCalls(calls, messages, emit, {
+      ...baseOpts,
+      allowlist: AGENT_TOOLS
+    });
+    expect(runToolByName).not.toHaveBeenCalled();
+    expect(summary.attempted).toBe(0);
+    expect(summary.failed).toBe(0);
+    expect(messages.filter((m) => m.role === 'tool')).toHaveLength(2);
+    expect(emit.mock.calls.filter((c) => c[0]?.kind === 'tool-result')).toHaveLength(2);
   });
 });

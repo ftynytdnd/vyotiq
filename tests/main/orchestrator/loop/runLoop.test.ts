@@ -94,6 +94,7 @@ import {
   endsWithQuestionMark,
   isImplicitFinish,
   runOrchestratorLoop,
+  shouldSuppressImplicitFinishAfterTools,
   __test_resetRecentBillingBlock
 } from '@main/orchestrator/loop/runLoop';
 
@@ -345,6 +346,15 @@ describe('isImplicitFinish', () => {
   });
 });
 
+describe('shouldSuppressImplicitFinishAfterTools', () => {
+  it('suppresses once when prior tool rounds exist', () => {
+    expect(shouldSuppressImplicitFinishAfterTools(1, false)).toBe(true);
+    expect(shouldSuppressImplicitFinishAfterTools(3, false)).toBe(true);
+    expect(shouldSuppressImplicitFinishAfterTools(1, true)).toBe(false);
+    expect(shouldSuppressImplicitFinishAfterTools(0, false)).toBe(false);
+  });
+});
+
 describe('runOrchestratorLoop — implicit finish and empty-turn retry', () => {
   it('completes without error on a short direct answer', async () => {
     vi.mocked(handleAssistantTurn).mockResolvedValueOnce({
@@ -444,7 +454,7 @@ describe('runOrchestratorLoop — implicit finish and empty-turn retry', () => {
       expect.anything(),
       expect.anything(),
       expect.anything(),
-      { assistantMsgId: 'msg-retry' }
+      expect.objectContaining({ assistantMsgId: 'msg-retry' })
     );
     const aborted = events.filter((e) => e.kind === 'agent-text-aborted');
     expect(aborted).toHaveLength(1);
@@ -527,6 +537,127 @@ describe('runOrchestratorLoop — implicit finish and empty-turn retry', () => {
 
     expect(handleAssistantTurn).toHaveBeenCalledTimes(3);
     expect(events.filter((e) => e.kind === 'error')).toHaveLength(0);
+  });
+
+  it('retries prose implicit-finish once after tool rounds, then accepts finish', async () => {
+    const statusProse =
+      'I am proceeding with the deep audit and have identified several findings so far. ' +
+      'Next I will synthesize and apply fixes before running verification.';
+
+    vi.mocked(handleAssistantTurn)
+      .mockResolvedValueOnce({
+        assistantMsgId: 'msg-tools',
+        assistantText: '',
+        reasoningText: '',
+        partialToolCalls: [
+          {
+            id: 'tc-ls',
+            name: 'ls',
+            argumentsBuf: JSON.stringify({ path: '.', depth: 1 })
+          }
+        ],
+        hadText: false,
+        hadReasoning: false,
+        reasoningEndEmitted: false,
+        finishReason: 'tool_calls'
+      })
+      .mockResolvedValueOnce({
+        assistantMsgId: 'msg-status',
+        assistantText: statusProse,
+        reasoningText: '',
+        partialToolCalls: [],
+        hadText: true,
+        hadReasoning: false,
+        reasoningEndEmitted: false,
+        finishReason: 'stop'
+      })
+      .mockResolvedValueOnce({
+        assistantMsgId: 'msg-finish',
+        assistantText: '',
+        reasoningText: '',
+        partialToolCalls: [
+          {
+            id: 'tc-finish',
+            name: 'finish',
+            argumentsBuf: JSON.stringify({ summary: 'Audit complete.' })
+          }
+        ],
+        hadText: false,
+        hadReasoning: false,
+        reasoningEndEmitted: false,
+        finishReason: 'tool_calls'
+      });
+
+    const events: TimelineEvent[] = [];
+    await runOrchestratorLoop({
+      input: { ...baseInput, conversationId: 'c-audit' },
+      workspacePath: '/tmp/ws',
+      workspaceId: 'ws-test',
+      signal: new AbortController().signal,
+      emit: (e) => events.push(e),
+      initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'audit the repo' }],
+      initialQuery: 'audit the repo'
+    });
+
+    expect(handleAssistantTurn).toHaveBeenCalledTimes(3);
+    const aborted = events.filter((e) => e.kind === 'agent-text-aborted');
+    expect(aborted).toHaveLength(1);
+    expect((aborted[0] as { id: string }).id).toBe('msg-status');
+    const finishResult = events.find(
+      (e) => e.kind === 'tool-result' && e.result.name === 'finish'
+    );
+    expect(finishResult?.kind).toBe('tool-result');
+  });
+
+  it('synthetic-fails streamed tool calls that never received a name', async () => {
+    vi.mocked(handleAssistantTurn)
+      .mockResolvedValueOnce({
+        assistantMsgId: 'msg-unnamed',
+        assistantText: '',
+        reasoningText: '',
+        partialToolCalls: [{ id: 'tc-missing-name', argumentsBuf: '{"path":"."}' }],
+        hadText: false,
+        hadReasoning: false,
+        reasoningEndEmitted: false,
+        finishReason: 'tool_calls'
+      })
+      .mockResolvedValueOnce({
+        assistantMsgId: 'msg-finish',
+        assistantText: '',
+        reasoningText: '',
+        partialToolCalls: [
+          {
+            id: 'tc-finish',
+            name: 'finish',
+            argumentsBuf: JSON.stringify({ summary: 'Done.' })
+          }
+        ],
+        hadText: false,
+        hadReasoning: false,
+        reasoningEndEmitted: false,
+        finishReason: 'tool_calls'
+      });
+
+    const events: TimelineEvent[] = [];
+    await runOrchestratorLoop({
+      input: { ...baseInput, conversationId: 'c-unnamed' },
+      workspacePath: '/tmp/ws',
+      workspaceId: 'ws-test',
+      signal: new AbortController().signal,
+      emit: (e) => events.push(e),
+      initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'read file' }],
+      initialQuery: 'read file'
+    });
+
+    expect(handleAssistantTurn).toHaveBeenCalledTimes(2);
+    const synthetic = events.find(
+      (e) => e.kind === 'tool-result' && e.result.error === 'missing tool name'
+    );
+    expect(synthetic?.kind).toBe('tool-result');
+    const finishResult = events.find(
+      (e) => e.kind === 'tool-result' && e.result.name === 'finish'
+    );
+    expect(finishResult?.kind).toBe('tool-result');
   });
 });
 

@@ -6,7 +6,6 @@ import { requestUserAttention } from '../../window/requestUserAttention.js';
 import { cloneLoopCheckpoint } from '../pausedRunRegistry.js';
 import type { RunStateAccumulator } from './buildRunState.js';
 import type { PartialToolCall } from './handleAssistantTurn.js';
-import { insertHistoryBeforeTail } from '../context/buildContextLayers.js';
 import { tryParseArgumentsRecord } from './parseToolArgs.js';
 import type { SpinSignatureBuffer } from './toolSpinSignature.js';
 
@@ -44,21 +43,6 @@ export function pauseRunForAskUser(input: AskUserPauseInput): {
     input.assistantText.trim() ||
     'Could you clarify how you would like me to proceed?';
   if (!input.askUserCall.id) input.askUserCall.id = randomUUID();
-  insertHistoryBeforeTail(input.messages, {
-    role: 'assistant',
-    content: input.assistantText.length > 0 ? input.assistantText : null,
-    ...(input.reasoningText.length > 0 ? { reasoning_content: input.reasoningText } : {}),
-    tool_calls: [
-      {
-        id: input.askUserCall.id,
-        type: 'function' as const,
-        function: {
-          name: 'ask_user',
-          arguments: input.askUserCall.argumentsBuf || '{}'
-        }
-      }
-    ]
-  });
   const promptEventId = randomUUID();
   input.emit({
     kind: 'ask-user-prompt',

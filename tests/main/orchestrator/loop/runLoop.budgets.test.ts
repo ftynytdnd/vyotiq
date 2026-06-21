@@ -50,7 +50,14 @@ vi.mock('@main/providers/providerStore', () => ({
     name: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api',
     dialect: 'openai'
-  }))
+  })),
+  listProviders: vi.fn(async () => [
+    {
+      id: 'p',
+      enabled: true,
+      models: [{ id: 'm', inputModalities: ['text'] as const }]
+    }
+  ])
 }));
 
 import { handleAssistantTurn } from '@main/orchestrator/loop/handleAssistantTurn';

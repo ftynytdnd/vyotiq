@@ -48,16 +48,6 @@ import { drainFollowUpsForConversation } from '../followUps/drainFollowUps.js';
 
 const log = logger.child('ipc/chat');
 
-interface ConversationAskUserHooks {
-  emit: (event: TimelineEvent) => void;
-  persistEvent: (event: TimelineEvent) => void;
-  onAwaitingUser: () => void;
-  onDone: () => void;
-  onError: (message: string) => void;
-}
-
-const askUserHooksByConversation = new Map<string, ConversationAskUserHooks>();
-
 /**
  * Per-assistant-turn buffer of streaming `agent-text-delta` /
  * `agent-reasoning-delta` text used by the persistence coalescer.
@@ -400,19 +390,6 @@ export function registerChatIpc(): void {
 
     armRunSettlement(cid);
 
-    askUserHooksByConversation.set(cid, {
-      emit: (event) => {
-        if (!runFinalized) safeSend(IPC.CHAT_EVENT, input.runId, event);
-      },
-      persistEvent,
-      onAwaitingUser: () => {
-        flushAll();
-        safeSend(IPC.CHAT_AWAITING_USER, input.runId);
-      },
-      onDone: () => finalizeRunDurability('done'),
-      onError: (message) => finalizeRunDurability('error', message)
-    });
-
     void startRun({ ...input, conversationId: cid, workspaceId: workspaceIdForRun }, {
       emit: (event: TimelineEvent) => {
         if (runFinalized) {
@@ -551,9 +528,9 @@ export function registerChatIpc(): void {
     });
 
     function finalizeRunDurability(mode: 'done' | 'error', runErrorMessage?: string): void {
+      if (runFinalized) return;
       flushAll();
       runFinalized = true;
-      askUserHooksByConversation.delete(cid);
       drainAppendChain(cid)
         .catch((drainErr: unknown) => {
           const drainMessage =

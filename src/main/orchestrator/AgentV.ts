@@ -128,6 +128,16 @@ function abortAllActiveRunsWithError(message: string): void {
 export function abortRun(runId: string): void {
   const run = activeRuns.get(runId);
   if (!run) return;
+
+  const paused = getPausedRun(runId);
+  if (paused) {
+    clearPausedRun(runId);
+    run.awaitingUser = false;
+    removeActiveRunIfCurrent(runId, paused.generation);
+    paused.callbacks?.onError?.('Run stopped.');
+    return;
+  }
+
   run.abort.abort();
   clearPausedRun(runId);
   // Keep the registry entry until `startRun`'s `finally` drops it.

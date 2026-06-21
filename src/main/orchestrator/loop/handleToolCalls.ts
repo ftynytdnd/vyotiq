@@ -138,7 +138,15 @@ async function dispatchOneToolCall(
     log.warn('ask_user reached handleToolCalls — run loop should intercept', {
       callId
     });
-    settleToolCallSurrogate(tc, opts, batchIndex);
+    emitSyntheticToolFailure(
+      tc,
+      emit,
+      messages,
+      opts,
+      'ask_user must be intercepted by the run loop.',
+      'ask_user routing',
+      batchIndex
+    );
     return { kind: 'skipped' };
   }
 
@@ -167,13 +175,29 @@ async function dispatchOneToolCall(
     }
     const refusalMessage =
       `Tool "${tc.name}" is not in the agent allowlist (${opts.allowlist.join(', ')}).`;
-    insertHistoryBeforeTail(messages, {
-      role: 'tool',
-      tool_call_id: callId,
-      name: tc.name,
-      content: refusalMessage
+    const { args: parsedArgs } = parsed;
+    emit({
+      kind: 'tool-call',
+      id: randomUUID(),
+      ts: Date.now(),
+      call: {
+        id: callId,
+        name: tc.name as ToolName,
+        args: parsedArgs,
+        ...(typeof tc.thoughtSignature === 'string' && tc.thoughtSignature.length > 0
+          ? { thoughtSignature: tc.thoughtSignature }
+          : {})
+      }
     });
-    settleToolCallSurrogate(tc, opts, batchIndex);
+    emitSyntheticToolFailure(
+      tc,
+      emit,
+      messages,
+      opts,
+      refusalMessage,
+      'allowlist refusal',
+      batchIndex
+    );
     return { kind: 'skipped' };
   }
 
@@ -435,8 +459,11 @@ export async function handleToolCalls(
     parsedByIndex.set(i, parseToolArgs(tc.name, tc.argumentsBuf));
   }
 
-  const batches = opts.skipDependencyBatching
-    ? [finishedToolCalls.map((_, i) => i)]
+  const dependencyPlan = opts.skipDependencyBatching
+    ? {
+        batches: [finishedToolCalls.map((_, i) => i)],
+        deadlockIndices: [] as number[]
+      }
     : batchIndicesByDependencies(
         finishedToolCalls.map((tc, i) => {
           if (!tc.id) tc.id = randomUUID();
@@ -447,7 +474,23 @@ export async function handleToolCalls(
           return { id: tc.id!, dependsOn, index: i };
         }).map((d) => ({ id: d.id, dependsOn: d.dependsOn }))
       );
+  const batches = dependencyPlan.batches;
   const processed = new Set<number>();
+
+  for (const i of dependencyPlan.deadlockIndices) {
+    if (processed.has(i)) continue;
+    processed.add(i);
+    tallies.refused += 1;
+    emitSyntheticToolFailure(
+      finishedToolCalls[i]!,
+      emit,
+      messages,
+      opts,
+      'Tool call has unsatisfied depends_on edges (cycle or missing dependency id).',
+      'unsatisfied dependency',
+      i
+    );
+  }
 
   for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
     const batch = batches[batchIdx]!;
