@@ -213,6 +213,11 @@ interface ConversationsStore {
    * first send. No-op when the workspace already has a restorable session.
    */
   ensureLandingConversation: (workspaceId: string) => Promise<ConversationMeta | null>;
+  /**
+   * Select or create a conversation so attachment ingest has a target.
+   * Used by dock file attach and composer paste/drop when the mirror is empty.
+   */
+  ensureConversationForAttachments: (workspaceId: string) => Promise<string | null>;
 }
 
 /**
@@ -877,5 +882,35 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
       });
     landingCreateByWorkspace.set(workspaceId, createPromise);
     return createPromise;
+  },
+
+  ensureConversationForAttachments: async (workspaceId) => {
+    if (!isSessionBootReady(get())) return null;
+
+    const wsStore = useWorkspaceStore.getState();
+    if (wsStore.activeId !== workspaceId) {
+      await wsStore.setActive(workspaceId);
+    }
+
+    const chat = useChatStore.getState();
+    const mirrorId = chat.conversationId;
+    if (mirrorId) {
+      const mirrorMeta = get().list.find((m) => m.id === mirrorId);
+      if (mirrorMeta?.workspaceId === workspaceId) return mirrorId;
+    }
+
+    const slot = get().activeIdByWorkspace[workspaceId] ?? null;
+    const targetId = resolveWorkspaceConversationTarget(get().list, workspaceId, slot);
+    if (targetId) {
+      if (chat.conversationId !== targetId) {
+        await get().select(targetId);
+      } else {
+        writeWorkspaceSlot(set, get, workspaceId, targetId);
+      }
+      return targetId;
+    }
+
+    const meta = await get().newConversationFor(workspaceId);
+    return meta?.id ?? null;
   }
 }));

@@ -23,6 +23,30 @@ import {
 import { formatAttachmentIngestError } from './formatAttachmentIngestError.js';
 import { ATTACHMENT_ERROR_PASTE_FAILED } from '@shared/attachments/formatAttachmentError.js';
 import { resolveWorkspacePickPath } from '../../lib/resolveWorkspacePickPath.js';
+import { useConversationsStore } from '../../store/useConversationsStore.js';
+
+const ATTACH_NEED_WORKSPACE_TOAST = 'Open a workspace before attaching files.';
+const ATTACH_NEED_CHAT_TOAST = 'Could not open a chat for attachments.';
+
+async function resolveAttachmentTarget(
+  input: ComposerAttachmentInput
+): Promise<{ workspaceId: string; conversationId: string } | null> {
+  const workspaceId = input.workspaceId;
+  if (!workspaceId) return null;
+
+  let conversationId = input.conversationId;
+  if (!conversationId) {
+    conversationId =
+      (await useConversationsStore.getState().ensureConversationForAttachments(workspaceId)) ??
+      null;
+  }
+  if (!conversationId) return null;
+  return { workspaceId, conversationId };
+}
+
+function attachmentContextToast(workspaceId: string | null): string {
+  return workspaceId ? ATTACH_NEED_CHAT_TOAST : ATTACH_NEED_WORKSPACE_TOAST;
+}
 
 function attachmentPathKey(meta: PromptAttachmentMeta): string {
   return meta.sourceUrl ?? meta.workspacePath ?? meta.storedPath ?? meta.id;
@@ -154,11 +178,12 @@ export function useComposerAttachments(input: {
 
   const addFolder = useCallback(
     async (folderPath: string) => {
-      const { conversationId, workspaceId } = input;
-      if (!conversationId || !workspaceId) {
-        showToast('Open a workspace and conversation before attaching files.', 'danger');
+      const ctx = await resolveAttachmentTarget(input);
+      if (!ctx) {
+        showToast(attachmentContextToast(input.workspaceId), 'danger');
         return;
       }
+      const { conversationId, workspaceId } = ctx;
       const remaining = MAX_CHAT_ATTACHMENTS - attachments.length;
       if (remaining <= 0) {
         showToast(`Maximum ${MAX_CHAT_ATTACHMENTS} attachments per message.`, 'danger');
@@ -201,11 +226,12 @@ export function useComposerAttachments(input: {
   const addPaths = useCallback(
     async (paths: string[]): Promise<number> => {
       if (paths.length === 0) return 0;
-      const { conversationId, workspaceId } = input;
-      if (!conversationId || !workspaceId) {
-        showToast('Open a workspace and conversation before attaching files.', 'danger');
+      const ctx = await resolveAttachmentTarget(input);
+      if (!ctx) {
+        showToast(attachmentContextToast(input.workspaceId), 'danger');
         return 0;
       }
+      const { conversationId, workspaceId } = ctx;
       const remaining = MAX_CHAT_ATTACHMENTS - attachments.length;
       if (remaining <= 0) {
         showToast(`Maximum ${MAX_CHAT_ATTACHMENTS} attachments per message.`, 'danger');
@@ -238,11 +264,12 @@ export function useComposerAttachments(input: {
 
   const ingestDataTransferFiles = useCallback(
     async (data: DataTransfer) => {
-      const { conversationId, workspaceId } = input;
-      if (!conversationId || !workspaceId) {
-        showToast('Open a workspace and conversation before attaching files.', 'danger');
+      const ctx = await resolveAttachmentTarget(input);
+      if (!ctx) {
+        showToast(attachmentContextToast(input.workspaceId), 'danger');
         return false;
       }
+      const { conversationId, workspaceId } = ctx;
       const remaining = MAX_CHAT_ATTACHMENTS - attachments.length;
       if (remaining <= 0) {
         showToast(`Maximum ${MAX_CHAT_ATTACHMENTS} attachments per message.`, 'danger');
@@ -281,11 +308,12 @@ export function useComposerAttachments(input: {
   );
 
   const pickFromComputer = useCallback(async () => {
-    const { conversationId, workspaceId } = input;
-    if (!conversationId || !workspaceId) {
-      showToast('Open a workspace and conversation before attaching files.', 'danger');
+    const ctx = await resolveAttachmentTarget(input);
+    if (!ctx) {
+      showToast(attachmentContextToast(input.workspaceId), 'danger');
       return;
     }
+    const { conversationId, workspaceId } = ctx;
     const remaining = MAX_CHAT_ATTACHMENTS - attachments.length;
     if (remaining <= 0) {
       showToast(`Maximum ${MAX_CHAT_ATTACHMENTS} attachments per message.`, 'danger');
@@ -341,11 +369,6 @@ export function useComposerAttachments(input: {
 
   const onPaste = useCallback(
     (e: React.ClipboardEvent) => {
-      const { conversationId, workspaceId } = input;
-      if (!conversationId || !workspaceId) {
-        showToast('Open a workspace and conversation before attaching files.', 'danger');
-        return;
-      }
       const remaining = MAX_CHAT_ATTACHMENTS - attachments.length;
       if (remaining <= 0) {
         showToast(`Maximum ${MAX_CHAT_ATTACHMENTS} attachments per message.`, 'danger');
@@ -385,6 +408,12 @@ export function useComposerAttachments(input: {
 
       void (async () => {
         try {
+          const ctx = await resolveAttachmentTarget(input);
+          if (!ctx) {
+            showToast(attachmentContextToast(input.workspaceId), 'danger');
+            return;
+          }
+          const { conversationId, workspaceId } = ctx;
           const triedPathKeys = new Set<string>();
 
           if (hostPaths.length > 0) {

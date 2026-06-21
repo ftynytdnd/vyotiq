@@ -15,6 +15,10 @@ import { useChatStore } from '../../store/useChatStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { resolveWorkspacePickPath } from '../../lib/resolveWorkspacePickPath.js';
+import { useConversationsStore } from '../../store/useConversationsStore.js';
+
+const ATTACH_NEED_WORKSPACE_TOAST = 'Open a workspace before attaching files.';
+const ATTACH_NEED_CHAT_TOAST = 'Could not open a chat for attachments.';
 
 function workspaceFileMeta(path: string): PromptAttachmentMeta {
   return {
@@ -54,9 +58,16 @@ export async function previewDockWorkspaceFile(path: string): Promise<void> {
 export async function attachDockWorkspaceFile(path: string): Promise<boolean> {
   const showToast = useToastStore.getState().show;
   const workspaceId = useWorkspaceStore.getState().activeId;
-  const conversationId = useChatStore.getState().conversationId;
-  if (!workspaceId || !conversationId) {
-    showToast('Open a workspace and conversation before attaching files.', 'danger');
+  if (!workspaceId) {
+    showToast(ATTACH_NEED_WORKSPACE_TOAST, 'danger');
+    return false;
+  }
+
+  const conversationId =
+    (await useConversationsStore.getState().ensureConversationForAttachments(workspaceId)) ??
+    null;
+  if (!conversationId) {
+    showToast(ATTACH_NEED_CHAT_TOAST, 'danger');
     return false;
   }
 

@@ -163,3 +163,80 @@ describe('restoreWorkspaceSession / ensureLandingConversation', () => {
     expect(b?.id).toBe('conv-created');
   });
 });
+
+describe('ensureConversationForAttachments', () => {
+  const select = vi.fn(async () => undefined);
+  const newConversationFor = vi.fn(async () =>
+    meta({ id: 'conv-created', workspaceId: 'ws-1', updatedAt: 1 })
+  );
+
+  beforeEach(() => {
+    select.mockClear();
+    newConversationFor.mockClear();
+    useChatStore.setState({
+      slices: {},
+      runIdToConv: {},
+      events: [],
+      conversationId: null,
+      runId: null,
+      isProcessing: false
+    } as never);
+    useWorkspaceStore.setState({
+      list: [{ id: 'ws-1', path: '/tmp', label: 'A', addedAt: 0 }],
+      activeId: 'ws-1',
+      info: { path: '/tmp', label: 'A' },
+      loading: false
+    } as never);
+    useConversationsStore.setState({
+      list: [
+        meta({ id: 'conv-old', workspaceId: 'ws-1', updatedAt: 1 }),
+        meta({ id: 'conv-newest', workspaceId: 'ws-1', updatedAt: 99 })
+      ],
+      activeIdByWorkspace: { 'ws-1': 'conv-stale' },
+      hydratedIds: new Set<string>(),
+      loading: false,
+      activeSlotsHydrated: true,
+      selecting: false,
+      select,
+      newConversationFor
+    } as never);
+  });
+
+  it('returns the mirror conversation when it belongs to the workspace', async () => {
+    useChatStore.setState({ conversationId: 'conv-newest' } as never);
+
+    const id = await useConversationsStore.getState().ensureConversationForAttachments('ws-1');
+
+    expect(id).toBe('conv-newest');
+    expect(select).not.toHaveBeenCalled();
+    expect(newConversationFor).not.toHaveBeenCalled();
+  });
+
+  it('selects a restorable chat when the mirror is empty', async () => {
+    const id = await useConversationsStore.getState().ensureConversationForAttachments('ws-1');
+
+    expect(id).toBe('conv-newest');
+    expect(select).toHaveBeenCalledWith('conv-newest');
+    expect(newConversationFor).not.toHaveBeenCalled();
+  });
+
+  it('creates a chat when the workspace has none', async () => {
+    useConversationsStore.setState({ list: [], activeIdByWorkspace: {} } as never);
+
+    const id = await useConversationsStore.getState().ensureConversationForAttachments('ws-1');
+
+    expect(id).toBe('conv-created');
+    expect(newConversationFor).toHaveBeenCalledWith('ws-1');
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it('returns null before session boot is ready', async () => {
+    useConversationsStore.setState({ activeSlotsHydrated: false } as never);
+
+    const id = await useConversationsStore.getState().ensureConversationForAttachments('ws-1');
+
+    expect(id).toBeNull();
+    expect(select).not.toHaveBeenCalled();
+    expect(newConversationFor).not.toHaveBeenCalled();
+  });
+});

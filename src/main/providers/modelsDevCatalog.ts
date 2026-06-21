@@ -349,6 +349,8 @@ export async function enrichModelsFromModelsDev(
   return next;
 }
 
+const HOURLY_REFRESH_MS = 60 * 60 * 1000;
+
 /** Test-only reset. */
 export function _resetModelsDevCatalogForTests(): void {
   memoryCache = null;

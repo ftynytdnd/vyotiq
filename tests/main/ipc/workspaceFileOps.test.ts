@@ -17,4 +17,14 @@ describe('workspace path guards', () => {
   it('allows normal relative paths', () => {
     expect(() => assertSafeRelativePath('workspace:mkdir', 'path', 'src/components')).not.toThrow();
   });
+
+  it('allows workspace root reveal', () => {
+    expect(() =>
+      assertSafeRelativePath('workspace:reveal-path', 'path', '.', { allowDotRoot: true })
+    ).not.toThrow();
+  });
+
+  it('still rejects dot root for mutating ops', () => {
+    expect(() => assertSafeRelativePath('workspace:mkdir', 'path', '.')).toThrow(/invalid path/);
+  });
 });

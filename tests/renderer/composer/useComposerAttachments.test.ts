@@ -8,6 +8,7 @@ import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import { useComposerAttachments } from '@renderer/components/composer/useComposerAttachments';
 import { useWorkspaceStore } from '@renderer/store/useWorkspaceStore';
 import { useToastStore } from '@renderer/store/useToastStore';
+import { useConversationsStore } from '@renderer/store/useConversationsStore';
 
 const ingestClipboardImage = vi.fn<[], Promise<PromptAttachmentMeta | null>>();
 const ingestPaths = vi.fn<[], Promise<PromptAttachmentMeta[]>>();
@@ -82,6 +83,10 @@ beforeEach(() => {
 
   useWorkspaceStore.setState({
     info: { path: 'C:\\tmp\\agent' }
+  } as never);
+
+  useConversationsStore.setState({
+    ensureConversationForAttachments: vi.fn(async () => null)
   } as never);
 });
 
@@ -207,7 +212,7 @@ describe('useComposerAttachments onPaste', () => {
     });
   });
 
-  it('toasts when pasting without an active workspace or conversation', () => {
+  it('toasts when pasting without an active workspace or conversation', async () => {
     const { result } = renderHook(() => useComposerAttachments({ conversationId: null, workspaceId: null }));
     const event = makeClipboardPasteEvent([], ['image/png']);
 
@@ -215,10 +220,37 @@ describe('useComposerAttachments onPaste', () => {
       result.current.onPaste(event);
     });
 
-    expect(useToastStore.getState().toasts).toHaveLength(1);
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts).toHaveLength(1);
+    });
     expect(useToastStore.getState().toasts[0]?.message).toBe(
-      'Open a workspace and conversation before attaching files.'
+      'Open a workspace before attaching files.'
     );
     expect(ingestClipboard).not.toHaveBeenCalled();
+  });
+
+  it('ensures a conversation when workspace is open but mirror is empty', async () => {
+    const ensureConversationForAttachments = vi.fn(async () => 'conv-ensured');
+    useConversationsStore.setState({ ensureConversationForAttachments } as never);
+
+    const { result } = renderHook(() =>
+      useComposerAttachments({ conversationId: null, workspaceId: 'ws-1' })
+    );
+    const event = makeClipboardPasteEvent([], ['image/png']);
+
+    act(() => {
+      result.current.onPaste(event);
+    });
+
+    await waitFor(() => {
+      expect(ensureConversationForAttachments).toHaveBeenCalledWith('ws-1');
+      expect(ingestClipboard).toHaveBeenCalledOnce();
+    });
+    expect(ingestClipboard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'ws-1',
+        conversationId: 'conv-ensured'
+      })
+    );
   });
 });

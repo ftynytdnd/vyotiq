@@ -9,7 +9,7 @@ vi.mock('@main/secrets/safeStore', () => ({
   writePlainJson: vi.fn(async () => undefined)
 }));
 
-import { enrichModelsFromModelsDev, _resetModelsDevCatalogForTests } from '@main/providers/modelsDevCatalog.js';
+import { enrichModelsFromModelsDev, refreshModelsDevCatalogIfStale, _resetModelsDevCatalogForTests } from '@main/providers/modelsDevCatalog.js';
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -81,5 +81,29 @@ describe('enrichModelsFromModelsDev', () => {
 
     const models = await enrichModelsFromModelsDev(provider, [{ id: 'gpt-4o' }]);
     expect(models[0]?.inputModalities).toEqual(['text', 'image']);
+  });
+
+  it('refreshModelsDevCatalogIfStale does not throw when catalog is warm', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({
+        openai: {
+          models: {
+            'gpt-4o': { limit: { context: 128_000 } }
+          }
+        }
+      })
+    );
+    await enrichModelsFromModelsDev(
+      {
+        id: 'p1',
+        name: 'OpenAI',
+        baseUrl: 'https://api.openai.com',
+        dialect: 'openai',
+        enabled: true,
+        apiKey: 'k'
+      },
+      [{ id: 'gpt-4o' }]
+    );
+    await expect(refreshModelsDevCatalogIfStale()).resolves.toBeUndefined();
   });
 });

@@ -432,7 +432,9 @@ export function registerWorkspaceIpc(): void {
       assertObject('workspace:reveal-path', 'input', input);
       assertString('workspace:reveal-path', 'path', input.path, { maxBytes: MAX_PATH_BYTES });
       assertOptionalString('workspace:reveal-path', 'workspaceId', input.workspaceId);
-      assertSafeRelativePath('workspace:reveal-path', 'path', input.path);
+      assertSafeRelativePath('workspace:reveal-path', 'path', input.path, {
+        allowDotRoot: true
+      });
       const { wsPath } = await resolveWorkspaceForPathOps(input.workspaceId);
       const abs = await realpathInsideWorkspace(wsPath, input.path);
       shell.showItemInFolder(abs);

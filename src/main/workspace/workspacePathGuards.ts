@@ -4,9 +4,17 @@
 
 import { WORKSPACE_DOTDIR } from '@shared/constants.js';
 
-export function assertSafeRelativePath(label: string, field: string, relPath: string): void {
+export function assertSafeRelativePath(
+  label: string,
+  field: string,
+  relPath: string,
+  opts?: { allowDotRoot?: boolean }
+): void {
   const norm = relPath.replace(/\\/g, '/').replace(/^\/+/, '');
-  if (!norm || norm === '.' || norm === '..') {
+  if (!norm || norm === '..') {
+    throw new Error(`${label}: invalid ${field}.`);
+  }
+  if (norm === '.' && !opts?.allowDotRoot) {
     throw new Error(`${label}: invalid ${field}.`);
   }
   const parts = norm.split('/');
