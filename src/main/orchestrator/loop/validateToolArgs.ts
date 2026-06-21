@@ -3,7 +3,7 @@
  *
  * Fails fast before `toolRunner` (and dedupe counters) so repeated
  * malformed calls surface the real validation error instead of
- * `duplicate_tool_call` on the third identical attempt.
+ * `duplicate_tool_call` on the repeat budget for identical (tool, args).
  *
  * Prose-emitted tool JSON is not recovered here — only native `tool_calls`
  * from the provider stream are dispatched by the orchestrator loop.

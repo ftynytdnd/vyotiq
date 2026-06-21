@@ -15,6 +15,17 @@ const touchHeartbeatMock = vi.hoisted(() => vi.fn(async () => undefined));
 const deferHeartbeatMock = vi.hoisted(() => vi.fn(async () => undefined));
 const detachHeartbeatMock = vi.hoisted(() => vi.fn(async () => true));
 const listHeartbeatsMock = vi.hoisted(() => vi.fn(async (): Promise<ConversationHeartbeat[]> => []));
+const getContextLevelMock = vi.hoisted(() =>
+  vi.fn((): import('@shared/context/contextLevel.js').ContextLevel | undefined => undefined)
+);
+
+vi.mock('@main/orchestrator/conversationHasActiveRun.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@main/orchestrator/conversationHasActiveRun.js')>();
+  return {
+    ...actual,
+    getActiveRunContextLevel: (...args: unknown[]) => getContextLevelMock(...args)
+  };
+});
 
 vi.mock('@main/orchestrator/AgentV.js', () => ({
   listActiveRuns: () => listActiveRunsMock()
@@ -76,6 +87,7 @@ describe('conversation heartbeat service', () => {
     detachHeartbeatMock.mockClear();
     notifyUiToastMock.mockClear();
     listHeartbeatsMock.mockReset();
+    getContextLevelMock.mockReset();
     stopConversationHeartbeatService();
   });
 
@@ -143,6 +155,18 @@ describe('conversation heartbeat service', () => {
     expect(dispatchChatSendMock).toHaveBeenCalled();
     expect(touchHeartbeatMock).not.toHaveBeenCalled();
     expect(detachHeartbeatMock).toHaveBeenCalledWith('conv-1');
+  });
+
+  it('defers wake when active run is under context pressure', async () => {
+    listHeartbeatsMock.mockResolvedValue([sampleHeartbeat()]);
+    listActiveRunsMock.mockReturnValue([{ conversationId: 'conv-1' }]);
+    getContextLevelMock.mockReturnValue('trigger');
+
+    await runConversationHeartbeatTickForTests();
+
+    expect(enqueueFollowUpMock).not.toHaveBeenCalled();
+    expect(deferHeartbeatMock).toHaveBeenCalled();
+    expect(touchHeartbeatMock).not.toHaveBeenCalled();
   });
 
   it('starts interval poller without throwing', () => {

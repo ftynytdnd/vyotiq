@@ -43,7 +43,6 @@ import { normalizeRegisteredToolName } from '@shared/tools/normalizeToolName.js'
 import { pauseRunForAskUser } from './askUserPause.js';
 import { backoff } from '../retry.js';
 import { isAbortError } from '../abortSignal.js';
-import { isStreamInactivityError } from '../../providers/streamInactivity.js';
 import { logger } from '../../logging/logger.js';
 import {
   isNonRecoverableProviderError,
@@ -98,6 +97,7 @@ import {
   toolCallSignature,
   type SpinSignatureBuffer
 } from './toolSpinSignature.js';
+import { setActiveRunContextLevel } from '../conversationHasActiveRun.js';
 import {
   consumeSteeringFollowUps,
   tryConsumeQueueBeforeFinish,
@@ -303,7 +303,6 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     const allowlistRefusalCounts = new Map<string, number>();
     let consecutiveBadToolRounds = resume?.consecutiveBadToolRounds ?? 0;
     let providerRecoveryRounds = 0;
-    let transportFailuresThisRun = 0;
     let runHadLlmProgress = false;
     let lastToolRoundFailure: string | undefined;
     let rootToolRoundFailure: string | undefined;
@@ -437,14 +436,14 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             modelId: opts.input.selection.modelId,
             iteration: iter
           });
-          if (consecutiveSpinHotIterations >= 3 && !spinHotNudgeEmitted) {
+          if (consecutiveSpinHotIterations >= 2 && !spinHotNudgeEmitted) {
             spinHotNudgeEmitted = true;
             emit({
               kind: 'agent-thought',
               id: randomUUID(),
               ts: Date.now(),
               content:
-                'The same tool pattern has repeated several times. Pivot strategy or ask the user.',
+                'The same tool pattern has repeated several times. Pivot to `edit`, `ask_user`, or a different file — do not re-read the same paths.',
               severity: 'warn'
             });
           }
@@ -503,6 +502,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           const usage = reduction.usage;
           advertisedWindowForTurn = usage.advertisedWindow;
           lastUsageLevel = usage.level;
+          if (opts.input.conversationId) {
+            setActiveRunContextLevel(opts.input.conversationId, usage.level);
+          }
           if (usage.effectiveWindow > 0) {
             emit({
               kind: 'context-usage',
@@ -733,9 +735,6 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             });
             return { terminalError: msg };
           }
-          if (isStreamInactivityError(turn.error) || /stream inactive/i.test(msg)) {
-            transportFailuresThisRun += 1;
-          }
           consecutiveErrors += 1;
           log.warn('LLM call failed', { attempt: consecutiveErrors, msg });
           // One aborted marker drops BOTH the text and reasoning accumulators in
@@ -788,16 +787,6 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             // "thinking…" indicator. See plan §H.
             severity: 'warn'
           });
-          if (transportFailuresThisRun > 1) {
-            emit({
-              kind: 'agent-thought',
-              id: randomUUID(),
-              ts: Date.now(),
-              content:
-                'The provider connection was unstable earlier in this run. Retrying may take up to a minute per attempt.',
-              severity: 'info'
-            });
-          }
           emitRunStatus(
             emit,
             'retrying',

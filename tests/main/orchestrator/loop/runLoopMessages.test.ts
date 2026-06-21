@@ -4,7 +4,6 @@ import {
   formatRetryThought,
   formatRunTokenBudgetError,
   formatToolRecoveryThought,
-  formatToolStrikeError,
   sentenceEnd
 } from '@main/orchestrator/loop/runLoopMessages';
 
@@ -28,8 +27,10 @@ describe('runLoopMessages', () => {
     );
   });
 
-  it('formatToolStrikeError includes last failure when provided', () => {
-    expect(formatToolStrikeError('read — missing path')).toContain('read — missing path');
+  it('formatProviderStrikeError includes connectivity hint for fetch failed', () => {
+    const msg = formatProviderStrikeError(3, 'fetch failed');
+    expect(msg).toContain('fetch failed');
+    expect(msg.toLowerCase()).toContain('connectivity');
   });
 
   it('formatRunTokenBudgetError cites cumulative and max totals', () => {
@@ -37,15 +38,6 @@ describe('runLoopMessages', () => {
     expect(msg).toContain('1,500,000');
     expect(msg).toContain('1,000,000');
     expect(msg).toContain('Start a new message to continue');
-  });
-
-  it('formatToolStrikeError surfaces root cause when it differs from last error', () => {
-    const msg = formatToolStrikeError(
-      'read — duplicate_tool_call',
-      'read — missing path'
-    );
-    expect(msg).toContain('Root cause: read — missing path');
-    expect(msg).toContain('Last error: read — duplicate_tool_call');
   });
 
   it('formatToolRecoveryThought gives timeout and escape hints from failure chain', () => {

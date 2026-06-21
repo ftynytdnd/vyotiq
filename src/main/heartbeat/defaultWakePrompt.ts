@@ -12,5 +12,7 @@ Before acting:
 4. If blocked on a human decision: ask_user — do not guess.
 5. If fully done: detach heartbeat and finish with a clear summary.
 
-Do not repeat completed work. Human oversight remains.
+Do not repeat completed work. If identical tools ran in the last 10 minutes, continue from \`<run_progress>\` instead of re-reading the same files.
+
+Human oversight remains.
 </heartbeat_wake>`;

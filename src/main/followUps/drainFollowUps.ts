@@ -23,8 +23,6 @@ const draining = new Set<string>();
 /** Suppresses post-abort drain while send-now owns dispatch for a conversation. */
 const suppressDrain = new Set<string>();
 
-export { conversationHasActiveRun };
-
 /**
  * After a run settles, start the next queued follow-up when the conversation is idle.
  */

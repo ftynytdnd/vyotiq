@@ -56,6 +56,7 @@ import {
   type LoopCheckpoint
 } from './pausedRunRegistry.js';
 import { registerRunCrashDrain } from './runCrashDrain.js';
+import { clearActiveRunContextLevel } from './conversationHasActiveRun.js';
 import { getSettings } from '../settings/settingsStore.js';
 import { resolveReportsSettings, type ResolvedReportsSettings } from '@shared/report/reportsSettings.js';
 import {
@@ -282,7 +283,10 @@ export function abortRunsForProvider(providerId: string): number {
  */
 function removeActiveRunIfCurrent(runId: string, generation: number): void {
   const entry = activeRuns.get(runId);
-  if (entry?.generation === generation) activeRuns.delete(runId);
+  if (entry?.generation === generation) {
+    if (entry.conversationId) clearActiveRunContextLevel(entry.conversationId);
+    activeRuns.delete(runId);
+  }
 }
 
 export async function startRun(

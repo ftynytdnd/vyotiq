@@ -25,27 +25,13 @@ export function formatRetryThought(
 export function formatProviderStrikeError(consecutiveErrors: number, detail: string): string {
   const core = sentenceEnd(detail);
   const piiHint = formatPiiOrModerationHint(detail);
+  const fetchHint = /fetch failed/i.test(detail)
+    ? ' Check network connectivity and your provider host (e.g. Ollama Cloud).'
+    : '';
   const base =
     `The provider failed ${consecutiveErrors} times in a row (${core}) ` +
-    'Try Retry below, check API settings, or switch models.';
+    `Try Retry below, check API settings, or switch models.${fetchHint}`;
   return piiHint ? `${base} ${piiHint}` : base;
-}
-
-export function formatToolStrikeError(
-  lastFailure?: string,
-  rootFailure?: string
-): string {
-  const base = `Tools failed ${MAX_SELF_CORRECTION_ATTEMPTS} times in a row.`;
-  const tail = 'Try Retry below, review the errors above, or adjust your request.';
-  const last = lastFailure?.trim();
-  const root = rootFailure?.trim();
-  if (root && last && root !== last) {
-    return (
-      `${base} Root cause: ${sentenceEnd(root)} Last error: ${sentenceEnd(last)} ${tail}`
-    );
-  }
-  if (last) return `${base} Last error: ${sentenceEnd(last)} ${tail}`;
-  return `${base} ${tail}`;
 }
 
 /** Harness-driven recovery copy — run continues after sustained tool failures. */
@@ -98,9 +84,12 @@ export function formatToolRecoveryThought(
 /** Harness-driven recovery when the provider keeps failing — run continues. */
 export function formatProviderRecoveryThought(consecutiveErrors: number, detail: string): string {
   const piiHint = formatPiiOrModerationHint(detail);
+  const fetchHint = /fetch failed/i.test(detail)
+    ? ' Verify Ollama Cloud / provider host reachability before retrying.'
+    : '';
   const base =
     `Provider recovery (${consecutiveErrors} failures): ${sentenceEnd(detail)} ` +
-    'Check network and API settings, switch models, or use `ask_user` if this persists.';
+    `Check network and API settings, switch models, or use \`ask_user\` if this persists.${fetchHint}`;
   return piiHint ? `${base} ${piiHint}` : base;
 }
 

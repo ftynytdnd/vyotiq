@@ -5,7 +5,10 @@
 import { randomUUID } from 'node:crypto';
 import { dispatchChatSend } from '../ipc/chat.ipc.js';
 import { enqueueFollowUp } from '../followUps/followUpQueueService.js';
-import { conversationHasActiveRun } from '../orchestrator/conversationHasActiveRun.js';
+import {
+  conversationHasActiveRun,
+  getActiveRunContextLevel
+} from '../orchestrator/conversationHasActiveRun.js';
 import {
   listConversationHeartbeats,
   shouldWakeHeartbeat,
@@ -30,7 +33,13 @@ let shuttingDown = false;
 /** conversationId → nextWakeAt window we already toasted for queue-full */
 const queueFullToastNotified = new Map<string, number>();
 
-export { conversationHasActiveRun };
+const CONTEXT_PRESSURE_DEFER_MS = 5 * 60_000;
+
+function shouldDeferWakeForActiveRun(conversationId: string): boolean {
+  if (!conversationHasActiveRun(conversationId)) return false;
+  const level = getActiveRunContextLevel(conversationId);
+  return level === 'trigger' || level === 'critical';
+}
 
 async function dispatchWake(row: ConversationHeartbeat): Promise<boolean> {
   if (shuttingDown) return false;
@@ -76,6 +85,14 @@ async function tick(): Promise<void> {
     const rows = await listConversationHeartbeats();
     for (const row of rows) {
       if (!shouldWakeHeartbeat(row, now)) continue;
+      if (shouldDeferWakeForActiveRun(row.conversationId)) {
+        log.info('heartbeat wake deferred — active run under context pressure', {
+          conversationId: row.conversationId,
+          level: getActiveRunContextLevel(row.conversationId)
+        });
+        await deferConversationHeartbeat(row.conversationId, now, CONTEXT_PRESSURE_DEFER_MS);
+        continue;
+      }
       try {
         const dispatched = await dispatchWake(row);
         if (dispatched) {

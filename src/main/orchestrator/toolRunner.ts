@@ -16,7 +16,7 @@ import type { TimelineEvent } from '@shared/types/chat.js';
 import type { ToolResult } from '@shared/types/tool.js';
 import { getTool, isKnownToolName } from '../tools/registry.js';
 import { lookupCachedResult, recordToolResult } from './toolResultCache.js';
-import { checkToolCallDedupe } from './toolCallDedupe.js';
+import { checkToolCallDedupe, isSpinProneTool } from './toolCallDedupe.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child('orchestrator/toolRunner');
@@ -30,6 +30,22 @@ export interface ToolRunOpts {
   signal: AbortSignal;
   toolCallId?: string;
   onProgress?: (message: string) => void;
+}
+
+function blockDuplicateToolCall(
+  toolName: string,
+  args: Record<string, unknown>,
+  opts: ToolRunOpts
+): ToolResult | null {
+  const dedupeBlocked = checkToolCallDedupe(opts.signal, toolName, args);
+  if (!dedupeBlocked) return null;
+  log.warn('duplicate tool call blocked', {
+    tool: toolName,
+    argKeys: Object.keys(args),
+    runId: opts.runId,
+    conversationId: opts.conversationId
+  });
+  return dedupeBlocked;
 }
 
 export async function runToolByName(
@@ -54,20 +70,19 @@ export async function runToolByName(
   }
   const tool = getTool(toolName)!;
 
-  // Cache check before dedupe — identical read-shaped calls must return
-  // the memoized result instead of counting toward the duplicate block.
+  // Spin-prone tools: dedupe before cache so a second identical call is blocked
+  // instead of silently replaying cached output.
+  if (isSpinProneTool(tool.name)) {
+    const blocked = blockDuplicateToolCall(tool.name, args, opts);
+    if (blocked) return blocked;
+  }
+
   const cached = lookupCachedResult(opts.signal, tool.name, args, opts.conversationId);
   if (cached) return cached;
 
-  const dedupeBlocked = checkToolCallDedupe(opts.signal, tool.name, args);
-  if (dedupeBlocked) {
-    log.warn('duplicate tool call blocked', {
-      tool: tool.name,
-      argKeys: Object.keys(args),
-      runId: opts.runId,
-      conversationId: opts.conversationId
-    });
-    return dedupeBlocked;
+  if (!isSpinProneTool(tool.name)) {
+    const blocked = blockDuplicateToolCall(tool.name, args, opts);
+    if (blocked) return blocked;
   }
 
   try {

@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useChatStore } from '../../../store/useChatStore.js';
-import { formatTokenCountUsed, formatTokenCountWithUnit } from '../../../lib/formatTokens.js';
+import { formatTokenCount, formatTokenCountUsed } from '../../../lib/formatTokens.js';
 import {
   LONG_TURN_WARN_MS,
   VERY_LONG_TURN_WARN_MS
@@ -86,7 +86,7 @@ export function TurnStickyFooter({
     showLive && usage && usage.cumulative.totalTokens > 0
       ? awaitingAskUser
         ? formatTokenCountUsed(usage.cumulative.totalTokens)
-        : formatTokenCountWithUnit(usage.cumulative.totalTokens)
+        : `${formatTokenCount(usage.cumulative.totalTokens)} run total`
       : null;
   const throughputLabel = liveTokenRateLabel ?? tokenLabel;
 

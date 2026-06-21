@@ -42,8 +42,8 @@ function breakdownTitle(
 ): string {
   const approx = usage.exact ? '' : ' (approximate)';
   const base = isUnknownContextWindow(usage)
-    ? `Context: ${formatTokenCountWithUnit(usage.usedTokens)}${approx} — window unknown`
-    : `Context: ${formatTokenCountWithUnit(usage.usedTokens)} of ` +
+    ? `Prompt fill: ${formatTokenCountWithUnit(usage.usedTokens)}${approx} — window unknown`
+    : `Prompt fill: ${formatTokenCountWithUnit(usage.usedTokens)} of ` +
       `${formatTokenCountWithUnit(usage.effectiveWindow)}${approx} — ${percent}%`;
   const compactionDetail = levelDetailTitle(usage);
   if (compactionDetail) return `${base} · ${compactionDetail}`;

@@ -22,8 +22,6 @@ let running = false;
 /** runId → dueAt window we already toasted for queue-full */
 const queueFullToastNotified = new Map<string, number>();
 
-export { conversationHasActiveRun };
-
 export function shouldDispatchScheduledRun(run: ScheduledRun, now: number): boolean {
   if (!run.enabled) return false;
   const dueAt = run.nextRunAt ?? run.createdAt;

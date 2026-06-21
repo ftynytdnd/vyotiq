@@ -1,17 +1,31 @@
 /**
- * Per-run guard against identical tool+args spam. Blocks the third
- * dispatch of the same signature in a run (after two allowed attempts).
- * Complements `toolResultCache` (read memoization) without restoring the
- * removed spin-detector halt.
+ * Per-run guard against identical tool+args spam.
+ *
+ * Spin-prone tools (`read`, `bash`, `search`, `ls`) block on the second
+ * identical dispatch so the model cannot cache-loop through a third repeat.
+ * Other tools allow two attempts then block.
  */
 
 import type { ToolResult } from '@shared/types/tool.js';
 import type { ToolName } from '@shared/types/tool.js';
 import { toolCallSignature } from './loop/toolSpinSignature.js';
 
-const MAX_IDENTICAL_DISPATCHES = 3;
+const MAX_IDENTICAL_DISPATCHES_DEFAULT = 3;
+const MAX_IDENTICAL_DISPATCHES_SPIN_PRONE = 2;
 
 const EXCLUDED_TOOLS = new Set<string>(['finish', 'ask_user']);
+
+const SPIN_PRONE_TOOLS = new Set<string>(['read', 'bash', 'search', 'ls']);
+
+export function isSpinProneTool(toolName: string): boolean {
+  return SPIN_PRONE_TOOLS.has(toolName);
+}
+
+function maxIdenticalDispatches(toolName: string): number {
+  return isSpinProneTool(toolName)
+    ? MAX_IDENTICAL_DISPATCHES_SPIN_PRONE
+    : MAX_IDENTICAL_DISPATCHES_DEFAULT;
+}
 
 interface DedupeEntry {
   count: number;
@@ -29,8 +43,8 @@ function dedupeMap(signal: AbortSignal): Map<string, DedupeEntry> {
 }
 
 /**
- * Returns a blocked `ToolResult` when the same tool+args was already
- * dispatched twice in this run; otherwise `null` (proceed).
+ * Returns a blocked `ToolResult` when the same tool+args exceeded the
+ * per-tool repeat budget; otherwise `null` (proceed).
  */
 export function checkToolCallDedupe(
   signal: AbortSignal,
@@ -45,15 +59,19 @@ export function checkToolCallDedupe(
   const count = (prev?.count ?? 0) + 1;
   map.set(signature, { count });
 
-  if (count < MAX_IDENTICAL_DISPATCHES) return null;
+  const max = maxIdenticalDispatches(toolName);
+  if (count < max) return null;
+
+  const pivotHint = isSpinProneTool(toolName)
+    ? ' Pivot to `edit`, `ask_user`, or a different path — do not re-read the same file.'
+    : ' Change your approach or arguments before trying again.';
 
   return {
     id: 'dedupe-blocked',
     name: toolName,
     ok: false,
     output:
-      `BLOCKED: Tool "${toolName}" was called with identical arguments ${count} times in this run. ` +
-      'Change your approach or arguments before trying again.',
+      `BLOCKED: Tool "${toolName}" was called with identical arguments ${count} times in this run.${pivotHint}`,
     error: 'duplicate_tool_call',
     durationMs: 0
   };

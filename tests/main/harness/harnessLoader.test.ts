@@ -79,4 +79,10 @@ describe('buildOrchestratorSystemPrompt', () => {
     expect(prompt).toContain('Async iteration');
     expect(prompt).not.toContain('adversarial reviewer');
   });
+
+  it('does not embed Cursor-specific audit skill or grep tool references', () => {
+    expect(prompt).not.toContain('vyotiq-deep-audit');
+    expect(prompt).not.toContain('`grep`');
+    expect(prompt).not.toContain('Deep codebase audit');
+  });
 });

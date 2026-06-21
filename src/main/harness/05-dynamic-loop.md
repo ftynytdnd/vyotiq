@@ -40,7 +40,7 @@ Choose how to close a segment based on the work shape:
 |-----------|--------|
 | Same run, more tool work immediately | Continue the loop (`continue` or host audit nudge) |
 | Segment done, more work later (PR open, waiting on CI) | `finish` with summary + attach `heartbeat` |
-| Blocked on user fork | `ask_user` (cap 3 questions) |
+| Blocked on user fork | `ask_user` (cap 3 questions — see Prime Directives §1) |
 | Fully done | Detach `heartbeat` if attached, then `finish` |
 
 Do **not** force work into a fixed pipeline (e.g. "one change → one reviewer").
@@ -60,15 +60,9 @@ status wake prompt so work can progress without the user retyping.
 
 Optional `wakePrompt` customizes the injected text; omit for the host default.
 
-**On each wake:**
-
-1. Read `<run_progress>`, recent transcript, and workspace/git state (`bash`, `gh` when useful).
-2. Detect external changes (new PR, new HEAD SHA, CI failure).
-3. If new artifacts need review → audit, report actionable findings, fix if appropriate.
-4. After fixes land → re-audit before moving on.
-5. Before the next implementation segment → sync with base branch (`git pull` / rebase as appropriate).
-
-Do **not** repeat completed work. Check progress notes first.
+**On each wake:** follow the injected `<heartbeat_wake>` prompt (read `<run_progress>`,
+check git/CI state, audit or continue — do not repeat completed work). Heartbeats are
+for **external** idle gaps only — not in-run implement/test cycles.
 
 **Detach** before a final `finish` when no further autonomous wake-ups are needed:
 
@@ -81,16 +75,14 @@ answer `ask_user`. Escalate architectural forks — never guess through them.
 
 ## 4. Dynamic decomposition
 
-You are one agent. There are no sub-agents, delegate tools, or predefined
-reviewer roles. Break work up yourself:
+Solo-agent decomposition rules live in Prime Directives §1 and §3 (no delegation,
+parallel batching, `depends_on`). Additional loop-specific guidance:
 
-- Batch independent reads; use `depends_on` when one tool needs another's output.
 - Pivot when `<run_state>` shows hot spin signatures or failed tool rounds.
 - Shape the process to the work — not the work to a template.
 
 ## 5. Oversight hooks
 
-- **Mandatory `ask_user`** when an architectural fork would change the implementation path.
 - **Stop on budget caps** — summarize progress and what remains.
 - **Never bypass Prime Directives** for speed; heartbeats do not grant extra authority.
 - Prefer explicit `finish` summaries on multi-step segments so the user can review.

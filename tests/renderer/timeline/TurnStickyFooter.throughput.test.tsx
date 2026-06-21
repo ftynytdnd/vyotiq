@@ -57,7 +57,7 @@ describe('TurnStickyFooter throughput', () => {
     );
 
     expect(screen.getByText(/Thinking/)).toBeTruthy();
-    expect(screen.getByText(/1k tok/)).toBeTruthy();
+    expect(screen.getByText(/1k run total/)).toBeTruthy();
   });
 
   it('shows live tok/s instead of cumulative total while streaming', () => {
@@ -102,6 +102,6 @@ describe('TurnStickyFooter throughput', () => {
     );
 
     expect(screen.getByText(/tok\/s/)).toBeTruthy();
-    expect(screen.queryByText(/1k tok/)).toBeNull();
+    expect(screen.queryByText(/1k run total/)).toBeNull();
   });
 });

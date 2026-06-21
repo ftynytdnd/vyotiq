@@ -9,10 +9,8 @@ vi.mock('@main/orchestrator/AgentV.js', () => ({
   listActiveRuns: () => listActiveRunsMock()
 }));
 
-import {
-  conversationHasActiveRun,
-  shouldDispatchScheduledRun
-} from '@main/scheduler/scheduledRunsService.js';
+import { conversationHasActiveRun } from '@main/orchestrator/conversationHasActiveRun.js';
+import { shouldDispatchScheduledRun } from '@main/scheduler/scheduledRunsService.js';
 
 function sampleRun(overrides: Partial<ScheduledRun> = {}): ScheduledRun {
   const now = Date.now();
