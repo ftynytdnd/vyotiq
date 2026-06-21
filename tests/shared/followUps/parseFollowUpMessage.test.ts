@@ -30,4 +30,12 @@ describe('parseFollowUpMessage', () => {
     const { source: _source, ...withoutSource } = valid;
     expect(parseFollowUpMessage(withoutSource)?.source).toBe('composer');
   });
+
+  it('accepts dynamic loop follow-up sources', () => {
+    expect(parseFollowUpMessage({ ...valid, source: 'heartbeat' })?.source).toBe('heartbeat');
+    expect(parseFollowUpMessage({ ...valid, source: 'continue' })?.source).toBe('continue');
+    expect(parseFollowUpMessage({ ...valid, source: 'dynamic-loop' })?.source).toBe(
+      'dynamic-loop'
+    );
+  });
 });

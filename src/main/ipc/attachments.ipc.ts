@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { clipboard, dialog, shell } from 'electron';
-import { IPC, MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
+import { IPC, MAX_CHAT_ATTACHMENTS, MAX_IO_PATH_BYTES } from '@shared/constants.js';
 import type { PromptAttachmentMeta } from '@shared/types/chat.js';
 import {
   looksLikeAbsoluteFilePath,
@@ -19,7 +19,15 @@ import { realpathInsideAttachmentsRoot } from '../attachments/sandbox.js';
 import { requireWorkspaceById } from '../workspace/workspaceState.js';
 import { realpathInsideWorkspace } from '../tools/sandbox.js';
 
-const MAX_ATTACHMENT_IO_PATH_BYTES = 4096;
+function pathByteLength(path: string): number {
+  return Buffer.byteLength(path, 'utf8');
+}
+
+function attachmentPathTooLong(path: string): string | null {
+  const bytes = pathByteLength(path);
+  if (bytes <= MAX_IO_PATH_BYTES) return null;
+  return `path exceeds the ${MAX_IO_PATH_BYTES.toLocaleString()}-byte cap (received ${bytes.toLocaleString()} bytes)`;
+}
 
 function notifyAttachmentIngestRejections(
   rejected: Array<{ name: string; reason: string }>,
@@ -38,11 +46,11 @@ interface AttachmentPathInput {
 
 function parseAttachmentPathInput(channel: string, input: unknown): AttachmentPathInput {
   if (typeof input === 'string') {
-    assertString(channel, 'path', input, { maxBytes: MAX_ATTACHMENT_IO_PATH_BYTES });
+    assertString(channel, 'path', input, { maxBytes: MAX_IO_PATH_BYTES });
     return { path: input };
   }
   assertObject(channel, 'input', input);
-  assertString(channel, 'input.path', input.path, { maxBytes: MAX_ATTACHMENT_IO_PATH_BYTES });
+  assertString(channel, 'input.path', input.path, { maxBytes: MAX_IO_PATH_BYTES });
   assertOptionalString(channel, 'input.workspaceId', input.workspaceId);
   return {
     path: input.path,
@@ -196,7 +204,7 @@ export function registerAttachmentsIpc(): void {
       assertObject('attachments:collectFolder', 'input', input);
       assertString('attachments:collectFolder', 'workspaceId', input.workspaceId);
       assertString('attachments:collectFolder', 'folderPath', input.folderPath, {
-        maxBytes: MAX_ATTACHMENT_IO_PATH_BYTES
+        maxBytes: MAX_IO_PATH_BYTES
       });
       const max = input.maxCount ?? MAX_CHAT_ATTACHMENTS;
       assertNumber('attachments:collectFolder', 'maxCount', max, {
@@ -231,13 +239,21 @@ export function registerAttachmentsIpc(): void {
       const workspaceRoot = await requireWorkspaceById(input.workspaceId);
       const out: PromptAttachmentMeta[] = [];
       const rejected: Array<{ name: string; reason: string }> = [];
-      for (const p of input.paths) {
-        assertString('attachments:ingest', 'path', p, { maxBytes: MAX_ATTACHMENT_IO_PATH_BYTES });
-        const ws = await resolveAttachmentInWorkspace(workspaceRoot, p);
+      for (const raw of input.paths) {
+        if (typeof raw !== 'string' || raw.length === 0) {
+          rejected.push({ name: '(invalid path)', reason: 'path must be a non-empty string' });
+          continue;
+        }
+        const tooLong = attachmentPathTooLong(raw);
+        if (tooLong) {
+          rejected.push({ name: raw.split(/[/\\]/).pop() ?? raw, reason: tooLong });
+          continue;
+        }
+        const ws = await resolveAttachmentInWorkspace(workspaceRoot, raw);
         try {
           out.push(
             await ingestExternalFile({
-              sourcePath: ws.inWorkspace ? ws.absPath : p,
+              sourcePath: ws.inWorkspace ? ws.absPath : raw,
               workspaceId: input.workspaceId,
               conversationId: input.conversationId,
               messageId: input.messageId,
@@ -246,7 +262,7 @@ export function registerAttachmentsIpc(): void {
           );
         } catch (err: unknown) {
           const reason = err instanceof Error ? err.message : String(err);
-          rejected.push({ name: p.split(/[/\\]/).pop() ?? p, reason });
+          rejected.push({ name: raw.split(/[/\\]/).pop() ?? raw, reason });
         }
       }
       notifyAttachmentIngestRejections(rejected, input.conversationId);

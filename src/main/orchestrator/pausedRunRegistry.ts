@@ -30,6 +30,8 @@ export interface LoopCheckpoint {
   reportGateBonusIteration?: boolean;
   /** Summed provider `usage.totalTokens` across LLM turns in this run. */
   runCumulativeTokens?: number;
+  /** Host dynamic-loop audit nudge awaiting agent response. */
+  dynamicLoopAuditAwaitingResponse?: boolean;
 }
 
 interface PausedRunCallbacks {
@@ -99,6 +101,7 @@ export function cloneLoopCheckpoint(state: {
   pendingTerminal?: 'finish' | 'implicit-finish';
   reportGateBonusIteration?: boolean;
   runCumulativeTokens?: number;
+  dynamicLoopAuditAwaitingResponse?: boolean;
 }): LoopCheckpoint {
   return {
     // Defensive shallow copy: the checkpoint must not alias the live
@@ -123,6 +126,9 @@ export function cloneLoopCheckpoint(state: {
       : {}),
     ...(state.runCumulativeTokens !== undefined
       ? { runCumulativeTokens: state.runCumulativeTokens }
+      : {}),
+    ...(state.dynamicLoopAuditAwaitingResponse !== undefined
+      ? { dynamicLoopAuditAwaitingResponse: state.dynamicLoopAuditAwaitingResponse }
       : {})
   };
 }

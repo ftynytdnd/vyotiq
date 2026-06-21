@@ -63,6 +63,36 @@ describe('followUpQueueService', () => {
     expect(state.queued[0]!.prompt).toBe('queue me');
   });
 
+  it('persists dynamic loop follow-up sources', async () => {
+    await enqueueFollowUp({
+      conversationId,
+      kind: 'steering',
+      prompt: 'self-continue',
+      selection,
+      source: 'continue'
+    });
+    await enqueueFollowUp({
+      conversationId,
+      kind: 'steering',
+      prompt: 'host audit',
+      selection,
+      source: 'dynamic-loop'
+    });
+    await enqueueFollowUp({
+      conversationId,
+      kind: 'steering',
+      prompt: 'wake',
+      selection,
+      source: 'heartbeat'
+    });
+    const state = await listFollowUps(conversationId);
+    expect(state.steering.map((m) => m.source)).toEqual([
+      'continue',
+      'dynamic-loop',
+      'heartbeat'
+    ]);
+  });
+
   it('rejects when a lane exceeds max depth', async () => {
     for (let i = 0; i < MAX_FOLLOW_UP_QUEUE_DEPTH; i++) {
       await enqueueFollowUp({

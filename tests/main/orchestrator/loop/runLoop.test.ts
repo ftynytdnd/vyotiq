@@ -93,8 +93,10 @@ import { handleAssistantTurn } from '@main/orchestrator/loop/handleAssistantTurn
 import {
   endsWithQuestionMark,
   isImplicitFinish,
+  looksLikeProseEmittedToolCalls,
   runOrchestratorLoop,
   shouldSuppressImplicitFinishAfterTools,
+  USER_PROSE_TOOL_CALL_ERROR,
   __test_resetRecentBillingBlock
 } from '@main/orchestrator/loop/runLoop';
 
@@ -344,6 +346,43 @@ describe('isImplicitFinish', () => {
     expect(isImplicitFinish('Okay.')).toBe(false);
     expect(isImplicitFinish('Yes.')).toBe(false);
   });
+
+  it('rejects fenced JSON tool-call prose (gemma-style regression)', () => {
+    const prose = `\`\`\`json
+[
+  {
+    "name": "ls",
+    "arguments": {
+      "depth": 3
+    }
+  },
+  {
+    "name": "read",
+    "arguments": {
+      "path": "main.py"
+    }
+  }
+]
+\`\`\``;
+    expect(looksLikeProseEmittedToolCalls(prose)).toBe(true);
+    expect(isImplicitFinish(prose)).toBe(false);
+  });
+});
+
+describe('looksLikeProseEmittedToolCalls', () => {
+  it('detects raw JSON arrays of tool calls', () => {
+    expect(
+      looksLikeProseEmittedToolCalls(
+        '[{"name":"read","arguments":{"path":"main.py"}}]'
+      )
+    ).toBe(true);
+  });
+
+  it('ignores normal answers', () => {
+    expect(looksLikeProseEmittedToolCalls('Here is the summary of changes.')).toBe(
+      false
+    );
+  });
 });
 
 describe('shouldSuppressImplicitFinishAfterTools', () => {
@@ -489,6 +528,40 @@ describe('runOrchestratorLoop — implicit finish and empty-turn retry', () => {
     expect(errors).toHaveLength(1);
     expect((errors[0] as { message: string }).message).toContain("didn't produce a complete answer");
     expect(result.terminalError).toContain("didn't produce a complete answer");
+  });
+
+  it('retries prose tool JSON once then emits a model-capability error', async () => {
+    const proseToolJson = `\`\`\`json
+[{"name":"ls","arguments":{"depth":3}},{"name":"read","arguments":{"path":"main.py"}}]
+\`\`\``;
+    vi.mocked(handleAssistantTurn).mockResolvedValue({
+      assistantMsgId: 'msg-prose-tools',
+      assistantText: proseToolJson,
+      reasoningText: '',
+      partialToolCalls: [],
+      hadText: true,
+      hadReasoning: false,
+      reasoningEndEmitted: false,
+      finishReason: 'stop'
+    });
+
+    const events: TimelineEvent[] = [];
+    const result = await runOrchestratorLoop({
+      input: { ...baseInput, conversationId: 'c-prose-tools' },
+      workspacePath: '/tmp/ws',
+      workspaceId: 'ws-test',
+      signal: new AbortController().signal,
+      emit: (e) => events.push(e),
+      initialMessages: [{ role: 'system', content: '' }, { role: 'user', content: 'audit repo' }],
+      initialQuery: 'audit repo'
+    });
+
+    expect(handleAssistantTurn).toHaveBeenCalledTimes(2);
+    expect(events.filter((e) => e.kind === 'agent-text-aborted')).toHaveLength(1);
+    const errors = events.filter((e) => e.kind === 'error');
+    expect(errors).toHaveLength(1);
+    expect((errors[0] as { message: string }).message).toBe(USER_PROSE_TOOL_CALL_ERROR);
+    expect(result.terminalError).toBe(USER_PROSE_TOOL_CALL_ERROR);
   });
 
   it('allows two reasoning-only turns before empty-turn handling', async () => {

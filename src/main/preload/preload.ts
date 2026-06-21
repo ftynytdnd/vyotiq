@@ -127,6 +127,18 @@ const api: VyotiqApi = {
     delete: (id) => ipcRenderer.invoke(IPC.SCHEDULED_RUNS_DELETE, id)
   },
 
+  heartbeat: {
+    list: () => ipcRenderer.invoke(IPC.HEARTBEAT_LIST),
+    get: (conversationId) => ipcRenderer.invoke(IPC.HEARTBEAT_GET, conversationId),
+    attach: (input) => ipcRenderer.invoke(IPC.HEARTBEAT_ATTACH, input),
+    detach: (input) => ipcRenderer.invoke(IPC.HEARTBEAT_DETACH, input),
+    onUpdated: (cb) =>
+      on<[string, import('@shared/types/conversationHeartbeat.js').ConversationHeartbeat | null]>(
+        IPC.HEARTBEAT_UPDATED,
+        (conversationId, row) => cb(conversationId, row)
+      )
+  },
+
   followUps: {
     list: (conversationId: string) => ipcRenderer.invoke(IPC.FOLLOW_UPS_LIST, conversationId),
     enqueue: (input) => ipcRenderer.invoke(IPC.FOLLOW_UPS_ENQUEUE, input),

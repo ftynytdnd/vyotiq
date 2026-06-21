@@ -17,6 +17,8 @@ const log = logger.child('providers/models-dev');
 const MODELS_DEV_URL = 'https://models.dev/api.json';
 const CACHE_FILE = 'models-dev-catalog.json';
 const CATALOG_TTL_MS = 24 * 60 * 60 * 1000;
+/** models.dev refresh cadence during active UI polling (not full catalog TTL). */
+const HOURLY_REFRESH_MS = 60 * 60 * 1000;
 
 type ModelsDevLimit = {
   context?: number;
@@ -348,8 +350,6 @@ export async function enrichModelsFromModelsDev(
 
   return next;
 }
-
-const HOURLY_REFRESH_MS = 60 * 60 * 1000;
 
 /** Test-only reset. */
 export function _resetModelsDevCatalogForTests(): void {

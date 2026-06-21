@@ -83,6 +83,32 @@ function makeStubApi() {
       onAwaitingUser: subscribe,
       listActiveRuns: vi.fn(async () => [])
     },
+    followUps: {
+      list: vi.fn(async () => ({ steering: [], queued: [] })),
+      enqueue: vi.fn(async () => ({ steering: [], queued: [] })),
+      update: vi.fn(async () => ({ steering: [], queued: [] })),
+      remove: vi.fn(async () => ({ steering: [], queued: [] })),
+      sendNow: vi.fn(async () => ({ steering: [], queued: [] })),
+      onUpdated: subscribe
+    },
+    ui: {
+      onToast: subscribe
+    },
+    heartbeat: {
+      list: vi.fn(async () => []),
+      get: vi.fn(async () => null),
+      attach: vi.fn(async (input) => ({
+        conversationId: input.conversationId,
+        workspaceId: input.workspaceId,
+        enabled: true,
+        intervalMinutes: input.intervalMinutes,
+        wakePrompt: '',
+        selection: input.selection,
+        createdAt: 0,
+        updatedAt: 0
+      })),
+      detach: vi.fn(async () => ({ ok: true }))
+    },
     conversations: {
       list: vi.fn(async () => []),
       read: vi.fn(async () => null),

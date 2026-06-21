@@ -208,8 +208,15 @@ export const MAX_USER_PROMPT_BYTES = 1_048_576; // 1 MiB
 /** Max attachments per message (composer shows N/10). */
 export const MAX_CHAT_ATTACHMENTS = 10;
 
+/** Max UTF-8 byte length for filesystem paths over IPC (Windows long-path ceiling). */
+export const MAX_IO_PATH_BYTES = 32_767;
+
 /** Max items per follow-up lane (steering + queued) per conversation. */
 export const MAX_FOLLOW_UP_QUEUE_DEPTH = 10;
+
+/** Per-conversation heartbeat poll interval bounds (minutes). */
+export const HEARTBEAT_MIN_INTERVAL_MINUTES = 5;
+export const HEARTBEAT_MAX_INTERVAL_MINUTES = 10;
 
 /** Default per-file ingest cap for text and generic binary attachments. */
 export const MAX_ATTACHMENT_FILE_BYTES = 10 * 1024 * 1024;
@@ -448,6 +455,14 @@ export const IPC = {
   SCHEDULED_RUNS_LIST: 'scheduled-runs:list',
   SCHEDULED_RUNS_UPSERT: 'scheduled-runs:upsert',
   SCHEDULED_RUNS_DELETE: 'scheduled-runs:delete',
+
+  /** Per-conversation async loop heartbeats. */
+  HEARTBEAT_LIST: 'heartbeat:list',
+  HEARTBEAT_GET: 'heartbeat:get',
+  HEARTBEAT_ATTACH: 'heartbeat:attach',
+  HEARTBEAT_DETACH: 'heartbeat:detach',
+  /** Push: heartbeat attach/detach changed for a conversation (main → renderer). */
+  HEARTBEAT_UPDATED: 'heartbeat:updated',
 
   // Checkpoints — file-change review + rewind
   CHECKPOINTS_PREVIEW_REWIND: 'checkpoints:preview-rewind',

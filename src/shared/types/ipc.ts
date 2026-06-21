@@ -12,6 +12,11 @@
 
 import type { ScheduledRun, ScheduledRunInput } from './scheduledRun.js';
 import type {
+  ConversationHeartbeat,
+  HeartbeatAttachInput,
+  HeartbeatDetachInput
+} from './conversationHeartbeat.js';
+import type {
   ConversationFollowUpState,
   FollowUpEnqueueInput,
   FollowUpRemoveInput,
@@ -1205,6 +1210,16 @@ export interface VyotiqApi {
     list(): Promise<ScheduledRun[]>;
     upsert(input: ScheduledRunInput): Promise<ScheduledRun>;
     delete(id: string): Promise<{ ok: boolean }>;
+  };
+
+  heartbeat: {
+    list(): Promise<ConversationHeartbeat[]>;
+    get(conversationId: string): Promise<ConversationHeartbeat | null>;
+    attach(input: HeartbeatAttachInput): Promise<ConversationHeartbeat>;
+    detach(input: HeartbeatDetachInput): Promise<{ ok: boolean }>;
+    onUpdated(
+      cb: (conversationId: string, row: ConversationHeartbeat | null) => void
+    ): () => void;
   };
 
   followUps: {

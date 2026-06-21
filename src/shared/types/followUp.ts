@@ -9,7 +9,12 @@ import type { ModelSelection } from './provider.js';
 
 export type FollowUpKind = 'steering' | 'queue';
 
-export type FollowUpSource = 'composer' | 'scheduled';
+export type FollowUpSource =
+  | 'composer'
+  | 'scheduled'
+  | 'heartbeat'
+  | 'continue'
+  | 'dynamic-loop';
 
 export interface FollowUpMessage {
   id: string;

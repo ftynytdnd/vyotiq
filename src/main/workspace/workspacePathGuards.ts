@@ -8,7 +8,7 @@ export function assertSafeRelativePath(
   label: string,
   field: string,
   relPath: string,
-  opts?: { allowDotRoot?: boolean }
+  opts?: { allowDotRoot?: boolean; allowDotVyotiq?: boolean }
 ): void {
   const norm = relPath.replace(/\\/g, '/').replace(/^\/+/, '');
   if (!norm || norm === '..') {
@@ -21,7 +21,10 @@ export function assertSafeRelativePath(
   if (parts.some((p) => p === '..' || p === '')) {
     throw new Error(`${label}: path must stay inside the workspace.`);
   }
-  if (parts[0] === WORKSPACE_DOTDIR || norm.startsWith(`${WORKSPACE_DOTDIR}/`)) {
+  if (
+    !opts?.allowDotVyotiq &&
+    (parts[0] === WORKSPACE_DOTDIR || norm.startsWith(`${WORKSPACE_DOTDIR}/`))
+  ) {
     throw new Error(`${label}: cannot modify ${WORKSPACE_DOTDIR} metadata.`);
   }
 }

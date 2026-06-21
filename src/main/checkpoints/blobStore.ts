@@ -2,7 +2,7 @@
  * Content-addressed blob store for checkpoint pre/post file bodies.
  */
 
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { blobPath } from './paths.js';
@@ -32,16 +32,26 @@ export async function writeBlob(workspaceId: string, content: string): Promise<s
   const dest = blobPath(workspaceId, hash);
   if (hasBlob(workspaceId, hash)) return hash;
   await fs.mkdir(dirname(dest), { recursive: true });
-  const tmp = `${dest}.tmp`;
+  const tmp = `${dest}.${randomUUID()}.tmp`;
   try {
     await fs.writeFile(tmp, content, 'utf8');
-    await fs.rename(tmp, dest);
+    try {
+      await fs.rename(tmp, dest);
+    } catch (renameErr) {
+      const code = (renameErr as NodeJS.ErrnoException)?.code;
+      if (code === 'EEXIST' || hasBlob(workspaceId, hash)) {
+        await fs.unlink(tmp).catch(() => undefined);
+        return hash;
+      }
+      throw renameErr;
+    }
   } catch (err) {
     try {
       await fs.unlink(tmp);
     } catch {
       /* noop */
     }
+    if (hasBlob(workspaceId, hash)) return hash;
     log.error('failed to write blob', { workspaceId, hash, err });
     throw err;
   }

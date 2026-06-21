@@ -4,7 +4,8 @@ import { MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
 import {
   looksLikeAbsoluteFilePath,
   normalizeClipboardPath,
-  normalizePathComparisonKey
+  normalizePathComparisonKey,
+  parseFileUriList
 } from '@shared/attachments/clipboardFilePaths.js';
 import { filterClipboardBlobsWithinLimits } from '@shared/attachments/clipboardBlobLimits.js';
 import {
@@ -22,7 +23,7 @@ import {
 } from './collectClipboardFiles.js';
 import { formatAttachmentIngestError } from './formatAttachmentIngestError.js';
 import { ATTACHMENT_ERROR_PASTE_FAILED } from '@shared/attachments/formatAttachmentError.js';
-import { resolveWorkspacePickPath } from '../../lib/resolveWorkspacePickPath.js';
+import { toAttachmentIngestPath } from '../../lib/resolveWorkspacePickPath.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 
 const ATTACH_NEED_WORKSPACE_TOAST = 'Open a workspace before attaching files.';
@@ -206,7 +207,7 @@ export function useComposerAttachments(input: {
           );
         }
         const workspaceRoot = useWorkspaceStore.getState().info.path;
-        const resolved = collected.paths.map((p) => resolveWorkspacePickPath(p, workspaceRoot));
+        const resolved = collected.paths.map((p) => toAttachmentIngestPath(p, workspaceRoot));
         const ingested = await withIngesting(() =>
           vyotiq.attachments.ingestPaths({
             paths: resolved,
@@ -242,7 +243,7 @@ export function useComposerAttachments(input: {
         showToast(`Only ${remaining} more attachment(s) allowed (max ${MAX_CHAT_ATTACHMENTS}).`, 'danger');
       }
       const workspaceRoot = useWorkspaceStore.getState().info.path;
-      const resolved = slice.map((p) => resolveWorkspacePickPath(p, workspaceRoot));
+      const resolved = slice.map((p) => toAttachmentIngestPath(p, workspaceRoot));
       try {
         const ingested = await withIngesting(() =>
           vyotiq.attachments.ingestPaths({
@@ -429,13 +430,20 @@ export function useComposerAttachments(input: {
             if (added > 0) return;
           }
 
+          const uriListPaths = parseFileUriList(e.clipboardData.getData('text/uri-list'));
+          if (uriListPaths.length > 0) {
+            const added = await addPaths(uriListPaths.slice(0, remaining));
+            if (added > 0) return;
+          }
+
           if (hasFilePathText) {
             const pathKey = normalizePathComparisonKey(plainText);
             if (!triedPathKeys.has(pathKey)) {
               triedPathKeys.add(pathKey);
+              const workspaceRoot = useWorkspaceStore.getState().info.path;
               const ingested = await withIngesting(() =>
                 vyotiq.attachments.ingestPaths({
-                  paths: [normalizeClipboardPath(plainText)],
+                  paths: [toAttachmentIngestPath(normalizeClipboardPath(plainText), workspaceRoot)],
                   workspaceId,
                   conversationId,
                   messageId: ensureMessageId()

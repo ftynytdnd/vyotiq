@@ -3,6 +3,7 @@ import type { TimelineEvent } from '@shared/types/chat';
 import { createRunStateAccumulator } from '@main/orchestrator/loop/buildRunState';
 import { createSpinSignatureBuffer } from '@main/orchestrator/loop/toolSpinSignature';
 import { DEFAULT_REPORTS_SETTINGS } from '@shared/report/reportsSettings';
+import { maybeInterceptHostReportGate } from '@main/orchestrator/loop/hostReportGate.js';
 
 const transcript: TimelineEvent[] = [
   { kind: 'user-prompt', id: 'p1', ts: 1_000, content: 'fix all', runId: 'r1' },
@@ -45,9 +46,6 @@ describe('maybeInterceptHostReportGate', () => {
   });
 
   it('pauses with host-report-gate checkpoint when thresholds met', async () => {
-    const { maybeInterceptHostReportGate } = await import(
-      '@main/orchestrator/loop/hostReportGate.js'
-    );
     const emitted: TimelineEvent[] = [];
     const messages: Array<{ role: string; tool_calls?: unknown[] }> = [];
     const runStateAcc = createRunStateAccumulator();
@@ -85,9 +83,6 @@ describe('maybeInterceptHostReportGate', () => {
   });
 
   it('skips when promptForReportAfterEdits is off', async () => {
-    const { maybeInterceptHostReportGate } = await import(
-      '@main/orchestrator/loop/hostReportGate.js'
-    );
     const result = await maybeInterceptHostReportGate({
       runId: 'r1',
       conversationId: 'c1',
@@ -109,9 +104,6 @@ describe('maybeInterceptHostReportGate', () => {
   });
 
   it('skips manual replay run ids', async () => {
-    const { maybeInterceptHostReportGate } = await import(
-      '@main/orchestrator/loop/hostReportGate.js'
-    );
     const result = await maybeInterceptHostReportGate({
       runId: 'manual:replay-1',
       conversationId: 'c1',

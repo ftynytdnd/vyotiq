@@ -27,6 +27,7 @@ export interface AskUserPauseInput {
   runStateAcc: RunStateAccumulator;
   spin: SpinSignatureBuffer;
   runCumulativeTokens: number;
+  dynamicLoopAuditAwaitingResponse?: boolean;
   emit: (event: TimelineEvent) => void;
   deferred?: boolean;
 }
@@ -81,7 +82,10 @@ export function pauseRunForAskUser(input: AskUserPauseInput): {
       askUserToolCallId: input.askUserCall.id,
       askUserPromptEventId: promptEventId,
       askUserPayload: payload,
-      runCumulativeTokens: input.runCumulativeTokens
+      runCumulativeTokens: input.runCumulativeTokens,
+      ...(input.dynamicLoopAuditAwaitingResponse !== undefined
+        ? { dynamicLoopAuditAwaitingResponse: input.dynamicLoopAuditAwaitingResponse }
+        : {})
     })
   };
 }

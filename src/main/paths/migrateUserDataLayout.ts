@@ -39,6 +39,8 @@ Electron — do not move them.
 | \`memory-last-referenced.json\` | Memory panel "last referenced" hints |
 | \`scheduled-runs.json\` | Local scheduled agent prompts |
 | \`models-dev-catalog.json\` | Cached models.dev metadata |
+| \`conversation-heartbeats.json\` | Per-conversation async wake polling |
+| \`vision-cache/\` | Prepared vision attachment cache |
 | \`conversations/\` | Chat JSONL transcripts + index |
 | \`checkpoints/\` | Run rewind blob store |
 | \`logs/\` | Rolling \`vyotiq.log\` |
@@ -101,6 +103,22 @@ export async function migrateUserDataLayout(): Promise<void> {
   await migrateFilePair(GLOBAL_META_FILE, GLOBAL_META_FILE);
 
   await migrateEntry(join(root, 'attachments'), vyotiqDataPath('attachments'));
+
+  await migrateEntry(join(root, 'conversations'), vyotiqDataPath('conversations'));
+  await migrateEntry(join(root, 'checkpoints'), vyotiqDataPath('checkpoints'));
+  await migrateEntry(join(root, 'logs'), vyotiqDataPath('logs'));
+  await migrateEntry(join(root, 'harness-overrides'), vyotiqDataPath('harness-overrides'));
+  await migrateEntry(join(root, 'vision-cache'), vyotiqDataPath('vision-cache'));
+  await migrateEntry(join(root, 'vyotiq', 'conversations'), vyotiqDataPath('conversations'));
+  await migrateEntry(join(root, 'vyotiq', 'checkpoints'), vyotiqDataPath('checkpoints'));
+  await migrateEntry(join(root, 'vyotiq', 'logs'), vyotiqDataPath('logs'));
+  await migrateEntry(join(root, 'vyotiq', 'harness-overrides'), vyotiqDataPath('harness-overrides'));
+  await migrateEntry(join(root, 'vyotiq', 'vision-cache'), vyotiqDataPath('vision-cache'));
+  await migrateFilePair('conversation-heartbeats.json', 'conversation-heartbeats.json');
+  await migrateEntry(
+    join(root, 'vyotiq', 'conversation-heartbeats.json'),
+    vyotiqDataPath('conversation-heartbeats.json')
+  );
 
   // Legacy double-prefix cache paths (safeStore used to join userData + `vyotiq/...`).
   await migrateEntry(

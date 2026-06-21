@@ -108,24 +108,28 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   runIdToModel: {},
 
   applyEvent: (runId, event, opts) => {
+    get().applyEvents(runId, [{ event, opts }]);
+  },
+
+  applyEvents: (runId, entries) => {
+    if (entries.length === 0) return;
     const convId = get().runIdToConv[runId];
     if (!convId) {
-      // Late delivery for a run whose mapping was already pruned — or
-      // an event from before this renderer's hydration. Either way
-      // there's no destination, so drop it. This is the multi-session
-      // analogue of the old `s.runId !== runId` guard.
-      log.debug('applyEvent dropped: runId not mapped to a conversation', { runId, kind: event.kind });
+      log.debug('applyEvents dropped: runId not mapped to a conversation', {
+        runId,
+        count: entries.length,
+        firstKind: entries[0]?.event.kind
+      });
       return;
     }
     set((s) => {
-      const nextSlices = updateSlice(s.slices, convId, (prev) => ({
-        ...prev,
-        ...applyTimelineEvent(prev, event, opts)
-      }));
-      // Mirror only when the affected slice is the active one — keeps
-      // selector subscriptions cheap for inactive slices, which would
-      // otherwise re-render the whole timeline on every background
-      // event.
+      const nextSlices = updateSlice(s.slices, convId, (prev) => {
+        let next = prev;
+        for (const { event, opts } of entries) {
+          next = { ...next, ...applyTimelineEvent(next, event, opts) };
+        }
+        return next;
+      });
       if (s.conversationId === convId) {
         return { ...s, slices: nextSlices, ...mirrorOf(nextSlices[convId]!) };
       }
@@ -134,11 +138,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   applyConversationEvent: (conversationId, event, opts) => {
+    get().applyConversationEvents(conversationId, [{ event, opts }]);
+  },
+
+  applyConversationEvents: (conversationId, entries) => {
+    if (entries.length === 0) return;
     set((s) => {
-      const nextSlices = updateSlice(s.slices, conversationId, (prev) => ({
-        ...prev,
-        ...applyTimelineEvent(prev, event, opts ?? {})
-      }));
+      const nextSlices = updateSlice(s.slices, conversationId, (prev) => {
+        let next = prev;
+        for (const { event, opts } of entries) {
+          next = { ...next, ...applyTimelineEvent(next, event, opts ?? {}) };
+        }
+        return next;
+      });
       if (s.conversationId === conversationId) {
         return { ...s, slices: nextSlices, ...mirrorOf(nextSlices[conversationId]!) };
       }

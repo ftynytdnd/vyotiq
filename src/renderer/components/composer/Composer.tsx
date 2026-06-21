@@ -12,6 +12,7 @@ import { StopButton } from './StopButton.js';
 import { FollowUpTrayHost } from './followUps/index.js';
 import { ModelPicker } from './modelPicker/index.js';
 import { TokenUsagePill } from './TokenUsagePill.js';
+import { HeartbeatStatusPill } from './HeartbeatStatusPill.js';
 import { ContextWindowMeter } from './ContextWindowMeter.js';
 import { PromptAttachmentCards } from './PromptAttachmentCards.js';
 import { defaultAttachmentPrompt } from '@shared/attachments/defaultAttachmentPrompt.js';
@@ -679,6 +680,13 @@ export function Composer({
               />
             </div>
             <div className="vx-composer-metrics-row__usage">
+              <HeartbeatStatusPill
+                conversationId={conversationId}
+                workspaceId={activeWorkspaceIdForAttach}
+                modelProviderId={model?.providerId}
+                modelId={model?.modelId}
+                compact={metricsStreamCompact}
+              />
               <TokenUsagePill
                 model={model}
                 total={totalRunUsage}

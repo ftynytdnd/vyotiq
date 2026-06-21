@@ -24,6 +24,14 @@ describe('workspace path guards', () => {
     ).not.toThrow();
   });
 
+  it('allows read-only reveal under .vyotiq', () => {
+    expect(() =>
+      assertSafeRelativePath('workspace:reveal-path', 'path', '.vyotiq/generated/run-1.png', {
+        allowDotVyotiq: true
+      })
+    ).not.toThrow();
+  });
+
   it('still rejects dot root for mutating ops', () => {
     expect(() => assertSafeRelativePath('workspace:mkdir', 'path', '.')).toThrow(/invalid path/);
   });

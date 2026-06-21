@@ -70,4 +70,13 @@ describe('buildOrchestratorSystemPrompt', () => {
     expect(prompt).toContain('Metavariables');
     expect(prompt).toContain('`search` tool');
   });
+
+  it('includes dynamic agent loop guidance in system instructions', () => {
+    expect(prompt).toContain('Dynamic Agent Loop');
+    expect(prompt).toContain('Verify before finish');
+    expect(prompt).toContain('`heartbeat`');
+    expect(prompt).toContain('`continue`');
+    expect(prompt).toContain('Async iteration');
+    expect(prompt).not.toContain('adversarial reviewer');
+  });
 });

@@ -169,6 +169,45 @@ describe('conversationStore', () => {
     expect(after?.peakPromptTokens).toBe(72_000);
   });
 
+  it('reconciles orphan JSONL transcripts missing from index.json on load', async () => {
+    const meta = await createConversation('ws-test');
+    await appendEvent(meta.id, {
+      id: 'ck-orphan-hint',
+      kind: 'checkpoint-entry',
+      ts: Date.now(),
+      entryId: 'ent-1',
+      runId: 'run-1',
+      conversationId: meta.id,
+      workspaceId: 'ws-test',
+      filePath: 'src/a.ts',
+      changeKind: 'edit',
+      additions: 1,
+      deletions: 0,
+      source: 'edit'
+    });
+    await appendEvent(meta.id, userTextEvent('Orphan recovery prompt title here'));
+    await flushAll();
+
+    const { app } = await import('electron');
+    const { join } = await import('node:path');
+    const indexFile = join(app.getPath('userData'), 'vyotiq', 'conversations', 'index.json');
+    const raw = await fs.readFile(indexFile, 'utf8');
+    const parsed = JSON.parse(raw) as Array<{ id: string }>;
+    await fs.writeFile(indexFile, JSON.stringify(parsed.filter((m) => m.id !== meta.id)), 'utf8');
+
+    const { __test_resetConversationIndexCacheForTests } = await import(
+      '@main/conversations/conversationStore'
+    );
+    __test_resetConversationIndexCacheForTests();
+
+    const list = await listConversations();
+    const recovered = list.find((c) => c.id === meta.id);
+    expect(recovered).toBeTruthy();
+    expect(recovered?.eventCount).toBe(2);
+    expect(recovered?.title).toContain('Orphan recovery');
+    expect(recovered?.workspaceId).toBe('ws-test');
+  });
+
   it('removeConversation drops the meta and unlinks the transcript', async () => {
     const meta = await createConversation('ws-test');
     await appendEvent(meta.id, userTextEvent('to be deleted'));

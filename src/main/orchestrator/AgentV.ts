@@ -196,6 +196,22 @@ export function listActiveRuns(): ActiveRunInfo[] {
   return out;
 }
 
+/** Model selection for an in-flight run on this conversation, if any. */
+export function getActiveRunSelectionForConversation(
+  conversationId: string
+): { providerId: string; modelId: string; workspaceId: string } | null {
+  for (const run of activeRuns.values()) {
+    if (run.conversationId === conversationId && run.workspaceId) {
+      return {
+        providerId: run.providerId,
+        modelId: run.modelId,
+        workspaceId: run.workspaceId
+      };
+    }
+  }
+  return null;
+}
+
 /**
  * Aborts every in-flight run pinned to the given `conversationId`.
  * Returns the count of runs that were signalled. Used by

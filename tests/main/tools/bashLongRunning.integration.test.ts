@@ -37,24 +37,28 @@ describe('bash tool — long-running server guard (integration)', () => {
     }
   });
 
-  it('caps timeout for ollama serve rewrites even when the model requests more', async () => {
-    const workspace = await mkdtemp(join(tmpdir(), 'vyotiq-bash-lr-'));
-    try {
-      const started = Date.now();
-      const result = await bashTool.run(
-        {
-          command: 'ollama serve',
-          timeoutMs: 30 * 60 * 1000,
-          shared: false
-        },
-        makeCtx(workspace)
-      );
-      // Rewritten detached startup must finish within the server-start cap (+ scan slack).
-      expect(Date.now() - started).toBeLessThan(BASH_SERVER_START_TIMEOUT_MS + 15_000);
-      const data = result.data as { command: string } | undefined;
-      expect(data?.command).toBe('ollama serve');
-    } finally {
-      await rm(workspace, { recursive: true, force: true });
-    }
-  });
+  it(
+    'caps timeout for ollama serve rewrites even when the model requests more',
+    async () => {
+      const workspace = await mkdtemp(join(tmpdir(), 'vyotiq-bash-lr-'));
+      try {
+        const started = Date.now();
+        const result = await bashTool.run(
+          {
+            command: 'ollama serve',
+            timeoutMs: 30 * 60 * 1000,
+            shared: false
+          },
+          makeCtx(workspace)
+        );
+        // Rewritten detached startup must finish within the server-start cap (+ scan slack).
+        expect(Date.now() - started).toBeLessThan(BASH_SERVER_START_TIMEOUT_MS + 15_000);
+        const data = result.data as { command: string } | undefined;
+        expect(data?.command).toBe('ollama serve');
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
+      }
+    },
+    BASH_SERVER_START_TIMEOUT_MS + 20_000
+  );
 });

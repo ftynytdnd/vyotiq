@@ -88,10 +88,19 @@ export interface ChatStore extends ActiveMirror {
   runIdToModel: Record<string, string>;
 
   applyEvent: (runId: string, event: TimelineEvent, opts?: ApplyEventOptions) => void;
+  /** Apply multiple timeline events in one store commit (bursty tool rounds). */
+  applyEvents: (
+    runId: string,
+    entries: ReadonlyArray<{ event: TimelineEvent; opts?: ApplyEventOptions }>
+  ) => void;
   applyConversationEvent: (
     conversationId: string,
     event: TimelineEvent,
     opts?: ApplyEventOptions
+  ) => void;
+  applyConversationEvents: (
+    conversationId: string,
+    entries: ReadonlyArray<{ event: TimelineEvent; opts?: ApplyEventOptions }>
   ) => void;
   finishRun: (runId: string) => void;
   errorRun: (runId: string, message: string) => void;

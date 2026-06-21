@@ -20,6 +20,8 @@ export const AGENT_TOOLS: readonly ToolName[] = [
   'recall',
   'report',
   'capture',
+  'heartbeat',
+  'continue',
   'finish',
   'ask_user'
 ] as const;

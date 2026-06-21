@@ -24,6 +24,8 @@ export type RegisteredToolName =
   | 'recall'
   | 'report'
   | 'capture'
+  | 'heartbeat'
+  | 'continue'
   | 'finish'
   | 'ask_user';
 
@@ -48,6 +50,8 @@ export const REGISTERED_TOOL_NAMES = [
   'recall',
   'report',
   'capture',
+  'heartbeat',
+  'continue',
   'finish',
   'ask_user'
 ] as const satisfies readonly RegisteredToolName[];

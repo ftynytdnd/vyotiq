@@ -21,7 +21,7 @@ import { teardownTerminalIpc } from './ipc/terminal.ipc.js';
 import { teardownBrowserIpc } from './ipc/browser.ipc.js';
 import { teardownCompletionIpc } from './ipc/completion.ipc.js';
 import { lspDisconnectAll } from './lsp/lspManager.js';
-import { logger, installCrashHandlers } from './logging/logger.js';
+import { logger, installCrashHandlers, drainLogger } from './logging/logger.js';
 import { assertHarnessBoot, warmHarnessOverrides } from './harness/harnessLoader.js';
 import { flushAll as flushConversations } from './conversations/conversationStore.js';
 import { flushAll as flushCheckpoints } from './checkpoints/index.js';
@@ -46,6 +46,10 @@ import {
 import { IPC } from '@shared/constants.js';
 import { safeWebContentsSend } from './window/safeWebContentsSend.js';
 import { startScheduledRunsService, stopScheduledRunsService } from './scheduler/scheduledRunsService.js';
+import {
+  startConversationHeartbeatService,
+  stopConversationHeartbeatService
+} from './heartbeat/conversationHeartbeatService.js';
 const log = logger.child('boot');
 
 // Single-instance lock. Vyotiq is an always-on desktop agent that owns
@@ -111,6 +115,7 @@ async function bootstrap() {
   if (activeWs?.path) scheduleWorkspaceVectorIndex(activeWs.path);
   log.info('app ready; ipc registered');
   startScheduledRunsService();
+  startConversationHeartbeatService();
 
   await createMainWindow();
 
@@ -164,6 +169,7 @@ app.on('before-quit', (event) => {
     abortRun(info.runId);
   }
   stopScheduledRunsService();
+  stopConversationHeartbeatService();
   if (isShuttingDown) return;
   isShuttingDown = true;
   event.preventDefault();
@@ -171,6 +177,7 @@ app.on('before-quit', (event) => {
     teardownProvidersIpc(),
     flushConversations(),
     flushCheckpoints(),
+    drainLogger(),
     flushWorkspaceState(),
     Promise.resolve().then(() => disposeAllVectorIndexesAsync()).then(() => {
       closeAllVectorDbs();

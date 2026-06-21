@@ -250,11 +250,30 @@ export function chunkCount(db: DatabaseSync): number {
 
 /** Drop on-disk index and close any open handle (e.g. embedder change). */
 export async function resetVectorIndex(workspacePath: string): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const refs = openDbs.get(workspacePath)?.refs ?? 0;
+    if (refs === 0) break;
+    await new Promise((r) => setTimeout(r, 15));
+  }
+
   closeVectorDb(workspacePath);
-  try {
-    await unlink(indexDbPath(workspacePath));
-  } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') throw err;
+
+  const dbPath = indexDbPath(workspacePath);
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    try {
+      await unlink(dbPath);
+      return;
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === 'ENOENT') return;
+      if ((code === 'EBUSY' || code === 'EPERM') && attempt < 11) {
+        closeVectorDb(workspacePath);
+        await new Promise((r) => setTimeout(r, 50 * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
   }
 }
 

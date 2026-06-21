@@ -170,6 +170,11 @@ function makeLogger(scope: string): Logger {
 
 export const logger: Logger = makeLogger('vyotiq');
 
+/** Await pending log file writes — call from `before-quit` for shutdown breadcrumbs. */
+export async function drainLogger(): Promise<void> {
+  await writeChain;
+}
+
 /**
  * Install process-level handlers ONCE at boot. Uncaught errors are logged
  * but never crash the app — Agent V is an always-on desktop agent.

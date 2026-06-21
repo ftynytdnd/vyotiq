@@ -26,6 +26,7 @@ import { registerCompletionIpc } from './completion.ipc.js';
 import { registerLspIpc } from './lsp.ipc.js';
 import { registerMentionsIpc } from './mentions.ipc.js';
 import { registerScheduledRunsIpc } from './scheduledRuns.ipc.js';
+import { registerHeartbeatIpc } from './heartbeat.ipc.js';
 import { registerFollowUpsIpc } from './followUps.ipc.js';
 import {
   abortRunsForConversation,
@@ -66,5 +67,6 @@ export function registerIpc(): void {
   registerAttachmentsIpc();
   registerRendererLogRelay();
   registerScheduledRunsIpc();
+  registerHeartbeatIpc();
   registerFollowUpsIpc();
 }

@@ -17,7 +17,8 @@ import {
   appendEntry,
   flushAll as flushRunManifests,
   readRun,
-  deleteRun as deleteRunManifest
+  deleteRun as deleteRunManifest,
+  listRunHeads
 } from './runManifest.js';
 import {
   listForConversation,
@@ -237,4 +238,21 @@ export const readBlobBody = readBlob;
 
 export async function flushAll(): Promise<void> {
   await Promise.all([flushRunManifests(), flushPending()]);
+}
+
+/**
+ * Drop pending rows and run manifests for a deleted conversation.
+ */
+export async function cleanupCheckpointsForConversation(
+  conversationId: string,
+  workspaceId: string,
+  knownWorkspaceIds?: readonly string[]
+): Promise<void> {
+  await dropAllForConversation(conversationId, knownWorkspaceIds ?? [workspaceId]);
+  const runs = await listRunHeads(workspaceId);
+  for (const head of runs) {
+    if (head.conversationId === conversationId) {
+      await deleteRunManifest(workspaceId, head.runId);
+    }
+  }
 }

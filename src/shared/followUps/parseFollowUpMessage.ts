@@ -14,7 +14,13 @@ function parseKind(v: unknown): FollowUpKind | null {
 }
 
 function parseSource(v: unknown): FollowUpSource | null {
-  return v === 'composer' || v === 'scheduled' ? v : null;
+  return v === 'composer' ||
+    v === 'scheduled' ||
+    v === 'heartbeat' ||
+    v === 'continue' ||
+    v === 'dynamic-loop'
+    ? v
+    : null;
 }
 
 function parseSelection(v: unknown): ModelSelection | null {

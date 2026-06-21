@@ -14,8 +14,6 @@ import { applyAppTheme, readCachedThemePrefs } from './lib/theme.js';
 
 applyAppTheme(readCachedThemePrefs());
 
-void bootstrapChatChannel();
-
 // After a dev rebuild or app update, lazy route chunks can 404. Debounce a
 // single full reload so the user is not stuck on a blank shell.
 let preloadReloadScheduled = false;
@@ -37,12 +35,18 @@ window.addEventListener('beforeunload', () => {
 });
 
 const root = createRoot(document.getElementById('root')!);
-root.render(
-  <React.StrictMode>
-    <ErrorBoundary>
-      <Suspense fallback={<LoadingHint className="flex h-full items-center justify-center" />}>
-        <App />
-      </Suspense>
-    </ErrorBoundary>
-  </React.StrictMode>
-);
+
+async function bootRenderer(): Promise<void> {
+  await bootstrapChatChannel();
+  root.render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <Suspense fallback={<LoadingHint className="flex h-full items-center justify-center" />}>
+          <App />
+        </Suspense>
+      </ErrorBoundary>
+    </React.StrictMode>
+  );
+}
+
+void bootRenderer();

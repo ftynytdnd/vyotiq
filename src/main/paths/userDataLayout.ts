@@ -88,6 +88,10 @@ export function scheduledRunsFilePath(): string {
   return vyotiqDataPath('scheduled-runs.json');
 }
 
+export function conversationHeartbeatsFilePath(): string {
+  return vyotiqDataPath('conversation-heartbeats.json');
+}
+
 export function memoryLastReferencedFilePath(): string {
   return vyotiqDataPath('memory-last-referenced.json');
 }

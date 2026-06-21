@@ -24,6 +24,7 @@ import {
   submitAskUserAnswers
 } from '../orchestrator/AgentV.js';
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
+import { notifyUiToast } from '../ui/uiToast.js';
 import {
   appendEvent,
   createConversation,
@@ -333,12 +334,21 @@ export function registerChatIpc(): void {
     const tombstonedIds = new Set<string>();
 
     let persistFailureMessage: string | null = null;
+    let persistFailureNotified = false;
     const persistEvent = (event: TimelineEvent): void => {
       appendEvent(cid, event).catch((err) => {
         const message =
           err instanceof Error ? err.message : 'Failed to persist transcript event';
         persistFailureMessage = message;
         log.warn('appendEvent failed', { conversationId: cid, kind: event.kind, err });
+        if (!persistFailureNotified) {
+          persistFailureNotified = true;
+          notifyUiToast({
+            conversationId: cid,
+            variant: 'danger',
+            message: `Transcript save failed: ${message}`
+          });
+        }
       });
     };
 

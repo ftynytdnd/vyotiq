@@ -264,7 +264,7 @@ export async function reduceContextIfNeeded(
       }
     }
     if (Math.ceil(reclaimableChars / 4) < settings.minSavingsTokens) {
-      return { messages: [...messages], usage };
+      return { messages: [...workingMessages], usage };
     }
   }
 
@@ -453,7 +453,7 @@ export async function reduceContextIfNeeded(
     }
   }
 
-  if (!changed) return { messages: [...messages], usage };
+  if (!changed) return { messages: [...next], usage };
 
   state.lastReductionAt = now;
   emitReductionNotice(opts, state);

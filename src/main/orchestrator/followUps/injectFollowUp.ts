@@ -11,10 +11,6 @@ import {
   resolveInputModalitiesForSelection
 } from '../buildUserTurnMessage.js';
 import { getPreparedMediaCache } from '../../attachments/preparedMediaCache.js';
-import { appendEvent } from '../../conversations/conversationStore.js';
-import { logger } from '../../logging/logger.js';
-
-const log = logger.child('follow-ups/inject');
 
 export interface InjectFollowUpOpts {
   followUp: FollowUpMessage;
@@ -73,18 +69,13 @@ export async function injectFollowUp(opts: InjectFollowUpOpts): Promise<InjectFo
     providerId: followUp.selection.providerId,
     modelId: followUp.selection.modelId,
     ...(attachmentsForEvent ? { attachments: attachmentsForEvent } : {}),
-    ...(followUp.mentions && followUp.mentions.length > 0 ? { mentions: followUp.mentions } : {})
+    ...(followUp.mentions && followUp.mentions.length > 0 ? { mentions: followUp.mentions } : {}),
+    ...(followUp.source !== 'composer' ? { source: followUp.source } : {})
   };
 
-  try {
-    await appendEvent(conversationId, userPromptEvent);
-  } catch (err: unknown) {
-    const message =
-      err instanceof Error ? err.message : 'Failed to persist injected follow-up';
-    log.warn('appendEvent failed for injected follow-up', { conversationId, err });
-    throw new Error(message);
-  }
-
+  // Persist via the run `emit` path only (`chat.ipc` → `persistEvent`). A
+  // direct `appendEvent` here duplicated every injected follow-up (steering,
+  // dynamic-loop audit, heartbeat, continue) in the JSONL transcript.
   emit(userPromptEvent);
   insertHistoryBeforeTail(messages, userMessage);
 

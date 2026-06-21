@@ -34,6 +34,8 @@ import {
 } from '../workspace/workspaceState.js';
 import { atomicWriteString } from '../checkpoints/atomicWrite.js';
 import { deleteAttachmentsForConversation } from '../attachments/gc.js';
+import { detachConversationHeartbeat } from '../heartbeat/conversationHeartbeatStore.js';
+import { dropFollowUpsForConversation } from '../followUps/followUpQueueService.js';
 import {
   cleanupCompactionArtifactsForConversation,
   cleanupSummaryArtifactsForConversation
@@ -41,7 +43,9 @@ import {
 import { normalizeLegacyTranscript } from '@shared/transcript/normalizeLegacyTranscript.js';
 import { TRANSCRIPT_PAGE_SIZE } from '@shared/constants.js';
 import type { TranscriptBeforeRead, TranscriptPaging } from '@shared/types/chat.js';
+import { cleanupCheckpointsForConversation } from '../checkpoints/index.js';
 import { migrateConversationPending } from '../checkpoints/pendingChanges.js';
+import { updateConversationHeartbeatWorkspace } from '../heartbeat/conversationHeartbeatStore.js';
 import { redactEventForPersist } from './redactPersistedEvent.js';
 
 const log = logger.child('conversations');
@@ -196,6 +200,8 @@ async function loadIndex(): Promise<ConversationMeta[]> {
       }
     }
     await migrateWorkspaceIdsInPlace();
+    await reconcileIndexEventCounts();
+    await reconcileOrphanTranscripts();
     seedRecordedConversationSpendFromIndex(indexCache!);
     return indexCache!;
   })();
@@ -253,6 +259,169 @@ async function migrateWorkspaceIdsInPlace(): Promise<void> {
     workspaceId: targetWorkspaceId
   });
   scheduleIndexFlush();
+}
+
+/**
+ * Count parseable JSONL events on disk without touching the append chain.
+ * Used to heal `index.json` `eventCount` when debounced flushes lag behind.
+ */
+async function countTranscriptEventsOnDisk(id: string): Promise<number> {
+  const file = transcriptPath(id);
+  if (!existsSync(file)) return 0;
+  let count = 0;
+  await new Promise<void>((resolve, reject) => {
+    const rl = createInterface({ input: createReadStream(file, { encoding: 'utf8' }) });
+    rl.on('line', (line) => {
+      if (line.length === 0) return;
+      try {
+        JSON.parse(line) as TimelineEvent;
+        count += 1;
+      } catch {
+        /* skip malformed — matches forEachTranscriptEvent */
+      }
+    });
+    rl.on('close', () => resolve());
+    rl.on('error', (err) => reject(err));
+  });
+  return count;
+}
+
+/** Bump meta.eventCount when on-disk JSONL has more events than the index. */
+async function reconcileIndexEventCounts(): Promise<void> {
+  const list = indexCache;
+  if (!list || list.length === 0) return;
+  let changed = false;
+  for (const meta of list) {
+    const diskCount = await countTranscriptEventsOnDisk(meta.id);
+    if (diskCount > meta.eventCount) {
+      log.info('reconciled eventCount from disk', {
+        id: meta.id,
+        prior: meta.eventCount,
+        disk: diskCount
+      });
+      meta.eventCount = diskCount;
+      changed = true;
+    } else if (diskCount < meta.eventCount) {
+      log.warn('index eventCount ahead of disk; trusting disk', {
+        id: meta.id,
+        index: meta.eventCount,
+        disk: diskCount
+      });
+      meta.eventCount = diskCount;
+      changed = true;
+    }
+  }
+  if (changed) scheduleIndexFlush();
+}
+
+/** Scan transcript lines for workspace/title hints when rebuilding orphan meta. */
+async function scanTranscriptHints(id: string): Promise<{
+  workspaceId?: string;
+  title?: string;
+  firstUserPrompt?: string;
+}> {
+  const file = transcriptPath(id);
+  if (!existsSync(file)) return {};
+  let workspaceId: string | undefined;
+  let firstUserPrompt: string | undefined;
+  await new Promise<void>((resolve, reject) => {
+    const rl = createInterface({ input: createReadStream(file, { encoding: 'utf8' }) });
+    rl.on('line', (line) => {
+      if (line.length === 0) return;
+      try {
+        const event = JSON.parse(line) as TimelineEvent;
+        if (!workspaceId && event.kind === 'checkpoint-entry') {
+          workspaceId = event.workspaceId;
+        }
+        if (!firstUserPrompt && event.kind === 'user-prompt') {
+          const content = (event as { content?: string }).content;
+          if (typeof content === 'string' && content.trim().length > 0) {
+            firstUserPrompt = content;
+          }
+        }
+        if (workspaceId && firstUserPrompt) {
+          rl.close();
+        }
+      } catch {
+        /* skip malformed */
+      }
+    });
+    rl.on('close', () => resolve());
+    rl.on('error', (err) => reject(err));
+  });
+  const title = firstUserPrompt ? sanitizeTitle(firstUserPrompt) : undefined;
+  return { workspaceId, title, firstUserPrompt };
+}
+
+/**
+ * Re-index JSONL transcripts that exist on disk but are missing from
+ * `index.json` (e.g. after index corruption, partial delete, or a race
+ * that unlinked the meta before the file).
+ */
+async function reconcileOrphanTranscripts(): Promise<void> {
+  const list = indexCache;
+  if (!list) return;
+  const indexedIds = new Set(list.map((m) => m.id));
+  await ensureDir();
+  let entries: string[];
+  try {
+    entries = await fs.readdir(resolveBase());
+  } catch {
+    return;
+  }
+  let changed = false;
+  for (const name of entries) {
+    if (!name.endsWith(FILE_EXT)) continue;
+    const id = name.slice(0, -FILE_EXT.length);
+    if (indexedIds.has(id)) continue;
+    if (isRecentlyRemoved(id)) continue;
+    const diskCount = await countTranscriptEventsOnDisk(id);
+    if (diskCount === 0) continue;
+
+    const hints = await scanTranscriptHints(id);
+    let workspaceId = hints.workspaceId;
+    if (!workspaceId) {
+      try {
+        const active = await getActiveWorkspace();
+        workspaceId = active?.id;
+      } catch {
+        /* non-fatal */
+      }
+    }
+    if (!workspaceId) {
+      try {
+        const all = await listWorkspaces();
+        workspaceId = all.workspaces[0]?.id;
+      } catch {
+        /* non-fatal */
+      }
+    }
+    if (!workspaceId) {
+      log.warn('orphan transcript skipped — no workspace to stamp', { id, diskCount });
+      continue;
+    }
+
+    const stat = await fs.stat(transcriptPath(id));
+    const now = Date.now();
+    const meta: ConversationMeta = {
+      id,
+      title: hints.title && hints.title.length > 0 ? hints.title : 'Recovered conversation',
+      createdAt: stat.birthtimeMs > 0 ? stat.birthtimeMs : stat.mtimeMs || now,
+      updatedAt: stat.mtimeMs || now,
+      eventCount: diskCount,
+      workspaceId
+    };
+    list.unshift(meta);
+    indexedIds.add(id);
+    log.info('recovered orphan transcript', {
+      id,
+      title: meta.title,
+      diskCount,
+      workspaceId
+    });
+    changed = true;
+  }
+  if (changed) scheduleIndexFlush();
 }
 
 function scheduleIndexFlush(): void {
@@ -313,30 +482,69 @@ function bumpMeta(meta: ConversationMeta): void {
   }
 }
 
+/** Prefer archived / empty chats before evicting active history at the cap. */
+function pickPruneVictim(list: ConversationMeta[]): ConversationMeta | undefined {
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i]!.archived) {
+      return list.splice(i, 1)[0];
+    }
+  }
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i]!.eventCount === 0) {
+      return list.splice(i, 1)[0];
+    }
+  }
+  return list.pop();
+}
+
+/** Best-effort cleanup of heartbeat, follow-ups, checkpoints, attachments, compaction. */
+function purgeConversationSidecars(id: string, workspaceId: string | undefined): void {
+  void detachConversationHeartbeat(id);
+  dropFollowUpsForConversation(id);
+  if (!workspaceId) return;
+  void cleanupCheckpointsForConversation(id, workspaceId).catch((err: unknown) => {
+    log.warn('failed to clean checkpoint sidecars on conversation purge', {
+      conversationId: id,
+      err: err instanceof Error ? err.message : String(err)
+    });
+  });
+  void deleteAttachmentsForConversation(workspaceId, id);
+  void requireWorkspaceById(workspaceId)
+    .then(async (workspacePath) => {
+      await cleanupCompactionArtifactsForConversation(workspacePath, id);
+      await cleanupSummaryArtifactsForConversation(workspacePath, id);
+    })
+    .catch((err: unknown) => {
+      log.warn('failed to clean compaction/summary artifacts on conversation purge', {
+        conversationId: id,
+        err: err instanceof Error ? err.message : String(err)
+      });
+    });
+}
+
 async function pruneIfOversized(): Promise<void> {
   const list = indexCache!;
   while (list.length > MAX_CONVERSATIONS) {
-    const oldest = list.pop();
-    if (!oldest) break;
-    log.info('pruning oldest conversation', { id: oldest.id, title: oldest.title });
-    // Drain any in-flight appends to this transcript before unlinking, so
-    // we can't race a queued write that re-creates the file post-unlink.
-    const chain = appendChains.get(oldest.id);
+    const victim = pickPruneVictim(list);
+    if (!victim) break;
+    log.info('pruning conversation at index cap', { id: victim.id, title: victim.title });
+    const chain = appendChains.get(victim.id);
     if (chain) {
       try {
         await chain;
       } catch {
         /* logged inside the appender */
       }
-      appendChains.delete(oldest.id);
+      appendChains.delete(victim.id);
     }
     try {
-      await fs.unlink(transcriptPath(oldest.id));
+      await fs.unlink(transcriptPath(victim.id));
     } catch (err: unknown) {
       if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-        log.warn('failed to unlink pruned transcript', { id: oldest.id, err });
+        log.warn('failed to unlink pruned transcript', { id: victim.id, err });
       }
     }
+    purgeConversationSidecars(victim.id, victim.workspaceId);
   }
 }
 
@@ -416,7 +624,7 @@ export async function renameConversation(id: string, title: string): Promise<Con
   await loadIndex();
   const meta = findMeta(id);
   if (!meta) throw new Error(`Conversation not found: ${id}`);
-  meta.title = title.trim().slice(0, 200) || meta.title;
+  meta.title = sanitizeTitle(title) || meta.title;
   meta.updatedAt = Date.now();
   scheduleIndexFlush();
   await flushIndex();
@@ -479,24 +687,7 @@ export async function removeConversation(id: string): Promise<void> {
       log.warn('failed to unlink transcript', { id, err });
     }
   }
-  if (removedMeta?.workspaceId) {
-    void deleteAttachmentsForConversation(removedMeta.workspaceId, id);
-    // Reclaim reversible-compaction artifacts under the workspace
-    // `.vyotiq/compaction/<id>` tree. Best-effort: the transcript (and
-    // its `tool-compacted` markers) is already gone, so these artifacts
-    // can never be referenced again.
-    void requireWorkspaceById(removedMeta.workspaceId)
-      .then(async (workspacePath) => {
-        await cleanupCompactionArtifactsForConversation(workspacePath, id);
-        await cleanupSummaryArtifactsForConversation(workspacePath, id);
-      })
-      .catch((err: unknown) => {
-        log.warn('failed to clean compaction/summary artifacts on conversation remove', {
-          conversationId: id,
-          err: err instanceof Error ? err.message : String(err)
-        });
-      });
-  }
+  purgeConversationSidecars(id, removedMeta?.workspaceId);
   scheduleIndexFlush();
   await flushIndex();
 }
@@ -676,6 +867,12 @@ export async function incrementConversationSpend(
 /** Test-only reset. */
 export function __test_resetRecordedConversationSpend(): void {
   recordedConversationPromptSpend.clear();
+}
+
+/** Test-only — force `loadIndex` to re-read disk (orphan recovery tests). */
+export function __test_resetConversationIndexCacheForTests(): void {
+  indexCache = null;
+  indexLoad = null;
 }
 
 /** Persist a provider-billed ÷ estimate calibration ratio for a model selection. */
@@ -1120,7 +1317,8 @@ export async function moveConversationToWorkspace(
   meta.updatedAt = Date.now();
   if (priorWorkspaceId && priorWorkspaceId !== targetWorkspaceId) {
     await migrateConversationPending(id, priorWorkspaceId, targetWorkspaceId);
-    // Legacy checkpoint/review sidecars on disk are not migrated.
+    await updateConversationHeartbeatWorkspace(id, targetWorkspaceId);
+    // Legacy checkpoint run manifests on disk are not migrated.
   }
   log.info('conversation moved to workspace', {
     conversationId: id,
@@ -1179,9 +1377,14 @@ export async function bulkRemoveOrReparentByWorkspace(
     throw new Error('reparent requires a non-empty targetWorkspaceId.');
   }
   for (const m of targets) {
+    const priorWorkspaceId = m.workspaceId;
     m.workspaceId = mode.targetWorkspaceId;
     m.updatedAt = Date.now();
     touchedIds.push(m.id);
+    if (priorWorkspaceId && priorWorkspaceId !== mode.targetWorkspaceId) {
+      await migrateConversationPending(m.id, priorWorkspaceId, mode.targetWorkspaceId);
+      await updateConversationHeartbeatWorkspace(m.id, mode.targetWorkspaceId);
+    }
   }
   if (touchedIds.length > 0) {
     scheduleIndexFlush();
@@ -1222,6 +1425,10 @@ export async function deriveTitleIfFresh(id: string, prompt: string): Promise<vo
 const FLUSH_DRAIN_MAX_PASSES = 8;
 export async function flushAll(): Promise<void> {
   try {
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
     for (let pass = 0; pass < FLUSH_DRAIN_MAX_PASSES; pass++) {
       const before = Array.from(appendChains.values());
       if (before.length === 0) break;
@@ -1236,6 +1443,12 @@ export async function flushAll(): Promise<void> {
       ) {
         break;
       }
+    }
+    if (appendChains.size > 0) {
+      log.warn('flushAll: append chains still pending after drain cap', {
+        pending: appendChains.size,
+        maxPasses: FLUSH_DRAIN_MAX_PASSES
+      });
     }
     // Index flush goes LAST so it observes every `bumpMeta` /
     // `scheduleIndexFlush` triggered by the drained appends.

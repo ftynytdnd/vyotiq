@@ -21,6 +21,7 @@ import { parseFollowUpMessage } from '@shared/followUps/parseFollowUpMessage.js'
 import { conversationsDir } from '../paths/userDataLayout.js';
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import { logger } from '../logging/logger.js';
+import { atomicWriteJson } from '../checkpoints/atomicWrite.js';
 
 const log = logger.child('follow-ups/store');
 
@@ -98,7 +99,7 @@ function schedulePersist(
               if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') throw err;
             });
           } else {
-            await fs.writeFile(path, JSON.stringify(state, null, 2), 'utf8');
+            await atomicWriteJson(path, state);
           }
         } catch (err: unknown) {
           log.warn('failed to persist follow-ups', { conversationId, err });

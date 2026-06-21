@@ -16,6 +16,12 @@ function sourceLabel(source: FollowUpSource): string {
   switch (source) {
     case 'scheduled':
       return 'scheduled';
+    case 'heartbeat':
+      return 'heartbeat';
+    case 'continue':
+      return 'continue';
+    case 'dynamic-loop':
+      return 'dynamic loop';
     case 'composer':
       return 'composer';
     default: {

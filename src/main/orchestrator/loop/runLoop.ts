@@ -105,6 +105,11 @@ import {
   type FollowUpLoopCtx
 } from '../followUps/followUpLoopHooks.js';
 import {
+  clearsDynamicLoopAuditAwaiting,
+  injectDynamicLoopAudit,
+  shouldInjectDynamicLoopAudit
+} from './dynamicLoopAudit.js';
+import {
   buildRunStateXml,
   createRunStateAccumulator,
   snapshotRunState,
@@ -162,6 +167,10 @@ const GOAL_ANCHOR_MAX_CHARS = 600;
 /** User-facing copy when empty-turn retries are exhausted. */
 const USER_EMPTY_TURN_ERROR =
   "The assistant didn't produce a complete answer. Try Retry below, switch models, or lower thinking effort.";
+
+/** When the model prints fenced JSON tool calls instead of native `tool_calls`. */
+export const USER_PROSE_TOOL_CALL_ERROR =
+  'The model described tool calls in prose instead of invoking them. Switch to a model with native tool calling support, or retry.';
 
 import {
   getRecentBillingBlock,
@@ -322,6 +331,8 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     let retryAssistantMsgId: string | null = null;
     /** Reasoning-only turns without prose count as progress (capped). */
     let consecutiveReasoningOnlyTurns = 0;
+    /** Skip back-to-back host audit nudges until the agent edits/continues. */
+    let dynamicLoopAuditAwaitingResponse = resume?.dynamicLoopAuditAwaitingResponse ?? false;
     /** Anthropic cache-diagnostics: prior turn `msg_…` id for prefix comparison. */
     let lastAnthropicMessageId: string | undefined;
 
@@ -1071,6 +1082,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             runStateAcc,
             spin,
             runCumulativeTokens,
+            dynamicLoopAuditAwaitingResponse,
             emit
           });
         }
@@ -1107,6 +1119,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             resetSpinBuffer(spin);
             runStateAcc.toolRoundsTotal += 1;
             runStateAcc.lastAction = 'tool';
+            if (clearsDynamicLoopAuditAwaiting(actionTools)) {
+              dynamicLoopAuditAwaitingResponse = false;
+            }
             const directQuery = summarizeDirectToolArgs(actionTools);
             if (directQuery.length > 0) {
               query = clampQuery(`${opts.input.prompt} ${directQuery}`, opts.input.prompt);
@@ -1168,6 +1183,38 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         }
 
         if (finishCall && actionTools.length > 0) {
+          const steeredBeforeDeferredFinish = await consumeSteeringFollowUps(followUpCtx);
+          if (steeredBeforeDeferredFinish) {
+            query = applyFollowUpResult(steeredBeforeDeferredFinish, opts);
+            consecutiveEmptyTurns = 0;
+            runStateAcc.lastAction = 'none';
+            continue;
+          }
+          if (
+            shouldInjectDynamicLoopAudit(
+              actionTools,
+              finishedToolCalls,
+              dynamicLoopAuditAwaitingResponse
+            ) &&
+            opts.input.conversationId
+          ) {
+            const auditedBeforeFinish = await injectDynamicLoopAudit(
+              followUpCtx,
+              opts.input.selection
+            );
+            if (auditedBeforeFinish) {
+              query = applyFollowUpResult(auditedBeforeFinish, opts);
+              consecutiveEmptyTurns = 0;
+              runStateAcc.lastAction = 'none';
+              dynamicLoopAuditAwaitingResponse = true;
+              log.info('dynamic loop auto-audit injected before deferred finish', {
+                iteration: iter,
+                runId: opts.input.runId
+              });
+              continue;
+            }
+          }
+
           const summary = resolveFinishSummary(finishCall, turn.assistantText);
           if (!turn.hadText) {
             emitFinalAnswer(emit, summary);
@@ -1224,6 +1271,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             runStateAcc,
             spin,
             runCumulativeTokens,
+            dynamicLoopAuditAwaitingResponse,
             emit,
             deferred: true
           });
@@ -1235,6 +1283,28 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           consecutiveEmptyTurns = 0;
           runStateAcc.lastAction = 'none';
           continue;
+        }
+
+        if (
+          shouldInjectDynamicLoopAudit(
+            actionTools,
+            finishedToolCalls,
+            dynamicLoopAuditAwaitingResponse
+          ) &&
+          opts.input.conversationId
+        ) {
+          const audited = await injectDynamicLoopAudit(followUpCtx, opts.input.selection);
+          if (audited) {
+            query = applyFollowUpResult(audited, opts);
+            consecutiveEmptyTurns = 0;
+            runStateAcc.lastAction = 'none';
+            dynamicLoopAuditAwaitingResponse = true;
+            log.info('dynamic loop auto-audit injected', {
+              iteration: iter,
+              runId: opts.input.runId
+            });
+            continue;
+          }
         }
 
         if (didWork) continue;
@@ -1338,11 +1408,17 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         }
 
         consecutiveEmptyTurns += 1;
+        const proseToolCalls = looksLikeProseEmittedToolCalls(proseText);
         if (consecutiveEmptyTurns < 2) {
-          log.warn('assistant turn produced no tool call — retrying once', {
-            iteration: iter,
-            proseChars: proseText.length
-          });
+          log.warn(
+            proseToolCalls
+              ? 'assistant emitted prose tool JSON — retrying once'
+              : 'assistant turn produced no tool call — retrying once',
+            {
+              iteration: iter,
+              proseChars: proseText.length
+            }
+          );
           popProseOnlyAssistant(messages);
           if (turn.hadText || turn.hadReasoning) {
             emit({ kind: 'agent-text-aborted', id: turn.assistantMsgId, ts: Date.now() });
@@ -1352,16 +1428,19 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           continue;
         }
         {
+          const haltMessage = proseToolCalls ? USER_PROSE_TOOL_CALL_ERROR : USER_EMPTY_TURN_ERROR;
           log.warn('empty-turn halt', {
             iteration: iter,
             consecutiveEmptyTurns,
             proseChars: proseText.length,
-            technical:
-              'The model produced no tool call and no substantive answer after a retry — escalating to user.'
+            proseToolCalls,
+            technical: proseToolCalls
+              ? 'The model printed tool-call JSON in prose after a retry — escalating to user.'
+              : 'The model produced no tool call and no substantive answer after a retry — escalating to user.'
           });
           retryAssistantMsgId = null;
-          emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: USER_EMPTY_TURN_ERROR });
-          return { terminalError: USER_EMPTY_TURN_ERROR };
+          emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: haltMessage });
+          return { terminalError: haltMessage };
         }
     }
   } finally {
@@ -1534,6 +1613,47 @@ function endsWithSentenceEnd(s: string): boolean {
   return endsWithMeaningfulCodePoint(s, SENTENCE_END_CODEPOINTS);
 }
 
+function isProseToolCallObject(v: unknown): boolean {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
+  const o = v as Record<string, unknown>;
+  if (typeof o.name !== 'string' || !o.name.trim()) return false;
+  return o.arguments !== undefined || o.args !== undefined;
+}
+
+function isProseToolCallJson(text: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (Array.isArray(parsed)) {
+      return parsed.length > 0 && parsed.every(isProseToolCallObject);
+    }
+    return isProseToolCallObject(parsed);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Models that lack native `tool_calls` sometimes emit fenced JSON like
+ * `[{ "name": "read", "arguments": { ... } }]`. That is not a final
+ * answer — treat it as a no-tool turn so the loop retries instead of
+ * implicit-finish.
+ */
+export function looksLikeProseEmittedToolCalls(prose: string): boolean {
+  const trimmed = prose.trim();
+  if (!trimmed) return false;
+
+  const fenceRe = /```(?:json)?\s*([\s\S]*?)```/gi;
+  let match: RegExpExecArray | null;
+  while ((match = fenceRe.exec(trimmed)) !== null) {
+    if (isProseToolCallJson(match[1].trim())) return true;
+  }
+
+  if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+    return isProseToolCallJson(trimmed);
+  }
+  return false;
+}
+
 /**
  * After any tool round, prose-only turns must not end the run on the
  * first implicit-finish probe — the model should call `finish` or keep
@@ -1555,6 +1675,7 @@ export function shouldSuppressImplicitFinishAfterTools(
 export function isImplicitFinish(prose: string): boolean {
   const t = prose.trim();
   if (t.length === 0) return false;
+  if (looksLikeProseEmittedToolCalls(t)) return false;
   if (t.length >= IMPLICIT_FINISH_MIN_CHARS) return true;
   if (endsWithQuestionMark(t)) return true;
   if (t.length >= IMPLICIT_FINISH_MIN_SENTENCE_CHARS && endsWithSentenceEnd(t)) return true;

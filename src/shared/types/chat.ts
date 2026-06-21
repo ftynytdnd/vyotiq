@@ -6,6 +6,7 @@ import type { ToolCall, ToolResult, DiffHunk } from './tool.js';
 import type { ModelSelection, ThinkingEffort } from './provider.js';
 import type { CheckpointChangeKind } from './checkpoint.js';
 import type { AskUserAnswer, AskUserStructuredPayload } from './askUser.js';
+import type { FollowUpSource } from './followUp.js';
 import type { MentionRef } from './mention.js';
 import type { ContextUsageBreakdown } from '../context/contextLevel.js';
 
@@ -225,6 +226,8 @@ export type TimelineEvent =
     /** Model used for this run — stable per prompt for cost badges on replay. */
     providerId?: string;
     modelId?: string;
+    /** Host-injected follow-up lane (heartbeat, dynamic-loop, continue, scheduled). */
+    source?: FollowUpSource;
     /** Persisted attachment metadata for timeline cards after reload. */
     attachments?: PromptAttachmentMeta[];
     /** Inline `@` file mentions (chips), resolved into context on send. */

@@ -90,6 +90,11 @@ interface DiffStreamQueueEntry {
   event: Extract<TimelineEvent, { kind: 'diff-stream' }>;
 }
 
+interface ToolRoundQueueEntry {
+  runId: string;
+  event: Extract<TimelineEvent, { kind: 'tool-call' | 'tool-result' }>;
+}
+
 /** Defer store commits as non-urgent so scroll/input stay responsive. */
 function applyInTransition(fn: () => void): void {
   startTransition(fn);
@@ -686,6 +691,38 @@ export async function bootstrapChatChannel(): Promise<void> {
     });
   });
 
+  const toolRoundBatcher = createRafBatcher<ToolRoundQueueEntry>((batch) => {
+    applyInTransition(() => {
+      let i = 0;
+      while (i < batch.length) {
+        const runId = batch[i]!.runId;
+        const segment: ToolRoundQueueEntry[] = [];
+        while (i < batch.length && batch[i]!.runId === runId) {
+          segment.push(batch[i]!);
+          i += 1;
+        }
+        for (const entry of segment) {
+          if (entry.event.kind === 'tool-call') {
+            reconcileToolCallParser(runId, entry.event.call.id, 'orc');
+          }
+        }
+        const entries = segment.map((entry) => ({
+          event: redactTimelineEventForDisplay(entry.event)
+        }));
+        if (runId.startsWith('manual:')) {
+          const conversationId = runId.slice('manual:'.length);
+          useChatStore.getState().applyConversationEvents(conversationId, entries);
+        } else {
+          useChatStore.getState().applyEvents(runId, entries);
+        }
+      }
+    });
+  });
+
+  function flushToolRoundBatcher(): void {
+    toolRoundBatcher.flush();
+  }
+
   // Every listener body is wrapped in try/catch. A throw from the
   // reducer (malformed event slipping past the runtime guard, an
   // unhandled selector case, etc.) previously tore down the IPC
@@ -725,7 +762,11 @@ export async function bootstrapChatChannel(): Promise<void> {
           diffStreamBatcher.flush();
           toolOutputDeltaBatcher.flush();
           argsDeltaBatcher.flush();
+          flushAllTextForRun(runId);
+          toolRoundBatcher.push({ runId, event });
+          return;
         }
+        flushToolRoundBatcher();
         // Audit fix A3: RAF-coalesce streaming text + reasoning
         // deltas the same way args-deltas are coalesced. The
         // reducer's accumulation semantics (`text + event.delta`)
@@ -738,6 +779,7 @@ export async function bootstrapChatChannel(): Promise<void> {
           event.kind === 'agent-text-delta' ||
           event.kind === 'agent-reasoning-delta'
         ) {
+          flushToolRoundBatcher();
           enqueueTextDelta(runId, event);
           return;
         }
@@ -778,15 +820,7 @@ export async function bootstrapChatChannel(): Promise<void> {
         if (event.kind === 'token-usage') {
           resetSyntheticForOwner(runId, 'orc');
         }
-        // Phase 1.1: prune the parser pool on lifecycle events so
-        // it never grows without bound across long sessions.
-        if (event.kind === 'tool-call') {
-          // Authoritative call has landed; any partial-args parser
-          // we kept for this callId (or the matching surrogate) is
-          // done. The owner prefix mirrors the reducer's
-          // `clearPartialFor` rule.
-          reconcileToolCallParser(runId, event.call.id, 'orc');
-        } else if (event.kind === 'agent-text-aborted') {
+        if (event.kind === 'agent-text-aborted') {
           // The reducer also wipes ALL orchestrator partials on
           // abort (see `applyTimelineEvent.ts`). Mirror it here so
           // the parser pool stays in sync.
@@ -823,6 +857,7 @@ export async function bootstrapChatChannel(): Promise<void> {
   unsub.push(
     vyotiq.chat.onAwaitingUser((runId) => {
       try {
+        flushToolRoundBatcher();
         flushAllTextForRun(runId);
         useChatStore.getState().pauseForAskUser(runId);
       } catch (err) {
@@ -833,6 +868,7 @@ export async function bootstrapChatChannel(): Promise<void> {
   unsub.push(
     vyotiq.chat.onDone((runId) => {
       try {
+        flushToolRoundBatcher();
         // Audit fix A3: flush any pending text/reasoning deltas
         // BEFORE the finish state lands so the renderer never
         // sees "settled then late delta" on a terminal run.
@@ -856,6 +892,7 @@ export async function bootstrapChatChannel(): Promise<void> {
   unsub.push(
     vyotiq.chat.onError((runId, message) => {
       try {
+        flushToolRoundBatcher();
         // Same drain rationale as `onDone` — terminal runs must not
         // leak buffered deltas onto the next event the user sees.
         flushAllTextForRun(runId);
@@ -878,6 +915,7 @@ export async function bootstrapChatChannel(): Promise<void> {
     argsDeltaBatcher.cancel();
     diffStreamBatcher.cancel();
     toolOutputDeltaBatcher.cancel();
+    toolRoundBatcher.cancel();
     if (textDeltaRafHandle !== null) {
       rafCancel(textDeltaRafHandle);
       textDeltaRafHandle = null;
