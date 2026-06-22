@@ -9,7 +9,6 @@
  */
 
 import { IPC, PERSIST_DELTA_COALESCE_CHARS } from '@shared/constants.js';
-import { randomUUID } from 'node:crypto';
 import type {
   ChatSendInput,
   ChatSendReply,

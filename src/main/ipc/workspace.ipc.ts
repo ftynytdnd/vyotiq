@@ -134,7 +134,12 @@ export function registerWorkspaceIpc(): void {
 
   wrapIpcHandler(IPC.WORKSPACES_SET_ACTIVE, async (_event, id: string) => {
     assertString('workspaces:setActive', 'id', id);
+    const before = await listWorkspaces();
+    const prevActive = before.workspaces.find((w) => w.id === before.activeId);
     const state = await setActiveWorkspace(id);
+    if (prevActive && prevActive.id !== id) {
+      void disposeWorkspaceVectorIndex(prevActive.path);
+    }
     const active = state.workspaces.find((w) => w.id === state.activeId);
     if (active) scheduleWorkspaceVectorIndex(active.path);
     return state;

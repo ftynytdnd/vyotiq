@@ -15,6 +15,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { vyotiq } from '../../lib/ipc.js';
+import { useTerminalStore } from '../../store/useTerminalStore.js';
 import { applyXtermTheme, buildXtermTheme, resolveMonoFontFamily } from '@shared/terminal/xtermTheme.js';
 
 export interface TerminalPoolEntry {
@@ -68,6 +69,7 @@ function bindGlobalListeners(): void {
     vyotiq.terminal.onExit((event) => {
       const entry = pool.get(event.sessionId);
       entry?.term.writeln(`\r\n\x1b[38;5;245m[shell exited ${event.exitCode}]\x1b[0m`);
+      useTerminalStore.getState().handleExit(event.sessionId);
     })
   );
   globalsRef.__vyotiqTerminalPoolUnsub = unsub;

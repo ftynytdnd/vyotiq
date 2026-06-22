@@ -1,5 +1,8 @@
 # Deliverables — Timeline Markdown vs HTML Reports
 
+An **on-demand context pack** — load it with the `context` tool before producing
+a large or tabular deliverable, or before calling the `report` tool.
+
 ## A. Two surfaces, two formats
 
 **Timeline (the journey)** — concise Markdown only. The chat column is a durable

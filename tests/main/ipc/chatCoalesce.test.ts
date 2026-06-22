@@ -266,12 +266,12 @@ describe('chat.ipc delta coalescing', () => {
     await startFreshRun();
     const emit = capture.emit!;
     emit({
-      kind: 'phase',
-      id: 'phase-1',
+      kind: 'agent-thought',
+      id: 'thought-1',
       ts: 1,
-      label: 'Spawning 2 workers'
+      content: 'Spawning workers'
     });
-    const phaseRows = appended.filter((a) => a.event.kind === 'phase');
-    expect(phaseRows).toHaveLength(1);
+    const thoughtRows = appended.filter((a) => a.event.kind === 'agent-thought');
+    expect(thoughtRows).toHaveLength(1);
   });
 });

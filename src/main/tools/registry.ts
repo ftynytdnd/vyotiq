@@ -13,6 +13,7 @@ import { searchTool } from './search.tool.js';
 import { sgTool } from './sg.tool.js';
 import { memoryTool } from './memory.tool.js';
 import { recallTool } from './recall.tool.js';
+import { contextTool } from './context.tool.js';
 import { finishTool } from './finish.tool.js';
 import { askUserTool } from './ask_user.tool.js';
 import { reportTool } from './report.tool.js';
@@ -32,6 +33,7 @@ const TOOLS: Record<RegisteredToolName, Tool> = {
   sg: sgTool,
   memory: memoryTool,
   recall: recallTool,
+  context: contextTool,
   report: reportTool,
   capture: captureTool,
   heartbeat: heartbeatTool,

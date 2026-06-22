@@ -37,7 +37,9 @@ function blockDuplicateToolCall(
   args: Record<string, unknown>,
   opts: ToolRunOpts
 ): ToolResult | null {
-  const dedupeBlocked = checkToolCallDedupe(opts.signal, toolName, args);
+  const dedupeBlocked = isKnownToolName(toolName)
+    ? checkToolCallDedupe(opts.signal, toolName, args)
+    : null;
   if (!dedupeBlocked) return null;
   log.warn('duplicate tool call blocked', {
     tool: toolName,

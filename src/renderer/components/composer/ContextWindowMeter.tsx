@@ -68,6 +68,7 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
     isRunActive
   });
   const [busy, setBusy] = useState(false);
+  const [busyMode, setBusyMode] = useState<'compact' | 'reset' | null>(null);
   const [open, setOpen] = useState(false);
   const [compactionNote, setCompactionNote] = useState<string | null>(null);
   const providers = useProviderStore((s) => s.providers);
@@ -92,6 +93,7 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
     async (mode: 'compact' | 'reset') => {
       if (!conversationId || !model || busy) return;
       setBusy(true);
+      setBusyMode(mode);
       try {
         const input = {
           conversationId,
@@ -140,6 +142,7 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
           .show(`Could not ${mode} context: ${err instanceof Error ? err.message : String(err)}`, 'danger');
       } finally {
         setBusy(false);
+        setBusyMode(null);
       }
     },
     [conversationId, model, busy, providers]
@@ -207,6 +210,10 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
         evaluating={evaluating}
         controlsEnabled={controlsEnabled}
         hasConversation={Boolean(conversationId)}
+        busy={busy}
+        busyMode={busy ? busyMode : null}
+        runActive={isRunActive}
+        compactionNote={compactionNote}
         onCompact={() => void run('compact')}
         onReset={() => void run('reset')}
       />

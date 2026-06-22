@@ -22,6 +22,7 @@ export type RegisteredToolName =
   | 'sg'
   | 'memory'
   | 'recall'
+  | 'context'
   | 'report'
   | 'capture'
   | 'heartbeat'
@@ -48,6 +49,7 @@ export const REGISTERED_TOOL_NAMES = [
   'sg',
   'memory',
   'recall',
+  'context',
   'report',
   'capture',
   'heartbeat',
@@ -246,6 +248,22 @@ export type ToolData =
     /** For `list`: how many conversations are visible to the agent. */
     count?: number;
     /** Markdown body the renderer can show on expand. */
+    preview?: string;
+  }
+  | {
+    /**
+     * On-demand context packs — `list` enumerates loadable reference packs,
+     * `load` returns a pack body into the run's history.
+     */
+    tool: 'context';
+    action: 'list' | 'load';
+    /** For `load`: the pack id that was requested. */
+    pack?: string;
+    /** For `load`: true when the pack was already loaded earlier this run. */
+    alreadyLoaded?: boolean;
+    /** For `list`: true when the catalogue was already listed earlier this run. */
+    alreadyListed?: boolean;
+    /** Markdown body the renderer can show on expand (catalogue or pack). */
     preview?: string;
   }
 export interface ToolResult {

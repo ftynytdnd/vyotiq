@@ -1,28 +1,30 @@
 /**
  * Cache-aware context layer builders. Static prefix at the top;
  * volatile runtime data at the message tail (see project.md § caching).
+ *
+ * Reference material (ast-grep, deliverables, examples) is NOT a static
+ * layer — the model loads it on demand via the `context` tool, so loaded
+ * packs land in the history band like any other tool result and never
+ * perturb the cached prefix.
  */
 
 import type { ChatContentPart, ChatMessage } from '@shared/types/chat.js';
 import type { ContextLevel } from '@shared/context/contextLevel.js';
 import type { ContextEnvelopes } from '../contextManager.js';
-import { buildStaticFewShotXml } from '../../harness/harnessLoader.js';
 import { wrapXml } from '../envelope/index.js';
 
 /** Minimum messages for cache-layered topology (no transcript history). */
-export const CACHE_LAYERED_MIN_MESSAGES = 5;
+export const CACHE_LAYERED_MIN_MESSAGES = 4;
 
 /** Fixed indices in the cache-layered layout. */
-export const CACHE_LAYER_FEW_SHOT_INDEX = 1;
-export const CACHE_LAYER_WORKSPACE_INDEX = 2;
-export const CACHE_LAYER_HISTORY_START = 3;
+export const CACHE_LAYER_WORKSPACE_INDEX = 1;
+export const CACHE_LAYER_HISTORY_START = 2;
 
 /**
  * True when `messages` uses the cache-layered layout:
  *   [0] system (harness + meta_rules)
- *   [1] user (static few-shot examples)
- *   [2] user (workspace)
- *   [3..n-4] history
+ *   [1] user (workspace)
+ *   [2..n-3] history
  *   [n-2] user (runtime)
  *   [n-1] user (turn)
  */
@@ -32,22 +34,10 @@ export function isCacheLayeredTopology(messages: readonly ChatMessage[]): boolea
   const turnIdx = messages.length - 1;
   return (
     messages[0]?.role === 'system' &&
-    messages[CACHE_LAYER_FEW_SHOT_INDEX]?.role === 'user' &&
     messages[CACHE_LAYER_WORKSPACE_INDEX]?.role === 'user' &&
     messages[runtimeIdx]?.role === 'user' &&
     messages[turnIdx]?.role === 'user'
   );
-}
-
-/** Pre–few-shot-slot topology: workspace at index 1, no slot at index 2. */
-export function isLegacyCacheLayeredTopology(messages: readonly ChatMessage[]): boolean {
-  if (messages.length < 4) return false;
-  const runtimeIdx = messages.length - 2;
-  const turnIdx = messages.length - 1;
-  if (messages[0]?.role !== 'system' || messages[1]?.role !== 'user') return false;
-  if (messages[runtimeIdx]?.role !== 'user' || messages[turnIdx]?.role !== 'user') return false;
-  if (messages.length >= 5 && messages[CACHE_LAYER_WORKSPACE_INDEX]?.role === 'user') return false;
-  return true;
 }
 
 /** Boot-cached harness + user meta-rules (stable system prefix). */
@@ -133,10 +123,6 @@ export interface ApplyCacheLayersOpts {
 /** Migrate legacy `[system, …history, turn]` arrays in place. */
 export function migrateToCacheLayeredInPlace(messages: ChatMessage[]): void {
   if (isCacheLayeredTopology(messages)) return;
-  if (isLegacyCacheLayeredTopology(messages)) {
-    messages.splice(CACHE_LAYER_FEW_SHOT_INDEX, 0, { role: 'user', content: '' });
-    return;
-  }
   if (messages.length < 2) return;
   const turn = messages[messages.length - 1];
   if (turn?.role !== 'user') return;
@@ -159,7 +145,6 @@ export function applyCacheLayers(messages: ChatMessage[], opts: ApplyCacheLayers
     role: 'system',
     content: buildStaticSystemPrefix(opts.harness, opts.env.metaRulesXml)
   };
-  messages[CACHE_LAYER_FEW_SHOT_INDEX] = { role: 'user', content: buildStaticFewShotXml() };
   messages[CACHE_LAYER_WORKSPACE_INDEX] = { role: 'user', content: opts.env.workspaceXml };
   messages[runtimeIdx] = {
     role: 'user',
@@ -183,7 +168,6 @@ export function seedCacheLayeredMessages(
 ): ChatMessage[] {
   return [
     { role: 'system', content: '' },
-    { role: 'user', content: '' },
     { role: 'user', content: '' },
     ...replayed,
     { role: 'user', content: '' },
@@ -221,13 +205,6 @@ export function extractStaticSystemForWire(messages: readonly ChatMessage[]): st
   return typeof messages[0]?.content === 'string' ? messages[0].content : '';
 }
 
-/** Static few-shot user block (cache-layer index 1). */
-export function extractFewShotBlock(messages: readonly ChatMessage[]): string | undefined {
-  if (!isCacheLayeredTopology(messages)) return undefined;
-  const content = messages[CACHE_LAYER_FEW_SHOT_INDEX]?.content;
-  return typeof content === 'string' && content.length > 0 ? content : undefined;
-}
-
 /** Workspace user block for explicit Anthropic cache breakpoint. */
 export function extractWorkspaceBlock(messages: readonly ChatMessage[]): string | undefined {
   if (!isCacheLayeredTopology(messages)) return undefined;
@@ -237,14 +214,12 @@ export function extractWorkspaceBlock(messages: readonly ChatMessage[]): string 
 
 /**
  * Static prefix parts for Gemini `systemInstruction` when cache-layered:
- * harness + meta_rules, few-shot examples, then workspace context.
+ * harness + meta_rules, then workspace context.
  */
 export function buildGeminiStaticInstructionTexts(messages: readonly ChatMessage[]): string[] {
   const parts: string[] = [];
   const staticSys = extractStaticSystemForWire(messages);
   if (staticSys.trim().length > 0) parts.push(staticSys);
-  const fewShot = extractFewShotBlock(messages);
-  if (fewShot) parts.push(fewShot);
   const workspace = extractWorkspaceBlock(messages);
   if (workspace) parts.push(workspace);
   return parts;

@@ -19,6 +19,7 @@ import { invalidateWorkspaceTreeCache } from '../lib/workspaceTreeCache.js';
 import { disposeLspClient } from '../lib/lspWorkspaceClient.js';
 import { useToastStore } from './useToastStore.js';
 import { useUiStore } from './useUiStore.js';
+import { useTerminalStore } from './useTerminalStore.js';
 // `useConversationsStore` and `useSettingsStore` were previously
 // dynamic-imported here to avoid a circular module graph at boot. With
 // the renderer bundle now eager-loading the same stores from
@@ -174,6 +175,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((setState, getState) => 
     setState({ activeId: id, info });
     const filesExpanded = useUiStore.getState().filesExpandedWorkspaces.has(id);
     useUiStore.setState({ dockPanelTab: filesExpanded ? 'files' : 'chats' });
+    if (useTerminalStore.getState().open) {
+      void useTerminalStore.getState().openPanel(id);
+    }
     try {
       const next = await vyotiq.workspace.setActive(id);
       // Reconcile against main's authoritative response. The optimistic

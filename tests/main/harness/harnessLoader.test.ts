@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import {
-  buildOrchestratorSystemPrompt,
-  buildStaticFewShotXml
-} from '@main/harness/harnessLoader';
+import { buildOrchestratorSystemPrompt } from '@main/harness/harnessLoader';
+import { getContextPackBody } from '@main/harness/contextPacks';
+import { CONTEXT_PACK_IDS } from '@shared/types/harness';
 import {
   IMPLICIT_FINISH_MIN_CHARS,
   MAX_SELF_CORRECTION_ATTEMPTS,
@@ -24,15 +23,26 @@ describe('buildOrchestratorSystemPrompt', () => {
     expect(prompt).toContain('one dynamic agent');
   });
 
-  it('does not embed few-shot patterns in the harness system prefix', () => {
-    expect(prompt).not.toContain('Static Few-Shot Patterns');
+  it('does not embed on-demand pack bodies in the system prefix', () => {
+    // Reference packs are loaded on demand via the `context` tool, not forced
+    // into the always-on prefix. (Markers chosen to be unique to pack bodies —
+    // e.g. `vy-severity-table` also appears in the `report` tool brief.)
     expect(prompt).not.toContain('Read before edit');
+    expect(prompt).not.toContain('## Metavariables');
+    expect(prompt).not.toContain('Two surfaces, two formats');
   });
 
-  it('buildStaticFewShotXml supplies the dedicated cache-layer slot', () => {
-    const fewShot = buildStaticFewShotXml();
-    expect(fewShot).toContain('<static_examples>');
-    expect(fewShot).toContain('Read before edit');
+  it('advertises the on-demand context pack catalogue in the prefix', () => {
+    expect(prompt).toContain('# On-Demand Context Packs');
+    expect(prompt).toContain('`ast-grep-reference`');
+    expect(prompt).toContain('`deliverables`');
+    expect(prompt).toContain('`static-examples`');
+  });
+
+  it('resolves a non-empty body for every on-demand pack', () => {
+    for (const id of CONTEXT_PACK_IDS) {
+      expect(getContextPackBody(id).trim().length).toBeGreaterThan(20);
+    }
   });
 
   it('cites runtime limits from constants', () => {
@@ -58,17 +68,24 @@ describe('buildOrchestratorSystemPrompt', () => {
     expect(prompt).toContain('Plain-English briefs');
   });
 
-  it('includes deliverables guidance for markdown vs HTML reports', () => {
-    expect(prompt).toContain('Deliverables — Timeline Markdown vs HTML Reports');
-    expect(prompt).toContain('vy-severity-table');
-    expect(prompt).toContain('≤80 lines');
-    expect(prompt).toContain('host injects an end-of-run `ask_user` gate');
+  it('keeps deliverables guidance in the on-demand pack, not the prefix', () => {
+    expect(prompt).not.toContain('Two surfaces, two formats');
+    const body = getContextPackBody('deliverables');
+    expect(body).toContain('Deliverables — Timeline Markdown vs HTML Reports');
+    expect(body).toContain('vy-severity-table');
+    expect(body).toContain('≤80 lines');
   });
 
-  it('includes bundled ast-grep reference in system instructions', () => {
-    expect(prompt).toContain('ast-grep Quick Reference');
-    expect(prompt).toContain('Metavariables');
-    expect(prompt).toContain('`search` tool');
+  it('keeps the ast-grep reference in the on-demand pack, not the prefix', () => {
+    expect(prompt).not.toContain('## Metavariables');
+    const body = getContextPackBody('ast-grep-reference');
+    expect(body).toContain('ast-grep Quick Reference');
+    expect(body).toContain('Metavariables');
+    expect(body).toContain('`search` tool');
+  });
+
+  it('exposes the context tool brief in the prefix', () => {
+    expect(prompt).toContain('### Tool: `context`');
   });
 
   it('includes dynamic agent loop guidance in system instructions', () => {

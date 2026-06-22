@@ -3,17 +3,16 @@
  */
 
 import { useEffect } from 'react';
-import { vyotiq } from '../lib/ipc.js';
 import { scheduleWorkspaceTreeRefresh } from '../lib/scheduleWorkspaceTreeRefresh.js';
+import { subscribeWorkspaceTreeChanged } from '../lib/workspaceTreeChangeHub.js';
 import { useWorkspaceStore } from '../store/useWorkspaceStore.js';
 
 export function useWorkspaceTreeWatcher(): void {
   useEffect(() => {
-    const unsub = vyotiq.workspace.onTreeChanged((payload) => {
+    return subscribeWorkspaceTreeChanged((payload) => {
       const activeId = useWorkspaceStore.getState().activeId;
       if (activeId && payload.workspaceId !== activeId) return;
       scheduleWorkspaceTreeRefresh();
     });
-    return unsub;
   }, []);
 }

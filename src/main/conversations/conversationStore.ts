@@ -1169,7 +1169,7 @@ export async function readTranscript(id: string): Promise<TimelineEvent[]> {
     const removed = out.length - migrated.length;
     await rewriteTranscriptEvents(id, migrated, removed);
   }
-  return migrated;
+  return normalizeLegacyTranscript(migrated);
 }
 
 async function rewriteTranscriptEvents(

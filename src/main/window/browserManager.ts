@@ -175,17 +175,6 @@ export function browserOpenExternal(url: string): void {
   throw new Error('Only http(s) URLs can be opened externally');
 }
 
-export function browserIsVisible(): boolean {
-  return visible;
-}
-
-export function browserHasLoaded(): boolean {
-  const wc = view?.webContents;
-  if (!wc || wc.isDestroyed()) return false;
-  const url = wc.getURL();
-  return url.length > 0 && url !== 'about:blank' && !wc.isLoading();
-}
-
 /** Capture the visible Globe browser page as PNG bytes. */
 export async function browserCapturePage(): Promise<{
   png: Buffer;

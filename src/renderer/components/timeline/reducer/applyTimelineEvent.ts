@@ -396,9 +396,6 @@ export function applyTimelineEvent(
       });
     case 'agent-thought':
     case 'ask-user-prompt':
-    case 'phase':
-    case 'phase-gate':
-    case 'phase-ledger-entry':
     case 'error':
       return { ...state, events: appendTimelineEvent(state.events, event, mutate) };
 

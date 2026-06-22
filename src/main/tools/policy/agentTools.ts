@@ -18,6 +18,7 @@ export const AGENT_TOOLS: readonly ToolName[] = [
   'sg',
   'memory',
   'recall',
+  'context',
   'report',
   'capture',
   'heartbeat',

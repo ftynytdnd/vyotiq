@@ -112,9 +112,9 @@ export function flushTimelineUiPersistence(): Promise<void> {
   const snapshot = pendingExpanded;
   persistTimer = null;
   pendingExpanded = null;
-  return persistSettingsPatch({ ui: { expandedRows: buildPayload(snapshot) } }).catch(() => {
-    /* noop */
-  });
+  return persistSettingsPatch({ ui: { expandedRows: buildPayload(snapshot) } })
+    .then(() => undefined)
+    .catch(() => undefined);
 }
 
 export const useTimelineUiStore = create<TimelineUiStore>((set, get) => ({

@@ -10,6 +10,7 @@
  */
 
 import { logger } from '../../logging/logger.js';
+import { isContextPackId } from '@shared/types/harness.js';
 
 const log = logger.child('orchestrator/validateToolArgs');
 
@@ -223,6 +224,34 @@ export function validateToolArgs(
           output: 'Error: `conversationId` is required for action="read".',
           error: 'missing conversationId'
         };
+      }
+      return { ok: true };
+    }
+    case 'context': {
+      const action = args['action'];
+      if (action !== 'list' && action !== 'load') {
+        return {
+          ok: false,
+          output: 'Error: `action` must be "list" or "load".',
+          error: 'invalid action'
+        };
+      }
+      if (action === 'load' && !requireNonEmptyString(args, 'pack')) {
+        return {
+          ok: false,
+          output: 'Error: `pack` is required for action="load".',
+          error: 'missing pack'
+        };
+      }
+      if (action === 'load') {
+        const pack = args['pack'];
+        if (typeof pack === 'string' && !isContextPackId(pack)) {
+          return {
+            ok: false,
+            output: `Error: unknown context pack "${pack}". Call action="list" for valid ids.`,
+            error: 'invalid pack'
+          };
+        }
       }
       return { ok: true };
     }

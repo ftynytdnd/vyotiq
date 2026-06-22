@@ -3991,9 +3991,6 @@ button.vx-mention-highlight--open:focus-visible {
 .vx-context-breakdown__stack-seg--system {
   background: color-mix(in oklch, var(--color-accent) 88%, white);
 }
-.vx-context-breakdown__stack-seg--fewShot {
-  background: color-mix(in oklch, var(--color-accent) 68%, white);
-}
 .vx-context-breakdown__stack-seg--workspace {
   background: color-mix(in oklch, var(--color-accent) 52%, white);
 }
@@ -4073,9 +4070,6 @@ button.vx-mention-highlight--open:focus-visible {
 
 .vx-context-breakdown-popover__swatch--system {
   background: color-mix(in oklch, var(--color-accent) 88%, white);
-}
-.vx-context-breakdown-popover__swatch--fewShot {
-  background: color-mix(in oklch, var(--color-accent) 68%, white);
 }
 .vx-context-breakdown-popover__swatch--workspace {
   background: color-mix(in oklch, var(--color-accent) 52%, white);

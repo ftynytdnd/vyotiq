@@ -54,10 +54,3 @@ export function focusActiveWorkbenchDom(tab: CompanionTab): void {
     requestAnimationFrame(run);
   });
 }
-
-/** Test-only reset. */
-export function __test_resetWorkbenchFocusDom(): void {
-  terminalFocus = null;
-  editorFocus = null;
-  browserUrlFocus = null;
-}

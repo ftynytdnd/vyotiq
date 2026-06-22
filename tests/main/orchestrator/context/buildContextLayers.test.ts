@@ -4,40 +4,34 @@ import {
   buildGeminiStaticInstructionTexts,
   buildRuntimeTailXml,
   buildStaticSystemPrefix,
-  CACHE_LAYER_FEW_SHOT_INDEX,
   CACHE_LAYER_WORKSPACE_INDEX,
   isCacheLayeredTopology,
   insertHistoryBeforeTail,
   migrateToCacheLayeredInPlace,
   seedCacheLayeredMessages
 } from '@main/orchestrator/context/buildContextLayers';
-import { buildStaticFewShotXml } from '@main/harness/harnessLoader';
 import { wrapXml } from '@main/orchestrator/envelope';
 
 describe('buildContextLayers', () => {
-  it('seeds cache-layered topology with few-shot and workspace slots', () => {
+  it('seeds cache-layered topology with workspace slot at index 1', () => {
     const messages = seedCacheLayeredMessages(
       [{ role: 'user', content: '<turn>hi</turn>' }],
       '<turn>current</turn>'
     );
     expect(isCacheLayeredTopology(messages)).toBe(true);
     expect(messages[0]?.role).toBe('system');
-    expect(messages[CACHE_LAYER_FEW_SHOT_INDEX]?.role).toBe('user');
     expect(messages[CACHE_LAYER_WORKSPACE_INDEX]?.role).toBe('user');
     expect(messages[messages.length - 1]?.content).toBe('<turn>current</turn>');
   });
 
-  it('migrates pre-few-shot cache-layered layout by inserting slot at index 1', () => {
+  it('recognizes the minimal 4-slot cache-layered layout', () => {
     const messages = [
       { role: 'system' as const, content: 'harness' },
       { role: 'user' as const, content: wrapXml('workspace_context', 'ws') },
       { role: 'user' as const, content: wrapXml('runtime_context', 'run') },
       { role: 'user' as const, content: '<turn>current</turn>' }
     ];
-    migrateToCacheLayeredInPlace(messages);
     expect(isCacheLayeredTopology(messages)).toBe(true);
-    expect(messages[CACHE_LAYER_FEW_SHOT_INDEX]?.role).toBe('user');
-    expect(messages[CACHE_LAYER_WORKSPACE_INDEX]?.content).toContain('workspace_context');
     applyCacheLayers(messages, {
       harness: 'HARNESS',
       env: {
@@ -51,7 +45,7 @@ describe('buildContextLayers', () => {
       runStateXml: wrapXml('run_state', 'run'),
       hostEnvironmentXml: wrapXml('host_environment', 'host')
     });
-    expect(messages[CACHE_LAYER_FEW_SHOT_INDEX]?.content).toContain('static_examples');
+    expect(messages[CACHE_LAYER_WORKSPACE_INDEX]?.content).toContain('ws-new');
   });
 
   it('migrates minimal legacy system + turn layout in place', () => {
@@ -61,7 +55,7 @@ describe('buildContextLayers', () => {
     ];
     migrateToCacheLayeredInPlace(messages);
     expect(isCacheLayeredTopology(messages)).toBe(true);
-    expect(messages.length).toBeGreaterThanOrEqual(5);
+    expect(messages.length).toBeGreaterThanOrEqual(4);
   });
 
   it('migrates legacy single-system layout in place', () => {
@@ -73,11 +67,12 @@ describe('buildContextLayers', () => {
     ];
     migrateToCacheLayeredInPlace(messages);
     expect(isCacheLayeredTopology(messages)).toBe(true);
-    expect(messages[4]?.content).toBe('ok');
+    // [system, workspace, <turn>old</turn>, ok, runtime, <turn>new</turn>]
+    expect(messages[3]?.content).toBe('ok');
     expect(messages[messages.length - 1]?.content).toBe('<turn>new</turn>');
   });
 
-  it('applyCacheLayers writes static, few-shot, workspace, and runtime slots', () => {
+  it('applyCacheLayers writes static, workspace, and runtime slots — no few-shot', () => {
     const messages = seedCacheLayeredMessages([], '<turn>t</turn>');
     applyCacheLayers(messages, {
       harness: wrapXml('system_instructions', 'harness'),
@@ -95,8 +90,6 @@ describe('buildContextLayers', () => {
     expect(messages[0]?.content).toContain('harness');
     expect(messages[0]?.content).toContain('meta_rules');
     expect(messages[0]?.content).not.toContain('static_examples');
-    expect(messages[CACHE_LAYER_FEW_SHOT_INDEX]?.content).toContain('static_examples');
-    expect(messages[CACHE_LAYER_FEW_SHOT_INDEX]?.content).toContain('Read before edit');
     expect(messages[CACHE_LAYER_WORKSPACE_INDEX]?.content).toContain('workspace_context');
     const runtime = messages[messages.length - 2]?.content ?? '';
     expect(runtime).toContain('runtime_context');
@@ -110,13 +103,7 @@ describe('buildContextLayers', () => {
     expect(out).toContain('meta_rules');
   });
 
-  it('buildStaticFewShotXml wraps harness examples markdown', () => {
-    const xml = buildStaticFewShotXml();
-    expect(xml).toContain('<static_examples>');
-    expect(xml).toContain('Read before edit');
-  });
-
-  it('buildGeminiStaticInstructionTexts returns system, few-shot, then workspace', () => {
+  it('buildGeminiStaticInstructionTexts returns system, then workspace', () => {
     const messages = seedCacheLayeredMessages([], '<turn>t</turn>');
     applyCacheLayers(messages, {
       harness: 'HARNESS',
@@ -132,10 +119,9 @@ describe('buildContextLayers', () => {
       hostEnvironmentXml: ''
     });
     const parts = buildGeminiStaticInstructionTexts(messages);
-    expect(parts).toHaveLength(3);
+    expect(parts).toHaveLength(2);
     expect(parts[0]).toContain('HARNESS');
-    expect(parts[1]).toContain('static_examples');
-    expect(parts[2]).toContain('workspace_context');
+    expect(parts[1]).toContain('workspace_context');
   });
 
   it('insertHistoryBeforeTail keeps runtime and turn at the tail after tool rounds', () => {

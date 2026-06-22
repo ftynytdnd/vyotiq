@@ -452,9 +452,6 @@ export function deriveRows(
 
       case 'agent-text-end':
       case 'agent-reasoning-end':
-      case 'phase':
-      case 'phase-gate':
-      case 'phase-ledger-entry':
         break;
 
       case 'tool-call': {

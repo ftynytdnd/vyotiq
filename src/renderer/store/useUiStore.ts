@@ -45,9 +45,9 @@ function flushDockExpandedNow(): Promise<void> {
   if (pendingDockExpanded === null) return Promise.resolve();
   const next = pendingDockExpanded;
   pendingDockExpanded = null;
-  return persistSettingsPatch({ ui: { dockExpanded: next } }).catch(() => {
-    /* noop */
-  });
+  return persistSettingsPatch({ ui: { dockExpanded: next } })
+    .then(() => undefined)
+    .catch(() => undefined);
 }
 
 function flushDockWidthNow(): Promise<void> {
@@ -58,9 +58,9 @@ function flushDockWidthNow(): Promise<void> {
   if (pendingDockWidth === null) return Promise.resolve();
   const next = pendingDockWidth;
   pendingDockWidth = null;
-  return persistSettingsPatch({ ui: { dockWidth: next } }).catch(() => {
-    /* noop */
-  });
+  return persistSettingsPatch({ ui: { dockWidth: next } })
+    .then(() => undefined)
+    .catch(() => undefined);
 }
 
 function flushWorkbenchPaneWidthNow(): Promise<void> {
@@ -71,9 +71,9 @@ function flushWorkbenchPaneWidthNow(): Promise<void> {
   if (pendingWorkbenchPaneWidth === null) return Promise.resolve();
   const next = pendingWorkbenchPaneWidth;
   pendingWorkbenchPaneWidth = null;
-  return persistSettingsPatch({ ui: { workbenchPaneWidth: next } }).catch(() => {
-    /* noop */
-  });
+  return persistSettingsPatch({ ui: { workbenchPaneWidth: next } })
+    .then(() => undefined)
+    .catch(() => undefined);
 }
 
 function flushCollapsedNow(): Promise<void> {
@@ -84,9 +84,9 @@ function flushCollapsedNow(): Promise<void> {
   if (pendingCollapsed === null) return Promise.resolve();
   const next = pendingCollapsed;
   pendingCollapsed = null;
-  return persistSettingsPatch({ ui: { collapsedWorkspaces: Array.from(next) } }).catch(() => {
-    /* noop */
-  });
+  return persistSettingsPatch({ ui: { collapsedWorkspaces: Array.from(next) } })
+    .then(() => undefined)
+    .catch(() => undefined);
 }
 
 function flushFilesExpandedNow(): Promise<void> {
@@ -97,9 +97,9 @@ function flushFilesExpandedNow(): Promise<void> {
   if (pendingFilesExpanded === null) return Promise.resolve();
   const next = pendingFilesExpanded;
   pendingFilesExpanded = null;
-  return persistSettingsPatch({ ui: { filesExpandedWorkspaces: Array.from(next) } }).catch(() => {
-    /* noop */
-  });
+  return persistSettingsPatch({ ui: { filesExpandedWorkspaces: Array.from(next) } })
+    .then(() => undefined)
+    .catch(() => undefined);
 }
 
 export function flushUiPersistence(): Promise<void> {

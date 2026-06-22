@@ -4,6 +4,13 @@
  * Spin-prone tools (`read`, `bash`, `search`, `ls`) block on the second
  * identical dispatch so the model cannot cache-loop through a third repeat.
  * Other tools allow two attempts then block.
+ *
+ * Excluded tools self-govern repeats and must never see the hostile generic
+ * block: `finish` / `ask_user` are legitimately repeatable terminals, and
+ * `context` is an idempotent, self-dedluping reference loader (it returns its
+ * own graceful `[already loaded]` / `[already listed]` banner on repeats — see
+ * `context.tool.ts`). Letting the generic blocker fire on `context` produced a
+ * confusing `BLOCKED: identical arguments` message that derailed weaker models.
  */
 
 import type { ToolResult } from '@shared/types/tool.js';
@@ -13,7 +20,7 @@ import { toolCallSignature } from './loop/toolSpinSignature.js';
 const MAX_IDENTICAL_DISPATCHES_DEFAULT = 3;
 const MAX_IDENTICAL_DISPATCHES_SPIN_PRONE = 2;
 
-const EXCLUDED_TOOLS = new Set<string>(['finish', 'ask_user']);
+const EXCLUDED_TOOLS = new Set<string>(['finish', 'ask_user', 'context']);
 
 const SPIN_PRONE_TOOLS = new Set<string>(['read', 'bash', 'search', 'ls']);
 

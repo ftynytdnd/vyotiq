@@ -10,7 +10,6 @@ import { openWorkspaceFile } from './openPath.js';
 import { useToastStore } from '../store/useToastStore.js';
 import { useAttachmentPreviewStore } from '../store/useAttachmentPreviewStore.js';
 import {
-  attachmentPreviewKind,
   canPreviewAttachmentInApp as canPreviewAttachmentInAppKind
 } from './attachmentPreview.js';
 

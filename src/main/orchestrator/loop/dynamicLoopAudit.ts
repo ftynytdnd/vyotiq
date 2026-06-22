@@ -1,5 +1,10 @@
 /**
- * Host-driven async loop nudges — auto-audit after substantive tool work.
+ * Host verify-before-finish net. The dynamic loop is model-directed: the
+ * harness tells Agent V to self-audit and `continue` after substantive work.
+ * The host no longer injects a per-iteration audit nudge — it only injects a
+ * single verification prompt at the deferred-finish boundary (finish co-emitted
+ * with substantive edits), so a run cannot settle on unverified changes without
+ * at least one explicit "re-check, then finish" pass.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -18,11 +23,11 @@ Continue this task in the same run. Audit your recent work if you have not alrea
 </dynamic_loop_continue>`;
 
 export const DEFAULT_DYNAMIC_LOOP_AUDIT_PROMPT = `<dynamic_loop_audit>
-Self-audit your recent changes before continuing or finishing:
-1. Re-read edited files and run relevant tests or builds.
-2. Fix gaps in-loop — do not call finish yet.
-3. Use continue with a specific next step if more work remains in this run.
-4. Use heartbeat only when waiting on external events (PR, CI).
+You called finish right after substantive edits. Verify before this run settles:
+1. Re-read the files you changed and run the relevant tests or build.
+2. If anything is incomplete or unverified, fix it in-loop and do not finish yet —
+   use continue with a specific next step.
+3. Finish only once the work is verified against the user's goal and <goal_anchor>.
 </dynamic_loop_audit>`;
 
 const SUBSTANTIVE_TOOL_NAMES = new Set(['edit', 'delete']);
@@ -48,7 +53,9 @@ function isSubstantiveToolCall(tc: PartialToolCall): boolean {
 export function clearsDynamicLoopAuditAwaiting(actionTools: PartialToolCall[]): boolean {
   return actionTools.some((tc) => {
     const name = normalizedToolName(tc);
-    return name === 'continue' || (name !== null && SUBSTANTIVE_TOOL_NAMES.has(name));
+    if (name === 'continue') return true;
+    if (name !== null && SUBSTANTIVE_TOOL_NAMES.has(name)) return true;
+    return isSubstantiveToolCall(tc);
   });
 }
 

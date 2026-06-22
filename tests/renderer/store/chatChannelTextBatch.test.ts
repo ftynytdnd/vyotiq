@@ -189,10 +189,10 @@ describe('chatChannel — text/reasoning-delta RAF batcher', () => {
     cb.onEvent('run-1', textDelta('turn-A', 'pre '));
     cb.onEvent('run-1', reasoningDelta('turn-B', 'side '));
     expect(internal.textDeltaAccumulatorSize()).toBe(2);
-    // A `phase` event is not an id-targeted boundary — its arrival
-    // implicitly closes EVERY in-flight stream so the persisted /
-    // dispatched ordering stays `deltas → phase`.
-    cb.onEvent('run-1', { kind: 'phase', id: 'p-1', ts: 5, label: 'next' });
+    // A non-delta event is not id-targeted — its arrival implicitly
+    // closes EVERY in-flight stream so the persisted / dispatched
+    // ordering stays `deltas → thought`.
+    cb.onEvent('run-1', { kind: 'agent-thought', id: 'p-1', ts: 5, content: 'next' });
     expect(internal.textDeltaAccumulatorSize()).toBe(0);
     const s = useChatStore.getState();
     expect(s.assistantTexts['turn-A']?.text).toBe('pre ');
@@ -221,7 +221,7 @@ describe('chatChannel — text/reasoning-delta RAF batcher', () => {
     cb.onEvent('run-1', textDelta('turn-A', 'A1 '));
     cb.onEvent('run-2', textDelta('turn-B', 'B1 '));
     expect(internal.textDeltaAccumulatorSize()).toBe(2);
-    cb.onEvent('run-1', { kind: 'phase', id: 'p-1', ts: 5, label: 'next' });
+    cb.onEvent('run-1', { kind: 'agent-thought', id: 'p-1', ts: 5, content: 'next' });
     // run-1's entry was flushed; run-2's is untouched.
     expect(internal.textDeltaAccumulatorSize()).toBe(1);
     expect(internal.textDeltaAccumulatorKeys()).toEqual([

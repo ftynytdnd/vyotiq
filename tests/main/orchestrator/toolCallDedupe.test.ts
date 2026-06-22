@@ -36,4 +36,15 @@ describe('checkToolCallDedupe', () => {
       expect(checkToolCallDedupe(signal, 'ask_user', { questions: [] })).toBeNull();
     }
   });
+
+  it('never blocks the self-governing context tool', () => {
+    // `context` self-dedupes (graceful [already loaded] / [already listed]
+    // banners) so the host must not emit the hostile generic block for it.
+    for (let i = 0; i < 5; i++) {
+      expect(checkToolCallDedupe(signal, 'context', { action: 'list' })).toBeNull();
+      expect(
+        checkToolCallDedupe(signal, 'context', { action: 'load', pack: 'ast-grep-reference' })
+      ).toBeNull();
+    }
+  });
 });

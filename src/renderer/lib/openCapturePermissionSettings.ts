@@ -10,7 +10,7 @@ export async function openCapturePermissionSettings(): Promise<void> {
     ? 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'
     : 'ms-settings:privacy-screen';
   try {
-    await vyotiq.shell.openExternal(url);
+    await vyotiq.browser.openExternal({ url });
   } catch {
     /* shell may be unavailable in tests */
   }

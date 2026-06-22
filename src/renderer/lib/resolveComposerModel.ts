@@ -13,14 +13,6 @@ export function isComposerModelValid(
   return !!provider?.models?.some((m) => m.id === sel.modelId);
 }
 
-export function modelSelectionsEqual(a: ModelSelection, b: ModelSelection): boolean {
-  return (
-    a.providerId === b.providerId &&
-    a.modelId === b.modelId &&
-    a.thinkingEffort === b.thinkingEffort
-  );
-}
-
 export function enrichModelSelection(
   sel: ModelSelection,
   providers: readonly ProviderConfig[]

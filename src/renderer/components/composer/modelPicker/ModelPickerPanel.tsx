@@ -521,7 +521,6 @@ export function ModelPickerPanel({
               ) : null}
               {(mode === 'split' || detailsOpen) && (
                 <ModelPickerSidePanel
-                  id="vx-model-picker-side-panel"
                   provider={activeProvider}
                   modelId={activeModelId}
                   model={activeModel}

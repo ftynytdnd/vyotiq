@@ -43,7 +43,6 @@ vi.mock('@main/providers/tokenCounter', () => ({
     visionTokens: 0,
     breakdown: {
       system: 0,
-      fewShot: 0,
       workspace: 0,
       history: 200_000,
       runtime: 0,
@@ -130,7 +129,7 @@ describe('contextCompaction', () => {
       createContextReductionState()
     );
 
-    expect(out.messages.length).toBeGreaterThanOrEqual(5);
+    expect(out.messages.length).toBeGreaterThanOrEqual(4);
     expect(out.messages[0]?.role).toBe('system');
     expect(out.messages[out.messages.length - 1]?.role).toBe('user');
   });
@@ -144,9 +143,11 @@ describe('contextCompaction', () => {
     } as Awaited<ReturnType<typeof getProviderWithKey>>);
 
     const largeOutput = 'x'.repeat(5_000);
+    // Tool result lands in the history band (index 2 under the cache-layered
+    // topology: [system, workspace, …history, runtime, turn]).
     const messages = seedCacheLayeredMessages([], '<turn/>');
     messages[0] = { role: 'system', content: '<system_instructions>x</system_instructions>' };
-    messages.splice(3, 0, {
+    messages.splice(2, 0, {
       role: 'tool',
       tool_call_id: 'tc-1m',
       name: 'read',
@@ -175,14 +176,51 @@ describe('contextCompaction', () => {
     expect(out.usage.effectiveWindow).toBe(1_000_000);
     expect(out.usage.fractionUsed).toBeCloseTo(0.2, 2);
     expect(out.usage.level).toBe('trigger');
-    expect(isCompactedToolContent(String(out.messages[3]?.content))).toBe(true);
+    expect(isCompactedToolContent(String(out.messages[2]?.content))).toBe(true);
+  });
+
+  it('reduces with absolute thresholds when the model window is unknown', async () => {
+    vi.mocked(getProviderWithKey).mockResolvedValueOnce(null);
+
+    const largeOutput = 'x'.repeat(5_000);
+    const messages = seedCacheLayeredMessages([], '<turn/>');
+    messages[0] = { role: 'system', content: '<system_instructions>x</system_instructions>' };
+    messages.splice(2, 0, {
+      role: 'tool',
+      tool_call_id: 'tc-unknown',
+      name: 'read',
+      content: largeOutput
+    });
+
+    const out = await reduceContextIfNeeded(
+      messages,
+      {
+        conversationId: 'conv-unknown',
+        runId: 'run-unknown',
+        workspacePath,
+        modelId: 'local-model',
+        providerId: 'missing',
+        settings: cmSettings({
+          enabled: true,
+          summarizationEnabled: false,
+          keepLastToolResults: 0,
+          minSavingsTokens: 0
+        }),
+        emit: () => {}
+      },
+      createContextReductionState()
+    );
+
+    expect(out.usage.effectiveWindow).toBe(0);
+    expect(out.usage.level).toBe('trigger');
+    expect(isCompactedToolContent(String(out.messages[2]?.content))).toBe(true);
   });
 
   it('replaces large tool outputs with reversible banners when over threshold', async () => {
     const largeOutput = 'x'.repeat(5_000);
     const messages = seedCacheLayeredMessages([], '<turn/>');
     messages[0] = { role: 'system', content: '<system_instructions>x</system_instructions>' };
-    messages.splice(3, 0, {
+    messages.splice(2, 0, {
       role: 'tool',
       tool_call_id: 'tc-large',
       name: 'read',
@@ -206,7 +244,7 @@ describe('contextCompaction', () => {
       createContextReductionState()
     );
 
-    const toolMsg = out.messages[3];
+    const toolMsg = out.messages[2];
     expect(toolMsg?.role).toBe('tool');
     expect(typeof toolMsg?.content).toBe('string');
     expect(isCompactedToolContent(toolMsg!.content as string)).toBe(true);
@@ -262,13 +300,14 @@ describe('contextCompaction', () => {
 
     // 5 tool rows, keep last 3 → the 2 oldest are cleared (reason 'clear');
     // they are below the size threshold so only the keep-N rule applies.
+    // History band starts at index 2: [system, workspace, tc-0..tc-4, runtime, turn].
     const cleared = emitted.filter((e) => e.kind === 'tool-compacted');
     expect(cleared).toHaveLength(2);
     expect(cleared.every((e) => e.reason === 'clear')).toBe(true);
+    expect(isCompactedToolContent(out.messages[2]!.content as string)).toBe(true);
     expect(isCompactedToolContent(out.messages[3]!.content as string)).toBe(true);
-    expect(isCompactedToolContent(out.messages[4]!.content as string)).toBe(true);
-    expect(isCompactedToolContent(out.messages[5]!.content as string)).toBe(false);
-    expect(isCompactedToolContent(out.messages[7]!.content as string)).toBe(false);
+    expect(isCompactedToolContent(out.messages[4]!.content as string)).toBe(false);
+    expect(isCompactedToolContent(out.messages[6]!.content as string)).toBe(false);
   });
 
   it('buildCompactionBanner round-trips detection', () => {

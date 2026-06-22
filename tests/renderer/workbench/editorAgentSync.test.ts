@@ -1,16 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderHook } from '@testing-library/react';
 import { useEditorStore } from '../../../src/renderer/store/useEditorStore.js';
-import { useEditorAgentSync } from '../../../src/renderer/hooks/useEditorAgentSync.js';
+import { syncEditorFromAgentEvent } from '../../../src/renderer/lib/syncEditorFromAgentEvent.js';
 
-const { onEventMock, readMock } = vi.hoisted(() => ({
-  onEventMock: vi.fn(),
+const { readMock } = vi.hoisted(() => ({
   readMock: vi.fn()
 }));
 
 vi.mock('../../../src/renderer/lib/ipc.js', () => ({
   vyotiq: {
-    chat: { onEvent: onEventMock },
     editor: { read: readMock, write: vi.fn() },
     settings: { set: vi.fn() }
   }
@@ -53,16 +50,9 @@ function seedTab(overrides: Record<string, unknown> = {}) {
   return tab;
 }
 
-describe('useEditorAgentSync', () => {
-  let emit: (event: unknown) => void;
-
+describe('syncEditorFromAgentEvent', () => {
   beforeEach(() => {
-    onEventMock.mockReset();
     readMock.mockReset();
-    onEventMock.mockImplementation((handler: (runId: string, event: unknown) => void) => {
-      emit = (event) => handler('run-1', event);
-      return () => {};
-    });
     useEditorStore.setState({
       open: false,
       tabs: [],
@@ -73,14 +63,13 @@ describe('useEditorAgentSync', () => {
 
   it('applies live postBody and marks tab agent-streaming', () => {
     seedTab();
-    renderHook(() => useEditorAgentSync());
 
-    emit({
+    syncEditorFromAgentEvent({
       kind: 'diff-stream',
       filePath: 'src/main.ts',
       settled: false,
       postBody: 'streaming body'
-    });
+    } as never);
 
     const tab = useEditorStore.getState().tabs[0]!;
     expect(tab.content).toBe('streaming body');
@@ -99,13 +88,12 @@ describe('useEditorAgentSync', () => {
     });
 
     seedTab({ agentStreaming: true, content: 'streaming body' });
-    renderHook(() => useEditorAgentSync());
 
-    emit({
+    syncEditorFromAgentEvent({
       kind: 'diff-stream',
       filePath: 'src/main.ts',
       settled: true
-    });
+    } as never);
 
     await vi.waitFor(() => {
       const tab = useEditorStore.getState().tabs[0]!;

@@ -120,7 +120,6 @@ describe('tokenCounter.tokenizeMessages (Phase 1)', () => {
     expect(r.visionTokens).toBe(0);
     expect(r.breakdown).toEqual({
       system: 0,
-      fewShot: 0,
       workspace: 0,
       history: 0,
       runtime: 0,
@@ -153,7 +152,6 @@ describe('tokenCounter.tokenizeMessages (Phase 1)', () => {
     expect(r.breakdown.tools).toBeGreaterThan(0);
     expect(r.total).toBe(
       r.breakdown.system +
-        r.breakdown.fewShot +
         r.breakdown.workspace +
         r.breakdown.history +
         r.breakdown.runtime +
@@ -190,7 +188,6 @@ describe('tokenCounter.tokenizeMessages (Phase 1)', () => {
     expect(r.visionTokens).toBeGreaterThan(0);
     expect(r.total).toBeGreaterThan(
       r.breakdown.system +
-        r.breakdown.fewShot +
         r.breakdown.workspace +
         r.breakdown.history +
         r.breakdown.runtime +

@@ -33,7 +33,6 @@ import {
   DOCK_TAB_ICON_STROKE,
   DOCK_TAB_LABEL_CLASS,
   DOCK_TAB_TRIGGER_CLASS,
-  dockInlineActionClassName,
   dockTabRowClassName,
   dockTabActiveAttr,
   dismissDockSearchAfterSelection

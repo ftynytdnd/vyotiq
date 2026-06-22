@@ -30,7 +30,6 @@ describe('contextBreakdownLayers', () => {
   it('activeBreakdownLayers sorts by token count descending', () => {
     const breakdown = {
       system: 10_000,
-      fewShot: 500,
       workspace: 100,
       history: 0,
       runtime: 1_200,
@@ -42,7 +41,6 @@ describe('contextBreakdownLayers', () => {
       'system',
       'tools',
       'runtime',
-      'fewShot',
       'workspace'
     ]);
   });
@@ -61,7 +59,6 @@ describe('contextBreakdownLayers', () => {
   it('formatOmittedLayerNote clarifies static prefix when history is empty', () => {
     const breakdown = {
       system: 10_000,
-      fewShot: 0,
       workspace: 0,
       history: 0,
       runtime: 500,
@@ -69,8 +66,8 @@ describe('contextBreakdownLayers', () => {
       tools: 2_000
     };
     expect(formatOmittedLayerNote(['History'], breakdown)).toMatch(/harness, tools/);
-    expect(formatOmittedLayerNote(['Few-shot', 'History'], breakdown)).toBe(
-      'Few-shot, History empty'
+    expect(formatOmittedLayerNote(['Workspace', 'History'], breakdown)).toBe(
+      'Workspace, History empty'
     );
   });
 });

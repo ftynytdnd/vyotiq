@@ -40,8 +40,7 @@ vi.mock('@main/orchestrator/contextManager', async () => {
   };
 });
 vi.mock('@main/harness/harnessLoader', () => ({
-  buildOrchestratorSystemPrompt: () => '<system_instructions>stub</system_instructions>',
-  buildStaticFewShotXml: () => '<static_examples>stub</static_examples>'
+  buildOrchestratorSystemPrompt: () => '<system_instructions>stub</system_instructions>'
 }));
 vi.mock('@main/orchestrator/loop/buildOrchestratorRequest', () => ({
   buildOrchestratorRequest: vi.fn(
@@ -88,7 +87,9 @@ describe('runOrchestratorLoop — dynamic agent loop', () => {
     vi.mocked(handleToolCalls).mockResolvedValue({ attempted: 1, failed: 0 });
   });
 
-  it('injects auto-audit after edit and continues the loop', async () => {
+  it('does not inject a host nudge after an edit-only turn (model-directed loop)', async () => {
+    // The per-iteration after-edit audit was removed: an edit-only turn should
+    // continue the loop without any host injection. The model self-audits.
     vi.mocked(handleAssistantTurn)
       .mockResolvedValueOnce({
         assistantMsgId: 'msg-edit',
@@ -122,12 +123,7 @@ describe('runOrchestratorLoop — dynamic agent loop', () => {
     const events: TimelineEvent[] = [];
     await runOrchestratorLoop(loopOpts(events));
 
-    expect(injectFollowUpMock).toHaveBeenCalledTimes(1);
-    expect(injectFollowUpMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        followUp: expect.objectContaining({ source: 'dynamic-loop' })
-      })
-    );
+    expect(injectFollowUpMock).not.toHaveBeenCalled();
     expect(handleAssistantTurn).toHaveBeenCalledTimes(2);
     expect(events.some((e) => e.kind === 'tool-result' && e.result.name === 'finish')).toBe(true);
   });
@@ -218,14 +214,19 @@ describe('runOrchestratorLoop — dynamic agent loop', () => {
     expect(finishResults[0]!.result.output).toBe('After audit.');
   });
 
-  it('skips back-to-back auto-audit until agent edits again', async () => {
+  it('verify-before-finish net uses the dynamic-loop steering prompt', async () => {
     vi.mocked(handleAssistantTurn)
       .mockResolvedValueOnce({
-        assistantMsgId: 'msg-edit-1',
+        assistantMsgId: 'msg-edit-finish',
         assistantText: '',
         reasoningText: '',
         partialToolCalls: [
-          { id: 'tc-edit-1', name: 'edit', argumentsBuf: '{"path":"c.ts","content":"z"}' }
+          { id: 'tc-edit', name: 'edit', argumentsBuf: '{"path":"d.ts","content":"q"}' },
+          {
+            id: 'tc-finish',
+            name: 'finish',
+            argumentsBuf: JSON.stringify({ summary: 'Too early.' })
+          }
         ],
         hadText: false,
         hadReasoning: false,
@@ -233,26 +234,14 @@ describe('runOrchestratorLoop — dynamic agent loop', () => {
         finishReason: 'tool_calls'
       })
       .mockResolvedValueOnce({
-        assistantMsgId: 'msg-read',
-        assistantText: '',
-        reasoningText: '',
-        partialToolCalls: [
-          { id: 'tc-read', name: 'read', argumentsBuf: '{"path":"c.ts"}' }
-        ],
-        hadText: false,
-        hadReasoning: false,
-        reasoningEndEmitted: false,
-        finishReason: 'tool_calls'
-      })
-      .mockResolvedValueOnce({
-        assistantMsgId: 'msg-finish',
+        assistantMsgId: 'msg-real-finish',
         assistantText: '',
         reasoningText: '',
         partialToolCalls: [
           {
-            id: 'tc-finish',
+            id: 'tc-finish-2',
             name: 'finish',
-            argumentsBuf: JSON.stringify({ summary: 'Done.' })
+            argumentsBuf: JSON.stringify({ summary: 'After audit.' })
           }
         ],
         hadText: false,
@@ -265,7 +254,14 @@ describe('runOrchestratorLoop — dynamic agent loop', () => {
     await runOrchestratorLoop(loopOpts(events));
 
     expect(injectFollowUpMock).toHaveBeenCalledTimes(1);
-    expect(handleAssistantTurn).toHaveBeenCalledTimes(3);
-    expect(events.some((e) => e.kind === 'tool-result' && e.result.name === 'finish')).toBe(true);
+    expect(injectFollowUpMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        followUp: expect.objectContaining({
+          source: 'dynamic-loop',
+          kind: 'steering',
+          prompt: DEFAULT_DYNAMIC_LOOP_AUDIT_PROMPT
+        })
+      })
+    );
   });
 });

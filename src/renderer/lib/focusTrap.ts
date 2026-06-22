@@ -68,39 +68,3 @@ export function bindFocusTrap({
   document.addEventListener('keydown', onKey);
   return () => document.removeEventListener('keydown', onKey);
 }
-
-export interface SoftFocusTrapOptions {
-  /** Resolved on each keydown when roots mount after open. */
-  getRoots: () => (HTMLElement | null | undefined)[];
-}
-
-/** Tab cycles across focusables in multiple roots without blocking pointer access. */
-export function bindSoftFocusTrap({ getRoots }: SoftFocusTrapOptions): () => void {
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key !== 'Tab') return;
-    const roots = getRoots().filter((r): r is HTMLElement => r != null);
-    if (roots.length === 0) return;
-    const focusables: HTMLElement[] = [];
-    for (const root of roots) {
-      focusables.push(...getFocusable(root));
-    }
-    if (focusables.length === 0) return;
-    const first = focusables[0]!;
-    const last = focusables[focusables.length - 1]!;
-    const active = document.activeElement;
-    const inTrap = roots.some((root) => root.contains(active));
-    if (!inTrap) return;
-    if (e.shiftKey) {
-      if (active === first || !roots.some((root) => root.contains(active))) {
-        e.preventDefault();
-        last.focus();
-      }
-    } else if (active === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  };
-
-  document.addEventListener('keydown', onKey);
-  return () => document.removeEventListener('keydown', onKey);
-}

@@ -7,7 +7,6 @@ export const CONTEXT_BREAKDOWN_LAYERS: ReadonlyArray<{
   title: string;
 }> = [
   { key: 'system', label: 'System', title: 'Harness and agent meta-rules' },
-  { key: 'fewShot', label: 'Few-shot', title: 'Static instruction examples' },
   { key: 'workspace', label: 'Workspace', title: 'Project listing and workspace envelope' },
   { key: 'history', label: 'History', title: 'Prior turns, tool calls, and results' },
   { key: 'runtime', label: 'Runtime', title: 'Host environment, session, run state, and memory' },

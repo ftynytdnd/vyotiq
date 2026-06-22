@@ -5,7 +5,6 @@
 
 import type { ChatMessage } from '@shared/types/chat.js';
 import {
-  CACHE_LAYER_FEW_SHOT_INDEX,
   CACHE_LAYER_WORKSPACE_INDEX,
   extractStaticSystemForWire,
   isCacheLayeredTopology
@@ -61,17 +60,6 @@ function markUserTextCache(wireMessages: WireMessage[], text: string): void {
   );
   const block = userMsg?.content.find((b) => b['type'] === 'text' && b['text'] === text);
   if (block) block['cache_control'] = resolveAnthropicCacheControl();
-}
-
-/** Mark few-shot user block (index 1) when cache-layered. */
-export function markFewShotUserCache(
-  wireMessages: WireMessage[],
-  sourceMessages: readonly ChatMessage[]
-): void {
-  if (!isCacheLayeredTopology(sourceMessages)) return;
-  const fewShot = sourceMessages[CACHE_LAYER_FEW_SHOT_INDEX]?.content;
-  if (typeof fewShot !== 'string' || fewShot.length === 0) return;
-  markUserTextCache(wireMessages, fewShot);
 }
 
 /** Mark workspace user block when cache-layered. */

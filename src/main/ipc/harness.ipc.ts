@@ -18,6 +18,9 @@ import {
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 import { assertString } from './validate.js';
 
+/** Harness section bodies may include full markdown packs (tens of KB). */
+const HARNESS_SECTION_MAX_BYTES = 256 * 1024;
+
 export function registerHarnessIpc(): void {
   wrapIpcHandler(IPC.HARNESS_LIST_SECTIONS, async () => listHarnessSections());
 
@@ -40,7 +43,7 @@ export function registerHarnessIpc(): void {
     IPC.HARNESS_WRITE_SECTION,
     async (_event, sectionId: string, body: string) => {
       assertString('harness:writeSection', 'sectionId', sectionId);
-      assertString('harness:writeSection', 'body', body);
+      assertString('harness:writeSection', 'body', body, { maxBytes: HARNESS_SECTION_MAX_BYTES });
       if (!isHarnessSectionId(sectionId)) {
         throw new Error(`harness:writeSection: unknown sectionId "${sectionId}"`);
       }

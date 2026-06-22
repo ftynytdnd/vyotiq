@@ -40,6 +40,7 @@ import { resolveReportsSettings } from '@shared/report/reportsSettings.js';
 import { isTimelineEvent } from '../components/timeline/reducer/runtimeGuards.js';
 import { createRafBatcher } from '../lib/rafBatch.js';
 import { logger } from '../lib/logger.js';
+import { syncEditorFromAgentEvent } from '../lib/syncEditorFromAgentEvent.js';
 import { PartialJsonParser } from '@shared/text/partialJsonParser.js';
 import { tokenizeForModel } from '@shared/text/tokenizeForModel.js';
 
@@ -739,6 +740,9 @@ export async function bootstrapChatChannel(): Promise<void> {
         if (!isTimelineEvent(event)) {
           log.warn('dropping malformed timeline event', { runId, event });
           return;
+        }
+        if (event.kind === 'diff-stream' || event.kind === 'file-edit') {
+          syncEditorFromAgentEvent(event);
         }
         // Route streaming partial-args deltas through the RAF
         // batcher so a high-frequency stream produces at most one

@@ -56,7 +56,6 @@ function staticFingerprint(
   providerId: string,
   model: string,
   staticSystem: string,
-  fewShotBlock: string | undefined,
   workspaceBlock: string | undefined,
   tools: ChatStreamRequest['tools']
 ): string {
@@ -68,7 +67,6 @@ function staticFingerprint(
     .update(
       stableStringify({
         system: staticSystem,
-        fewShot: fewShotBlock ?? '',
         workspace: workspaceBlock ?? '',
         tools
       })
@@ -93,7 +91,6 @@ async function createCachedContent(opts: {
   geminiAuthMode?: 'query' | 'header';
   model: string;
   staticSystem: string;
-  fewShotBlock?: string;
   workspaceBlock?: string;
   tools: ChatStreamRequest['tools'];
   signal?: AbortSignal;
@@ -108,8 +105,6 @@ async function createCachedContent(opts: {
     opts.geminiAuthMode === 'query' ? { 'Content-Type': 'application/json' } : cacheHeaders(opts.apiKey);
 
   const instructionParts: Array<{ text: string }> = [{ text: opts.staticSystem }];
-  const fewShot = opts.fewShotBlock?.trim();
-  if (fewShot) instructionParts.push({ text: fewShot });
   const workspace = opts.workspaceBlock?.trim();
   if (workspace) instructionParts.push({ text: workspace });
 
@@ -159,17 +154,15 @@ export async function resolveGeminiExplicitCacheName(opts: {
   apiKey: string;
   geminiAuthMode?: 'query' | 'header';
   staticSystem: string;
-  fewShotBlock?: string;
   workspaceBlock?: string;
   tools?: ChatStreamRequest['tools'];
   signal?: AbortSignal;
 }): Promise<string | undefined> {
   const tools = opts.tools ?? [];
   const staticSystem = opts.staticSystem.trim();
-  const fewShot = opts.fewShotBlock?.trim() ?? '';
   const workspace = opts.workspaceBlock?.trim() ?? '';
   const staticSize =
-    staticSystem.length + fewShot.length + workspace.length + stableStringify(tools).length;
+    staticSystem.length + workspace.length + stableStringify(tools).length;
 
   if (!shouldUseGeminiExplicitCache(staticSize)) {
     if (staticSize < MIN_STATIC_CHARS) {
@@ -191,7 +184,6 @@ export async function resolveGeminiExplicitCacheName(opts: {
     opts.providerId,
     opts.model,
     staticSystem,
-    fewShot || undefined,
     workspace || undefined,
     tools
   );

@@ -129,7 +129,7 @@ import {
   createContextReductionState,
   reduceContextIfNeeded
 } from '../context/contextCompaction.js';
-import { estimatePromptTokensSync } from '../context/contextBudget.js';
+import { estimatePromptTokensSync, evaluateContextBudget } from '../context/contextBudget.js';
 import {
   clampCalibrationRatio,
   loadContextCalibration,
@@ -307,8 +307,6 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     let lastToolRoundFailure: string | undefined;
     let rootToolRoundFailure: string | undefined;
     let runCumulativeTokens = resume?.runCumulativeTokens ?? 0;
-    /** One retry when prose would implicit-finish after prior tool rounds. */
-    let suppressedImplicitFinishAfterTools = false;
     const iterationCapBonus = resume?.reportGateBonusIteration ? 1 : 0;
     const runStateAcc: RunStateAccumulator = resume
       ? { ...resume.runStateAcc }
@@ -457,8 +455,28 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         const hostEnvXml = buildHostEnvironmentXml(undefined, {
           workspacePath: opts.workspacePath
         });
+        let pressureLevel = lastUsageLevel;
+        if (agentBehaviorSettings.contextManagement.enabled) {
+          try {
+            const pressureUsage = await evaluateContextBudget({
+              messages,
+              modelId: opts.input.selection.modelId,
+              providerId: opts.input.selection.providerId,
+              settings: agentBehaviorSettings.contextManagement,
+              tools: budgetToolSchemas,
+              ...(calibrationRatio !== undefined ? { calibrationRatio } : {}),
+              skipRemoteRefine: true
+            });
+            pressureLevel = pressureUsage.level;
+          } catch (err) {
+            log.debug('context pressure pre-eval failed; using prior level', {
+              iteration: iter,
+              err: err instanceof Error ? err.message : String(err)
+            });
+          }
+        }
         const contextPressureXml = agentBehaviorSettings.contextManagement.enabled
-          ? buildContextPressureXml(lastUsageLevel)
+          ? buildContextPressureXml(pressureLevel)
           : '';
         applyCacheLayers(messages, {
           harness,
@@ -505,22 +523,23 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           if (opts.input.conversationId) {
             setActiveRunContextLevel(opts.input.conversationId, usage.level);
           }
-          if (usage.effectiveWindow > 0) {
-            emit({
-              kind: 'context-usage',
-              id: randomUUID(),
-              ts: Date.now(),
-              usedTokens: usage.usedTokens,
-              effectiveWindow: usage.effectiveWindow,
-              advertisedWindow: usage.advertisedWindow,
-              level: usage.level,
-              exact: usage.exact,
-              providerId: opts.input.selection.providerId,
-              modelId: opts.input.selection.modelId,
-              ...(calibrationRatio !== undefined ? { calibrationRatio } : {}),
-              ...(usage.breakdown ? { breakdown: usage.breakdown } : {})
-            });
-          }
+          emit({
+            kind: 'context-usage',
+            id: randomUUID(),
+            ts: Date.now(),
+            usedTokens: usage.usedTokens,
+            effectiveWindow: usage.effectiveWindow,
+            advertisedWindow: usage.advertisedWindow,
+            level: usage.level,
+            exact: usage.exact,
+            providerId: opts.input.selection.providerId,
+            modelId: opts.input.selection.modelId,
+            ...(calibrationRatio !== undefined ? { calibrationRatio } : {}),
+            ...(usage.breakdown ? { breakdown: usage.breakdown } : {}),
+            ...(usage.visionTokens != null && usage.visionTokens > 0
+              ? { visionTokens: usage.visionTokens }
+              : {})
+          });
         } catch (err) {
           // Defensive: context reduction is always-on, so a failure here (e.g.
           // a transient provider-store read) must never abort the run — fall
@@ -555,6 +574,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               // inputs (mirrors the host-side `clear_tool_inputs` tier).
               clearAtLeastTokens: 8_192,
               clearToolInputs: true,
+              // Loaded context packs are reference material — keep them server-side
+              // when Anthropic context editing clears stale tool results.
+              excludeTools: ['context'],
               // Opt-in server-side compaction backstop. Trigger sits below the
               // host `clear_tool_uses` band so summarization only fires if
               // clearing alone cannot keep the prompt lean.
@@ -579,7 +601,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           mediaCache: getPreparedMediaCache(opts.input.runId),
           signal: opts.signal
         });
-        if (visionMsg) messages.push(visionMsg);
+        if (visionMsg) insertHistoryBeforeTail(messages, visionMsg);
 
         const fp = messagesSanitizeFingerprint(messages);
         const sanitized =
@@ -960,8 +982,8 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
 
         const assistantContent: string | null =
           actionTools.length > 0 && turn.assistantText.length === 0 ? null : turn.assistantText;
-        const askUserOnly = askUserCall && actionTools.length === 0;
-        if (askUserOnly && !askUserCall.id) askUserCall.id = randomUUID();
+        const askUserOnly = Boolean(askUserCall) && actionTools.length === 0;
+        if (askUserCall && askUserOnly && !askUserCall.id) askUserCall.id = randomUUID();
         const toolCallsForHistory = [
           ...actionTools.map((tc) => ({
             id: tc.id!,
@@ -1274,28 +1296,10 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           continue;
         }
 
-        if (
-          shouldInjectDynamicLoopAudit(
-            actionTools,
-            finishedToolCalls,
-            dynamicLoopAuditAwaitingResponse
-          ) &&
-          opts.input.conversationId
-        ) {
-          const audited = await injectDynamicLoopAudit(followUpCtx, opts.input.selection);
-          if (audited) {
-            query = applyFollowUpResult(audited, opts);
-            consecutiveEmptyTurns = 0;
-            runStateAcc.lastAction = 'none';
-            dynamicLoopAuditAwaitingResponse = true;
-            log.info('dynamic loop auto-audit injected', {
-              iteration: iter,
-              runId: opts.input.runId
-            });
-            continue;
-          }
-        }
-
+        // No per-iteration audit nudge here: the dynamic loop is model-directed.
+        // The harness (`05-dynamic-loop.md`) tells Agent V to self-audit and
+        // `continue` after substantive work; the host only injects a single
+        // verify-before-finish net at the deferred-finish boundary above.
         if (didWork) continue;
 
         const proseText = turn.assistantText.trim();
@@ -1346,26 +1350,19 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         }
 
         if (isImplicitFinish(proseText)) {
-          if (shouldSuppressImplicitFinishAfterTools(runStateAcc.toolRoundsTotal, suppressedImplicitFinishAfterTools)) {
-            suppressedImplicitFinishAfterTools = true;
-            log.warn('implicit finish suppressed after tool rounds — retrying for explicit finish', {
-              iteration: iter,
-              textChars: proseText.length,
-              toolRoundsTotal: runStateAcc.toolRoundsTotal
-            });
-            popProseOnlyAssistant(messages);
-            if (turn.hadText || turn.hadReasoning) {
-              emit({ kind: 'agent-text-aborted', id: turn.assistantMsgId, ts: Date.now() });
-            }
-            retryAssistantMsgId = turn.assistantMsgId;
-            runStateAcc.lastAction = 'retry';
-            continue;
-          }
+          // Substantive prose ends the run whether or not tools ran first.
+          // Models that answer in prose instead of calling `finish` must not
+          // have their completed, already-streamed answer aborted and retried
+          // — that destroys the rendered answer (`agent-text-aborted` drops it
+          // in the renderer) and, for prose-only models, can only flash, lose,
+          // or duplicate the same text. Capable models close with an explicit
+          // `finish` / `continue` and never reach this branch.
           retryAssistantMsgId = null;
           runStateAcc.lastAction = 'answer';
           log.info('implicit finish - substantive prose accepted as answer', {
             iteration: iter,
-            textChars: proseText.length
+            textChars: proseText.length,
+            toolRoundsTotal: runStateAcc.toolRoundsTotal
           });
           const queuedImplicit = await tryConsumeQueueBeforeFinish(followUpCtx);
           if (queuedImplicit) {
@@ -1641,18 +1638,6 @@ export function looksLikeProseEmittedToolCalls(prose: string): boolean {
     return isProseToolCallJson(trimmed);
   }
   return false;
-}
-
-/**
- * After any tool round, prose-only turns must not end the run on the
- * first implicit-finish probe — the model should call `finish` or keep
- * using tools. One retry is allowed before accepting implicit finish.
- */
-export function shouldSuppressImplicitFinishAfterTools(
-  toolRoundsTotal: number,
-  alreadySuppressedOnce: boolean
-): boolean {
-  return toolRoundsTotal > 0 && !alreadySuppressedOnce;
 }
 
 /**

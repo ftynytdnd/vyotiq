@@ -2,11 +2,20 @@
  * Harness loader. Reads markdown that constitutes Agent V's natural-language
  * operating system and assembles the system prompt. Per-tool briefs come from
  * registry `Tool` objects so schemas and prose stay aligned.
+ *
+ * Always-on sections (`HARNESS_PREFIX_SECTION_IDS`) go into the cached
+ * `<system_instructions>` system slot every turn. Reference material lives in
+ * on-demand "context packs" (`CONTEXT_PACK_IDS`): a short catalogue advertises
+ * them in the prefix, and the model loads a pack itself via the `context` tool
+ * when it needs it — keeping the static prefix lean and the per-turn token
+ * cost low without sacrificing recoverability.
  */
 
 import { listTools } from '../tools/registry.js';
 import { wrapXml } from '../orchestrator/envelope/index.js';
 import { AGENT_TOOLS } from '../tools/policy/index.js';
+import type { HarnessSectionId } from '@shared/types/harness.js';
+import { HARNESS_PREFIX_SECTION_IDS } from '@shared/types/harness.js';
 import {
   BASE_BACKOFF_MS,
   IMPLICIT_FINISH_MIN_CHARS,
@@ -20,79 +29,78 @@ import {
 
 import orchestratorCore from './00-orchestrator-core.md?raw';
 import contextLearning from './01-context-learning.md?raw';
-import deliverables from './02-deliverables.md?raw';
-import staticExamples from './03-static-examples.md?raw';
-import astGrepReference from './04-ast-grep-cheatsheet.md?raw';
 import dynamicLoop from './05-dynamic-loop.md?raw';
-import type { HarnessSectionId } from './harnessOverrides.js';
 import { readHarnessOverride } from './harnessOverrides.js';
+import {
+  assertContextPacksPresent,
+  buildContextPackCatalogue,
+  invalidateContextPacks,
+  readBundledContextPack,
+  warmContextPacks
+} from './contextPacks.js';
 
-const BUNDLED_BODIES: Record<HarnessSectionId, string> = {
+/** Bundled bodies for the always-on prefix sections (00 / 01 / 05). */
+const BUNDLED_PREFIX_BODIES: Record<(typeof HARNESS_PREFIX_SECTION_IDS)[number], string> = {
   'orchestrator-core': orchestratorCore,
   'context-learning': contextLearning,
-  deliverables: deliverables,
-  'static-examples': staticExamples,
-  'ast-grep-reference': astGrepReference,
   'dynamic-loop': dynamicLoop
 };
 
-export function readBundledHarnessSection(sectionId: HarnessSectionId): string {
-  return BUNDLED_BODIES[sectionId];
+function isPrefixSectionId(
+  id: HarnessSectionId
+): id is (typeof HARNESS_PREFIX_SECTION_IDS)[number] {
+  return (HARNESS_PREFIX_SECTION_IDS as readonly string[]).includes(id);
 }
 
-async function resolveSectionBody(sectionId: HarnessSectionId): Promise<string> {
+/** Bundled body for any editable section — prefix sections here, packs delegate. */
+export function readBundledHarnessSection(sectionId: HarnessSectionId): string {
+  return isPrefixSectionId(sectionId)
+    ? BUNDLED_PREFIX_BODIES[sectionId]
+    : readBundledContextPack(sectionId);
+}
+
+async function resolvePrefixBody(
+  sectionId: (typeof HARNESS_PREFIX_SECTION_IDS)[number]
+): Promise<string> {
   const override = await readHarnessOverride(sectionId);
   if (override !== null && override.trim().length > 0) {
     return override;
   }
-  return BUNDLED_BODIES[sectionId];
+  return BUNDLED_PREFIX_BODIES[sectionId];
 }
 
-let sectionBodiesCache: Record<HarnessSectionId, string> | null = null;
+let prefixBodiesCache: Record<(typeof HARNESS_PREFIX_SECTION_IDS)[number], string> | null = null;
 
-async function loadSectionBodies(): Promise<Record<HarnessSectionId, string>> {
-  if (sectionBodiesCache) return sectionBodiesCache;
+async function loadPrefixBodies(): Promise<
+  Record<(typeof HARNESS_PREFIX_SECTION_IDS)[number], string>
+> {
+  if (prefixBodiesCache) return prefixBodiesCache;
   const entries = await Promise.all(
-    (Object.keys(BUNDLED_BODIES) as HarnessSectionId[]).map(async (id) => [
-      id,
-      await resolveSectionBody(id)
-    ] as const)
+    HARNESS_PREFIX_SECTION_IDS.map(async (id) => [id, await resolvePrefixBody(id)] as const)
   );
-  sectionBodiesCache = Object.fromEntries(entries) as Record<HarnessSectionId, string>;
-  return sectionBodiesCache;
+  prefixBodiesCache = Object.fromEntries(entries) as Record<
+    (typeof HARNESS_PREFIX_SECTION_IDS)[number],
+    string
+  >;
+  return prefixBodiesCache;
 }
 
 export function invalidateHarnessPromptCache(): void {
   agentPromptCache = null;
-  sectionBodiesCache = null;
+  prefixBodiesCache = null;
+  invalidateContextPacks();
 }
 
-const AGENT_SECTIONS: ReadonlyArray<{ title: string; id: HarnessSectionId }> = [
-  { title: 'Agent Core', id: 'orchestrator-core' },
-  { title: 'Context, Memory & Continuous Learning', id: 'context-learning' },
-  { title: 'Dynamic Agent Loop', id: 'dynamic-loop' },
-  { title: 'ast-grep Reference', id: 'ast-grep-reference' },
-  { title: 'Deliverables — Markdown vs HTML Reports', id: 'deliverables' }
-];
-
-const BOOTSTRAP_HARNESS_MARKDOWN: ReadonlyArray<{ file: string; id: HarnessSectionId }> = [
-  { file: '00-orchestrator-core.md', id: 'orchestrator-core' },
-  { file: '01-context-learning.md', id: 'context-learning' },
-  { file: '04-ast-grep-cheatsheet.md', id: 'ast-grep-reference' },
-  { file: '05-dynamic-loop.md', id: 'dynamic-loop' },
-  { file: '03-static-examples.md', id: 'static-examples' },
-  { file: '02-deliverables.md', id: 'deliverables' }
-];
-
 function assertHarnessMarkdownPresent(): void {
-  for (const { file, id } of BOOTSTRAP_HARNESS_MARKDOWN) {
-    const body = BUNDLED_BODIES[id];
+  for (const id of HARNESS_PREFIX_SECTION_IDS) {
+    const body = BUNDLED_PREFIX_BODIES[id];
     if (typeof body !== 'string' || body.trim().length === 0) {
       throw new Error(
-        `harness boot: ${file} missing or empty (Vite ?raw import failed or file unparseable)`
+        `harness boot: section "${id}" missing or empty (Vite ?raw import failed or file unparseable)`
       );
     }
   }
+  assertContextPacksPresent();
 }
 
 function buildRuntimeLimitsBlock(): string {
@@ -142,20 +150,20 @@ export function assertHarnessBoot(): void {
   if (!prompt.includes(`MAX_TOTAL_ITERATIONS=${MAX_TOTAL_ITERATIONS}`)) {
     throw new Error('harness boot: runtime_limits drift from constants.ts');
   }
-  const fewShot = buildStaticFewShotXml();
-  if (!fewShot.includes('<static_examples>') || fewShot.trim().length < 20) {
-    throw new Error('harness boot: static few-shot slot missing or empty');
+  if (!prompt.includes('# On-Demand Context Packs')) {
+    throw new Error('harness boot: context pack catalogue missing from system prompt');
   }
 }
 
 /** System prompt for Agent V (single dynamic agent). */
 export function buildOrchestratorSystemPrompt(): string {
   if (agentPromptCache !== null) return agentPromptCache;
-  const bodies = sectionBodiesCache ?? BUNDLED_BODIES;
-  const sections = AGENT_SECTIONS.map((s) => bodies[s.id]).join('\n\n---\n\n');
+  const bodies = prefixBodiesCache ?? BUNDLED_PREFIX_BODIES;
+  const sections = HARNESS_PREFIX_SECTION_IDS.map((id) => bodies[id]).join('\n\n---\n\n');
   const built = wrapXml(
     'system_instructions',
-    `${sections}\n\n---\n\n${buildRuntimeLimitsBlock()}\n\n---\n\n${buildAgentToolCatalogue()}`
+    `${sections}\n\n---\n\n${buildRuntimeLimitsBlock()}\n\n---\n\n` +
+      `${buildAgentToolCatalogue()}\n\n---\n\n${buildContextPackCatalogue()}`
   );
   agentPromptCache = built;
   return built;
@@ -167,13 +175,7 @@ export function __resetOrchestratorPromptCacheForTests(): void {
 
 /** Load user overrides into memory. Call at app boot and after harness edits. */
 export async function warmHarnessOverrides(): Promise<void> {
-  sectionBodiesCache = null;
+  prefixBodiesCache = null;
   agentPromptCache = null;
-  await loadSectionBodies();
-}
-
-/** Cache-layer slot `[1]` — static few-shot patterns (not in harness system prefix). */
-export function buildStaticFewShotXml(): string {
-  const bodies = sectionBodiesCache ?? BUNDLED_BODIES;
-  return wrapXml('static_examples', bodies['static-examples'].trim());
+  await Promise.all([loadPrefixBodies(), warmContextPacks()]);
 }

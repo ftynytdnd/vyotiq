@@ -18,10 +18,11 @@ import {
   resolveAdvertisedWindow,
   scaleContextBreakdown,
   summarizeContextUsage,
+  summarizeContextUsageEstimatedWindow,
+  summarizeContextUsageUnknownWindow,
   type ContextUsageBreakdown,
   type ContextUsageSummary
 } from '@shared/context/contextLevel.js';
-import { chatContentToText } from '@shared/text/chatContent.js';
 import {
   CONTEXT_CALIBRATION_MAX,
   CONTEXT_CALIBRATION_MIN
@@ -48,38 +49,6 @@ function resolveAdvertisedWindowForProvider(
   if (!provider) return 0;
   const model = findProviderModel(provider, modelId);
   return resolveAdvertisedWindow(model, provider.contextOverrides) ?? 0;
-}
-
-/**
- * Flatten messages (+ tool schemas) into one string. Used both to fingerprint
- * for the remote-count cache and as the payload sent to provider count
- * endpoints — so the cached number corresponds to exactly this prompt shape.
- */
-function serializePromptText(
-  messages: readonly ChatMessage[],
-  tools: ReadonlyArray<TokenizableToolSchema>
-): string {
-  const parts: string[] = [];
-  for (const m of messages) {
-    const text =
-      typeof m.content === 'string'
-        ? m.content
-        : m.content != null
-          ? chatContentToText(m.content)
-          : '';
-    if (text.length > 0) parts.push(text);
-    if (Array.isArray(m.tool_calls)) {
-      for (const tc of m.tool_calls) {
-        parts.push(tc.function.name);
-        parts.push(tc.function.arguments);
-      }
-    }
-    if (typeof m.reasoning_content === 'string' && m.reasoning_content.length > 0) {
-      parts.push(m.reasoning_content);
-    }
-  }
-  for (const t of tools) parts.push(JSON.stringify(t));
-  return parts.join('\n');
 }
 
 export interface EvaluateContextBudgetInput {
@@ -117,8 +86,12 @@ export async function evaluateContextBudget(
   input: EvaluateContextBudgetInput
 ): Promise<ContextUsageSummary> {
   const provider = await getProviderWithKey(input.providerId);
+  const model = provider ? findProviderModel(provider, input.modelId) : undefined;
+  const contextEstimated = model?.contextEstimated === true;
   const advertisedWindow = resolveAdvertisedWindowForProvider(provider, input.modelId);
   const tools = input.tools ?? [];
+  const remoteDialect =
+    provider?.dialect === 'gemini-native' ? 'gemini-native' : 'anthropic-native';
 
   const base = tokenizeMessages(input.modelId, input.messages, tools);
   const ratio = normalizeCalibration(input.calibrationRatio);
@@ -132,27 +105,48 @@ export async function evaluateContextBudget(
   // Provider count endpoints are text-only; native media tokens are tracked
   // separately via `tokenizeMessages().visionTokens` and added below.
   if (!base.exact && provider && providerSupportsRemoteCount(provider)) {
-    const text = serializePromptText(input.messages, tools);
-    const remote = getCachedRemoteCount(provider.id, input.modelId, text, visionTokens);
+    const remote = getCachedRemoteCount(
+      provider.id,
+      input.modelId,
+      input.messages,
+      tools,
+      visionTokens,
+      remoteDialect
+    );
     if (typeof remote === 'number' && remote > 0) {
       usedTokens = remote + visionTokens;
       exact = true;
       breakdown = scaleContextBreakdown(base.breakdown, base.total, remote + visionTokens);
     } else if (!input.skipRemoteRefine) {
-      refineRemoteCount(provider, input.modelId, text, visionTokens);
+      refineRemoteCount(provider, input.modelId, input.messages, tools, visionTokens);
     }
   }
 
-  return summarizeContextUsage({
+  const usageBase = {
     usedTokens,
+    exact,
+    breakdown,
+    ...(visionTokens > 0 ? { visionTokens } : {})
+  };
+
+  if (advertisedWindow <= 0) {
+    return summarizeContextUsageUnknownWindow(usageBase);
+  }
+
+  if (contextEstimated) {
+    return summarizeContextUsageEstimatedWindow({
+      ...usageBase,
+      advertisedWindow
+    });
+  }
+
+  return summarizeContextUsage({
+    ...usageBase,
     advertisedWindow,
     thresholds: {
       warnFraction: input.settings.warnFraction,
       triggerFraction: input.settings.triggerFraction
-    },
-    exact,
-    breakdown,
-    ...(visionTokens > 0 ? { visionTokens } : {})
+    }
   });
 }
 

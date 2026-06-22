@@ -3,7 +3,6 @@
  */
 
 import { readFile, stat } from 'node:fs/promises';
-import { join } from 'node:path';
 import sharp from 'sharp';
 import type { AttachmentMediaKind, ChatContentPart, PromptAttachmentMeta } from '@shared/types/chat.js';
 import type { ModelInputModality } from '@shared/types/provider.js';
@@ -370,16 +369,4 @@ export async function prepareVisionParts(
     preparedWorkspacePaths,
     preparedAttachmentHashes
   };
-}
-
-/** Resolve absolute path for tests / diagnostics. */
-export async function resolveAttachmentAbsPathForVision(
-  meta: PromptAttachmentMeta,
-  workspacePath: string
-): Promise<string> {
-  return resolveAttachmentAbsPath(meta, workspacePath);
-}
-
-export function workspaceAbsFromRelative(workspacePath: string, rel: string): string {
-  return join(workspacePath, rel);
 }

@@ -163,6 +163,23 @@ describe('buildOrchestratorRequest', () => {
     expect(withoutId.conversationId).toBeUndefined();
   });
 
+  it('threads anthropic context editing options when supplied', () => {
+    const req = buildOrchestratorRequest({
+      selection,
+      messages: baseMessages(),
+      signal: new AbortController().signal,
+      dialect: 'anthropic-native',
+      anthropicContextEditing: {
+        keepToolUses: 2,
+        triggerInputTokens: 150_000,
+        clearAtLeastTokens: 8_192,
+        clearToolInputs: true,
+        excludeTools: ['context']
+      }
+    });
+    expect(req.anthropicContextEditing?.excludeTools).toEqual(['context']);
+  });
+
   it('redacts user-home paths in wire messages without mutating the caller buffer', () => {
     const home = os.homedir();
     const rawPath =

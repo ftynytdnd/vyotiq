@@ -19,6 +19,7 @@ const log = logger.child('scheduler/service');
 const TICK_MS = 30_000;
 let timer: ReturnType<typeof setInterval> | null = null;
 let running = false;
+let shuttingDown = false;
 /** runId → dueAt window we already toasted for queue-full */
 const queueFullToastNotified = new Map<string, number>();
 
@@ -30,7 +31,7 @@ export function shouldDispatchScheduledRun(run: ScheduledRun, now: number): bool
 }
 
 async function tick(): Promise<void> {
-  if (running) return;
+  if (running || shuttingDown) return;
   running = true;
   try {
     const now = Date.now();
@@ -97,12 +98,14 @@ async function tick(): Promise<void> {
 
 export function startScheduledRunsService(): void {
   if (timer !== null) return;
+  shuttingDown = false;
   void tick();
   timer = setInterval(() => void tick(), TICK_MS);
   log.info('scheduled runs service started', { tickMs: TICK_MS });
 }
 
 export function stopScheduledRunsService(): void {
+  shuttingDown = true;
   if (timer !== null) clearInterval(timer);
   timer = null;
 }

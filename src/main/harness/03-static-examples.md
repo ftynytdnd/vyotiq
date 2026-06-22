@@ -1,8 +1,10 @@
-# Static Few-Shot Patterns (cache-stable)
+# Tool-Use Examples (on-demand pack)
 
-These examples are **static reference patterns** — they do not change per turn.
-They teach consistent tool-use shape for common coding-agent tasks. Live workspace
-state always comes from `<workspace_context>` and tool results, not from these samples.
+Worked examples of the correct tool-call shape for common coding-agent tasks.
+This is an **on-demand context pack** — load it with the `context` tool when you
+want a concrete pattern to follow. The examples are illustrative: live workspace
+state always comes from `<workspace_context>` and tool results, not from these
+samples.
 
 ---
 

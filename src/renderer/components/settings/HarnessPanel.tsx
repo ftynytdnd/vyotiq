@@ -4,9 +4,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { HarnessSectionId, HarnessSectionInfo } from '@shared/types/harness.js';
-import { HARNESS_SECTION_IDS } from '@shared/types/harness.js';
+import { CONTEXT_PACKS } from '@shared/types/harness.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { useToastStore } from '../../store/useToastStore.js';
+import { DestructiveConfirm } from '../ui/DestructiveConfirm.js';
 import { ShellCaption, ShellRow, ShellSection, ShellStack } from '../ui/ShellSection.js';
 import { Button } from '../ui/Button.js';
 import { LoadingHint } from '../ui/LoadingHint.js';
@@ -15,10 +16,13 @@ const SECTION_LABELS: Record<HarnessSectionId, string> = {
   'orchestrator-core': 'Agent core',
   'context-learning': 'Context & learning',
   deliverables: 'Deliverables',
-  'static-examples': 'Static examples (few-shot)',
+  'static-examples': 'Tool-use examples',
   'ast-grep-reference': 'ast-grep reference',
   'dynamic-loop': 'Dynamic agent loop'
 };
+
+/** Pack catalogue metadata, keyed by id for quick lookup in the panel. */
+const PACK_META = new Map(CONTEXT_PACKS.map((p) => [p.id as HarnessSectionId, p]));
 
 export function HarnessPanel() {
   const [sections, setSections] = useState<HarnessSectionInfo[]>([]);
@@ -29,6 +33,7 @@ export function HarnessPanel() {
   const [dirty, setDirty] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [pendingSectionId, setPendingSectionId] = useState<HarnessSectionId | null>(null);
 
   const refreshSections = useCallback(async () => {
     try {
@@ -64,6 +69,22 @@ export function HarnessPanel() {
     void loadSection(activeId);
   }, [activeId, loadSection]);
 
+  const onSelectSection = (sectionId: HarnessSectionId) => {
+    if (sectionId === activeId) return;
+    if (dirty) {
+      setPendingSectionId(sectionId);
+      return;
+    }
+    setActiveId(sectionId);
+  };
+
+  const confirmSectionSwitch = () => {
+    const next = pendingSectionId;
+    setPendingSectionId(null);
+    if (!next) return;
+    setActiveId(next);
+  };
+
   const onSave = async () => {
     setBusy(true);
     try {
@@ -98,39 +119,58 @@ export function HarnessPanel() {
   };
 
   const activeMeta = sections.find((s) => s.id === activeId);
+  const activePack = PACK_META.get(activeId);
+  const prefixSections = sections.filter((s) => s.placement === 'prefix');
+  const packSections = sections.filter((s) => s.placement === 'pack');
+
+  const renderGroup = (label: string, group: HarnessSectionInfo[]) => {
+    if (group.length === 0) return null;
+    return (
+      <ShellStack>
+        <ShellCaption>{label}</ShellCaption>
+        <ShellRow className="flex flex-wrap gap-1.5">
+          {group.map((meta) => {
+            const selected = meta.id === activeId;
+            return (
+              <Button
+                key={meta.id}
+                variant={selected ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={() => onSelectSection(meta.id)}
+                title={meta.file}
+              >
+                {SECTION_LABELS[meta.id]}
+                {meta.hasOverride ? ' *' : ''}
+              </Button>
+            );
+          })}
+        </ShellRow>
+      </ShellStack>
+    );
+  };
 
   return (
     <ShellSection title="Harness">
       <ShellStack>
         <ShellCaption>
-          Edit Agent V natural-language instructions. Overrides persist under userData and apply on
-          the next run without rebuilding the app.
+          Edit Agent V natural-language instructions. Always-on sections ship in every system
+          prompt; on-demand packs are loaded by the agent itself via the `context` tool when
+          relevant. Overrides persist under userData and apply on the next run without rebuilding
+          the app.
         </ShellCaption>
 
-        <ShellRow className="flex flex-wrap gap-1.5">
-          {HARNESS_SECTION_IDS.map((id) => {
-            const meta = sections.find((s) => s.id === id);
-            const selected = id === activeId;
-            return (
-              <Button
-                key={id}
-                variant={selected ? 'primary' : 'secondary'}
-                size="sm"
-                onClick={() => setActiveId(id)}
-                title={meta?.file ?? SECTION_LABELS[id]}
-              >
-                {SECTION_LABELS[id]}
-                {meta?.hasOverride ? ' *' : ''}
-              </Button>
-            );
-          })}
-        </ShellRow>
+        {renderGroup('Always-on sections', prefixSections)}
+        {renderGroup('On-demand packs', packSections)}
 
         {activeMeta && (
           <ShellCaption>
             {activeMeta.file}
             {hasOverride ? ' · custom override active' : ' · bundled default'}
+            {activeMeta.placement === 'pack' ? ' · on-demand (loaded via `context`)' : ''}
           </ShellCaption>
+        )}
+        {activePack && (
+          <ShellCaption>Load when: {activePack.loadWhen}</ShellCaption>
         )}
 
         {loading ? (
@@ -165,6 +205,18 @@ export function HarnessPanel() {
             Revert edits
           </Button>
         </ShellRow>
+        {pendingSectionId !== null ? (
+          <DestructiveConfirm
+            variant="inline"
+            open
+            twoStep={false}
+            question="Discard unsaved harness edits?"
+            confirmLabel="Discard"
+            cancelLabel="Keep editing"
+            onConfirm={confirmSectionSwitch}
+            onCancel={() => setPendingSectionId(null)}
+          />
+        ) : null}
       </ShellStack>
     </ShellSection>
   );

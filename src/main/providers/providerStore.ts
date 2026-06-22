@@ -20,6 +20,9 @@ import { readEncryptedJson, writeEncryptedJson } from '../secrets/safeStore.js';
 import { evictProviderCaches } from './evictProviderCaches.js';
 import { clearDiscoveryPollStatus } from './providerDiscoveryPollStatus.js';
 import { evictDiscoverInFlight } from './discoverInFlight.js';
+import { logger } from '../logging/logger.js';
+
+const log = logger.child('providers/store');
 
 interface PersistedProvider extends ProviderConfig {
   apiKey: string;
@@ -89,8 +92,16 @@ async function load(): Promise<PersistedProvider[]> {
   if (mutated) {
     // Migration write: cache is already the authoritative load result,
     // so a write failure here just defers the migration to the next
-    // boot — the in-memory shape is still correct.
-    await writeEncryptedJson(PROVIDERS_FILE, cache);
+    // boot — the in-memory shape is still correct. The try/catch is
+    // load-bearing: without it an `await writeEncryptedJson` throw
+    // (disk full, OneDrive lock, keychain flap) would reject all of
+    // `load()` and break provider listing entirely, contradicting the
+    // "defers to next boot" contract this comment promises.
+    try {
+      await writeEncryptedJson(PROVIDERS_FILE, cache);
+    } catch (err) {
+      log.warn('provider store migration write failed; deferring to next boot', { err });
+    }
   }
   return cache;
 }

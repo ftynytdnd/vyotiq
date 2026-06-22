@@ -29,6 +29,7 @@
   "ignoreDependencies": [
     "@fontsource-variable/geist",
     "@fontsource-variable/geist-mono",
+    "electron-rebuild",
     "pyright",
     "tailwindcss",
     "typescript-language-server"

@@ -25,6 +25,8 @@ import { logger, installCrashHandlers, drainLogger } from './logging/logger.js';
 import { assertHarnessBoot, warmHarnessOverrides } from './harness/harnessLoader.js';
 import { flushAll as flushConversations } from './conversations/conversationStore.js';
 import { flushAll as flushCheckpoints } from './checkpoints/index.js';
+import { teardownCaptureFramebufferBridge } from './capture/captureFramebufferBridge.js';
+import { clearAllPreparedMediaCaches } from './attachments/preparedMediaCache.js';
 import { flushWorkspaceState, teardownWorkspaceTreeWatcher } from './workspace/workspaceState.js';
 import { abortRun, listActiveRuns } from './orchestrator/AgentV.js';
 import { getSettings } from './settings/settingsStore.js';
@@ -170,6 +172,8 @@ app.on('before-quit', (event) => {
   }
   stopScheduledRunsService();
   stopConversationHeartbeatService();
+  teardownCaptureFramebufferBridge();
+  clearAllPreparedMediaCaches();
   if (isShuttingDown) return;
   isShuttingDown = true;
   event.preventDefault();

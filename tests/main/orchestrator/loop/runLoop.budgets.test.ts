@@ -30,8 +30,7 @@ vi.mock('@main/orchestrator/contextManager', async () => {
   };
 });
 vi.mock('@main/harness/harnessLoader', () => ({
-  buildOrchestratorSystemPrompt: () => '<system_instructions>stub</system_instructions>',
-  buildStaticFewShotXml: () => '<static_examples>stub</static_examples>'
+  buildOrchestratorSystemPrompt: () => '<system_instructions>stub</system_instructions>'
 }));
 vi.mock('@main/orchestrator/loop/buildOrchestratorRequest', () => ({
   buildOrchestratorRequest: vi.fn((opts: {

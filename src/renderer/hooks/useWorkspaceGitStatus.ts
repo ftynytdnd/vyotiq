@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import type { GitPathStatus, WorkspaceGitStatusResult, WorkspaceTreeChangedPayload } from '@shared/types/ipc.js';
 import { vyotiq } from '../lib/ipc.js';
+import { subscribeWorkspaceTreeChanged } from '../lib/workspaceTreeChangeHub.js';
 
 const POLL_MS = 5_000;
 
@@ -36,7 +37,7 @@ export function useWorkspaceGitStatus(
 
     refresh();
     timer = setInterval(refresh, POLL_MS);
-    const unsub = vyotiq.workspace.onTreeChanged((payload: WorkspaceTreeChangedPayload) => {
+    const unsub = subscribeWorkspaceTreeChanged((payload: WorkspaceTreeChangedPayload) => {
       if (payload.workspaceId === workspaceId) refresh();
     });
 

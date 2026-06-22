@@ -118,6 +118,10 @@ function toolHeadline(toolName: ToolName | undefined): string | null {
       return 'Updating memory';
     case 'recall':
       return 'Recalling context';
+    case 'context':
+      return 'Loading context';
+    case 'capture':
+      return 'Capturing';
     case 'report':
       return 'Writing report';
     case 'ask_user':

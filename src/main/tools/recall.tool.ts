@@ -448,7 +448,6 @@ function renderTranscript(events: TimelineEvent[]): string {
         break;
       }
       // Renderer-only / model-irrelevant — intentionally skipped.
-      case 'phase':
       case 'agent-thought':
       case 'file-edit':
       case 'error':

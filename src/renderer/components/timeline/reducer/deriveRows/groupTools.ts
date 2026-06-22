@@ -225,8 +225,11 @@ function verbFor(name: ToolName, pending = false): string {
       case 'sg': return 'Running sg';
       case 'memory': return 'Memory';
       case 'recall': return 'Recalling';
+      case 'context': return 'Loading';
       case 'report': return 'Writing';
       case 'capture': return 'Capturing';
+      case 'heartbeat': return 'Heartbeat';
+      case 'continue': return 'Continuing';
       case 'ask_user': return 'Asking';
       case 'finish': return '';
       case 'unknown': return 'Running';
@@ -246,8 +249,11 @@ function verbFor(name: ToolName, pending = false): string {
     case 'sg': return 'Ran sg';
     case 'memory': return 'Memory';
     case 'recall': return 'Recalled';
+    case 'context': return 'Loaded';
     case 'report': return 'Wrote';
     case 'capture': return 'Captured';
+    case 'heartbeat': return 'Heartbeat';
+    case 'continue': return 'Continued';
     case 'ask_user': return 'Asked';
     case 'finish': return '';
     case 'unknown': return 'Unknown tool';
@@ -269,8 +275,11 @@ function unitFor(name: ToolName, singular: boolean): string {
     case 'sg': return singular ? 'sg run' : 'sg runs';
     case 'memory': return singular ? 'note' : 'notes';
     case 'recall': return singular ? 'conversation' : 'conversations';
+    case 'context': return singular ? 'pack' : 'packs';
     case 'report': return singular ? 'report' : 'reports';
     case 'capture': return singular ? 'screenshot' : 'screenshots';
+    case 'heartbeat': return singular ? 'heartbeat' : 'heartbeats';
+    case 'continue': return singular ? 'step' : 'steps';
     case 'ask_user': return singular ? 'question' : 'questions';
     case 'finish': return singular ? 'answer' : 'answers';
     case 'unknown': return singular ? 'invocation' : 'invocations';
@@ -400,6 +409,26 @@ function extractPrimary(name: ToolName, child: ToolGroupChild): string {
       }
       return action;
     }
+    case 'context': {
+      const action =
+        typeof args['action'] === 'string'
+          ? (args['action'] as string)
+          : data?.tool === 'context'
+            ? data.action
+            : '';
+      const pack =
+        typeof args['pack'] === 'string'
+          ? (args['pack'] as string)
+          : data?.tool === 'context' && data.pack
+            ? data.pack
+            : '';
+      // The verb ("Loaded") is supplied by `verbFor`; return only the object so
+      // the row reads "Loaded ast-grep-reference" (not "Loaded load ast-grep-…")
+      // and "Loaded catalogue" for a `list`.
+      if (action === 'load') return pack || 'pack';
+      if (action === 'list') return 'catalogue';
+      return action;
+    }
     case 'report': {
       const title =
         typeof args['title'] === 'string'
@@ -412,6 +441,14 @@ function extractPrimary(name: ToolName, child: ToolGroupChild): string {
     case 'capture': {
       const target = typeof args['target'] === 'string' ? (args['target'] as string) : '';
       return target;
+    }
+    case 'heartbeat': {
+      const action = typeof args['action'] === 'string' ? (args['action'] as string) : '';
+      return action;
+    }
+    case 'continue': {
+      const prompt = typeof args['prompt'] === 'string' ? (args['prompt'] as string) : '';
+      return prompt;
     }
     case 'ask_user':
       return typeof args['question'] === 'string' ? (args['question'] as string) : '';

@@ -5,52 +5,10 @@
 import type { ToolCall, ToolResult, DiffHunk } from './tool.js';
 import type { ModelSelection, ThinkingEffort } from './provider.js';
 import type { CheckpointChangeKind } from './checkpoint.js';
-import type { AskUserAnswer, AskUserStructuredPayload } from './askUser.js';
+import type { AskUserStructuredPayload } from './askUser.js';
 import type { FollowUpSource } from './followUp.js';
 import type { MentionRef } from './mention.js';
 import type { ContextUsageBreakdown } from '../context/contextLevel.js';
-
-/** Legacy phased-execution transcript phase ids (engine removed; replay only). */
-type ExecutionPhase =
-  | 'intake'
-  | 'understand'
-  | 'think_frame'
-  | 'plan'
-  | 'rethink'
-  | 'checkpoint'
-  | 'execute'
-  | 'verify'
-  | 'diagnose'
-  | 'reflect'
-  | 'done';
-
-type PhasedExecutionMode = 'auto' | 'always' | 'never';
-
-type GateDecisionKind = 'passed' | 'looped_back' | 'blocked';
-
-interface CodeLink {
-  file: string;
-  line?: number;
-}
-
-interface AttemptedApproach {
-  approach: string;
-  whyFailed: string;
-}
-
-/** Host-recorded acceptance test evidence (legacy VERIFY gate rows). */
-interface AcceptanceRunEvidence {
-  command: string;
-  exitCode: number;
-  output: string;
-  timedOut: boolean;
-}
-
-interface CheckpointMarkerRef {
-  checkpointId: string;
-  lastEntryId: string;
-  entryCount: number;
-}
 
 /**
  * Internal role union for `ChatMessage`. Not exported because the only
@@ -284,60 +242,6 @@ export type TimelineEvent =
    */
   | { kind: 'agent-reasoning-end'; id: string; ts: number; signature?: string }
   /**
-   * Phase divider row. `label` is user-facing and MUST be free of literal
-   * harness XML. `tooltip`, when present,
-   * carries the developer-facing detail (technical contract, raw ids,
-   * full reason) and is surfaced via the divider's `title` attribute.
-   * Both fields persist in the JSONL transcript so historical replays
-   * keep the same tooltip surface.
-   */
-  | { kind: 'phase'; id: string; ts: number; label: string; tooltip?: string }
-  /**
-   * Phase gate decision — persisted audit of exit-gate evaluation.
-   * Rendered as compact badges on `phase` rows; full detail in tooltip.
-   */
-  | {
-    kind: 'phase-gate';
-    id: string;
-    ts: number;
-    runId: string;
-    subtaskId: string;
-    seq: number;
-    phase: ExecutionPhase;
-    exitCriteria: string;
-    gateDecision: {
-      kind: GateDecisionKind;
-      reason: string;
-      targetPhase?: ExecutionPhase;
-      citeLedgerEntryId?: string;
-    };
-    acceptanceEvidence?: AcceptanceRunEvidence[];
-  }
-  /**
-   * Append-only phased-execution ledger entry — artifacts, constraints,
-   * decisions, checkpoint references. Collapsible child row in timeline.
-   */
-  | {
-    kind: 'phase-ledger-entry';
-    id: string;
-    ts: number;
-    runId: string;
-    subtaskId: string;
-    seq: number;
-    phase: ExecutionPhase;
-    exitCriteria?: string;
-    discoveredConstraints?: string[];
-    assumptions?: string[];
-    decisions?: Array<{ decision: string; rationale: string }>;
-    attemptedApproaches?: AttemptedApproach[];
-    codeLinks?: CodeLink[];
-    checkpointRef?: CheckpointMarkerRef;
-    /** JSON snapshot of phase artifact for inspector replay. */
-    artifactSummary?: string;
-    /** Auditable promote/demote of phased mode mid-run. */
-    modeDecision?: PhasedExecutionMode;
-  }
-  /**
    * Structured clarifying question from `ask_user` (multi-choice). Persisted
    * for timeline replay; plain-text fallback uses `agent-text-delta` when
    * only legacy `question` is present.
@@ -476,9 +380,11 @@ export type TimelineEvent =
     calibrationRatio?: number;
     /**
      * Per-layer token breakdown for the composer meter. Mirrors the cache-layered
-     * prompt topology (system, few-shot, workspace, history, runtime, turn, tools).
+     * prompt topology (system, workspace, history, runtime, turn, tools).
      */
     breakdown?: ContextUsageBreakdown;
+    /** Vision / multimodal token estimate folded into `usedTokens`. */
+    visionTokens?: number;
   }
   /**
    * Live partial-args snapshot for a streaming tool call. Emitted by

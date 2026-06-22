@@ -33,6 +33,7 @@ import { persistSettingsPatch } from './lib/persistSettingsPatch.js';
 import { logger } from './lib/logger.js';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts.js';
 import { useCaptureFrameBridge } from './hooks/useCaptureFrameBridge.js';
+import { useDockEditorTreeSync } from './hooks/useDockEditorTreeSync.js';
 import {
   applyAppTheme,
   stopWatchSystemTheme,
@@ -42,7 +43,6 @@ import {
 import { useTerminalStore } from './store/useTerminalStore.js';
 import { useBrowserStore } from './store/useBrowserStore.js';
 import { selectEditorDirty, useEditorStore } from './store/useEditorStore.js';
-import { useEditorAgentSync } from './hooks/useEditorAgentSync.js';
 import { useRestoreEditorTabs } from './hooks/useRestoreEditorTabs.js';
 import { resolveKeybindings, isMacPlatform } from './lib/resolveKeybindings.js';
 import { eventMatchesCombo } from '@shared/keybindings/defaultKeybindings.js';
@@ -69,6 +69,7 @@ export default function App() {
     useShallow((s) => ({ hydrateTimelineUi: s.hydrate, timelineUiHydrated: s.hydrated }))
   );
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
+  const activeWorkspacePath = useWorkspaceStore((s) => s.info.path ?? '');
   const {
     hydrateActiveByWorkspace,
     list: conversationsList,
@@ -106,7 +107,6 @@ export default function App() {
     dockExpanded && !settingsOpen,
     dockWidth
   );
-  useEditorAgentSync();
   useRestoreEditorTabs();
   const showToast = useToastStore((s) => s.show);
   const updateCheckDone = useRef(false);
@@ -324,13 +324,6 @@ export default function App() {
     });
   }, []);
 
-  // Reap closed/exited PTY sessions from the terminal store.
-  useEffect(() => {
-    return vyotiq.terminal.onExit((event) => {
-      useTerminalStore.getState().handleExit(event.sessionId);
-    });
-  }, []);
-
   const openSettingsSection = (section?: SettingsSectionId | 'providers' | 'memory') => {
     openSettings(section);
   };
@@ -385,6 +378,7 @@ export default function App() {
   // `MenuItem` row does, so menu click and keyboard shortcut share
   // one wire path.
   useCaptureFrameBridge();
+  useDockEditorTreeSync(activeWorkspaceId, activeWorkspacePath);
   useGlobalShortcuts({
     newConversation: fileActions.newConversation,
     openWorkspace: fileActions.openWorkspace,

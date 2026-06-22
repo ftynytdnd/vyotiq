@@ -3,6 +3,7 @@ import type { ChatMessage, TimelineEvent } from '@shared/types/chat.js';
 import { parseAskUserArgs, resolveAskUserPayload } from '@shared/text/parseAskUser.js';
 import { logger } from '../../logging/logger.js';
 import { requestUserAttention } from '../../window/requestUserAttention.js';
+import { insertHistoryBeforeTail } from '../context/buildContextLayers.js';
 import { cloneLoopCheckpoint } from '../pausedRunRegistry.js';
 import type { RunStateAccumulator } from './buildRunState.js';
 import type { PartialToolCall } from './handleAssistantTurn.js';
@@ -45,6 +46,27 @@ export function pauseRunForAskUser(input: AskUserPauseInput): {
     'Could you clarify how you would like me to proceed?';
   if (!input.askUserCall.id) input.askUserCall.id = randomUUID();
   const promptEventId = randomUUID();
+
+  // Deferred co-emission runs action tools first; the ask_user assistant row
+  // was omitted from the initial history insert — mirror hostReportGate pairing.
+  if (input.deferred) {
+    insertHistoryBeforeTail(input.messages, {
+      role: 'assistant',
+      content: input.assistantText.trim().length > 0 ? input.assistantText : null,
+      ...(input.reasoningText.length > 0 ? { reasoning_content: input.reasoningText } : {}),
+      tool_calls: [
+        {
+          id: input.askUserCall.id,
+          type: 'function',
+          function: {
+            name: 'ask_user',
+            arguments: input.askUserCall.argumentsBuf || '{}'
+          }
+        }
+      ]
+    });
+  }
+
   input.emit({
     kind: 'ask-user-prompt',
     id: promptEventId,

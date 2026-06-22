@@ -1080,6 +1080,7 @@ async function enrichModelsMetadata(
         if (attached.contextEstimated) contextEstimated = true;
       }
     }
+    // Last resort only — suffix/id heuristics when API, models.dev, and host tables miss.
     if (contextWindow === undefined) {
       const inferred = contextWindowFromModelId(model.id);
       if (inferred !== undefined) {

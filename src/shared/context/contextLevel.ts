@@ -120,6 +120,33 @@ export function summarizeContextUsageUnknownWindow(opts: {
   };
 }
 
+/**
+ * Meter fill uses the curated/estimated window for display, but compaction
+ * pressure follows absolute bands — inferred windows can be wrong for new models.
+ */
+export function summarizeContextUsageEstimatedWindow(opts: {
+  usedTokens: number;
+  advertisedWindow: number;
+  exact: boolean;
+  breakdown?: ContextUsageBreakdown;
+  visionTokens?: number;
+}): ContextUsageSummary {
+  const unknown = summarizeContextUsageUnknownWindow({
+    usedTokens: opts.usedTokens,
+    exact: opts.exact,
+    breakdown: opts.breakdown,
+    visionTokens: opts.visionTokens
+  });
+  const window = resolveModelContextWindow(opts.advertisedWindow);
+  return {
+    ...unknown,
+    advertisedWindow: window,
+    effectiveWindow: window,
+    fractionUsed: window > 0 ? opts.usedTokens / window : 0,
+    contextEstimated: true
+  };
+}
+
 const LEVEL_RANK: Record<ContextLevel, number> = {
   ok: 0,
   warn: 1,
@@ -188,9 +215,7 @@ export function resolveAnthropicServerCompactionTriggerTokens(
 export interface ContextUsageBreakdown {
   /** Harness + meta-rules (`messages[0]` system slot). */
   system: number;
-  /** Static few-shot examples (`messages[1]`). */
-  fewShot: number;
-  /** Workspace listing envelope (`messages[2]`). */
+  /** Workspace listing envelope (`messages[1]`). */
   workspace: number;
   /** Replayed transcript rows between workspace and the runtime tail. */
   history: number;
@@ -206,7 +231,6 @@ export interface ContextUsageBreakdown {
 export function sumContextBreakdown(b: ContextUsageBreakdown): number {
   return (
     b.system +
-    b.fewShot +
     b.workspace +
     b.history +
     b.runtime +
@@ -225,7 +249,6 @@ export function scaleContextBreakdown(
   const f = targetTotal / baseTotal;
   const scaled: ContextUsageBreakdown = {
     system: Math.round(breakdown.system * f),
-    fewShot: Math.round(breakdown.fewShot * f),
     workspace: Math.round(breakdown.workspace * f),
     history: Math.round(breakdown.history * f),
     runtime: Math.round(breakdown.runtime * f),
@@ -237,7 +260,6 @@ export function scaleContextBreakdown(
 
 const BREAKDOWN_KEYS: (keyof ContextUsageBreakdown)[] = [
   'system',
-  'fewShot',
   'workspace',
   'history',
   'runtime',
@@ -293,6 +315,11 @@ export interface ContextUsageSummary {
   breakdown?: ContextUsageBreakdown;
   /** Native vision media tokens (images/PDF/video) when non-zero. */
   visionTokens?: number;
+  /**
+   * True when `advertisedWindow` came from host tables or model-id heuristics
+   * rather than authoritative discovery — compaction uses absolute thresholds.
+   */
+  contextEstimated?: boolean;
 }
 
 /** Build a full usage summary from raw inputs. */

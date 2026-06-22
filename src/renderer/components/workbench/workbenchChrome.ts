@@ -17,18 +17,6 @@ export const WORKBENCH_ACTIONS_TRAY_CLASS =
 
 export const WORKBENCH_ACTION_GROUP_CLASS = 'flex shrink-0 items-center gap-0.5';
 
-/** Fixed right edge strip — mirrors left {@link DOCK_EDGE_STRIP_CLASS}. */
-export const WORKBENCH_EDGE_CONTAINER_CLASS =
-  'absolute right-0 top-0 bottom-0 z-(--z-dock-rail) flex min-h-0 pointer-events-none';
-
-export const WORKBENCH_EDGE_STRIP_CLASS =
-  'vx-workbench-edge-strip vx-dock-shell app-no-drag pointer-events-auto flex w-11 shrink-0 flex-col items-center justify-start gap-1 bg-surface-base pt-[var(--dock-strip-pt)] pb-2';
-
-/** Collapsed launcher column when no companion panel is open. */
-export const WORKBENCH_LAUNCHER_PANE_CLASS =
-  'vx-workbench-launcher-pane vx-dock-shell app-no-drag pointer-events-auto flex w-11 shrink-0 flex-col items-center gap-1 bg-surface-base pt-[var(--dock-strip-pt)] pb-2';
-
-/** Icon slot in the right workbench rail — matches dock rail sizing. */
 export const WORKBENCH_RAIL_BTN_CLASS =
   'vx-dock-icon-slot vx-btn vx-btn-quiet px-0 vx-dock-icon-hover text-text-muted';
 

@@ -26,8 +26,7 @@ vi.mock('@main/providers/tokenCounter.js', () => ({
     exact: false,
     visionTokens: 0,
     breakdown: {
-      system: 5_000,
-      fewShot: 1_000,
+      system: 6_000,
       workspace: 500,
       history: 2_000,
       runtime: 1_000,
@@ -76,6 +75,7 @@ describe('evaluateContextBudget', () => {
     });
     expect(usage.effectiveWindow).toBe(0);
     expect(usage.advertisedWindow).toBe(0);
+    expect(usage.level).toBe('ok');
   });
 
   it('includes visionTokens in remote count cache key and used total', async () => {
@@ -86,7 +86,6 @@ describe('evaluateContextBudget', () => {
       visionTokens: 1_500,
       breakdown: {
         system: 0,
-        fewShot: 0,
         workspace: 0,
         history: 10_000,
         runtime: 0,
@@ -115,10 +114,49 @@ describe('evaluateContextBudget', () => {
     expect(tokenCountRemote.getCachedRemoteCount).toHaveBeenCalledWith(
       'anthropic',
       'claude',
-      expect.any(String),
-      1_500
+      [{ role: 'user', content: 'hello' }],
+      [],
+      1_500,
+      'anthropic-native'
     );
     expect(usage.usedTokens).toBe(9_500);
     expect(usage.visionTokens).toBe(1_500);
+  });
+
+  it('uses absolute compaction bands when context window is estimated', async () => {
+    vi.mocked(tokenCountRemote.providerSupportsRemoteCount).mockReturnValue(false);
+    vi.mocked(tokenCountRemote.getCachedRemoteCount).mockReturnValue(undefined);
+    const { tokenizeMessages } = await import('@main/providers/tokenCounter.js');
+    vi.mocked(tokenizeMessages).mockReturnValueOnce({
+      total: 210_000,
+      exact: false,
+      visionTokens: 0,
+      breakdown: {
+        system: 0,
+        workspace: 0,
+        history: 210_000,
+        runtime: 0,
+        turn: 0,
+        tools: 0
+      }
+    });
+    vi.mocked(getProviderWithKey).mockResolvedValueOnce({
+      id: 'test',
+      name: 'Test',
+      models: [{ id: 'm1', contextWindow: 200_000, contextEstimated: true }],
+      contextOverrides: {}
+    } as Awaited<ReturnType<typeof getProviderWithKey>>);
+
+    const usage = await evaluateContextBudget({
+      messages: [{ role: 'user', content: 'large prompt' }],
+      modelId: 'm1',
+      providerId: 'test',
+      settings: DEFAULT_CONTEXT_MANAGEMENT_SETTINGS,
+      skipRemoteRefine: true
+    });
+
+    expect(usage.contextEstimated).toBe(true);
+    expect(usage.advertisedWindow).toBe(200_000);
+    expect(usage.level).not.toBe('ok');
   });
 });

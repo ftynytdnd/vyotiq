@@ -8,7 +8,7 @@ import {
   resolveSettingsSectionId,
   type SettingsSectionId
 } from '@shared/settings/settingsSection.js';
-import { vyotiq } from '../lib/ipc.js';
+import { persistSettingsPatch } from '../lib/persistSettingsPatch.js';
 import { useAttachmentPreviewStore } from './useAttachmentPreviewStore.js';
 import { useBrowserStore } from './useBrowserStore.js';
 import { useEditorStore } from './useEditorStore.js';
@@ -100,7 +100,7 @@ export const useAppViewStore = create<AppViewStore>((set, get) => ({
   setSettingsSection: (section) => {
     set({ settingsSection: section, aboutOpen: section === 'about' });
     if (isPersistableSettingsSection(section)) {
-      void vyotiq.settings.set({ ui: { lastSettingsTab: section } });
+      void persistSettingsPatch({ ui: { lastSettingsTab: section } });
     }
   },
   openAbout: () => {

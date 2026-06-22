@@ -4,6 +4,7 @@ import App from './App.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { LoadingHint } from './components/ui/LoadingHint.js';
 import { bootstrapChatChannel } from './store/chatChannel.js';
+import { bootstrapWorkspaceTreeChangeHub } from './lib/workspaceTreeChangeHub.js';
 import { flushTimelineUiPersistence } from './store/useTimelineUiStore.js';
 import { flushUiPersistence } from './store/useUiStore.js';
 import './index.css';
@@ -38,6 +39,7 @@ const root = createRoot(document.getElementById('root')!);
 
 async function bootRenderer(): Promise<void> {
   await bootstrapChatChannel();
+  bootstrapWorkspaceTreeChangeHub();
   root.render(
     <React.StrictMode>
       <ErrorBoundary>

@@ -109,15 +109,3 @@ export function hunksToChangedSnippet(hunks: readonly DiffHunk[]): string {
   }
   return out.join('\n');
 }
-
-export function findLastChangedLineIndex(hunks: readonly DiffHunk[]): number | null {
-  let last: number | null = null;
-  let offset = 0;
-  for (const hunk of hunks) {
-    for (let i = 0; i < hunk.lines.length; i++) {
-      if (hunk.lines[i]!.kind !== ' ') last = offset + i;
-    }
-    offset += hunk.lines.length;
-  }
-  return last;
-}

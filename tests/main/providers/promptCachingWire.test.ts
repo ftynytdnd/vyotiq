@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   applyCacheLayers,
   buildGeminiStaticInstructionTexts,
-  CACHE_LAYER_FEW_SHOT_INDEX,
   CACHE_LAYER_WORKSPACE_INDEX,
   isCacheLayeredTopology,
   seedCacheLayeredMessages
@@ -10,7 +9,6 @@ import {
 import { buildOrchestratorRequest } from '@main/orchestrator/loop/buildOrchestratorRequest';
 import { buildHostEnvironmentXml } from '@main/orchestrator/loop/buildHostEnvironment';
 import { wrapXml } from '@main/orchestrator/envelope';
-import { markFewShotUserCache } from '@main/providers/cacheHints/anthropicCacheHints';
 import { __geminiInternals } from '@main/providers/geminiChatStream';
 import { messagesToResponsesInput } from '@main/providers/openaiResponsesStream';
 import type { ModelSelection } from '@shared/types/provider';
@@ -39,14 +37,13 @@ describe('cache-layered topology invariants', () => {
 
     expect(isCacheLayeredTopology(messages)).toBe(true);
     expect(messages[0]?.role).toBe('system');
-    expect(messages[CACHE_LAYER_FEW_SHOT_INDEX]?.role).toBe('user');
     expect(messages[CACHE_LAYER_WORKSPACE_INDEX]?.role).toBe('user');
     expect(messages[messages.length - 2]?.role).toBe('user');
     expect(messages[messages.length - 1]?.role).toBe('user');
     expect(messages[messages.length - 3]?.role).toBe('assistant');
   });
 
-  it('keeps host clock out of static system, few-shot, and workspace slots', () => {
+  it('keeps host clock out of static system and workspace slots', () => {
     const hostXml = buildHostEnvironmentXml(FIXED_NOW);
     const messages = seedCacheLayeredMessages([], '<turn>t</turn>');
     applyCacheLayers(messages, {
@@ -64,14 +61,13 @@ describe('cache-layered topology invariants', () => {
     });
 
     expect(messages[0]?.content).not.toContain('now_utc');
-    expect(messages[CACHE_LAYER_FEW_SHOT_INDEX]?.content).not.toContain('now_utc');
     expect(messages[CACHE_LAYER_WORKSPACE_INDEX]?.content).not.toContain('now_utc');
     expect(messages[messages.length - 2]?.content).toContain('now_utc');
   });
 });
 
 describe('Gemini wire snapshots', () => {
-  it('hoists system, few-shot, and workspace out of contents when cache-layered', async () => {
+  it('hoists system and workspace out of contents when cache-layered', async () => {
     const messages = seedCacheLayeredMessages(
       [{ role: 'assistant', content: 'history' }],
       '<turn>tail</turn>'
@@ -91,10 +87,9 @@ describe('Gemini wire snapshots', () => {
     });
 
     const staticParts = buildGeminiStaticInstructionTexts(messages);
-    expect(staticParts).toHaveLength(3);
+    expect(staticParts).toHaveLength(2);
     expect(staticParts[0]).toContain('HARNESS');
-    expect(staticParts[1]).toContain('static_examples');
-    expect(staticParts[2]).toContain('workspace_context');
+    expect(staticParts[1]).toContain('workspace_context');
 
     const geminiWireProvider = {
       id: 'p',
@@ -110,46 +105,6 @@ describe('Gemini wire snapshots', () => {
     expect(contents.some((c) => String(c.parts[0]?.text ?? '').includes('workspace_context'))).toBe(
       false
     );
-    expect(contents.some((c) => String(c.parts[0]?.text ?? '').includes('static_examples'))).toBe(
-      false
-    );
-  });
-});
-
-describe('Anthropic few-shot cache breakpoint', () => {
-  it('marks the few-shot user block on the wire', () => {
-    const runtime = wrapXml('runtime_context', 'runtime');
-    const turn = '<turn>current</turn>';
-    const sourceMessages = seedCacheLayeredMessages([], turn);
-    applyCacheLayers(sourceMessages, {
-      harness: 'HARNESS',
-      env: {
-        metaRulesXml: '',
-        workspaceXml: wrapXml('workspace_context', 'ws'),
-        sessionXml: '',
-        priorConversationsXml: '',
-        memoryXml: '',
-        runProgressXml: ''
-      },
-      runStateXml: wrapXml('run_state', 'run'),
-      hostEnvironmentXml: wrapXml('host_environment', 'host')
-    });
-    sourceMessages[sourceMessages.length - 2] = { role: 'user', content: runtime };
-    const fewShot = String(sourceMessages[CACHE_LAYER_FEW_SHOT_INDEX]?.content ?? '');
-    const wireMessages = [
-      { role: 'user', content: [{ type: 'text', text: fewShot }] },
-      {
-        role: 'user',
-        content: [{ type: 'text', text: wrapXml('workspace_context', 'ws') }]
-      },
-      { role: 'user', content: [{ type: 'text', text: runtime }] },
-      { role: 'user', content: [{ type: 'text', text: turn }] }
-    ];
-
-    markFewShotUserCache(wireMessages, sourceMessages);
-
-    const fewShotBlock = wireMessages[0]?.content[0] as { cache_control?: unknown };
-    expect(fewShotBlock?.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
   });
 });
 
@@ -190,7 +145,7 @@ describe('wrap-up synthesis turn', () => {
       /final turn and tool calling is disabled/i
     );
     expect(String(req.messages[req.messages.length - 1]?.content)).toContain(turn);
-    expect(String(req.messages[CACHE_LAYER_FEW_SHOT_INDEX]?.content)).toContain('static_examples');
+    expect(String(req.messages[CACHE_LAYER_WORKSPACE_INDEX]?.content)).toContain('workspace_context');
   });
 });
 
@@ -219,7 +174,6 @@ describe('multi-turn prefix growth', () => {
     applyCacheLayers(messages, layers);
 
     const systemBefore = messages[0]?.content;
-    const fewShotBefore = messages[CACHE_LAYER_FEW_SHOT_INDEX]?.content;
     const workspaceBefore = messages[CACHE_LAYER_WORKSPACE_INDEX]?.content;
     const historyLenBefore = messages.length;
 
@@ -235,7 +189,6 @@ describe('multi-turn prefix growth', () => {
     });
 
     expect(messages[0]?.content).toBe(systemBefore);
-    expect(messages[CACHE_LAYER_FEW_SHOT_INDEX]?.content).toBe(fewShotBefore);
     expect(messages[CACHE_LAYER_WORKSPACE_INDEX]?.content).toBe(workspaceBefore);
     expect(messages.length).toBe(historyLenBefore + 2);
     expect(isCacheLayeredTopology(messages)).toBe(true);
@@ -270,13 +223,12 @@ describe('OpenAI Responses input order', () => {
     expect(input.map((m) => m.role)).toEqual([
       'system',
       'user',
-      'user',
       'assistant',
       'user',
       'user'
     ]);
     expect(input[0]?.content).toContain('SYS');
-    expect(input[1]?.content).toContain('static_examples');
-    expect(input[2]?.content).toBe('WS');
+    expect(input[1]?.content).toBe('WS');
+    expect(input[2]?.content).toBe('hist');
   });
 });

@@ -73,4 +73,12 @@ describe('validateToolArgs', () => {
   it('passes through tools without required-arg guards', () => {
     expect(validateToolArgs('ls', {}).ok).toBe(true);
   });
+
+  it('validates context list/load and pack ids', () => {
+    expect(validateToolArgs('context', {}).ok).toBe(false);
+    expect(validateToolArgs('context', { action: 'list' }).ok).toBe(true);
+    expect(validateToolArgs('context', { action: 'load' }).ok).toBe(false);
+    expect(validateToolArgs('context', { action: 'load', pack: 'static-examples' }).ok).toBe(true);
+    expect(validateToolArgs('context', { action: 'load', pack: 'not-a-pack' }).ok).toBe(false);
+  });
 });

@@ -85,13 +85,14 @@ describe('recall tool', () => {
     await appendEvent(meta.id, textDelta('a1', 'hi! '));
     await appendEvent(meta.id, textDelta('a1', 'how can I help?'));
     await appendEvent(meta.id, textEnd('a1'));
-    // Renderer-only kinds — must be excluded from the recall body.
-    await appendEvent(meta.id, {
-      kind: 'phase',
-      id: 'p1',
-      ts: Date.now(),
-      label: 'should-not-appear-in-recall'
-    });
+      // Renderer-only kinds — must be excluded from the recall body.
+      await appendEvent(meta.id, {
+        kind: 'run-status',
+        id: 'rs1',
+        ts: Date.now(),
+        status: 'running',
+        label: 'should-not-appear-in-recall'
+      } as Parameters<typeof appendEvent>[1]);
     await appendEvent(meta.id, {
       kind: 'agent-thought',
       id: 't1',

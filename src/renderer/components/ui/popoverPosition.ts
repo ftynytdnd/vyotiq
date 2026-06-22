@@ -3,6 +3,8 @@
  * the panel is taller than the available viewport slice.
  */
 
+import { MODEL_PICKER_FIT_MAX_WIDTH_PX } from '@renderer/components/composer/modelPicker/modelPickerLayout.js';
+
 export type PopoverSide = 'top' | 'bottom';
 export type PopoverAlign = 'start' | 'end' | 'fit';
 
@@ -25,7 +27,6 @@ export interface PopoverPosition {
 }
 
 const MIN_USABLE_HEIGHT = 120;
-const MAX_MODEL_PICKER_WIDTH = 768; // 48rem
 
 function spaceAbove(rect: DOMRect, padTop: number, offset: number): number {
   return Math.max(0, rect.top - padTop - offset);
@@ -116,7 +117,7 @@ export function measurePopoverPosition(
   collisionPadding: PopoverCollisionPadding = {},
   preferSide: PopoverSide | 'auto' = 'auto',
   anchorStrict = false,
-  fitMaxWidth = MAX_MODEL_PICKER_WIDTH,
+  fitMaxWidth = MODEL_PICKER_FIT_MAX_WIDTH_PX,
   naturalHeight?: number
 ): PopoverPosition {
   const rect = anchor.getBoundingClientRect();

@@ -23,8 +23,3 @@ export function getActiveRunContextLevel(conversationId: string): ContextLevel |
 export function clearActiveRunContextLevel(conversationId: string): void {
   if (conversationId) contextLevelByConversation.delete(conversationId);
 }
-
-/** Test-only: reset tracked context levels. */
-export function __test_resetActiveRunContextLevels(): void {
-  contextLevelByConversation.clear();
-}

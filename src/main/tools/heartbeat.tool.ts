@@ -3,7 +3,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import type { Tool, ToolContext } from './types.js';
+import type { Tool } from './types.js';
 import type { ToolResult } from '@shared/types/tool.js';
 import {
   HEARTBEAT_MAX_INTERVAL_MINUTES,

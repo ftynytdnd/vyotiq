@@ -493,7 +493,7 @@ export function MentionComposer({
           bubbles: true,
           cancelable: true
         });
-        onPaste(event as ClipboardEvent<HTMLDivElement>);
+        onPaste(event as unknown as ClipboardEvent<HTMLDivElement>);
         if (event.defaultPrevented) {
           requestAnimationFrame(updateFromDom);
           return;

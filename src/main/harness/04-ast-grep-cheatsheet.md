@@ -1,6 +1,8 @@
-# ast-grep Quick Reference (cache-stable)
+# ast-grep Quick Reference (on-demand pack)
 
-Bundled ast-grep v0.43+ guidance for Agent V. Official docs: https://ast-grep.github.io/
+Bundled ast-grep v0.43+ guidance for Agent V — an **on-demand context pack**;
+load it with the `context` tool before writing non-trivial `search` / `sg`
+patterns or YAML rules. Official docs: https://ast-grep.github.io/
 
 ## Metavariables
 

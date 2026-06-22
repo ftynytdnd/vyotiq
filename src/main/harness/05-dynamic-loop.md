@@ -6,9 +6,12 @@ is done — without fixed reviewer personas or a second runtime.
 
 ## Async iteration (work → audit → again)
 
-The loop is **async**: after substantive edits, the host may inject a
-self-audit nudge, or you can call **`continue`** to self-prompt the next
-step — **without** `finish` and without waiting for the user.
+The loop is **async** and **you direct it**: after substantive edits, audit your
+own work and call **`continue`** to self-prompt the next step — **without**
+`finish` and without waiting for the user. The host does **not** nag you after
+every edit; its only safety net is a single **verify-before-finish** prompt
+(`<dynamic_loop_audit>`) injected when you call `finish` in the same turn as
+substantive edits. Don't rely on it — verify proactively and keep moving.
 
 ```json
 { "name": "continue", "arguments": {} }
@@ -20,7 +23,8 @@ Use **`heartbeat`** only when waiting on **external** idle gaps (PR, CI).
 
 ## 1. Verify before finish
 
-On multi-step tasks, **audit your own output before `finish`**:
+On multi-step tasks, **audit your own output before `finish`** — this is your
+job, not the host's:
 
 - Re-read changed files, run relevant tests or builds, inspect diffs.
 - Compare results to the user's goal and `<goal_anchor>`.
@@ -80,6 +84,11 @@ parallel batching, `depends_on`). Additional loop-specific guidance:
 
 - Pivot when `<run_state>` shows hot spin signatures or failed tool rounds.
 - Shape the process to the work — not the work to a template.
+- **Build the context you need on demand.** Pull reference material with the
+  `context` tool (see the **On-Demand Context Packs** catalogue) only when a step
+  calls for it, and pull files/symbols with `read` / `search` as you go. Don't
+  expect every reference to be pre-loaded — decide what each step needs and fetch
+  it yourself.
 
 ## 5. Oversight hooks
 

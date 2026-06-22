@@ -103,3 +103,13 @@ export function requestCaptureFramebuffer(
     }
   });
 }
+
+/** Reject in-flight capture requests and clear timers on app quit. */
+export function teardownCaptureFramebufferBridge(): void {
+  for (const [requestId, entry] of pending) {
+    pending.delete(requestId);
+    clearTimeout(entry.timer);
+    entry.cleanup();
+    entry.reject(new Error('Application is shutting down.'));
+  }
+}

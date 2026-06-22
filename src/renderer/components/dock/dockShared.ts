@@ -67,12 +67,6 @@ export function dockFlyoutShellClassName(isResizing: boolean): string {
   );
 }
 
-export const DOCK_EDGE_STRIP_CLASS = cn(
-  'vx-dock-edge-strip vx-dock-shell app-no-drag',
-  'flex w-11 shrink-0 flex-col items-center justify-start',
-  'bg-surface-base pt-[var(--dock-strip-pt)] pb-2'
-);
-
 export function workspacePanelClassName(workspaceCount: number): string {
   if (workspaceCount <= 2) {
     return 'flex shrink-0 flex-col overflow-hidden';
@@ -91,9 +85,6 @@ export function workspacePathVisible(label: string, path: string): boolean {
 
 /** Flat region for the active workspace files/chats panel (no card chrome). */
 export const DOCK_WORKSPACE_PANEL_SHELL_CLASS = 'vx-dock-workspace-region';
-
-/** Inner layout for the active workspace panel. */
-export const DOCK_WORKSPACE_PANEL_CLASS = 'vx-dock-workspace-panel';
 
 export type DockPanelTab = 'files' | 'chats';
 

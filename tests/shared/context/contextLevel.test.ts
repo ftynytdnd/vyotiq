@@ -33,8 +33,7 @@ describe('contextLevel', () => {
 
   it('summarizeContextUsage uses the full model window for display % and breakdown', () => {
     const breakdown = {
-      system: 500,
-      fewShot: 100,
+      system: 600,
       workspace: 200,
       history: 747_000,
       runtime: 100,
@@ -80,8 +79,7 @@ describe('contextLevel', () => {
 
   it('history-dominated prompts warn on 1M windows before total absolute warn', () => {
     const breakdown = {
-      system: 9_000,
-      fewShot: 300,
+      system: 9_300,
       workspace: 100,
       history: 119_000,
       runtime: 1_500,
@@ -103,7 +101,6 @@ describe('contextLevel', () => {
     expect(
       applyHistoryCompactionPressure('ok', {
         system: 0,
-        fewShot: 0,
         workspace: 0,
         history: CONTEXT_HISTORY_COMPACTION_TRIGGER_TOKENS,
         runtime: 0,
@@ -114,7 +111,6 @@ describe('contextLevel', () => {
     expect(
       applyHistoryCompactionPressure('ok', {
         system: 0,
-        fewShot: 0,
         workspace: 0,
         history: CONTEXT_HISTORY_COMPACTION_WARN_TOKENS,
         runtime: 0,
@@ -185,8 +181,7 @@ describe('contextLevel', () => {
 
   it('scaleContextBreakdown reconciles layer sum to the target total', () => {
     const base = {
-      system: 333,
-      fewShot: 333,
+      system: 666,
       workspace: 334,
       history: 0,
       runtime: 0,
@@ -199,8 +194,7 @@ describe('contextLevel', () => {
 
   it('reconcileContextBreakdown absorbs rounding drift into the largest layer', () => {
     const drifted = {
-      system: 10,
-      fewShot: 5,
+      system: 15,
       workspace: 0,
       history: 100,
       runtime: 0,
@@ -219,7 +213,6 @@ describe('contextLevel', () => {
       exact: false,
       breakdown: {
         system: 100,
-        fewShot: 0,
         workspace: 0,
         history: CONTEXT_ABSOLUTE_COMPACTION_TRIGGER_TOKENS,
         runtime: 0,

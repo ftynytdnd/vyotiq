@@ -7,14 +7,6 @@ import { chatContentToText, isChatContentPartArray } from '@shared/text/chatCont
 import { parseDataUrl } from './parseDataUrl.js';
 import type { ContentPartFileRefs } from '../files/resolveFileReference.js';
 
-export function normalizeUserContent(
-  content: string | ChatContentPart[] | null | undefined
-): string | ChatContentPart[] {
-  if (content == null) return '';
-  if (typeof content === 'string') return content;
-  return content;
-}
-
 export function userContentHasMultimodalParts(
   content: string | ChatContentPart[] | null | undefined
 ): boolean {

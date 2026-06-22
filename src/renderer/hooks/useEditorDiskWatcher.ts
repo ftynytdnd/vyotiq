@@ -3,7 +3,7 @@
  */
 
 import { useEffect } from 'react';
-import { vyotiq } from '../lib/ipc.js';
+import { subscribeWorkspaceTreeChanged } from '../lib/workspaceTreeChangeHub.js';
 import { useEditorStore } from '../store/useEditorStore.js';
 
 const DISK_SYNC_DEBOUNCE_MS = 500;
@@ -12,7 +12,7 @@ export function useEditorDiskWatcher(): void {
   useEffect(() => {
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const unsub = vyotiq.workspace.onTreeChanged((payload) => {
+    const unsub = subscribeWorkspaceTreeChanged((payload) => {
       if (debounceTimer !== null) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         debounceTimer = null;

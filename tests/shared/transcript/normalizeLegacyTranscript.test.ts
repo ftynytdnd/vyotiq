@@ -22,7 +22,7 @@ describe('normalizeLegacyTranscript', () => {
         subagentId: 'A1',
         call: { id: 'c1', name: 'read', args: {} }
       }
-    ] as TimelineEvent[];
+    ] as unknown as TimelineEvent[];
 
     const out = normalizeLegacyTranscript(raw);
     expect(out).toHaveLength(2);
@@ -38,7 +38,7 @@ describe('normalizeLegacyTranscript', () => {
       { kind: 'phase-gate', id: 'g1', ts: 3, decision: 'continue' },
       { kind: 'phase-ledger-entry', id: 'l1', ts: 4, summary: 'done' },
       { kind: 'agent-text', id: 'a1', ts: 5, content: 'ok' }
-    ] as TimelineEvent[];
+    ] as unknown as TimelineEvent[];
 
     const out = normalizeLegacyTranscript(raw);
     expect(out).toHaveLength(2);

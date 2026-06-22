@@ -260,8 +260,8 @@ describe('chatChannel — synthetic-usage-update dispatch (Phase 3)', () => {
     cb.onEvent('run-1', textDelta('turn-A', 'run-1 text'));
     cb.onEvent('run-2', textDelta('turn-B', 'run-2 text'));
     expect(internal.syntheticUsageSize()).toBe(2);
-    cb.onEvent('run-1', { kind: 'phase', id: 'p-1', ts: 5, label: 'next' });
-    // Phase doesn't reset the synthetic counter — only end / aborted /
+    cb.onEvent('run-1', { kind: 'agent-thought', id: 'p-1', ts: 5, content: 'next' });
+    // Non-terminal telemetry doesn't reset the synthetic counter — only end /
     // token-usage / terminal events do.
     expect(internal.syntheticUsageChars('run-1', 'orc')).toBe('run-1 text'.length);
     expect(internal.syntheticUsageChars('run-2', 'orc')).toBe('run-2 text'.length);

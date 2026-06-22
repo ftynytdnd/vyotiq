@@ -61,14 +61,6 @@ export function escapeFocusInRoots(
   return false;
 }
 
-/** Whether any registered layer would run before the given priority threshold. */
-export function escapeHandledAbovePriority(minPriority: number): boolean {
-  for (const layer of layers.values()) {
-    if (layer.priority > minPriority) return true;
-  }
-  return false;
-}
-
 /** Test-only reset. */
 export function __test_resetEscapeLayerStack(): void {
   layers.clear();

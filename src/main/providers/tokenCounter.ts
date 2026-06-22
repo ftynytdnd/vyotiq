@@ -43,7 +43,6 @@ import { estimateVisionTokensFromContent } from '@shared/text/estimateVisionToke
 import { logger } from '../logging/logger.js';
 import { escapeXmlAttr } from '../orchestrator/envelope/index.js';
 import {
-  CACHE_LAYER_FEW_SHOT_INDEX,
   CACHE_LAYER_HISTORY_START,
   CACHE_LAYER_WORKSPACE_INDEX,
   isCacheLayeredTopology
@@ -340,10 +339,6 @@ export function tokenizeMessages(
     const turnIdx = messages.length - 1;
 
     const systemBody = stringifyMessageBody(messages[0] ?? { role: 'system', content: '' });
-    const fewShotBody =
-      typeof messages[CACHE_LAYER_FEW_SHOT_INDEX]?.content === 'string'
-        ? messages[CACHE_LAYER_FEW_SHOT_INDEX].content
-        : '';
     const workspaceBody =
       typeof messages[CACHE_LAYER_WORKSPACE_INDEX]?.content === 'string'
         ? messages[CACHE_LAYER_WORKSPACE_INDEX].content
@@ -353,8 +348,6 @@ export function tokenizeMessages(
 
     const systemTokens = countChatBlock(enc, [{ role: 'system', content: systemBody }]);
     if (!systemTokens.exact) exact = false;
-    const fewShotTokens = countChatBlock(enc, [{ role: 'user', content: fewShotBody }]);
-    if (!fewShotTokens.exact) exact = false;
     const workspaceTokens = countChatBlock(enc, [{ role: 'user', content: workspaceBody }]);
     if (!workspaceTokens.exact) exact = false;
     const runtimeTokens = countChatBlock(enc, [{ role: 'user', content: runtimeBody }]);
@@ -375,7 +368,6 @@ export function tokenizeMessages(
 
     const breakdown: ContextUsageBreakdown = {
       system: systemTokens.tokens,
-      fewShot: fewShotTokens.tokens,
       workspace: workspaceTokens.tokens,
       history: historyTokens.tokens,
       runtime: runtimeTokens.tokens,
@@ -416,7 +408,6 @@ export function tokenizeMessages(
 
   const breakdown: ContextUsageBreakdown = {
     system: systemTokens.tokens,
-    fewShot: 0,
     workspace: 0,
     history: historyTokens.tokens,
     runtime: 0,

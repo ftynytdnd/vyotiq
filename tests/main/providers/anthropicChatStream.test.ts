@@ -703,7 +703,6 @@ describe('prompt caching wire hints', () => {
 
     const messages: ChatMessage[] = [
       { role: 'system', content: '<system_instructions>static harness</system_instructions>' },
-      { role: 'user', content: '<static_examples>patterns</static_examples>' },
       { role: 'user', content: '<workspace_context>ws</workspace_context>' },
       { role: 'user', content: '<runtime_context>volatile</runtime_context>' },
       { role: 'user', content: '<turn>hi</turn>' }
@@ -738,10 +737,6 @@ describe('prompt caching wire hints', () => {
       role: string;
       content: Array<{ type?: string; text?: string; cache_control?: { type: string } }>;
     }>;
-    const fewShotUser = wireMessages.find(
-      (m) => m.role === 'user' && m.content[0]?.text?.includes('static_examples')
-    );
-    expect(fewShotUser?.content[0]?.cache_control).toEqual(cacheCtl);
     const workspaceUser = wireMessages.find(
       (m) => m.role === 'user' && m.content[0]?.text?.includes('workspace_context')
     );
@@ -764,7 +759,6 @@ describe('prompt caching wire hints', () => {
 
     const messages: ChatMessage[] = [
       { role: 'system', content: '<system_instructions>static</system_instructions>' },
-      { role: 'user', content: '<static_examples>patterns</static_examples>' },
       { role: 'user', content: '<workspace_context>ws</workspace_context>' },
       { role: 'assistant', content: 'prior answer' },
       { role: 'user', content: '<runtime_context>volatile</runtime_context>' },
@@ -788,9 +782,9 @@ describe('prompt caching wire hints', () => {
       (m) => m.role === 'assistant' && m.content[0]?.text === 'prior answer'
     );
     expect(historyAssistant?.content[0]?.cache_control).toBeUndefined();
-    const fewShotUser = wireMessages.find(
-      (m) => m.role === 'user' && m.content[0]?.text?.includes('static_examples')
+    const workspaceUser = wireMessages.find(
+      (m) => m.role === 'user' && m.content[0]?.text?.includes('workspace_context')
     );
-    expect(fewShotUser?.content[0]?.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
+    expect(workspaceUser?.content[0]?.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
   });
 });

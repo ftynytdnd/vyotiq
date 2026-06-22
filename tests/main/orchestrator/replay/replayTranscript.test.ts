@@ -260,7 +260,13 @@ describe('replayTranscript', () => {
         // of them into the assistant or user message stream, the
         // resulting reconstructed memory grows beyond just the
         // user/assistant turn we authored.
-        evt({ kind: 'phase', id: 'p', ts: ts(), label: 'Thinking' }),
+        evt({
+          kind: 'run-status',
+          id: 'rs',
+          ts: ts(),
+          status: 'running',
+          label: 'telemetry-only'
+        }),
         evt({
           kind: 'agent-thought',
           id: 't',

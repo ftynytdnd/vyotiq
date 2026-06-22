@@ -69,15 +69,9 @@ export function isTimelineEvent(value: unknown): value is TimelineEvent {
       return true;
     case 'user-prompt':
     case 'agent-thought':
-    case 'phase':
     case 'error':
-      // `content` (user-prompt / agent-thought) and `message` (error)
-      // / `label` (phase) — every variant has a single text field.
-      return (
-        hasStringField(o, 'content') ||
-        hasStringField(o, 'message') ||
-        hasStringField(o, 'label')
-      );
+      // `content` (user-prompt / agent-thought) and `message` (error).
+      return hasStringField(o, 'content') || hasStringField(o, 'message');
     case 'ask-user-prompt':
       return (
         hasStringField(o, 'displayText') &&

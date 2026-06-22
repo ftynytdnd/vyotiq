@@ -41,7 +41,7 @@ export function prunePinnedConversationIds(
   pinnedIds: readonly string[] | undefined,
   removedId: string
 ): string[] | undefined {
-  if (!pinnedIds?.length) return pinnedIds;
+  if (!pinnedIds?.length) return pinnedIds ? [...pinnedIds] : undefined;
   const next = pinnedIds.filter((id) => id !== removedId);
-  return next.length === pinnedIds.length ? pinnedIds : next;
+  return next.length === pinnedIds.length ? [...pinnedIds] : [...next];
 }

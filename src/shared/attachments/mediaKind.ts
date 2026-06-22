@@ -27,14 +27,6 @@ export function mediaKindFromMeta(meta: {
   return 'text';
 }
 
-export function isImageMediaKind(kind: AttachmentMediaKind): boolean {
-  return kind === 'image';
-}
-
-export function isAudioMediaKind(kind: AttachmentMediaKind): boolean {
-  return kind === 'audio';
-}
-
 export function guessMimeFromName(name: string): string {
   const lower = name.toLowerCase();
   if (lower.endsWith('.png')) return 'image/png';

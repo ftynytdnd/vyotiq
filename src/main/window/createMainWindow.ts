@@ -10,6 +10,8 @@ import { dirname } from 'node:path';
 import { APP_NAME, IPC } from '@shared/constants.js';
 import { safeWebContentsSend } from './safeWebContentsSend.js';
 import { setMainWindow } from './getMainWindow.js';
+import { clearProviderPollSources } from '../providers/providerPollSources.js';
+import { notifyProviderPollSourcesChanged } from '../providers/providerDiscoveryPoller.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -65,6 +67,11 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   };
   win.on('maximize', sendState);
   win.on('unmaximize', sendState);
+
+  win.webContents.on('did-finish-load', () => {
+    clearProviderPollSources();
+    notifyProviderPollSourcesChanged();
+  });
 
   // Open external links in the OS browser, never inside the app.
   win.webContents.setWindowOpenHandler(({ url }) => {

@@ -60,7 +60,7 @@ describe('resolveGeminiExplicitCacheName', () => {
     expect(createCount).toBe(1);
   });
 
-  it('creates explicit cache with system, few-shot, and workspace parts (no duplication)', async () => {
+  it('creates explicit cache with system and workspace parts (no duplication)', async () => {
     let capturedBody: Record<string, unknown> | null = null;
     vi.stubGlobal(
       'fetch',
@@ -74,7 +74,6 @@ describe('resolveGeminiExplicitCacheName', () => {
     );
 
     const staticSystem = 'harness'.repeat(3_500);
-    const fewShotBlock = '<static_examples>' + 'pattern'.repeat(500) + '</static_examples>';
     const workspaceBlock = '<workspace_context>stable ws</workspace_context>';
     await resolveGeminiExplicitCacheName({
       providerId: 'gem',
@@ -82,7 +81,6 @@ describe('resolveGeminiExplicitCacheName', () => {
       baseUrl: 'https://generativelanguage.googleapis.com',
       apiKey: 'key',
       staticSystem,
-      fewShotBlock,
       workspaceBlock,
       tools: []
     });
@@ -90,11 +88,10 @@ describe('resolveGeminiExplicitCacheName', () => {
     const instruction = capturedBody?.['systemInstruction'] as {
       parts?: Array<{ text?: string }>;
     };
-    expect(instruction?.parts).toHaveLength(3);
+    expect(instruction?.parts).toHaveLength(2);
     expect(instruction?.parts?.[0]?.text).toBe(staticSystem);
-    expect(instruction?.parts?.[1]?.text).toBe(fewShotBlock);
-    expect(instruction?.parts?.[2]?.text).toBe(workspaceBlock);
-    expect(instruction?.parts?.[2]?.text).not.toContain(staticSystem.slice(0, 40));
+    expect(instruction?.parts?.[1]?.text).toBe(workspaceBlock);
+    expect(instruction?.parts?.[1]?.text).not.toContain(staticSystem.slice(0, 40));
   });
 
   it('returns undefined when static prefix is below the size threshold', async () => {

@@ -202,7 +202,6 @@ export function replayTranscript(events: TimelineEvent[]): ChatMessage[] {
         }
         break;
       }
-      case 'phase':
       case 'agent-thought':
       case 'file-edit':
       case 'error':

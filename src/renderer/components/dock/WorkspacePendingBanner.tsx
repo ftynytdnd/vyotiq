@@ -5,7 +5,6 @@
 import { useEffect, useRef } from 'react';
 import type { WorkspaceEntry } from '@shared/types/ipc.js';
 import { Button } from '../ui/Button.js';
-import { cn } from '../../lib/cn.js';
 
 export type WorkspacePendingAction =
   | { kind: 'remove-confirm'; workspace: WorkspaceEntry }

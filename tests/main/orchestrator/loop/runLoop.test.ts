@@ -54,8 +54,7 @@ vi.mock('@main/orchestrator/contextManager', async () => {
   };
 });
 vi.mock('@main/harness/harnessLoader', () => ({
-  buildOrchestratorSystemPrompt: () => '<system_instructions>stub</system_instructions>',
-  buildStaticFewShotXml: () => '<static_examples>stub</static_examples>'
+  buildOrchestratorSystemPrompt: () => '<system_instructions>stub</system_instructions>'
 }));
 vi.mock('@main/orchestrator/retry', async () => {
   const real = await vi.importActual<typeof import('@main/orchestrator/retry')>(
@@ -95,7 +94,6 @@ import {
   isImplicitFinish,
   looksLikeProseEmittedToolCalls,
   runOrchestratorLoop,
-  shouldSuppressImplicitFinishAfterTools,
   USER_PROSE_TOOL_CALL_ERROR,
   __test_resetRecentBillingBlock
 } from '@main/orchestrator/loop/runLoop';
@@ -385,15 +383,6 @@ describe('looksLikeProseEmittedToolCalls', () => {
   });
 });
 
-describe('shouldSuppressImplicitFinishAfterTools', () => {
-  it('suppresses once when prior tool rounds exist', () => {
-    expect(shouldSuppressImplicitFinishAfterTools(1, false)).toBe(true);
-    expect(shouldSuppressImplicitFinishAfterTools(3, false)).toBe(true);
-    expect(shouldSuppressImplicitFinishAfterTools(1, true)).toBe(false);
-    expect(shouldSuppressImplicitFinishAfterTools(0, false)).toBe(false);
-  });
-});
-
 describe('runOrchestratorLoop — implicit finish and empty-turn retry', () => {
   it('completes without error on a short direct answer', async () => {
     vi.mocked(handleAssistantTurn).mockResolvedValueOnce({
@@ -612,10 +601,14 @@ describe('runOrchestratorLoop — implicit finish and empty-turn retry', () => {
     expect(events.filter((e) => e.kind === 'error')).toHaveLength(0);
   });
 
-  it('retries prose implicit-finish once after tool rounds, then accepts finish', async () => {
-    const statusProse =
-      'I am proceeding with the deep audit and have identified several findings so far. ' +
-      'Next I will synthesize and apply fixes before running verification.';
+  it('accepts substantive prose as the final answer after tool rounds (no destructive retry)', async () => {
+    // Regression: a prose-answering model (no `finish` tool call) that
+    // completes its work after tool rounds must have its already-streamed
+    // answer accepted — never aborted (`agent-text-aborted`) and retried,
+    // which destroyed the rendered answer and could lose or duplicate it.
+    const finalProse =
+      'I have completed the demonstration of the context tool. I loaded the reference packs ' +
+      'and applied the syntax to run a structural search across the codebase.';
 
     vi.mocked(handleAssistantTurn)
       .mockResolvedValueOnce({
@@ -635,34 +628,18 @@ describe('runOrchestratorLoop — implicit finish and empty-turn retry', () => {
         finishReason: 'tool_calls'
       })
       .mockResolvedValueOnce({
-        assistantMsgId: 'msg-status',
-        assistantText: statusProse,
+        assistantMsgId: 'msg-final',
+        assistantText: finalProse,
         reasoningText: '',
         partialToolCalls: [],
         hadText: true,
         hadReasoning: false,
         reasoningEndEmitted: false,
         finishReason: 'stop'
-      })
-      .mockResolvedValueOnce({
-        assistantMsgId: 'msg-finish',
-        assistantText: '',
-        reasoningText: '',
-        partialToolCalls: [
-          {
-            id: 'tc-finish',
-            name: 'finish',
-            argumentsBuf: JSON.stringify({ summary: 'Audit complete.' })
-          }
-        ],
-        hadText: false,
-        hadReasoning: false,
-        reasoningEndEmitted: false,
-        finishReason: 'tool_calls'
       });
 
     const events: TimelineEvent[] = [];
-    await runOrchestratorLoop({
+    const result = await runOrchestratorLoop({
       input: { ...baseInput, conversationId: 'c-audit' },
       workspacePath: '/tmp/ws',
       workspaceId: 'ws-test',
@@ -672,14 +649,12 @@ describe('runOrchestratorLoop — implicit finish and empty-turn retry', () => {
       initialQuery: 'audit the repo'
     });
 
-    expect(handleAssistantTurn).toHaveBeenCalledTimes(3);
-    const aborted = events.filter((e) => e.kind === 'agent-text-aborted');
-    expect(aborted).toHaveLength(1);
-    expect((aborted[0] as { id: string }).id).toBe('msg-status');
-    const finishResult = events.find(
-      (e) => e.kind === 'tool-result' && e.result.name === 'finish'
-    );
-    expect(finishResult?.kind).toBe('tool-result');
+    // Exactly two turns: the tool round, then the accepted prose answer.
+    expect(handleAssistantTurn).toHaveBeenCalledTimes(2);
+    // The completed answer is never aborted/destroyed.
+    expect(events.filter((e) => e.kind === 'agent-text-aborted')).toHaveLength(0);
+    expect(events.filter((e) => e.kind === 'error')).toHaveLength(0);
+    expect(result.terminalError).toBeUndefined();
   });
 
   it('synthetic-fails streamed tool calls that never received a name', async () => {

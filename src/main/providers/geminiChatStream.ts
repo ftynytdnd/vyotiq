@@ -74,7 +74,6 @@ import {
 import {
   CACHE_LAYER_WORKSPACE_INDEX,
   buildGeminiStaticInstructionTexts,
-  extractFewShotBlock,
   extractStaticSystemForWire,
   extractWorkspaceBlock,
   isCacheLayeredTopology
@@ -199,7 +198,6 @@ export async function* streamGemini(
   const body: Record<string, unknown> = { contents: translated.contents };
   const staticParts = buildGeminiStaticInstructionTexts(req.messages);
   const staticSystemOnly = extractStaticSystemForWire(req.messages);
-  const fewShotBlock = extractFewShotBlock(req.messages);
   const workspaceBlock = extractWorkspaceBlock(req.messages);
   let explicitCacheName: string | undefined;
   if (staticParts.length > 0 && provider.apiKey) {
@@ -210,7 +208,6 @@ export async function* streamGemini(
       apiKey: provider.apiKey,
       geminiAuthMode: provider.geminiAuthMode,
       staticSystem: staticSystemOnly,
-      fewShotBlock,
       workspaceBlock,
       tools: wireTools,
       signal: req.signal
@@ -261,7 +258,8 @@ export async function* streamGemini(
     findProviderModel(provider, req.model)?.thinking
   );
   if (thinkingConfig !== null) generationConfig['thinkingConfig'] = thinkingConfig;
-  if (modelSupportsImageOutput(req.model)) {
+  const modelInfo = findProviderModel(provider, req.model);
+  if (modelSupportsImageOutput(req.model, modelInfo)) {
     generationConfig['responseModalities'] = ['TEXT', 'IMAGE'];
   }
   if (Object.keys(generationConfig).length > 0) {

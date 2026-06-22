@@ -82,7 +82,6 @@ import {
   applyAnthropicAutomaticCache,
   buildAnthropicSystemBlocks,
   markAnthropicToolCache,
-  markFewShotUserCache,
   markWorkspaceUserCache
 } from './cacheHints/anthropicCacheHints.js';
 import {
@@ -175,7 +174,6 @@ export async function* streamAnthropic(
     role: string;
     content: Array<Record<string, unknown>>;
   }>;
-  markFewShotUserCache(wireMessages, req.messages);
   markWorkspaceUserCache(wireMessages, req.messages);
   applyAnthropicAutomaticCache(body);
   if (req.workspaceId?.trim()) {

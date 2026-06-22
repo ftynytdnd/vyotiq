@@ -7,7 +7,7 @@
 import { promises as fs, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { HarnessSectionId, HarnessSectionInfo } from '@shared/types/harness.js';
-import { HARNESS_SECTION_IDS } from '@shared/types/harness.js';
+import { HARNESS_SECTION_IDS, HARNESS_SECTION_PLACEMENT } from '@shared/types/harness.js';
 import { harnessOverridesDir } from '../paths/userDataLayout.js';
 import { logger } from '../logging/logger.js';
 
@@ -41,6 +41,7 @@ export function listHarnessSections(): HarnessSectionInfo[] {
   return HARNESS_SECTION_IDS.map((id) => ({
     id,
     file: SECTION_TO_FILE[id],
+    placement: HARNESS_SECTION_PLACEMENT[id],
     hasOverride: existsSync(overridePath(id))
   }));
 }

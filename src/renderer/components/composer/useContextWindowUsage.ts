@@ -8,7 +8,7 @@
 
  * Between runs, calls `context:evaluate` so the meter includes the static
 
- * prefix (harness, few-shot, workspace, tools) — not just last-turn tokens.
+ * prefix (harness, workspace, tools) — not just last-turn tokens.
 
  */
 

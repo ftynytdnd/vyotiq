@@ -94,7 +94,19 @@ export function modelSupportsAudioNative(
 }
 
 /** Heuristic for models that can emit image output (Gemini image, OpenAI image gen). */
-export function modelSupportsImageOutput(modelId: string): boolean {
+export function modelSupportsImageOutput(
+  modelId: string,
+  discovery?: { id?: string; label?: string }
+): boolean {
+  const discoveryId = (discovery?.id ?? discovery?.label ?? '').toLowerCase();
+  if (discoveryId.length > 0) {
+    if (/imagen|flash-image|gemini-.*-image|image-preview|image-generation/.test(discoveryId)) {
+      return true;
+    }
+    if (/^gemini-[\d.]+\-(pro|flash)(-preview)?$/i.test(discoveryId)) {
+      return false;
+    }
+  }
   const id = modelId.toLowerCase();
   const tail = id.includes('/') ? id.slice(id.lastIndexOf('/') + 1) : id;
   const patterns = [

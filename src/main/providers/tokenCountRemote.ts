@@ -17,8 +17,15 @@
  * fetch settles.
  */
 
+import type { ChatMessage } from '@shared/types/chat.js';
 import type { ProviderWithKey } from '@shared/types/provider.js';
 import { logger } from '../logging/logger.js';
+import type { TokenizableToolSchema } from './tokenCounter.js';
+import {
+  buildAnthropicCountBody,
+  buildGeminiCountBody,
+  fingerprintCountPayload
+} from './tokenCountPayload.js';
 
 const log = logger.child('providers/tokenCountRemote');
 
@@ -49,18 +56,17 @@ function fingerprint(text: string): string {
     h ^= text.charCodeAt(i);
     h = Math.imul(h, 0x01000193);
   }
-  // Length guards against collisions where two different texts hash equal.
   return `${(h >>> 0).toString(36)}:${text.length}`;
 }
 
 function cacheKey(
   providerId: string,
   modelId: string,
-  text: string,
+  payloadFingerprint: string,
   visionTokens = 0
 ): string {
   const visionSuffix = visionTokens > 0 ? `::v${visionTokens}` : '';
-  return `${providerId}::${modelId}::${fingerprint(text)}${visionSuffix}`;
+  return `${providerId}::${modelId}::${fingerprint(payloadFingerprint)}${visionSuffix}`;
 }
 
 function readCache(key: string): number | undefined {
@@ -70,7 +76,6 @@ function readCache(key: string): number | undefined {
     cache.delete(key);
     return undefined;
   }
-  // LRU bump.
   cache.delete(key);
   cache.set(key, entry);
   return entry.tokens;
@@ -85,13 +90,33 @@ function writeCache(key: string, tokens: number): void {
   }
 }
 
+function promptCharCount(
+  messages: readonly ChatMessage[],
+  tools: ReadonlyArray<TokenizableToolSchema>
+): number {
+  let chars = 0;
+  for (const m of messages) {
+    const c = m.content;
+    if (typeof c === 'string') chars += c.length;
+    else if (c != null) chars += JSON.stringify(c).length;
+    if (Array.isArray(m.tool_calls)) {
+      for (const tc of m.tool_calls) {
+        chars += tc.function.name.length + tc.function.arguments.length;
+      }
+    }
+    if (typeof m.reasoning_content === 'string') chars += m.reasoning_content.length;
+  }
+  for (const t of tools) chars += JSON.stringify(t).length;
+  return chars;
+}
+
 /** True when the provider dialect exposes a usable count endpoint. */
 export function providerSupportsRemoteCount(provider: ProviderWithKey): boolean {
   return provider.dialect === 'anthropic-native' || provider.dialect === 'gemini-native';
 }
 
 /**
- * Synchronously read a cached remote count for this exact text, if fresh.
+ * Synchronously read a cached remote count for this exact prompt shape, if fresh.
  * Returns `undefined` when there is no fresh cached value (caller should use
  * the local heuristic and may call `refineRemoteCount` to warm the cache).
  *
@@ -101,19 +126,24 @@ export function providerSupportsRemoteCount(provider: ProviderWithKey): boolean 
 export function getCachedRemoteCount(
   providerId: string,
   modelId: string,
-  text: string,
-  visionTokens = 0
+  messages: readonly ChatMessage[],
+  tools: ReadonlyArray<TokenizableToolSchema> = [],
+  visionTokens = 0,
+  dialect: 'anthropic-native' | 'gemini-native' = 'anthropic-native'
 ): number | undefined {
-  return readCache(cacheKey(providerId, modelId, text, visionTokens));
+  const payloadFingerprint = fingerprintCountPayload(dialect, messages, tools);
+  return readCache(cacheKey(providerId, modelId, payloadFingerprint, visionTokens));
 }
 
 async function fetchAnthropicCount(
   provider: ProviderWithKey,
   modelId: string,
-  text: string,
+  messages: readonly ChatMessage[],
+  tools: ReadonlyArray<TokenizableToolSchema>,
   signal: AbortSignal
 ): Promise<number | undefined> {
   const url = `${provider.baseUrl}/v1/messages/count_tokens`;
+  const body = buildAnthropicCountBody(modelId, messages, tools);
   const res = await fetch(url, {
     method: 'POST',
     headers: {
@@ -121,10 +151,7 @@ async function fetchAnthropicCount(
       'x-api-key': provider.apiKey,
       'anthropic-version': '2023-06-01'
     },
-    body: JSON.stringify({
-      model: modelId,
-      messages: [{ role: 'user', content: text }]
-    }),
+    body: JSON.stringify(body),
     signal
   });
   if (!res.ok) return undefined;
@@ -135,7 +162,8 @@ async function fetchAnthropicCount(
 async function fetchGeminiCount(
   provider: ProviderWithKey,
   modelId: string,
-  text: string,
+  messages: readonly ChatMessage[],
+  tools: ReadonlyArray<TokenizableToolSchema>,
   signal: AbortSignal
 ): Promise<number | undefined> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -148,10 +176,13 @@ async function fetchGeminiCount(
     }
   }
   const url = `${provider.baseUrl}/v1beta/models/${encodeURIComponent(modelId)}:countTokens${query}`;
+  const body = buildGeminiCountBody(modelId, messages, tools);
+  const { model: _model, ...wire } = body;
+  void _model;
   const res = await fetch(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text }] }] }),
+    body: JSON.stringify(wire),
     signal
   });
   if (!res.ok) return undefined;
@@ -160,7 +191,7 @@ async function fetchGeminiCount(
 }
 
 /**
- * Fire-and-forget: refresh the cached remote count for `text`. Safe to call
+ * Fire-and-forget: refresh the cached remote count for `messages`. Safe to call
  * every evaluation — it no-ops when a fresh value already exists, when a
  * count for the same key is already in flight, when the text is short, or
  * when the provider has no count endpoint. Never throws.
@@ -171,25 +202,28 @@ async function fetchGeminiCount(
 export function refineRemoteCount(
   provider: ProviderWithKey,
   modelId: string,
-  text: string,
+  messages: readonly ChatMessage[],
+  tools: ReadonlyArray<TokenizableToolSchema> = [],
   visionTokens = 0
 ): void {
   if (!providerSupportsRemoteCount(provider)) return;
-  if (text.length < MIN_CHARS_FOR_REMOTE) return;
-  const key = cacheKey(provider.id, modelId, text, visionTokens);
+  if (promptCharCount(messages, tools) < MIN_CHARS_FOR_REMOTE) return;
+  const dialect =
+    provider.dialect === 'gemini-native' ? 'gemini-native' : 'anthropic-native';
+  const payloadFingerprint = fingerprintCountPayload(dialect, messages, tools);
+  const key = cacheKey(provider.id, modelId, payloadFingerprint, visionTokens);
   if (inFlight.has(key)) return;
   if (readCache(key) !== undefined) return;
   inFlight.add(key);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), COUNT_TIMEOUT_MS);
-  // Detach: the orchestrator must not await this.
   void (async () => {
     try {
       const tokens =
         provider.dialect === 'anthropic-native'
-          ? await fetchAnthropicCount(provider, modelId, text, controller.signal)
-          : await fetchGeminiCount(provider, modelId, text, controller.signal);
+          ? await fetchAnthropicCount(provider, modelId, messages, tools, controller.signal)
+          : await fetchGeminiCount(provider, modelId, messages, tools, controller.signal);
       if (typeof tokens === 'number' && tokens > 0) {
         writeCache(key, tokens);
       }

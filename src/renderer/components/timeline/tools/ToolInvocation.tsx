@@ -16,6 +16,7 @@ import { SearchInvocation } from './SearchInvocation.js';
 import { SgInvocation } from './SgInvocation.js';
 import { MemoryInvocation } from './MemoryInvocation.js';
 import { RecallInvocation } from './RecallInvocation.js';
+import { ContextInvocation } from './ContextInvocation.js';
 import { UnknownInvocation } from './UnknownInvocation.js';
 import { ReportInvocation } from './report/ReportInvocation.js';
 import { CaptureInvocation } from './CaptureInvocation.js';
@@ -128,6 +129,8 @@ export function ToolInvocation({
       );
     case 'recall':
       return <RecallInvocation call={call} result={result} dense={dense} rowKey={rowKey} />;
+    case 'context':
+      return <ContextInvocation call={call} result={result} dense={dense} rowKey={rowKey} />;
     case 'report':
       return (
         <ReportInvocation
@@ -146,6 +149,10 @@ export function ToolInvocation({
       return null;
     case 'finish':
       return null;
+    case 'heartbeat':
+    case 'continue':
+      // Loop-control tools have no bespoke card; render the generic shell.
+      return <UnknownInvocation call={call} result={result} dense={dense} rowKey={rowKey} />;
     case 'unknown':
       return <UnknownInvocation call={call} result={result} dense={dense} rowKey={rowKey} />;
     default: {

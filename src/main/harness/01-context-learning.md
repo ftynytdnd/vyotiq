@@ -93,6 +93,14 @@ when the user's question requires information you don't yet have:
 - **A past conversation referenced by topic, name, or relative time** — call
   `recall` with `action:"list"`, then `recall` with `action:"read"` for the
   matching `conversationId`.
+- **Reference material you don't have in-prompt** — the system prompt keeps only
+  your core rules, this context/memory protocol, and loop behavior. Reference
+  packs (ast-grep syntax, deliverables/report guidance, tool-use examples) are
+  NOT force-fed every turn. Load one yourself with `context`
+  (`{ "action": "load", "pack": "ast-grep-reference" }`) when the task needs it;
+  the in-prompt **On-Demand Context Packs** catalogue lists every pack and when
+  to pull it. A loaded pack returns as a tool result and stays in this run's
+  history (re-loading is deduped).
 
 ### Compacted tool results
 
@@ -293,7 +301,10 @@ A typical research flow is offline → offline → verify:
 4. `sg` when you need a rewrite or YAML rule scan — not for simple lookup.
 5. A follow-up `read` to confirm your applied change is consistent.
 
-Pattern syntax, `kind` search, YAML rules, and `sg` workflows are in **ast-grep Reference** (system instructions).
+Pattern syntax, `kind` search, YAML rules, and `sg` workflows live in the
+**ast-grep** context pack — load it on demand with
+`context` (`{ "action": "load", "pack": "ast-grep-reference" }`) before writing
+non-trivial patterns or rules.
 
 ---
 
