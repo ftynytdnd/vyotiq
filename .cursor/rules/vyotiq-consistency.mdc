@@ -1,0 +1,19 @@
+---
+description: Preserve Vyotiq Shell Mono styling, UX, and behavior codebase-wide
+alwaysApply: true
+---
+
+# Vyotiq consistency
+
+When changing UI, dock, composer, timeline, workbench, or settings:
+
+- **Do not redesign** surfaces the user did not ask to change.
+- **Reuse** existing tokens (`@theme` in `src/renderer/index.css`), `vx-*` classes, `SurfaceShell` helpers, and feature CSS (e.g. `dock-flyout.css`, `shell-chrome.css`).
+- **Extend** current components and patterns; avoid parallel styling systems or one-off colors/spacing.
+- **Keep interactions consistent** within a surface (selection, hover, spacing, alignment) and aligned with neighboring surfaces.
+- **Preserve behavior** — do not drop or alter features (per-workspace state, keyboard shortcuts, IPC flows) unless explicitly requested.
+- **Verify** with tests/build after CSS or layout changes.
+
+See also `.cursor/rules/vyotiq-engineering.mdc` for non-negotiable constraints (real features, no slop, leak-safe patterns, search-before-create).
+
+Authoritative preferences and workspace facts: `AGENTS.md`.

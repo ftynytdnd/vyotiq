@@ -1,0 +1,45 @@
+---
+description: Vyotiq Shell Mono layout zones — extend existing workbench/timeline/dock; never greenfield IDE shells
+globs: src/renderer/**/*.{tsx,css},tests/renderer/**/*.tsx
+alwaysApply: false
+---
+
+# Vyotiq UI layout
+
+Vyotiq is **chat-primary left** + **optional companion pane right**. Extend existing shells — do **not** scaffold Activity Bars, 30/70 split layouts, or parallel `AppLayout` trees.
+
+## Zones (extend — do not replace)
+
+| Zone | Entry points |
+|------|--------------|
+| Title bar | `TitleBar`, `TitlebarDockChrome`, `TitlebarWorkbenchChrome` |
+| Left dock flyout | `LeftDock`, `DockNavigator` |
+| Agent canvas | `WorkbenchShell` → `ChatPage` → `Timeline` + `Composer` |
+| Companion pane | `CompanionDeck` (editor / terminal / browser / preview) |
+| Settings | `SettingsFullView` (full overlay) |
+
+Resizing already exists: `LeftDock` → `useUiStore.dockWidth`; `WorkbenchResizeHandle` → `useUiStore.workbenchPaneWidth`.
+
+## Before coding
+
+1. Read `App.tsx`, touched zone entry points, and adjacent components.
+2. Grep for overlap — extend `SurfaceShell`, `InvocationShell`, `DetailShell`, `vx-*` tokens.
+3. Wire through existing Zustand stores and typed IPC — no new layout context providers.
+4. Styling: Tailwind v4 `@theme` in `src/renderer/index.css` — no hex, no `tailwind.config.js`.
+5. Icons: `lucide-react`; shared stroke/size via `shellIcons.ts` where applicable.
+
+## Progressive disclosure (reuse)
+
+- Tool rows: `InvocationShell` + `DetailShell` + `useTimelineRowExpand`
+- Turn grouping: `TurnBlock`
+- Hidden tools: `isTimelineHiddenTool` (`finish`, `ask_user`, `todos`, `heartbeat`, `continue`)
+
+## Anti-patterns
+
+- Greenfield `AppLayout`, vertical Activity Bar, or Graphify/visualization view
+- Timeline as 30% side panel with code as 70% main stage
+- Central titlebar pulsing agent status (run indicators live in composer/timeline chrome)
+- Inline diffs replaced by a full-window split diff canvas
+- Phased-execution UI, tool re-run, sub-agent delegation
+
+Full architecture, component map, and workflow: skill **vyotiq-ui-layout** (`.cursor/skills/vyotiq-ui-layout/reference.md`).

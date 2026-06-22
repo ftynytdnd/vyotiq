@@ -1,0 +1,29 @@
+---
+description: Vyotiq engineering constraints — real features, no slop, leak-safe, extend-don't-duplicate
+alwaysApply: true
+---
+
+# Vyotiq engineering standards
+
+## Ship real work
+- No placeholder UI, stub IPC handlers, or fake workflows in user-facing paths.
+- Integrate with existing stores, IPC (`src/shared/types/ipc.ts`), settings persistence, and tests.
+
+## Code quality
+- Minimal scope; match existing patterns in the touched area.
+- **Search before creating files** — extend `src/main/`, `src/renderer/`, `src/shared/` modules when overlap exists.
+- One tool per file under `src/main/tools/`; feature folders under `components/`, not monoliths.
+
+## Always-on desktop agent (memory)
+- Cleanup: `useEffect` return handlers, `removeListener`, clear intervals, dispose PTY/LSP/watchers on workspace switch.
+- IPC: typed `vyotiq.*` invoke; avoid listener accumulation in renderer (`chatChannel.ts` pattern).
+- Main: null `BrowserWindow` refs on `closed`; stop pollers/watchers on quit.
+
+## Consistency
+- Tailwind v4 CSS-first tokens in `src/renderer/index.css` — no hardcoded hex in components.
+- Shell Mono aesthetic; reuse `vx-*`, `SurfaceShell`, feature CSS (`dock-flyout.css`, etc.).
+- Never remove existing features without explicit user request.
+
+## Verify
+- Targeted Vitest + `pnpm build` after renderer/CSS changes.
+- Authoritative context: `AGENTS.md`, `project.md`.
