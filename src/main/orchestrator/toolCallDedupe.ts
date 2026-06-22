@@ -7,10 +7,12 @@
  *
  * Excluded tools self-govern repeats and must never see the hostile generic
  * block: `finish` / `ask_user` are legitimately repeatable terminals, and
- * `context` is an idempotent, self-dedluping reference loader (it returns its
+ * `context` is an idempotent, self-deduping reference loader (it returns its
  * own graceful `[already loaded]` / `[already listed]` banner on repeats — see
  * `context.tool.ts`). Letting the generic blocker fire on `context` produced a
  * confusing `BLOCKED: identical arguments` message that derailed weaker models.
+ * `todos` merge/replace is idempotent by design (`todos.tool.ts`) — blocking
+ * identical status updates produced the same spin without helping the model.
  */
 
 import type { ToolResult } from '@shared/types/tool.js';
@@ -20,7 +22,7 @@ import { toolCallSignature } from './loop/toolSpinSignature.js';
 const MAX_IDENTICAL_DISPATCHES_DEFAULT = 3;
 const MAX_IDENTICAL_DISPATCHES_SPIN_PRONE = 2;
 
-const EXCLUDED_TOOLS = new Set<string>(['finish', 'ask_user', 'context']);
+const EXCLUDED_TOOLS = new Set<string>(['finish', 'ask_user', 'context', 'todos']);
 
 const SPIN_PRONE_TOOLS = new Set<string>(['read', 'bash', 'search', 'ls']);
 

@@ -90,13 +90,21 @@ export interface HandleToolCallsResult {
   attempted: number;
   /** Of `attempted`, how many produced a `result.ok === false`. */
   failed: number;
+  /** Of `failed`, how many were `duplicate_tool_call` blocks (not actionable). */
+  duplicateFailures: number;
   /** Most recent failed tool output in this round (for terminal error copy). */
   lastFailure?: string;
 }
 
 type DispatchOutcome =
   | { kind: 'skipped' }
-  | { kind: 'ran'; attempted: number; failed: number; failureDetail?: string };
+  | {
+      kind: 'ran';
+      attempted: number;
+      failed: number;
+      duplicateFailures: number;
+      failureDetail?: string;
+    };
 
 async function dispatchOneToolCall(
   tc: PartialToolCall,
@@ -246,6 +254,7 @@ async function dispatchOneToolCall(
       kind: 'ran',
       attempted: 1,
       failed: 1,
+      duplicateFailures: 0,
       failureDetail: formatToolFailureDetail(tc.name, parseError, 'argument parse failed')
     };
   }
@@ -281,6 +290,7 @@ async function dispatchOneToolCall(
       kind: 'ran',
       attempted: 1,
       failed: 1,
+      duplicateFailures: 0,
       failureDetail: formatToolFailureDetail(tc.name, validation.output, validation.error)
     };
   }
@@ -330,6 +340,7 @@ async function dispatchOneToolCall(
     kind: 'ran',
     attempted: 1,
     failed: result.ok ? 0 : 1,
+    duplicateFailures: result.error === 'duplicate_tool_call' ? 1 : 0,
     ...(!result.ok
       ? {
           failureDetail: formatToolFailureDetail(tc.name ?? 'unknown', result.output, result.error)
@@ -378,7 +389,7 @@ async function dispatchRunnableBatch(
   opts: HandleToolCallsOpts,
   tallies: { refused: number },
   processed: Set<number>,
-  tally: { attempted: number; failed: number; lastFailure?: string },
+  tally: { attempted: number; failed: number; duplicateFailures: number; lastFailure?: string },
   parsedByIndex: Map<number, ToolArgsParseResult>,
   allowlistLogged: Set<string>
 ): Promise<void> {
@@ -404,6 +415,7 @@ async function dispatchRunnableBatch(
         if (o.kind === 'ran') {
           tally.attempted += o.attempted;
           tally.failed += o.failed;
+          tally.duplicateFailures += o.duplicateFailures;
           if (o.failureDetail) tally.lastFailure = o.failureDetail;
         }
       }
@@ -429,6 +441,7 @@ async function dispatchRunnableBatch(
       if (o.kind === 'ran') {
         tally.attempted += o.attempted;
         tally.failed += o.failed;
+        tally.duplicateFailures += o.duplicateFailures;
         if (o.failureDetail) tally.lastFailure = o.failureDetail;
       }
     }
@@ -444,6 +457,7 @@ export async function handleToolCalls(
   const startedAt = Date.now();
   let attempted = 0;
   let failed = 0;
+  let duplicateFailures = 0;
   let lastFailure: string | undefined;
   const tallies = { refused: 0 };
 
@@ -547,11 +561,17 @@ export async function handleToolCalls(
       if (o.kind === 'ran') {
         attempted += o.attempted;
         failed += o.failed;
+        duplicateFailures += o.duplicateFailures;
         recordFailure(o.failureDetail);
       }
     }
 
-    const batchTally = { attempted: 0, failed: 0, lastFailure: undefined as string | undefined };
+    const batchTally = {
+      attempted: 0,
+      failed: 0,
+      duplicateFailures: 0,
+      lastFailure: undefined as string | undefined
+    };
     await dispatchRunnableBatch(
       runnable,
       finishedToolCalls,
@@ -566,6 +586,7 @@ export async function handleToolCalls(
     );
     attempted += batchTally.attempted;
     failed += batchTally.failed;
+    duplicateFailures += batchTally.duplicateFailures;
     recordFailure(batchTally.lastFailure);
   }
 
@@ -573,6 +594,7 @@ export async function handleToolCalls(
     log.warn('tool round had failures', {
       attempted,
       failed,
+      duplicateFailures,
       refused: tallies.refused,
       lastFailure,
       ms: Date.now() - startedAt
@@ -581,9 +603,15 @@ export async function handleToolCalls(
     log.debug('tool round summary', {
       attempted,
       failed,
+      duplicateFailures,
       refused: tallies.refused,
       ms: Date.now() - startedAt
     });
   }
-  return { attempted, failed, ...(lastFailure ? { lastFailure } : {}) };
+  return {
+    attempted,
+    failed,
+    duplicateFailures,
+    ...(lastFailure ? { lastFailure } : {})
+  };
 }

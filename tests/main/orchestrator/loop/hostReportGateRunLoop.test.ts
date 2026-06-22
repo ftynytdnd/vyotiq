@@ -90,7 +90,8 @@ describe('runOrchestratorLoop — host report gate resume', () => {
 
     vi.mocked(handleToolCalls).mockResolvedValue({
       attempted: 1,
-      failed: 0
+      failed: 0,
+      duplicateFailures: 0
     });
 
     const events: TimelineEvent[] = [];

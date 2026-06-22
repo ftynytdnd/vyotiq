@@ -27,7 +27,14 @@
 import { randomUUID } from 'node:crypto';
 import type { ChatMessage, TimelineEvent } from '@shared/types/chat.js';
 import type { ContextManagementSettings } from '@shared/settings/agentBehaviorSettings.js';
-import { COMPACT_MIN_TOOL_INPUT_CHARS, COMPACT_MIN_TOOL_OUTPUT_CHARS, CONTEXT_ABSOLUTE_COMPACTION_TRIGGER_TOKENS, CONTEXT_ABSOLUTE_COMPACTION_WARN_TOKENS } from '@shared/constants.js';
+import {
+  COMPACT_MIN_TOOL_INPUT_CHARS,
+  COMPACT_MIN_TOOL_OUTPUT_CHARS,
+  CONTEXT_ABSOLUTE_COMPACTION_TRIGGER_TOKENS,
+  CONTEXT_ABSOLUTE_COMPACTION_WARN_TOKENS,
+  CONTEXT_HISTORY_COMPACTION_TRIGGER_TOKENS,
+  CONTEXT_HISTORY_COMPACTION_WARN_TOKENS
+} from '@shared/constants.js';
 import { chatContentToText } from '@shared/text/chatContent.js';
 import {
   resolveCompactionThresholds,
@@ -217,11 +224,34 @@ export async function reduceContextIfNeeded(
   // so one new tool round doesn't immediately re-trip reduction. (Stopping at
   // the trigger line left est ~148k while trigger was 150k, which blocked
   // summarization AND let the prompt refill on the next iteration.)
-  const offloadThreshold = force
+  let offloadThreshold = force
     ? Math.min(triggerThreshold, Math.floor(usage.usedTokens * 0.5))
     : critical || usage.level === 'trigger'
       ? warnThreshold
       : triggerThreshold;
+
+  // History pressure can bump level to `trigger` while total tokens are still
+  // below the fraction-derived warn band (common on 262k+ window models). The
+  // default stopping line (`warnThreshold`) is then *above* current usage, so
+  // Tier A/B never run. Aim for the history warn band instead.
+  const historyTokens = usage.breakdown?.history ?? 0;
+  const historyPressureTrigger = historyTokens >= CONTEXT_HISTORY_COMPACTION_TRIGGER_TOKENS;
+  if (
+    !force &&
+    !critical &&
+    usage.level === 'trigger' &&
+    usage.usedTokens < warnThreshold &&
+    historyPressureTrigger
+  ) {
+    const nonHistory = Math.max(0, usage.usedTokens - historyTokens);
+    offloadThreshold = Math.max(
+      0,
+      Math.min(
+        CONTEXT_HISTORY_COMPACTION_WARN_TOKENS + nonHistory,
+        usage.usedTokens - settings.minSavingsTokens
+      )
+    );
+  }
 
   const next = workingMessages.map((m) => ({ ...m }));
   const historyEnd = next.length - 2;

@@ -1,5 +1,6 @@
 /**
- * Spin-prone tools: dedupe runs before cache so a second identical call is blocked.
+ * Read-shaped tools: cache replay runs before dedupe so repeats return ok
+ * results with a pivot banner instead of duplicate_tool_call failures.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -7,8 +8,8 @@ import { runToolByName } from '@main/orchestrator/toolRunner';
 import { recordToolResult } from '@main/orchestrator/toolResultCache';
 import type { ToolResult } from '@shared/types/tool';
 
-describe('runToolByName spin-prone dedupe before cache', () => {
-  it('blocks the second identical read after a cached first replay', async () => {
+describe('runToolByName cache before dedupe', () => {
+  it('replays the cached read on the second identical call', async () => {
     const ac = new AbortController();
     const args = { path: 'src/example.ts' };
     const opts = {
@@ -33,9 +34,11 @@ describe('runToolByName spin-prone dedupe before cache', () => {
     expect(replay.ok).toBe(true);
     expect(replay.error).not.toBe('duplicate_tool_call');
     expect(replay.output).toContain('file body');
+    expect(replay.output).toContain('[cache]');
 
-    const blocked = await runToolByName('read', args, opts);
-    expect(blocked.ok).toBe(false);
-    expect(blocked.error).toBe('duplicate_tool_call');
+    const again = await runToolByName('read', args, opts);
+    expect(again.ok).toBe(true);
+    expect(again.error).not.toBe('duplicate_tool_call');
+    expect(again.output).toContain('file body');
   });
 });

@@ -47,4 +47,11 @@ describe('checkToolCallDedupe', () => {
       ).toBeNull();
     }
   });
+
+  it('never blocks idempotent todos merges', () => {
+    const args = { merge: true, todos: [{ id: '1', content: 'x', status: 'pending' }] };
+    for (let i = 0; i < 5; i++) {
+      expect(checkToolCallDedupe(signal, 'todos', args)).toBeNull();
+    }
+  });
 });

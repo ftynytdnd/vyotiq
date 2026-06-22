@@ -37,19 +37,7 @@ function cmSettings(patch: Partial<ContextManagementSettings>): ContextManagemen
 }
 
 vi.mock('@main/providers/tokenCounter', () => ({
-  tokenizeMessages: vi.fn(() => ({
-    total: 200_000,
-    exact: true,
-    visionTokens: 0,
-    breakdown: {
-      system: 0,
-      workspace: 0,
-      history: 200_000,
-      runtime: 0,
-      turn: 0,
-      tools: 0
-    }
-  }))
+  tokenizeMessages: vi.fn(() => defaultTokenizeResult())
 }));
 
 vi.mock('@main/providers/providerStore', () => ({
@@ -62,6 +50,23 @@ vi.mock('@main/providers/providerStore', () => ({
 }));
 
 import { getProviderWithKey } from '@main/providers/providerStore.js';
+import { tokenizeMessages } from '@main/providers/tokenCounter.js';
+
+function defaultTokenizeResult() {
+  return {
+    total: 200_000,
+    exact: true,
+    visionTokens: 0,
+    breakdown: {
+      system: 0,
+      workspace: 0,
+      history: 200_000,
+      runtime: 0,
+      turn: 0,
+      tools: 0
+    }
+  };
+}
 
 const summarizeHistoryMock = vi.fn(async () => ({
   summary: '## Task intent\ncompacted',
@@ -83,6 +88,7 @@ describe('contextCompaction', () => {
 
   beforeEach(async () => {
     workspacePath = await mkdtemp(path.join(os.tmpdir(), 'vyotiq-compact-'));
+    vi.mocked(tokenizeMessages).mockImplementation(() => defaultTokenizeResult());
   });
 
   afterEach(async () => {
@@ -132,6 +138,66 @@ describe('contextCompaction', () => {
     expect(out.messages.length).toBeGreaterThanOrEqual(4);
     expect(out.messages[0]?.role).toBe('system');
     expect(out.messages[out.messages.length - 1]?.role).toBe('user');
+  });
+
+  it('offloads when history pressure triggers compaction below the fraction warn band', async () => {
+    vi.mocked(tokenizeMessages).mockImplementation(() => ({
+      total: 145_000,
+      exact: true,
+      visionTokens: 0,
+      breakdown: {
+        system: 16_000,
+        workspace: 136,
+        history: 122_000,
+        runtime: 2_000,
+        turn: 19,
+        tools: 4_800
+      }
+    }));
+
+    vi.mocked(getProviderWithKey).mockResolvedValueOnce({
+      id: 'ollama',
+      name: 'Ollama',
+      models: [{ id: 'gemma4:31b', contextWindow: 262_144 }],
+      contextOverrides: {}
+    } as Awaited<ReturnType<typeof getProviderWithKey>>);
+
+    const largeOutput = 'x'.repeat(5_000);
+    const toolRows = Array.from({ length: 4 }, (_, i) => ({
+      role: 'tool' as const,
+      tool_call_id: `tc-hist-${i}`,
+      name: 'read',
+      content: largeOutput
+    }));
+    const messages = seedCacheLayeredMessages(toolRows, '<turn/>');
+    messages[0] = { role: 'system', content: '<system_instructions>x</system_instructions>' };
+
+    const out = await reduceContextIfNeeded(
+      messages,
+      {
+        conversationId: 'conv-hist',
+        runId: 'run-hist',
+        workspacePath,
+        modelId: 'gemma4:31b',
+        providerId: 'ollama',
+        settings: cmSettings({
+          enabled: true,
+          summarizationEnabled: false,
+          keepLastToolResults: 0,
+          minSavingsTokens: 2_000
+        }),
+        emit: () => {}
+      },
+      createContextReductionState()
+    );
+
+    expect(out.usage.effectiveWindow).toBe(262_144);
+    expect(out.usage.fractionUsed).toBeCloseTo(145_000 / 262_144, 2);
+    expect(out.usage.level).toBe('trigger');
+    expect(isCompactedToolContent(String(out.messages[2]?.content))).toBe(true);
+    expect(isCompactedToolContent(String(out.messages[3]?.content))).toBe(true);
+    expect(isCompactedToolContent(String(out.messages[4]?.content))).toBe(true);
+    expect(isCompactedToolContent(String(out.messages[5]?.content))).toBe(true);
   });
 
   it('reduces on 1M-window models at the absolute compaction trigger (~200k)', async () => {

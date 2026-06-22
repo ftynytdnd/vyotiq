@@ -59,7 +59,19 @@ describe('classifyProviderError — kind mapping', () => {
     expect(err.friendlyMessage).not.toMatch(/Authentication failed/i);
   });
 
-  it('429 → rate-limit', () => {
+  it('429 with subscription-shaped body → billing (Ollama Cloud weekly quota)', () => {
+    const err = classifyProviderError({
+      ...baseInput,
+      status: 429,
+      statusText: 'Too Many Requests',
+      body: '{"error":"you (user) have reached your weekly usage limit, upgrade for higher limits: https://ollama.com/upgrade"}'
+    });
+    expect(err.kind).toBe('billing');
+    expect(err.friendlyMessage).toMatch(/weekly usage limit|upgrade/i);
+    expect(err.friendlyMessage).not.toMatch(/Rate limit exceeded/i);
+  });
+
+  it('429 without subscription hints → rate-limit', () => {
     expect(make(429).kind).toBe('rate-limit');
   });
 
@@ -187,6 +199,15 @@ describe('isNonRecoverableProviderError', () => {
     expect(isNonRecoverableProviderError(rate)).toBe(false);
     const server = classifyProviderError({ ...baseInput, status: 503 });
     expect(isNonRecoverableProviderError(server)).toBe(false);
+  });
+
+  it('returns true for Ollama-style 429 weekly quota errors', () => {
+    const err = classifyProviderError({
+      ...baseInput,
+      status: 429,
+      body: '{"error":"weekly usage limit, upgrade: https://ollama.com/upgrade"}'
+    });
+    expect(isNonRecoverableProviderError(err)).toBe(true);
   });
 
   it('does NOT mark a tool_choice 400 as non-recoverable (runLoop retries it)', () => {

@@ -36,7 +36,7 @@ vi.mock('@main/orchestrator/loop/handleAssistantTurn', () => ({
   handleAssistantTurn: vi.fn()
 }));
 vi.mock('@main/orchestrator/loop/handleToolCalls', () => ({
-  handleToolCalls: vi.fn(async () => ({ attempted: 1, failed: 0 }))
+  handleToolCalls: vi.fn(async () => ({ attempted: 1, failed: 0, duplicateFailures: 0 }))
 }));
 vi.mock('@main/orchestrator/contextManager', async () => {
   const real = await vi.importActual<

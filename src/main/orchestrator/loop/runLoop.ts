@@ -1141,30 +1141,34 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               lastToolRoundFailure = summary.lastFailure;
             }
             if (summary.attempted > 0 && summary.failed === summary.attempted) {
-              if (consecutiveBadToolRounds === 0 && summary.lastFailure) {
-                rootToolRoundFailure = summary.lastFailure;
-              }
-              consecutiveBadToolRounds += 1;
-              if (consecutiveBadToolRounds >= MAX_SELF_CORRECTION_ATTEMPTS) {
-                log.warn('tool-round sustained failures — harness recovery', {
-                  consecutiveBadToolRounds,
-                  iteration: iter,
-                  rootFailure: rootToolRoundFailure,
-                  lastFailure: lastToolRoundFailure
-                });
-                emit({
-                  kind: 'agent-thought',
-                  id: randomUUID(),
-                  ts: Date.now(),
-                  content: formatToolRecoveryThought(
+              const duplicateOnly =
+                summary.failed > 0 && summary.duplicateFailures === summary.failed;
+              if (!duplicateOnly) {
+                if (consecutiveBadToolRounds === 0 && summary.lastFailure) {
+                  rootToolRoundFailure = summary.lastFailure;
+                }
+                consecutiveBadToolRounds += 1;
+                if (consecutiveBadToolRounds >= MAX_SELF_CORRECTION_ATTEMPTS) {
+                  log.warn('tool-round sustained failures — harness recovery', {
                     consecutiveBadToolRounds,
-                    lastToolRoundFailure,
-                    rootToolRoundFailure
-                  ),
-                  severity: 'warn'
-                });
-                consecutiveBadToolRounds = 0;
-                rootToolRoundFailure = undefined;
+                    iteration: iter,
+                    rootFailure: rootToolRoundFailure,
+                    lastFailure: lastToolRoundFailure
+                  });
+                  emit({
+                    kind: 'agent-thought',
+                    id: randomUUID(),
+                    ts: Date.now(),
+                    content: formatToolRecoveryThought(
+                      consecutiveBadToolRounds,
+                      lastToolRoundFailure,
+                      rootToolRoundFailure
+                    ),
+                    severity: 'warn'
+                  });
+                  consecutiveBadToolRounds = 0;
+                  rootToolRoundFailure = undefined;
+                }
               }
             } else if (summary.attempted > 0) {
               consecutiveBadToolRounds = 0;

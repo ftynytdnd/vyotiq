@@ -16,7 +16,7 @@ import type { TimelineEvent } from '@shared/types/chat.js';
 import type { ToolResult } from '@shared/types/tool.js';
 import { getTool, isKnownToolName } from '../tools/registry.js';
 import { lookupCachedResult, recordToolResult } from './toolResultCache.js';
-import { checkToolCallDedupe, isSpinProneTool } from './toolCallDedupe.js';
+import { checkToolCallDedupe } from './toolCallDedupe.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child('orchestrator/toolRunner');
@@ -72,20 +72,14 @@ export async function runToolByName(
   }
   const tool = getTool(toolName)!;
 
-  // Spin-prone tools: dedupe before cache so a second identical call is blocked
-  // instead of silently replaying cached output.
-  if (isSpinProneTool(tool.name)) {
-    const blocked = blockDuplicateToolCall(tool.name, args, opts);
-    if (blocked) return blocked;
-  }
-
+  // Cache before dedupe: identical read-shaped calls replay the prior ok result
+  // with a pivot banner instead of emitting a synthetic duplicate_tool_call
+  // failure that bloats context and trips the three-strike tool recovery path.
   const cached = lookupCachedResult(opts.signal, tool.name, args, opts.conversationId);
   if (cached) return cached;
 
-  if (!isSpinProneTool(tool.name)) {
-    const blocked = blockDuplicateToolCall(tool.name, args, opts);
-    if (blocked) return blocked;
-  }
+  const blocked = blockDuplicateToolCall(tool.name, args, opts);
+  if (blocked) return blocked;
 
   try {
     const result = await tool.run(args, {

@@ -84,7 +84,7 @@ describe('runOrchestratorLoop — dynamic agent loop', () => {
     vi.mocked(handleAssistantTurn).mockReset();
     vi.mocked(handleToolCalls).mockReset();
     injectFollowUpMock.mockClear();
-    vi.mocked(handleToolCalls).mockResolvedValue({ attempted: 1, failed: 0 });
+    vi.mocked(handleToolCalls).mockResolvedValue({ attempted: 1, failed: 0, duplicateFailures: 0 });
   });
 
   it('does not inject a host nudge after an edit-only turn (model-directed loop)', async () => {

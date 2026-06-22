@@ -100,7 +100,14 @@ export function classifyProviderError(input: ClassifyInput): ProviderError {
  * We detect that case by scanning the response body for billing-shaped
  * vocabulary; everything else still classifies as `'auth'`.
  */
-const SUBSCRIPTION_HINTS = ['subscription', 'upgrade', 'plan', 'billing', 'quota'];
+const SUBSCRIPTION_HINTS = [
+  'subscription',
+  'upgrade',
+  'plan',
+  'billing',
+  'quota',
+  'usage limit'
+];
 
 function looksLikeSubscriptionError(body: string): boolean {
   if (!body) return false;
@@ -113,7 +120,7 @@ function pickKind(status: number, surface: ProviderErrorSurface, body: string): 
   if (status === 403) return looksLikeSubscriptionError(body) ? 'billing' : 'auth';
   if (status === 402) return 'billing';
   if (status === 404) return surface === 'chat' ? 'model-not-found' : 'endpoint-missing';
-  if (status === 429) return 'rate-limit';
+  if (status === 429) return looksLikeSubscriptionError(body) ? 'billing' : 'rate-limit';
   if (status >= 500 && status < 600) return 'server';
   return 'unknown';
 }
@@ -124,15 +131,16 @@ function describe(kind: ProviderErrorKind, input: ClassifyInput): string {
     case 'auth':
       return `${name}: Authentication failed (HTTP ${input.status}). Check the API key in Settings → Providers.`;
     case 'billing': {
-      // For HTTP 403 subscription-shaped errors the provider's own body
-      // is the most actionable text the user can read (typically a link
-      // to the upgrade page). Surface it instead of a generic balance
-      // line. Falls back to the generic message for true 402s.
-      if (input.status === 403) {
+      // For HTTP 403/429 subscription- or quota-shaped errors the provider's
+      // own body is the most actionable text (typically a link to upgrade).
+      // Surface it instead of a generic balance / rate-limit line.
+      if (input.status === 403 || input.status === 429) {
         const summary = summarizeBody(input.body);
         return summary
           ? `${name}: ${summary}`
-          : `${name}: This model requires a higher subscription tier. Switch models or upgrade at your provider dashboard.`;
+          : input.status === 429
+            ? `${name}: Usage quota exceeded. Switch models or upgrade at your provider dashboard.`
+            : `${name}: This model requires a higher subscription tier. Switch models or upgrade at your provider dashboard.`;
       }
       return `${name}: Insufficient balance. Top up at your provider dashboard or switch providers.`;
     }
