@@ -119,7 +119,8 @@ function makeStubApi() {
         createdAt: 0,
         updatedAt: 0
       })),
-      detach: vi.fn(async () => ({ ok: true }))
+      detach: vi.fn(async () => ({ ok: true })),
+      onUpdated: subscribe
     },
     conversations: {
       list: vi.fn(async () => []),

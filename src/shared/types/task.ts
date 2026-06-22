@@ -143,6 +143,13 @@ export function countCompleted(items: readonly TaskItem[]): number {
   return n;
 }
 
+/** Count of tasks that are not `cancelled` (pending, in_progress, or completed). */
+export function countActiveTasks(items: readonly TaskItem[]): number {
+  let n = 0;
+  for (const item of items) if (item.status !== 'cancelled') n += 1;
+  return n;
+}
+
 /**
  * Render a task list as a compact markdown checklist for the `<run_progress>`
  * context slot. Mirrors GFM checkbox semantics the model already understands.
@@ -167,6 +174,6 @@ export function renderTaskListMarkdown(items: readonly TaskItem[]): string {
     }
   });
   const done = countCompleted(items);
-  const active = items.filter((i) => i.status !== 'cancelled').length;
+  const active = countActiveTasks(items);
   return `Task plan (${done}/${active} done):\n${lines.join('\n')}`;
 }

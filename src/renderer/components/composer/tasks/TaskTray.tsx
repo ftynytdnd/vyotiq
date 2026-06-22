@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ListTodo, ChevronRight, Plus } from 'lucide-react';
 import type { TaskItem, TaskStatus } from '@shared/types/task.js';
-import { countCompleted } from '@shared/types/task.js';
+import { countActiveTasks, countCompleted } from '@shared/types/task.js';
 import { cn } from '../../../lib/cn.js';
 import { randomId } from '../../../lib/ids.js';
 import {
@@ -18,15 +18,15 @@ interface TaskTrayProps {
 
 export function TaskTray({ conversationId, tasks }: TaskTrayProps) {
   const setTasks = useTasksStore((s) => s.setTasks);
-  const [expanded, setExpanded] = useState(tasks.length === 0);
+  const [expanded, setExpanded] = useState(false);
   const [addDraft, setAddDraft] = useState('');
   const [ariaMessage, setAriaMessage] = useState('');
   const skipAriaOnMountRef = useRef(true);
 
   useEffect(() => {
     const completed = countCompleted(tasks);
-    const nonCancelled = tasks.filter((t) => t.status !== 'cancelled').length;
-    const message = `${nonCancelled} tasks, ${completed} done`;
+    const active = countActiveTasks(tasks);
+    const message = `${active} tasks, ${completed} done`;
     if (skipAriaOnMountRef.current) {
       skipAriaOnMountRef.current = false;
       return;
@@ -36,8 +36,8 @@ export function TaskTray({ conversationId, tasks }: TaskTrayProps) {
 
   const { done, active } = useMemo(() => {
     const completed = countCompleted(tasks);
-    const nonCancelled = tasks.filter((t) => t.status !== 'cancelled').length;
-    return { done: completed, active: nonCancelled };
+    const activeCount = countActiveTasks(tasks);
+    return { done: completed, active: activeCount };
   }, [tasks]);
 
   function persist(next: TaskItem[]) {

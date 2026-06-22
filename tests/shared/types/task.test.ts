@@ -4,6 +4,7 @@ import {
   mergeTaskItems,
   renderTaskListMarkdown,
   countCompleted,
+  countActiveTasks,
   TASK_LIST_MAX_ITEMS,
   TASK_CONTENT_MAX_CHARS,
   type TaskItem
@@ -118,6 +119,7 @@ describe('renderTaskListMarkdown / countCompleted', () => {
     expect(md).toContain('- [ ] later');
     expect(md).toContain('- [~] dropped (cancelled)');
     expect(countCompleted(items)).toBe(1);
+    expect(countActiveTasks(items)).toBe(3);
   });
 
   it('returns empty string for an empty list', () => {

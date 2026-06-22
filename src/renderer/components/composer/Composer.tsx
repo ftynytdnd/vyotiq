@@ -684,9 +684,6 @@ export function Composer({
             <div className="vx-composer-metrics-row__usage">
               <HeartbeatStatusPill
                 conversationId={conversationId}
-                workspaceId={activeWorkspaceIdForAttach}
-                modelProviderId={model?.providerId}
-                modelId={model?.modelId}
                 compact={metricsStreamCompact}
               />
               <TokenUsagePill

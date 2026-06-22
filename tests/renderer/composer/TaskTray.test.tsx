@@ -3,7 +3,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TaskTray } from '@renderer/components/composer/tasks/TaskTray';
 import { TaskTrayHost } from '@renderer/components/composer/tasks/TaskTrayHost';
@@ -45,8 +45,14 @@ describe('TaskTray', () => {
 
   it('adds a task and persists via tasks:set', async () => {
     const user = userEvent.setup();
-    render(<TaskTray conversationId="c1" tasks={[]} />);
+    render(
+      <TaskTray
+        conversationId="c1"
+        tasks={[{ id: '1', content: 'Existing', status: 'pending' }]}
+      />
+    );
 
+    await user.click(screen.getByRole('button', { name: /Tasks/i }));
     const input = screen.getByPlaceholderText('Add a task…');
     await user.type(input, 'New task{Enter}');
 
@@ -105,6 +111,32 @@ describe('TaskTrayHost', () => {
     expect(await screen.findByTestId('task-tray')).toBeInTheDocument();
     expect(await screen.findByText('0/2 done')).toBeInTheDocument();
     expect(useTasksStore.getState().byConversation.c1).toEqual(tasks);
+  });
+
+  it('hides the tray when the conversation has no tasks', async () => {
+    window.vyotiq.tasks.get = vi.fn(async (conversationId: string) => ({
+      conversationId,
+      items: [],
+      updatedAt: 0
+    })) as never;
+
+    const { queryByTestId } = render(<TaskTrayHost conversationId="c1" />);
+
+    await waitFor(() => expect(window.vyotiq.tasks.get).toHaveBeenCalledWith('c1'));
+    expect(queryByTestId('task-tray')).toBeNull();
+  });
+
+  it('hides the tray when every task is cancelled', async () => {
+    window.vyotiq.tasks.get = vi.fn(async (conversationId: string) => ({
+      conversationId,
+      items: [{ id: '1', content: 'Dropped step', status: 'cancelled' }],
+      updatedAt: 0
+    })) as never;
+
+    const { queryByTestId } = render(<TaskTrayHost conversationId="c1" />);
+
+    await waitFor(() => expect(window.vyotiq.tasks.get).toHaveBeenCalledWith('c1'));
+    expect(queryByTestId('task-tray')).toBeNull();
   });
 
   it('renders nothing without a conversation id', () => {
