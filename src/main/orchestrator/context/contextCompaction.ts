@@ -61,6 +61,7 @@ import {
 import {
   buildContextSummaryMessage,
   isContextSummaryContent,
+  resolveSummarizationCandidates,
   summarizeHistory
 } from './contextSummarize.js';
 import { stripOldVisionParts } from './visionCompaction.js';
@@ -439,16 +440,25 @@ export async function reduceContextIfNeeded(
       (m) => !isContextSummaryContent(chatContentToText(m.content))
     );
     if (summarizable) {
-      const summaryModel = settings.summaryModel;
-      const result = await summarizeHistory({
+      const candidates = await resolveSummarizationCandidates(opts.settings, {
+        providerId: opts.providerId,
+        modelId: opts.modelId
+      });
+      const { result, failureMessage } = await summarizeHistory({
         history: histSlice,
-        providerId: summaryModel?.providerId ?? opts.providerId,
-        modelId: summaryModel?.modelId ?? opts.modelId,
+        candidates,
         conversationId: opts.conversationId,
         runId: opts.runId,
         workspacePath: opts.workspacePath,
         ...(opts.signal ? { signal: opts.signal } : {})
       });
+      if (failureMessage) {
+        log.warn('context summarization skipped after model failures', {
+          runId: opts.runId,
+          conversationId: opts.conversationId,
+          err: failureMessage
+        });
+      }
       if (result) {
         const summaryMsg: ChatMessage = {
           role: 'user',
@@ -549,40 +559,61 @@ export interface ReduceContextResult {
 
 export { isCompactedToolContent, buildCompactionBanner };
 
+export interface ResetContextToSummaryResult {
+  messages: ChatMessage[];
+  /** True when history was collapsed into a summary block. */
+  summarized: boolean;
+  /** Set when summarization was needed but every model candidate failed. */
+  failureMessage?: string;
+}
+
 /**
  * In-place context reset for the manual "Reset context" control: summarize the
  * ENTIRE history slice into a single structured block and continue from it
  * (mirrors Claude Code `/compact`). Always runs summarization regardless of
- * thresholds. Returns the reduced messages, or the original when there is
- * nothing to summarize or the model call fails.
+ * thresholds.
  */
 export async function resetContextToSummary(
   messages: readonly ChatMessage[],
   opts: ReduceContextOpts,
   state: ContextReductionState
-): Promise<ChatMessage[]> {
-  if (!opts.conversationId) return [...messages];
+): Promise<ResetContextToSummaryResult> {
+  if (!opts.conversationId) {
+    return { messages: [...messages], summarized: false };
+  }
 
   const next = messages.map((m) => ({ ...m }));
   migrateToCacheLayeredInPlace(next);
-  if (!isCacheLayeredTopology(next)) return [...messages];
+  if (!isCacheLayeredTopology(next)) {
+    return { messages: [...messages], summarized: false };
+  }
   const histSlice = next.slice(CACHE_LAYER_HISTORY_START, next.length - 2);
   const summarizable = histSlice.some(
     (m) => !isContextSummaryContent(chatContentToText(m.content))
   );
-  if (!summarizable) return [...messages];
+  if (!summarizable) {
+    return { messages: [...messages], summarized: false };
+  }
 
-  const summaryModel = opts.settings.summaryModel;
-  const result = await summarizeHistory({
+  const candidates = await resolveSummarizationCandidates(opts.settings, {
+    providerId: opts.providerId,
+    modelId: opts.modelId
+  });
+  const { result, failureMessage } = await summarizeHistory({
     history: histSlice,
-    providerId: summaryModel?.providerId ?? opts.providerId,
-    modelId: summaryModel?.modelId ?? opts.modelId,
+    candidates,
     conversationId: opts.conversationId,
     runId: opts.runId,
     workspacePath: opts.workspacePath,
     ...(opts.signal ? { signal: opts.signal } : {})
   });
-  if (!result) return [...messages];
+  if (!result) {
+    return {
+      messages: [...messages],
+      summarized: false,
+      ...(failureMessage ? { failureMessage } : {})
+    };
+  }
 
   const summaryMsg: ChatMessage = {
     role: 'user',
@@ -612,7 +643,9 @@ export async function resetContextToSummary(
   log.info('context reset via summary', {
     runId: opts.runId,
     conversationId: opts.conversationId,
-    originalMessages: result.originalMessages
+    originalMessages: result.originalMessages,
+    providerId: result.providerId,
+    modelId: result.modelId
   });
-  return next;
+  return { messages: next, summarized: true };
 }

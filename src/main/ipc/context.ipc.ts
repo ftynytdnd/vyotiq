@@ -156,7 +156,14 @@ async function runManualReduction(
         tokensRemoved = result.tokensRemoved;
       }
     } else {
-      await resetContextToSummary(seeded, opts, createContextReductionState());
+      const reset = await resetContextToSummary(seeded, opts, createContextReductionState());
+      if (reset.failureMessage) {
+        return {
+          ok: false,
+          reason: 'failed',
+          message: reset.failureMessage
+        };
+      }
     }
   } catch (err) {
     log.warn('manual context reduction failed', {

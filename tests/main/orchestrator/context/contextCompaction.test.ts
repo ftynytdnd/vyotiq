@@ -69,17 +69,24 @@ function defaultTokenizeResult() {
 }
 
 const summarizeHistoryMock = vi.fn(async () => ({
-  summary: '## Task intent\ncompacted',
-  relativePath: '.vyotiq/context-summaries/conv-sum/run-sum/s.txt',
-  originalChars: 12_000,
-  originalMessages: 8
+  result: {
+    summary: '## Task intent\ncompacted',
+    relativePath: '.vyotiq/context-summaries/conv-sum/run-sum/s.txt',
+    originalChars: 12_000,
+    originalMessages: 8,
+    providerId: 'openai',
+    modelId: 'gpt-4o'
+  }
 }));
 
 vi.mock('@main/orchestrator/context/contextSummarize', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/orchestrator/context/contextSummarize')>();
   return {
     ...actual,
-    summarizeHistory: (...args: unknown[]) => summarizeHistoryMock(...args)
+    summarizeHistory: (...args: unknown[]) => summarizeHistoryMock(...args),
+    resolveSummarizationCandidates: vi.fn(async () => [
+      { providerId: 'openai', modelId: 'gpt-4o' }
+    ])
   };
 });
 
