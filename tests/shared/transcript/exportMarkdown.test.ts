@@ -15,4 +15,24 @@ describe('renderTranscriptMarkdown', () => {
     expect(md).toContain('Hello');
     expect(md).toContain('Hi there');
   });
+
+  it('renders todos-update snapshots as markdown checklists', () => {
+    const events: TimelineEvent[] = [
+      {
+        kind: 'todos-update',
+        id: 'todos-1',
+        ts: 3_000,
+        conversationId: 'c1',
+        items: [
+          { id: '1', content: 'Ship feature', status: 'completed' },
+          { id: '2', content: 'Write tests', status: 'in_progress' }
+        ]
+      }
+    ];
+    const md = renderTranscriptMarkdown(events);
+    expect(md).toContain('### Tasks ·');
+    expect(md).toContain('Task plan (1/2 done)');
+    expect(md).toContain('- [x] Ship feature');
+    expect(md).toContain('- [ ] Write tests (in progress)');
+  });
 });

@@ -10,7 +10,7 @@ let mainWindowRef: BrowserWindow | null = null;
 export function setMainWindow(win: BrowserWindow | null): void {
   mainWindowRef = win;
   if (win) {
-    win.on('closed', () => {
+    win.once('closed', () => {
       if (mainWindowRef === win) mainWindowRef = null;
     });
   }

@@ -350,6 +350,12 @@ export interface ProviderModelsUpdate {
   lastDiscoveredAt: number;
 }
 
+/** IPC result for `providers:discoverModels` — mirrors main-process cache timestamp. */
+export interface ProviderDiscoverModelsResult {
+  models: ModelInfo[];
+  lastDiscoveredAt: number;
+}
+
 /** Push payload when background discovery poll failures warrant a Settings hint. */
 export interface ProviderDiscoveryPollHint {
   providerId: string;

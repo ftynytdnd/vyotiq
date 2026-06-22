@@ -1,5 +1,5 @@
 import { useSettingsStore } from '../../store/useSettingsStore.js';
-import { vyotiq } from '../../lib/ipc.js';
+import { persistSettingsPatch } from '../../lib/persistSettingsPatch.js';
 import { resolveReportsSettings } from '@shared/report/reportsSettings.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { ShellCaption, ShellSection } from '../ui/ShellSection.js';
@@ -7,14 +7,12 @@ import { SettingsSwitchRow } from './SettingsSwitchRow.js';
 
 export function ReportsPanel() {
   const settings = useSettingsStore((s) => s.settings);
-  const refresh = useSettingsStore((s) => s.refresh);
   const reports = resolveReportsSettings(settings.ui);
 
   const apply = (patch: Partial<NonNullable<typeof settings.ui>['reports']>) => {
-    void vyotiq.settings
-      .set({ ui: { reports: { ...settings.ui?.reports, ...patch } } })
-      .then(() => refresh())
-      .catch((err) => {
+    void persistSettingsPatch({
+      ui: { reports: { ...settings.ui?.reports, ...patch } }
+    }).catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
         useToastStore.getState().show(`Could not save report settings: ${msg}`, 'danger');
       });

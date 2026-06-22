@@ -391,6 +391,12 @@ export const IPC = {
   /** Push: follow-up state changed for a conversation (main → renderer). */
   FOLLOW_UPS_UPDATED: 'follow-ups:updated',
 
+  // Tasks / todos (per-conversation structured task list)
+  /** renderer → main: read the current task list for a conversation. */
+  TASKS_GET: 'tasks:get',
+  /** renderer → main: persist a user-edited task list for a conversation. */
+  TASKS_SET: 'tasks:set',
+
   /** Push: scoped toast notification (main → renderer). */
   UI_TOAST: 'ui:toast',
 
@@ -501,7 +507,6 @@ export const IPC = {
   BROWSER_FIND: 'browser:find',
   BROWSER_STOP_FIND: 'browser:stop-find',
   BROWSER_OPEN_EXTERNAL: 'browser:open-external',
-  BROWSER_CAPTURE: 'browser:capture',
   CAPTURE_LIST_SOURCES: 'capture:list-sources',
   CAPTURE_SCREEN: 'capture:screen',
   CAPTURE_BROWSER: 'capture:browser',

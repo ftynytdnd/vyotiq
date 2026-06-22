@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { resolvePromptCachingSettings } from '@shared/settings/promptCachingSettings.js';
 import type { PromptCacheRuntimeStatus } from '@shared/types/promptCache.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
+import { persistSettingsPatch } from '../../lib/persistSettingsPatch.js';
 import { useChatStore } from '../../store/useChatStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { vyotiq } from '../../lib/ipc.js';
@@ -29,7 +30,6 @@ function formatGeminiCacheState(status: PromptCacheRuntimeStatus['geminiExplicit
 
 export function PromptCachingPanel() {
   const settings = useSettingsStore((s) => s.settings);
-  const refresh = useSettingsStore((s) => s.refresh);
   const promptCaching = resolvePromptCachingSettings(settings.ui);
   const orchestratorUsage = useChatStore((s) => s.orchestratorUsage);
   const lastMissReason = useChatStore((s) => s.lastPromptCacheMissReason);
@@ -53,10 +53,9 @@ export function PromptCachingPanel() {
   }, [refreshRuntime, promptCaching.geminiExplicitCache]);
 
   const apply = (patch: Partial<NonNullable<typeof settings.ui>['promptCaching']>) => {
-    void vyotiq.settings
-      .set({ ui: { promptCaching: { ...settings.ui?.promptCaching, ...patch } } })
-      .then(() => refresh())
-      .catch((err) => {
+    void persistSettingsPatch({
+      ui: { promptCaching: { ...settings.ui?.promptCaching, ...patch } }
+    }).catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
         useToastStore.getState().show(`Could not save prompt caching settings: ${msg}`, 'danger');
       });

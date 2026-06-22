@@ -184,7 +184,7 @@ export function HarnessPanel() {
             }}
             spellCheck={false}
             rows={16}
-            className="vx-textarea font-mono text-[12px] leading-relaxed"
+            className="vx-textarea font-mono text-chat-meta leading-relaxed"
             aria-label={`Harness section ${SECTION_LABELS[activeId]}`}
           />
         )}

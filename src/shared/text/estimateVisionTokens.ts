@@ -2,8 +2,11 @@
  * Estimate vision image token cost from encoded dimensions (2026 heuristic).
  *
  * OpenAI-style tile model: 512px tiles, ~170 tokens per tile (low detail
- * baseline). Used for composer pre-flight when exact provider counts are
- * unavailable.
+ * baseline). Used for composer pre-flight and context-budget metering when
+ * provider count endpoints are unavailable (they are text-only). The context
+ * meter surfaces these as approximate (`exact: false`; vision row labelled
+ * "est" in the breakdown popover) until a turn's real `usage.promptTokens`
+ * calibrates the text portion.
  */
 
 import type { ChatContentPart } from '../types/chat.js';

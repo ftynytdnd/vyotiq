@@ -108,14 +108,4 @@ export function registerCaptureIpc(): void {
       return captureByTarget(workspacePath, 'window');
     }
   );
-
-  wrapIpcHandler(
-    IPC.BROWSER_CAPTURE,
-    async (_event, input: CaptureBrowserInput): Promise<CaptureResult> => {
-      assertObject('browser:capture', 'input', input);
-      assertString('browser:capture', 'workspaceId', input.workspaceId);
-      const workspacePath = await requireWorkspaceById(input.workspaceId);
-      return captureBrowserToWorkspace(workspacePath);
-    }
-  );
 }

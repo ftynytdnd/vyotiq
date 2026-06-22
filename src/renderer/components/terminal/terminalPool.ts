@@ -186,3 +186,11 @@ export function disposeTerminalEntry(sessionId: string): void {
   entry.host.remove();
   pool.delete(sessionId);
 }
+
+/** Drop pooled xterm instances that no longer belong to the active workspace. */
+export function disposeStaleTerminalEntries(keepSessionIds: Iterable<string>): void {
+  const keep = new Set(keepSessionIds);
+  for (const sessionId of [...pool.keys()]) {
+    if (!keep.has(sessionId)) disposeTerminalEntry(sessionId);
+  }
+}

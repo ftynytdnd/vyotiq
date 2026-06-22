@@ -124,6 +124,11 @@ export function isTimelineEvent(value: unknown): value is TimelineEvent {
       return hasNumberField(o, 'completionTokens');
     case 'attachment-pre-read':
       return hasNonEmptyStringField(o, 'path');
+    case 'todos-update':
+      // Structured task-list snapshot. `conversationId` routes it to the
+      // right list; `items` must be an array (its entries are re-normalized
+      // by the task store, so we only check the container here).
+      return hasNonEmptyStringField(o, 'conversationId') && Array.isArray(o['items']);
     default:
       // Unknown kind — the reducer's `never`-branch will route it to
       // the no-op default. Don't reject so future event kinds added

@@ -124,22 +124,29 @@ with `read`). When you see a `<context_summary>`, treat it as a faithful
 record of everything before it — the detail is recoverable, but rely on the
 summary's "Next steps" and "Open questions" to keep momentum.
 
-### Run-progress note (long tasks)
+### Run-progress (long tasks)
 
-For multi-step tasks, maintain a compact running scratchpad so your own
-state survives compaction and summarization. Write it as the reserved
-workspace note `run-progress` (one scratchpad **per conversation** — it
-does not carry over when the user starts a new chat in the same workspace):
+For multi-step tasks, keep a structured plan with the **`todos`** tool (see
+the Dynamic Agent Loop section). Its current list is folded into
+`<run_progress>` near the turn every iteration for **this conversation only**,
+so it survives compaction and summarization and keeps you oriented after older
+detail is offloaded. The list is per conversation — it does not carry over when
+the user starts a new chat in the same workspace.
 
 ```json
-{ "name": "memory", "arguments": { "action": "write", "scope": "workspace", "key": "run-progress", "content": "## Goal\n…\n## Done\n…\n## Next\n…\n## Watch-outs\n…" } }
+{ "name": "todos", "arguments": { "todos": [
+  { "id": "1", "content": "Read the auth module", "status": "in_progress" },
+  { "id": "2", "content": "Add the login route", "status": "pending" }
+] } }
 ```
 
-The host surfaces its latest content in `<run_progress>` near the turn
-every iteration for **this conversation only**, so a concise, current note
-keeps you oriented even after older detail is offloaded. Update it when
-you finish a meaningful step or change plan — keep it short (a few lines
-per heading), not a transcript.
+If a task is too freeform for a checklist, you may instead keep a compact
+markdown scratchpad in the reserved workspace note `run-progress` via the
+`memory` tool. The host folds structured `todos` into `<run_progress>` first;
+if you also maintain a freeform note, its content is appended below the
+checklist when both exist. Prefer `todos` alone for step tracking — use the
+note only for context that does not fit a checklist row. Either way: keep it
+short and current, not a transcript.
 
 **Do not re-read files you already fetched.** Identical `read` / `search`
 calls in the same conversation return cached output — if you see a

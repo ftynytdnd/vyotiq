@@ -3,16 +3,18 @@
  * Used by timeline revert rows, floating live diff, and edit approval.
  */
 
-import { useState } from 'react';
+import { useEffect } from 'react';
 import type { DiffHunk } from '@shared/types/tool.js';
 import type { DiffViewVariant } from '../timeline/tools/edit/diff/DiffHunk.js';
 import type { ReviewLinePickProps } from '../timeline/tools/edit/diff/diffLinePick.js';
+import { persistSettingsPatch } from '../../lib/persistSettingsPatch.js';
+import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { DiffLayoutToggle } from './DiffLayoutToggle.js';
 import { SplitDiffViewer } from './SplitDiffViewer.js';
 import { UnifiedDiffBody } from './UnifiedDiffBody.js';
 import {
-  readDiffLayoutPref,
-  writeDiffLayoutPref,
+  resolveDiffLayoutPref,
+  takeLegacyDiffLayoutPref,
   type DiffLayoutMode
 } from './diffLayoutPref.js';
 
@@ -32,11 +34,17 @@ export function DiffViewer({
   linePick,
   showLayoutToggle = true
 }: DiffViewerProps) {
-  const [layout, setLayout] = useState<DiffLayoutMode>(() => readDiffLayoutPref());
+  const settingsUi = useSettingsStore((s) => s.settings.ui);
+  const layout = resolveDiffLayoutPref(settingsUi);
+
+  useEffect(() => {
+    const legacy = takeLegacyDiffLayoutPref(settingsUi);
+    if (!legacy) return;
+    void persistSettingsPatch({ ui: { diffLayout: legacy } });
+  }, [settingsUi]);
 
   const onLayoutChange = (mode: DiffLayoutMode) => {
-    setLayout(mode);
-    writeDiffLayoutPref(mode);
+    void persistSettingsPatch({ ui: { diffLayout: mode } });
   };
 
   const diffProps = {

@@ -147,6 +147,10 @@ export function ToolInvocation({
     case 'ask_user':
       // Interactive UI lives on dedicated `ask-user-prompt` rows only.
       return null;
+    case 'todos':
+      // Task state surfaces live in the composer task tray; the tool is
+      // hidden from the activity lane (see `timelineHiddenTools`).
+      return null;
     case 'finish':
       return null;
     case 'heartbeat':

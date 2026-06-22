@@ -12,6 +12,7 @@ import { app, BrowserWindow } from 'electron';
 // Required for renderer getUserMedia desktop capture (chromeMediaSource) on Windows.
 app.commandLine.appendSwitch('enable-usermedia-screen-capturing');
 import { createMainWindow } from './window/createMainWindow.js';
+import { closeReportWindow } from './window/reportBrowserWindow.js';
 import { requestUserAttention } from './window/requestUserAttention.js';
 import { isBrowserWebContents } from './window/browserManager.js';
 import { migrateUserDataLayout } from './paths/migrateUserDataLayout.js';
@@ -134,6 +135,7 @@ async function bootstrap() {
   // after a 30 s idle delay to reclaim dirs from crashed / partial
   // deletes without impacting boot time.
   const gcTimer = setTimeout(() => {
+    bootGcTimer = null;
     sweepOrphanAttachments().catch((err) =>
       log.warn('orphan attachment sweep failed', { err })
     );
@@ -144,6 +146,7 @@ async function bootstrap() {
       log.warn('orphan compaction sweep failed', { err })
     );
   }, 30_000);
+  bootGcTimer = gcTimer;
   gcTimer.unref();
 
   app.on('activate', async () => {
@@ -166,13 +169,20 @@ app.on('window-all-closed', () => {
 // guard prevents an infinite loop when the post-flush `app.quit()` re-
 // enters this handler.
 let isShuttingDown = false;
+/** Boot orphan-sweeper — cleared on quit so it cannot fire during teardown. */
+let bootGcTimer: ReturnType<typeof setTimeout> | null = null;
 app.on('before-quit', (event) => {
+  if (bootGcTimer) {
+    clearTimeout(bootGcTimer);
+    bootGcTimer = null;
+  }
   for (const info of listActiveRuns()) {
     abortRun(info.runId);
   }
   stopScheduledRunsService();
   stopConversationHeartbeatService();
   teardownCaptureFramebufferBridge();
+  closeReportWindow();
   clearAllPreparedMediaCaches();
   if (isShuttingDown) return;
   isShuttingDown = true;

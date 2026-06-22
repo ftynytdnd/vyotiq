@@ -8,6 +8,8 @@
  * from. `output` remains a plain string so the LLM contract is unchanged.
  */
 
+import type { TaskItem } from './task.js';
+
 /**
  * Tool names actually present in the registry — the canonical actuator
  * catalogue. Every entry maps 1:1 to a file under `src/main/tools/*.tool.ts`.
@@ -23,6 +25,7 @@ export type RegisteredToolName =
   | 'memory'
   | 'recall'
   | 'context'
+  | 'todos'
   | 'report'
   | 'capture'
   | 'heartbeat'
@@ -50,6 +53,7 @@ export const REGISTERED_TOOL_NAMES = [
   'memory',
   'recall',
   'context',
+  'todos',
   'report',
   'capture',
   'heartbeat',
@@ -265,6 +269,22 @@ export type ToolData =
     alreadyListed?: boolean;
     /** Markdown body the renderer can show on expand (catalogue or pack). */
     preview?: string;
+  }
+  | {
+    /**
+     * Structured task list — `read` returns the current list, `write`
+     * persists a new snapshot. The renderer's invocation UI shows the
+     * task count; live task state surfaces in the composer task tray via
+     * the `todos-update` timeline event.
+     */
+    tool: 'todos';
+    action: 'read' | 'write';
+    /** Whether the write merged by id (true) or replaced the list (false). */
+    merged?: boolean;
+    /** Number of items in the resulting list. */
+    count: number;
+    /** Full resulting list (authoritative snapshot). */
+    items: TaskItem[];
   }
 export interface ToolResult {
   id: string;

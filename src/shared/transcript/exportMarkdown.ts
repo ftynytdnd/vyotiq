@@ -3,6 +3,7 @@
  */
 
 import type { TimelineEvent } from '../types/chat.js';
+import { renderTaskListMarkdown } from '../types/task.js';
 
 function coalesceStreaming(events: ReadonlyArray<TimelineEvent>): {
   textById: Map<string, string>;
@@ -132,7 +133,13 @@ export function renderTranscriptMarkdown(
       case 'synthetic-usage-update':
       case 'attachment-pre-read':
       case 'assistant-image':
+      case 'todos-update': {
+        const checklist = renderTaskListMarkdown(e.items);
+        if (checklist.length > 0) {
+          lines.push(`### Tasks · ${formatTimestamp(e.ts)}`, '', checklist, '');
+        }
         break;
+      }
       default: {
         const _exhaustive: never = e;
         void _exhaustive;

@@ -7,9 +7,9 @@
  */
 
 import { useState } from 'react';
-import { vyotiq } from '../../lib/ipc.js';
 import { resolveAgentBehaviorSettings } from '@shared/settings/agentBehaviorSettings.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
+import { persistSettingsPatch } from '../../lib/persistSettingsPatch.js';
 import { useProviderStore } from '../../store/useProviderStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { ShellCaption, ShellSection } from '../ui/ShellSection.js';
@@ -21,22 +21,18 @@ type ContextManagementPatch = Partial<
 
 export function ContextManagementPanel() {
   const settings = useSettingsStore((s) => s.settings);
-  const refresh = useSettingsStore((s) => s.refresh);
   const providers = useProviderStore((s) => s.providers);
   const cm = resolveAgentBehaviorSettings(settings.ui).contextManagement;
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const apply = (patch: ContextManagementPatch) => {
-    void vyotiq.settings
-      .set({
-        ui: {
-          agentBehavior: {
-            contextManagement: { ...settings.ui?.agentBehavior?.contextManagement, ...patch }
-          }
+    void persistSettingsPatch({
+      ui: {
+        agentBehavior: {
+          contextManagement: { ...settings.ui?.agentBehavior?.contextManagement, ...patch }
         }
-      })
-      .then(() => refresh())
-      .catch((err) => {
+      }
+    }).catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
         useToastStore.getState().show(`Could not save context settings: ${msg}`, 'danger');
       });

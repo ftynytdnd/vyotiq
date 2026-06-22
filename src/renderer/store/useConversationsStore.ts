@@ -30,6 +30,7 @@ import { vyotiq } from '../lib/ipc.js';
 import { logger } from '../lib/logger.js';
 import { useChatStore } from './useChatStore.js';
 import { useCheckpointsStore } from './useCheckpointsStore.js';
+import { useTasksStore } from './useTasksStore.js';
 import { useTimelineUiStore } from './useTimelineUiStore.js';
 import { useWorkspaceStore } from './useWorkspaceStore.js';
 import { useSettingsStore } from './useSettingsStore.js';
@@ -655,6 +656,7 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
     // Drop the slice + any dangling runId mappings.
     useChatStore.getState().dropConversation(id);
     useCheckpointsStore.getState().dropConversation(id);
+    useTasksStore.getState().pruneConversation(id);
     const pinned = useSettingsStore.getState().settings.ui?.pinnedConversationIds;
     const nextPinned = prunePinnedConversationIds(pinned, id);
     if (nextPinned !== pinned) {

@@ -226,6 +226,8 @@ function verbFor(name: ToolName, pending = false): string {
       case 'memory': return 'Memory';
       case 'recall': return 'Recalling';
       case 'context': return 'Loading';
+      // `todos` is timeline-hidden; branches kept for exhaustive ToolName switch.
+      case 'todos': return 'Planning';
       case 'report': return 'Writing';
       case 'capture': return 'Capturing';
       case 'heartbeat': return 'Heartbeat';
@@ -250,6 +252,7 @@ function verbFor(name: ToolName, pending = false): string {
     case 'memory': return 'Memory';
     case 'recall': return 'Recalled';
     case 'context': return 'Loaded';
+    case 'todos': return 'Updated tasks';
     case 'report': return 'Wrote';
     case 'capture': return 'Captured';
     case 'heartbeat': return 'Heartbeat';
@@ -276,6 +279,7 @@ function unitFor(name: ToolName, singular: boolean): string {
     case 'memory': return singular ? 'note' : 'notes';
     case 'recall': return singular ? 'conversation' : 'conversations';
     case 'context': return singular ? 'pack' : 'packs';
+    case 'todos': return singular ? 'task update' : 'task updates';
     case 'report': return singular ? 'report' : 'reports';
     case 'capture': return singular ? 'screenshot' : 'screenshots';
     case 'heartbeat': return singular ? 'heartbeat' : 'heartbeats';
@@ -428,6 +432,10 @@ function extractPrimary(name: ToolName, child: ToolGroupChild): string {
       if (action === 'load') return pack || 'pack';
       if (action === 'list') return 'catalogue';
       return action;
+    }
+    case 'todos': {
+      const count = data?.tool === 'todos' ? data.count : 0;
+      return count === 1 ? '1 task' : `${count} tasks`;
     }
     case 'report': {
       const title =

@@ -95,10 +95,10 @@ export function buildContextPressureXml(level: ContextLevel): string {
   if (level === 'ok') return '';
   const body =
     level === 'critical'
-      ? 'Context is at the compaction threshold. Older detail is being offloaded to keep reasoning sharp. Persist anything load-bearing NOW to your `run-progress` note (via the `memory` tool) — file paths, key decisions, and the exact next step — and prefer finishing or narrowing scope over starting new exploration.'
+      ? 'Context is at the compaction threshold. Older detail is being offloaded to keep reasoning sharp. Persist anything load-bearing NOW via the `todos` tool (or a `run-progress` memory note as fallback) — file paths, key decisions, and the exact next step — and prefer finishing or narrowing scope over starting new exploration.'
       : level === 'trigger'
-        ? 'Context has crossed the reduction threshold; older tool output is being offloaded reversibly (recoverable via `read`). Make sure your `run-progress` note captures the current plan, decisions, and next step so progress survives compaction.'
-        : 'Context is filling up. Keep your `run-progress` note current (plan, key decisions, next step) so nothing important is lost if older detail is offloaded.';
+        ? 'Context has crossed the reduction threshold; older tool output is being offloaded reversibly (recoverable via `read`). Make sure your `todos` list (or `run-progress` note) captures the current plan, decisions, and next step so progress survives compaction.'
+        : 'Context is filling up. Keep your `todos` list current (plan, key decisions, next step) so nothing important is lost if older detail is offloaded.';
   return wrapXml('context_pressure', body);
 }
 

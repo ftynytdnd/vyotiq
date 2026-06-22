@@ -84,4 +84,20 @@ describe('readTranscriptBefore', () => {
     expect(page.events.map((e) => e.id)).toEqual(['evt-4', 'evt-5', 'evt-6']);
     expect(page.hasOlder).toBe(true);
   });
+
+  it('strips legacy phase rows from paged reads', async () => {
+    const store = await importStore();
+    await store.appendEvent(conversationId, userPrompt('evt-0', 'hello'));
+    await store.appendEvent(conversationId, {
+      kind: 'phase',
+      id: 'legacy-phase',
+      ts: Date.now(),
+      name: 'old'
+    } as TimelineEvent);
+    await store.appendEvent(conversationId, userPrompt('evt-1', 'after'));
+    const tail = await store.readTranscriptTail(conversationId, 10);
+    expect(tail.events.map((e) => e.kind)).toEqual(['user-prompt', 'user-prompt']);
+    const page = await store.readTranscriptBefore(conversationId, 'evt-1', 10);
+    expect(page.events.map((e) => e.kind)).toEqual(['user-prompt']);
+  });
 });

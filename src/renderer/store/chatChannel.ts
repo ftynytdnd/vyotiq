@@ -34,6 +34,7 @@ import { vyotiq } from '../lib/ipc.js';
 import { useChatStore } from './useChatStore.js';
 import { useConversationsStore } from './useConversationsStore.js';
 import { useToastStore } from './useToastStore.js';
+import { useTasksStore } from './useTasksStore.js';
 import { resolveRunSummaryOfferFromRunId } from '../lib/runSummaryOffer.js';
 import { useSettingsStore } from './useSettingsStore.js';
 import { resolveReportsSettings } from '@shared/report/reportsSettings.js';
@@ -743,6 +744,14 @@ export async function bootstrapChatChannel(): Promise<void> {
         }
         if (event.kind === 'diff-stream' || event.kind === 'file-edit') {
           syncEditorFromAgentEvent(event);
+        }
+        if (event.kind === 'todos-update') {
+          // Live task-list snapshot (agent write). Route by the event's own
+          // conversationId so it lands on the right list even when the run
+          // belongs to a background conversation. Falls through to
+          // dispatchTimelineEvent below so the in-memory transcript mirrors
+          // disk (deriveRows ignores it — no inline row).
+          useTasksStore.getState().applyUpdate(event.conversationId, event.items);
         }
         // Route streaming partial-args deltas through the RAF
         // batcher so a high-frequency stream produces at most one

@@ -36,6 +36,7 @@ import { atomicWriteString } from '../checkpoints/atomicWrite.js';
 import { deleteAttachmentsForConversation } from '../attachments/gc.js';
 import { detachConversationHeartbeat } from '../heartbeat/conversationHeartbeatStore.js';
 import { dropFollowUpsForConversation } from '../followUps/followUpQueueService.js';
+import { deleteTaskList } from '../tasks/taskStore.js';
 import {
   cleanupCompactionArtifactsForConversation,
   cleanupSummaryArtifactsForConversation
@@ -501,6 +502,12 @@ function pickPruneVictim(list: ConversationMeta[]): ConversationMeta | undefined
 function purgeConversationSidecars(id: string, workspaceId: string | undefined): void {
   void detachConversationHeartbeat(id);
   dropFollowUpsForConversation(id);
+  void deleteTaskList(id).catch((err: unknown) => {
+    log.warn('failed to delete task sidecar on conversation purge', {
+      conversationId: id,
+      err: err instanceof Error ? err.message : String(err)
+    });
+  });
   if (!workspaceId) return;
   void cleanupCheckpointsForConversation(id, workspaceId).catch((err: unknown) => {
     log.warn('failed to clean checkpoint sidecars on conversation purge', {
@@ -1105,7 +1112,7 @@ export async function readTranscriptTail(
     if (tail.length > limit) tail.shift();
     return true;
   });
-  const events = stripLegacySummaryTimelineEvents(tail);
+  const events = normalizeLegacyTranscript(stripLegacySummaryTimelineEvents(tail));
   return {
     events,
     totalCount,
@@ -1134,7 +1141,7 @@ export async function readTranscriptBefore(
   if (!found) {
     throw new Error(`readTranscriptBefore: event not found (${beforeEventId})`);
   }
-  const filtered = stripLegacySummaryTimelineEvents(before);
+  const filtered = normalizeLegacyTranscript(stripLegacySummaryTimelineEvents(before));
   const sliceStart = Math.max(0, filtered.length - limit);
   return {
     events: filtered.slice(sliceStart),
@@ -1221,10 +1228,7 @@ export async function readConversation(id: string): Promise<Conversation | null>
   await loadIndex();
   const meta = findMeta(id);
   if (!meta) return null;
-  // Normalize legacy transcript shapes on load (drops obsolete lifecycle rows,
-  // strips legacy worker ids from surviving events).
-  const rawEvents = await readTranscript(id);
-  const events = normalizeLegacyTranscript(rawEvents);
+  const events = await readTranscript(id);
   const peak = peakOrchestratorPromptTokens(events);
   if (peak > (meta.peakPromptTokens ?? 0)) {
     meta.peakPromptTokens = peak;
@@ -1241,8 +1245,7 @@ export async function readConversationTail(
   await loadIndex();
   const meta = findMeta(id);
   if (!meta) return null;
-  const { events: rawEvents, totalCount, hasOlder } = await readTranscriptTail(id, limit);
-  const events = normalizeLegacyTranscript(rawEvents);
+  const { events, totalCount, hasOlder } = await readTranscriptTail(id, limit);
   const peak = peakOrchestratorPromptTokens(events);
   if (peak > (meta.peakPromptTokens ?? 0)) {
     meta.peakPromptTokens = peak;
@@ -1405,6 +1408,41 @@ export async function deriveTitleIfFresh(id: string, prompt: string): Promise<vo
   scheduleIndexFlush();
 }
 
+const FLUSH_DRAIN_MAX_PASSES = 32;
+const FLUSH_HARD_TIMEOUT_MS = 5_000;
+
+async function drainAppendChains(): Promise<void> {
+  const started = Date.now();
+  for (let pass = 0; pass < FLUSH_DRAIN_MAX_PASSES; pass++) {
+    const chains = Array.from(appendChains.values());
+    if (chains.length === 0) return;
+    await Promise.all(chains);
+    if (appendChains.size === 0) return;
+    const after = Array.from(appendChains.values());
+    if (
+      after.length === chains.length &&
+      after.every((promise, index) => promise === chains[index])
+    ) {
+      return;
+    }
+    if (Date.now() - started >= FLUSH_HARD_TIMEOUT_MS) {
+      log.warn('flushAll: append chains still pending after hard timeout', {
+        pending: appendChains.size,
+        elapsedMs: Date.now() - started,
+        maxPasses: FLUSH_DRAIN_MAX_PASSES
+      });
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  if (appendChains.size > 0) {
+    log.warn('flushAll: append chains still pending after drain cap', {
+      pending: appendChains.size,
+      maxPasses: FLUSH_DRAIN_MAX_PASSES
+    });
+  }
+}
+
 /** Final flush at app quit — best-effort.
  *
  * Loops until the per-conversation chain map is stable across two
@@ -1417,39 +1455,18 @@ export async function deriveTitleIfFresh(id: string, prompt: string): Promise<vo
  * doesn't observe the extension, so a flat `Promise.all(values())`
  * resolves before the new tail event has hit disk. Review finding M6.
  *
- * The loop caps at a generous iteration count so a pathological case
- * (tools that themselves emit more tool calls indefinitely) can't
- * hang the shutdown path. Per real runs the chain stabilises in 1–2
- * iterations.
+ * The loop caps at a generous iteration count and a hard timeout so a
+ * pathological case (tools that themselves emit more tool calls
+ * indefinitely) can't hang the shutdown path. Per real runs the chain
+ * stabilises in 1–2 iterations.
  */
-const FLUSH_DRAIN_MAX_PASSES = 8;
 export async function flushAll(): Promise<void> {
   try {
     if (flushTimer) {
       clearTimeout(flushTimer);
       flushTimer = null;
     }
-    for (let pass = 0; pass < FLUSH_DRAIN_MAX_PASSES; pass++) {
-      const before = Array.from(appendChains.values());
-      if (before.length === 0) break;
-      await Promise.all(before);
-      // Re-snapshot. If no chain was extended (or replaced) during
-      // the drain, every entry's promise reference equals the one
-      // we just awaited and we can stop.
-      const after = Array.from(appendChains.values());
-      if (
-        after.length === before.length &&
-        after.every((p, i) => p === before[i])
-      ) {
-        break;
-      }
-    }
-    if (appendChains.size > 0) {
-      log.warn('flushAll: append chains still pending after drain cap', {
-        pending: appendChains.size,
-        maxPasses: FLUSH_DRAIN_MAX_PASSES
-      });
-    }
+    await drainAppendChains();
     // Index flush goes LAST so it observes every `bumpMeta` /
     // `scheduleIndexFlush` triggered by the drained appends.
     await flushIndex();

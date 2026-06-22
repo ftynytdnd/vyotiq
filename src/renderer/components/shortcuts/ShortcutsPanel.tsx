@@ -8,7 +8,7 @@ import {
   type KeybindingId
 } from '@shared/keybindings/defaultKeybindings.js';
 import { cn } from '../../lib/cn.js';
-import { vyotiq } from '../../lib/ipc.js';
+import { persistSettingsPatch } from '../../lib/persistSettingsPatch.js';
 import { isMacPlatform, resolveKeybindings } from '../../lib/resolveKeybindings.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { TextField } from '../ui/TextField.js';
@@ -28,7 +28,6 @@ interface ShortcutsPanelProps {
 
 export function ShortcutsPanel({ presentation = 'region' }: ShortcutsPanelProps) {
   const settings = useSettingsStore((s) => s.settings);
-  const refresh = useSettingsStore((s) => s.refresh);
   const isMac = isMacPlatform();
   const resolved = useMemo(
     () => resolveKeybindings(settings.ui?.keybindings, isMac),
@@ -44,7 +43,7 @@ export function ShortcutsPanel({ presentation = 'region' }: ShortcutsPanelProps)
     const next = { ...(settings.ui?.keybindings ?? {}) };
     if (!value) delete next[id];
     else next[id] = value;
-    void vyotiq.settings.set({ ui: { keybindings: next } }).then(() => refresh());
+    void persistSettingsPatch({ ui: { keybindings: next } });
     setDraft((d) => {
       const copy = { ...d };
       delete copy[id];
@@ -53,7 +52,7 @@ export function ShortcutsPanel({ presentation = 'region' }: ShortcutsPanelProps)
   };
 
   const resetAll = () => {
-    void vyotiq.settings.set({ ui: { keybindings: {} } }).then(() => refresh());
+    void persistSettingsPatch({ ui: { keybindings: {} } });
     setDraft({});
   };
 

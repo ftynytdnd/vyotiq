@@ -2,6 +2,8 @@
  * Background poller for provider account snapshots.
  * Starts once at IPC registration; stops on app quit.
  * Poll cadence is adaptive: fast while billing UI is active, slow when idle.
+ * When no renderer poll sources are registered, `pollOnce` is a no-op so
+ * background billing HTTP is not issued on an idle desktop agent.
  */
 
 import {
@@ -70,7 +72,9 @@ function rescheduleTimer(): void {
   });
 }
 
-function pollOnceInner(): Promise<void> {
+function pollOnceInner(force = false): Promise<void> {
+  if (!force && !hasActivePollSources()) return Promise.resolve();
+
   abortController?.abort();
   abortController = new AbortController();
   const signal = abortController.signal;
@@ -128,8 +132,8 @@ function pollOnceInner(): Promise<void> {
   })();
 }
 
-async function pollOnce(): Promise<void> {
-  const run = pollQueue.then(() => pollOnceInner());
+async function pollOnce(force = false): Promise<void> {
+  const run = pollQueue.then(() => pollOnceInner(force));
   pollQueue = run.catch(() => undefined);
   await run;
 }
@@ -166,6 +170,6 @@ export function stopProviderAccountPoller(): void {
 /** Force a single refresh (IPC manual refresh). */
 export async function refreshProviderAccountsNow(): Promise<ProviderAccountSnapshotMap> {
   lastBroadcastJson = null;
-  await pollOnce();
+  await pollOnce(true);
   return getAllProviderAccountSnapshots();
 }

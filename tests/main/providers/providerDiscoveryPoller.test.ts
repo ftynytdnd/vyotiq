@@ -41,17 +41,26 @@ describe('providerDiscoveryPoller', () => {
     vi.useRealTimers();
   });
 
-  it('keeps polling on the idle interval when no poll sources are active', async () => {
-    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+  it('skips discovery work when no poll sources are active', async () => {
     const { startProviderDiscoveryPoller } = await import(
       '@main/providers/providerDiscoveryPoller.js'
     );
 
     startProviderDiscoveryPoller();
+    await vi.runOnlyPendingTimersAsync();
 
-    expect(setIntervalSpy).toHaveBeenCalled();
-    expect(hasActivePollSources()).toBe(false);
+    expect(listProviders).not.toHaveBeenCalled();
+  });
 
-    setIntervalSpy.mockRestore();
+  it('polls providers when a poll source is active', async () => {
+    hasActivePollSources.mockReturnValue(true);
+    const { startProviderDiscoveryPoller } = await import(
+      '@main/providers/providerDiscoveryPoller.js'
+    );
+
+    startProviderDiscoveryPoller();
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(listProviders).toHaveBeenCalled();
   });
 });

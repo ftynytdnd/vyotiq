@@ -3,6 +3,7 @@
  */
 
 import type { ToolCall, ToolResult, DiffHunk } from './tool.js';
+import type { TaskItem } from './task.js';
 import type { ModelSelection, ThinkingEffort } from './provider.js';
 import type { CheckpointChangeKind } from './checkpoint.js';
 import type { AskUserStructuredPayload } from './askUser.js';
@@ -669,6 +670,22 @@ export type TimelineEvent =
    * telemetry — meaningless after the fact.
    *
    */
+  /**
+   * Structured task-list snapshot. Emitted by the `todos` tool and by
+   * `tasks:set` (user edits) with the FULL current list each time — the
+   * renderer + transcript replay always take the latest snapshot as the
+   * authoritative state (no incremental patching on the wire). Persisted to
+   * JSONL so a reopened transcript shows the final plan; the per-conversation
+   * sidecar (`src/main/tasks/taskStore.ts`) remains the source of truth for
+   * the `<run_progress>` context slot and `tasks:get`.
+   */
+  | {
+    kind: 'todos-update';
+    id: string;
+    ts: number;
+    conversationId: string;
+    items: TaskItem[];
+  }
   | {
     kind: 'synthetic-usage-update';
     id: string;

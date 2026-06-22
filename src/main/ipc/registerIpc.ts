@@ -28,6 +28,7 @@ import { registerMentionsIpc } from './mentions.ipc.js';
 import { registerScheduledRunsIpc } from './scheduledRuns.ipc.js';
 import { registerHeartbeatIpc } from './heartbeat.ipc.js';
 import { registerFollowUpsIpc } from './followUps.ipc.js';
+import { registerTasksIpc } from './tasks.ipc.js';
 import {
   abortRunsForConversation,
   abortRunsForProvider,
@@ -69,4 +70,5 @@ export function registerIpc(): void {
   registerScheduledRunsIpc();
   registerHeartbeatIpc();
   registerFollowUpsIpc();
+  registerTasksIpc();
 }

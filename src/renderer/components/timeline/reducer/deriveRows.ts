@@ -602,6 +602,12 @@ export function deriveRows(
         // treatment as `run-status` / `token-usage` — pure telemetry.
         break;
 
+      case 'todos-update':
+        // Structured task-list snapshot. Surfaces only in the composer task
+        // tray via `useTasksStore` (routed in `chatChannel`); no inline
+        // timeline row, no group close.
+        break;
+
       default: {
         const _exhaustive: never = e;
         void _exhaustive;

@@ -1,11 +1,11 @@
 import { useSettingsStore } from '../../store/useSettingsStore.js';
-import { vyotiq } from '../../lib/ipc.js';
 import {
   applyAppTheme,
   themePrefsFromSettings,
   type AppDensity,
   type AppThemeMode
 } from '../../lib/theme.js';
+import { persistSettingsPatch } from '../../lib/persistSettingsPatch.js';
 import { useToastStore } from '../../store/useToastStore.js';
 import { ShellFieldLabel, ShellRow, ShellRowSplit, ShellSection } from '../ui/ShellSection.js';
 import { Tabs, type TabItem } from '../ui/Tabs.js';
@@ -25,7 +25,6 @@ const DENSITY_TABS: TabItem<AppDensity>[] = [
 
 export function AppearancePanel() {
   const settings = useSettingsStore((s) => s.settings);
-  const setSettings = useSettingsStore((s) => s.refresh);
 
   const ui = settings.ui ?? {};
   const theme = ui.theme ?? 'dark';
@@ -33,12 +32,9 @@ export function AppearancePanel() {
   const reducedMotion = ui.reducedMotion ?? false;
 
   const apply = (next: Partial<typeof ui>) => {
-    void vyotiq.settings
-      .set({ ui: next })
-      .then(() => {
-        const merged = { ...ui, ...next };
-        applyAppTheme(themePrefsFromSettings({ ...settings, ui: merged }));
-        void setSettings();
+    void persistSettingsPatch({ ui: next })
+      .then((updated) => {
+        applyAppTheme(themePrefsFromSettings(updated));
       })
       .catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);

@@ -121,6 +121,44 @@ describe('evaluateContextBudget', () => {
     );
     expect(usage.usedTokens).toBe(9_500);
     expect(usage.visionTokens).toBe(1_500);
+    expect(usage.exact).toBe(false);
+  });
+
+  it('marks exact when remote text count applies and vision is zero', async () => {
+    const { tokenizeMessages } = await import('@main/providers/tokenCounter.js');
+    vi.mocked(tokenizeMessages).mockReturnValueOnce({
+      total: 10_000,
+      exact: false,
+      visionTokens: 0,
+      breakdown: {
+        system: 0,
+        workspace: 0,
+        history: 10_000,
+        runtime: 0,
+        turn: 0,
+        tools: 0
+      }
+    });
+    vi.mocked(getProviderWithKey).mockResolvedValueOnce({
+      id: 'anthropic',
+      name: 'Anthropic',
+      dialect: 'anthropic-native',
+      models: [{ id: 'claude', contextWindow: 200_000 }],
+      contextOverrides: {}
+    } as Awaited<ReturnType<typeof getProviderWithKey>>);
+    vi.mocked(tokenCountRemote.providerSupportsRemoteCount).mockReturnValue(true);
+    vi.mocked(tokenCountRemote.getCachedRemoteCount).mockReturnValue(8_000);
+
+    const usage = await evaluateContextBudget({
+      messages: [{ role: 'user', content: 'hello' }],
+      modelId: 'claude',
+      providerId: 'anthropic',
+      settings: DEFAULT_CONTEXT_MANAGEMENT_SETTINGS,
+      skipRemoteRefine: true
+    });
+
+    expect(usage.usedTokens).toBe(8_000);
+    expect(usage.exact).toBe(true);
   });
 
   it('uses absolute compaction bands when context window is estimated', async () => {

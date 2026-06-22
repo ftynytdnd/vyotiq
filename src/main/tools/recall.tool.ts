@@ -18,8 +18,8 @@
  *     is capped at `MAX_TOOL_OUTPUT_CHARS` so the orchestrator's
  *     context window never balloons regardless of how long the
  *     recalled conversation is. Renderer-only events (`run-status`,
- *     `phase`, `agent-thought`, `token-usage`, `file-edit`,
- *     legacy worker lifecycle kinds) are skipped.
+ *     `agent-thought`, `token-usage`, `file-edit`, legacy phased-execution
+ *     rows) are skipped.
  *
  * Returning the active conversation's own id is rejected — the
  * orchestrator already has its own transcript in-context via replay,

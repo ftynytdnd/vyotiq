@@ -19,21 +19,35 @@ import {
   RUN_PROGRESS_AGENT_KEY,
   runProgressStorageKey
 } from '../memory/runProgressNote.js';
+import { renderTaskListForContext } from '../tasks/taskStore.js';
 import { getWorkspace } from '../workspace/workspaceState.js';
 import { listConversations } from '../conversations/conversationStore.js';
 import type { ConversationMeta } from '@shared/types/chat';
 import { realpathInsideWorkspace } from '../tools/sandbox.js';
 
-/**
- * Reserved workspace-memory note key the agent maintains as a structured
- * run-progress scratchpad. Surfaced read-only in `<run_progress>` near the
- * turn so it survives reversible reduction / summarization. The harness
- * instructs the agent to keep it current via the `memory` tool.
- * @deprecated Use `RUN_PROGRESS_AGENT_KEY` from `runProgressNote.ts`.
- */
-export const RUN_PROGRESS_NOTE_KEY = RUN_PROGRESS_AGENT_KEY;
 /** Cap on the run-progress body folded into the runtime tail. */
 const RUN_PROGRESS_MAX_CHARS = 2_000;
+
+/**
+ * Fold structured `todos` and the optional freeform `run-progress` note into
+ * `<run_progress>`. The checklist is primary; supplementary note content is
+ * appended when both exist so agents are not silently masked mid-migration.
+ */
+export function buildRunProgressBody(
+  structuredTasks: string,
+  runProgressNoteContent: string | undefined
+): string {
+  const structured = structuredTasks.trim();
+  const note = runProgressNoteContent?.trim() ?? '';
+  if (structured.length === 0 && note.length === 0) return '';
+  const body =
+    structured.length > 0 && note.length > 0
+      ? `${structured}\n\n---\n\n${note}`
+      : structured.length > 0
+        ? structured
+        : note;
+  return body.slice(0, RUN_PROGRESS_MAX_CHARS);
+}
 
 const TOP_LEVEL_LIMIT = 60;
 
@@ -99,9 +113,9 @@ export interface ContextEnvelopes {
    */
   priorConversationsXml: string;
   /**
-   * `<run_progress>` — the agent-maintained structured progress note
-   * (`RUN_PROGRESS_NOTE_KEY` workspace memory). Empty string when no note
-   * exists yet. Surfaced near the turn so the agent's own running state
+   * `<run_progress>` — structured `todos` checklist (primary) plus optional
+   * freeform `RUN_PROGRESS_AGENT_KEY` workspace-memory note when both exist.
+   * Empty string when neither is set. Surfaced near the turn so running state
    * survives reversible reduction / summarization.
    */
   runProgressXml: string;
@@ -245,11 +259,19 @@ export async function buildContextEnvelope(
           () => null
         )
       : Promise.resolve(null);
-  const [topLevel, mem, conversationsList, runProgressNote] = await Promise.all([
+  // Structured task list is the primary source for `<run_progress>`; the
+  // freeform memory note is kept only as a fallback for conversations that
+  // never used the `todos` tool. Failures resolve to '' so a missing/corrupt
+  // sidecar never throws into the context path.
+  const structuredTasksPromise = conversationId
+    ? renderTaskListForContext(conversationId).catch(() => '')
+    : Promise.resolve('');
+  const [topLevel, mem, conversationsList, runProgressNote, structuredTasks] = await Promise.all([
     workspaceTopLevel(workspacePath),
     retrieveRelevantMemory(userPrompt, undefined, workspacePath),
     sharedListPromise,
-    runProgressPromise
+    runProgressPromise,
+    structuredTasksPromise
   ]);
   const [sessionBody, priorBody] = await Promise.all([
     sessionContextBody(conversationId, conversationsList),
@@ -270,10 +292,10 @@ export async function buildContextEnvelope(
         )
         .join('\n\n');
 
-  const runProgressBody =
-    runProgressNote && runProgressNote.content.trim().length > 0
-      ? runProgressNote.content.trim().slice(0, RUN_PROGRESS_MAX_CHARS)
-      : '';
+  const runProgressBody = buildRunProgressBody(
+    structuredTasks,
+    runProgressNote?.content
+  );
 
   return {
     workspaceXml: getStableWorkspaceXml(workspaceId, workspacePath, topLevel),

@@ -19,6 +19,7 @@
  *     models-dev-catalog.json
  *     conversations/
  *     checkpoints/
+ *     tasks/
  *     logs/
  *     harness-overrides/
  *     attachments/
@@ -62,6 +63,11 @@ export function globalMetaFilePath(): string {
 
 export function conversationsDir(): string {
   return vyotiqDataPath('conversations');
+}
+
+/** Per-conversation structured task lists: `<vyotiq>/tasks/<conversationId>.json`. */
+export function tasksDir(): string {
+  return vyotiqDataPath('tasks');
 }
 
 export function checkpointsDir(): string {

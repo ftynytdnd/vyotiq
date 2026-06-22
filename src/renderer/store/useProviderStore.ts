@@ -110,10 +110,10 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
   },
 
   discover: async (id) => {
-    const models = await vyotiq.providers.discoverModels(id, true);
+    const { models, lastDiscoveredAt } = await vyotiq.providers.discoverModels(id, true);
     set({
       providers: get().providers.map((p) =>
-        p.id === id ? { ...p, models, lastDiscoveredAt: Date.now() } : p
+        p.id === id ? { ...p, models, lastDiscoveredAt } : p
       ),
       discoveryPollHints: (() => {
         const next = { ...get().discoveryPollHints };
@@ -125,10 +125,10 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
   },
 
   discoverCached: async (id) => {
-    const models = await vyotiq.providers.discoverModels(id, false);
+    const { models, lastDiscoveredAt } = await vyotiq.providers.discoverModels(id, false);
     set({
       providers: get().providers.map((p) =>
-        p.id === id ? { ...p, models, lastDiscoveredAt: Date.now() } : p
+        p.id === id ? { ...p, models, lastDiscoveredAt } : p
       )
     });
     return models;

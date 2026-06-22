@@ -115,7 +115,8 @@ export async function evaluateContextBudget(
     );
     if (typeof remote === 'number' && remote > 0) {
       usedTokens = remote + visionTokens;
-      exact = true;
+      // Remote count endpoints are text-only; vision media stays heuristic.
+      exact = visionTokens === 0;
       breakdown = scaleContextBreakdown(base.breakdown, base.total, remote + visionTokens);
     } else if (!input.skipRemoteRefine) {
       refineRemoteCount(provider, input.modelId, input.messages, tools, visionTokens);

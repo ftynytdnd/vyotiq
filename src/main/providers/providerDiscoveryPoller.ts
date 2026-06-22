@@ -1,6 +1,7 @@
 /**
- * Background poller for model discovery when billing UI is active.
- * Shares poll-source registry with the account poller.
+ * Background poller for model discovery while billing-related UI is active.
+ * Shares poll-source registry with the account poller; both pollers are no-ops
+ * when no poll sources are registered (manual account refresh still forces one).
  */
 
 import { IPC, PROVIDER_ACCOUNT_POLL_ACTIVE_MS, PROVIDER_ACCOUNT_POLL_IDLE_MS } from '@shared/constants.js';
@@ -66,6 +67,7 @@ function rescheduleTimer(): void {
 
 async function pollOnce(): Promise<void> {
   if (tickInFlight) return;
+  if (!hasActivePollSources()) return;
   tickInFlight = true;
 
   try {

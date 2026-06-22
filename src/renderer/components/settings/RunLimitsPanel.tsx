@@ -1,5 +1,5 @@
 import { useSettingsStore } from '../../store/useSettingsStore.js';
-import { vyotiq } from '../../lib/ipc.js';
+import { persistSettingsPatch } from '../../lib/persistSettingsPatch.js';
 import {
   DEFAULT_RUN_TOKEN_BUDGET_MAX,
   DEFAULT_RUN_WALL_CLOCK_BUDGET_MS,
@@ -11,16 +11,14 @@ import { SettingsSwitchRow } from './SettingsSwitchRow.js';
 
 export function RunLimitsPanel() {
   const settings = useSettingsStore((s) => s.settings);
-  const refresh = useSettingsStore((s) => s.refresh);
   const agentBehavior = resolveAgentBehaviorSettings(settings.ui);
 
   const applyAgentBehavior = (
     patch: Partial<NonNullable<typeof settings.ui>['agentBehavior']>
   ) => {
-    void vyotiq.settings
-      .set({ ui: { agentBehavior: { ...settings.ui?.agentBehavior, ...patch } } })
-      .then(() => refresh())
-      .catch((err) => {
+    void persistSettingsPatch({
+      ui: { agentBehavior: { ...settings.ui?.agentBehavior, ...patch } }
+    }).catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
         useToastStore.getState().show(`Could not save run limit settings: ${msg}`, 'danger');
       });

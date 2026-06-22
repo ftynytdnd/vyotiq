@@ -14,6 +14,7 @@ import { sgTool } from './sg.tool.js';
 import { memoryTool } from './memory.tool.js';
 import { recallTool } from './recall.tool.js';
 import { contextTool } from './context.tool.js';
+import { todosTool } from './todos.tool.js';
 import { finishTool } from './finish.tool.js';
 import { askUserTool } from './ask_user.tool.js';
 import { reportTool } from './report.tool.js';
@@ -34,6 +35,7 @@ const TOOLS: Record<RegisteredToolName, Tool> = {
   memory: memoryTool,
   recall: recallTool,
   context: contextTool,
+  todos: todosTool,
   report: reportTool,
   capture: captureTool,
   heartbeat: heartbeatTool,

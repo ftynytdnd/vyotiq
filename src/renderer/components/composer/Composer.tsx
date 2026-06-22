@@ -10,6 +10,7 @@ import { AttachmentButton } from './AttachmentButton.js';
 import { SendButton } from './SendButton.js';
 import { StopButton } from './StopButton.js';
 import { FollowUpTrayHost } from './followUps/index.js';
+import { TaskTrayHost } from './tasks/index.js';
 import { ModelPicker } from './modelPicker/index.js';
 import { TokenUsagePill } from './TokenUsagePill.js';
 import { HeartbeatStatusPill } from './HeartbeatStatusPill.js';
@@ -488,6 +489,7 @@ export function Composer({
           onDrop(e);
         }}
       >
+        <TaskTrayHost conversationId={conversationId} />
         <FollowUpTrayHost
           steering={followUps.steering}
           queued={followUps.queued}

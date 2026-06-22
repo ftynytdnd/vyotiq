@@ -11,6 +11,7 @@
 
 
 import type { ScheduledRun, ScheduledRunInput } from './scheduledRun.js';
+import type { TaskItem, TaskList } from './task.js';
 import type {
   ConversationHeartbeat,
   HeartbeatAttachInput,
@@ -249,6 +250,10 @@ export interface AppSettings {
     /** Workbench side-pane width in px. Default 480; clamped 320–900. */
 
     workbenchPaneWidth?: number;
+
+    /** Unified vs split layout for diff review surfaces. Default unified. */
+
+    diffLayout?: 'unified' | 'split';
 
     /** @deprecated Legacy secondary-zone layout flags — ignored after workbench shell. */
     /** Custom keyboard binding overrides (binding id → combo string). */
@@ -1017,7 +1022,7 @@ export interface VyotiqApi {
 
     remove(id: string): Promise<void>;
 
-    discoverModels(id: string, force?: boolean): Promise<ModelInfo[]>;
+    discoverModels(id: string, force?: boolean): Promise<import('./provider.js').ProviderDiscoverModelsResult>;
 
     test(id: string): Promise<{ ok: boolean; message: string }>;
 
@@ -1229,6 +1234,15 @@ export interface VyotiqApi {
     remove(input: FollowUpRemoveInput): Promise<ConversationFollowUpState>;
     sendNow(input: FollowUpSendNowInput): Promise<ConversationFollowUpState>;
     onUpdated(cb: (conversationId: string, state: ConversationFollowUpState) => void): () => void;
+  };
+
+  // ---- Tasks / todos (per-conversation structured task list) ----
+
+  tasks: {
+    /** Read the current task list for a conversation. */
+    get(conversationId: string): Promise<TaskList>;
+    /** Persist a user-edited task list (replace) and return the normalized result. */
+    set(conversationId: string, items: TaskItem[]): Promise<TaskList>;
   };
 
   ui: {

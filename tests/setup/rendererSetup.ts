@@ -65,7 +65,7 @@ function makeStubApi() {
       add: asyncNoop,
       update: asyncNoop,
       remove: asyncNoop,
-      discoverModels: vi.fn(async () => []),
+      discoverModels: vi.fn(async () => ({ models: [], lastDiscoveredAt: 1_700_000_000_000 })),
       test: vi.fn(async () => ({ ok: true, message: 'ok' })),
       getAccounts: vi.fn(async () => ({})),
       refreshAccounts: vi.fn(async () => ({})),
@@ -90,6 +90,18 @@ function makeStubApi() {
       remove: vi.fn(async () => ({ steering: [], queued: [] })),
       sendNow: vi.fn(async () => ({ steering: [], queued: [] })),
       onUpdated: subscribe
+    },
+    tasks: {
+      get: vi.fn(async (conversationId: string) => ({
+        conversationId,
+        items: [],
+        updatedAt: 0
+      })),
+      set: vi.fn(async (conversationId: string, items: unknown[]) => ({
+        conversationId,
+        items,
+        updatedAt: 0
+      }))
     },
     ui: {
       onToast: subscribe

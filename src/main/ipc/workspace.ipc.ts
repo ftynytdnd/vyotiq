@@ -139,6 +139,7 @@ export function registerWorkspaceIpc(): void {
     const state = await setActiveWorkspace(id);
     if (prevActive && prevActive.id !== id) {
       void disposeWorkspaceVectorIndex(prevActive.path);
+      await disposeLspSession(prevActive.id);
     }
     const active = state.workspaces.find((w) => w.id === state.activeId);
     if (active) scheduleWorkspaceVectorIndex(active.path);

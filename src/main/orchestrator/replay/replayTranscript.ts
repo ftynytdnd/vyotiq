@@ -15,7 +15,7 @@
  *   - Each `tool-result` immediately following its assistant turn →
  *       { role:'tool', tool_call_id, name, content }
  *
- *   - `phase`, `agent-thought`, `error` → skipped (UI-only, not model
+ *   - `run-status`, `agent-thought`, `error` → skipped (UI-only, not model
  *      memory).
  */
 

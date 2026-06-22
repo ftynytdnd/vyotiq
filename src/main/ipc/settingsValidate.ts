@@ -210,6 +210,9 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
       }
     }
   }
+  if ('diffLayout' in ui && ui.diffLayout !== undefined) {
+    assertEnum(channel, 'patch.ui.diffLayout', ui.diffLayout, ['unified', 'split']);
+  }
   if ('favoriteModels' in ui && ui.favoriteModels !== undefined) {
     assertStringArray(channel, 'patch.ui.favoriteModels', ui.favoriteModels, {
       maxItems: 64,

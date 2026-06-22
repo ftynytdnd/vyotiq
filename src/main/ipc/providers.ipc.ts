@@ -237,9 +237,13 @@ export function registerProvidersIpc(): void {
       if (force !== undefined) {
         assertBoolean('providers:discoverModels', 'force', force);
       }
-      return discoverModels(id, force ?? true).then((models) => {
+      return discoverModels(id, force ?? true).then(async (models) => {
         publishDiscoveryPollCleared(id);
-        return models;
+        const refreshed = (await listProviders()).find((x) => x.id === id);
+        return {
+          models,
+          lastDiscoveredAt: refreshed?.lastDiscoveredAt ?? Date.now()
+        };
       });
     }
   );

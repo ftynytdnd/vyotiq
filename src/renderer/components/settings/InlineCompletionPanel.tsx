@@ -8,15 +8,14 @@ import {
   DEFAULT_INLINE_COMPLETION_SETTINGS
 } from '@shared/settings/inlineCompletionSettings.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
+import { persistSettingsPatch } from '../../lib/persistSettingsPatch.js';
 import { useProviderStore } from '../../store/useProviderStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
-import { vyotiq } from '../../lib/ipc.js';
 import { ShellCaption, ShellSection } from '../ui/ShellSection.js';
 import { SettingsSwitchRow } from './SettingsSwitchRow.js';
 
 export function InlineCompletionPanel() {
   const settings = useSettingsStore((s) => s.settings);
-  const refresh = useSettingsStore((s) => s.refresh);
   const providers = useProviderStore((s) => s.providers);
   const inline = resolveInlineCompletionSettings(settings.ui);
 
@@ -41,10 +40,9 @@ export function InlineCompletionPanel() {
     : '';
 
   const apply = (patch: Partial<NonNullable<typeof settings.ui>['inlineCompletion']>) => {
-    void vyotiq.settings
-      .set({ ui: { inlineCompletion: { ...settings.ui?.inlineCompletion, ...patch } } })
-      .then(() => refresh())
-      .catch((err) => {
+    void persistSettingsPatch({
+      ui: { inlineCompletion: { ...settings.ui?.inlineCompletion, ...patch } }
+    }).catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
         useToastStore.getState().show(`Could not save inline completion settings: ${msg}`, 'danger');
       });

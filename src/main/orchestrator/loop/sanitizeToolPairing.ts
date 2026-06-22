@@ -58,16 +58,14 @@ const ORPHAN_STUB =
 
 /**
  * Stats surfaced alongside the sanitized message stream so callers can
- * emit user-visible signals (a `phase` event saying "Recovered N
- * orphan tool_calls in history") without re-walking the messages.
+ * log recovery activity without re-walking the messages.
  *
  * Review finding H7: prior to this slot, sanitizer activity was a
  * `log.info` only — the model proceeded correctly under the stubs but
  * the USER saw nothing, even when stub injection fired repeatedly on
  * a broken replay. The orchestrator's `runLoop` now reads
- * `injectedStubs` and emits a single `phase` event so the user has a
- * triage breadcrumb without polluting the timeline with one event per
- * stub.
+ * `injectedStubs` and emits a structured debug log so triage has a
+ * breadcrumb without polluting the timeline with one event per stub.
  */
 /** Stats returned by `sanitizeToolCallPairingWithStats` (exported for tests). */
 interface SanitizeStats {
@@ -84,7 +82,7 @@ export interface SanitizeResult {
 
 /**
  * Rich variant of `sanitizeToolCallPairing` that also returns the
- * stub/drop counts so callers can surface them via a `phase` event.
+ * stub/drop counts so callers can log recovery activity.
  * Production orchestrator path uses this.
  */
 export function sanitizeToolCallPairingWithStats(messages: ChatMessage[]): SanitizeResult {

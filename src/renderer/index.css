@@ -3414,7 +3414,7 @@ mark.vyotiq-timeline-find-mark-active {
 
 .vx-composer-followup-section__label {
   font-family: var(--font-mono);
-  font-size: var(--text-meta-size);
+  font-size: var(--text-meta);
   line-height: 1.2;
   color: var(--color-text-faint);
   margin-bottom: 0.25rem;
@@ -3448,7 +3448,7 @@ mark.vyotiq-timeline-find-mark-active {
 .vx-composer-followup-source-badge {
   flex-shrink: 0;
   font-family: var(--font-mono);
-  font-size: var(--text-meta-size);
+  font-size: var(--text-meta);
   line-height: 1.2;
   color: var(--color-text-faint);
   border: 1px solid var(--color-border-subtle);
@@ -3464,7 +3464,7 @@ mark.vyotiq-timeline-find-mark-active {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-mono);
-  font-size: var(--text-meta-size);
+  font-size: var(--text-meta);
   line-height: 1.2;
   color: var(--color-text-faint);
   border: 1px solid var(--color-border-subtle);
@@ -3475,7 +3475,7 @@ mark.vyotiq-timeline-find-mark-active {
 .vx-composer-followup-stale-badge {
   flex-shrink: 0;
   font-family: var(--font-mono);
-  font-size: var(--text-meta-size);
+  font-size: var(--text-meta);
   line-height: 1.2;
   color: var(--color-text-secondary);
   border: 1px solid color-mix(in oklch, var(--color-border-subtle) 70%, var(--color-text-faint));
@@ -3487,7 +3487,7 @@ mark.vyotiq-timeline-find-mark-active {
 .vx-composer-followup-editing-badge {
   flex-shrink: 0;
   font-family: var(--font-mono);
-  font-size: var(--text-meta-size);
+  font-size: var(--text-meta);
   line-height: 1.2;
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border-subtle);
@@ -3501,9 +3501,185 @@ mark.vyotiq-timeline-find-mark-active {
   opacity: 0.85;
 }
 
+/* ---- Composer task tray (per-conversation todo list) ---- */
+
+.vx-composer-task-tray {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--color-border-subtle);
+  padding: 0.375rem 0.625rem;
+  max-height: 13rem;
+  overflow-y: auto;
+}
+
+.vx-task-tray-header {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  width: 100%;
+  padding: 0.125rem 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+}
+
+.vx-task-tray-header:hover {
+  color: var(--color-text-primary);
+}
+
+.vx-task-tray-chevron {
+  width: 0.75rem;
+  height: 0.75rem;
+  flex-shrink: 0;
+  color: var(--color-text-faint);
+  transition: transform 120ms ease;
+}
+
+.vx-task-tray-chevron--open {
+  transform: rotate(90deg);
+}
+
+.vx-task-tray-title {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+}
+
+.vx-task-tray-count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  line-height: 1.2;
+  color: var(--color-text-faint);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 0 0.25rem;
+}
+
+.vx-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1875rem;
+  margin: 0.375rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vx-task-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-subtle);
+  background: color-mix(in oklch, var(--color-surface-raised) 70%, transparent);
+  padding: 0.25rem 0.375rem;
+}
+
+.vx-task-row--done .vx-task-content {
+  color: var(--color-text-faint);
+  text-decoration: line-through;
+}
+
+.vx-task-row--cancelled .vx-task-content {
+  color: var(--color-text-faint);
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.vx-task-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.125rem;
+  height: 1.125rem;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  color: var(--color-text-faint);
+}
+
+.vx-task-status:hover {
+  background: var(--color-chrome-hover-soft);
+}
+
+.vx-task-status--pending {
+  color: var(--color-text-faint);
+}
+
+.vx-task-status--active {
+  color: var(--color-accent-gold);
+}
+
+.vx-task-status--done {
+  color: var(--color-success);
+}
+
+.vx-task-status--cancelled {
+  color: var(--color-text-muted);
+}
+
+.vx-task-content {
+  background: transparent;
+  border: none;
+  cursor: text;
+  padding: 0;
+  font-size: var(--text-meta);
+  line-height: 1.35;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vx-task-content:hover {
+  color: var(--color-text-primary);
+}
+
+.vx-task-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.0625rem;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.vx-task-row:hover .vx-task-row__actions,
+.vx-task-row:focus-within .vx-task-row__actions {
+  opacity: 1;
+}
+
+.vx-task-edit-input {
+  background: var(--color-surface-input);
+  border: 1px solid var(--color-composer-border-focus);
+  border-radius: var(--radius-xs);
+  padding: 0.0625rem 0.25rem;
+  font-size: var(--text-meta);
+  line-height: 1.35;
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.vx-task-edit-input::placeholder {
+  color: var(--color-text-faint);
+}
+
+.vx-task-add-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  color: var(--color-text-faint);
+}
+
 .vx-composer-queue-btn {
   font-family: var(--font-mono);
-  font-size: var(--text-meta-size);
+  font-size: var(--text-meta);
   line-height: 1;
   color: var(--color-text-secondary);
 }

@@ -585,6 +585,17 @@ export function applyTimelineEvent(
       };
     }
 
+    case 'todos-update': {
+      // Structured task-list snapshot. Kept in `events` so the in-memory
+      // transcript mirrors disk on replay; deriveRows ignores it. The live
+      // task tray reads task state via `useTasksStore` (routed in
+      // `chatChannel`), not from this reducer.
+      return {
+        ...state,
+        events: appendTimelineEvent(state.events, event, mutate)
+      };
+    }
+
     default: {
       const _exhaustive: never = event;
       void _exhaustive;

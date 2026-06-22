@@ -626,8 +626,6 @@ async function fetchOpenAiModels(provider: ProviderWithKey): Promise<ModelInfo[]
         meta?: { context_size?: number | null; n_ctx_train?: number | null; context_length?: number | null };
       };
       const fromApi = contextWindowFromOpenAiModelRow(entry);
-      const attached = attachModelContext(provider, id, fromApi);
-      const ctx = mergeContextWindows(fromApi, attached.contextWindow);
       const info: ModelInfo = { id };
       if (
         typeof nameCandidate === 'string' &&
@@ -636,10 +634,7 @@ async function fetchOpenAiModels(provider: ProviderWithKey): Promise<ModelInfo[]
       ) {
         info.label = nameCandidate;
       }
-      if (ctx !== undefined) info.contextWindow = ctx;
-      if (fromApi === undefined && attached.contextEstimated) {
-        info.contextEstimated = true;
-      }
+      if (fromApi !== undefined) info.contextWindow = fromApi;
       if (Array.isArray(entry.supported_parameters) && entry.supported_parameters.length > 0) {
         info.supportedParameters = entry.supported_parameters;
       }
@@ -1061,7 +1056,8 @@ async function enrichModelsMetadata(
       (m) =>
         m.contextWindow === undefined ||
         m.pricing === undefined ||
-        m.inputModalities === undefined
+        m.inputModalities === undefined ||
+        !m.thinking?.supported
     )
   ) {
     next = await enrichModelsFromModelsDev(provider, next);

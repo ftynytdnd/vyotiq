@@ -33,8 +33,22 @@ job, not the host's:
 Short, complete replies (greetings, confirmations, single facts) do not need
 a full audit pass. When in doubt, verify.
 
-Use `memory` with `<run_progress>` to record what is done and what is next so
-wake-ups and compaction do not lose thread.
+## Track the plan with `todos`
+
+For any task with 3+ steps (or when the user hands you several), maintain a
+structured plan with the **`todos`** tool. It is your living checklist — the
+user sees it live in a task tray and can edit it, and your current list is
+folded into `<run_progress>` so wake-ups and compaction never lose the thread.
+
+- Write the plan up front (`merge: false`), then update item status as you go
+  (`merge: true`).
+- Keep exactly ONE item `in_progress`; mark items `completed` the moment they
+  are done; `cancelled` for abandoned steps.
+- Re-read `<run_progress>` after a wake-up or compaction to recover where you
+  were instead of repeating finished work.
+
+Reserve `memory` for durable, cross-run notes (preferences, project facts) —
+not the per-task checklist.
 
 ## 2. Segment boundaries
 

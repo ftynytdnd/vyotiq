@@ -12,7 +12,8 @@ import type { ChatSendInput, TimelineEvent } from '../../shared/types/chat.js';
 import type {
   AddProviderInput,
   ProviderConfig,
-  ModelInfo
+  ModelInfo,
+  ProviderDiscoverModelsResult
 } from '../../shared/types/provider.js';
 import type { ProviderAccountSnapshotMap } from '../../shared/types/providerAccount.js';
 import type { AskUserSubmitInput } from '../../shared/types/askUser.js';
@@ -70,7 +71,7 @@ const api: VyotiqApi = {
       ipcRenderer.invoke(IPC.PROVIDERS_ADD, input),
     update: (id, patch) => ipcRenderer.invoke(IPC.PROVIDERS_UPDATE, id, patch),
     remove: (id) => ipcRenderer.invoke(IPC.PROVIDERS_REMOVE, id),
-    discoverModels: (id, force): Promise<ModelInfo[]> =>
+    discoverModels: (id, force): Promise<ProviderDiscoverModelsResult> =>
       ipcRenderer.invoke(IPC.PROVIDERS_DISCOVER_MODELS, id, force),
     test: (id) => ipcRenderer.invoke(IPC.PROVIDERS_TEST, id),
     getAccounts: () => ipcRenderer.invoke(IPC.PROVIDERS_GET_ACCOUNTS),
@@ -150,6 +151,12 @@ const api: VyotiqApi = {
         IPC.FOLLOW_UPS_UPDATED,
         (conversationId, state) => cb(conversationId, state)
       )
+  },
+
+  tasks: {
+    get: (conversationId: string) => ipcRenderer.invoke(IPC.TASKS_GET, conversationId),
+    set: (conversationId: string, items) =>
+      ipcRenderer.invoke(IPC.TASKS_SET, conversationId, items)
   },
 
   ui: {

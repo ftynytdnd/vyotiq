@@ -108,3 +108,13 @@ export async function openReportInAppBrowser(
     throw new Error(msg);
   }
 }
+
+/** Idempotent teardown for app quit. */
+export function closeReportWindow(): void {
+  if (!reportWindow || reportWindow.isDestroyed()) {
+    reportWindow = null;
+    loadedAbsPath = null;
+    return;
+  }
+  reportWindow.close();
+}

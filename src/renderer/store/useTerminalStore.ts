@@ -15,7 +15,7 @@ import {
 } from '../components/workbench/workbenchShared.js';
 import { focusActiveWorkbenchDom } from '../lib/workbenchFocusDom.js';
 import { useUiStore } from './useUiStore.js';
-import { disposeTerminalEntry } from '../components/terminal/terminalPool.js';
+import { disposeTerminalEntry, disposeStaleTerminalEntries } from '../components/terminal/terminalPool.js';
 
 interface TerminalStore {
   open: boolean;
@@ -75,10 +75,12 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     set({ open: true, workspaceId, attaching: true, error: null });
     try {
       const reply = await vyotiq.terminal.attach({ workspaceId });
+      if (get().workspaceId !== workspaceId) return;
       const sessions = reply.sessions;
       const current = get().activeSessionId;
       const activeStillValid = current && sessions.some((s) => s.sessionId === current);
       const primary = sessions.find((s) => s.primary) ?? sessions[0] ?? null;
+      disposeStaleTerminalEntries(sessions.map((s) => s.sessionId));
       set({
         attaching: false,
         sessions,

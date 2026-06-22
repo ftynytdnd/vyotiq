@@ -36,13 +36,38 @@ vi.mock('node:fs', () => ({
     readdir: vi.fn()
   }
 }));
+vi.mock('@main/memory/workspaceNotes.js', () => ({
+  readWorkspaceNote: vi.fn()
+}));
+vi.mock('@main/tasks/taskStore.js', () => ({
+  renderTaskListForContext: vi.fn()
+}));
 
-import { buildContextEnvelope } from '@main/orchestrator/contextManager';
+import { buildContextEnvelope, buildRunProgressBody } from '@main/orchestrator/contextManager';
 import { retrieveRelevantMemory } from '@main/memory/retrieval';
 import { getWorkspace } from '@main/workspace/workspaceState';
 import { listConversations } from '@main/conversations/conversationStore';
+import { readWorkspaceNote } from '@main/memory/workspaceNotes';
+import { renderTaskListForContext } from '@main/tasks/taskStore';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
+
+describe('buildRunProgressBody', () => {
+  it('prefers structured tasks when only the checklist exists', () => {
+    expect(buildRunProgressBody('- [ ] Ship fix', undefined)).toBe('- [ ] Ship fix');
+  });
+
+  it('uses the freeform note when no structured tasks exist', () => {
+    expect(buildRunProgressBody('', 'Key decision: use SQLite')).toBe('Key decision: use SQLite');
+  });
+
+  it('appends the freeform note below structured tasks when both exist', () => {
+    const body = buildRunProgressBody('- [ ] Ship fix', 'Key decision: use SQLite');
+    expect(body).toContain('- [ ] Ship fix');
+    expect(body).toContain('---');
+    expect(body).toContain('Key decision: use SQLite');
+  });
+});
 
 describe('buildContextEnvelope — session context (plan §6)', () => {
   beforeEach(() => {
@@ -52,6 +77,8 @@ describe('buildContextEnvelope — session context (plan §6)', () => {
       notes: []
     });
     vi.mocked(listConversations).mockResolvedValue([]);
+    vi.mocked(renderTaskListForContext).mockResolvedValue('');
+    vi.mocked(readWorkspaceNote).mockResolvedValue(null);
   });
 
   /**
@@ -133,6 +160,23 @@ describe('buildContextEnvelope — session context (plan §6)', () => {
     // not mis-read a host-side failure as a session-freshness signal.
     expect(env.sessionXml).toContain('session lookup failed');
     expect(env.sessionXml).not.toContain('first turn of a fresh conversation');
+  });
+
+  it('folds structured tasks and freeform run-progress note into <run_progress>', async () => {
+    vi.mocked(renderTaskListForContext).mockResolvedValue('- [ ] Ship fix');
+    vi.mocked(readWorkspaceNote).mockResolvedValue({
+      key: 'run-progress-conv-1',
+      content: 'Decision: use SQLite',
+      scope: 'workspace',
+      updatedAt: 0
+    });
+    vi.mocked(fs.readdir).mockResolvedValue([
+      { name: 'src', isDirectory: () => true } as import('node:fs').Dirent
+    ]);
+    const env = await buildContextEnvelope('proceed', 'conv-1', '/tmp/ws');
+    expect(env.runProgressXml).toContain('<run_progress>');
+    expect(env.runProgressXml).toContain('- [ ] Ship fix');
+    expect(env.runProgressXml).toContain('Decision: use SQLite');
   });
 });
 
