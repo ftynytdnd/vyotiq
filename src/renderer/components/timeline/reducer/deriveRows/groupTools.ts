@@ -254,7 +254,7 @@ function verbFor(name: ToolName, pending = false): string {
     case 'context': return 'Loaded';
     case 'todos': return 'Updated tasks';
     case 'report': return 'Wrote';
-    case 'capture': return 'Captured';
+    case 'capture': return 'Capture';
     case 'heartbeat': return 'Heartbeat';
     case 'continue': return 'Continued';
     case 'ask_user': return 'Asked';

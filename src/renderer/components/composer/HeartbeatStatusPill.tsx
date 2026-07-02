@@ -52,7 +52,7 @@ export const HeartbeatStatusPill = memo(function HeartbeatStatusPill({
   return (
     <span
       className={cn(
-        'vx-composer-cache-pill shrink-0 text-meta text-accent-primary',
+        'vx-composer-cache-pill shrink-0 text-meta text-accent',
         'inline-flex items-center'
       )}
       role="status"

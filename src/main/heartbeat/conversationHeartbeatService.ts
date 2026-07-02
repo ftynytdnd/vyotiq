@@ -5,6 +5,7 @@
 import { randomUUID } from 'node:crypto';
 import { dispatchChatSend } from '../ipc/chat.ipc.js';
 import { enqueueFollowUp } from '../followUps/followUpQueueService.js';
+import { listActiveRuns } from '../orchestrator/AgentV.js';
 import {
   conversationHasActiveRun,
   getActiveRunContextLevel
@@ -21,6 +22,7 @@ import type { ConversationHeartbeat } from '@shared/types/conversationHeartbeat.
 import { FollowUpQueueFullError } from '@shared/types/followUp.js';
 import { MAX_FOLLOW_UP_QUEUE_DEPTH } from '@shared/constants.js';
 import { notifyUiToast } from '../ui/uiToast.js';
+import { parseAutomationPrompt } from '@shared/skills/parseSkillSlash.js';
 
 const log = logger.child('heartbeat/service');
 
@@ -41,16 +43,44 @@ function shouldDeferWakeForActiveRun(conversationId: string): boolean {
   return level === 'trigger' || level === 'critical';
 }
 
+function conversationAwaitingUser(conversationId: string): boolean {
+  return listActiveRuns().some(
+    (run) => run.conversationId === conversationId && run.awaitingUser
+  );
+}
+
 async function dispatchWake(row: ConversationHeartbeat): Promise<boolean> {
   if (shuttingDown) return false;
   const { conversationId, wakePrompt, selection } = row;
+  const { prompt, invokedSkill } = parseAutomationPrompt(wakePrompt);
   if (conversationHasActiveRun(conversationId)) {
+    if (conversationAwaitingUser(conversationId)) {
+      try {
+        await enqueueFollowUp({
+          conversationId,
+          kind: 'queue',
+          prompt,
+          selection,
+          source: 'heartbeat',
+          ...(invokedSkill ? { invokedSkill } : {})
+        });
+        log.info('heartbeat enqueued queued wake during ask_user', { conversationId });
+        return true;
+      } catch (err) {
+        if (err instanceof FollowUpQueueFullError) {
+          log.warn('heartbeat queue wake dropped — follow-up queue full', { conversationId });
+          return false;
+        }
+        throw err;
+      }
+    }
     await enqueueFollowUp({
       conversationId,
       kind: 'steering',
-      prompt: wakePrompt,
+      prompt,
       selection,
-      source: 'heartbeat'
+      source: 'heartbeat',
+      ...(invokedSkill ? { invokedSkill } : {})
     });
     log.info('heartbeat enqueued steering wake', { conversationId });
     return true;
@@ -60,8 +90,9 @@ async function dispatchWake(row: ConversationHeartbeat): Promise<boolean> {
     runId: randomUUID(),
     conversationId,
     workspaceId: row.workspaceId,
-    prompt: wakePrompt,
-    selection
+    prompt,
+    selection,
+    ...(invokedSkill ? { invokedSkill } : {})
   });
   if (!reply.ok) {
     log.warn('heartbeat wake rejected by chat:send', {

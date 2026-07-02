@@ -21,7 +21,14 @@ import { LoadingHint } from '../components/ui/LoadingHint.js';
 import { RegionErrorBoundary } from '../components/RegionErrorBoundary.js';
 import { useProviderAccountPollSource } from '../lib/useProviderAccountPollSource.js';
 import { useWorkbenchActive } from '../components/workbench/useWorkbenchActive.js';
+import { openWorkspaceLauncher } from '../store/useWorkspaceLauncherStore.js';
 import { useUiStore } from '../store/useUiStore.js';
+import { useComposerModelBridgeStore } from '../store/useComposerModelBridgeStore.js';
+import {
+  enrichModelSelection,
+  isComposerModelValid,
+  resolveComposerModel
+} from '../lib/resolveComposerModel.js';
 
 interface ChatPageProps {
   onOpenProviders: () => void;
@@ -32,7 +39,6 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
   const providers = useProviderStore((s) => s.providers);
   const workspaceInfo = useWorkspaceStore((s) => s.info);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeId);
-  const pickWorkspace = useWorkspaceStore((s) => s.pick);
   const settings = useSettingsStore((s) => s.settings);
   const setLastModelByWorkspace = useSettingsStore((s) => s.setLastModelByWorkspace);
   const activeConversationId = useActiveConversationId();
@@ -41,7 +47,6 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
   );
   const isProcessing = useChatStore((s) => s.isProcessing);
   const workbenchActive = useWorkbenchActive();
-  const dockExpanded = useUiStore((s) => s.dockExpanded);
 
   useProviderAccountPollSource('agent-run', isProcessing);
 
@@ -49,6 +54,11 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
   const agentColumnMaxWidth = timelineAgentColumnMaxWidth(workbenchActive);
 
   const [model, setModel] = useState<ModelSelection | null>(null);
+  const authoringEditNonce = useComposerModelBridgeStore((s) => s.authoringEditNonce);
+
+  const autoModelEnabled = Boolean(
+    activeWorkspaceId && settings.ui?.autoModelByWorkspace?.[activeWorkspaceId]
+  );
 
   const prevConvIdRef = useRef<string | null>(activeConversationId);
   useEffect(() => {
@@ -61,48 +71,44 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
 
   useEffect(() => {
     if (model) return;
-    const active = conversationList.find((c) => c.id === activeConversationId);
-    if (active?.lastProviderId && active.lastModelId) {
-      const p = providers.find((p) => p.id === active.lastProviderId && p.enabled);
-      if (p?.models?.some((m) => m.id === active.lastModelId)) {
-        setModel({ providerId: active.lastProviderId, modelId: active.lastModelId });
-        return;
-      }
-    }
-    if (activeWorkspaceId) {
-      const wsLast = settings.ui?.lastModelByWorkspace?.[activeWorkspaceId];
-      if (wsLast) {
-        const p = providers.find((p) => p.id === wsLast.providerId && p.enabled);
-        if (p?.models?.some((m) => m.id === wsLast.modelId)) {
-          setModel({ providerId: wsLast.providerId, modelId: wsLast.modelId });
-          return;
-        }
-      }
-    }
-    const def = settings.defaultModel;
-    if (def) {
-      const p = providers.find((p) => p.id === def.providerId && p.enabled);
-      if (p?.models?.some((m) => m.id === def.modelId)) {
-        setModel(def);
-        return;
-      }
-    }
-    for (const p of providers) {
-      if (!p.enabled) continue;
-      const m = p.models?.[0];
-      if (m) {
-        setModel({ providerId: p.id, modelId: m.id });
-        return;
-      }
-    }
+    const resolved = resolveComposerModel({
+      providers,
+      activeConversationId,
+      conversationList,
+      activeWorkspaceId,
+      lastModelByWorkspace: settings.ui?.lastModelByWorkspace ?? {},
+      defaultModel: settings.defaultModel,
+      authoringModel: settings.authoringModel,
+      autoModelEnabled
+    });
+    if (resolved) setModel(resolved);
   }, [
     providers,
     settings.defaultModel,
+    settings.authoringModel,
     settings.ui?.lastModelByWorkspace,
     model,
     activeConversationId,
     activeWorkspaceId,
-    conversationList
+    conversationList,
+    autoModelEnabled
+  ]);
+
+  useEffect(() => {
+    if (!authoringEditNonce) return;
+    const authoring = settings.authoringModel;
+    if (!authoring || !isComposerModelValid(authoring, providers)) return;
+    const sel = enrichModelSelection(authoring, providers);
+    setModel(sel);
+    if (activeWorkspaceId) {
+      void setLastModelByWorkspace(activeWorkspaceId, sel);
+    }
+  }, [
+    authoringEditNonce,
+    settings.authoringModel,
+    providers,
+    activeWorkspaceId,
+    setLastModelByWorkspace
   ]);
 
   const defaultModelKey = settings.defaultModel
@@ -150,8 +156,8 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
   );
   const hasWorkspace = Boolean(workspaceInfo.path);
   const needsSetup = !hasWorkspace || !hasProviders;
-  /** Empty chat — center the composer only when chat owns the full canvas. */
-  const centerComposer = isFresh && !workbenchActive && !dockExpanded;
+  /** Empty chat — center the composer when chat owns the canvas (companion closed). */
+  const centerComposer = isFresh && !workbenchActive;
   const [jumpOverlayHost, setJumpOverlayHost] = useState<HTMLElement | null>(null);
   const prevCenterComposerRef = useRef(centerComposer);
   const [dockingFromCenter, setDockingFromCenter] = useState(false);
@@ -181,14 +187,24 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
     prevCenterComposerRef.current = centerComposer;
   }, [centerComposer]);
 
-  const setupLead = needsSetup ? (
+  const setupLead = (
     <ChatLandingSetup
       hasWorkspace={hasWorkspace}
       hasProviders={hasProviders}
-      onPickWorkspace={() => void pickWorkspace()}
+      landing={centerComposer}
+      workspaceId={activeWorkspaceId}
+      workspaceLabel={workspaceInfo.label}
+      onPickWorkspace={() => {
+        useUiStore.getState().setDockExpanded(true);
+        openWorkspaceLauncher('local', 'inline');
+      }}
+      onConnectGitHub={() => {
+        useUiStore.getState().setDockExpanded(true);
+        openWorkspaceLauncher('github', 'inline');
+      }}
       onOpenProviders={onOpenProviders}
     />
-  ) : null;
+  );
 
   return (
     <RevertPromptProvider
@@ -196,8 +212,7 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
       onModelChange={handleModelChange}
       onOpenProviders={onOpenProviders}
     >
-      <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
-        <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+      <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden">
           {selecting && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-surface-base/80">
               <LoadingHint message="Loading conversation…" />
@@ -209,6 +224,7 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
               centered
               landing
               setupLead={setupLead}
+              showShortcutHints={!needsSetup}
               contentWidth={contentWidth}
               model={model}
               onModelChange={handleModelChange}
@@ -221,7 +237,7 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
           ) : (
             <>
               <div
-                className="scrollbar-stealth vx-timeline-scroll-host min-h-0 flex-1 overflow-y-auto scroll-pb-6 px-4 pb-8 antialiased"
+                className="scrollbar-stealth vx-timeline-scroll-host min-h-0 flex-1 overflow-y-auto px-4 antialiased"
                 style={
                   {
                     '--timeline-agent-max-w': agentColumnMaxWidth
@@ -258,7 +274,6 @@ export function ChatPage({ onOpenProviders }: ChatPageProps) {
               </RegionErrorBoundary>
             </>
           )}
-        </div>
       </div>
     </RevertPromptProvider>
   );

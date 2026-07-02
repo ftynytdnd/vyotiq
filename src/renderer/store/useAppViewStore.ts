@@ -8,6 +8,7 @@ import {
   resolveSettingsSectionId,
   type SettingsSectionId
 } from '@shared/settings/settingsSection.js';
+import type { AgentBehaviorSectionId } from '@shared/settings/agentBehaviorSection.js';
 import { persistSettingsPatch } from '../lib/persistSettingsPatch.js';
 import { useAttachmentPreviewStore } from './useAttachmentPreviewStore.js';
 import { useBrowserStore } from './useBrowserStore.js';
@@ -16,6 +17,7 @@ import { useTerminalStore } from './useTerminalStore.js';
 import { useSettingsStore } from './useSettingsStore.js';
 import { useUiStore } from './useUiStore.js';
 import { useDockSearchStore } from './useDockSearchStore.js';
+import { useDockSchedulesStore } from './useDockSchedulesStore.js';
 
 export type { SettingsSectionId };
 
@@ -30,15 +32,22 @@ export type LegacySettingsTabArg =
 
 export type AppView = 'chat' | 'settings';
 
+export interface OpenSettingsOptions {
+  agentBehaviorSection?: AgentBehaviorSectionId;
+}
+
 interface AppViewStore {
   view: AppView;
   settingsSection: SettingsSectionId;
   aboutOpen: boolean;
   settingsSectionBeforeAbout: SettingsSectionId | null;
-  openSettings: (section?: LegacySettingsTabArg) => void;
+  /** One-shot deep link consumed by AgentBehaviorPanel on mount. */
+  pendingAgentBehaviorSection: AgentBehaviorSectionId | null;
+  openSettings: (section?: LegacySettingsTabArg, opts?: OpenSettingsOptions) => void;
   closeSettings: () => void;
   toggleSettings: () => void;
   setSettingsSection: (section: SettingsSectionId) => void;
+  consumePendingAgentBehaviorSection: () => AgentBehaviorSectionId | null;
   openAbout: () => void;
   closeAbout: () => void;
 }
@@ -53,6 +62,7 @@ function clearCompanionOverlays(): void {
 function collapseDockForSettings(): void {
   useUiStore.getState().setDockExpanded(false);
   useDockSearchStore.getState().setOpen(false);
+  useDockSchedulesStore.getState().setOpen(false);
 }
 
 function normalizeSectionArg(
@@ -77,15 +87,22 @@ export const useAppViewStore = create<AppViewStore>((set, get) => ({
   settingsSection: 'models-api',
   aboutOpen: false,
   settingsSectionBeforeAbout: null,
-  openSettings: (section?: LegacySettingsTabArg) => {
+  pendingAgentBehaviorSection: null,
+  openSettings: (section?: LegacySettingsTabArg, opts?: OpenSettingsOptions) => {
     clearCompanionOverlays();
     collapseDockForSettings();
     const nextSection = resolveInitialSection(section, get().settingsSection);
     set({
       view: 'settings',
       settingsSection: nextSection,
-      aboutOpen: nextSection === 'about'
+      aboutOpen: nextSection === 'about',
+      pendingAgentBehaviorSection: opts?.agentBehaviorSection ?? null
     });
+  },
+  consumePendingAgentBehaviorSection: () => {
+    const pending = get().pendingAgentBehaviorSection;
+    if (pending) set({ pendingAgentBehaviorSection: null });
+    return pending;
   },
   closeSettings: () => {
     set({ view: 'chat', aboutOpen: false });

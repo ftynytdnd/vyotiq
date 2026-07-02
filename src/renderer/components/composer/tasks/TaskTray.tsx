@@ -10,6 +10,15 @@ import {
 } from '../../../lib/shellIcons.js';
 import { useTasksStore } from '../../../store/useTasksStore.js';
 import { TaskRow } from './TaskRow.js';
+import {
+  addSubTaskDraft,
+  defaultExpandedTaskIds,
+  flattenVisibleTaskRows,
+  indentTaskUsingPreviousRow,
+  moveTaskAmongSiblings,
+  outdentTask,
+  removeTaskWithDescendants
+} from './taskTreeModel.js';
 
 interface TaskTrayProps {
   conversationId: string;
@@ -19,9 +28,21 @@ interface TaskTrayProps {
 export function TaskTray({ conversationId, tasks }: TaskTrayProps) {
   const setTasks = useTasksStore((s) => s.setTasks);
   const [expanded, setExpanded] = useState(false);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => defaultExpandedTaskIds(tasks));
   const [addDraft, setAddDraft] = useState('');
+  const [subTaskDraftFor, setSubTaskDraftFor] = useState<string | null>(null);
+  const [subTaskDraft, setSubTaskDraft] = useState('');
   const [ariaMessage, setAriaMessage] = useState('');
   const skipAriaOnMountRef = useRef(true);
+
+  useEffect(() => {
+    setExpandedIds((prev) => {
+      const defaults = defaultExpandedTaskIds(tasks);
+      const next = new Set(prev);
+      for (const id of defaults) next.add(id);
+      return next;
+    });
+  }, [tasks]);
 
   useEffect(() => {
     const completed = countCompleted(tasks);
@@ -40,6 +61,11 @@ export function TaskTray({ conversationId, tasks }: TaskTrayProps) {
     return { done: completed, active: activeCount };
   }, [tasks]);
 
+  const visibleRows = useMemo(
+    () => flattenVisibleTaskRows(tasks, expandedIds),
+    [tasks, expandedIds]
+  );
+
   function persist(next: TaskItem[]) {
     void setTasks(conversationId, next);
   }
@@ -47,9 +73,6 @@ export function TaskTray({ conversationId, tasks }: TaskTrayProps) {
   function cycleStatus(id: string, next: TaskStatus) {
     const updated = tasks.map((t) => {
       if (t.id === id) return { ...t, status: next };
-      // Enforce a single in_progress: demote any other active item so the
-      // user's pick is the one that sticks (the normalizer would otherwise
-      // keep the first in_progress and silently ignore this click).
       if (next === 'in_progress' && t.status === 'in_progress') {
         return { ...t, status: 'pending' as TaskStatus };
       }
@@ -63,18 +86,20 @@ export function TaskTray({ conversationId, tasks }: TaskTrayProps) {
   }
 
   function removeTask(id: string) {
-    persist(tasks.filter((t) => t.id !== id));
+    persist(removeTaskWithDescendants(id, tasks));
   }
 
   function moveTask(id: string, direction: -1 | 1) {
-    const index = tasks.findIndex((t) => t.id === id);
-    if (index < 0) return;
-    const target = index + direction;
-    if (target < 0 || target >= tasks.length) return;
-    const next = [...tasks];
-    const [moved] = next.splice(index, 1);
-    next.splice(target, 0, moved!);
-    persist(next);
+    persist(moveTaskAmongSiblings(tasks, id, direction));
+  }
+
+  function toggleExpand(id: string) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   function addTask() {
@@ -82,6 +107,32 @@ export function TaskTray({ conversationId, tasks }: TaskTrayProps) {
     if (content.length === 0) return;
     persist([...tasks, { id: randomId(), content, status: 'pending' }]);
     setAddDraft('');
+  }
+
+  function beginAddSubTask(parentId: string) {
+    setSubTaskDraftFor(parentId);
+    setSubTaskDraft('');
+    setExpandedIds((prev) => new Set(prev).add(parentId));
+  }
+
+  function commitAddSubTask() {
+    if (!subTaskDraftFor) return;
+    const content = subTaskDraft.trim();
+    if (content.length === 0) {
+      setSubTaskDraftFor(null);
+      return;
+    }
+    persist(addSubTaskDraft(tasks, subTaskDraftFor, content, randomId()));
+    setSubTaskDraft('');
+    setSubTaskDraftFor(null);
+  }
+
+  function indentTask(id: string) {
+    persist(indentTaskUsingPreviousRow(visibleRows, tasks, id));
+  }
+
+  function outdentTaskById(id: string) {
+    persist(outdentTask(tasks, id));
   }
 
   return (
@@ -108,17 +159,32 @@ export function TaskTray({ conversationId, tasks }: TaskTrayProps) {
 
       {expanded ? (
         <>
-          <ul className="vx-task-list">
-            {tasks.map((item, i) => (
+          <ul className="vx-task-list" role="tree" aria-label="Task tree">
+            {visibleRows.map((row) => (
               <TaskRow
-                key={item.id}
-                item={item}
-                index={i}
-                total={tasks.length}
+                key={row.item.id}
+                item={row.item}
+                depth={row.depth}
+                hasChildren={row.hasChildren}
+                isExpanded={row.isExpanded}
+                siblingIndex={row.siblingIndex}
+                siblingCount={row.siblingCount}
+                canIndent={visibleRows.findIndex((r) => r.item.id === row.item.id) > 0}
                 onCycleStatus={cycleStatus}
                 onEditContent={editContent}
                 onRemove={removeTask}
                 onMove={moveTask}
+                onToggleExpand={toggleExpand}
+                onAddSubTask={beginAddSubTask}
+                onIndent={indentTask}
+                onOutdent={outdentTaskById}
+                subTaskDraft={subTaskDraftFor === row.item.id ? subTaskDraft : null}
+                onSubTaskDraftChange={setSubTaskDraft}
+                onSubTaskCommit={commitAddSubTask}
+                onSubTaskCancel={() => {
+                  setSubTaskDraftFor(null);
+                  setSubTaskDraft('');
+                }}
               />
             ))}
           </ul>

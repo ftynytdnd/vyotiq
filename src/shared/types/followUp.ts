@@ -26,6 +26,8 @@ export interface FollowUpMessage {
   promptEventId?: string;
   queuedAt: number;
   source: FollowUpSource;
+  /** Skill explicitly invoked via `/skill-name` in the composer. */
+  invokedSkill?: string;
 }
 
 export interface ConversationFollowUpState {
@@ -49,6 +51,8 @@ export interface FollowUpEnqueueInput {
   mentions?: MentionRef[];
   promptEventId?: string;
   source?: FollowUpSource;
+  /** Skill explicitly invoked via `/skill-name` in the composer. */
+  invokedSkill?: string;
 }
 
 export interface FollowUpUpdateInput {
@@ -58,6 +62,7 @@ export interface FollowUpUpdateInput {
   selection?: ModelSelection;
   attachmentMeta?: PromptAttachmentMeta[];
   mentions?: MentionRef[];
+  invokedSkill?: string;
 }
 
 export interface FollowUpRemoveInput {

@@ -8,22 +8,20 @@
  * doesn't help on moderate redundancy — 4 or 5 repeats that still look
  * like "progress" to the detector.
  *
- * This cache short-circuits identical (name, args) pairs for the subset
- * of tools that are **read-shaped and stateless** — `ls`, `read`,
- * `search`, `recall`, and `memory` in `list`/`read` actions. The second
- * and subsequent hits return the EXACT same `output` the model got the
- * first time, with a small system banner prepended so the model can
- * recognize the repetition and move on. It never fabricates or masks
- * data: the payload (`data`) is identical to the original run.
+ * This cache short-circuits identical (name, args) pairs for read-shaped
+ * tools (`ls`, `read`, `search`, `recall`, `memory` list/read) and for
+ * successful `bash` commands. The second and subsequent hits return the
+ * EXACT same `output` the model got the first time, with a small system
+ * banner prepended so the model can recognize the repetition and move on.
+ * It never fabricates or masks data: the payload (`data`) is identical to
+ * the original run.
  *
  * Scope: keyed by `AbortSignal` (one cache bucket per orchestrator run).
  *
- * Invalidation: any call to a **write-shaped** tool (`edit`, `delete`,
- * `bash`, `report`, `memory write/append`) clears the run's cache so
- * subsequent reads see fresh workspace state. `delete` and `report` are
- * included because both mutate the on-disk workspace (`delete` unlinks a
- * file; `report` writes under `.vyotiq/reports`), so a previously cached
- * `read`/`ls`/`search` could otherwise return stale content.
+ * Invalidation: `edit`, `delete`, `report`, `capture`, `sg apply`, and
+ * `memory write/append` clear the entire run cache. Successful `bash`
+ * evicts only read-shaped entries (workspace may have changed) while
+ * memoizing its own result for idempotent replay.
  */
 
 import type { ToolName, ToolResult } from '@shared/types/tool.js';
@@ -31,6 +29,8 @@ import { logger } from '../logging/logger.js';
 import {
   cacheableKey,
   clearConversationCache,
+  clearReadShapedCacheEntries,
+  clearReadShapedConversationCache,
   clearRunCacheEntries,
   deleteRunCache,
   getConversationCache,
@@ -40,32 +40,24 @@ import {
   type CacheEntry
 } from './toolResultCacheInternals.js';
 
+import { buildSmartCacheReplay } from './toolCacheReplayPolicy.js';
+
 const log = logger.child('orchestrator/toolResultCache');
 
-function replayCachedEntry(entry: CacheEntry, name: ToolName, scope: 'run' | 'conversation'): ToolResult {
-  entry.hits += 1;
-  if (entry.seeded) {
-    log.info('tool-result cache hit (seeded)', {
-      tool: name,
-      hits: entry.hits,
-      scope
-    });
-    return { ...entry.result };
-  }
-  const banner =
-    `[cache] This exact \`${name}\` call has already been issued ` +
-    `${entry.hits} time${entry.hits === 1 ? '' : 's'} earlier in this ${scope === 'conversation' ? 'conversation' : 'run'}. ` +
-    `The output may be stale if a write tool ran since. Re-issue after \`edit\`/\`delete\`/\`bash\`, or use a fresh \`read\`. ` +
-    `If you keep seeing this, move to planning or edit instead of re-reading.\n\n`;
+function replayCachedEntry(
+  entry: CacheEntry,
+  name: ToolName,
+  scope: 'run' | 'conversation',
+  spinHot: boolean
+): ToolResult {
+  const replay = buildSmartCacheReplay(entry, name, scope, spinHot);
   log.info('tool-result cache hit', {
     tool: name,
     hits: entry.hits,
-    scope
+    scope,
+    spinHot
   });
-  return {
-    ...entry.result,
-    output: banner + entry.result.output
-  };
+  return replay;
 }
 
 /**
@@ -90,20 +82,21 @@ export function lookupCachedResult(
   signal: AbortSignal,
   name: ToolName,
   args: Record<string, unknown>,
-  conversationId?: string
+  conversationId?: string,
+  spinHot = false
 ): ToolResult | null {
   const key = cacheableKey(name, args);
   if (key === null) return null;
 
   const runEntry = getRunCacheMap(signal).get(key);
   if (runEntry?.result.ok) {
-    return replayCachedEntry(runEntry, name, 'run');
+    return replayCachedEntry(runEntry, name, 'run', spinHot);
   }
 
   if (conversationId) {
     const convEntry = getConversationCache(conversationId).get(key);
     if (convEntry?.result.ok) {
-      return replayCachedEntry(convEntry, name, 'conversation');
+      return replayCachedEntry(convEntry, name, 'conversation', spinHot);
     }
   }
 
@@ -115,6 +108,23 @@ export function lookupCachedResult(
  * wholesale when the call was a write. Callers invoke this after the
  * real tool has run (never on a cache-hit replay).
  */
+function storeCacheEntry(
+  signal: AbortSignal,
+  conversationId: string | undefined,
+  key: string,
+  result: ToolResult
+): void {
+  const store = (target: Map<string, CacheEntry>): void => {
+    if (!target.has(key)) {
+      target.set(key, { result, hits: 0, firstTs: Date.now() });
+    }
+  };
+  store(getRunCacheMap(signal));
+  if (conversationId) {
+    store(getConversationCache(conversationId));
+  }
+}
+
 export function recordToolResult(
   signal: AbortSignal,
   name: ToolName,
@@ -122,6 +132,16 @@ export function recordToolResult(
   result: ToolResult,
   conversationId?: string
 ): void {
+  if (name === 'bash') {
+    if (!result.ok) return;
+    clearReadShapedCacheEntries(signal);
+    clearReadShapedConversationCache(conversationId);
+    const bashKey = cacheableKey(name, args);
+    if (bashKey === null) return;
+    storeCacheEntry(signal, conversationId, bashKey, result);
+    return;
+  }
+
   if (isWriteShaped(name, args)) {
     if (getRunCacheEntryCount(signal) > 0) {
       log.debug('tool-result cache invalidated by write', {
@@ -133,20 +153,11 @@ export function recordToolResult(
     clearConversationCache(conversationId);
     return;
   }
+
   const key = cacheableKey(name, args);
   if (key === null) return;
   if (!result.ok) return;
-
-  const storeEntry = (target: Map<string, CacheEntry>): void => {
-    if (!target.has(key)) {
-      target.set(key, { result, hits: 0, firstTs: Date.now() });
-    }
-  };
-
-  storeEntry(getRunCacheMap(signal));
-  if (conversationId) {
-    storeEntry(getConversationCache(conversationId));
-  }
+  storeCacheEntry(signal, conversationId, key, result);
 }
 
 /**

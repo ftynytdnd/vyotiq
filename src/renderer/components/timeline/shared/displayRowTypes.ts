@@ -2,3 +2,4 @@
 import type { Row } from '../reducer/deriveRows.js';
 
 export type DisplayRow = Row;
+export type AgentStreamRow = Row;

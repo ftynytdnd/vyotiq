@@ -3,15 +3,15 @@
 import { ASK_USER_COMPOSER_PLACEHOLDER, ASK_USER_QUEUE_DEFERRAL } from '@shared/askUser/askUserCopy.js';
 
 export const COMPOSER_LANDING_PLACEHOLDER =
-  '@ to mention files, or describe what Agent V should work on…';
+  '@ files or / skills — describe what Agent V should work on…';
 
 export const COMPOSER_DRAFT_PLACEHOLDER =
   'Unsent draft — continue editing or send when ready…';
 
-export const COMPOSER_DEFAULT_PLACEHOLDER = '@ to mention files, or describe your task…';
+export const COMPOSER_DEFAULT_PLACEHOLDER = '@ files or / skills — describe your task…';
 
 /** Active run — Send/Queue guidance lives in the status strip. */
-export const COMPOSER_PROCESSING_PLACEHOLDER = '@ to mention files…';
+export const COMPOSER_PROCESSING_PLACEHOLDER = '@ files or / skills…';
 
 /** Shown in the chip-row status strip while a run is active. */
 export const COMPOSER_PROCESSING_RUN_HINT =

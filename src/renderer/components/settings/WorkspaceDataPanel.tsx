@@ -1,21 +1,19 @@
 import { FolderOpen, Pencil, Trash2 } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { Button } from '../ui/Button.js';
-import { Notice } from '../ui/Notice.js';
 import { ShellCaption, ShellRow, ShellSection } from '../ui/ShellSection.js';
 import {
   SHELL_ROW_ICON_CLASS,
   SHELL_ROW_ICON_STROKE
 } from '../../lib/shellIcons.js';
+import { openWorkspaceLauncher } from '../../store/useWorkspaceLauncherStore.js';
 import { cn } from '../../lib/cn.js';
 
 export function WorkspaceDataPanel() {
   const workspaces = useWorkspaceStore((s) => s.list);
   const activeId = useWorkspaceStore((s) => s.activeId);
   const setActive = useWorkspaceStore((s) => s.setActive);
-  const add = useWorkspaceStore((s) => s.add);
   const remove = useWorkspaceStore((s) => s.remove);
-  const pick = useWorkspaceStore((s) => s.pick);
 
   return (
     <ShellSection>
@@ -27,17 +25,25 @@ export function WorkspaceDataPanel() {
       </ShellRow>
 
       <ShellRow className="flex flex-wrap gap-2 py-0">
-        <Button variant="primary" size="sm" onClick={() => void add()}>
+        <Button variant="accentFill" size="sm" onClick={() => openWorkspaceLauncher('local', 'elevated')}>
           <FolderOpen className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
           Add workspace…
         </Button>
-        <Button variant="secondary" size="sm" onClick={() => void pick()}>
-          Open folder…
+        <Button variant="secondary" size="sm" onClick={() => openWorkspaceLauncher('github', 'elevated')}>
+          From GitHub…
         </Button>
       </ShellRow>
 
       {workspaces.length === 0 ? (
-        <Notice tone="info">No workspaces yet. Add a folder to get started.</Notice>
+        <div className="vx-settings-empty w-full">
+          <p className="text-row text-text-primary">
+            No workspaces yet — open a folder to start chatting with Agent V.
+          </p>
+          <Button variant="accentFill" size="sm" onClick={() => openWorkspaceLauncher('local', 'elevated')}>
+            <FolderOpen className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
+            Add workspace…
+          </Button>
+        </div>
       ) : (
         <ul className="flex flex-col gap-1">
           {workspaces.map((ws) => {

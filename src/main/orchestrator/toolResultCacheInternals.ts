@@ -26,7 +26,25 @@ export function cacheableKey(name: ToolName, args: Record<string, unknown>): str
       return `${name}|${stableStringify(args)}`;
     }
   }
+  if (name === 'bash') {
+    const command = typeof args.command === 'string' ? args.command : '';
+    if (command.length > 0) {
+      return `${name}|${stableStringify(args)}`;
+    }
+  }
   return null;
+}
+
+/** Keys for read-shaped memo entries (ls/read/search/recall/memory list|read). */
+export function isReadShapedCacheKey(key: string): boolean {
+  const sep = key.indexOf('|');
+  if (sep < 0) return false;
+  const toolName = key.slice(0, sep);
+  if (PURE_READ_TOOLS.has(toolName as ToolName)) return true;
+  if (toolName === 'memory') {
+    return key.includes('"action":"list"') || key.includes('"action":"read"');
+  }
+  return false;
 }
 
 export function readCacheKey(args: Record<string, unknown>): string | null {
@@ -89,4 +107,22 @@ export function getRunCacheEntryCount(signal: AbortSignal): number {
 
 export function clearRunCacheEntries(signal: AbortSignal): void {
   caches.get(signal)?.clear();
+}
+
+/** Evict read-shaped entries only — bash may mutate workspace without dropping other bash memos. */
+export function clearReadShapedCacheEntries(signal: AbortSignal): void {
+  const map = caches.get(signal);
+  if (!map) return;
+  for (const key of [...map.keys()]) {
+    if (isReadShapedCacheKey(key)) map.delete(key);
+  }
+}
+
+export function clearReadShapedConversationCache(conversationId: string | undefined): void {
+  if (!conversationId) return;
+  const map = conversationCaches.get(conversationId);
+  if (!map) return;
+  for (const key of [...map.keys()]) {
+    if (isReadShapedCacheKey(key)) map.delete(key);
+  }
 }

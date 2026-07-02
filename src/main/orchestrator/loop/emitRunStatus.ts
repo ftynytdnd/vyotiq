@@ -3,7 +3,7 @@
  * the orchestrator. Centralizes the `id`/`ts` bookkeeping so call sites
  * read as a single intentful line.
  *
- * `run-status` events drive the renderer's `LiveStatusRow` — the live
+ * `run-status` events drive the renderer's `TurnStickyFooter` — the live
  * replacement for the old static "Agent V is thinking…" placeholder.
  * Every meaningful transition in the loop (contacting the provider,
  * awaiting the first token, running a tool, preparing the next turn,

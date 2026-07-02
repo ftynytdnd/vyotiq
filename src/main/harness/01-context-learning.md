@@ -95,12 +95,13 @@ when the user's question requires information you don't yet have:
   matching `conversationId`.
 - **Reference material you don't have in-prompt** — the system prompt keeps only
   your core rules, this context/memory protocol, and loop behavior. Reference
-  packs (ast-grep syntax, deliverables/report guidance, tool-use examples) are
-  NOT force-fed every turn. Load one yourself with `context`
-  (`{ "action": "load", "pack": "ast-grep-reference" }`) when the task needs it;
-  the in-prompt **On-Demand Context Packs** catalogue lists every pack and when
-  to pull it. A loaded pack returns as a tool result and stays in this run's
-  history (re-loading is deduped).
+  Reference skills (ast-grep syntax, deliverables/report guidance, tool-use examples, and
+  workspace SKILL.md workflows) are NOT force-fed every turn. Load one yourself with
+  `context` (`{ "action": "load", "skill": "ast-grep-reference" }`) when the task needs it;
+  the in-prompt **On-Demand Skills** catalogue lists every skill and when to pull it. A loaded
+  skill returns as a tool result and stays in this run's history (re-loading is deduped).
+  Create workspace skills at `.vyotiq/skills/<name>/SKILL.md`, invoke with `/skill-name`, or use
+  `/create-skill` for an interactive authoring workflow.
 
 ### Compacted tool results
 
@@ -135,10 +136,14 @@ the user starts a new chat in the same workspace.
 
 ```json
 { "name": "todos", "arguments": { "todos": [
-  { "id": "1", "content": "Read the auth module", "status": "in_progress" },
-  { "id": "2", "content": "Add the login route", "status": "pending" }
+  { "id": "p1", "content": "Implement auth", "status": "pending" },
+  { "id": "s1", "parentId": "p1", "content": "Read the auth module", "status": "in_progress" },
+  { "id": "s2", "parentId": "p1", "content": "Add the login route", "status": "pending" }
 ] } }
 ```
+
+The host renders nested plans as a **numbered outline** in `<run_progress>`
+(e.g. `1. Phase`, `1.1 Sub-step`). Prefer nested sub-tasks for multi-phase work.
 
 If a task is too freeform for a checklist, you may instead keep a compact
 markdown scratchpad in the reserved workspace note `run-progress` via the
@@ -309,8 +314,8 @@ A typical research flow is offline → offline → verify:
 5. A follow-up `read` to confirm your applied change is consistent.
 
 Pattern syntax, `kind` search, YAML rules, and `sg` workflows live in the
-**ast-grep** context pack — load it on demand with
-`context` (`{ "action": "load", "pack": "ast-grep-reference" }`) before writing
+**ast-grep-reference** skill — load it on demand with
+`context` (`{ "action": "load", "skill": "ast-grep-reference" }`) before writing
 non-trivial patterns or rules.
 
 ---

@@ -18,6 +18,7 @@ import { randomUUID } from 'node:crypto';
 import type { Tool } from './types.js';
 import type { ToolData, ToolResult } from '@shared/types/tool.js';
 import { normalizeTaskItems, renderTaskListMarkdown, type TaskItem } from '@shared/types/task.js';
+import { invalidateEnvelopesForConversation } from '../orchestrator/contextManager.js';
 import { readTaskList, writeTaskList } from '../tasks/taskStore.js';
 
 interface TodosArgs {
@@ -38,21 +39,25 @@ compaction and wake-ups.
 - Provide a \`todos\` array to write; omit it to read the current list.
 - \`merge: false\` (default) replaces the entire list with a fresh plan.
 - \`merge: true\` updates existing items by \`id\` and appends new ones.
-- Each item: \`{ id: string, content: string, status: "pending" | "in_progress" | "completed" | "cancelled" }\`.
-- List order is priority order.
+- Each item: \`{ id: string, content: string, status: "pending" | "in_progress" | "completed" | "cancelled", parentId?: string }\`.
+- **Top-level items** (omit \`parentId\`) = phases or outcomes. **Sub-tasks** set \`parentId\` to the parent item's \`id\`.
+- List order is priority order (depth-first after normalize).
 
 \`\`\`json
 { "name": "todos", "arguments": { "todos": [
-  { "id": "1", "content": "Read the auth module", "status": "in_progress" },
-  { "id": "2", "content": "Add the login route", "status": "pending" },
-  { "id": "3", "content": "Write tests", "status": "pending" }
+  { "id": "p1", "content": "Implement auth", "status": "pending" },
+  { "id": "s1", "parentId": "p1", "content": "Read the auth module", "status": "in_progress" },
+  { "id": "s2", "parentId": "p1", "content": "Add the login route", "status": "pending" },
+  { "id": "p2", "content": "Write tests", "status": "pending" }
 ] } }
-{ "name": "todos", "arguments": { "merge": true, "todos": [ { "id": "1", "content": "Read the auth module", "status": "completed" }, { "id": "2", "content": "Add the login route", "status": "in_progress" } ] } }
+{ "name": "todos", "arguments": { "merge": true, "todos": [ { "id": "s1", "content": "Read the auth module", "status": "completed" }, { "id": "s2", "content": "Add the login route", "status": "in_progress" } ] } }
 { "name": "todos", "arguments": {} }
 \`\`\`
 
 **WHEN to trigger it.**
 - Use for non-trivial tasks with 3+ steps, or when the user gives multiple tasks.
+- Break each phase into **sub-tasks** via \`parentId\` — do not flatten everything to one level.
+- Mark the **active sub-task** \`in_progress\`, not the parent phase (parent stays \`pending\` until sub-tasks finish; parent auto-completes when all children are done).
 - Keep exactly ONE item \`in_progress\` at a time.
 - Mark an item \`completed\` immediately when it is done — don't batch.
 - If a step is abandoned, set it \`cancelled\` and add a revised item.
@@ -64,7 +69,7 @@ Always returns the full current list.`,
     function: {
       name: 'todos',
       description:
-        'Manage your task list for the current conversation. Provide `todos` to write (replace or merge by id), or omit it to read. Use for multi-step work; keep one item in_progress and mark items completed as you finish.',
+        'Manage your task list for the current conversation. Provide `todos` to write (replace or merge by id), or omit it to read. Use nested sub-tasks via optional `parentId` for multi-step work; keep one item in_progress and mark items completed as you finish.',
       parameters: {
         type: 'object',
         properties: {
@@ -79,6 +84,11 @@ Always returns the full current list.`,
                 status: {
                   type: 'string',
                   enum: ['pending', 'in_progress', 'completed', 'cancelled']
+                },
+                parentId: {
+                  type: 'string',
+                  description:
+                    'Optional parent task id. Omit for top-level phases; set to nest a sub-task under that parent.'
                 }
               },
               required: ['id', 'content', 'status']
@@ -113,6 +123,7 @@ Always returns the full current list.`,
       const merge = a.merge === true;
       const incoming = normalizeTaskItems(a.todos, randomUUID);
       const list = await writeTaskList(ctx.conversationId, incoming, merge);
+      invalidateEnvelopesForConversation(ctx.conversationId);
 
       // Live-update the renderer task tray + persist a transcript snapshot.
       ctx.emit({

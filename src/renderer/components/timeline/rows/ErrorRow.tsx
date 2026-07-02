@@ -4,17 +4,16 @@
 
 import { useEffect, useRef } from 'react';
 import { AlertCircle } from 'lucide-react';
-import { formatTokenCountWithUnit } from '../../../lib/formatTokens.js';
-import type { TokenUsageAggregate } from '../reducer/types.js';
 import { timelineLogRowClassName, timelineRunCompleteRowClassName } from '../shared/rowStyles.js';
 import { cn } from '../../../lib/cn.js';
 import { SHELL_ROW_ICON_CLASS, SHELL_ROW_ICON_STROKE } from '../../../lib/shellIcons.js';
 import { Button } from '../../ui/Button.js';
-import { formatDuration, formatWallClock } from './RunCompleteRow.js';
-import { estimateCostForUsage, estimateRunCostBreakdown, estimateRunCostUsd, buildTurnUsageStatsDelta, recordRunSpendForPrompt, resolveModelForPrompt } from '../../../lib/workspaceSpend.js';
+import { estimateRunCostBreakdown, estimateRunCostUsd, buildTurnUsageStatsDelta, recordRunSpendForPrompt, resolveModelForPrompt } from '../../../lib/workspaceSpend.js';
 import { useChatStore } from '../../../store/useChatStore.js';
 import { useConversationsStore } from '../../../store/useConversationsStore.js';
 import { useProviderStore } from '../../../store/useProviderStore.js';
+import { buildTurnMetaLabels, resolveTurnModelForCost } from './runTurnMetaParts.js';
+import type { TokenUsageAggregate } from '../reducer/types.js';
 
 interface ErrorRowProps {
   message: string;
@@ -51,51 +50,17 @@ function ErrorRunMeta({
 
   if (durationMs === undefined || completedAt === undefined) return null;
 
-  const modelForCost =
-    promptId !== undefined
-      ? resolveModelForPrompt(
-          events,
-          promptId,
-          conversationMeta?.lastProviderId && conversationMeta?.lastModelId
-            ? {
-                providerId: conversationMeta.lastProviderId,
-                modelId: conversationMeta.lastModelId
-              }
-            : null
-        )
-      : null;
-
-  const tokenLabel =
-    usage && usage.cumulative.totalTokens > 0
-      ? formatTokenCountWithUnit(usage.cumulative.totalTokens)
-      : null;
-
-  const costLabel =
-    usage && modelForCost ? estimateCostForUsage(modelForCost, providers, usage.cumulative) : null;
-
-  const stats: string[] = [];
-  if (typeof editCount === 'number' && editCount > 0) {
-    stats.push(`${editCount} edit${editCount === 1 ? '' : 's'}`);
-  }
-  if (typeof fileCount === 'number' && fileCount > 0) {
-    stats.push(`${fileCount} file${fileCount === 1 ? '' : 's'}`);
-  }
-  if (typeof commandCount === 'number' && commandCount > 0) {
-    stats.push(`${commandCount} command${commandCount === 1 ? '' : 's'}`);
-  }
-
-  const cachedTokens = usage?.cumulative.cachedPromptTokens ?? 0;
-  const uncachedTokens = usage?.cumulative.uncachedPromptTokens ?? 0;
-  const cacheParts: string[] = [];
-  if (cachedTokens > 0) {
-    cacheParts.push(`${formatTokenCountWithUnit(cachedTokens)} cached`);
-  }
-  if (uncachedTokens > 0) {
-    cacheParts.push(`${formatTokenCountWithUnit(uncachedTokens)} uncached`);
-  }
-  const cacheLabel = cacheParts.length > 0 ? cacheParts.join(' · ') : null;
-
-  const timeLabel = formatWallClock(completedAt);
+  const modelForCost = resolveTurnModelForCost(events, promptId, conversationMeta);
+  const meta = buildTurnMetaLabels({
+    durationMs,
+    completedAt,
+    usage,
+    modelForCost,
+    providers,
+    editCount,
+    fileCount,
+    commandCount
+  });
 
   return (
     <div
@@ -103,55 +68,46 @@ function ErrorRunMeta({
         'vx-timeline-meta text-text-faint pl-6',
         timelineRunCompleteRowClassName
       )}
-      aria-label={[
-        stats.length > 0 ? stats.join(' · ') : null,
-        `done in ${formatDuration(durationMs)}`,
-        costLabel ? `~${costLabel}` : null,
-        tokenLabel,
-        cacheLabel,
-        timeLabel
-      ]
-        .filter(Boolean)
-        .join(' · ')}
+      aria-label={meta.ariaLabel}
     >
-      {stats.length > 0 ? (
+      {meta.stats.length > 0 ? (
         <>
-          <span>{stats.join(' · ')}</span>
+          <span>{meta.stats.join(' · ')}</span>
           <span aria-hidden className="text-text-faint/70">
             {' · '}
           </span>
         </>
       ) : null}
-      <span>done in {formatDuration(durationMs)}</span>
-      {costLabel !== null ? (
+      <span>done in {meta.durationLabel}</span>
+      {meta.costLabel !== null ? (
         <>
           <span aria-hidden className="text-text-faint/70">
             {' · '}
           </span>
-          <span className="font-mono tabular-nums">~{costLabel}</span>
+          <span className="font-mono tabular-nums">~{meta.costLabel}</span>
         </>
       ) : null}
-      {tokenLabel !== null ? (
+      {meta.tokenLabel !== null ? (
         <>
           <span aria-hidden className="text-text-faint/70">
             {' · '}
           </span>
-          <span className="font-mono tabular-nums">{tokenLabel}</span>
+          <span className="font-mono tabular-nums">{meta.tokenLabel}</span>
         </>
       ) : null}
-      {cacheLabel !== null ? (
+      {meta.cacheLabel !== null ? (
         <>
           <span aria-hidden className="text-text-faint/70">
             {' · '}
           </span>
-          <span className="font-mono tabular-nums text-text-faint">{cacheLabel}</span>
+          <span className="font-mono tabular-nums text-text-faint">{meta.cacheLabel}</span>
         </>
       ) : null}
       <span aria-hidden className="text-text-faint/70">
         {' · '}
       </span>
       <time dateTime={new Date(completedAt).toISOString()} className="tabular-nums">
-        {timeLabel}
+        {meta.timeLabel}
       </time>
     </div>
   );
@@ -225,7 +181,7 @@ export function ErrorRow({
           strokeWidth={SHELL_ROW_ICON_STROKE}
           aria-hidden
         />
-        <div className="min-w-0 flex-1 whitespace-pre-wrap text-row text-danger">{message}</div>
+        <div className="min-w-0 flex-1 whitespace-pre-wrap text-body text-danger">{message}</div>
       </div>
       <ErrorRunMeta
         promptId={promptId}
@@ -239,12 +195,12 @@ export function ErrorRow({
       {(onRetry || (showProviders && onOpenProviders)) && (
         <div className="flex flex-wrap items-center gap-2 pl-6">
           {onRetry ? (
-            <Button type="button" size="sm" variant="secondary" onClick={onRetry}>
+            <Button type="button" size="sm" variant="primary" onClick={onRetry}>
               Retry last message
             </Button>
           ) : null}
           {showProviders && onOpenProviders ? (
-            <Button type="button" size="sm" variant="link" onClick={onOpenProviders}>
+            <Button type="button" size="sm" variant="secondary" onClick={onOpenProviders}>
               Open providers
             </Button>
           ) : null}

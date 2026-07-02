@@ -47,6 +47,7 @@ const BLOCKING_SERVER_PATTERNS: ReadonlyArray<RegExp> = [
   /\brails\s+server\b/i,
   /\bng\s+serve\b/i,
   /\bnext\s+dev\b/i,
+  /\bflutter\s+run\b/i,
   /\bdocker\s+run\b(?![\s\S]*(?:\s|^)-d\b)(?![\s\S]*--detach)/i
 ];
 

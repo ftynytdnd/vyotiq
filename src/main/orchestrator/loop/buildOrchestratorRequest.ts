@@ -80,6 +80,8 @@ export function buildOrchestratorRequest(opts: {
   omitToolChoice?: boolean;
   conversationId?: string;
   workspaceId?: string;
+  /** Dynamic `context` tool skill enum for this request. */
+  contextSkillNames?: string[];
   previousAnthropicMessageId?: string | null;
   /**
    * Opportunistic Anthropic native context-editing backstop. Set by `runLoop`
@@ -118,7 +120,13 @@ export function buildOrchestratorRequest(opts: {
   // and rely on `tool_choice: 'none'`; tool_choice-rejecting models get
   // an empty tool list so there is nothing to call.
   const tools =
-    opts.wrapUp && !toolChoiceSafe ? [] : toolSchemasFor(AGENT_TOOLS);
+    opts.wrapUp && !toolChoiceSafe
+      ? []
+      : toolSchemasFor(AGENT_TOOLS, {
+          ...(opts.contextSkillNames?.length
+            ? { contextSkillNames: opts.contextSkillNames }
+            : {})
+        });
 
   const rawMessages = opts.wrapUp ? appendWrapUpInstruction(opts.messages) : opts.messages;
   const messages = redactChatMessagesForProvider(rawMessages);

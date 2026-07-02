@@ -130,7 +130,7 @@ describe('Timeline row chrome — May 2026 restyle', () => {
 
     // 1. One agent column rail wraps the turn's agent stream and
     //    carries the canonical reading-column tokens.
-    const agentColumns = container.querySelectorAll('.timeline-agent-column');
+    const agentColumns = container.querySelectorAll('.vx-timeline-agent-column');
     expect(agentColumns.length).toBeGreaterThanOrEqual(1);
     const sample = agentColumns[0]!;
     expect(sample.className).toContain('vx-timeline-agent-column');

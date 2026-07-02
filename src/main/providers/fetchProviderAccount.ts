@@ -20,6 +20,7 @@ import {
 } from './providerRateLimitCapture.js';
 
 const XAI_MANAGEMENT_API_BASE = 'https://management-api.x.ai';
+import { fetchClaudeCodeProxyAccount } from './claudeCodeProxy.js';
 import { safeText } from './errorBody.js';
 import { logger } from '../logging/logger.js';
 import { isAbortError } from '../orchestrator/abortSignal.js';
@@ -59,6 +60,10 @@ async function fetchProviderAccountInner(
 
   if (kind === 'local') {
     return { ...base, status: 'local', message: 'Local provider — no cloud billing.' };
+  }
+
+  if (kind === 'claude-code-proxy') {
+    return finalize(await fetchClaudeCodeProxyAccount(provider));
   }
 
   try {

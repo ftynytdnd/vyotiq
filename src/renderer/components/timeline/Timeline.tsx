@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Timeline. Pure row renderer over derived Row descriptors. All streaming
  * state (accumulators, tool previews) is maintained by the shared
  * timeline reducer in `useChatStore`. This file only renders — it does
@@ -22,21 +22,24 @@ import { useChatStore } from '../../store/useChatStore.js';
 import { useAttachmentPreviewStore } from '../../store/useAttachmentPreviewStore.js';
 import { applyDeriveRowsLiveLayer, deriveRows } from './reducer/deriveRows.js';
 import { UserPromptRow } from './rows/UserPromptRow.js';
-import { AskUserRow } from './rows/AskUserRow.js';
+import { AskUserCompactRow } from './rows/AskUserCompactRow.js';
 import { AssistantTextRow } from './rows/AssistantTextRow.js';
 import { AssistantImageRow } from './rows/AssistantImageRow.js';
 import { ReasoningLineRow } from './rows/ReasoningLineRow.js';
 import { AgentThoughtRow } from './rows/AgentThoughtRow.js';
 import { ErrorRow } from './rows/ErrorRow.js';
 import { ToolGroupRow } from './rows/ToolGroupRow.js';
-import { FileEditGroupRow } from './rows/FileEditGroupRow.js';
+import { FileEditCardRow } from './rows/FileEditCardRow.js';
+import { FileEditPendingRow } from './rows/FileEditPendingRow.js';
+import { ExplorationSummaryRow } from './rows/ExplorationSummaryRow.js';
 import { RunCompleteRow } from './rows/RunCompleteRow.js';
 import type { RunCompleteMetaProps } from './rows/RunCompleteMeta.js';
 import { ContextReductionRow } from './rows/ContextReductionRow.js';
-import type { DisplayRow } from './shared/displayRowTypes.js';
+import type { AgentStreamRow, DisplayRow } from './shared/displayRowTypes.js';
 import { RowAnchor } from './shared/RowAnchor.js';
 import { TimelineFindBar } from './shared/TimelineFindBar.js';
 import { parseRowAnchorHash, scrollToRowAnchor } from './shared/timelineRowAnchor.js';
+import { usePendingTimelineScroll } from '../../hooks/usePendingTimelineScroll.js';
 import { TurnBlock, groupRowsIntoTurns } from './shared/TurnBlock.js';
 import { partitionTurnSegment } from './shared/groupTurnSegment.js';
 import { timelineStackClassName } from './shared/rowStyles.js';
@@ -85,6 +88,7 @@ export function Timeline({
   jumpOverlayHost: jumpOverlayHostProp,
   promptAnchorEnter = false
 }: TimelineProps) {
+  usePendingTimelineScroll();
   // --- Stores (fixed order; never short-circuit hooks with `||`) ---
   const companionOverlayOpen = useAttachmentPreviewStore((s) => s.attachment !== null);
 
@@ -570,14 +574,14 @@ export function Timeline({
       const runCompleteRow = partitioned.footer.find(
         (row): row is Extract<DisplayRow, { kind: 'run-complete' }> => row.kind === 'run-complete'
       );
+      const assistantRow = partitioned.agentStream.find(
+        (r): r is Extract<DisplayRow, { kind: 'assistant-text' }> => r.kind === 'assistant-text'
+      );
       const inlineRunComplete =
-        runCompleteRow && partitioned.response?.kind === 'assistant-text'
-          ? runCompleteMetaFromRow(runCompleteRow)
-          : null;
-      const responseAssistantId =
-        partitioned.response?.kind === 'assistant-text' ? partitioned.response.id : null;
+        runCompleteRow && assistantRow ? runCompleteMetaFromRow(runCompleteRow) : null;
+      const responseAssistantId = assistantRow?.id ?? null;
 
-      const renderAnchoredRow = (r: DisplayRow) => (
+      const renderAnchoredRow = (r: AgentStreamRow) => (
         <RowAnchor rowKey={r.key}>
           {renderRow(r, model, liveTurn, errorRowActions, {
             inlineRunComplete:
@@ -684,12 +688,13 @@ function runCompleteMetaFromRow(
     ...(r.usage !== undefined ? { usage: r.usage } : {}),
     ...(r.editCount !== undefined ? { editCount: r.editCount } : {}),
     ...(r.fileCount !== undefined ? { fileCount: r.fileCount } : {}),
-    ...(r.commandCount !== undefined ? { commandCount: r.commandCount } : {})
+    ...(r.commandCount !== undefined ? { commandCount: r.commandCount } : {}),
+    ...(r.continued ? { continued: true } : {})
   };
 }
 
 function renderRow(
-  r: DisplayRow,
+  r: AgentStreamRow,
   model: ModelSelection | null | undefined,
   liveTurn = false,
   errorRowActions?: ErrorRowActions,
@@ -707,6 +712,7 @@ function renderRow(
             ? { attachments: r.attachments }
             : {})}
           {...(r.mentions && r.mentions.length > 0 ? { mentions: r.mentions } : {})}
+          {...(r.invokedSkill ? { invokedSkill: r.invokedSkill } : {})}
           live={liveTurn}
         />
       );
@@ -744,13 +750,11 @@ function renderRow(
       );
     case 'ask-user-prompt':
       return (
-        <AskUserRow
+        <AskUserCompactRow
           key={r.key}
           payload={r.payload}
           displayText={r.displayText}
           promptEventId={r.id}
-          toolCallId={r.toolCallId}
-          runId={r.runId}
           {...(r.status ? { status: r.status } : {})}
           {...(r.source ? { source: r.source } : {})}
         />
@@ -783,9 +787,30 @@ function renderRow(
           items={r.children}
         />
       );
-    case 'file-edit-group':
+    case 'file-edit-card':
       return (
-        <FileEditGroupRow key={r.key} rowKey={r.key} items={r.children} />
+        <FileEditCardRow
+          key={r.key}
+          rowKey={r.key}
+          filePath={r.filePath}
+          additions={r.additions}
+          deletions={r.deletions}
+          hunks={r.hunks}
+          phase={r.phase}
+          revisions={r.revisions}
+        />
+      );
+    case 'file-edit-pending':
+      return <FileEditPendingRow key={r.key} filePath={r.filePath} />;
+    case 'exploration-summary':
+      return (
+        <ExplorationSummaryRow
+          key={r.key}
+          rowKey={r.key}
+          fileCount={r.fileCount}
+          searchCount={r.searchCount}
+          samples={r.samples}
+        />
       );
     case 'run-complete':
       return (

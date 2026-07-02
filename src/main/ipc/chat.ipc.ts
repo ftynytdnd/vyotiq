@@ -95,7 +95,7 @@ interface CoalescerEntry {
  * Predicate that decides whether a TimelineEvent should be appended to
  * the conversation's JSONL transcript. Everything is persistent EXCEPT
  * `run-status` — that stream is pure live telemetry for the renderer's
- * `LiveStatusRow` and has no meaning on replay. Persisting it would
+ * `TurnStickyFooter` and has no meaning on replay. Persisting it would
  * just bloat transcripts with transient run-status flips ("connecting",
  * "awaiting-response", "running-tool:read", …) that already get their
  * authoritative counterparts (`tool-call`, `agent-text-delta`, etc.) on
@@ -111,7 +111,7 @@ function isPersistentEvent(event: TimelineEvent): boolean {
   // these are safe to drop on append.
   //
   //   - `run-status` — live status telemetry for the renderer's
-  //     `LiveStatusRow`. Authoritative state lives on `tool-call`,
+  //     `TurnStickyFooter`. Authoritative state lives on `tool-call`,
   //     `tool-result`, `agent-text-end`, etc.
   //   - `tool-call-args-delta` — streaming partial-args preview;
   //     superseded by the final `tool-call` event.

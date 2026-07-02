@@ -13,6 +13,7 @@ import {
   type TurnUsageStatsDelta
 } from '@shared/types/usageStats.js';
 import { resolveSettingsSectionId } from '@shared/settings/settingsSection.js';
+import { resolveAgentBehaviorSectionId } from '@shared/settings/agentBehaviorSection.js';
 import { readBlob, updateBlob, type SettingsBlob } from './blob.js';
 import { normalizeDockWidthInUi } from '@shared/dock/dockWidth.js';
 import { normalizeWorkbenchPaneWidthInUi } from '@shared/workbench/workbenchPaneWidth.js';
@@ -257,6 +258,13 @@ function publicShape(blob: SettingsBlob): AppSettings {
     };
   }
 
+  if (ui?.lastAgentBehaviorSection !== undefined) {
+    ui = {
+      ...ui,
+      lastAgentBehaviorSection: resolveAgentBehaviorSectionId(ui.lastAgentBehaviorSection, 'memory')
+    };
+  }
+
   return {
     ...DEFAULTS,
     ...rest,
@@ -283,6 +291,19 @@ export async function setSettings(patch: Partial<AppSettings>): Promise<AppSetti
       ui: {
         ...ui,
         lastSettingsTab: resolveSettingsSectionId(ui.lastSettingsTab, 'models-api')
+      }
+    };
+  }
+  if (normalized.ui?.lastAgentBehaviorSection !== undefined) {
+    const ui = normalized.ui ?? patch.ui ?? {};
+    normalized = {
+      ...normalized,
+      ui: {
+        ...ui,
+        lastAgentBehaviorSection: resolveAgentBehaviorSectionId(
+          ui.lastAgentBehaviorSection,
+          'memory'
+        )
       }
     };
   }
@@ -435,12 +456,21 @@ export async function setSettings(patch: Partial<AppSettings>): Promise<AppSetti
 
     const { permissions: _patchPerms, ...normalizedSansPerms } = normalized as Partial<AppSettings> & {
       permissions?: unknown;
+      authoringModel?: AppSettings['authoringModel'] | null;
     };
     void _patchPerms;
 
+    const clearAuthoringModel =
+      Object.prototype.hasOwnProperty.call(patch, 'authoringModel') &&
+      patch.authoringModel === null;
+
+    const mergedTop = { ...cleaned, ...normalizedSansPerms };
+    if (clearAuthoringModel) {
+      delete mergedTop.authoringModel;
+    }
+
     return {
-      ...cleaned,
-      ...normalizedSansPerms,
+      ...mergedTop,
       // Deep-merge `ui` so a partial patch (e.g. just `dockExpanded` or legacy `sidebarOpen`)
       // doesn't clobber sibling fields written by other features.
       ui: mergedUi

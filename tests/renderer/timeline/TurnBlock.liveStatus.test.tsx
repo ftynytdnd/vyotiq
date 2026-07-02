@@ -12,8 +12,6 @@ const CONNECTING_LABEL = 'Connecting to Ollama Cloud…';
 
 const livePartition: PartitionedTurn = {
   prompt: { kind: 'user-prompt', key: 'p1', id: 'p1', content: 'hi' },
-  activity: [],
-  response: null,
   footer: [],
   agentStream: []
 };

@@ -1,11 +1,12 @@
 /**
- * TurnStickyFooter — live throughput vs cumulative token fallback.
+ * TurnStickyFooter — throughput hidden until long-turn threshold.
  */
 
 import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { TurnStickyFooter } from '@renderer/components/timeline/shared/TurnStickyFooter';
 import { useChatStore } from '@renderer/store/useChatStore';
+import { LONG_TURN_WARN_MS } from '@shared/timeline/longTurnThresholds.js';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -49,7 +50,7 @@ afterEach(() => {
 });
 
 describe('TurnStickyFooter throughput', () => {
-  it('falls back to cumulative tok when rate is not yet measurable', () => {
+  it('omits token throughput on short turns', () => {
     render(
       <TurnStickyFooter live promptId="p1">
         <div>body</div>
@@ -57,11 +58,21 @@ describe('TurnStickyFooter throughput', () => {
     );
 
     expect(screen.getByText(/Thinking/)).toBeTruthy();
-    expect(screen.getByText(/1k run total/)).toBeTruthy();
+    expect(screen.queryByText(/1k run total/)).toBeNull();
+    expect(screen.queryByText(/tok\/s/)).toBeNull();
   });
 
-  it('shows live tok/s instead of cumulative total while streaming', () => {
+  it('shows live tok/s after the long-turn threshold', () => {
     useChatStore.setState({
+      events: [
+        {
+          kind: 'user-prompt',
+          id: 'p1',
+          ts: 10_000 - LONG_TURN_WARN_MS - 5_000,
+          content: 'hi',
+          runId: 'r1'
+        }
+      ],
       orchestratorUsage: {
         latest: { promptTokens: 1000, completionTokens: 10, totalTokens: 1010 },
         peak: { promptTokens: 1000, completionTokens: 10, totalTokens: 1010 },

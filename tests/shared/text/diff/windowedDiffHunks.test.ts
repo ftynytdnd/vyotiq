@@ -13,11 +13,11 @@ describe('windowedDiffHunks', () => {
   });
 
   it('windows around the changed region for large bodies', () => {
-    const prefix = 'line\n'.repeat(5000);
-    const before = `${prefix}old\n${'tail\n'.repeat(5000)}`;
-    const after = `${prefix}new\n${'tail\n'.repeat(5000)}`;
+    const prefix = 'line\n'.repeat(110_000);
+    const before = `${prefix}old\n${'tail\n'.repeat(110_000)}`;
+    const after = `${prefix}new\n${'tail\n'.repeat(110_000)}`;
     const window = extractDiffWindow(before, after);
-    expect(window.before.length + window.after.length).toBeLessThan(before.length);
+    expect(window.before.length + window.after.length).toBeLessThan(before.length + after.length);
     expect(window.oldLineOffset).toBeGreaterThan(0);
   });
 

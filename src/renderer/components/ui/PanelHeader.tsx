@@ -44,7 +44,7 @@ export function PanelHeader({
     >
       <h2
         id={titleId}
-        className="min-w-0 flex-1 truncate text-section font-medium text-text-primary"
+        className="vx-panel-title min-w-0 flex-1 truncate"
       >
         {title}
       </h2>

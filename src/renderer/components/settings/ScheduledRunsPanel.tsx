@@ -19,6 +19,7 @@ import {
 } from '../ui/ShellSection.js';
 import { SettingsSwitchRow } from './SettingsSwitchRow.js';
 import { TextField } from '../ui/TextField.js';
+import { LoadingHint } from '../ui/LoadingHint.js';
 import { Button } from '../ui/Button.js';
 
 const INTERVAL_PRESETS = [
@@ -189,16 +190,17 @@ function ScheduledRunCard({
         </select>
       </ShellRow>
 
-      <label className="vx-settings-field flex flex-col gap-1.5">
-        <span className="text-meta text-text-muted">Prompt</span>
+      <div className="vx-settings-field flex flex-col gap-1.5">
+        <ShellFieldLabel htmlFor={`schedule-prompt-${run.id}`}>Prompt</ShellFieldLabel>
         <textarea
+          id={`schedule-prompt-${run.id}`}
           className="vx-textarea min-h-[5rem]"
           value={run.prompt}
           placeholder="Message sent to the agent on each tick…"
           onChange={(e) => onChange({ ...run, prompt: e.target.value })}
           onBlur={(e) => onPersist({ ...run, prompt: e.target.value })}
         />
-      </label>
+      </div>
 
       <Button variant="secondary" size="sm" onClick={onDelete}>
         Delete schedule
@@ -271,16 +273,21 @@ export function ScheduledRunsPanel() {
   };
 
   return (
-    <ShellSection title="Scheduled runs">
+    <ShellSection>
       <ShellStack>
         <ShellCaption>
           Dispatches the prompt to the chosen conversation on the interval while Vyotiq is open
           (minimum 5 minutes). Skips a tick when that conversation already has an active agent run.
         </ShellCaption>
         {loading ? (
-          <ShellCaption>Loading…</ShellCaption>
+          <LoadingHint message="Loading scheduled runs…" className="py-2" />
         ) : runs.length === 0 ? (
-          <ShellCaption>No schedules yet.</ShellCaption>
+          <div className="vx-settings-empty w-full">
+            <p className="text-row text-text-primary">
+              No schedules yet — use Add schedule below to dispatch prompts on an interval while
+              Vyotiq is open.
+            </p>
+          </div>
         ) : (
           runs.map((run) => (
             <ScheduledRunCard

@@ -5,9 +5,10 @@
  *   1. Read-shaped calls (ls/read/search/recall + memory list/read) are
  *      memoized and the second hit short-circuits tool execution with a
  *      "you already did this" banner prepended.
- *   2. Write-shaped calls (edit/delete/bash/report/capture, sg apply,
- *      memory write/append) invalidate the entire per-signal cache so
- *      subsequent reads see fresh state.
+ *   2. Write-shaped calls (`edit`/`delete`/`report`/`capture`, `sg`
+ *      apply, `memory` write/append) invalidate the entire per-signal
+ *      cache. Successful `bash` evicts read-shaped entries only and
+ *      memoizes its own result for idempotent replay.
  *   3. Failed results are NEVER cached — a transient failure must not
  *      poison the cache.
  *   4. Different AbortSignals (= different runs) do not share entries.
@@ -51,7 +52,7 @@ describe('toolResultCache', () => {
     expect(hit!.ok).toBe(true);
     expect(hit!.output).toContain('contents of a.ts'); // original body preserved
     expect(hit!.output.startsWith('[cache]')).toBe(true); // banner prepended
-    expect(hit!.output).toMatch(/already been issued/);
+    expect(hit!.output).toMatch(/was issued 1 time earlier/);
   });
 
   /**
@@ -92,7 +93,7 @@ describe('toolResultCache', () => {
     // This is the line that replaces the deleted spin nudge's
     // "Either emit a `<delegate ... />` directive or finalize the
     // answer" copy.
-    expect(secondCall!.output).toMatch(/move to planning or edit/i);
+    expect(secondCall!.output).toMatch(/may be stale after writes/i);
   });
 
   it('treats argument key order as insignificant (stable hash)', () => {
@@ -148,8 +149,10 @@ describe('toolResultCache', () => {
     for (let i = 0; i < 13; i++) {
       const hit = lookupCachedResult(sig, 'read', { path: 'x.ts' });
       expect(hit).not.toBeNull();
-      expect(hit!.output).toContain('body of x');
-      expect(hit!.output).toMatch(/already been issued/);
+      expect(hit!.output).toMatch(/\[(cache|cache-compact|cache-ref)/);
+      if (i < 2) {
+        expect(hit!.output).toContain('body of x');
+      }
     }
   });
 
@@ -309,5 +312,89 @@ describe('toolResultCache', () => {
     recordToolResult(sigA, 'read', { path: 'a.ts' }, okResult('shared'), conv);
     expect(lookupCachedResult(sigB, 'read', { path: 'a.ts' }, conv)).not.toBeNull();
     expect(lookupCachedResult(sigB, 'read', { path: 'a.ts' })).toBeNull();
+  });
+
+  it('memoizes successful bash and replays with a cache banner', () => {
+    const sig = new AbortController().signal;
+    const args = { command: 'git init' };
+    const first: ToolResult = {
+      id: 'tc-1',
+      name: 'bash',
+      ok: true,
+      output: '--- stdout ---\nInitialized empty Git repository\n--- exit: 0 ---',
+      durationMs: 1
+    };
+    recordToolResult(sig, 'bash', args, first);
+
+    const hit = lookupCachedResult(sig, 'bash', args);
+    expect(hit).not.toBeNull();
+    expect(hit!.ok).toBe(true);
+    expect(hit!.output).toContain('Initialized empty Git repository');
+    expect(hit!.output.startsWith('[cache]')).toBe(true);
+  });
+
+  it('does not cache failed bash', () => {
+    const sig = new AbortController().signal;
+    const args = { command: 'git init' };
+    recordToolResult(sig, 'bash', args, {
+      id: 'tc',
+      name: 'bash',
+      ok: false,
+      output: '--- exit: 1 ---',
+      error: 'exited with code 1',
+      durationMs: 1
+    });
+    expect(lookupCachedResult(sig, 'bash', args)).toBeNull();
+  });
+
+  it('bash evicts read-shaped cache but keeps other bash memos', () => {
+    const sig = new AbortController().signal;
+    recordToolResult(sig, 'read', { path: 'a.ts' }, okResult('before bash'));
+    recordToolResult(
+      sig,
+      'bash',
+      { command: 'git init' },
+      {
+        id: 'tc',
+        name: 'bash',
+        ok: true,
+        output: 'init ok',
+        durationMs: 1
+      }
+    );
+    expect(lookupCachedResult(sig, 'read', { path: 'a.ts' })).toBeNull();
+    expect(lookupCachedResult(sig, 'bash', { command: 'git init' })).not.toBeNull();
+
+    recordToolResult(
+      sig,
+      'bash',
+      { command: 'git status' },
+      {
+        id: 'tc2',
+        name: 'bash',
+        ok: true,
+        output: 'status ok',
+        durationMs: 1
+      }
+    );
+    expect(lookupCachedResult(sig, 'bash', { command: 'git init' })).not.toBeNull();
+    expect(lookupCachedResult(sig, 'bash', { command: 'git status' })).not.toBeNull();
+  });
+
+  it('edit clears bash memos along with read cache', () => {
+    const sig = new AbortController().signal;
+    recordToolResult(
+      sig,
+      'bash',
+      { command: 'git init' },
+      { id: 'tc', name: 'bash', ok: true, output: 'init ok', durationMs: 1 }
+    );
+    recordToolResult(
+      sig,
+      'edit',
+      { filePath: 'a.ts' },
+      { id: 'tc2', name: 'edit', ok: true, output: 'ok', durationMs: 1 }
+    );
+    expect(lookupCachedResult(sig, 'bash', { command: 'git init' })).toBeNull();
   });
 });

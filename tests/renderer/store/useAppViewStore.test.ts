@@ -12,7 +12,8 @@ beforeEach(() => {
   useAppViewStore.setState({
     view: 'chat',
     settingsSection: 'models-api',
-    aboutOpen: false
+    aboutOpen: false,
+    pendingAgentBehaviorSection: null
   });
   useUiStore.setState({ dockExpanded: true, dockWidth: 260, collapsedWorkspaces: new Set(), hydrated: true });
   useDockSearchStore.setState({ open: true, query: 'tri' });
@@ -80,5 +81,11 @@ describe('useAppViewStore', () => {
   it('openSettings restores persisted section', () => {
     useAppViewStore.getState().openSettings();
     expect(useAppViewStore.getState().settingsSection).toBe('agent-behavior');
+  });
+
+  it('openSettings accepts agent behavior deep-link sub-section', () => {
+    useAppViewStore.getState().openSettings('agent-behavior', { agentBehaviorSection: 'lsp' });
+    expect(useAppViewStore.getState().settingsSection).toBe('agent-behavior');
+    expect(useAppViewStore.getState().pendingAgentBehaviorSection).toBe('lsp');
   });
 });

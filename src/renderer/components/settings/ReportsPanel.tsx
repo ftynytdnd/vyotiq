@@ -19,7 +19,7 @@ export function ReportsPanel() {
   };
 
   return (
-    <ShellSection title="Reports" className="mt-4">
+    <ShellSection>
       <ShellCaption>
         HTML deliverables open in a dedicated report window or your system browser. Quick
         summary is always free; the AI report button uses your selected model.

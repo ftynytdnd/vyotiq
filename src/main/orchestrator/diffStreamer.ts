@@ -71,6 +71,7 @@ import {
   workspaceRelative
 } from '../tools/sandbox.js';
 import { logger } from '../logging/logger.js';
+import { normalizeEditNeedles, findFlexible, countOccurrencesFlexible } from '../tools/editHelpers.js';
 import { tryParseBashWrite, type BashWriteOp } from './bashWriteParser.js';
 
 const log = logger.child('diffStreamer');
@@ -942,33 +943,34 @@ export class DiffStreamer {
     body: string,
     args: Record<string, unknown>
   ): string | null {
-    const oldString = args['oldString'];
-    const newString = args['newString'];
-    if (typeof oldString !== 'string' || typeof newString !== 'string') {
+    const rawOld = args['oldString'];
+    const rawNew = args['newString'];
+    if (typeof rawOld !== 'string' || typeof rawNew !== 'string') {
       return null;
     }
+    const { oldString, newString } = normalizeEditNeedles(rawOld, rawNew);
     if (oldString.length === 0 || oldString === newString) return null;
 
     if (args['replaceAll'] === true) {
-      // Walk and splice each occurrence in turn.
       let work = body;
       let cursor = 0;
       let any = false;
-      // Cap iterations defensively. The streaming case shouldn't
-      // hit pathological replace-all loops.
       let safety = 1024;
       while (safety-- > 0) {
-        const idx = work.indexOf(oldString, cursor);
-        if (idx === -1) break;
+        const match = findFlexible(work.slice(cursor), oldString);
+        if (!match) break;
+        const idx = cursor + match.index;
         any = true;
-        work = work.slice(0, idx) + newString + work.slice(idx + oldString.length);
+        work = work.slice(0, idx) + newString + work.slice(idx + match.length);
         cursor = idx + newString.length;
       }
       return any ? work : null;
     }
-    const idx = body.indexOf(oldString);
-    if (idx === -1) return null; // anchor not found yet
-    return body.slice(0, idx) + newString + body.slice(idx + oldString.length);
+    if (countOccurrencesFlexible(body, oldString) > 1) return null;
+    const match = findFlexible(body, oldString);
+    if (!match) return null;
+    const idx = match.index;
+    return body.slice(0, idx) + newString + body.slice(idx + match.length);
   }
 }
 

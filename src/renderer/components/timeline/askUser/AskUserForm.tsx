@@ -88,7 +88,7 @@ export function AskUserForm({ pending, variant = 'inline' }: AskUserFormProps) {
               </p>
             </div>
             {isHostGate ? (
-              <p className="text-meta text-text-faint">{ASK_USER_HOST_GATE_SUBTITLE}</p>
+              <p className="text-row text-text-muted">{ASK_USER_HOST_GATE_SUBTITLE}</p>
             ) : null}
           </div>
           {!isHostGate && questionCount > 1 ? (
@@ -139,7 +139,7 @@ export function AskUserForm({ pending, variant = 'inline' }: AskUserFormProps) {
                   ) : null}
                 </div>
                 {d.skipped ? (
-                  <p className="font-mono text-meta text-text-faint italic">Skipped</p>
+                  <p className="font-mono text-row text-text-muted italic">Skipped</p>
                 ) : (
                   <>
                     <ul className="flex flex-col gap-1">

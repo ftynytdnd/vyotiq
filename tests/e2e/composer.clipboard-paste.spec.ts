@@ -1,6 +1,6 @@
 ﻿/**
  * Composer clipboard image paste — renderer paste handler + stubbed
- * `attachments:ingest-clipboard-image` IPC (no OS clipboard required).
+ * `attachments:ingest-clipboard` IPC (no OS clipboard required).
  */
 
 import { mkdtemp } from 'node:fs/promises';

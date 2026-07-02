@@ -1,10 +1,11 @@
 /**
  * Bespoke renderer for the `context` tool. Surfaces the action and (for
- * `load`) the pack id; the expanded detail previews the catalogue or the
- * loaded pack body.
+ * `load`) the skill name; the expanded detail previews the catalogue or the
+ * loaded skill body.
  */
 
 import type { ToolCall, ToolResult } from '@shared/types/tool.js';
+import { SKILL_SOURCE_LABELS } from '@shared/types/skills.js';
 import { InvocationShell } from './shared/InvocationShell.js';
 import { DetailPane } from './shared/DetailPane.js';
 import { CodeBlock } from './shared/CodeBlock.js';
@@ -23,20 +24,24 @@ export function ContextInvocation({ call, result, dense, rowKey }: ContextInvoca
     (typeof call?.args?.['action'] === 'string'
       ? (call.args['action'] as string)
       : data?.action) ?? '?';
-  const pack =
-    (typeof call?.args?.['pack'] === 'string'
-      ? (call.args['pack'] as string)
-      : data?.pack) ?? '';
+  const skill =
+    (typeof call?.args?.['skill'] === 'string'
+      ? (call.args['skill'] as string)
+      : data?.skill) ??
+    (typeof call?.args?.['pack'] === 'string' ? (call.args['pack'] as string) : data?.pack) ??
+    '';
 
   const summary =
     action === 'list'
       ? data?.alreadyListed
         ? 'catalogue (cached)'
         : 'catalogue'
-      : pack
+      : skill
         ? data?.alreadyLoaded
-          ? `${pack} (cached)`
-          : pack
+          ? `${skill} (cached)`
+          : data?.source
+            ? `${skill} · ${SKILL_SOURCE_LABELS[data.source as keyof typeof SKILL_SOURCE_LABELS] ?? data.source}`
+            : skill
         : 'load';
 
   const errorHint = toolErrorHint(result);
@@ -44,7 +49,7 @@ export function ContextInvocation({ call, result, dense, rowKey }: ContextInvoca
   let detail: React.ReactNode = undefined;
   if (data?.preview) {
     detail = (
-      <DetailPane label={action === 'list' ? 'packs' : 'pack'}>
+      <DetailPane label={action === 'list' ? 'skills' : 'skill'}>
         <CodeBlock body={data.preview} />
       </DetailPane>
     );

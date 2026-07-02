@@ -191,6 +191,8 @@ export type TimelineEvent =
     attachments?: PromptAttachmentMeta[];
     /** Inline `@` file mentions (chips), resolved into context on send. */
     mentions?: MentionRef[];
+    /** Composer `/skill-name` slash invocation for this turn. */
+    invokedSkill?: string;
   }
   | {
     kind: 'agent-thought';
@@ -758,6 +760,8 @@ export interface ChatSendInput {
   promptEventId?: string;
   /** Inline `@` file mentions from the composer (not attachment pills). */
   mentions?: MentionRef[];
+  /** Composer `/skill-name` slash invocation — loads manual-only skills in catalogue. */
+  invokedSkill?: string;
 }
 
 /**

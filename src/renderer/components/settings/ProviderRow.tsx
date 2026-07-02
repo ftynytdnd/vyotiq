@@ -54,9 +54,11 @@ import {
 
 interface ProviderRowProps {
   provider: ProviderConfig;
+  /** Detail pane already shows the provider name as a section head. */
+  hideTitle?: boolean;
 }
 
-export function ProviderRow({ provider }: ProviderRowProps) {
+export function ProviderRow({ provider, hideTitle = false }: ProviderRowProps) {
   const remove = useProviderStore((s) => s.remove);
   const discover = useProviderStore((s) => s.discover);
   const test = useProviderStore((s) => s.test);
@@ -116,7 +118,7 @@ export function ProviderRow({ provider }: ProviderRowProps) {
         <ShellRowSplit
           main={
             <>
-              <div className="vx-row-label">{provider.name}</div>
+              {!hideTitle ? <div className="vx-row-label">{provider.name}</div> : null}
               <div className="vx-provider-meta">{provider.baseUrl}</div>
               <ShellCaption className="mt-1">
                 {PROVIDER_DIALECT_LABELS[provider.dialect ?? 'openai']}

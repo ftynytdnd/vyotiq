@@ -3,12 +3,11 @@
  */
 
 import type { DiffHunk, ToolCall, ToolName, ToolResult } from '@shared/types/tool.js';
-import type { FileEditGroupChild, Row } from '../deriveRows.js';
+import type { Row, ToolGroupChild } from '../deriveRows.js';
 import { editChildPath } from './groupTools.js';
 
 export interface ScopedGroupState {
   openToolGroupIdx: number | null;
-  openFileEditGroupIdx: number | null;
   callIdToGroupIdx: Map<string, number>;
   callIdToChildIdx: Map<string, number>;
 }
@@ -20,8 +19,33 @@ function toolGroupMatches(
   return !!row && row.kind === 'tool-group' && row.toolName === toolName;
 }
 
-function fileEditGroupMatches(row: Row | undefined): row is Extract<Row, { kind: 'file-edit-group' }> {
-  return !!row && row.kind === 'file-edit-group';
+function withEditRetryCount(
+  children: ToolGroupChild[],
+  childIdx: number,
+  child: ToolGroupChild
+): ToolGroupChild {
+  if (child.result?.name !== 'edit' || child.result.ok) return child;
+  const path = editChildPath(child);
+  if (!path) return child;
+  const prev = childIdx > 0 ? children[childIdx - 1] : undefined;
+  if (
+    prev?.result &&
+    !prev.result.ok &&
+    prev.result.name === 'edit' &&
+    editChildPath(prev) === path
+  ) {
+    return { ...child, retryCount: (prev.retryCount ?? 1) + 1 };
+  }
+  return child;
+}
+
+function mergeToolResultChild(
+  children: ToolGroupChild[],
+  childIdx: number,
+  result: ToolResult
+): ToolGroupChild {
+  const prev = children[childIdx]!;
+  return withEditRetryCount(children, childIdx, { ...prev, result });
 }
 
 export function foldToolCall(out: Row[], state: ScopedGroupState, call: ToolCall): void {
@@ -58,7 +82,6 @@ export function foldToolCall(out: Row[], state: ScopedGroupState, call: ToolCall
     });
     groupIdx = out.length - 1;
     state.openToolGroupIdx = groupIdx;
-    state.openFileEditGroupIdx = null;
   } else {
     groupIdx = curIdx!;
   }
@@ -79,8 +102,7 @@ export function foldToolResult(out: Row[], state: ScopedGroupState, result: Tool
   ) {
     const row = out[groupIdx] as Extract<Row, { kind: 'tool-group' }>;
     const children = row.children.slice();
-    const prev = children[childIdx]!;
-    children[childIdx] = { ...prev, result };
+    children[childIdx] = mergeToolResultChild(children, childIdx, result);
     out[groupIdx] = { ...row, children };
     return;
   }
@@ -98,15 +120,16 @@ export function foldToolResult(out: Row[], state: ScopedGroupState, result: Tool
     });
     gIdx = out.length - 1;
     state.openToolGroupIdx = gIdx;
-    state.openFileEditGroupIdx = null;
   } else {
     gIdx = curIdx!;
   }
   const row = out[gIdx] as Extract<Row, { kind: 'tool-group' }>;
   const children = [...row.children, { callId: result.id, result }];
+  const newChildIdx = children.length - 1;
+  children[newChildIdx] = withEditRetryCount(children, newChildIdx, children[newChildIdx]!);
   out[gIdx] = { ...row, children };
   state.callIdToGroupIdx.set(result.id, gIdx);
-  state.callIdToChildIdx.set(result.id, children.length - 1);
+  state.callIdToChildIdx.set(result.id, newChildIdx);
 }
 
 export interface FileEditFoldInput {
@@ -124,34 +147,17 @@ export function foldScopedFileEdit(
   edit: FileEditFoldInput
 ): void {
   state.openToolGroupIdx = null;
-  let groupIdx: number;
-  const curIdx = state.openFileEditGroupIdx;
-  const curRow = curIdx !== null ? out[curIdx] : undefined;
-  if (!fileEditGroupMatches(curRow)) {
-    out.push({
-      kind: 'file-edit-group',
-      key: `fe:${edit.id}`,
-      children: []
-    });
-    groupIdx = out.length - 1;
-    state.openFileEditGroupIdx = groupIdx;
-  } else {
-    groupIdx = curIdx!;
-  }
-  appendFileEditChild(out, groupIdx, edit);
-}
-
-function appendFileEditChild(out: Row[], groupIdx: number, edit: FileEditFoldInput): void {
-  const row = out[groupIdx] as Extract<Row, { kind: 'file-edit-group' }>;
-  const child: FileEditGroupChild = {
-    key: edit.id,
+  out.push({
+    kind: 'file-edit-card',
+    key: `fec:${edit.id}`,
+    callId: edit.id,
     filePath: edit.filePath,
     additions: edit.additions,
     deletions: edit.deletions,
     ...(edit.entryId ? { entryId: edit.entryId } : {}),
-    ...(edit.hunks ? { hunks: edit.hunks } : {})
-  };
-  out[groupIdx] = { ...row, children: [...row.children, child] };
+    ...(edit.hunks && edit.hunks.length > 0 ? { hunks: edit.hunks } : {}),
+    phase: 'settled'
+  });
 }
 
 function mergeFileEditIntoEditToolGroupAt(

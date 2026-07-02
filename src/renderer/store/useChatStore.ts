@@ -267,8 +267,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       set((s) => ({ ...s, ...EMPTY_MIRROR, slices: s.slices, runIdToConv: s.runIdToConv }));
       return;
     }
+    const safeEvents = Array.isArray(events) ? events : [];
     set((s) => {
-      const prepared = prepareTranscriptEventsForLoad(events);
+      const prepared = prepareTranscriptEventsForLoad(safeEvents);
       syncSpendPromptBaseline(conversationId, prepared);
       const rebuilt = rebuildTimelineState(prepared);
       // Preserve any in-flight `runId / isProcessing / runStartedAt`
@@ -539,7 +540,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             : {}),
         ...(options?.mentions && options.mentions.length > 0
           ? { mentions: options.mentions }
-          : {})
+          : {}),
+        ...(options?.invokedSkill ? { invokedSkill: options.invokedSkill } : {})
       });
       if (!reply) {
         throw new Error('chat:send rejected by main process (no reply).');
@@ -932,12 +934,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   syncFollowUps: (conversationId, state) => {
+    const steering = Array.isArray(state.steering) ? state.steering : [];
+    const queued = Array.isArray(state.queued) ? state.queued : [];
     set((s) => {
       const nextSlices = updateSlice(s.slices, conversationId, (prev) => ({
         ...prev,
         followUps: {
-          steering: state.steering.map((m) => ({ ...m })),
-          queued: state.queued.map((m) => ({ ...m }))
+          steering: steering.map((m) => ({ ...m })),
+          queued: queued.map((m) => ({ ...m }))
         }
       }));
       if (s.conversationId === conversationId) {
@@ -972,7 +976,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           ? { attachmentMeta: options.attachmentMeta }
           : {}),
         ...(options?.mentions && options.mentions.length > 0 ? { mentions: options.mentions } : {}),
-        ...(options?.promptEventId ? { promptEventId: options.promptEventId } : {})
+        ...(options?.promptEventId ? { promptEventId: options.promptEventId } : {}),
+        ...(options?.invokedSkill ? { invokedSkill: options.invokedSkill } : {})
       });
       get().syncFollowUps(conversationId, state);
     } catch (err: unknown) {

@@ -16,13 +16,9 @@ import {
 } from '../../../lib/liveTokenRate.js';
 import { useLiveTokenRate } from '../../../lib/useLiveTokenRate.js';
 import { cn } from '../../../lib/cn.js';
-import { timelineRunCompleteRowClassName } from './rowStyles.js';
+import { timelineRunCompleteRowClassName, timelinePhaseHeadingClassName } from './rowStyles.js';
 import { detectLiveRunActivity } from './detectLiveRunActivity.js';
 import { resolveStickyFooterLiveLabel } from './resolveStickyFooterLiveLabel.js';
-import {
-  resolveActiveBashLiveOutput,
-  tailLine
-} from './resolveActiveBashLiveOutput.js';
 
 interface TurnStickyFooterProps {
   live?: boolean;
@@ -47,7 +43,6 @@ export function TurnStickyFooter({
   const assistantTexts = useChatStore((s) => s.assistantTexts);
   const partialToolCallArgs = useChatStore((s) => s.partialToolCallArgs);
   const toolResultSettledIds = useChatStore((s) => s.toolResultSettledIds);
-  const liveToolOutputByCallId = useChatStore((s) => s.liveToolOutputByCallId);
   const [now, setNow] = useState(() => Date.now());
 
   const { promptTs, runId } = useMemo(() => {
@@ -88,7 +83,10 @@ export function TurnStickyFooter({
         ? formatTokenCountUsed(usage.cumulative.totalTokens)
         : `${formatTokenCount(usage.cumulative.totalTokens)} run total`
       : null;
-  const throughputLabel = liveTokenRateLabel ?? tokenLabel;
+  const throughputLabel =
+    showLive && elapsedMs >= LONG_TURN_WARN_MS
+      ? liveTokenRateLabel ?? tokenLabel
+      : null;
 
   const elapsedWarn =
     showLive && !awaitingAskUser && elapsedMs >= LONG_TURN_WARN_MS
@@ -117,28 +115,13 @@ export function TurnStickyFooter({
     ]
   );
 
-  const bashLiveTail = useMemo(() => {
-    if (!showLive) return null;
-    const live = resolveActiveBashLiveOutput({
-      events,
-      liveToolOutputByCallId,
-      toolResultSettledIds
-    });
-    if (!live) return null;
-    const body = live.stderr.length > 0 ? live.stderr : live.stdout;
-    if (body.length > 0) return tailLine(body);
-    const cmd = live.command.trim();
-    return cmd.length > 0 ? `$ ${cmd.length > 72 ? `…${cmd.slice(-71)}` : cmd}` : null;
-  }, [showLive, events, liveToolOutputByCallId, toolResultSettledIds]);
-
   const liveLabel = resolveStickyFooterLiveLabel({
     awaitingAskUser: showLive && awaitingAskUser,
     ...(latestStatus ? { latestStatus } : {}),
     activity,
     fileEditCount,
     elapsedMs,
-    tokenLabel: throughputLabel,
-    bashLiveTail
+    tokenLabel: throughputLabel
   });
 
   return (
@@ -156,7 +139,15 @@ export function TurnStickyFooter({
           aria-live="polite"
           aria-atomic="true"
         >
-          <span className="text-text-secondary">{liveLabel.headline}</span>
+          <span
+            className={cn(
+              awaitingAskUser
+                ? 'font-medium text-text-secondary'
+                : timelinePhaseHeadingClassName(true)
+            )}
+          >
+            {liveLabel.headline}
+          </span>
           {liveLabel.detailParts.map((part, i) => (
             <span key={part} className="contents">
               <span aria-hidden className="text-text-faint/70">

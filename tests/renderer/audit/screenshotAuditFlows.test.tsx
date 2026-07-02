@@ -10,6 +10,7 @@ import { SettingsFullView } from '@renderer/components/settings/SettingsFullView
 import { useChatStore } from '@renderer/store/useChatStore';
 import { useSettingsStore } from '@renderer/store/useSettingsStore';
 import { useWorkspaceStore } from '@renderer/store/useWorkspaceStore';
+import { useAppViewStore } from '@renderer/store/useAppViewStore';
 
 vi.mock('@renderer/lib/ipc.js', () => ({
   vyotiq: {
@@ -58,6 +59,17 @@ vi.mock('@renderer/lib/ipc.js', () => ({
 }));
 
 beforeEach(() => {
+  useAppViewStore.setState({ view: 'settings', settingsSection: 'agent-behavior', aboutOpen: false });
+  useSettingsStore.setState({
+    loading: false,
+    initialLoadDone: true,
+    settings: { ui: { lastAgentBehaviorSection: 'memory' } }
+  } as never);
+  useWorkspaceStore.setState({
+    activeId: 'ws-1',
+    list: [{ id: 'ws-1', label: 'Agent', path: 'C:\\tmp\\agent', addedAt: 0 }],
+    info: { path: 'C:\\tmp\\agent' }
+  } as never);
   useChatStore.setState({
     isProcessing: true,
     events: [
@@ -90,7 +102,7 @@ describe('screenshot audit flows', () => {
   });
 
   it('settings agent group shows memory section', () => {
-    render(<SettingsFullView initialSection="agent-behavior" />);
-    expect(screen.getAllByText(/Memory/i).length).toBeGreaterThan(0);
+    render(<SettingsFullView />);
+    expect(screen.getByRole('tab', { name: 'Memory' })).toBeInTheDocument();
   });
 });

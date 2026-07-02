@@ -166,7 +166,7 @@ export function AboutPanel() {
           </p>
         </div>
 
-        <h4 className="vx-settings-subhead">Build</h4>
+        <h4 className="vx-section-head">Build</h4>
         {info ? (
           <>
             <div className="surface-shell vx-settings-build-card">
@@ -210,7 +210,7 @@ export function AboutPanel() {
           </ShellRow>
         )}
 
-        <h4 className="vx-settings-subhead">On-disk paths</h4>
+        <h4 className="vx-section-head">On-disk paths</h4>
         <ShellCaption>
           Vyotiq data lives under <code className="font-mono">vyotiq/</code> inside the Electron
           profile folder. Chromium caches (Cache/, GPUCache/, …) stay in the profile root.

@@ -17,6 +17,7 @@ import '@xterm/xterm/css/xterm.css';
 import { vyotiq } from '../../lib/ipc.js';
 import { useTerminalStore } from '../../store/useTerminalStore.js';
 import { applyXtermTheme, buildXtermTheme, resolveMonoFontFamily } from '@shared/terminal/xtermTheme.js';
+import { shouldUseXtermWebglRenderer } from '@shared/terminal/xtermWebgl.js';
 
 export interface TerminalPoolEntry {
   sessionId: string;
@@ -25,6 +26,7 @@ export interface TerminalPoolEntry {
   search: SearchAddon;
   host: HTMLDivElement;
   opened: boolean;
+  webgl?: WebglAddon;
 }
 
 const pool = new Map<string, TerminalPoolEntry>();
@@ -88,10 +90,12 @@ function bindGlobalListeners(): void {
   }
 }
 
-function tryLoadWebglRenderer(term: Terminal): void {
+function tryLoadWebglRenderer(term: Terminal, entry: TerminalPoolEntry): void {
+  if (!shouldUseXtermWebglRenderer()) return;
   try {
     const webgl = new WebglAddon();
     term.loadAddon(webgl);
+    entry.webgl = webgl;
   } catch {
     /* canvas renderer fallback */
   }
@@ -137,7 +141,7 @@ export function getTerminalEntry(sessionId: string): TerminalPoolEntry {
 export function openTerminalEntry(entry: TerminalPoolEntry): void {
   if (!entry.opened) {
     entry.term.open(entry.host);
-    tryLoadWebglRenderer(entry.term);
+    tryLoadWebglRenderer(entry.term, entry);
     applyXtermTheme(entry.term);
     entry.opened = true;
   }
@@ -178,6 +182,11 @@ export function fitTerminalEntry(entry: TerminalPoolEntry): void {
 export function disposeTerminalEntry(sessionId: string): void {
   const entry = pool.get(sessionId);
   if (!entry) return;
+  try {
+    entry.webgl?.dispose();
+  } catch {
+    /* noop */
+  }
   try {
     entry.term.dispose();
   } catch {

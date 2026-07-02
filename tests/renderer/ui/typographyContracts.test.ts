@@ -48,6 +48,8 @@ describe('typography contracts', () => {
     expect(css).toContain('var(--color-chrome-active)');
     expect(css).toContain('.vx-btn-accent-fill');
     expect(css).toContain('.vx-btn-link');
+    expect(css).toContain('.vx-settings-panel-title');
+    expect(css).toContain('.vx-titlebar-action--emphasis');
     expect(css).toContain('.vx-section-body--rail');
     expect(css).toContain('.vx-panel-body .vx-btn-primary');
     expect(css).toMatch(/\.vx-section-head[\s\S]*font-weight:\s*500/);

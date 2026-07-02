@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { Cloud, BarChart3, Brain, FolderTree, Info, Keyboard, Palette } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { ProvidersPanel } from './ProvidersPanel.js';
@@ -6,6 +5,7 @@ import { UsagePanel } from './UsagePanel.js';
 import { AgentBehaviorPanel } from './AgentBehaviorPanel.js';
 import { AppearancePanel } from './AppearancePanel.js';
 import { WorkspaceDataPanel } from './WorkspaceDataPanel.js';
+import { GitHubAccountsPanel } from './GitHubAccountsPanel.js';
 import { AboutPanel } from './AboutPanel.js';
 import { ShortcutsPanel } from '../shortcuts/ShortcutsPanel.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
@@ -20,6 +20,7 @@ import {
   SHELL_TAB_ICON_CLASS,
   SHELL_TAB_ICON_STROKE
 } from '../../lib/shellIcons.js';
+import { SETTINGS_SECTION_LABELS } from '@shared/settings/settingsSection.js';
 
 type NavGroup = { label: string; items: { id: SettingsSectionId; label: string; Icon: LucideIcon }[] };
 
@@ -56,12 +57,8 @@ const ABOUT_NAV_ITEM = {
   Icon: Info
 };
 
-interface SettingsFullViewProps {
-  initialSection?: SettingsSectionId;
-}
-
-export function SettingsFullView({ initialSection = 'models-api' }: SettingsFullViewProps) {
-  const [section, setSection] = useState<SettingsSectionId>(initialSection);
+export function SettingsFullView() {
+  const settingsSection = useAppViewStore((s) => s.settingsSection);
   const loading = useSettingsStore((s) => s.loading);
   const loadError = useSettingsStore((s) => s.loadError);
   const refreshSettings = useSettingsStore((s) => s.refresh);
@@ -70,22 +67,16 @@ export function SettingsFullView({ initialSection = 'models-api' }: SettingsFull
   const openAbout = useAppViewStore((s) => s.openAbout);
   const closeAbout = useAppViewStore((s) => s.closeAbout);
 
-  useEffect(() => setSection(initialSection), [initialSection]);
-  useEffect(() => {
-    if (aboutOpen) setSection('about');
-  }, [aboutOpen]);
-
   const onSectionChange = (next: SettingsSectionId) => {
     if (next === 'about') {
       openAbout();
       return;
     }
     closeAbout();
-    setSection(next);
     persistSection(next);
   };
 
-  const activeSection = aboutOpen ? 'about' : section;
+  const activeSection = aboutOpen ? 'about' : settingsSection;
 
   const navItems: LeftSubnavItem<SettingsSectionId>[] = [
     ...FLAT_SECTIONS.map((t) => ({
@@ -153,18 +144,31 @@ export function SettingsFullView({ initialSection = 'models-api' }: SettingsFull
                 <span className="break-words">{loadError}</span>
               </Notice>
             ) : aboutOpen ? (
-              <ShellStack>
-                <AboutPanel />
-              </ShellStack>
+              <>
+                <h2 className="vx-settings-panel-title">{SETTINGS_SECTION_LABELS.about}</h2>
+                <ShellStack>
+                  <AboutPanel />
+                </ShellStack>
+              </>
             ) : (
-              <ShellStack>
-                {section === 'models-api' && <ProvidersPanel />}
-                {section === 'usage' && <UsagePanel />}
-                {section === 'agent-behavior' && <AgentBehaviorPanel />}
-                {section === 'workspace-data' && <WorkspaceDataPanel />}
-                {section === 'appearance' && <AppearancePanel />}
-                {section === 'shortcuts' && <ShortcutsPanel />}
-              </ShellStack>
+              <>
+                <h2 className="vx-settings-panel-title">
+                  {SETTINGS_SECTION_LABELS[activeSection]}
+                </h2>
+                <ShellStack>
+                  {settingsSection === 'models-api' && <ProvidersPanel />}
+                  {settingsSection === 'usage' && <UsagePanel />}
+                  {settingsSection === 'agent-behavior' && <AgentBehaviorPanel />}
+                  {settingsSection === 'workspace-data' && (
+                    <>
+                      <WorkspaceDataPanel />
+                      <GitHubAccountsPanel />
+                    </>
+                  )}
+                  {settingsSection === 'appearance' && <AppearancePanel />}
+                  {settingsSection === 'shortcuts' && <ShortcutsPanel />}
+                </ShellStack>
+              </>
             )}
           </RegionErrorBoundary>
         </div>

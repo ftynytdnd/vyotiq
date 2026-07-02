@@ -32,7 +32,7 @@ describe('renderTranscriptMarkdown', () => {
     const md = renderTranscriptMarkdown(events);
     expect(md).toContain('### Tasks ·');
     expect(md).toContain('Task plan (1/2 done)');
-    expect(md).toContain('- [x] Ship feature');
-    expect(md).toContain('- [ ] Write tests (in progress)');
+    expect(md).toContain('1. [x] Ship feature');
+    expect(md).toContain('2. Write tests (in progress)');
   });
 });

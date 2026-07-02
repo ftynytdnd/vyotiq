@@ -10,6 +10,7 @@ import { cn } from '../../../../lib/cn.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../../../lib/shellIcons.js';
 import { useCopyFeedback } from '../../../../hooks/useCopyFeedback.js';
 import { MAX_TOOL_OUTPUT_CHARS } from '@shared/constants.js';
+import { sanitizeToolOutputForDisplay } from '@shared/text/stripAnsi.js';
 
 const MAX_CHARS = MAX_TOOL_OUTPUT_CHARS;
 
@@ -31,7 +32,8 @@ export function CodeBlock({
   wrap = 'wrap'
 }: CodeBlockProps) {
   const truncated = body.length > MAX_CHARS;
-  const shown = truncated ? body.slice(0, MAX_CHARS) + '\n…[truncated]' : body;
+  const cleaned = sanitizeToolOutputForDisplay(body);
+  const shown = truncated ? cleaned.slice(0, MAX_CHARS) + '\n…[truncated]' : cleaned;
   const { copied, copy } = useCopyFeedback();
 
   const onCopy = (): void => {

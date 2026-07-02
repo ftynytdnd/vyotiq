@@ -13,7 +13,7 @@ import {
   MessageSquare
 } from 'lucide-react';
 import { basenameFromPath } from '@shared/text/languageFromPath.js';
-import { appPopoverPanelClassName, chromeNoMatchesClassName } from '../../ui/SurfaceShell.js';
+import { chromeNoMatchesClassName } from '../../ui/SurfaceShell.js';
 import { ModelPickerSectionHeader } from '../modelPicker/ModelPickerSectionHeader.js';
 import { cn } from '../../../lib/cn.js';
 import {
@@ -21,6 +21,13 @@ import {
   SHELL_ROW_ICON_CLASS,
   SHELL_ROW_ICON_STROKE
 } from '../../../lib/shellIcons.js';
+import {
+  ComposerPickerFoot,
+  ComposerPickerHead,
+  ComposerPickerShell
+} from '../picker/ComposerPickerPanel.js';
+import { ComposerPickerHints } from '../picker/ComposerPickerHints.js';
+import { ComposerPickerRow } from '../picker/ComposerPickerRow.js';
 import type {
   MentionPickerGroup,
   MentionPickerRow,
@@ -86,7 +93,7 @@ export function MentionPicker({
     if (scrollFromKeyboardRef && !scrollFromKeyboardRef.current) return;
     if (scrollFromKeyboardRef) scrollFromKeyboardRef.current = false;
     const rowEl = listRef.current?.querySelector(
-      `[data-mention-id="${activeRow.id}"]`
+      `[data-composer-picker-row="${activeRow.id}"], [data-mention-id="${activeRow.id}"]`
     ) as HTMLElement | undefined;
     scrollMentionRowIntoView(listRef.current, rowEl ?? null);
   }, [open, activeRow?.id, activeIndex, scrollFromKeyboardRef]);
@@ -96,74 +103,58 @@ export function MentionPicker({
   const hasVisibleRows = groups.some((g) => g.rows.length > 0 || g.emptyHint);
   const showGlobalEmpty = !loading && !hasVisibleRows;
 
+  const headIcon = (
+    <AtSign
+      className={cn(SHELL_ROW_ICON_CLASS, 'shrink-0 text-text-faint')}
+      strokeWidth={SHELL_ROW_ICON_STROKE}
+      aria-hidden
+    />
+  );
+
   return (
-    <div
-      className={cn(
-        appPopoverPanelClassName,
-        'vx-mention-picker flex h-full max-h-full min-h-0 w-full min-w-0 flex-col'
-      )}
-      role="presentation"
-    >
-      <div className="vx-mention-picker-head shrink-0 flex items-center gap-2 border-b border-border-subtle/30 px-2 py-1.5">
-        <AtSign
-          className={cn(SHELL_ROW_ICON_CLASS, 'shrink-0 text-text-faint')}
-          strokeWidth={SHELL_ROW_ICON_STROKE}
-          aria-hidden
+    <ComposerPickerShell
+      listRef={listRef}
+      listAriaLabel="Mention picker"
+      activeDescendantId={activeRow ? `composer-picker-row-${activeRow.id}` : undefined}
+      head={
+        <ComposerPickerHead
+          icon={headIcon}
+          title="Mention"
+          subtitle={
+            trimmedQuery.length > 0
+              ? `Filtering · ${trimmedQuery}`
+              : 'Workspace files, symbols, chats'
+          }
         />
-        <div className="min-w-0 flex-1">
-          <div className="truncate font-mono text-row text-text-primary">Mention</div>
-          <div className="truncate text-meta text-text-faint">
-            {trimmedQuery.length > 0 ? `Filtering · ${trimmedQuery}` : 'Workspace files, symbols, chats'}
-          </div>
+      }
+      foot={
+        <ComposerPickerFoot>
+          <ComposerPickerHints selectLabel="select · folder expand" />
+        </ComposerPickerFoot>
+      }
+    >
+      {showGlobalEmpty ? (
+        <div className={cn(chromeNoMatchesClassName, 'py-3 text-center')}>No matches</div>
+      ) : (
+        groups.map((group) => (
+          <MentionPickerSection
+            key={group.kind}
+            group={group}
+            rows={rows}
+            activeRow={activeRow}
+            onActiveIndexChange={onActiveIndexChange}
+            onPick={onPick}
+            onToggleFolder={onToggleFolder}
+            onClose={onClose}
+          />
+        ))
+      )}
+      {treeTruncated && !showGlobalEmpty ? (
+        <div className="border-t border-border-subtle/20 px-2 py-1 text-meta text-text-faint">
+          Results truncated — narrow your filter
         </div>
-      </div>
-
-      <div
-        ref={listRef}
-        className="vx-mention-picker-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-0.5 py-0.5"
-        role="listbox"
-        aria-label="Mention picker"
-        aria-activedescendant={activeRow ? `mention-row-${activeRow.id}` : undefined}
-        onWheel={(e) => e.stopPropagation()}
-      >
-        {showGlobalEmpty ? (
-          <div className={cn(chromeNoMatchesClassName, 'py-3 text-center')}>No matches</div>
-        ) : (
-          groups.map((group) => (
-            <MentionPickerSection
-              key={group.kind}
-              group={group}
-              rows={rows}
-              activeRow={activeRow}
-              onActiveIndexChange={onActiveIndexChange}
-              onPick={onPick}
-              onToggleFolder={onToggleFolder}
-              onClose={onClose}
-            />
-          ))
-        )}
-        {treeTruncated && !showGlobalEmpty ? (
-          <div className="border-t border-border-subtle/20 px-2 py-1 text-meta text-text-faint">
-            Results truncated — narrow your filter
-          </div>
-        ) : null}
-      </div>
-
-      <div className="vx-mention-picker-foot shrink-0 border-t border-border-subtle/30 px-2 py-1">
-        <div className="vx-model-picker-hints text-meta text-text-faint" aria-hidden>
-          <span className="vx-model-picker-hints--nav">
-            <HintKbd>↑</HintKbd>
-            <HintKbd>↓</HintKbd> navigate
-          </span>
-          <span>
-            <HintKbd>Enter</HintKbd> select · folder expand
-          </span>
-          <span className="vx-model-picker-hints--compact">
-            <HintKbd>Esc</HintKbd> dismiss
-          </span>
-        </div>
-      </div>
-    </div>
+      ) : null}
+    </ComposerPickerShell>
   );
 }
 
@@ -314,20 +305,23 @@ function MentionPickerRowButton({
   const indent = 8 + depth * MENTION_TREE_INDENT_PX + (row.kind === 'workspace-file' ? 14 : 0);
 
   return (
-    <button
-      type="button"
-      role="option"
-      id={active ? `mention-row-${row.id}` : undefined}
-      aria-selected={active}
-      aria-disabled={row.disabled || undefined}
-      data-mention-id={row.id}
+    <ComposerPickerRow
+      rowId={row.id}
+      active={active}
       disabled={row.disabled || navIndex < 0}
-      className={cn(
-        'vx-mention-picker-row vx-dropdown-item flex w-full items-center gap-2 rounded-md py-1 pr-2 text-left',
-        active && 'bg-dock-selection',
-        row.disabled && 'cursor-not-allowed opacity-50'
-      )}
-      style={{ paddingLeft: `${indent}px` }}
+      ariaLabel={rowPrimaryLabel(row)}
+      layout="inline"
+      icon={icon}
+      primary={
+        <span className={cn(mono && 'font-mono')}>{rowPrimaryLabel(row)}</span>
+      }
+      description={
+        row.subtitle && row.kind !== 'workspace-file' ? row.subtitle : undefined
+      }
+      trailing={
+        row.disabled ? 'Added' : row.hint ? row.hint : undefined
+      }
+      paddingLeft={indent}
       onMouseEnter={() => {
         if (navIndex >= 0) onActiveIndexChange(navIndex);
       }}
@@ -336,31 +330,6 @@ function MentionPickerRowButton({
         onPick(row);
         onClose();
       }}
-    >
-      <span className="shrink-0 text-text-faint">{icon}</span>
-      <span className="min-w-0 flex-1">
-        <span
-          className={cn(
-            'block truncate text-row text-text-secondary',
-            mono && 'font-mono',
-            active && 'text-text-primary'
-          )}
-        >
-          {rowPrimaryLabel(row)}
-        </span>
-        {row.subtitle && row.kind !== 'workspace-file' ? (
-          <span className="block truncate font-mono text-meta text-text-faint">{row.subtitle}</span>
-        ) : null}
-      </span>
-      {row.disabled ? (
-        <span className="shrink-0 text-meta text-text-faint">Added</span>
-      ) : row.hint ? (
-        <span className="shrink-0 font-mono text-meta text-text-faint">{row.hint}</span>
-      ) : null}
-    </button>
+    />
   );
-}
-
-function HintKbd({ children }: { children: ReactNode }) {
-  return <kbd className="vx-model-picker-hint-kbd">{children}</kbd>;
 }

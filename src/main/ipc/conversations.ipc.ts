@@ -15,8 +15,8 @@ import type {
   TranscriptBeforeRead
 } from '@shared/types/chat.js';
 import type { TurnUsageStatsDelta } from '@shared/types/usageStats.js';
+import type { ConversationSearchHit } from '@shared/types/ipc.js';
 import { renderTranscriptMarkdown } from '@shared/transcript/exportMarkdown.js';
-import { normalizeLegacyTranscript } from '@shared/transcript/normalizeLegacyTranscript.js';
 import {
   createConversation,
   incrementConversationSpend,
@@ -29,6 +29,7 @@ import {
   renameConversation,
   setConversationArchived
 } from '../conversations/conversationStore.js';
+import { searchPromptIndex } from '../conversations/conversationSearchIndex.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 // Audit fix 2026-06-P2-1 — id-and-title shape gates for the
 // conversations channels. Conversation titles get a higher cap
@@ -137,7 +138,7 @@ export function registerConversationsIpc(): void {
       }
       const page = await readTranscriptBefore(id, beforeEventId, limit ?? TRANSCRIPT_PAGE_SIZE);
       return {
-        events: normalizeLegacyTranscript(page.events),
+        events: page.events,
         hasOlder: page.hasOlder
       };
     }
@@ -175,6 +176,31 @@ export function registerConversationsIpc(): void {
           : renderTranscriptMarkdown(conv.events, conv.title);
       await fs.writeFile(result.filePath, body, 'utf8');
       return { canceled: false, filePath: result.filePath };
+    }
+  );
+
+  wrapIpcHandler(
+    IPC.CONVERSATIONS_SEARCH,
+    async (_e, workspaceId: string, query: string, limit?: number): Promise<ConversationSearchHit[]> => {
+      assertString('conversations:search', 'workspaceId', workspaceId);
+      assertString('conversations:search', 'query', query, { maxBytes: 512 });
+      if (limit !== undefined) {
+        assertNumber('conversations:search', 'limit', limit, { min: 1, max: 50 });
+      }
+      const q = query.trim();
+      if (!q) return [];
+      const entries = await searchPromptIndex(workspaceId, q, limit ?? 20);
+      if (entries.length === 0) return [];
+      const metas = await listConversations();
+      const titleById = new Map(metas.map((m) => [m.id, m.title]));
+      return entries.map((entry) => ({
+        conversationId: entry.conversationId,
+        eventId: entry.eventId,
+        workspaceId: entry.workspaceId,
+        excerpt: entry.excerpt,
+        ts: entry.ts,
+        conversationTitle: titleById.get(entry.conversationId) ?? 'Untitled'
+      }));
     }
   );
 }

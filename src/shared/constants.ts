@@ -12,8 +12,14 @@ export const AGENT_NAME = 'Agent V';
  */
 export const MAX_TOOL_OUTPUT_CHARS = 8_000;
 
-/** Maximum orchestrator loop iterations before a wrap-up synthesis turn. */
-export const MAX_TOTAL_ITERATIONS = 24;
+/** Default orchestrator loop iterations before a wrap-up synthesis turn (overridable in Settings). */
+export const DEFAULT_MAX_TOTAL_ITERATIONS = 93;
+
+/**
+ * Back-compat alias for tests and boot assertions. Prefer
+ * `resolveMaxTotalIterations(settings)` for per-run limits.
+ */
+export const MAX_TOTAL_ITERATIONS = DEFAULT_MAX_TOTAL_ITERATIONS;
 
 /** Host implicit-finish prose thresholds (mirrored in harness `<runtime_limits>`). */
 export const IMPLICIT_FINISH_MIN_CHARS = 28;
@@ -103,6 +109,7 @@ export const VYOTIQ_DATA_DIR_NAME = 'vyotiq';
 /** Filenames inside {@link VYOTIQ_DATA_DIR_NAME}. */
 export const GLOBAL_META_FILE = 'meta-rules.md';
 export const PROVIDERS_FILE = 'providers.encrypted.json';
+export const GITHUB_ACCOUNTS_FILE = 'github.accounts.encrypted.json';
 export const SETTINGS_FILE = 'settings.json';
 
 /** Model discovery cache TTL (ms). */
@@ -323,6 +330,24 @@ export const IPC = {
   WORKSPACE_LIST_TREE: 'workspace:list-tree',
   WORKSPACE_LIST_CHILDREN: 'workspace:list-children',
   WORKSPACE_GIT_STATUS: 'workspace:git-status',
+  WORKSPACE_GIT_FILE_DIFF: 'workspace:git-file-diff',
+  WORKSPACE_GIT_STAGE: 'workspace:git-stage',
+  WORKSPACE_GIT_UNSTAGE: 'workspace:git-unstage',
+  WORKSPACE_GIT_COMMIT: 'workspace:git-commit',
+  WORKSPACE_GIT_PUSH: 'workspace:git-push',
+  WORKSPACE_GIT_PULL: 'workspace:git-pull',
+  WORKSPACE_GIT_FETCH: 'workspace:git-fetch',
+  WORKSPACE_GIT_DISCARD: 'workspace:git-discard',
+  WORKSPACE_GIT_STASH: 'workspace:git-stash',
+  WORKSPACE_GIT_STASH_POP: 'workspace:git-stash-pop',
+  WORKSPACE_GIT_STASH_DROP: 'workspace:git-stash-drop',
+  WORKSPACE_GIT_STASH_LIST: 'workspace:git-stash-list',
+  WORKSPACE_GIT_BRANCHES: 'workspace:git-branches',
+  WORKSPACE_GIT_CHECKOUT: 'workspace:git-checkout',
+  WORKSPACE_GIT_CREATE_BRANCH: 'workspace:git-create-branch',
+  WORKSPACE_GIT_GENERATE_COMMIT_MESSAGE: 'workspace:git-generate-commit-message',
+  /** Push: streaming delta while generating a commit message (main → renderer). */
+  WORKSPACE_GIT_COMMIT_MESSAGE_DELTA: 'workspace:git-commit-message-delta',
   /** Push: workspace filesystem changed (main → renderer). */
   WORKSPACE_TREE_CHANGED: 'workspace:tree-changed',
   WORKSPACE_MKDIR: 'workspace:mkdir',
@@ -342,6 +367,28 @@ export const IPC = {
    * Triggered from the dock's per-group warning chip.
    */
   WORKSPACES_RETRY_REACHABILITY: 'workspaces:retry-reachability',
+  /** Checkout a different branch for a GitHub-bound workspace. */
+  WORKSPACES_SWITCH_BRANCH: 'workspaces:switch-branch',
+
+  // GitHub accounts + repos
+  GITHUB_ACCOUNTS_LIST: 'github:accounts:list',
+  GITHUB_ACCOUNTS_START_DEVICE: 'github:accounts:start-device',
+  GITHUB_ACCOUNTS_POLL_DEVICE: 'github:accounts:poll-device',
+  GITHUB_ACCOUNTS_ADD_PAT: 'github:accounts:add-pat',
+  GITHUB_ACCOUNTS_REMOVE: 'github:accounts:remove',
+  GITHUB_ACCOUNTS_VERIFY: 'github:accounts:verify',
+  GITHUB_OAUTH_CONFIGURED: 'github:oauth:configured',
+  GITHUB_REPOS_LIST: 'github:repos:list',
+  GITHUB_ORGS_LIST: 'github:orgs:list',
+  GITHUB_REPOS_RECENT: 'github:repos:recent',
+  GITHUB_REPOS_CLONE_STATE: 'github:repos:clone-state',
+  /** E2E-only — seeds in-memory GitHub catalogue (NODE_ENV=test). */
+  GITHUB_E2E_SEED: 'github:__e2e-seed',
+  GITHUB_E2E_BIND_WORKSPACE: 'github:__e2e-bind-workspace',
+  /** Push: git clone/fetch progress (main → renderer). */
+  GITHUB_GIT_PROGRESS: 'github:git-progress',
+  GITHUB_REPOS_BRANCHES: 'github:repos:branches',
+  GITHUB_REPOS_OPEN: 'github:repos:open',
 
   // Providers
   PROVIDERS_LIST: 'providers:list',
@@ -359,6 +406,8 @@ export const IPC = {
   /** Push: refreshed model list for one provider (main → renderer). */
   PROVIDERS_MODELS_UPDATED: 'providers:models-updated',
   PROVIDERS_DISCOVERY_POLL_HINT: 'providers:discovery-poll-hint',
+  /** Local claude-code-proxy bridge: start, OAuth login, or refresh status. */
+  PROVIDERS_CLAUDE_CODE_PROXY_ACTION: 'providers:claude-code-proxy-action',
 
   // Token estimation (main-process BPE / heuristic)
   TOKENS_ESTIMATE: 'tokens:estimate',
@@ -456,11 +505,14 @@ export const IPC = {
   CONVERSATIONS_READ_BEFORE: 'conversations:read-before',
   /** Save transcript to disk as JSONL or Markdown. */
   CONVERSATIONS_EXPORT: 'conversations:export',
+  /** Search indexed user-prompt excerpts in a workspace. */
+  CONVERSATIONS_SEARCH: 'conversations:search',
 
   /** renderer ↔ main: local scheduled agent runs. */
   SCHEDULED_RUNS_LIST: 'scheduled-runs:list',
   SCHEDULED_RUNS_UPSERT: 'scheduled-runs:upsert',
   SCHEDULED_RUNS_DELETE: 'scheduled-runs:delete',
+  SCHEDULED_RUNS_UPDATED: 'scheduled-runs:updated',
 
   /** Per-conversation async loop heartbeats. */
   HEARTBEAT_LIST: 'heartbeat:list',
@@ -539,6 +591,13 @@ export const IPC = {
   HARNESS_READ_SECTION: 'harness:read-section',
   HARNESS_WRITE_SECTION: 'harness:write-section',
   HARNESS_RESET_SECTION: 'harness:reset-section',
+
+  SKILLS_LIST: 'skills:list',
+  SKILLS_READ: 'skills:read',
+  SKILLS_CREATE: 'skills:create',
+  SKILLS_REVEAL: 'skills:reveal',
+  SKILLS_WRITE_OVERRIDE: 'skills:write-override',
+  SKILLS_RESET_OVERRIDE: 'skills:reset-override',
 
   /**
    * main → renderer (broadcast). Emitted when a conversation's

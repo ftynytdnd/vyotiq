@@ -48,6 +48,12 @@ import { cleanupCheckpointsForConversation } from '../checkpoints/index.js';
 import { migrateConversationPending } from '../checkpoints/pendingChanges.js';
 import { updateConversationHeartbeatWorkspace } from '../heartbeat/conversationHeartbeatStore.js';
 import { redactEventForPersist } from './redactPersistedEvent.js';
+import {
+  indexUserPromptEvent,
+  makePromptSearchIndexEntry,
+  removePromptSearchEntriesForConversation
+} from './conversationSearchIndex.js';
+import type { PromptSearchIndexEntry } from './conversationSearchIndex.js';
 
 const log = logger.child('conversations');
 
@@ -502,6 +508,12 @@ function pickPruneVictim(list: ConversationMeta[]): ConversationMeta | undefined
 function purgeConversationSidecars(id: string, workspaceId: string | undefined): void {
   void detachConversationHeartbeat(id);
   dropFollowUpsForConversation(id);
+  void removePromptSearchEntriesForConversation(id).catch((err: unknown) => {
+    log.warn('failed to remove prompt search index on conversation purge', {
+      conversationId: id,
+      err: err instanceof Error ? err.message : String(err)
+    });
+  });
   void deleteTaskList(id).catch((err: unknown) => {
     log.warn('failed to delete task sidecar on conversation purge', {
       conversationId: id,
@@ -794,6 +806,15 @@ export async function appendEvent(id: string, event: TimelineEvent): Promise<voi
       }
       bumpMeta(meta);
       scheduleIndexFlush();
+      if (event.kind === 'user-prompt' && meta.workspaceId) {
+        void indexUserPromptEvent({
+          conversationId: id,
+          eventId: event.id,
+          workspaceId: meta.workspaceId,
+          content: event.content,
+          ts: event.ts
+        });
+      }
     } catch (err) {
       log.error('failed to append event to transcript', { id, kind: event.kind, err });
       throw err;
@@ -880,6 +901,7 @@ export function __test_resetRecordedConversationSpend(): void {
 export function __test_resetConversationIndexCacheForTests(): void {
   indexCache = null;
   indexLoad = null;
+  baseDir = null;
 }
 
 /** Persist a provider-billed ÷ estimate calibration ratio for a model selection. */
@@ -1094,6 +1116,26 @@ async function forEachTranscriptEvent(
     rl.on('close', () => resolve());
     rl.on('error', (err) => reject(err));
   });
+}
+
+/** Collect user-prompt rows for Mod+K search index backfill. */
+export async function collectUserPromptIndexEntries(
+  id: string,
+  workspaceId: string
+): Promise<PromptSearchIndexEntry[]> {
+  const entries: PromptSearchIndexEntry[] = [];
+  await forEachTranscriptEvent(id, (event) => {
+    if (event.kind !== 'user-prompt') return;
+    const entry = makePromptSearchIndexEntry({
+      conversationId: id,
+      eventId: event.id,
+      workspaceId,
+      content: event.content,
+      ts: event.ts
+    });
+    if (entry) entries.push(entry);
+  });
+  return entries;
 }
 
 /**

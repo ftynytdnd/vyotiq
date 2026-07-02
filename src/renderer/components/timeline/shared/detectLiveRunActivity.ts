@@ -17,6 +17,8 @@ export interface LiveRunActivity {
   streamingText?: boolean;
   activeToolName?: ToolName;
   streamingToolName?: ToolName;
+  /** Edit path known but diff stream not yet visible. */
+  creatingFilePath?: string;
 }
 
 export function detectLiveRunActivity(input: {
@@ -40,6 +42,20 @@ export function detectLiveRunActivity(input: {
   let latestPartial: PartialToolCallArgs | undefined;
   for (const partial of Object.values(input.partialToolCallArgs)) {
     if (!latestPartial || partial.ts > latestPartial.ts) latestPartial = partial;
+  }
+  if (latestPartial?.name === 'edit' || latestPartial?.diffStream?.tool === 'edit') {
+    const path =
+      typeof latestPartial.parsed?.['path'] === 'string'
+        ? (latestPartial.parsed['path'] as string)
+        : latestPartial.diffStream?.filePath ?? '';
+    const hasStream =
+      (latestPartial.diffStream?.hunks?.length ?? 0) > 0 ||
+      typeof latestPartial.parsed?.['content'] === 'string' ||
+      typeof latestPartial.parsed?.['newString'] === 'string';
+    if (path.length > 0 && !hasStream) {
+      return { streamingToolName: 'edit', creatingFilePath: path };
+    }
+    return { streamingToolName: 'edit' };
   }
   if (latestPartial?.name && !isTimelineHiddenTool(latestPartial.name)) {
     return { streamingToolName: latestPartial.name as ToolName };

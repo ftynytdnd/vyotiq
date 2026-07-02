@@ -11,7 +11,20 @@
 
 
 import type { ScheduledRun, ScheduledRunInput } from './scheduledRun.js';
+import type {
+  GitHubAccount,
+  GitHubAddPatInput,
+  GitHubBranch,
+  GitHubDeviceFlowPoll,
+  GitHubDeviceFlowStart,
+  GitHubListReposInput,
+  GitHubOpenRepoInput,
+  GitHubRepo,
+  GitHubSwitchBranchInput,
+  WorkspaceGitHubBinding
+} from './github.js';
 import type { TaskItem, TaskList } from './task.js';
+import type { DiffHunk } from './tool.js';
 import type {
   ConversationHeartbeat,
   HeartbeatAttachInput,
@@ -32,8 +45,6 @@ import type {
   ProviderAttribution,
 
   ThinkingEffort,
-
-  ModelInfo,
 
   ModelSelection
 
@@ -214,6 +225,13 @@ export interface AppSettings {
   defaultModel?: { providerId: string; modelId: string };
 
   /**
+   * Optional frontier model for harness/skill authoring (build phase).
+   * Day-to-day agent runs use `defaultModel`. When set and different from
+   * the composer model, Settings surfaces a hint to switch for authoring.
+   */
+  authoringModel?: { providerId: string; modelId: string };
+
+  /**
 
    * Persisted UI state. Kept under a sub-object so future renderer-level
 
@@ -334,6 +352,12 @@ export interface AppSettings {
     favoriteModels?: string[];
 
     /**
+     * Per-workspace auto model — when true, composer uses
+     * `authoringModel ?? defaultModel` instead of conversation/workspace last.
+     */
+    autoModelByWorkspace?: Record<string, boolean>;
+
+    /**
      * Cumulative estimated API spend (USD) per workspace id.
      * Updated when runs complete and model pricing is available.
      */
@@ -365,6 +389,16 @@ export interface AppSettings {
     /** Last Settings subnav tab. */
 
     lastSettingsTab?: string;
+
+    /** Last Agent behavior sub-section (memory, lsp, harness, …). */
+
+    lastAgentBehaviorSection?: string;
+
+    /** Optional override for GitHub OAuth Device Flow client ID. */
+    githubOAuthClientId?: string;
+
+    /** Last N GitHub repos opened per account (Open workspace dialog). */
+    recentGitHubReposByAccount?: Record<string, import('./github.js').GitHubRecentRepo[]>;
 
     /** Pinned conversation ids shown at the top of the dock list. */
 
@@ -552,6 +586,14 @@ export interface AppSettings {
 
       };
 
+      /** Maximum orchestrator loop iterations before wrap-up / halt. */
+
+      runIterationLimit?: {
+
+        maxTotalIterations?: number;
+
+      };
+
     };
 
     /** Atomic workspace spend increments (USD) — merged server-side. */
@@ -568,7 +610,10 @@ export interface AppSettings {
 
 }
 
-
+/** Settings patch accepted by main-process `settings:set` (null clears optional top-level keys). */
+export type SettingsPatch = Omit<Partial<AppSettings>, 'authoringModel'> & {
+  authoringModel?: AppSettings['authoringModel'] | null;
+};
 
 /**
 
@@ -611,6 +656,12 @@ export interface WorkspaceEntry {
    */
 
   unreachable?: boolean;
+
+  /** `local` (default) or `github` when cloned from a connected account. */
+  source?: 'local' | 'github';
+
+  /** Set when `source === 'github'`. */
+  github?: WorkspaceGitHubBinding;
 
 }
 
@@ -817,12 +868,147 @@ export interface WorkspaceListChildrenResult {
 
 export type GitPathStatus = 'M' | 'A' | 'D' | 'U' | 'R' | '?';
 
+export interface GitFileState {
+  staged?: GitPathStatus;
+  unstaged?: GitPathStatus;
+}
+
+export interface WorkspaceGitContext {
+  isRepo: boolean;
+  branch: string | null;
+  headShort: string | null;
+  dirtyCount: number;
+  /** Commits on local branch not on upstream (after fetch). */
+  ahead?: number;
+  /** Commits on upstream not on local branch (after fetch). */
+  behind?: number;
+  /** Remote used for sync (upstream tracking, else origin / first remote). */
+  remote?: string | null;
+}
+
 export interface WorkspaceGitStatusResult {
   paths: Record<string, GitPathStatus>;
+  staged: Record<string, GitPathStatus>;
+  unstaged: Record<string, GitPathStatus>;
+  entries: Record<string, GitFileState>;
+  context?: WorkspaceGitContext;
+}
+
+export interface WorkspaceGitFileDiffInput {
+  workspaceId: string;
+  path: string;
+  status: GitPathStatus;
+  /** When true, diff staged (HEAD vs index); otherwise worktree (index vs disk). */
+  staged?: boolean;
+}
+
+export interface WorkspaceGitFileDiffResult {
+  path: string;
+  status: GitPathStatus;
+  hunks: DiffHunk[];
+  binary?: boolean;
+  truncated?: boolean;
+}
+
+export interface WorkspaceGitPathsInput {
+  workspaceId: string;
+  paths?: string[];
+  all?: boolean;
+}
+
+export interface WorkspaceGitCommitInput {
+  workspaceId: string;
+  message: string;
+  amend?: boolean;
+  stageAllIfEmpty?: boolean;
+}
+
+export interface WorkspaceGitSyncInput {
+  workspaceId: string;
+  branch?: string;
+}
+
+export interface WorkspaceGitDiscardInput {
+  workspaceId: string;
+  paths?: Array<{ path: string; status: GitPathStatus }>;
+  all?: boolean;
+}
+
+export interface WorkspaceGitStashInput {
+  workspaceId: string;
+  message?: string;
+  paths?: string[];
+  includeUntracked?: boolean;
+}
+
+export interface WorkspaceGitStashIndexInput {
+  workspaceId: string;
+  index: number;
+}
+
+export interface GitBranchRow {
+  name: string;
+  current: boolean;
+  remote?: boolean;
+}
+
+export interface WorkspaceGitBranchesResult {
+  branches: GitBranchRow[];
+}
+
+export interface WorkspaceGitCheckoutInput {
+  workspaceId: string;
+  branch: string;
+}
+
+export interface WorkspaceGitCreateBranchInput {
+  workspaceId: string;
+  branch: string;
+  checkout?: boolean;
+}
+
+export interface WorkspaceGitGenerateMessageInput {
+  workspaceId: string;
+  requestId: string;
+}
+
+export interface WorkspaceGitGenerateMessageResult {
+  message: string;
+  /** User-facing failure — returned instead of throwing so Electron does not log handler errors. */
+  error?: string;
+  /** Non-fatal caveats (truncated diff, large change, possible breaking change). */
+  warnings?: string[];
+}
+
+export interface WorkspaceGitCommitMessageDeltaPayload {
+  requestId: string;
+  delta: string;
+}
+
+export interface GitStashRow {
+  index: number;
+  message: string;
+}
+
+export interface WorkspaceGitStashListResult {
+  stashes: GitStashRow[];
+}
+
+export interface WorkspaceGitOkResult {
+  ok: true;
 }
 
 export interface WorkspaceTreeChangedPayload {
   workspaceId: string;
+}
+
+export interface ConversationSearchHit {
+  conversationId: string;
+  eventId: string;
+  workspaceId: string;
+  excerpt: string;
+  ts: number;
+  conversationTitle: string;
 }
 
 export interface WorkspaceMkdirInput {
@@ -905,6 +1091,41 @@ export interface VyotiqApi {
 
     gitStatus(opts?: { workspaceId?: string }): Promise<WorkspaceGitStatusResult>;
 
+    gitFileDiff(input: WorkspaceGitFileDiffInput): Promise<WorkspaceGitFileDiffResult>;
+
+    gitStage(input: WorkspaceGitPathsInput): Promise<WorkspaceGitOkResult>;
+
+    gitUnstage(input: WorkspaceGitPathsInput): Promise<WorkspaceGitOkResult>;
+
+    gitCommit(input: WorkspaceGitCommitInput): Promise<WorkspaceGitOkResult>;
+
+    gitPush(input: WorkspaceGitSyncInput): Promise<WorkspaceGitOkResult>;
+
+    gitPull(input: WorkspaceGitSyncInput): Promise<WorkspaceGitOkResult>;
+
+    gitFetch(input: { workspaceId: string }): Promise<WorkspaceGitOkResult>;
+
+    gitDiscard(input: WorkspaceGitDiscardInput): Promise<WorkspaceGitOkResult>;
+
+    gitStash(input: WorkspaceGitStashInput): Promise<WorkspaceGitOkResult>;
+
+    gitStashPop(input: WorkspaceGitStashIndexInput): Promise<WorkspaceGitOkResult>;
+
+    gitStashDrop(input: WorkspaceGitStashIndexInput): Promise<WorkspaceGitOkResult>;
+
+    gitStashList(input: { workspaceId: string }): Promise<WorkspaceGitStashListResult>;
+
+    gitBranches(input: { workspaceId: string }): Promise<WorkspaceGitBranchesResult>;
+
+    gitCheckout(input: WorkspaceGitCheckoutInput): Promise<WorkspaceGitOkResult>;
+
+    gitCreateBranch(input: WorkspaceGitCreateBranchInput): Promise<WorkspaceGitOkResult>;
+
+    gitGenerateCommitMessage(
+      input: { workspaceId: string },
+      onDelta?: (delta: string) => void
+    ): Promise<WorkspaceGitGenerateMessageResult>;
+
 
 
     /** Full multi-workspace registry. Used by the dock tree. */
@@ -957,6 +1178,9 @@ export interface VyotiqApi {
 
     retryReachability(id: string): Promise<WorkspacesState>;
 
+    /** Checkout a branch for a GitHub-bound workspace (fetch + checkout). */
+    switchBranch(input: GitHubSwitchBranchInput): Promise<WorkspaceEntry>;
+
     mkdir(input: WorkspaceMkdirInput): Promise<WorkspacePathOpReply>;
 
     renamePath(input: WorkspaceRenamePathInput): Promise<WorkspacePathOpReply>;
@@ -966,6 +1190,53 @@ export interface VyotiqApi {
     revealPath(input: WorkspaceRevealPathInput): Promise<WorkspacePathOpReply>;
 
     onTreeChanged(cb: (payload: WorkspaceTreeChangedPayload) => void): () => void;
+
+  };
+
+
+
+  // ---- GitHub ----
+
+  github: {
+
+    listAccounts(): Promise<GitHubAccount[]>;
+
+    startDeviceFlow(host?: string): Promise<GitHubDeviceFlowStart>;
+
+    pollDeviceFlow(deviceCode: string, host?: string): Promise<GitHubDeviceFlowPoll>;
+
+    addPat(input: GitHubAddPatInput): Promise<GitHubAccount>;
+
+    removeAccount(id: string): Promise<{ ok: boolean }>;
+
+    verifyAccount(id: string): Promise<GitHubAccount>;
+
+    /** True when Settings or `VYOTIQ_GITHUB_OAUTH_CLIENT_ID` provides an OAuth App client ID. */
+    isOAuthConfigured(): Promise<boolean>;
+
+    listRepos(input: GitHubListReposInput): Promise<GitHubRepo[]>;
+
+    listOrgs(accountId: string): Promise<import('./github.js').GitHubOrg[]>;
+
+    listRecentRepos(accountId: string): Promise<import('./github.js').GitHubRecentRepo[]>;
+
+    getCloneState(
+      accountId: string,
+      owner: string,
+      repo: string
+    ): Promise<import('./github.js').GitHubCloneStateResult>;
+
+    listBranches(accountId: string, owner: string, repo: string): Promise<GitHubBranch[]>;
+
+    openRepo(input: GitHubOpenRepoInput): Promise<WorkspaceEntry>;
+
+    /** E2E-only — seeds in-memory GitHub catalogue (NODE_ENV=test). */
+    e2eSeed(input: import('./github.js').GitHubE2ESeedInput): Promise<{ accountId: string }>;
+
+    /** E2E-only — binds GitHub metadata onto an existing workspace (NODE_ENV=test). */
+    e2eBindWorkspace(input: import('./github.js').GitHubE2EBindWorkspaceInput): Promise<WorkspaceEntry>;
+
+    onGitProgress(cb: (payload: import('./github.js').GitHubGitProgress) => void): () => void;
 
   };
 
@@ -1025,6 +1296,10 @@ export interface VyotiqApi {
     discoverModels(id: string, force?: boolean): Promise<import('./provider.js').ProviderDiscoverModelsResult>;
 
     test(id: string): Promise<{ ok: boolean; message: string }>;
+
+    claudeCodeProxyAction(
+      action: import('@shared/providers/claudeCodeProxy.js').ClaudeCodeProxyAction
+    ): Promise<import('@shared/providers/claudeCodeProxy.js').ClaudeCodeProxyActionResult>;
 
     getAccounts(): Promise<ProviderAccountSnapshotMap>;
 
@@ -1118,6 +1393,12 @@ export interface VyotiqApi {
       id: string,
       format: import('./chat.js').ConversationExportFormat
     ): Promise<import('./chat.js').ConversationExportResult>;
+
+  search(
+    workspaceId: string,
+    query: string,
+    limit?: number
+  ): Promise<ConversationSearchHit[]>;
 
     /**
 
@@ -1215,6 +1496,7 @@ export interface VyotiqApi {
     list(): Promise<ScheduledRun[]>;
     upsert(input: ScheduledRunInput): Promise<ScheduledRun>;
     delete(id: string): Promise<{ ok: boolean }>;
+    onUpdated(cb: (runs: ScheduledRun[]) => void): () => void;
   };
 
   heartbeat: {
@@ -1357,7 +1639,7 @@ export interface VyotiqApi {
 
     get(): Promise<AppSettings>;
 
-    set(patch: Partial<AppSettings>): Promise<AppSettings>;
+    set(patch: SettingsPatch): Promise<AppSettings>;
 
   };
 
@@ -1463,6 +1745,29 @@ export interface VyotiqApi {
 
   };
 
+  skills: {
+    list(workspaceId: string): Promise<import('./skills.js').SkillMeta[]>;
+    read(
+      workspaceId: string,
+      skillName: string
+    ): Promise<{
+      meta: import('./skills.js').SkillMeta;
+      raw: string;
+      effective: string;
+    }>;
+    create(
+      workspaceId: string,
+      skillName: string
+    ): Promise<{ meta: import('./skills.js').SkillMeta; path: string }>;
+    reveal(workspaceId: string, skillName: string): Promise<{ ok: true }>;
+    writeOverride(
+      workspaceId: string,
+      skillName: string,
+      body: string
+    ): Promise<{ ok: true }>;
+    resetOverride(workspaceId: string, skillName: string): Promise<{ ok: true }>;
+  };
+
 
 
   // ---- In-app workspace editor ----
@@ -1564,8 +1869,6 @@ export interface VyotiqApi {
     cancel(kind: import('./completion.js').CompletionKind, workspaceId?: string): Promise<void>;
 
   };
-
-
 
   lsp: {
 

@@ -9,7 +9,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ChevronRight,
-  ClipboardCopy,
+  ChevronsDown,
   Columns2,
   Eraser,
   ExternalLink,
@@ -18,7 +18,6 @@ import {
   RotateCw,
   Save,
   Search,
-  ChevronsDown,
   Plus,
   TerminalSquare,
   X,
@@ -60,6 +59,7 @@ import {
   WORKBENCH_TOOLBAR_CLASS,
   workbenchToolbarToggleClass,
 } from "./workbenchChrome.js";
+import { TerminalOverflowMenu } from "./TerminalOverflowMenu.js";
 
 export function WorkbenchToolbar({ tab }: { tab: CompanionTab }) {
   switch (tab) {
@@ -71,6 +71,8 @@ export function WorkbenchToolbar({ tab }: { tab: CompanionTab }) {
       return <BrowserToolbar />;
     case "preview":
       return <PreviewToolbar />;
+    case "source-control":
+      return null;
     default: {
       const _exhaustive: never = tab;
       return _exhaustive;
@@ -332,62 +334,13 @@ function TerminalToolbar() {
           </button>
         </div>
         <div className={WORKBENCH_ACTION_GROUP_CLASS}>
-          <button
-            type="button"
-            className={WORKBENCH_ICON_BTN_CLASS}
-            title="Copy selection"
-            aria-label="Copy selection"
-            onClick={onCopy}
+          <TerminalOverflowMenu
             disabled={!activeSessionId}
-          >
-            <ClipboardCopy
-              className={SHELL_ROW_ICON_CLASS}
-              strokeWidth={SHELL_ACTION_ICON_STROKE}
-            />
-          </button>
-          <button
-            type="button"
-            className={WORKBENCH_ICON_BTN_CLASS}
-            title="Scroll to bottom"
-            aria-label="Scroll to bottom"
-            onClick={() =>
-              withActiveEntry((entry) => entry.term.scrollToBottom())
-            }
-            disabled={!activeSessionId}
-          >
-            <ChevronsDown
-              className={SHELL_ROW_ICON_CLASS}
-              strokeWidth={SHELL_ACTION_ICON_STROKE}
-            />
-          </button>
-        </div>
-        <div className={WORKBENCH_ACTION_GROUP_CLASS}>
-          <button
-            type="button"
-            className={WORKBENCH_ICON_BTN_CLASS}
-            title="Clear"
-            aria-label="Clear"
-            onClick={() => withActiveEntry((entry) => entry.term.clear())}
-            disabled={!activeSessionId}
-          >
-            <Eraser
-              className={SHELL_ROW_ICON_CLASS}
-              strokeWidth={SHELL_ACTION_ICON_STROKE}
-            />
-          </button>
-          <button
-            type="button"
-            className={WORKBENCH_ICON_BTN_CLASS}
-            title="Restart shell"
-            aria-label="Restart shell"
-            onClick={() => activeSessionId && void restart(activeSessionId)}
-            disabled={!activeSessionId || attaching}
-          >
-            <RotateCcw
-              className={SHELL_ROW_ICON_CLASS}
-              strokeWidth={SHELL_ACTION_ICON_STROKE}
-            />
-          </button>
+            onCopy={onCopy}
+            onScrollBottom={() => withActiveEntry((entry) => entry.term.scrollToBottom())}
+            onClear={() => withActiveEntry((entry) => entry.term.clear())}
+            onRestart={() => activeSessionId && void restart(activeSessionId)}
+          />
           <button
             type="button"
             className={WORKBENCH_ICON_BTN_CLASS}

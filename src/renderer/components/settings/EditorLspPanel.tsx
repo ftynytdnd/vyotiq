@@ -120,7 +120,7 @@ export function EditorLspPanel() {
   };
 
   return (
-    <ShellSection title="Editor language server" className="vx-editor-lsp-panel">
+    <ShellSection className="vx-editor-lsp-panel">
       <ShellCaption>
         Built-in language servers ship with Vyotiq — no separate install required for Python and
         TypeScript / JavaScript. They power diagnostics, hover tooltips, Ctrl+Space completion, F2

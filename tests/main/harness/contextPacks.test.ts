@@ -1,10 +1,5 @@
 /**
- * Resilience contract for the on-demand context-pack store.
- *
- * Covers:
- *   - `warmContextPacks` never rejects and leaves every body non-empty.
- *   - After `invalidateContextPacks` (cache null), `getContextPackBody`
- *     transparently falls back to the bundled bodies — never `undefined`.
+ * Legacy context-pack shim — delegates to bundled skills.
  */
 
 import { describe, expect, it } from 'vitest';

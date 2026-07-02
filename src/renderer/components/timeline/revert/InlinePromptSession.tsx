@@ -152,13 +152,13 @@ export function InlinePromptSession({
       aria-label={session.isEdit ? 'Edit and resend message' : 'Revert to before this message'}
     >
       <div className="flex min-w-0 flex-col gap-1 p-2">
-        <div className="flex items-center gap-1.5 text-meta text-text-muted">
+        <div className="flex items-center gap-1.5 text-text-muted">
           {session.isEdit ? (
             <Pencil className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
           ) : (
             <Undo2 className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
           )}
-          <span className="font-medium text-text-secondary">
+          <span className="text-row font-medium text-text-secondary">
             {session.isEdit ? 'Edit and resend' : 'Revert to here'}
           </span>
         </div>
@@ -180,8 +180,8 @@ export function InlinePromptSession({
         )}
         {impact &&
           (session.isEdit ? (
-            <details className="group text-meta">
-              <summary className="cursor-pointer select-none text-text-muted hover:text-text-secondary">
+            <details className="group">
+              <summary className="cursor-pointer select-none text-row text-text-muted hover:text-text-secondary">
                 View rewind impact
               </summary>
               <div className="pt-1">{impact}</div>
@@ -228,15 +228,15 @@ export function InlinePromptSession({
               />
             </div>
             {!hasComposerContent(editDoc) && attachments.length === 0 && (
-              <p className="text-meta text-warning">Type a message to send.</p>
+              <p className="text-row text-warning">Type a message to send.</p>
             )}
             {!model && (
-              <p className="text-meta text-warning">Select a model above to resend.</p>
+              <p className="text-row text-warning">Select a model above to resend.</p>
             )}
             {hasComposerContent(editDoc) &&
               intent.kind === 'edit' &&
               documentTrimmedPlain(editDoc) === intent.originalContent.trim() && (
-                <p className="text-meta text-text-muted">
+                <p className="text-row text-text-muted">
                   Unchanged — will resubmit the original prompt after rewind.
                 </p>
               )}

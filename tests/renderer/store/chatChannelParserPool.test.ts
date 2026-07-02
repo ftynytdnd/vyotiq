@@ -152,6 +152,7 @@ describe('chatChannel — partial-JSON parser pool', () => {
       ts: 5,
       call: { id: 'c1', name: 'edit', args: { path: 'a.ts' } }
     });
+    await flushRaf();
     expect(pool.parserPoolSize()).toBe(0);
   });
 
@@ -166,6 +167,7 @@ describe('chatChannel — partial-JSON parser pool', () => {
       ts: 5,
       call: { id: 'real-1', name: 'edit', args: { path: 'a.ts' } }
     });
+    await flushRaf();
     // Lowest-index surrogate dropped, the other survives.
     expect(pool.parserPoolKeys()).toEqual(['run-1\u0000pending:orc:1']);
   });

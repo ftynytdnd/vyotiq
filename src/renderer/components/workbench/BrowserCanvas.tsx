@@ -11,7 +11,7 @@ import { vyotiq } from '../../lib/ipc.js';
 import { useBrowserStore } from '../../store/useBrowserStore.js';
 import { WORKBENCH_BODY_CLASS } from './workbenchShared.js';
 import { WorkbenchFindBar } from './WorkbenchFindBar.js';
-import { BrowserEmptyState } from './BrowserEmptyState.js';
+import { BrowserEmptyState, BrowserErrorState } from './BrowserEmptyState.js';
 import { cn } from '../../lib/cn.js';
 
 function BrowserFindOverlay() {
@@ -83,9 +83,7 @@ export function BrowserCanvas() {
   return (
     <div className={cn(WORKBENCH_BODY_CLASS, 'vx-browser-canvas relative')}>
       {findOpen ? <BrowserFindOverlay /> : null}
-      {error ? (
-        <p className="shrink-0 px-3 py-2 text-center text-meta text-text-muted">{error}</p>
-      ) : null}
+      {error ? <BrowserErrorState message={error} /> : null}
       <div ref={slotRef} className="vx-browser-slot min-h-0 flex-1" />
       {!hasLoaded && !error ? <BrowserEmptyState /> : null}
     </div>

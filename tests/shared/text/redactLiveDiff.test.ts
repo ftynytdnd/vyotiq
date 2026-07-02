@@ -37,7 +37,7 @@ describe('redactLiveDiff', () => {
   it('redacts parsed tool arg strings', () => {
     const parsed = redactParsedToolArgs({
       path: 'x.ts',
-      newString: 'token=supersecretvalue'
+      newString: 'api_token=supersecretvalue'
     });
     expect(parsed?.['newString']).toContain('[REDACTED]');
   });

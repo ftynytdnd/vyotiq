@@ -18,6 +18,7 @@ import {
   openAttachmentExternal
 } from '../../lib/openAttachment.js';
 import { useAttachmentPreviewStore } from '../../store/useAttachmentPreviewStore.js';
+import { registerPreviewDomFocus } from '../../lib/workbenchFocusDom.js';
 import { cn } from '../../lib/cn.js';
 import { WORKBENCH_BODY_CLASS } from './workbenchShared.js';
 
@@ -36,6 +37,13 @@ export function PreviewZone({ attachment }: PreviewZoneProps) {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [fileUrlPhase, setFileUrlPhase] = useState<LoadPhase>('idle');
   const fallbackAttemptedRef = useRef(false);
+  const zoneRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    return registerPreviewDomFocus(() => {
+      zoneRef.current?.focus({ preventScroll: true });
+    });
+  }, []);
 
   const previewKind = attachmentPreviewKind(attachment);
   const needsFileUrl = attachmentPreviewUsesFileUrl(previewKind);
@@ -151,7 +159,11 @@ export function PreviewZone({ attachment }: PreviewZoneProps) {
   const canPreview = pathInput !== null;
 
   return (
-    <div className={cn(WORKBENCH_BODY_CLASS, 'vx-preview-zone scrollbar-stealth overflow-y-auto')}>
+    <div
+      ref={zoneRef}
+      tabIndex={-1}
+      className={cn(WORKBENCH_BODY_CLASS, 'vx-preview-zone scrollbar-stealth overflow-y-auto outline-none')}
+    >
       {isLoading && <LoadingHint message="Loading preview…" />}
       {error && <p className="p-3 text-row text-danger">{error}</p>}
       {previewKind === 'image' && fileUrl && (
@@ -181,7 +193,7 @@ export function PreviewZone({ attachment }: PreviewZoneProps) {
       )}
       {previewKind === 'audio' && fileUrl && (
         <div className="flex flex-col items-center justify-center gap-3 p-6">
-          <p className="max-w-full truncate font-mono text-meta text-text-secondary">{attachment.name}</p>
+          <p className="max-w-full truncate font-mono text-row text-text-secondary">{attachment.name}</p>
           <audio src={fileUrl} controls preload="metadata" className="w-full max-w-md">
             <track kind="captions" />
           </audio>

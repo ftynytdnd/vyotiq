@@ -22,6 +22,9 @@ export interface Toast {
 interface ToastStore {
   toasts: Toast[];
   show: (message: string, tone?: ToastTone, durationMs?: number) => void;
+  /** Update or create a toast with a stable key (for progress streams). */
+  showKeyed: (key: string, message: string, tone?: ToastTone) => void;
+  dismissKeyed: (key: string) => void;
   dismiss: (id: string) => void;
   /**
    * Freeze a toast's auto-expire timer. Used by `ToastHost` while the
@@ -43,6 +46,11 @@ const DEFAULT_DURATION_MS = 4000;
 /** Danger toasts persist until dismissed. */
 const PERSISTENT_DURATION_MS = 0;
 const MAX_STACK = 4;
+const KEYED_PREFIX = 'keyed:';
+
+function keyedId(key: string): string {
+  return `${KEYED_PREFIX}${key}`;
+}
 
 let serial = 0;
 function nextId(): string {
@@ -113,6 +121,31 @@ export const useToastStore = create<ToastStore>((set, get) => {
       }
       set({ toasts: [...trimmed, next] });
       scheduleExpire(id, resolvedDuration);
+    },
+
+    showKeyed: (key, message, tone = 'info') => {
+      const id = keyedId(key);
+      const cur = get().toasts;
+      const existing = cur.find((t) => t.id === id);
+      if (existing) {
+        set({
+          toasts: cur.map((t) => (t.id === id ? { ...t, message, tone } : t))
+        });
+        return;
+      }
+      const next: Toast = { id, message, tone };
+      const trimmed =
+        cur.length >= MAX_STACK ? cur.slice(cur.length - (MAX_STACK - 1)) : cur;
+      const dropped = cur.length - trimmed.length;
+      if (dropped > 0) {
+        for (const t of cur.slice(0, dropped)) clearTimer(t.id);
+      }
+      set({ toasts: [...trimmed, next] });
+      scheduleExpire(id, PERSISTENT_DURATION_MS);
+    },
+
+    dismissKeyed: (key) => {
+      get().dismiss(keyedId(key));
     },
 
     dismiss: (id) => {

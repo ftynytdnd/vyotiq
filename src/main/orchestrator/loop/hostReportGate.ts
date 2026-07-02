@@ -40,6 +40,7 @@ export interface HostReportGateContext {
   pendingTerminal: PendingTerminalKind;
   emit: (event: TimelineEvent) => void;
   runCumulativeTokens: number;
+  runHistoryStartIndex?: number;
 }
 
 export interface HostReportGatePause {
@@ -180,7 +181,10 @@ export async function maybeInterceptHostReportGate(
       hostReportGate: true,
       pendingTerminal: ctx.pendingTerminal,
       reportGateBonusIteration: true,
-      runCumulativeTokens: ctx.runCumulativeTokens
+      runCumulativeTokens: ctx.runCumulativeTokens,
+      ...(ctx.runHistoryStartIndex !== undefined
+        ? { runHistoryStartIndex: ctx.runHistoryStartIndex }
+        : {})
     })
   };
 }

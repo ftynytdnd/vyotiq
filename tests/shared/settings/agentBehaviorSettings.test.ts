@@ -4,8 +4,10 @@ import {
   DEFAULT_RUN_WALL_CLOCK_BUDGET_MS,
   isRunTokenBudgetExceeded,
   isRunWallClockBudgetExceeded,
-  resolveAgentBehaviorSettings
+  resolveAgentBehaviorSettings,
+  resolveMaxTotalIterations
 } from '@shared/settings/agentBehaviorSettings';
+import { DEFAULT_MAX_TOTAL_ITERATIONS } from '@shared/constants';
 
 describe('resolveAgentBehaviorSettings', () => {
   it('defaults token budget off and context management on', () => {
@@ -14,6 +16,22 @@ describe('resolveAgentBehaviorSettings', () => {
     expect(resolved.runTokenBudget.maxTotalTokens).toBe(DEFAULT_RUN_TOKEN_BUDGET_MAX);
     expect(resolved.contextManagement.enabled).toBe(true);
     expect(resolved.runWallClockBudget.enabled).toBe(false);
+    expect(resolveMaxTotalIterations(resolved)).toBe(DEFAULT_MAX_TOTAL_ITERATIONS);
+  });
+
+  it('clamps run iteration limit', () => {
+    const low = resolveAgentBehaviorSettings({
+      agentBehavior: { runIterationLimit: { maxTotalIterations: 3 } }
+    });
+    expect(resolveMaxTotalIterations(low)).toBe(8);
+    const high = resolveAgentBehaviorSettings({
+      agentBehavior: { runIterationLimit: { maxTotalIterations: 999 } }
+    });
+    expect(resolveMaxTotalIterations(high)).toBe(200);
+    const custom = resolveAgentBehaviorSettings({
+      agentBehavior: { runIterationLimit: { maxTotalIterations: 93 } }
+    });
+    expect(resolveMaxTotalIterations(custom)).toBe(93);
   });
 
   it('context management: defaults, legacy fallback, and fraction clamps', () => {

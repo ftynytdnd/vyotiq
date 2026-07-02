@@ -8,16 +8,14 @@ describe('revealFileInDockTree', () => {
     useWorkspaceStore.setState({ activeId: 'ws-1' } as never);
     useUiStore.setState({
       dockExpanded: false,
-      dockPanelTab: 'chats',
       filesExpandedWorkspaces: new Set<string>(),
       hydrated: true
     });
   });
 
-  it('expands dock and switches to files tab', () => {
+  it('expands dock and files panel for active workspace', () => {
     revealFileInDockTree('src/main.ts');
     expect(useUiStore.getState().dockExpanded).toBe(true);
-    expect(useUiStore.getState().dockPanelTab).toBe('files');
     expect(useUiStore.getState().filesExpandedWorkspaces.has('ws-1')).toBe(true);
   });
 });

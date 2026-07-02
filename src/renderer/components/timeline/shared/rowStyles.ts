@@ -4,7 +4,6 @@
 
 import { cn } from '../../../lib/cn.js';
 import { SHELL_ROW_ICON_CLASS, SHELL_ACTION_ICON_STROKE } from '../../../lib/shellIcons.js';
-import type { RunStatusPhase } from '@shared/types/chat.js';
 
 /** Shared inset for activity row headers and response prose left edge. */
 const timelineAgentContentInsetClassName = '';
@@ -15,7 +14,7 @@ const timelineAgentContentInsetClassName = '';
  * read on one vertical column.
  */
 export const timelineAgentColumnClassName = cn(
-  'timeline-agent-column vx-timeline-agent-column',
+  'vx-timeline-agent-column',
   timelineAgentContentInsetClassName,
   'flex w-full flex-col'
 );
@@ -27,15 +26,12 @@ export const timelineTurnZoneGapClassName = 'vx-timeline-turn-gap';
 export const timelineTurnOuterGapClassName = 'vx-timeline-turn-outer last:mb-0 last:pt-0';
 
 /**
- * User prompt surface — flush in the reading column (no card, no ring).
+ * User prompt surface — raised accent bubble in the reading column.
  *
- * Vyotiq's earlier raised-card treatment paired a `bg-surface-raised/45`
- * fill with an inset hairline ring and right-aligned alignment. The May
- * 2026 timeline restyle drops the chrome entirely so user prompts read
- * as plain markdown flush in the agent column rail. The export is preserved as
- * an empty string so any out-of-tree caller still composes safely; the
- * row identity is now carried by `data-row-kind="user-prompt"` and
- * positional cues alone.
+ * Identity is carried by `data-row-kind="user-prompt"`, bubble tokens in
+ * `.vx-timeline-user-bubble`, and {@link timelineUserPromptBodyClassName}.
+ * The export below is intentionally empty so out-of-tree callers still
+ * compose safely on the row wrapper.
  */
 /**
  * Agent response wrapper — flush prose with no surface chrome.
@@ -93,11 +89,6 @@ export const timelineRunCompleteRowClassName = cn(
   'flex w-full flex-row flex-wrap items-baseline gap-x-1.5'
 );
 
-/** Live-turn shell — no extra chrome (left rail removed). */
-export function timelineLiveTurnClassName(_live: boolean): string {
-  return '';
-}
-
 /**
  * Assistant prose block — flush markdown in the column.
  *
@@ -126,31 +117,6 @@ export function timelinePhaseHeadingClassName(live = false): string {
   return live ? 'vx-timeline-phase-live vyotiq-reveal-text' : 'vx-timeline-phase';
 }
 
-/** Map run-status phase + label to the user-facing gold headline. */
-export function resolveLivePhaseHeadline(
-  phase: string,
-  label: string
-): string {
-  if (phase === 'running-tool') return 'Exploring';
-  if (phase === 'awaiting-response') return 'Starting…';
-  return label;
-}
-
-/** Whether a persisted phase divider label is a live-phase headline. */
-export function isPhaseHeadlineLabel(label: string): boolean {
-  const normalized = label.trim().toLowerCase();
-  return normalized === 'exploring' || normalized.startsWith('exploring ');
-}
-
-/** Gold headline phases — tool exploration and active token streams. */
-export function isGoldLivePhase(phase: RunStatusPhase | 'streaming-reasoning' | 'streaming-text'): boolean {
-  return (
-    phase === 'running-tool' ||
-    phase === 'streaming-reasoning' ||
-    phase === 'streaming-text'
-  );
-}
-
 /** In-flight tool row title — primary while pending, settled label when done. */
 export function toolTitleClassName(running: boolean, failed = false): string {
   return cn(
@@ -159,7 +125,7 @@ export function toolTitleClassName(running: boolean, failed = false): string {
       ? 'text-text-primary'
       : failed
         ? 'text-danger'
-        : 'vx-row-label text-[length:var(--text-row)] text-text-secondary'
+        : 'vx-row-label text-[length:var(--text-row)] text-text-muted'
   );
 }
 

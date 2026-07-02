@@ -112,6 +112,25 @@ describe('conversation heartbeat service', () => {
     expect(touchHeartbeatMock).toHaveBeenCalled();
   });
 
+  it('enqueues queued wake when conversation is awaiting ask_user', async () => {
+    listHeartbeatsMock.mockResolvedValue([sampleHeartbeat()]);
+    listActiveRunsMock.mockReturnValue([
+      { conversationId: 'conv-1', awaitingUser: true }
+    ]);
+
+    await runConversationHeartbeatTickForTests();
+
+    expect(enqueueFollowUpMock).toHaveBeenCalledWith({
+      conversationId: 'conv-1',
+      kind: 'queue',
+      prompt: '<heartbeat_wake>Check status</heartbeat_wake>',
+      selection: { providerId: 'p1', modelId: 'm1' },
+      source: 'heartbeat'
+    });
+    expect(dispatchChatSendMock).not.toHaveBeenCalled();
+    expect(touchHeartbeatMock).toHaveBeenCalled();
+  });
+
   it('dispatches a new run when conversation is idle', async () => {
     listHeartbeatsMock.mockResolvedValue([sampleHeartbeat()]);
     listActiveRunsMock.mockReturnValue([]);

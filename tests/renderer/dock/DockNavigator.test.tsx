@@ -15,13 +15,11 @@ const WS_A = { id: 'ws-a', label: 'Codex', path: '/tmp/codex', addedAt: 0 };
 const WS_B = { id: 'ws-b', label: 'antigravit', path: '/tmp/antigravit', addedAt: 1 };
 
 const dockProps = {
-  onOpenWorkspace: () => {},
   onSetWorkspacePath: () => {}
 };
 
 beforeEach(() => {
   useUiStore.setState({
-    dockPanelTab: 'chats',
     filesExpandedWorkspaces: new Set<string>(),
     collapsedWorkspaces: new Set<string>(),
     hydrated: true
@@ -41,10 +39,11 @@ beforeEach(() => {
 });
 
 describe('DockNavigator', () => {
-  it('renders Workspaces header with add workspace only', () => {
+  it('renders Workspaces header with add workspace and GitHub actions', () => {
     render(<DockNavigator {...dockProps} />);
     expect(screen.getByRole('heading', { name: 'Workspaces' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add workspace' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open from GitHub' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Search workspace' })).toBeNull();
   });
 
@@ -149,12 +148,12 @@ describe('DockNavigator', () => {
     expect(filesToggle).toHaveAttribute('aria-expanded', 'true');
 
     useWorkspaceStore.setState({ activeId: WS_B.id } as never);
-    useUiStore.setState({ dockPanelTab: 'chats' });
+    useUiStore.setState({ filesExpandedWorkspaces: new Set<string>() });
     rerender(<DockNavigator {...dockProps} />);
     expect(screen.getByRole('button', { name: /Files/ })).toHaveAttribute('aria-expanded', 'false');
 
     useWorkspaceStore.setState({ activeId: WS_A.id } as never);
-    useUiStore.setState({ dockPanelTab: 'files' });
+    useUiStore.setState({ filesExpandedWorkspaces: new Set([WS_A.id]) });
     rerender(<DockNavigator {...dockProps} />);
     expect(screen.getByRole('button', { name: /Files/ })).toHaveAttribute('aria-expanded', 'true');
   });

@@ -130,7 +130,7 @@ export function PromptAttachmentCards({
                     strokeWidth={SHELL_MICRO_ICON_STROKE}
                   />
                 )}
-                <span className="min-w-0 truncate font-mono text-meta text-text-secondary">
+                <span className="min-w-0 truncate font-mono text-row text-text-secondary">
                   {a.name}
                 </span>
               </button>
@@ -180,7 +180,7 @@ export function PromptAttachmentCards({
                 <>
                   <AttachmentThumbnail attachment={a} />
                   {editable ? (
-                    <span className="min-w-0 truncate font-mono text-meta text-text-faint">
+                    <span className="min-w-0 truncate font-mono text-row text-text-secondary">
                       {a.name}
                     </span>
                   ) : null}
@@ -188,7 +188,7 @@ export function PromptAttachmentCards({
               ) : (
                 <>
                   <Icon className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
-                  <span className="min-w-0 truncate font-mono text-meta">{a.name}</span>
+                  <span className="min-w-0 truncate font-mono text-row text-text-secondary">{a.name}</span>
                 </>
               )}
             </button>

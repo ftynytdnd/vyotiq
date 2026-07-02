@@ -14,6 +14,8 @@ export type KeybindingId =
   | 'openSettings'
   | 'saveEditor'
   | 'toggleTerminal'
+  | 'companionPanels'
+  | 'sourceControl'
   | 'closeWorkbenchTab'
   | 'cycleWorkbenchTabPrev'
   | 'cycleWorkbenchTabNext'
@@ -44,7 +46,7 @@ export interface KeybindingDefinition {
 
 export const KEYBINDING_DEFINITIONS: readonly KeybindingDefinition[] = [
   { id: 'toggleDock', label: 'Toggle navigation dock', defaultCombo: 'Mod+B', group: 'Navigation' },
-  { id: 'openSearch', label: 'Search chats and workspace files', defaultCombo: 'Mod+K', group: 'Navigation' },
+  { id: 'openSearch', label: 'Search skills, chats, messages, and files', defaultCombo: 'Mod+K', group: 'Navigation' },
   { id: 'prevChat', label: 'Previous chat', defaultCombo: 'Alt+ArrowUp', group: 'Navigation' },
   { id: 'nextChat', label: 'Next chat', defaultCombo: 'Alt+ArrowDown', group: 'Navigation' },
   { id: 'nextWorkspace', label: 'Next workspace', defaultCombo: 'Mod+Tab', group: 'Workspace' },
@@ -54,6 +56,18 @@ export const KEYBINDING_DEFINITIONS: readonly KeybindingDefinition[] = [
   { id: 'openSettings', label: 'Settings', defaultCombo: 'Mod+,', group: 'Workspace' },
   { id: 'saveEditor', label: 'Save file in editor', defaultCombo: 'Mod+S', group: 'Window' },
   { id: 'toggleTerminal', label: 'Toggle terminal', defaultCombo: 'Mod+`', group: 'Window' },
+  {
+    id: 'companionPanels',
+    label: 'Companion panels',
+    defaultCombo: 'Mod+Shift+P',
+    group: 'Window'
+  },
+  {
+    id: 'sourceControl',
+    label: 'Source control',
+    defaultCombo: 'Mod+Alt+G',
+    group: 'Window'
+  },
   { id: 'closeWorkbenchTab', label: 'Close workbench tab', defaultCombo: 'Mod+W', group: 'Window' },
   {
     id: 'cycleWorkbenchTabPrev',

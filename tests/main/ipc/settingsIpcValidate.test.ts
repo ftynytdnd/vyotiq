@@ -124,4 +124,13 @@ describe('registerSettingsIpc — SETTINGS_SET payload validation', () => {
     ).rejects.toThrow(/exceeds 20 tabs/);
     expect(setSettingsMock).not.toHaveBeenCalled();
   });
+
+  it('accepts githubOAuthClientId override', async () => {
+    await mockIpc.__invoke(IPC.SETTINGS_SET, {
+      ui: { githubOAuthClientId: 'Iv1.abc123' }
+    });
+    expect(setSettingsMock).toHaveBeenCalledWith({
+      ui: { githubOAuthClientId: 'Iv1.abc123' }
+    });
+  });
 });

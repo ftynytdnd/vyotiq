@@ -23,6 +23,11 @@
 
 import type { ModelInfo, ModelInputModality, ProviderDialect, ProviderWithKey } from '@shared/types/provider.js';
 import { MODEL_DISCOVERY_TIMEOUT_MS, MODEL_DISCOVERY_TTL_MS } from '@shared/constants.js';
+import { isClaudeCodeProxyBaseUrl } from '@shared/providers/claudeCodeProxy.js';
+import {
+  fetchClaudeCodeProxyModels,
+  isClaudeCodeProxyProvider
+} from './claudeCodeProxy.js';
 import {
   contextWindowFromOllamaModelInfo,
   contextWindowFromOpenAiModelRow,
@@ -270,7 +275,9 @@ async function fetchAndPersistModels(
 ): Promise<ModelInfo[]> {
   const dialect = effectiveDialect(provider);
   let models: ModelInfo[];
-  switch (dialect) {
+  if (isClaudeCodeProxyProvider(provider)) {
+    models = await fetchClaudeCodeProxyModels(provider);
+  } else switch (dialect) {
     case 'ollama-native':
       models = await fetchOllamaTags(provider);
       break;
@@ -307,6 +314,7 @@ async function fetchAndPersistModels(
   } = { models, lastDiscoveredAt: Date.now() };
   if (
     dialect === 'anthropic-native' &&
+    !isClaudeCodeProxyProvider(provider) &&
     (!provider.anthropicBetas || provider.anthropicBetas.length === 0)
   ) {
     patch.anthropicBetas = [...DEFAULT_ANTHROPIC_BETAS];
@@ -331,6 +339,7 @@ async function fetchAndPersistModels(
  * Pure / synchronous; no I/O. Exported for testability.
  */
 function classifyKnownHost(baseUrl: string): ProviderDialect | null {
+  if (isClaudeCodeProxyBaseUrl(baseUrl)) return 'anthropic-native';
   return dialectHintFromHostname(baseUrl);
 }
 
@@ -481,6 +490,40 @@ const REASONING_DISCOVERY_PARAMETERS = new Set([
   'thinking'
 ]);
 
+function chatModelsFromCache(models: ModelInfo[]): ModelInfo[] {
+  return models.filter((m) => !isNonChatModel(m.id));
+}
+
+function providerExpectsContextFromDiscovery(provider: ProviderWithKey): boolean {
+  const dialect = effectiveDialect(provider);
+  if (dialect === 'anthropic-native' || dialect === 'gemini-native') return true;
+  if (dialect === 'ollama-native') return true;
+  if (isOpenRouterHost(provider.baseUrl)) return true;
+  if (isDeepSeekApiHost(provider.baseUrl)) return true;
+  if (isNvidiaIntegrateHost(provider.baseUrl)) return true;
+  if (classifyProviderHost(provider) === 'openai') return true;
+  if (dialect === 'openai') return true;
+  return false;
+}
+
+function providerExpectsModalitiesFromDiscovery(provider: ProviderWithKey): boolean {
+  const dialect = effectiveDialect(provider);
+  if (dialect === 'anthropic-native' || dialect === 'gemini-native') return true;
+  if (dialect === 'ollama-native') return true;
+  if (isOpenRouterHost(provider.baseUrl)) return true;
+  if (classifyProviderHost(provider) === 'openai') return true;
+  if (dialect === 'openai') return true;
+  return false;
+}
+
+function providerExpectsThinkingFromDiscovery(provider: ProviderWithKey): boolean {
+  const dialect = effectiveDialect(provider);
+  if (dialect === 'anthropic-native' || dialect === 'gemini-native') return true;
+  if (dialect === 'ollama-native') return true;
+  if (isDeepSeekApiHost(provider.baseUrl)) return true;
+  return false;
+}
+
 /**
  * Re-fetch when a TTL-fresh cache predates capability parsing (context
  * and/or thinking metadata missing on providers that expose them).
@@ -501,16 +544,12 @@ function cachedModelsLackExpectedModalities(
   models: ModelInfo[]
 ): boolean {
   if (models.length === 0) return false;
-  if (models.some((m) => m.inputModalities !== undefined && m.inputModalities.length > 0)) {
-    return false;
-  }
-  const dialect = effectiveDialect(provider);
-  if (dialect === 'anthropic-native' || dialect === 'gemini-native') return true;
-  if (dialect === 'ollama-native') return true;
-  if (isOpenRouterHost(provider.baseUrl)) return true;
-  if (classifyProviderHost(provider) === 'openai') return true;
-  if (dialect === 'openai') return true;
-  return false;
+  if (!providerExpectsModalitiesFromDiscovery(provider)) return false;
+  const chat = chatModelsFromCache(models);
+  if (chat.length === 0) return false;
+  return chat.some(
+    (m) => m.inputModalities === undefined || m.inputModalities.length === 0
+  );
 }
 
 function cachedModelsLackExpectedContext(
@@ -518,16 +557,10 @@ function cachedModelsLackExpectedContext(
   models: ModelInfo[]
 ): boolean {
   if (models.length === 0) return false;
-  if (models.some((m) => m.contextWindow !== undefined)) return false;
-  const dialect = effectiveDialect(provider);
-  if (dialect === 'anthropic-native' || dialect === 'gemini-native') return true;
-  if (dialect === 'ollama-native') return true;
-  if (isOpenRouterHost(provider.baseUrl)) return true;
-  if (isDeepSeekApiHost(provider.baseUrl)) return true;
-  if (isNvidiaIntegrateHost(provider.baseUrl)) return true;
-  if (classifyProviderHost(provider) === 'openai') return true;
-  if (dialect === 'openai') return true;
-  return false;
+  if (!providerExpectsContextFromDiscovery(provider)) return false;
+  const chat = chatModelsFromCache(models);
+  if (chat.length === 0) return false;
+  return chat.some((m) => m.contextWindow === undefined);
 }
 
 function cachedModelsLackExpectedThinking(
@@ -535,17 +568,17 @@ function cachedModelsLackExpectedThinking(
   models: ModelInfo[]
 ): boolean {
   if (models.length === 0) return false;
-  if (models.some((m) => m.thinking?.supported)) return false;
-  const dialect = effectiveDialect(provider);
-  if (dialect === 'anthropic-native' || dialect === 'gemini-native') return true;
-  if (dialect === 'ollama-native') return true;
-  if (isDeepSeekApiHost(provider.baseUrl)) return true;
   if (isOpenRouterHost(provider.baseUrl)) {
-    return models.some((m) =>
+    const reasoningCandidates = models.filter((m) =>
       m.supportedParameters?.some((p) => REASONING_DISCOVERY_PARAMETERS.has(p))
     );
+    if (reasoningCandidates.length === 0) return false;
+    return reasoningCandidates.some((m) => m.thinking === undefined);
   }
-  return false;
+  if (!providerExpectsThinkingFromDiscovery(provider)) return false;
+  const chat = chatModelsFromCache(models);
+  if (chat.length === 0) return false;
+  return chat.some((m) => m.thinking === undefined);
 }
 
 export function isNonChatModel(id: string): boolean {

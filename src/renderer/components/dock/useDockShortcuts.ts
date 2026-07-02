@@ -12,6 +12,8 @@ import { dismissDockFlyout } from './dockShared.js';
 import { useUiStore } from '../../store/useUiStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
+import { useDockSchedulesStore } from '../../store/useDockSchedulesStore.js';
+import { useWorkspaceLauncherStore } from '../../store/useWorkspaceLauncherStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useAppViewStore } from '../../store/useAppViewStore.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
@@ -29,6 +31,12 @@ function isTextInputTarget(target: EventTarget | null): boolean {
 function isDockSearchInputTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return target.closest('[role="search"][aria-label="Search workspace"]') !== null;
+}
+
+/** Workspace launcher query input — Escape is handled locally (must not collapse flyout). */
+function isWorkspaceLauncherInputTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.matches('[role="searchbox"][aria-label="Open workspace"]');
 }
 
 function currentBindings() {
@@ -53,6 +61,8 @@ export function useDockShortcuts(): void {
         if (settingsOpen) return;
         e.preventDefault();
         useUiStore.getState().setDockExpanded(true);
+        useWorkspaceLauncherStore.getState().setOpen(false);
+        useDockSchedulesStore.getState().setOpen(false);
         useDockSearchStore.getState().setOpen(true);
         return;
       }
@@ -66,10 +76,23 @@ export function useDockShortcuts(): void {
 
       if (e.key === 'Escape') {
         if (isDockSearchInputTarget(e.target)) return;
+        if (isWorkspaceLauncherInputTarget(e.target)) return;
+        const launcher = useWorkspaceLauncherStore.getState();
+        if (launcher.open && launcher.placement === 'inline') {
+          e.preventDefault();
+          launcher.setOpen(false);
+          return;
+        }
         const search = useDockSearchStore.getState();
         if (search.open) {
           e.preventDefault();
           search.setOpen(false);
+          return;
+        }
+        const schedules = useDockSchedulesStore.getState();
+        if (schedules.open) {
+          e.preventDefault();
+          schedules.setOpen(false);
           return;
         }
         if (useUiStore.getState().dockExpanded && !isTextInputTarget(e.target)) {

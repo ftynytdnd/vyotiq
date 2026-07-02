@@ -167,7 +167,8 @@ export async function enqueueFollowUp(input: FollowUpEnqueueInput): Promise<Conv
     ...(input.mentions && input.mentions.length > 0
       ? { mentions: input.mentions.map((m) => ({ ...m })) }
       : {}),
-    ...(input.promptEventId ? { promptEventId: input.promptEventId } : {})
+    ...(input.promptEventId ? { promptEventId: input.promptEventId } : {}),
+    ...(input.invokedSkill ? { invokedSkill: input.invokedSkill } : {})
   };
 
   lane.push(message);
@@ -192,6 +193,10 @@ export async function updateFollowUp(input: FollowUpUpdateInput): Promise<Conver
   if (input.mentions !== undefined) {
     target.mentions =
       input.mentions.length > 0 ? input.mentions.map((m) => ({ ...m })) : undefined;
+  }
+  if (input.invokedSkill !== undefined) {
+    const trimmed = input.invokedSkill.trim();
+    target.invokedSkill = trimmed.length > 0 ? trimmed : undefined;
   }
 
   return commit(input.conversationId, state);
@@ -257,6 +262,29 @@ export function dropFollowUpsForConversation(conversationId: string): void {
       log.warn('failed to delete follow-ups file', { conversationId, err });
     }
   });
+}
+
+/** Flush debounced follow-up writes before app quit. */
+export async function flushAllFollowUpPersists(): Promise<void> {
+  for (const timer of persistTimers.values()) clearTimeout(timer);
+  persistTimers.clear();
+  await Promise.allSettled(
+    [...memory.entries()].map(async ([conversationId, state]) => {
+      try {
+        const path = followUpsPath(conversationId);
+        if (state.steering.length === 0 && state.queued.length === 0) {
+          await fs.unlink(path).catch((err: unknown) => {
+            if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') throw err;
+          });
+        } else {
+          await fs.mkdir(conversationsDir(), { recursive: true });
+          await atomicWriteJson(path, state);
+        }
+      } catch (err: unknown) {
+        log.warn('failed to flush follow-ups on quit', { conversationId, err });
+      }
+    })
+  );
 }
 
 /** For tests — reset in-memory state without touching disk. */

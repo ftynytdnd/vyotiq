@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatMessage, TimelineEvent } from '@shared/types/chat';
 import type { PartialToolCall } from '@main/orchestrator/loop/handleAssistantTurn';
+import { __test_resetEditFailureTracker } from '@main/orchestrator/editFailureTracker';
 
 const runToolByName = vi.fn();
 
@@ -82,5 +83,47 @@ describe('handleToolCalls pre-dispatch validation', () => {
     const summary = await handleToolCalls(calls, messages, emit, baseOpts);
     expect(runToolByName).toHaveBeenCalledOnce();
     expect(summary.failed).toBe(0);
+  });
+
+  it('blocks edit on third identical no-match anchor without dispatching toolRunner', async () => {
+    const controller = new AbortController();
+    __test_resetEditFailureTracker(controller.signal);
+    const opts = { ...baseOpts, signal: controller.signal };
+    const editArgs = '{"path":"src/foo.ts","oldString":"stale","newString":"fresh"}';
+    const noMatch = {
+      id: 'edit-1',
+      name: 'edit' as const,
+      ok: false,
+      output: '`oldString` not found in src/foo.ts',
+      error: 'no match',
+      durationMs: 1
+    };
+    runToolByName.mockResolvedValue(noMatch);
+
+    const call = (): PartialToolCall[] => [
+      { id: `c-${runToolByName.mock.calls.length}`, name: 'edit', argumentsBuf: editArgs }
+    ];
+
+    const first = await handleToolCalls(call(), messages, emit, opts);
+    expect(runToolByName).toHaveBeenCalledTimes(1);
+    expect(first.failed).toBe(1);
+    expect(first.duplicateFailures).toBe(0);
+
+    const second = await handleToolCalls(call(), messages, emit, opts);
+    expect(runToolByName).toHaveBeenCalledTimes(2);
+    expect(second.failed).toBe(1);
+    expect(second.duplicateFailures).toBe(0);
+
+    const third = await handleToolCalls(call(), messages, emit, opts);
+    expect(runToolByName).toHaveBeenCalledTimes(2);
+    expect(third.failed).toBe(1);
+    expect(third.duplicateFailures).toBe(0);
+    expect(third.lastFailure).toContain('edit_no_match_repeat');
+
+    const blockedEvt = emit.mock.calls
+      .map((c) => c[0])
+      .filter((e): e is Extract<TimelineEvent, { kind: 'tool-result' }> => e.kind === 'tool-result')
+      .at(-1);
+    expect(blockedEvt?.result.error).toBe('edit_no_match_repeat');
   });
 });

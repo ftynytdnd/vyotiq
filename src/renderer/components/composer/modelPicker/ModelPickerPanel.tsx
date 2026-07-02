@@ -7,6 +7,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Search } from 'lucide-react';
 import type { ModelInfo, ModelSelection, ProviderConfig } from '@shared/types/provider.js';
+import {
+  groupClaudeCodeProxyModels,
+  isClaudeCodeProxyProvider
+} from '@shared/providers/claudeCodeProxy.js';
 import { findProviderModel } from './modelPickerContext.js';
 import { useModelOptions } from './useModelOptions.js';
 import {
@@ -303,7 +307,16 @@ export function ModelPickerPanel({
     groups.map((g) => (
       <div key={`${keyPrefix}-${g.provider.id}`} className="vx-model-picker-provider-group">
         <ProviderGroupHeader provider={g.provider} modelCount={g.models.length} />
-        {g.models.map((m) => renderModelRow(g.provider, m, `${keyPrefix}-${g.provider.id}-${m.id}`))}
+        {isClaudeCodeProxyProvider(g.provider)
+          ? groupClaudeCodeProxyModels(g.models).map((section) => (
+              <div key={`${g.provider.id}-${section.section}`} className="vx-model-picker-proxy-section">
+                <ModelPickerSectionHeader label={section.label} />
+                {section.models.map((m) =>
+                  renderModelRow(g.provider, m, `${keyPrefix}-${g.provider.id}-${m.id}`)
+                )}
+              </div>
+            ))
+          : g.models.map((m) => renderModelRow(g.provider, m, `${keyPrefix}-${g.provider.id}-${m.id}`))}
       </div>
     ));
 
@@ -410,13 +423,13 @@ export function ModelPickerPanel({
 
       {showEmptyState ? (
         <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">
-          <p className="text-meta leading-snug text-text-faint">
+          <p className="text-row leading-snug text-text-muted">
             {!hasEnabledProvider
               ? 'Add a provider to browse models.'
               : 'No models available yet. Refresh a provider in Settings or discover models.'}
           </p>
           <Button
-            variant="secondary"
+            variant={hasEnabledProvider ? 'secondary' : 'accentFill'}
             type="button"
             onClick={() => {
               onOpenProviders();

@@ -98,7 +98,7 @@ describe('taskStore', () => {
     expect(await renderTaskListForContext('conv-empty')).toBe('');
     await writeTaskList('conv-md', [{ id: '1', content: 'ship it', status: 'completed' }], false);
     const md = await renderTaskListForContext('conv-md');
-    expect(md).toContain('- [x] ship it');
+    expect(md).toContain('1. [x] ship it');
   });
 
   it('deleteTaskList removes the sidecar file', async () => {

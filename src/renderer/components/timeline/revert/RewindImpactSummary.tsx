@@ -63,7 +63,7 @@ export function RewindImpactSummary({
   const hasLegacyFileStats = fileCount > 0;
 
   return (
-    <div className={cn('flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-text-muted', className)}>
+    <div className={cn('flex flex-wrap items-center gap-x-3 gap-y-1 text-row text-text-muted', className)}>
       <span className="text-text-secondary">
         Trims the chat transcript from this message onward and restores workspace files from
         checkpoints when available.

@@ -46,6 +46,7 @@ export async function injectFollowUp(opts: InjectFollowUpOpts): Promise<InjectFo
     workspacePath,
     attachmentMeta: followUp.attachmentMeta,
     mentions: followUp.mentions,
+    ...(followUp.invokedSkill ? { invokedSkill: followUp.invokedSkill } : {}),
     inputModalities: await resolveInputModalitiesForSelection(followUp.selection),
     conversationId,
     runId,
@@ -97,6 +98,7 @@ export function followUpToChatSendInput(
       ? { attachmentMeta: followUp.attachmentMeta }
       : {}),
     ...(followUp.mentions && followUp.mentions.length > 0 ? { mentions: followUp.mentions } : {}),
-    ...(followUp.promptEventId ? { promptEventId: followUp.promptEventId } : {})
+    ...(followUp.promptEventId ? { promptEventId: followUp.promptEventId } : {}),
+    ...(followUp.invokedSkill ? { invokedSkill: followUp.invokedSkill } : {})
   };
 }

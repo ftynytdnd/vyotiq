@@ -13,7 +13,7 @@ import { isMacPlatform, resolveKeybindings } from '../../lib/resolveKeybindings.
 import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { TextField } from '../ui/TextField.js';
 import { Button } from '../ui/Button.js';
-import { ShellCaption } from '../ui/ShellSection.js';
+import { ShellActionRow, ShellCaption } from '../ui/ShellSection.js';
 
 export function formatPlatformShortcut(shortcut: string): string {
   const mod = isMacPlatform() ? '\u2318' : 'Ctrl';
@@ -64,7 +64,7 @@ export function ShortcutsPanel({ presentation = 'region' }: ShortcutsPanelProps)
       </ShellCaption>
       {groups.map((group) => (
         <section key={group} className="vx-section">
-          <h3 className="vx-section-head mb-1">{group}</h3>
+          <h4 className="vx-section-head mb-1">{group}</h4>
           <div className="flex flex-col">
             {KEYBINDING_DEFINITIONS.filter((d) => d.group === group).map((def) => {
               const active = draft[def.id] ?? resolved[def.id];
@@ -99,9 +99,11 @@ export function ShortcutsPanel({ presentation = 'region' }: ShortcutsPanelProps)
           </div>
         </section>
       ))}
-      <Button variant="secondary" size="sm" onClick={resetAll}>
-        Reset to defaults
-      </Button>
+      <ShellActionRow>
+        <Button variant="secondary" size="sm" onClick={resetAll}>
+          Reset to defaults
+        </Button>
+      </ShellActionRow>
     </div>
   );
 }

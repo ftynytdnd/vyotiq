@@ -17,11 +17,17 @@ export interface PersistedEditorTab {
 function flushTabs(workspaceId: string, tabs: PersistedEditorTab[]): void {
   const settings = useSettingsStore.getState().settings;
   const prev = settings.ui?.editorTabsByWorkspace ?? {};
+  const nextMap = { ...prev, [workspaceId]: tabs };
   void vyotiq.settings
     .set({
       ui: {
-        editorTabsByWorkspace: { ...prev, [workspaceId]: tabs }
+        editorTabsByWorkspace: nextMap
       }
+    })
+    .then((updated) => {
+      useSettingsStore.setState((state) => ({
+        settings: { ...state.settings, ...updated }
+      }));
     })
     .catch(() => {
       /* best-effort */

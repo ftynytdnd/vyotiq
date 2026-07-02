@@ -8,10 +8,6 @@
   background: var(--color-surface-base);
 }
 
-.vx-dock-edge-strip {
-  box-shadow: inset -1px 0 0 color-mix(in oklch, var(--color-border-subtle) 35%, transparent);
-}
-
 .vx-dock-icon-slot {
   display: flex;
   height: 2.25rem;
@@ -303,4 +299,20 @@
 [data-density='compact'] .vx-dock-tab {
   min-height: 1.75rem;
   padding: 0.25rem 0.375rem;
+}
+
+.vx-workspace-launcher-dock {
+  min-height: 0;
+}
+
+.vx-workspace-launcher-results {
+  scrollbar-gutter: stable;
+}
+
+.vx-workspace-launcher-dock .vx-workspace-launcher-results {
+  max-height: min(28dvh, 280px);
+}
+
+.vx-workspace-launcher-foot {
+  background: color-mix(in oklch, var(--color-surface-base) 92%, transparent);
 }

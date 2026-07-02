@@ -71,10 +71,9 @@ describe('Composer layout', () => {
       />
     );
 
-    const row = container.querySelector('.vx-composer-input-row');
-    expect(row).not.toBeNull();
-    expect(row?.querySelector('[contenteditable="true"]')).not.toBeNull();
-    expect(row?.querySelector('.vx-composer-send-inline')).not.toBeNull();
+    const zone = container.querySelector('.vx-composer-input-zone');
+    expect(zone).not.toBeNull();
+    expect(zone?.querySelector('[contenteditable="true"]')).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Send' })).toBeInTheDocument();
   });
 

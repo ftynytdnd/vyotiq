@@ -13,6 +13,12 @@ import { emitRunStatus } from './emitRunStatus.js';
 import { batchIndicesByDependencies, parseDependsOnIds } from './toolDependencyBatches.js';
 import { parseToolArgs, tryParseArgumentsRecord, type ToolArgsParseResult } from './parseToolArgs.js';
 import { validateToolArgs } from './validateToolArgs.js';
+import { checkValidationRepeat } from '../validationFailureTracker.js';
+import {
+  recordEditNoMatchFailure,
+  shouldBlockEditNoMatchRepeat
+} from '../editFailureTracker.js';
+import { clearToolCallDedupeSignature, isSpinProneTool } from '../toolCallDedupe.js';
 import { insertHistoryBeforeTail } from '../context/buildContextLayers.js';
 import { isWriteShaped } from '../toolResultCacheInternals.js';
 import { truncateToolOutputForContext } from '@shared/text/truncateUtf8Safe.js';
@@ -77,6 +83,8 @@ export interface HandleToolCallsOpts {
   allowlistRefusalCounts?: Map<string, number>;
   skipDependencyBatching?: boolean;
   onToolCallSettled?: (callId: string, owner?: string, index?: number) => void;
+  /** When set, cache replays use compact tiers aligned with spin detection. */
+  spinSignatureHot?: string | null;
 }
 
 /**
@@ -261,6 +269,38 @@ async function dispatchOneToolCall(
 
   const validation = validateToolArgs(tc.name, parsedArgs);
   if (!validation.ok) {
+    const repeatBlock = checkValidationRepeat(
+      opts.signal,
+      tc.name as ToolName,
+      parsedArgs,
+      validation.output
+    );
+    if (repeatBlock) {
+      log.warn('tool arguments repeat-blocked after validation failures', {
+        tool: tc.name,
+        callId
+      });
+      const syntheticResult = { ...repeatBlock, id: callId };
+      emit({
+        kind: 'tool-result',
+        id: randomUUID(),
+        ts: Date.now(),
+        result: syntheticResult
+      });
+      insertHistoryBeforeTail(messages, {
+        role: 'tool',
+        tool_call_id: callId,
+        name: tc.name,
+        content: repeatBlock.output
+      });
+      return {
+        kind: 'ran',
+        attempted: 1,
+        failed: 1,
+        duplicateFailures: repeatBlock.error === 'validation_repeat' ? 1 : 0,
+        failureDetail: formatToolFailureDetail(tc.name, repeatBlock.output, repeatBlock.error)
+      };
+    }
     log.warn('tool arguments rejected before dispatch', {
       tool: tc.name,
       callId,
@@ -296,6 +336,39 @@ async function dispatchOneToolCall(
   }
 
   emitRunStatus(emit, 'running-tool', 'Exploring', { toolName: tc.name });
+
+  if (tc.name === 'edit') {
+    const editPath = typeof parsedArgs['path'] === 'string' ? parsedArgs['path'] : '';
+    const editOld =
+      typeof parsedArgs['oldString'] === 'string' ? parsedArgs['oldString'] : '';
+    if (editPath && editOld) {
+      const editRepeatBlock = shouldBlockEditNoMatchRepeat(opts.signal, editPath, editOld);
+      if (editRepeatBlock) {
+        log.warn('edit no-match repeat-blocked', { tool: tc.name, callId, path: editPath });
+        const syntheticResult = { ...editRepeatBlock, id: callId };
+        emit({
+          kind: 'tool-result',
+          id: randomUUID(),
+          ts: Date.now(),
+          result: syntheticResult
+        });
+        insertHistoryBeforeTail(messages, {
+          role: 'tool',
+          tool_call_id: callId,
+          name: tc.name,
+          content: editRepeatBlock.output
+        });
+        return {
+          kind: 'ran',
+          attempted: 1,
+          failed: 1,
+          duplicateFailures: 0,
+          failureDetail: formatToolFailureDetail(tc.name, editRepeatBlock.output, editRepeatBlock.error)
+        };
+      }
+    }
+  }
+
   const result = await runToolByName(tc.name, parsedArgs, {
     workspacePath: opts.workspacePath,
     workspaceId: opts.workspaceId,
@@ -308,7 +381,8 @@ async function dispatchOneToolCall(
       const label = message.trim().slice(0, 160);
       if (!label) return;
       emitRunStatus(emit, 'running-tool', label, { toolName: tc.name });
-    }
+    },
+    ...(opts.spinSignatureHot ? { spinSignatureHot: true } : {})
   });
   result.id = callId;
   emit({
@@ -317,6 +391,26 @@ async function dispatchOneToolCall(
     ts: Date.now(),
     result
   });
+  if (
+    tc.name === 'edit' &&
+    !result.ok &&
+    (result.error === 'no match' || result.output.includes('`oldString` not found'))
+  ) {
+    const editPath = typeof parsedArgs['path'] === 'string' ? parsedArgs['path'] : '';
+    const editOld =
+      typeof parsedArgs['oldString'] === 'string' ? parsedArgs['oldString'] : '';
+    if (editPath) {
+      clearToolCallDedupeSignature(opts.signal, 'read', { path: editPath });
+    }
+    if (editPath && editOld) {
+      recordEditNoMatchFailure(opts.signal, editPath, editOld);
+    }
+  }
+  if (!result.ok && tc.name) {
+    if (isSpinProneTool(tc.name) || tc.name === 'bash') {
+      clearToolCallDedupeSignature(opts.signal, tc.name as ToolName, parsedArgs);
+    }
+  }
   if (tc.name === 'edit' && result.ok && result.data && result.data.tool === 'edit') {
     emit({
       kind: 'file-edit',
@@ -591,14 +685,26 @@ export async function handleToolCalls(
   }
 
   if (failed > 0) {
-    log.warn('tool round had failures', {
-      attempted,
-      failed,
-      duplicateFailures,
-      refused: tallies.refused,
-      lastFailure,
-      ms: Date.now() - startedAt
-    });
+    const duplicateOnly = failed > 0 && duplicateFailures === failed;
+    if (duplicateOnly) {
+      log.debug('tool round duplicate-only (dedupe fallback)', {
+        attempted,
+        failed,
+        duplicateFailures,
+        refused: tallies.refused,
+        lastFailure,
+        ms: Date.now() - startedAt
+      });
+    } else {
+      log.warn('tool round had failures', {
+        attempted,
+        failed,
+        duplicateFailures,
+        refused: tallies.refused,
+        lastFailure,
+        ms: Date.now() - startedAt
+      });
+    }
   } else {
     log.debug('tool round summary', {
       attempted,

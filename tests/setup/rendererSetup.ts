@@ -47,13 +47,45 @@ function makeStubApi() {
       pickDirectory: vi.fn(async () => null),
       listTree: vi.fn(async () => ({ entries: [], truncated: false, total: 0 })),
       listChildren: vi.fn(async () => ({ entries: [] })),
-      gitStatus: vi.fn(async () => ({ paths: {} })),
+      gitStatus: vi.fn(async () => ({
+        paths: {},
+        staged: {},
+        unstaged: {},
+        entries: {},
+        context: {
+          isRepo: false,
+          branch: null,
+          headShort: null,
+          dirtyCount: 0
+        }
+      })),
+      gitFileDiff: vi.fn(async () => ({ path: '', status: 'M' as const, hunks: [] })),
+      gitStage: vi.fn(async () => ({ ok: true as const })),
+      gitUnstage: vi.fn(async () => ({ ok: true as const })),
+      gitCommit: vi.fn(async () => ({ ok: true as const })),
+      gitPush: vi.fn(async () => ({ ok: true as const })),
+      gitPull: vi.fn(async () => ({ ok: true as const })),
+      gitFetch: vi.fn(async () => ({ ok: true as const })),
+      gitDiscard: vi.fn(async () => ({ ok: true as const })),
+      gitStash: vi.fn(async () => ({ ok: true as const })),
+      gitStashPop: vi.fn(async () => ({ ok: true as const })),
+      gitStashDrop: vi.fn(async () => ({ ok: true as const })),
+      gitStashList: vi.fn(async () => ({ stashes: [] })),
+      gitBranches: vi.fn(async () => ({ branches: [] })),
+      gitCheckout: vi.fn(async () => ({ ok: true as const })),
+      gitCreateBranch: vi.fn(async () => ({ ok: true as const })),
+      gitGenerateCommitMessage: vi.fn(async (_input, onDelta?) => {
+        onDelta?.('chore: ');
+        onDelta?.('update');
+        return { message: 'chore: update' };
+      }),
       list: vi.fn(async () => ({ activeId: null, workspaces: [] })),
       add: vi.fn(async () => ({ id: 'ws-stub', path: '/tmp', label: 'stub', addedAt: 0 })),
       setActive: vi.fn(async () => ({ activeId: null, workspaces: [] })),
       rename: vi.fn(async () => ({ id: 'ws-stub', path: '/tmp', label: 'stub', addedAt: 0 })),
       remove: vi.fn(async () => ({ activeId: null, workspaces: [] })),
       retryReachability: vi.fn(async () => ({ activeId: null, workspaces: [] })),
+      switchBranch: vi.fn(async () => ({ id: 'ws-stub', path: '/tmp', label: 'stub', addedAt: 0 })),
       mkdir: vi.fn(async () => ({ ok: true as const })),
       renamePath: vi.fn(async () => ({ ok: true as const })),
       deletePath: vi.fn(async () => ({ ok: true as const })),
@@ -67,11 +99,13 @@ function makeStubApi() {
       remove: asyncNoop,
       discoverModels: vi.fn(async () => ({ models: [], lastDiscoveredAt: 1_700_000_000_000 })),
       test: vi.fn(async () => ({ ok: true, message: 'ok' })),
+      claudeCodeProxyAction: vi.fn(async () => ({ ok: true as const })),
       getAccounts: vi.fn(async () => ({})),
       refreshAccounts: vi.fn(async () => ({})),
       setAccountPollSource: asyncNoop,
       onAccountsUpdated: subscribe,
-      onModelsUpdated: subscribe
+      onModelsUpdated: subscribe,
+      onDiscoveryPollHint: subscribe
     },
     chat: {
       send: vi.fn(async () => ({ ok: true, conversationId: 'c1' })),
@@ -122,11 +156,50 @@ function makeStubApi() {
       detach: vi.fn(async () => ({ ok: true })),
       onUpdated: subscribe
     },
+    mentions: {
+      searchSymbols: vi.fn(async () => ({ hits: [] }))
+    },
+    skills: {
+      list: vi.fn(async () => []),
+      read: vi.fn(async () => ({
+        meta: {
+          name: 'stub-skill',
+          description: 'stub',
+          source: 'bundled' as const,
+          rootPath: '/stub',
+          skillMdPath: '/stub/SKILL.md'
+        },
+        raw: '',
+        effective: ''
+      })),
+      create: vi.fn(async (_workspaceId: string, skillName: string) => ({
+        meta: {
+          name: skillName,
+          description: 'stub',
+          source: 'workspace' as const,
+          rootPath: '/stub',
+          skillMdPath: '/stub/SKILL.md'
+        },
+        path: '/stub/SKILL.md'
+      })),
+      reveal: vi.fn(async () => ({ ok: true as const })),
+      writeOverride: vi.fn(async () => ({ ok: true as const })),
+      resetOverride: vi.fn(async () => ({ ok: true as const }))
+    },
+    attachments: {
+      ingestPaths: vi.fn(async () => ({ attachments: [] })),
+      remove: asyncNoop
+    },
+    capture: {
+      ingestFrame: vi.fn(async () => ({ path: '/stub/capture.jpg' })),
+      requestFrame: vi.fn(async () => null)
+    },
     conversations: {
       list: vi.fn(async () => []),
       read: vi.fn(async () => null),
       readTail: vi.fn(async () => null),
       readBefore: vi.fn(async () => ({ events: [], hasOlder: false })),
+      search: vi.fn(async () => []),
       export: vi.fn(async () => ({ canceled: true })),
       create: vi.fn(async () => ({ id: 'new', title: 'Untitled', updatedAt: 0 })),
       rename: asyncNoop,
@@ -136,7 +209,50 @@ function makeStubApi() {
     scheduledRuns: {
       list: vi.fn(async () => []),
       upsert: vi.fn(async (input) => ({ ...input, id: 'sched-1', createdAt: 0, updatedAt: 0 })),
-      delete: vi.fn(async () => ({ ok: true }))
+      delete: vi.fn(async () => ({ ok: true })),
+      onUpdated: subscribe
+    },
+    github: {
+      listAccounts: vi.fn(async () => []),
+      startDeviceFlow: vi.fn(async () => ({
+        deviceCode: 'dc',
+        userCode: 'ABCD-1234',
+        verificationUri: 'https://github.com/login/device',
+        expiresIn: 900,
+        interval: 5
+      })),
+      pollDeviceFlow: vi.fn(async () => ({ status: 'pending' as const })),
+      addPat: vi.fn(async () => ({
+        id: 'gh-1',
+        login: 'user',
+        name: null,
+        avatarUrl: null,
+        host: 'github.com',
+        authKind: 'pat' as const,
+        addedAt: 0
+      })),
+      removeAccount: vi.fn(async () => ({ ok: true })),
+      verifyAccount: vi.fn(async () => ({
+        id: 'gh-1',
+        login: 'user',
+        name: null,
+        avatarUrl: null,
+        host: 'github.com',
+        authKind: 'pat' as const,
+        addedAt: 0,
+        lastVerifiedAt: Date.now(),
+        verifyStatus: 'ok' as const
+      })),
+      isOAuthConfigured: vi.fn(async () => false),
+      e2eSeed: vi.fn(async () => ({ accountId: 'gh-e2e' })),
+      e2eBindWorkspace: vi.fn(async () => ({ id: 'ws-e2e', path: '/tmp', label: 'e2e' })),
+      listRepos: vi.fn(async () => []),
+      listOrgs: vi.fn(async () => []),
+      listRecentRepos: vi.fn(async () => []),
+      getCloneState: vi.fn(async () => ({ state: 'absent' as const, path: '/tmp/repo' })),
+      listBranches: vi.fn(async () => []),
+      openRepo: vi.fn(async () => ({ id: 'ws-gh', path: '/tmp/repo', label: 'o/r', addedAt: 0 })),
+      onGitProgress: vi.fn(() => () => {})
     },
     tools: {
       openPath: asyncNoop,
@@ -208,11 +324,9 @@ function makeStubApi() {
     },
     harness: {
       listSections: vi.fn(async () => [
-        { id: 'orchestrator-core', file: '00-orchestrator-core.md', hasOverride: false },
-        { id: 'context-learning', file: '01-context-learning.md', hasOverride: false },
-        { id: 'deliverables', file: '02-deliverables.md', hasOverride: false },
-        { id: 'static-examples', file: '03-static-examples.md', hasOverride: false },
-        { id: 'ast-grep-reference', file: '04-ast-grep-cheatsheet.md', hasOverride: false }
+        { id: 'orchestrator-core', file: '00-orchestrator-core.md', hasOverride: false, placement: 'prefix' },
+        { id: 'context-learning', file: '01-context-learning.md', hasOverride: false, placement: 'prefix' },
+        { id: 'dynamic-loop', file: '05-dynamic-loop.md', hasOverride: false, placement: 'prefix' }
       ]),
       readSection: vi.fn(async (sectionId: string) => ({
         sectionId,

@@ -93,6 +93,16 @@ function buildMenuEntries(fileActions: FileMenuActions): MenuEntry[] {
           label: 'Set workspace path…',
           action: fileActions.setWorkspacePath
         },
+        ...(fileActions.openScheduledRuns
+          ? [
+              {
+                type: 'item' as const,
+                key: 'schedules',
+                label: 'Scheduled runs',
+                action: fileActions.openScheduledRuns
+              }
+            ]
+          : []),
         { type: 'separator', key: 'sep-settings' }
       ]
     : [];

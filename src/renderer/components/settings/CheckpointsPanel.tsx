@@ -133,16 +133,20 @@ export function CheckpointsPanel() {
   const expandedRow = pending.find((r) => r.entryId === expandedId);
 
   return (
-    <ShellSection title="Checkpoints">
+    <ShellSection>
       <ShellStack>
         <ShellCaption>
           Review agent file edits before they settle. Reject restores the pre-change file on disk.
           Expand a row to preview the on-disk diff from checkpoint blobs.
         </ShellCaption>
         {!conversationId ? (
-          <ShellCaption>No active conversation — open a chat to review pending changes.</ShellCaption>
+          <div className="vx-settings-empty w-full text-row text-text-muted">
+            No active conversation — open a chat to review pending file changes.
+          </div>
         ) : pending.length === 0 ? (
-          <ShellCaption>No pending file changes for this chat.</ShellCaption>
+          <div className="vx-settings-empty w-full text-row text-text-muted">
+            No pending file changes for this chat.
+          </div>
         ) : (
           <>
             <ShellRow>

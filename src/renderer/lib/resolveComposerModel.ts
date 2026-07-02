@@ -33,9 +33,24 @@ export interface ResolveComposerModelInput {
   activeWorkspaceId: string | null;
   lastModelByWorkspace: Readonly<Record<string, ModelSelection>>;
   defaultModel?: ModelSelection;
+  authoringModel?: ModelSelection;
+  autoModelEnabled?: boolean;
 }
 
-/** Priority: active conversation → workspace last → default → first enabled model. */
+/** Resolve auto-mode model: authoring frontier first, then default run model. */
+export function resolveAutoModelSelection(
+  providers: readonly ProviderConfig[],
+  authoringModel?: ModelSelection,
+  defaultModel?: ModelSelection
+): ModelSelection | null {
+  const trySel = (sel: ModelSelection | undefined): ModelSelection | null => {
+    if (!sel || !isComposerModelValid(sel, providers)) return null;
+    return enrichModelSelection(sel, providers);
+  };
+  return trySel(authoringModel) ?? trySel(defaultModel);
+}
+
+/** Priority: auto → conversation → workspace last → default → first enabled model. */
 export function resolveComposerModel(input: ResolveComposerModelInput): ModelSelection | null {
   const {
     providers,
@@ -43,7 +58,9 @@ export function resolveComposerModel(input: ResolveComposerModelInput): ModelSel
     conversationList,
     activeWorkspaceId,
     lastModelByWorkspace,
-    defaultModel
+    defaultModel,
+    authoringModel,
+    autoModelEnabled = false
   } = input;
 
   const trySel = (sel: ModelSelection | undefined): ModelSelection | null => {
@@ -51,7 +68,12 @@ export function resolveComposerModel(input: ResolveComposerModelInput): ModelSel
     return enrichModelSelection(sel, providers);
   };
 
-  if (activeConversationId) {
+  if (autoModelEnabled) {
+    const fromAuto = resolveAutoModelSelection(providers, authoringModel, defaultModel);
+    if (fromAuto) return fromAuto;
+  }
+
+  if (!autoModelEnabled && activeConversationId) {
     const active = conversationList.find((c) => c.id === activeConversationId);
     if (active?.lastProviderId && active.lastModelId) {
       const fromConv = trySel({
@@ -62,7 +84,7 @@ export function resolveComposerModel(input: ResolveComposerModelInput): ModelSel
     }
   }
 
-  if (activeWorkspaceId) {
+  if (!autoModelEnabled && activeWorkspaceId) {
     const fromWorkspace = trySel(lastModelByWorkspace[activeWorkspaceId]);
     if (fromWorkspace) return fromWorkspace;
   }

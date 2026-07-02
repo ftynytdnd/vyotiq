@@ -115,7 +115,7 @@ export function useContextWindowUsage({
 
   const latest = useChatStore((s) => s.latestContextUsage);
 
-  const eventCount = useChatStore((s) => s.events.length);
+  const eventCount = useChatStore((s) => s.events?.length ?? 0);
 
   const providers = useProviderStore((s) => s.providers);
 

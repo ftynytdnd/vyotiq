@@ -7,6 +7,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { LeftDock } from '@renderer/components/dock/LeftDock';
 import { useUiStore } from '@renderer/store/useUiStore';
 import { useDockSearchStore } from '@renderer/store/useDockSearchStore';
+import { useWorkspaceLauncherStore } from '@renderer/store/useWorkspaceLauncherStore';
 import { useConversationsStore } from '@renderer/store/useConversationsStore';
 import { useWorkspaceStore } from '@renderer/store/useWorkspaceStore';
 import { useAppViewStore } from '@renderer/store/useAppViewStore';
@@ -19,7 +20,6 @@ function fireKey(key: string, init: Partial<KeyboardEventInit> = {}) {
 
 const dockProps = {
   onOpenSettings: () => {},
-  onOpenWorkspace: () => {},
   onSetWorkspacePath: () => {}
 };
 
@@ -32,6 +32,12 @@ beforeEach(() => {
     hydrated: true
   });
   useDockSearchStore.setState({ open: false, query: '' });
+  useWorkspaceLauncherStore.setState({
+    open: false,
+    query: '',
+    sourceFilter: 'all',
+    placement: 'inline'
+  });
   useWorkspaceStore.setState({
     activeId: 'ws-1',
     list: [{ id: 'ws-1', label: 'Codex', path: '/tmp' }]
@@ -58,10 +64,21 @@ describe('useDockShortcuts via LeftDock mount', () => {
   });
 
   it('Ctrl+K expands dock and opens search', () => {
+    useWorkspaceLauncherStore.setState({ open: true, query: '', sourceFilter: 'all', placement: 'inline' });
     render(<LeftDock {...dockProps} />);
     fireKey('k', { ctrlKey: true });
     expect(useUiStore.getState().dockExpanded).toBe(true);
     expect(useDockSearchStore.getState().open).toBe(true);
+    expect(useWorkspaceLauncherStore.getState().open).toBe(false);
+  });
+
+  it('Escape closes workspace launcher when open', () => {
+    useUiStore.setState({ dockExpanded: true });
+    useWorkspaceLauncherStore.setState({ open: true, query: '', sourceFilter: 'all', placement: 'inline' });
+    render(<LeftDock {...dockProps} />);
+    fireKey('Escape');
+    expect(useWorkspaceLauncherStore.getState().open).toBe(false);
+    expect(useUiStore.getState().dockExpanded).toBe(true);
   });
 
   it('Alt+ArrowDown selects the next conversation', () => {

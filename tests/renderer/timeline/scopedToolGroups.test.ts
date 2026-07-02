@@ -12,7 +12,6 @@ import type { ToolCall, ToolResult } from '@shared/types/tool.js';
 function emptyState(): ScopedGroupState {
   return {
     openToolGroupIdx: null,
-    openFileEditGroupIdx: null,
     callIdToGroupIdx: new Map(),
     callIdToChildIdx: new Map()
   };
@@ -72,7 +71,7 @@ describe('scopedToolGroups', () => {
     expect(out.some((r) => r.kind === 'file-edit-group')).toBe(false);
   });
 
-  it('appends bare file edits into a file-edit-group', () => {
+  it('emits bare file edits as inline settled cards', () => {
     const out: Row[] = [];
     const state = emptyState();
     foldScopedFileEdit(out, state, {
@@ -87,9 +86,7 @@ describe('scopedToolGroups', () => {
       additions: 0,
       deletions: 1
     });
-    expect(out).toHaveLength(1);
-    if (out[0]?.kind === 'file-edit-group') {
-      expect(out[0].children).toHaveLength(2);
-    }
+    expect(out).toHaveLength(2);
+    expect(out.every((r) => r.kind === 'file-edit-card')).toBe(true);
   });
 });

@@ -4,17 +4,19 @@
  */
 
 import { useCallback, useState, type DragEvent, type ReactNode } from 'react';
-import { Image as ImageIcon, TerminalSquare, X } from 'lucide-react';
+import { Image as ImageIcon, GitBranch, TerminalSquare, X } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { basenameFromPath } from '@shared/text/languageFromPath.js';
 import { useEditorStore } from '../../store/useEditorStore.js';
 import { useTerminalStore } from '../../store/useTerminalStore.js';
 import { useAttachmentPreviewStore } from '../../store/useAttachmentPreviewStore.js';
+import { useSourceControlStore } from '../../store/useSourceControlStore.js';
 import { useUiStore } from '../../store/useUiStore.js';
 import { normalizePath } from '../../lib/normalizePath.js';
 import {
   closeEditorPanel,
   closePreviewPanel,
+  closeSourceControlPanel,
   resolveCompanionTab,
   shellBasename
 } from './workbenchShared.js';
@@ -149,8 +151,10 @@ export function WorkbenchTabBar() {
   const previewAttachment = useAttachmentPreviewStore((s) => s.attachment);
   const previewOpen = previewAttachment !== null;
 
+  const sourceControlOpen = useSourceControlStore((s) => s.open);
+
   const showTerminalSessionTabs = terminalOpen && terminalSessions.length > 1;
-  const showPrimitiveTabs = showTerminalSessionTabs || previewOpen;
+  const showPrimitiveTabs = showTerminalSessionTabs || previewOpen || sourceControlOpen;
   const hasTabStripContent = showPrimitiveTabs || tabs.length > 0;
 
   const onSelectFileTab = useCallback(
@@ -228,6 +232,17 @@ export function WorkbenchTabBar() {
             onSelect={() => setTab('preview')}
             onClose={closePreviewPanel}
             closeLabel="Close preview"
+          />
+        ) : null}
+        {sourceControlOpen ? (
+          <CompanionTabButton
+            active={activeTab === 'source-control'}
+            label="Source control"
+            tabId="vx-workbench-tab-source-control"
+            icon={<GitBranch className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />}
+            onSelect={() => setTab('source-control')}
+            onClose={closeSourceControlPanel}
+            closeLabel="Close source control"
           />
         ) : null}
         {showPrimitiveTabs && tabs.length > 0 ? <WorkbenchTabSeparator /> : null}

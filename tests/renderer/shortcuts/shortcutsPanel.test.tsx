@@ -25,7 +25,7 @@ describe('ShortcutsPanel', () => {
 
   it('documents dock search and workspace cycling', () => {
     render(<ShortcutsPanel />);
-    expect(screen.getByText('Search chats and workspace files')).toBeInTheDocument();
+    expect(screen.getByText('Search skills, chats, messages, and files')).toBeInTheDocument();
     expect(screen.getByText('Next workspace')).toBeInTheDocument();
     expect(screen.getByText('Previous workspace')).toBeInTheDocument();
   });

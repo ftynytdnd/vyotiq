@@ -43,7 +43,7 @@ export const TITLEBAR_RIGHT_CLUSTER_CLASS = cn(
   'app-no-drag vx-titlebar-cluster vx-titlebar-cluster--trailing flex shrink-0 items-stretch gap-0.5 pr-0.5'
 );
 
-/** Center drag region (empty — workspace/chat labels live in the dock). */
+/** Center drag region — settings breadcrumb; chat context when dock collapsed. */
 export const TITLEBAR_BREADCRUMB_ZONE_CLASS = cn(
   'app-drag flex min-w-0 flex-1 items-center justify-center px-2'
 );

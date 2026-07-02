@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { AskUserRow } from '@renderer/components/timeline/rows/AskUserRow.js';
+import { AskUserCompactRow } from '@renderer/components/timeline/rows/AskUserCompactRow.js';
 import { useChatStore } from '@renderer/store/useChatStore';
 import { INITIAL_TIMELINE_STATE } from '@renderer/components/timeline/reducer/types';
 import { emptySlice } from '@renderer/store/chatStoreTypes';
@@ -25,7 +25,7 @@ const askEvent = {
   }
 } satisfies TimelineEvent;
 
-describe('AskUserRow', () => {
+describe('AskUserCompactRow', () => {
   beforeEach(() => {
     useChatStore.setState({
       ...INITIAL_TIMELINE_STATE,
@@ -38,7 +38,7 @@ describe('AskUserRow', () => {
 
   it('renders inline form when pending ask_user matches this row', () => {
     const { container } = render(
-      <AskUserRow
+      <AskUserCompactRow
         payload={askEvent.payload}
         displayText={askEvent.displayText}
         promptEventId="prompt-1"
@@ -63,7 +63,7 @@ describe('AskUserRow', () => {
       }))
     };
     const { container } = render(
-      <AskUserRow
+      <AskUserCompactRow
         payload={multiPayload}
         displayText="Questions"
         promptEventId="prompt-multi"

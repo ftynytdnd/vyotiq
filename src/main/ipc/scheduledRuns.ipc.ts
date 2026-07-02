@@ -9,6 +9,7 @@ import {
   listScheduledRuns,
   upsertScheduledRun
 } from '../scheduler/scheduledRunsStore.js';
+import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
 import {
   assertBoolean,
@@ -17,6 +18,10 @@ import {
   assertOptionalString,
   assertString
 } from './validate.js';
+
+function broadcastScheduledRunsUpdated(runs: ScheduledRun[]): void {
+  safeWebContentsSend(IPC.SCHEDULED_RUNS_UPDATED, runs);
+}
 
 export function registerScheduledRunsIpc(): void {
   wrapIpcHandler(IPC.SCHEDULED_RUNS_LIST, async (): Promise<ScheduledRun[]> => {
@@ -38,12 +43,15 @@ export function registerScheduledRunsIpc(): void {
       max: 7 * 24 * 60
     });
     assertOptionalString('scheduled-runs:upsert', 'input.id', input.id);
-    return upsertScheduledRun(input);
+    const run = await upsertScheduledRun(input);
+    broadcastScheduledRunsUpdated(await listScheduledRuns());
+    return run;
   });
 
   wrapIpcHandler(IPC.SCHEDULED_RUNS_DELETE, async (_event, id: string): Promise<{ ok: boolean }> => {
     assertString('scheduled-runs:delete', 'id', id);
     const ok = await deleteScheduledRun(id);
+    if (ok) broadcastScheduledRunsUpdated(await listScheduledRuns());
     return { ok };
   });
 }

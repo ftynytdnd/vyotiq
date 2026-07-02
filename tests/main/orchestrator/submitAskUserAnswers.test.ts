@@ -8,9 +8,10 @@ const { runOrchestratorLoop } = vi.hoisted(() => ({
 vi.mock('@main/orchestrator/loop/index.js', () => ({
   runOrchestratorLoop
 }));
-vi.mock('@main/harness/harnessLoader.js', () => ({
-  buildOrchestratorSystemPrompt: () => ''
-}));
+vi.mock('@main/harness/harnessLoader.js', async () => {
+  const { createHarnessLoaderMock } = await import('../../helpers/harnessLoaderMock.js');
+  return createHarnessLoaderMock();
+});
 vi.mock('@main/orchestrator/replay/index.js', () => ({
   replayTranscript: vi.fn(() => [])
 }));

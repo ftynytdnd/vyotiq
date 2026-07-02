@@ -99,15 +99,30 @@ export function stripRemovedReflectiveAutonomyFields(
   return { agentBehavior: next, changed: true };
 }
 
-/** Strip removed right-dock fields from persisted settings. */
+/** Strip removed top-level `ui` fields from persisted settings. */
 export function stripRemovedUiFields<T extends UiRecord>(ui: T): { ui: T; changed: boolean } {
   let changed = false;
   let next: UiRecord = { ...ui };
-  for (const key of ['secondaryZoneMode', 'rightDockWidth', 'openEditorsCollapsedByWorkspace', 'phasedExecution'] as const) {
+  for (const key of [
+    'secondaryZoneMode',
+    'rightDockWidth',
+    'openEditorsCollapsedByWorkspace',
+    'phasedExecution',
+    'dictation'
+  ] as const) {
     if (key in next) {
       const { [key]: _removed, ...rest } = next;
       void _removed;
       next = rest;
+      changed = true;
+    }
+  }
+  if ('keybindings' in next && next.keybindings && typeof next.keybindings === 'object') {
+    const keybindings = next.keybindings as Record<string, unknown>;
+    if ('composerDictate' in keybindings) {
+      const { composerDictate: _removed, ...rest } = keybindings;
+      void _removed;
+      next = { ...next, keybindings: rest };
       changed = true;
     }
   }

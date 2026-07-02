@@ -53,9 +53,13 @@ describe('WorkbenchShell', () => {
   });
 
   it('shows side pane when the editor is open', () => {
-    useEditorStore.setState({ open: true });
+    useEditorStore.setState({
+      open: true,
+      tabs: [{ filePath: 'src/a.ts', workspaceId: 'ws-1', loading: false } as never],
+      activeFilePath: 'src/a.ts'
+    } as never);
     render(shell());
-    expect(screen.getByRole('tablist', { name: /workbench/i })).toBeTruthy();
+    expect(screen.getByRole('tablist', { name: /workbench panels/i })).toBeTruthy();
     expect(screen.queryByRole('tab', { name: /^terminal$/i })).toBeNull();
     expect(screen.queryByRole('tab', { name: /^agent$/i })).toBeNull();
   });
@@ -71,8 +75,8 @@ describe('WorkbenchShell', () => {
 
   it('shows side pane when only the terminal is open', () => {
     useTerminalStore.setState({ open: true, workspaceId: 'ws-1', attaching: false } as never);
-    render(shell());
-    expect(screen.getByRole('tablist', { name: /workbench/i })).toBeTruthy();
+    const { container } = render(shell());
+    expect(container.querySelector('[data-workbench-pane]')).toBeTruthy();
   });
 
   it('shows editor empty state in side pane when editor is open without files', () => {

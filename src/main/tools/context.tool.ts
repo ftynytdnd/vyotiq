@@ -1,99 +1,92 @@
 /**
- * `context` tool — on-demand reference "context packs".
+ * `context` tool — on-demand Agent Skills and legacy context-pack aliases.
  *
- * The harness keeps the static system prefix lean: reference material
- * (ast-grep syntax, deliverables/report guidance, tool-use examples) is NOT
- * force-fed every turn. Instead a short catalogue advertises the packs in the
- * prefix and the model loads one itself, on demand, with this tool. A loaded
- * pack returns as a tool result and lands in the run's history band — so it is
- * recoverable but never bloats the cached prefix.
- *
- * Two actions:
- *   - `list`: enumerate available packs (id, title, summary, load-when). The
- *     same catalogue already ships in the system prefix, so `list` is rarely
- *     needed; a second `list` in a run is deduped to a one-line banner.
- *   - `load`: return one pack's full markdown body. Re-loading the same pack
- *     within a run is deduped to a one-line banner so repeated loads do not
- *     burn context — the earlier copy is already in history.
- *
- * The tool self-governs repeats (graceful `ok:true` banners) and is excluded
- * from the host's generic duplicate-call blocker (`toolCallDedupe.ts`), so a
- * model that re-issues a `context` call is nudged, never hit with a hostile
- * `BLOCKED` message.
+ * Skills are SKILL.md workflows discovered from the workspace and user skill
+ * directories. A compact catalogue ships in the system prefix; the model loads
+ * a skill on demand. Loaded bodies land in the history band (cache-stable prefix).
  */
 
 import { randomUUID } from 'node:crypto';
 import type { Tool, ToolContext } from './types.js';
 import type { ToolData, ToolResult } from '@shared/types/tool.js';
-import type { ContextPackId } from '@shared/types/harness.js';
-import { CONTEXT_PACKS, isContextPackId } from '@shared/types/harness.js';
-import { getContextPackBody } from '../harness/contextPacks.js';
+import { resolveLegacyPackId } from '@shared/types/skills.js';
+import { findSkill, getSkillBody, listCatalogueSkills, listSkills } from '../skills/skillRegistry.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child('tools/context');
 
-/**
- * Per-run set of packs already loaded, keyed by the run's `AbortSignal`.
- * `WeakMap` ties the lifetime to the run: when the signal is GC'd the entry
- * vanishes — no explicit teardown (same contract `recall` uses for its
- * self-recall guard).
- */
-const loadedPacksByRun = new WeakMap<AbortSignal, Set<string>>();
-
-/**
- * Per-run flag tracking whether the catalogue was already listed. Same
- * lifetime contract as `loadedPacksByRun` — the entry GCs with the signal.
- * A second `list` in the run returns a short banner instead of re-emitting
- * the full catalogue (which already ships in the system prefix).
- */
+const loadedSkillsByRun = new WeakMap<AbortSignal, Set<string>>();
 const listedByRun = new WeakMap<AbortSignal, boolean>();
+const invokedSkillsByRun = new WeakMap<AbortSignal, Set<string>>();
+
+/** Seed per-run invoked skill names (slash invoke + follow-ups). */
+export function seedInvokedSkills(signal: AbortSignal, names: readonly string[]): void {
+  let set = invokedSkillsByRun.get(signal);
+  if (!set) {
+    set = new Set<string>();
+    invokedSkillsByRun.set(signal, set);
+  }
+  for (const n of names) {
+    const trimmed = n.trim();
+    if (trimmed) set.add(trimmed);
+  }
+}
+
+function getInvokedSkills(signal: AbortSignal): Set<string> {
+  return invokedSkillsByRun.get(signal) ?? new Set<string>();
+}
 
 interface ContextArgs {
   action: 'list' | 'load';
+  skill?: string;
+  /** @deprecated Use `skill`. Legacy context-pack alias. */
   pack?: string;
-}
-
-function packIdEnum(): string[] {
-  return CONTEXT_PACKS.map((p) => p.id);
 }
 
 export const contextTool: Tool = {
   name: 'context',
   briefMarkdown: `### Tool: \`context\`
 
-**WHAT it is.** Loads on-demand reference "context packs" that are intentionally kept OUT of your always-on system prompt (ast-grep syntax, deliverables/report guidance, tool-use examples). You decide when reference material is worth its tokens.
+**WHAT it is.** Loads on-demand **Agent Skills** — SKILL.md workflows kept OUT of your always-on system prompt (built-in reference skills, workspace skills, global skills). You decide when a skill is worth its tokens.
 
 **HOW to use it.** The main action is \`load\`:
 
 \`\`\`json
-{ "name": "context", "arguments": { "action": "load", "pack": "ast-grep-reference" } }
+{ "name": "context", "arguments": { "action": "load", "skill": "ast-grep-reference" } }
 \`\`\`
 
-The pack catalogue already ships in your system prompt (under "On-Demand Context Packs"), so you usually do **not** need \`action:"list"\` — just \`load\` the pack you need.
+The skills catalogue already ships in your system prompt (under "On-Demand Skills"), so you usually do **not** need \`action:"list"\` — just \`load\` the skill you need.
 
-**WHY it exists.** The system prefix carries only your inviolable rules, context/memory protocol, and loop behavior. Reference packs are loaded on demand so the static prefix stays cache-stable and cheap. A loaded pack returns as a tool result and stays in this run's history.
+**WHY it exists.** The static prefix carries inviolable rules and tool briefs. Skill bodies load on demand so the prefix stays cache-stable. A loaded skill returns as a tool result in this run's history.
 
 **WHEN to trigger it.**
-- Before writing ast-grep \`search\` / \`sg\` patterns or YAML rules → load \`ast-grep-reference\`.
-- Before a large/tabular deliverable or a \`report\` call → load \`deliverables\`.
-- When you want a concrete example of correct tool-call shape → load \`static-examples\`.
+- Before ast-grep patterns → load \`ast-grep-reference\`.
+- Before large deliverables or \`report\` → load \`deliverables\`.
+- For tool-call shape examples → load \`static-examples\`.
+- Before \`finish\` on multi-step or publishable work → load \`review-checklist\`.
+- For recurring / scheduled pipeline design → load \`pipeline-recipes\`.
+- When a user or catalogue description matches a workspace skill → load that skill by name.
+- When the user typed \`/skill-name\` → load that skill first.
 
-**Notes.** Load a pack only when a step actually needs it — do not pre-load packs "to demonstrate". Re-loading a pack (or re-listing) you already pulled this run returns a short banner (the earlier copy / the in-prefix catalogue already has it), so repeats are harmless but wasteful.`,
+**Notes.** Re-loading dedupes to a short banner. Tier-3 attachments (\`references/\`, \`scripts/\`) are loaded with \`read\` per SKILL.md instructions.`,
   schema: {
     type: 'function',
     function: {
       name: 'context',
       description:
-        'Load on-demand reference context packs that are kept out of the static system prompt. action="list" enumerates packs (id, title, summary, load-when); action="load" returns a pack body (requires pack).',
+        'Load on-demand Agent Skills (SKILL.md workflows). action="list" enumerates skills; action="load" returns a skill body (requires skill). Legacy pack= alias still accepted.',
       parameters: {
         type: 'object',
         properties: {
           action: { type: 'string', enum: ['list', 'load'] },
+          skill: {
+            type: 'string',
+            description:
+              'For action="load": skill name from the in-prompt catalogue or action="list".'
+          },
           pack: {
             type: 'string',
-            enum: packIdEnum(),
-            description:
-              'For action="load": which pack to load. Take the id from action="list" or the in-prompt pack catalogue.'
+            description: 'Deprecated alias for skill (legacy context-pack ids).'
           }
         },
         required: ['action']
@@ -110,11 +103,6 @@ The pack catalogue already ships in your system prompt (under "On-Demand Context
       return fail(id, started, `Error: unknown action "${String(a.action)}".`, 'invalid action');
     }
 
-    // Defense in depth: the actions below are pure (catalogue text / in-memory
-    // pack bodies) so they should not throw, but a top-level guard keeps a
-    // surprise (e.g. a future IO-backed pack source) from escaping as an
-    // unhandled rejection — it surfaces as a graceful `ok:false` result the
-    // model can react to, mirroring the `recall` tool's contract.
     try {
       if (a.action === 'list') {
         return runList(id, started, ctx);
@@ -122,20 +110,16 @@ The pack catalogue already ships in your system prompt (under "On-Demand Context
       return runLoad(a, id, started, ctx);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      log.error('context tool threw', {
-        action: a.action,
-        pack: a.pack,
-        error: msg
-      });
+      log.error('context tool threw', { action: a.action, skill: a.skill, pack: a.pack, error: msg });
       return fail(id, started, `context error: ${msg}`, msg);
     }
   }
 };
 
-function runList(id: string, started: number, ctx: ToolContext): ToolResult {
+async function runList(id: string, started: number, ctx: ToolContext): Promise<ToolResult> {
   if (listedByRun.get(ctx.signal)) {
     const banner =
-      '[context] You already listed the packs this run — the same catalogue also ships in your system prompt under "On-Demand Context Packs". Use `action:"load"` with a pack id when you actually need one.';
+      '[context] You already listed skills this run — the catalogue also ships in your system prompt under "On-Demand Skills". Use `action:"load"` with a skill name when you need one.';
     return ok(id, started, banner, {
       tool: 'context',
       action: 'list',
@@ -144,13 +128,17 @@ function runList(id: string, started: number, ctx: ToolContext): ToolResult {
     });
   }
 
-  const lines: string[] = ['# Context packs (load with `context` action="load")'];
-  for (const p of CONTEXT_PACKS) {
-    lines.push(`- \`${p.id}\` — ${p.title}. ${p.summary} Load when: ${p.loadWhen}`);
+  const invoked = [...getInvokedSkills(ctx.signal)];
+  const skills = await listCatalogueSkills(ctx.workspacePath, invoked);
+  const lines: string[] = ['# Skills (load with `context` action="load")'];
+  for (const s of skills) {
+    const pathNote = s.paths?.length ? ` Paths: ${s.paths.join(', ')}.` : '';
+    const manualNote = s.disableModelInvocation ? ' [manual invoke only]' : '';
+    lines.push(`- \`${s.name}\` [${s.source}]${manualNote} — ${s.description}${pathNote}`);
   }
   const body = lines.join('\n');
   listedByRun.set(ctx.signal, true);
-  log.debug('context catalogue listed', { packs: CONTEXT_PACKS.length });
+  log.debug('context skills listed', { count: skills.length });
   return ok(id, started, body, {
     tool: 'context',
     action: 'list',
@@ -159,72 +147,94 @@ function runList(id: string, started: number, ctx: ToolContext): ToolResult {
   });
 }
 
-function runLoad(
+async function runLoad(
   a: Partial<ContextArgs>,
   id: string,
   started: number,
   ctx: ToolContext
-): ToolResult {
-  const pack = typeof a.pack === 'string' ? a.pack.trim() : '';
-  if (!pack) {
+): Promise<ToolResult> {
+  const rawSkill =
+    typeof a.skill === 'string' && a.skill.trim()
+      ? a.skill.trim()
+      : typeof a.pack === 'string' && a.pack.trim()
+        ? resolveLegacyPackId(a.pack.trim())
+        : '';
+  if (!rawSkill) {
     return fail(
       id,
       started,
-      'Error: `pack` is required for action="load". Call action="list" to see ids.',
-      'missing pack'
-    );
-  }
-  if (!isContextPackId(pack)) {
-    log.warn('context load requested an unknown pack', { pack });
-    return fail(
-      id,
-      started,
-      `Error: unknown pack "${pack}". Valid ids: ${packIdEnum().join(', ')}.`,
-      'unknown pack'
+      'Error: `skill` is required for action="load". Call action="list" to see names.',
+      'missing skill'
     );
   }
 
-  const packId: ContextPackId = pack;
-  let loaded = loadedPacksByRun.get(ctx.signal);
+  const meta = await findSkill(rawSkill, ctx.workspacePath);
+  if (!meta) {
+    const invoked = [...getInvokedSkills(ctx.signal)];
+    const names = await listCatalogueSkills(ctx.workspacePath, invoked);
+    const valid = names.map((s) => s.name).join(', ');
+    log.warn('context load requested unknown skill', { skill: rawSkill });
+    return fail(
+      id,
+      started,
+      `Error: unknown skill "${rawSkill}". Valid names: ${valid || '(none)'}.`,
+      'unknown skill'
+    );
+  }
+
+  const invoked = getInvokedSkills(ctx.signal);
+  if (meta.disableModelInvocation && !invoked.has(meta.name)) {
+    const manualOnly = (await listSkills(ctx.workspacePath))
+      .filter((s) => s.disableModelInvocation)
+      .map((s) => s.name);
+    return fail(
+      id,
+      started,
+      `Error: skill "${meta.name}" is manual-invoke only. User must type /${meta.name} in the composer or explicitly request it. Manual-only skills: ${manualOnly.join(', ') || '(none)'}.`,
+      'manual invoke required'
+    );
+  }
+
+  let loaded = loadedSkillsByRun.get(ctx.signal);
   if (!loaded) {
     loaded = new Set<string>();
-    loadedPacksByRun.set(ctx.signal, loaded);
+    loadedSkillsByRun.set(ctx.signal, loaded);
   }
-  if (loaded.has(packId)) {
-    log.debug('context pack re-load deduped', { pack: packId });
-    const banner = `[context] Pack "${packId}" is already loaded earlier in this run — scroll back to that tool result instead of re-loading.`;
+  if (loaded.has(meta.name)) {
+    log.debug('context skill re-load deduped', { skill: meta.name });
+    const banner = `[context] Skill "${meta.name}" is already loaded earlier in this run — scroll back to that tool result instead of re-loading.`;
     return ok(id, started, banner, {
       tool: 'context',
       action: 'load',
-      pack: packId,
+      skill: meta.name,
+      source: meta.source,
+      pack: meta.name,
       alreadyLoaded: true,
       preview: banner
     });
   }
 
-  const meta = CONTEXT_PACKS.find((p) => p.id === packId);
-  const body = getContextPackBody(packId).trim();
-  // Defensive: `getContextPackBody` already falls back to the bundled body and
-  // never returns `undefined`, but if a pack genuinely resolves empty (e.g. a
-  // user saved a blank override and the bundled body is somehow missing) we
-  // fail gracefully instead of returning a header with no content.
-  if (body.length === 0) {
-    log.warn('context pack body unavailable', { pack: packId });
+  const body = await getSkillBody(meta.name, ctx.workspacePath);
+  if (!body || body.trim().length === 0) {
+    log.warn('context skill body unavailable', { skill: meta.name });
     return fail(
       id,
       started,
-      `Error: pack "${packId}" is currently unavailable (empty body). Proceed without it, or reset it in Settings → Agent behavior → Harness.`,
-      'empty pack body'
+      `Error: skill "${meta.name}" is currently unavailable (empty body). Proceed without it or fix the SKILL.md file.`,
+      'empty skill body'
     );
   }
-  loaded.add(packId);
-  const header = `# Context pack: ${meta?.title ?? packId} (\`${packId}\`)\n`;
+
+  loaded.add(meta.name);
+  const header = `# Skill: ${meta.name} (\`${meta.name}\`)\n`;
   const output = `${header}\n${body}`;
-  log.info('context pack loaded', { pack: packId, chars: output.length });
+  log.info('context skill loaded', { skill: meta.name, source: meta.source, chars: output.length });
   return ok(id, started, output, {
     tool: 'context',
     action: 'load',
-    pack: packId,
+    skill: meta.name,
+    source: meta.source,
+    pack: meta.name,
     alreadyLoaded: false,
     preview: output
   });

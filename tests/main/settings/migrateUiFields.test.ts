@@ -41,6 +41,16 @@ describe('normalizeSettingsPatch', () => {
     expect(patch.ui).toEqual({});
   });
 
+  it('strips removed dictation settings and keybinding overrides from patches', () => {
+    const patch = normalizeSettingsPatch({
+      ui: {
+        dictation: { enabled: true, mode: 'cascade' },
+        keybindings: { composerDictate: 'Mod+Shift+D', composerSend: 'Mod+Enter' }
+      }
+    });
+    expect(patch.ui).toEqual({ keybindings: { composerSend: 'Mod+Enter' } });
+  });
+
   it('strips removed context-management ceiling fields from patches', () => {
     const patch = normalizeSettingsPatch({
       ui: {

@@ -20,20 +20,35 @@ vi.mock('@renderer/pages/useLandingConversationPrewarm.js', () => ({
   useLandingConversationPrewarm: () => undefined
 }));
 
-vi.mock('@renderer/lib/ipc.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@renderer/lib/ipc.js')>();
+vi.mock('@renderer/lib/ipc.js', async () => {
   const subscribe = () => () => undefined;
+  const stub = window.vyotiq;
   return {
-    ...actual,
     vyotiq: {
-      ...actual.vyotiq,
+      ...stub,
       providers: {
-        ...actual.vyotiq.providers,
+        ...stub.providers,
         setAccountPollSource: vi.fn(async () => undefined)
       },
       completion: {
         cancel: vi.fn(async () => undefined),
         onEvent: subscribe
+      },
+      tasks: {
+        get: vi.fn(async (conversationId: string) => ({
+          conversationId,
+          items: [],
+          updatedAt: 0
+        })),
+        set: vi.fn(async (conversationId: string, items: unknown[]) => ({
+          conversationId,
+          items,
+          updatedAt: 0
+        }))
+      },
+      heartbeat: {
+        ...stub.heartbeat,
+        onUpdated: subscribe
       },
       terminal: {
         attach: vi.fn(async () => ({
@@ -186,7 +201,7 @@ describe('Workbench layout', () => {
     const { container } = render(shellWithChat());
 
     expect(container.querySelector(`.${WORKBENCH_SHELL_SPLIT_ROW_CLASS}`)).toBeTruthy();
-    expect(screen.getByRole('tablist', { name: /workbench/i })).toBeTruthy();
+    expect(document.querySelector('[data-workbench-pane]')).toBeTruthy();
     expect(document.querySelector('[data-chat-footer-centered]')).toBeNull();
     expect(document.querySelector('[data-workbench-agent-main] [role="textbox"]')).toBeTruthy();
     expect(document.querySelector('[data-workbench-agent-main]')).toBeTruthy();

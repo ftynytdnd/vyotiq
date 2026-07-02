@@ -9,6 +9,8 @@ export type OpenRun = {
   filePaths: Set<string>;
   /** Successful `bash` tool results in this run. */
   commandCount: number;
+  /** Hidden `continue` tool invocations in this run. */
+  continuedCount: number;
   /** Terminal `error` event ended this run — merge stats into that row. */
   endedInError?: boolean;
   errorKey?: string;
@@ -79,7 +81,8 @@ export function flushRunToRows(
       ...(usage !== undefined ? { usage } : {}),
       ...(editCount > 0 ? { editCount } : {}),
       ...(fileCount > 0 ? { fileCount } : {}),
-      ...(commandCount > 0 ? { commandCount } : {})
+      ...(commandCount > 0 ? { commandCount } : {}),
+      ...(openRun.continuedCount > 0 ? { continued: true } : {})
     });
   }
   return { openRun: null, openRunUsage: null };

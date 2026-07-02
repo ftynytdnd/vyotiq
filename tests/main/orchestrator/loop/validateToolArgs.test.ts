@@ -14,7 +14,7 @@ describe('validateToolArgs', () => {
   it('requires path for edit and delete', () => {
     expect(validateToolArgs('edit', { path: '  ' }).ok).toBe(false);
     expect(validateToolArgs('delete', {}).ok).toBe(false);
-    expect(validateToolArgs('edit', { path: 'src/foo.ts' }).ok).toBe(true);
+    expect(validateToolArgs('edit', { path: 'src/foo.ts', oldString: 'a', newString: 'b' }).ok).toBe(true);
   });
 
   it('requires command for bash and query, pattern, or kind for search', () => {
@@ -79,6 +79,75 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('context', { action: 'list' }).ok).toBe(true);
     expect(validateToolArgs('context', { action: 'load' }).ok).toBe(false);
     expect(validateToolArgs('context', { action: 'load', pack: 'static-examples' }).ok).toBe(true);
-    expect(validateToolArgs('context', { action: 'load', pack: 'not-a-pack' }).ok).toBe(false);
+    expect(validateToolArgs('context', { action: 'load', pack: 'not-a-pack' }).ok).toBe(true);
+  });
+
+  it('allows todos read calls with no todos array', () => {
+    expect(validateToolArgs('todos', {}).ok).toBe(true);
+  });
+
+  it('rejects malformed todos writes before dispatch', () => {
+    expect(validateToolArgs('todos', { todos: 'bad' }).ok).toBe(false);
+    expect(validateToolArgs('todos', { todos: [{}] }).ok).toBe(false);
+    expect(validateToolArgs('todos', { todos: [{ id: '1', content: 'x', status: 'nope' }] }).ok).toBe(
+      false
+    );
+    expect(
+      validateToolArgs('todos', {
+        todos: [{ id: '1', content: 'Read auth module', status: 'in_progress' }]
+      }).ok
+    ).toBe(true);
+  });
+
+  it('validates nested todos parentId and rejects self-parent', () => {
+    expect(
+      validateToolArgs('todos', {
+        todos: [
+          { id: 'p', content: 'Phase', status: 'pending' },
+          { id: 's', parentId: 'p', content: 'Step', status: 'pending' }
+        ]
+      }).ok
+    ).toBe(true);
+    expect(
+      validateToolArgs('todos', {
+        todos: [{ id: 'x', parentId: 'x', content: 'Self', status: 'pending' }]
+      }).ok
+    ).toBe(false);
+    expect(
+      validateToolArgs('todos', {
+        todos: [{ id: 'x', parentId: '  ', content: 'Bad parent', status: 'pending' }]
+      }).ok
+    ).toBe(false);
+  });
+
+  it('validates ls path and depth', () => {
+    expect(validateToolArgs('ls', {}).ok).toBe(true);
+    expect(validateToolArgs('ls', { path: '  ' }).ok).toBe(false);
+    expect(validateToolArgs('ls', { depth: -1 }).ok).toBe(false);
+    expect(validateToolArgs('ls', { path: 'src', depth: 2 }).ok).toBe(true);
+  });
+
+  it('validates heartbeat action and attach interval', () => {
+    expect(validateToolArgs('heartbeat', { action: 'nope' }).ok).toBe(false);
+    expect(validateToolArgs('heartbeat', { action: 'attach' }).ok).toBe(false);
+    expect(validateToolArgs('heartbeat', { action: 'attach', intervalMinutes: 7 }).ok).toBe(
+      true
+    );
+    expect(validateToolArgs('heartbeat', { action: 'detach' }).ok).toBe(true);
+  });
+
+  it('validates continue optional prompt', () => {
+    expect(validateToolArgs('continue', {}).ok).toBe(true);
+    expect(validateToolArgs('continue', { prompt: '  ' }).ok).toBe(false);
+    expect(validateToolArgs('continue', { prompt: 'keep going' }).ok).toBe(true);
+  });
+
+  it('accepts finish and ask_user without extra args', () => {
+    expect(validateToolArgs('finish', {}).ok).toBe(true);
+    expect(validateToolArgs('ask_user', { question: 'Pick one' }).ok).toBe(true);
+  });
+
+  it('passes unknown tool names through without validation', () => {
+    expect(validateToolArgs('not_a_tool', { anything: true }).ok).toBe(true);
   });
 });

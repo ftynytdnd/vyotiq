@@ -32,8 +32,8 @@ describe('buildOrchestratorSystemPrompt', () => {
     expect(prompt).not.toContain('Two surfaces, two formats');
   });
 
-  it('advertises the on-demand context pack catalogue in the prefix', () => {
-    expect(prompt).toContain('# On-Demand Context Packs');
+  it('advertises the on-demand skills catalogue in the prefix', () => {
+    expect(prompt).toContain('# On-Demand Skills');
     expect(prompt).toContain('`ast-grep-reference`');
     expect(prompt).toContain('`deliverables`');
     expect(prompt).toContain('`static-examples`');

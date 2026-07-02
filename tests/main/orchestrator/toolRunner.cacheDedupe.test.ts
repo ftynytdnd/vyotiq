@@ -41,4 +41,32 @@ describe('runToolByName cache before dedupe', () => {
     expect(again.error).not.toBe('duplicate_tool_call');
     expect(again.output).toContain('file body');
   });
+
+  it('replays cached bash on the second identical call', async () => {
+    const ac = new AbortController();
+    const args = { command: 'git init' };
+    const opts = {
+      workspacePath: process.cwd(),
+      workspaceId: 'ws-test',
+      runId: 'run-1',
+      conversationId: 'conv-1',
+      emit: () => undefined,
+      signal: ac.signal
+    };
+
+    const first: ToolResult = {
+      id: 'tc-1',
+      name: 'bash',
+      ok: true,
+      output: '--- stdout ---\nInitialized empty Git repository\n--- exit: 0 ---',
+      durationMs: 1
+    };
+    recordToolResult(ac.signal, 'bash', args, first, opts.conversationId);
+
+    const replay = await runToolByName('bash', args, opts);
+    expect(replay.ok).toBe(true);
+    expect(replay.error).not.toBe('duplicate_tool_call');
+    expect(replay.output).toContain('Initialized empty Git repository');
+    expect(replay.output).toContain('[cache]');
+  });
 });

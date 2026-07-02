@@ -78,7 +78,10 @@ export function registerEditorIpc(): void {
   wrapIpcHandler(IPC.EDITOR_WRITE, async (_event, input: EditorWriteInput): Promise<EditorWriteReply> => {
     assertObject('editor:write', 'input', input);
     assertString('editor:write', 'path', input.path, { maxBytes: MAX_RELATIVE_PATH_BYTES });
-    assertString('editor:write', 'content', input.content, { maxBytes: MAX_WRITE_BYTES });
+    assertString('editor:write', 'content', input.content, {
+      maxBytes: MAX_WRITE_BYTES,
+      nonEmpty: false
+    });
     assertOptionalString('editor:write', 'workspaceId', input.workspaceId);
     if (input.expectedMtimeMs !== undefined) {
       assertNumber('editor:write', 'expectedMtimeMs', input.expectedMtimeMs, { min: 0 });

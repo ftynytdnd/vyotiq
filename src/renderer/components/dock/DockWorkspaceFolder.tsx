@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ExternalLink,
   Folder,
+  FolderGit2,
   FolderOpen,
   Link2,
   MoreHorizontal,
@@ -15,6 +16,7 @@ import {
   Plus,
   Trash2
 } from 'lucide-react';
+import { workspaceGitHubSubtitle } from '@shared/github/workspaceGitHubLabel.js';
 import type { WorkspaceEntry } from '@shared/types/ipc.js';
 import { cn } from '../../lib/cn.js';
 import {
@@ -74,7 +76,11 @@ export function DockWorkspaceFolder({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const path = workspace.path ?? '';
-  const showPath = workspacePathVisible(workspace.label, path);
+  const githubBinding = workspace.github;
+  const isGitHub = workspace.source === 'github' || githubBinding != null;
+  const githubSubtitle = githubBinding ? workspaceGitHubSubtitle(githubBinding) : null;
+  const showPath = !githubSubtitle && workspacePathVisible(workspace.label, path);
+  const rowTitle = githubSubtitle ? `${workspace.label} — ${githubSubtitle}` : path || workspace.label;
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -194,7 +200,17 @@ export function DockWorkspaceFolder({
           <span className="vx-dock-folder-chevron-spacer shrink-0" aria-hidden />
         )}
 
-        {active ? (
+        {isGitHub ? (
+          <FolderGit2
+            className={cn(
+              SHELL_ROW_ICON_CLASS,
+              'shrink-0',
+              active ? 'text-text-muted' : 'text-text-faint'
+            )}
+            strokeWidth={DOCK_TAB_ICON_STROKE}
+            aria-hidden
+          />
+        ) : active ? (
           <FolderOpen
             className={cn(SHELL_ROW_ICON_CLASS, 'shrink-0 text-text-muted')}
             strokeWidth={DOCK_TAB_ICON_STROKE}
@@ -235,7 +251,7 @@ export function DockWorkspaceFolder({
               'vx-dock-folder-label min-w-0 flex-1 truncate text-left text-row',
               active ? 'text-text-primary' : 'text-text-secondary'
             )}
-            title={path || workspace.label}
+            title={rowTitle}
             onClick={() => {
               onActivate();
             }}
@@ -243,6 +259,12 @@ export function DockWorkspaceFolder({
             {workspace.label}
           </button>
         )}
+
+        {!active && githubSubtitle && githubBinding ? (
+          <span className="vx-dock-meta max-w-[5rem] truncate" title={githubSubtitle}>
+            {githubBinding.branch}
+          </span>
+        ) : null}
 
         {!active && chatCount > 0 ? (
           <span
@@ -339,7 +361,14 @@ export function DockWorkspaceFolder({
         ) : null}
       </div>
 
-      {showPath && !editing && active ? (
+      {githubSubtitle && !editing && active ? (
+        <p
+          className="vx-dock-folder-path truncate font-mono text-meta text-text-faint"
+          title={githubSubtitle}
+        >
+          {githubSubtitle}
+        </p>
+      ) : showPath && !editing && active ? (
         <p className="vx-dock-folder-path truncate font-mono text-meta text-text-faint" title={path}>
           {basenameFromPath(path)}
         </p>

@@ -110,14 +110,14 @@ Vyotiq supports multiple concurrent chats (one Agent V run per conversation, pos
 - LRU key is `(conversationId, workspaceId, workspacePath)` so per-iteration query churn does not zero out hit rate.
 
 **Prompt / context caching (2026 provider prefixes)**
-- Message topology: static harness + `<meta_rules>` in `messages[0]` system; hash-gated `<workspace_context>` in `messages[1]` user; transcript history; volatile `<runtime_context>` user block (host clock, run state, session, prior conversations, memory); final `<turn>` user envelope. Reference material is NOT a static layer — the model loads it on demand via the `context` tool (see "On-demand context packs" below), so loaded packs land in the history band like any tool result and never perturb the cached prefix.
+- Message topology: static harness + `<meta_rules>` in `messages[0]` system; hash-gated `<workspace_context>` in `messages[1]` user; transcript history; volatile `<runtime_context>` user block (host clock, run state, session, prior conversations, memory); final `<turn>` user envelope. Reference material is NOT a static layer — the model loads it on demand via the `context` tool (see "On-demand Agent Skills" below), so loaded skill bodies land in the history band like any tool result and never perturb the cached prefix.
 - Anthropic: explicit `cache_control` (default 1h ephemeral TTL) on static system, workspace user, and last tool schema; top-level automatic breakpoint for rolling history; `metadata.user_id` = `workspaceId`; cache-diagnostics beta via Settings or `VYOTIQ_CACHE_DIAGNOSTICS=1`.
 - OpenAI-compat: `prompt_cache_key` = `workspaceId:conversationId`; GPT-5/o3/o4 `prompt_cache_retention: "24h"` on direct OpenAI host; tiered cache-read cost fallbacks (GPT-5 90%, GPT-4.1 75%, GPT-4o 50%).
 - Gemini: harness + workspace hoisted to `systemInstruction` (skipped in `contents[]` when cache-layered); implicit cache via `cachedContentTokenCount`; optional explicit `cachedContents` via Settings or `VYOTIQ_GEMINI_EXPLICIT_CACHE=1` (fingerprint includes system + workspace + tools).
 
-**On-demand context packs (dynamic context injection)**
-- The always-on system prefix carries only the prefix harness sections (`00-orchestrator-core.md`, `01-context-learning.md`, `05-dynamic-loop.md`), `<runtime_limits>`, the tool catalogue, and a short **pack catalogue**. Reference material (`02-deliverables.md`, `03-static-examples.md`, `04-ast-grep-cheatsheet.md`) is exposed as on-demand **context packs** in `src/main/harness/contextPacks.ts`.
-- The model — not a host heuristic — decides what to load via the `context` tool (`action:"list" | "load"`); a loaded pack returns as a tool result into the run history (per-run dedupe by `AbortSignal`). Pack bodies are user-editable/resettable under Settings → Agent behavior → Harness (same override store as prefix sections; `HARNESS_SECTION_PLACEMENT`).
+**On-demand Agent Skills (dynamic context injection)**
+- The always-on system prefix carries only the prefix harness sections (`00-orchestrator-core.md`, `01-context-learning.md`, `05-dynamic-loop.md`), `<runtime_limits>`, the tool catalogue, and a short **skills catalogue** (name + description only). Full skill bodies live in `SKILL.md` files discovered from bundled skills (`src/main/skills/bundled/`), workspace `.vyotiq/skills/`, global `%APPDATA%/vyotiq/vyotiq/skills/`, and Cursor-compat `.cursor/skills/` / `.agents/skills/`.
+- The model — not a host heuristic — decides what to load via the `context` tool (`action:"list" | "load"`, `skill` argument; legacy `pack` alias retained). A loaded skill returns as a tool result into the run history (per-run dedupe by `AbortSignal`). Users invoke skills with `/skill-name` in the composer; the agent can create workspace skills at `.vyotiq/skills/<name>/SKILL.md`. Manage skills in Settings → Agent behavior → Skills; bundled skill overrides use `skill-overrides/` (legacy `harness-overrides/` still honored).
 - DeepSeek / xAI: automatic prefix caching (disk KV / `x-grok-conv-id`); `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` normalized to `TokenUsage`; stability from deterministic prefixes (`stableStringify`, ISO prior-conversation timestamps, workspace listing fingerprint).
 - Observability: per-turn `llm turn usage` log with `cacheRead` / `cacheWrite` / `cacheMiss`; run-complete row + composer status strip; Settings → Agent behavior → Prompt caching diagnostics panel; `token-usage` events carry optional `cacheMissReason` (Anthropic).
 - On cache hit, a **`queryFingerprint`** (trimmed rolling query, capped length) must match; otherwise the entry is treated as stale and memory retrieval rebuilds.
@@ -178,7 +178,7 @@ Vyotiq uses a **Shell Mono** design system on a stealth-dark oklch token palette
 ## 1. Global Theme & Color Palette (Linear-lite frameless)
 - **Backgrounds:** Stealth dark — never pure black. Region separation uses **surface steps only** (`surface-base`, `surface-sidebar`, `surface-input`) — no column border rules.
 - **Typography:** **Geist Sans** / **Geist Mono**. Body **400**, labels **500**, section whispers **text-meta** muted. Avoid `font-semibold` in shell chrome.
-- **Accent:** Steel violet for **focus halos**, **links**, and **Send-ready** only; warm gold for live streaming phase labels.
+- **Accent:** Steel violet for **focus halos**, **links**, **Send-ready**, and **first-run setup** CTAs only; warm gold for live streaming phase labels.
 - **Chrome interaction:** `chrome-hover` / `chrome-hover-soft` for ghost controls — not `panel-edge` layout lines.
 - **Borders:** Floating layers (popovers, modals, code blocks) only — not dock/chat/settings splits.
 
@@ -189,7 +189,7 @@ Vyotiq uses a **Shell Mono** design system on a stealth-dark oklch token palette
 
 ## 3. The Composer
 - **Container:** Flat `sm-composer-shell` on `surface-input` — no border, no drop shadow.
-- **Toolbar:** Ghost pills; Send uses `sm-btn-accent-fill` when ready (sole accent CTA).
+- **Toolbar:** Ghost pills; Send uses `sm-btn-accent-fill` when ready; first-run setup CTAs on the chat landing also use accent-fill.
 - **Token pill:** Ghost text + thin track (`sm-composer-token-pill` transparent fill).
 
 ## 4. Agent Interaction UI

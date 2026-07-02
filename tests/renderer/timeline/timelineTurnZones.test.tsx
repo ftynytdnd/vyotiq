@@ -79,7 +79,7 @@ describe('Timeline turn zones', () => {
     const toolGroup = container.querySelector('[data-row-kind="tool-group"]');
     const assistant = container.querySelector('[data-row-kind="assistant-text"]');
 
-    expect(weaveStream ?? container.querySelector('.timeline-agent-column')).not.toBeNull();
+    expect(weaveStream ?? container.querySelector('.vx-timeline-agent-column')).not.toBeNull();
     expect(toolGroup).not.toBeNull();
     expect(assistant).not.toBeNull();
     expect(
@@ -168,13 +168,13 @@ describe('Timeline turn zones', () => {
 
     const { container } = render(<Timeline />);
 
-    const agentColumn = container.querySelector('.timeline-agent-column');
+    const agentColumn = container.querySelector('.vx-timeline-agent-column');
     expect(agentColumn).not.toBeNull();
     expect(agentColumn?.className ?? '').toContain('vx-timeline-agent-column');
 
     const assistant = container.querySelector('[data-row-kind="assistant-text"]');
     expect(assistant).not.toBeNull();
-    expect(assistant?.closest('.timeline-agent-column')).not.toBeNull();
+    expect(assistant?.closest('.vx-timeline-agent-column')).not.toBeNull();
     expect(container.querySelector('[data-turn-activity-summary]')).toBeNull();
   });
 
@@ -236,7 +236,7 @@ describe('Timeline turn zones', () => {
     expect(container.querySelector('.vx-timeline-deleg-stream')).toBeNull();
     const assistant = container.querySelector('[data-row-kind="assistant-text"]');
     expect(assistant).not.toBeNull();
-    expect(assistant?.closest('.timeline-agent-column')).not.toBeNull();
+    expect(assistant?.closest('.vx-timeline-agent-column')).not.toBeNull();
   });
 
   it('shows run-complete when the run fully ends on the trailing turn', () => {

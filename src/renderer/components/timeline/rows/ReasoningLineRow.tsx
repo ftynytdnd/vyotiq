@@ -96,8 +96,9 @@ export function ReasoningLineRow({ id }: ReasoningLineRowProps) {
 
   return (
     <div
-      className="vyotiq-stepfade-once flex flex-col"
+      className="vx-timeline-reasoning-line vx-timeline-activity-row vyotiq-stepfade-once flex flex-col"
       data-row-kind="reasoning-line"
+      data-status={streaming ? 'running' : undefined}
       aria-live={streaming ? 'polite' : 'off'}
     >
       <TimelineRowHeader

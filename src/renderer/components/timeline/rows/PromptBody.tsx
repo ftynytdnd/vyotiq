@@ -72,7 +72,7 @@ export function PromptBody({
         <div
           ref={bubbleRef}
           className={cn(
-            'vx-timeline-user-bubble pl-3',
+            'vx-timeline-user-bubble',
             timelineUserPromptBodyClassName,
             bubbleClassName,
             variant === 'single-line' && !expanded && 'line-clamp-1',

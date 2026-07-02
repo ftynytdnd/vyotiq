@@ -87,6 +87,62 @@ describe('TaskTray', () => {
     expect(header).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByPlaceholderText('Add a task…')).toBeInTheDocument();
   });
+
+  it('adds a sub-task under a parent and persists parentId', async () => {
+    const user = userEvent.setup();
+    const nested: TaskItem[] = [
+      { id: 'p', content: 'Phase', status: 'pending' },
+      { id: 's', parentId: 'p', content: 'Step', status: 'pending' }
+    ];
+    render(<TaskTray conversationId="c1" tasks={nested} />);
+
+    await user.click(screen.getByRole('button', { name: /Tasks/i }));
+    await user.click(screen.getAllByRole('button', { name: 'Add sub-task' })[0]!);
+    const input = await screen.findByPlaceholderText('Add a sub-task…');
+    await user.type(input, 'New sub-step{Enter}');
+
+    expect(window.vyotiq.tasks.set).toHaveBeenCalled();
+    const [, items] = vi.mocked(window.vyotiq.tasks.set).mock.calls.at(-1)! as [string, TaskItem[]];
+    expect(items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ content: 'New sub-step', parentId: 'p', status: 'pending' })
+      ])
+    );
+  });
+
+  it('cascade-deletes descendants when removing a parent', async () => {
+    const user = userEvent.setup();
+    const nested: TaskItem[] = [
+      { id: 'p', content: 'Phase', status: 'pending' },
+      { id: 's', parentId: 'p', content: 'Step', status: 'pending' }
+    ];
+    render(<TaskTray conversationId="c1" tasks={nested} />);
+
+    await user.click(screen.getByRole('button', { name: /Tasks/i }));
+    await user.click(screen.getAllByRole('button', { name: 'Remove task' })[0]!);
+
+    const [, items] = vi.mocked(window.vyotiq.tasks.set).mock.calls.at(-1)! as [string, TaskItem[]];
+    expect(items).toEqual([]);
+  });
+
+  it('outdents a nested sub-task to top level', async () => {
+    const user = userEvent.setup();
+    const nested: TaskItem[] = [
+      { id: 'p', content: 'Phase', status: 'pending' },
+      { id: 's', parentId: 'p', content: 'Step', status: 'pending' }
+    ];
+    render(<TaskTray conversationId="c1" tasks={nested} />);
+
+    await user.click(screen.getByRole('button', { name: /Tasks/i }));
+    const outdentButtons = screen
+      .getAllByRole('button', { name: 'Outdent' })
+      .filter((btn) => !(btn as HTMLButtonElement).disabled);
+    await user.click(outdentButtons[0]!);
+
+    const [, items] = vi.mocked(window.vyotiq.tasks.set).mock.calls.at(-1)! as [string, TaskItem[]];
+    expect(items.find((t) => t.id === 's')).toMatchObject({ content: 'Step' });
+    expect(items.find((t) => t.id === 's')?.parentId).toBeUndefined();
+  });
 });
 
 describe('TaskTrayHost', () => {

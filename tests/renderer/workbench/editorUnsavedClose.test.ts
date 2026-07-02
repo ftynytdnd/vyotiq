@@ -43,7 +43,7 @@ describe('useEditorStore unsaved close', () => {
       staleOnDisk: false,
       error: null
     });
-    useUiStore.setState({ dockPanelTab: 'chats', dockExpanded: false });
+    useUiStore.setState({ dockExpanded: false });
   });
 
   it('queues prompt when closing a dirty tab', () => {

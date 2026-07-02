@@ -120,7 +120,7 @@ export interface ChatStreamRequest {
    *      but the model hasn't emitted its first token yet (the actual
    *      "thinking" wait, server-side).
    *
-   * The renderer's `LiveStatusRow` surfaces a different label per
+   * The renderer's `TurnStickyFooter` surfaces a different label per
    * phase so the user can tell whether the network or the model is
    * the bottleneck. Errors thrown by the callback are swallowed so a
    * misbehaving listener can never abort the stream.

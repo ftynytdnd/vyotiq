@@ -17,9 +17,6 @@ export const WORKBENCH_ACTIONS_TRAY_CLASS =
 
 export const WORKBENCH_ACTION_GROUP_CLASS = 'flex shrink-0 items-center gap-0.5';
 
-export const WORKBENCH_RAIL_BTN_CLASS =
-  'vx-dock-icon-slot vx-btn vx-btn-quiet px-0 vx-dock-icon-hover text-text-muted';
-
 /** Subtle 1px inset card for workbench empty states. */
 export const WORKBENCH_EMPTY_CARD_CLASS =
   'vx-workbench-empty-card rounded-inner px-5 py-6';

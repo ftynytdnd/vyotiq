@@ -19,7 +19,7 @@ import { useMemo } from 'react';
 import { useProviderStore } from '../../store/useProviderStore.js';
 import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { Dropdown, type DropdownItem } from '../ui/Dropdown.js';
-import { ShellCaption, ShellFieldLabel, ShellRow, ShellRowSplit } from '../ui/ShellSection.js';
+import { ShellCaption, ShellRow, ShellRowSplit } from '../ui/ShellSection.js';
 import { effectiveContextWindow } from '@shared/providers/contextWindow.js';
 import { formatTokenCount } from '../../lib/formatTokens.js';
 
@@ -58,12 +58,10 @@ export function DefaultModelRow() {
     <ShellRow>
       <ShellRowSplit
         main={
-          <>
-            <ShellFieldLabel>Default model</ShellFieldLabel>
-            <ShellCaption>
-              Used by Agent V and the composer. Applies immediately and persists across restarts.
-            </ShellCaption>
-          </>
+          <ShellCaption>
+            Default run model for Agent V and the composer. Applies immediately and persists
+            across restarts.
+          </ShellCaption>
         }
         control={
           <Dropdown<string>

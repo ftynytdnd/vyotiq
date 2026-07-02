@@ -17,7 +17,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { applyTimelineEvent } from '@renderer/components/timeline/reducer/applyTimelineEvent';
-import { deriveRows } from '@renderer/components/timeline/reducer/deriveRows';
+import { deriveDisplayRows, deriveRows } from '@renderer/components/timeline/reducer/deriveRows';
 import { INITIAL_TIMELINE_STATE } from '@renderer/components/timeline/reducer/types';
 import type { TimelineEvent } from '@shared/types/chat';
 import type { DiffHunk } from '@shared/types/tool';
@@ -191,25 +191,20 @@ describe('applyTimelineEvent — diff-stream', () => {
     expect(rows.some((r) => r.kind === 'tool-group')).toBe(false);
   });
 
-  it('flows the diffStream onto a synthesized partial tool-group child', () => {
+  it('flows the diffStream onto a root-level streaming file-edit card', () => {
     const s = applyTimelineEvent(INITIAL_TIMELINE_STATE, diffStream('c1', { ts: 2 }));
-    const rows = deriveRows([{ kind: 'user-prompt', id: 'p1', ts: 1, content: 'go' }], {
+    const rows = deriveDisplayRows([{ kind: 'user-prompt', id: 'p1', ts: 1, content: 'go' }], {
       partialToolCallArgs: s.partialToolCallArgs
     });
-    const tg = rows.find((r) => r.kind === 'tool-group');
-    expect(tg).toBeDefined();
-    if (tg?.kind !== 'tool-group') throw new Error('expected tool-group');
-    expect(tg.children).toHaveLength(1);
-    const child = tg.children[0]!;
-    expect(child.partial).toBe(true);
-    expect(child.diffStream).toEqual({
-      tool: 'edit',
-      filePath: 'a.ts',
-      hunks,
-      additions: 1,
-      deletions: 1,
-      settled: false,
-      ts: 2
-    });
+    const card = rows.find((r) => r.kind === 'file-edit-card');
+    expect(card).toBeDefined();
+    if (card?.kind !== 'file-edit-card') throw new Error('expected file-edit-card');
+    expect(card.callId).toBe('c1');
+    expect(card.filePath).toBe('a.ts');
+    expect(card.phase).toBe('streaming');
+    expect(card.hunks).toEqual(hunks);
+    expect(card.additions).toBe(1);
+    expect(card.deletions).toBe(1);
+    expect(rows.some((r) => r.kind === 'tool-group')).toBe(false);
   });
 });

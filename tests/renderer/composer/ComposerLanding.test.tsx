@@ -61,4 +61,19 @@ describe('Composer landing', () => {
 
     expect(container.querySelector('.vx-composer-shell--landing')).toBeTruthy();
   });
+
+  it('places model picker in the send cluster on landing', () => {
+    const { container } = render(
+      <Composer
+        landing
+        model={{ providerId: 'p1', modelId: 'm1' }}
+        onModelChange={() => undefined}
+        onOpenProviders={() => undefined}
+      />
+    );
+
+    const sendCluster = container.querySelector('.vx-composer-send-cluster');
+    expect(sendCluster?.querySelector('.vx-composer-send-cluster__model')).toBeTruthy();
+    expect(container.querySelector('.vx-composer-chip-row .vx-composer-model-trigger')).toBeNull();
+  });
 });

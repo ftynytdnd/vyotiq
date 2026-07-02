@@ -8,6 +8,8 @@ export interface FileMenuActions {
   setWorkspacePath: () => void;
   openSettings: () => void;
   quit: () => void;
+  /** Open scheduled-runs popover in the dock. */
+  openScheduledRuns?: () => void;
   /** Hide chat/workspace rows while settings (or similar) is open. */
   chatActionsEnabled?: boolean;
 }

@@ -18,6 +18,12 @@ import { isBrowserWebContents } from './window/browserManager.js';
 import { migrateUserDataLayout } from './paths/migrateUserDataLayout.js';
 import { registerIpc } from './ipc/registerIpc.js';
 import { teardownProvidersIpc } from './ipc/providers.ipc.js';
+import {
+  bootstrapClaudeCodeProxyProvider,
+  ensureClaudeCodeProxyRunning
+} from './providers/claudeCodeProxy.js';
+import { addProvider, listProviders } from './providers/providerStore.js';
+import { discoverModels } from './providers/modelDiscovery.js';
 import { teardownTerminalIpc } from './ipc/terminal.ipc.js';
 import { teardownBrowserIpc } from './ipc/browser.ipc.js';
 import { teardownCompletionIpc } from './ipc/completion.ipc.js';
@@ -28,13 +34,19 @@ import { flushAll as flushConversations } from './conversations/conversationStor
 import { flushAll as flushCheckpoints } from './checkpoints/index.js';
 import { teardownCaptureFramebufferBridge } from './capture/captureFramebufferBridge.js';
 import { clearAllPreparedMediaCaches } from './attachments/preparedMediaCache.js';
-import { flushWorkspaceState, teardownWorkspaceTreeWatcher } from './workspace/workspaceState.js';
-import { abortRun, listActiveRuns } from './orchestrator/AgentV.js';
+import {
+  flushWorkspaceState,
+  getActiveWorkspace,
+  listWorkspaces,
+  teardownWorkspaceTreeWatcher
+} from './workspace/workspaceState.js';
+import { flushAllFollowUpPersists } from './followUps/followUpQueueService.js';
+import { abortRun, drainActiveRuns, listActiveRuns } from './orchestrator/AgentV.js';
 import { getSettings } from './settings/settingsStore.js';
 import { sweepOrphanAttachments } from './attachments/gc.js';
 import { sweepVisionDiskCache } from './attachments/preparedMediaDiskCache.js';
 import { sweepOrphanCompactionAllWorkspaces } from './orchestrator/context/compactionSweep.js';
-import { getActiveWorkspace } from './workspace/workspaceState.js';
+import { backfillPromptSearchIndex } from './conversations/conversationSearchBackfill.js';
 import {
   disposeAllVectorIndexesAsync,
   scheduleWorkspaceVectorIndex
@@ -110,6 +122,9 @@ async function bootstrap() {
   );
 
   registerIpc();
+  void ensureClaudeCodeProxyRunning().then(async () => {
+    await bootstrapClaudeCodeProxyProvider(listProviders, addProvider, discoverModels);
+  });
   await warmHarnessOverrides().catch((err) =>
     log.warn('harness override preload failed; using bundled defaults', { err })
   );
@@ -144,6 +159,9 @@ async function bootstrap() {
     );
     sweepOrphanCompactionAllWorkspaces().catch((err) =>
       log.warn('orphan compaction sweep failed', { err })
+    );
+    backfillPromptSearchIndex().catch((err) =>
+      log.warn('prompt search index backfill failed', { err })
     );
   }, 30_000);
   bootGcTimer = gcTimer;
@@ -187,22 +205,26 @@ app.on('before-quit', (event) => {
   if (isShuttingDown) return;
   isShuttingDown = true;
   event.preventDefault();
-  Promise.allSettled([
-    teardownProvidersIpc(),
-    flushConversations(),
-    flushCheckpoints(),
-    drainLogger(),
-    flushWorkspaceState(),
-    Promise.resolve().then(() => disposeAllVectorIndexesAsync()).then(() => {
-      closeAllVectorDbs();
-    }),
-    Promise.resolve().then(() => teardownTerminalIpc()),
-    Promise.resolve().then(() => teardownBrowserIpc()),
-    Promise.resolve().then(() => teardownCompletionIpc()),
-    Promise.resolve().then(() => teardownWorkspaceTreeWatcher()),
-    Promise.resolve().then(() => lspDisconnectAll()),
-    Promise.resolve().then(() => teardownAutoUpdaterService())
-  ])
+  void drainActiveRuns(5_000)
+    .then(() => flushAllFollowUpPersists())
+    .then(() =>
+      Promise.allSettled([
+        teardownProvidersIpc(),
+        flushConversations(),
+        flushCheckpoints(),
+        drainLogger(),
+        flushWorkspaceState(),
+        Promise.resolve().then(() => disposeAllVectorIndexesAsync()).then(() => {
+          closeAllVectorDbs();
+        }),
+        Promise.resolve().then(() => teardownTerminalIpc()),
+        Promise.resolve().then(() => teardownBrowserIpc()),
+        Promise.resolve().then(() => teardownCompletionIpc()),
+        Promise.resolve().then(() => teardownWorkspaceTreeWatcher()),
+        Promise.resolve().then(() => lspDisconnectAll()),
+        Promise.resolve().then(() => teardownAutoUpdaterService())
+      ])
+    )
     .catch((err) => log.error('shutdown flush failed', { err }))
     .finally(() => app.quit());
 });

@@ -24,7 +24,8 @@ import { clearStreamingToolPreview } from './clearStreamingToolPreview.js';
 import {
   appendTimelineEvent,
   autoCloseReasoning,
-  clearPartialFor
+  clearPartialFor,
+  closeAllOpenReasoning
 } from './timelineReducerShared.js';
 
 type TokenUsageEvent = Extract<TimelineEvent, { kind: 'token-usage' }>;
@@ -199,9 +200,6 @@ export function applyTimelineEvent(
     case 'agent-reasoning-delta': {
       const existing = state.reasoningTexts[event.id];
       const firstSeen = !existing;
-      // Stamp `startedAt` on the first delta only; subsequent deltas keep
-      // the original wall-clock so the run-time math reflects the full
-      // span of the streamed reasoning.
       const prev = existing ?? {
         id: event.id,
         text: '',
@@ -209,19 +207,25 @@ export function applyTimelineEvent(
         startedAt: event.ts,
         ...(event.effort !== undefined ? { effort: event.effort } : {})
       };
-      // Phase 12 (2026): reasoning deltas count as "stream activity"
-      // for the tok/s anchor (a thinking model's first wall-clock
-      // event is usually a reasoning delta, not a text delta). Stamp
-      // the same anchor here so a turn dominated by reasoning still
-      // reports throughput once usage lands. Same idempotent no-op
-      // pattern as the text-delta branch.
+      const reopening = !firstSeen && prev.done;
       const orchestratorUsage = stampUsageStart(state.orchestratorUsage, event.ts);
+      let reasoningTexts = state.reasoningTexts;
+      if (firstSeen) {
+        reasoningTexts = closeAllOpenReasoning(reasoningTexts, event.ts, event.id);
+      }
+      const nextAcc = {
+        ...prev,
+        text: prev.text + event.delta,
+        ...(reopening
+          ? { done: false, endedAt: undefined, startedAt: event.ts }
+          : {})
+      };
       return {
         ...state,
         events: firstSeen ? appendTimelineEvent(state.events, event, mutate) : state.events,
         reasoningTexts: {
-          ...state.reasoningTexts,
-          [event.id]: { ...prev, text: prev.text + event.delta }
+          ...reasoningTexts,
+          [event.id]: nextAcc
         },
         ...(orchestratorUsage !== state.orchestratorUsage ? { orchestratorUsage } : {})
       };
@@ -266,10 +270,12 @@ export function applyTimelineEvent(
         realCallId,
         'orc'
       );
+      const reasoningTexts = closeAllOpenReasoning(state.reasoningTexts, event.ts);
       return {
         ...state,
         events: appendTimelineEvent(state.events, event, mutate),
         settledCallIds,
+        reasoningTexts,
         toolCacheHint: null,
         ...(nextPartial !== state.partialToolCallArgs
           ? { partialToolCallArgs: nextPartial }
@@ -548,8 +554,10 @@ export function applyTimelineEvent(
         ts: event.ts,
         ...(existing?.diffStream ? { diffStream: existing.diffStream } : {})
       };
+      const reasoningTexts = closeAllOpenReasoning(state.reasoningTexts, event.ts);
       return {
         ...state,
+        reasoningTexts,
         partialToolCallArgs: {
           ...state.partialToolCallArgs,
           [event.callId]: entry

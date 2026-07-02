@@ -256,18 +256,21 @@ export type ToolData =
   }
   | {
     /**
-     * On-demand context packs — `list` enumerates loadable reference packs,
-     * `load` returns a pack body into the run's history.
+     * On-demand Agent Skills — `list` enumerates skills, `load` returns a body.
      */
     tool: 'context';
     action: 'list' | 'load';
-    /** For `load`: the pack id that was requested. */
+    /** For `load`: the skill name that was requested. */
+    skill?: string;
+    /** Legacy alias — same as skill for built-in packs. */
     pack?: string;
-    /** For `load`: true when the pack was already loaded earlier this run. */
+    /** Skill source when resolved. */
+    source?: string;
+    /** For `load`: true when the skill was already loaded earlier this run. */
     alreadyLoaded?: boolean;
     /** For `list`: true when the catalogue was already listed earlier this run. */
     alreadyListed?: boolean;
-    /** Markdown body the renderer can show on expand (catalogue or pack). */
+    /** Markdown body the renderer can show on expand (catalogue or skill). */
     preview?: string;
   }
   | {

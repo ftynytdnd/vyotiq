@@ -50,12 +50,12 @@ export function EditorCanvas() {
   return (
     <div className={cn(WORKBENCH_BODY_CLASS, 'vx-editor-canvas')}>
       {truncated ? (
-        <p className="shrink-0 px-3 py-1 text-meta text-warning">
+        <p className="shrink-0 px-3 py-1 text-row text-warning">
           File exceeds 512 KB — showing the first portion only.
         </p>
       ) : null}
       {staleOnDisk ? (
-        <div className="vx-editor-stale-banner flex shrink-0 items-center justify-between gap-2 px-3 py-1.5 text-meta">
+        <div className="vx-editor-stale-banner flex shrink-0 items-center justify-between gap-2 px-3 py-1.5 text-row">
           <span>Disk changed — reload to replace your buffer.</span>
           <Button variant="link" size="sm" onClick={() => void reloadFromDisk()}>
             Reload
@@ -63,7 +63,7 @@ export function EditorCanvas() {
         </div>
       ) : null}
       {activeTab?.agentStreaming ? (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle/20 bg-accent/5 px-3 py-1 text-meta text-text-secondary">
+        <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle/20 bg-accent/5 px-3 py-1 text-row text-text-secondary">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
           Agent editing…
         </div>
@@ -91,7 +91,7 @@ export function EditorCanvas() {
           dirty={dirty}
           lspEnabled={lspSettings.enabled}
           lspStatus={lsp.status}
-          onLspClick={() => openSettings('agent-behavior')}
+          onLspClick={() => openSettings('agent-behavior', { agentBehaviorSection: 'lsp' })}
         />
       ) : null}
     </div>

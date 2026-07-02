@@ -25,7 +25,7 @@ export function ToastHost() {
 
   return (
     <div
-      className="pointer-events-none fixed bottom-4 right-4 z-[1000] flex flex-col gap-2"
+      className="pointer-events-none fixed bottom-4 right-4 z-(--z-toast) flex flex-col gap-2"
       aria-live="polite"
       aria-atomic="false"
     >

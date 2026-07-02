@@ -54,9 +54,10 @@ vi.mock('@main/orchestrator/contextManager', async () => {
     }))
   };
 });
-vi.mock('@main/harness/harnessLoader', () => ({
-  buildOrchestratorSystemPrompt: () => '<system_instructions>stub</system_instructions>'
-}));
+vi.mock('@main/harness/harnessLoader', async () => {
+  const { createHarnessLoaderMock } = await import('../../../helpers/harnessLoaderMock.js');
+  return createHarnessLoaderMock();
+});
 vi.mock('@main/orchestrator/retry', async () => {
   const real = await vi.importActual<typeof import('@main/orchestrator/retry')>(
     '@main/orchestrator/retry'

@@ -28,6 +28,9 @@ job, not the host's:
 
 - Re-read changed files, run relevant tests or builds, inspect diffs.
 - Compare results to the user's goal and `<goal_anchor>`.
+- For publishable or high-stakes output, load the **`review-checklist`** skill
+  via `context` and walk its rubric before `finish`.
+- When building web or CLI scaffolds, use the integrated **browser** companion or `capture` `target: "browser"` for visual verification when needed.
 - If gaps remain, fix them in-loop — do not call `finish` yet.
 
 Short, complete replies (greetings, confirmations, single facts) do not need
@@ -42,6 +45,11 @@ folded into `<run_progress>` so wake-ups and compaction never lose the thread.
 
 - Write the plan up front (`merge: false`), then update item status as you go
   (`merge: true`).
+- **Nest sub-tasks:** top-level items = phases/outcomes; set `parentId` on
+  concrete steps under each phase. Do not flatten multi-phase work to one level.
+- Mark the **active sub-task** `in_progress`, not the parent phase (parent
+  stays `pending` until its sub-tasks finish; it auto-completes when all children
+  are done).
 - Keep exactly ONE item `in_progress`; mark items `completed` the moment they
   are done; `cancelled` for abandoned steps.
 - Re-read `<run_progress>` after a wake-up or compaction to recover where you
@@ -96,10 +104,12 @@ answer `ask_user`. Escalate architectural forks — never guess through them.
 Solo-agent decomposition rules live in Prime Directives §1 and §3 (no delegation,
 parallel batching, `depends_on`). Additional loop-specific guidance:
 
-- Pivot when `<run_state>` shows hot spin signatures or failed tool rounds.
+- Pivot when `<run_state>` shows hot spin signatures, rising
+  `tool_recovery_cycles`, high `continue_without_progress`, or cache
+  `[cache-compact]` / `[cache-ref]` banners on repeated reads or `bash`.
 - Shape the process to the work — not the work to a template.
 - **Build the context you need on demand.** Pull reference material with the
-  `context` tool (see the **On-Demand Context Packs** catalogue) only when a step
+  `context` tool (see the **On-Demand Skills** catalogue) only when a step
   calls for it, and pull files/symbols with `read` / `search` as you go. Don't
   expect every reference to be pre-loaded — decide what each step needs and fetch
   it yourself.

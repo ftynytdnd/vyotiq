@@ -7,13 +7,15 @@ import { WorkbenchShell } from './components/workbench/WorkbenchShell.js';
 import {
   closeActiveWorkbenchFocus,
   cycleWorkbenchFocus,
+  focusWorkbenchTab,
   workbenchIsActive
 } from './components/workbench/workbenchShared.js';
 import { ChatPage } from './pages/ChatPage.js';
 import { SettingsFullView } from './components/settings/SettingsFullView.js';
 import { ToastHost } from './components/toast/ToastHost.js';
 import { VectorReindexModal } from './components/settings/VectorReindexModal.js';
-import { PromptDialog } from './components/ui/PromptDialog.js';
+import { ElevatedWorkspaceLauncher } from './components/workspace/ElevatedWorkspaceLauncher.js';
+import { openWorkspaceLauncher } from './store/useWorkspaceLauncherStore.js';
 import {
   selectEnabledProviderIds,
   useProviderStore
@@ -26,12 +28,15 @@ import {
   useConversationsStore
 } from './store/useConversationsStore.js';
 import { useUiStore } from './store/useUiStore.js';
+import { useDockSchedulesStore } from './store/useDockSchedulesStore.js';
+import { useWorkbenchPanelsStore } from './store/useWorkbenchPanelsStore.js';
+import { useSourceControlStore } from './store/useSourceControlStore.js';
 import { useTimelineUiStore } from './store/useTimelineUiStore.js';
 import { useAppViewStore, type SettingsSectionId } from './store/useAppViewStore.js';
 import { vyotiq } from './lib/ipc.js';
 import { persistSettingsPatch } from './lib/persistSettingsPatch.js';
-import { logger } from './lib/logger.js';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts.js';
+import { useGitHubGitProgress } from './hooks/useGitHubGitProgress.js';
 import { useCaptureFrameBridge } from './hooks/useCaptureFrameBridge.js';
 import { useDockEditorTreeSync } from './hooks/useDockEditorTreeSync.js';
 import {
@@ -48,8 +53,6 @@ import { resolveKeybindings, isMacPlatform } from './lib/resolveKeybindings.js';
 import { eventMatchesCombo } from '@shared/keybindings/defaultKeybindings.js';
 import { focusComposer } from './lib/focusComposer.js';
 import { registerEscapeLayer } from './lib/escapeLayerStack.js';
-
-const log = logger.child('app');
 
 export default function App() {
   const refreshProviders = useProviderStore((s) => s.refresh);
@@ -87,8 +90,6 @@ export default function App() {
   );
   const [activeMapHydrated, setActiveMapHydrated] = useState(false);
 
-  const [workspacePathOpen, setWorkspacePathOpen] = useState(false);
-  const [workspacePathError, setWorkspacePathError] = useState<string | null>(null);
   const { appView, settingsSection, openSettings, toggleSettings, closeSettings } =
     useAppViewStore(
       useShallow((s) => ({
@@ -328,26 +329,22 @@ export default function App() {
     openSettings(section);
   };
 
-  const pickWorkspace = useWorkspaceStore((s) => s.pick);
-  const setWorkspace = useWorkspaceStore((s) => s.set);
-
-  const openSetWorkspacePath = () => {
-    setWorkspacePathError(null);
-    setWorkspacePathOpen(true);
+  const openWorkspaceLauncherShortcut = () => {
+    if (useAppViewStore.getState().view === 'settings') {
+      openWorkspaceLauncher('all', 'elevated');
+      return;
+    }
+    useUiStore.getState().setDockExpanded(true);
+    openWorkspaceLauncher('all', 'inline');
   };
 
-  const onSubmitWorkspacePath = async (raw: string) => {
-    const path = raw.trim();
-    if (path.length === 0) return;
-    try {
-      await setWorkspace(path);
-      setWorkspacePathOpen(false);
-      setWorkspacePathError(null);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      log.warn('workspace set by path failed', { path, err: msg });
-      setWorkspacePathError(msg);
+  const openSetWorkspacePath = () => {
+    if (useAppViewStore.getState().view === 'settings') {
+      openWorkspaceLauncher('local', 'elevated');
+      return;
     }
+    useUiStore.getState().setDockExpanded(true);
+    openWorkspaceLauncher('local', 'inline');
   };
 
   // File menu actions are wired here (the only place that knows the
@@ -356,9 +353,13 @@ export default function App() {
     newConversation: () => {
       void beginNewChatFromDock();
     },
-    openWorkspace: () => void pickWorkspace(),
+    openWorkspace: () => void openWorkspaceLauncherShortcut(),
     setWorkspacePath: openSetWorkspacePath,
     openSettings: () => toggleSettings(),
+    openScheduledRuns: () => {
+      useUiStore.getState().setDockExpanded(true);
+      useDockSchedulesStore.getState().setOpen(true);
+    },
     quit: () => void vyotiq.window.close(),
     chatActionsEnabled: !settingsOpen
   };
@@ -378,6 +379,7 @@ export default function App() {
   // `MenuItem` row does, so menu click and keyboard shortcut share
   // one wire path.
   useCaptureFrameBridge();
+  useGitHubGitProgress();
   useDockEditorTreeSync(activeWorkspaceId, activeWorkspacePath);
   useGlobalShortcuts({
     newConversation: fileActions.newConversation,
@@ -386,6 +388,13 @@ export default function App() {
     toggleTerminal: () => toggleTerminal(activeWorkspaceId),
     blockChatActions: () => useAppViewStore.getState().view === 'settings',
     blockTerminal: () => useAppViewStore.getState().view === 'settings',
+    companionPanels: () => useWorkbenchPanelsStore.getState().setOpen(true),
+    blockCompanionPanels: () => useAppViewStore.getState().view === 'settings',
+    sourceControl: () => {
+      if (activeWorkspaceId) useSourceControlStore.getState().toggle(activeWorkspaceId);
+    },
+    blockSourceControl: () =>
+      useAppViewStore.getState().view === 'settings' || !activeWorkspaceId,
     saveEditor: () => {
       const editor = useEditorStore.getState();
       if (!editor.open || !editor.activeFilePath || !selectEditorDirty(editor)) return;
@@ -447,12 +456,10 @@ export default function App() {
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <LeftDock
           settingsMode={settingsOpen}
-          onOpenWorkspace={() => void pickWorkspace()}
           onSetWorkspacePath={openSetWorkspacePath}
         />
         <TitleBar
           fileActions={fileActions}
-          onOpenSettings={() => openSettingsSection()}
           onBackFromSettings={closeSettings}
         />
         <main
@@ -465,7 +472,7 @@ export default function App() {
         >
           <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
             {settingsOpen ? (
-              <SettingsFullView initialSection={settingsSection} />
+              <SettingsFullView />
             ) : (
               <WorkbenchShell>
                 <ChatPage onOpenProviders={() => openSettingsSection('providers')} />
@@ -474,28 +481,7 @@ export default function App() {
           </div>
         </main>
       </div>
-      <PromptDialog
-          open={workspacePathOpen}
-          variant="workspacePath"
-          title="Set Workspace by Path"
-          message={
-            workspacePathError
-              ? `Could not set that workspace: ${workspacePathError}\n\nChoose another folder, pick a recent path, or paste an absolute path.`
-              : 'Choose a folder or paste an absolute path. Agent V\'s tools will be sandboxed inside it.'
-          }
-          placeholder={
-            navigator.userAgent.toLowerCase().includes('windows')
-              ? 'C:\\Users\\you\\project'
-              : '/Users/you/project'
-          }
-          confirmLabel="Set workspace"
-          validate={(v) => (v.length === 0 ? 'Path cannot be empty.' : null)}
-          onSubmit={(v) => void onSubmitWorkspacePath(v)}
-          onCancel={() => {
-            setWorkspacePathOpen(false);
-            setWorkspacePathError(null);
-          }}
-        />
+      <ElevatedWorkspaceLauncher />
       <ToastHost />
       <VectorReindexModal />
     </div>

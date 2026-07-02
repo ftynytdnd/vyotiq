@@ -16,6 +16,7 @@ interface SettingsStore {
   initialLoadDone: boolean;
   refresh: () => Promise<void>;
   setDefaultModel: (sel: ModelSelection) => Promise<void>;
+  setAuthoringModel: (sel: ModelSelection | null) => Promise<void>;
   /**
    * Persist the per-workspace last-active conversation map. Called by
    * `useConversationsStore` after every `select` / `bindActive` /
@@ -63,6 +64,8 @@ export const EMPTY_LAST_MODEL_BY_WORKSPACE: Readonly<Record<string, ModelSelecti
   Object.freeze({});
 export const EMPTY_WORKSPACE_SPEND_USD: Readonly<Record<string, WorkspaceSpendEntry>> =
   Object.freeze({});
+export const EMPTY_AUTO_MODEL_BY_WORKSPACE: Readonly<Record<string, boolean>> =
+  Object.freeze({});
 
 export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
   settings: {},
@@ -97,6 +100,13 @@ export const useSettingsStore = create<SettingsStore>((setState, getState) => ({
 
   setDefaultModel: async (sel) => {
     const updated = await vyotiq.settings.set({ defaultModel: sel });
+    setState({ settings: { ...getState().settings, ...updated } });
+  },
+
+  setAuthoringModel: async (sel) => {
+    const updated = await vyotiq.settings.set(
+      sel === null ? { authoringModel: null } : { authoringModel: sel }
+    );
     setState({ settings: { ...getState().settings, ...updated } });
   },
 

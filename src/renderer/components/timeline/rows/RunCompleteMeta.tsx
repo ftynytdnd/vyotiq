@@ -2,22 +2,19 @@
  * Run-complete metadata line — duration, optional stats, tokens, wall clock.
  */
 
-import { formatTokenCountWithUnit } from '../../../lib/formatTokens.js';
-import type { TokenUsageAggregate } from '../reducer/types.js';
 import { cn } from '../../../lib/cn.js';
 import {
   timelineRunCompleteInlineClassName,
   timelineRunCompleteRowClassName
 } from '../shared/rowStyles.js';
-import { estimateCostForUsage, resolveModelForPrompt } from '../../../lib/workspaceSpend.js';
 import { useConversationsStore } from '../../../store/useConversationsStore.js';
 import { useProviderStore } from '../../../store/useProviderStore.js';
 import { useChatStore } from '../../../store/useChatStore.js';
-import { formatDuration, formatWallClock } from './runCompleteFormat.js';
+import type { TokenUsageAggregate } from '../reducer/types.js';
 import {
-  LONG_TURN_WARN_MS,
-  VERY_LONG_TURN_WARN_MS
-} from '@shared/timeline/longTurnThresholds.js';
+  buildTurnMetaLabels,
+  resolveTurnModelForCost
+} from './runTurnMetaParts.js';
 
 export interface RunCompleteMetaProps {
   promptId: string;
@@ -27,6 +24,7 @@ export interface RunCompleteMetaProps {
   editCount?: number;
   fileCount?: number;
   commandCount?: number;
+  continued?: boolean;
   /** Inline beside assistant copy — omits row marker styling. */
   inline?: boolean;
   className?: string;
@@ -40,6 +38,7 @@ export function RunCompleteMeta({
   editCount,
   fileCount,
   commandCount,
+  continued = false,
   inline = false,
   className
 }: RunCompleteMetaProps) {
@@ -49,70 +48,19 @@ export function RunCompleteMeta({
   const conversationMeta = useConversationsStore((s) =>
     conversationId ? (s.list.find((m) => m.id === conversationId) ?? null) : null
   );
-  const modelForCost = resolveModelForPrompt(
-    events,
-    promptId,
-    conversationMeta?.lastProviderId && conversationMeta?.lastModelId
-      ? {
-          providerId: conversationMeta.lastProviderId,
-          modelId: conversationMeta.lastModelId
-        }
-      : null
-  );
-
-  const tokenLabel =
-    usage && usage.cumulative.totalTokens > 0
-      ? formatTokenCountWithUnit(usage.cumulative.totalTokens)
-      : null;
-
-  const cachedTokens = usage?.cumulative.cachedPromptTokens ?? 0;
-  const uncachedTokens = usage?.cumulative.uncachedPromptTokens ?? 0;
-  const cacheWriteTokens = usage?.cumulative.cacheCreationTokens ?? 0;
-  const cacheParts: string[] = [];
-  if (cachedTokens > 0) {
-    cacheParts.push(`${formatTokenCountWithUnit(cachedTokens)} cached`);
-  }
-  if (uncachedTokens > 0) {
-    cacheParts.push(`${formatTokenCountWithUnit(uncachedTokens)} uncached`);
-  }
-  if (cacheWriteTokens > 0) {
-    cacheParts.push(`${formatTokenCountWithUnit(cacheWriteTokens)} cache write`);
-  }
-  const cacheLabel = cacheParts.length > 0 ? cacheParts.join(' · ') : null;
-
-  const costLabel =
-    usage && modelForCost
-      ? estimateCostForUsage(modelForCost, providers, usage.cumulative)
-      : null;
-
-  const stats: string[] = [];
-  if (typeof editCount === 'number' && editCount > 0) {
-    stats.push(`${editCount} edit${editCount === 1 ? '' : 's'}`);
-  }
-  if (typeof fileCount === 'number' && fileCount > 0) {
-    stats.push(`${fileCount} file${fileCount === 1 ? '' : 's'}`);
-  }
-  if (typeof commandCount === 'number' && commandCount > 0) {
-    stats.push(`${commandCount} command${commandCount === 1 ? '' : 's'}`);
-  }
-
-  const durationLabel = formatDuration(durationMs);
-  const timeLabel = formatWallClock(completedAt);
-  const tokenTitle = tokenLabel ? `${tokenLabel} used this turn` : null;
-  const veryLongTurn = durationMs >= VERY_LONG_TURN_WARN_MS;
-  const longTurn = durationMs >= LONG_TURN_WARN_MS;
-  const durationTitle = veryLongTurn
-    ? 'This turn took unusually long — often approval waits or connection delays.'
-    : longTurn
-      ? 'This turn took longer than usual.'
-      : undefined;
-  const metaParts: string[] = [`done in ${durationLabel}`];
-  if (costLabel) metaParts.push(`~${costLabel}`);
-  if (tokenLabel) metaParts.push(tokenLabel);
-  if (cacheLabel) metaParts.push(cacheLabel);
-  metaParts.push(timeLabel);
-  if (stats.length > 0) metaParts.unshift(stats.join(' · '));
-  const ariaLabel = metaParts.join(' · ');
+  const modelForCost = resolveTurnModelForCost(events, promptId, conversationMeta);
+  const meta = buildTurnMetaLabels({
+    durationMs,
+    completedAt,
+    usage,
+    modelForCost,
+    providers,
+    continued,
+    includeCacheWrite: true,
+    editCount,
+    fileCount,
+    commandCount
+  });
 
   return (
     <div
@@ -124,11 +72,11 @@ export function RunCompleteMeta({
       )}
       data-row-kind="run-complete"
       data-run-complete-placement={inline ? 'inline' : 'footer'}
-      aria-label={ariaLabel}
+      aria-label={meta.ariaLabel}
     >
-      {stats.length > 0 ? (
+      {meta.stats.length > 0 ? (
         <>
-          <span>{stats.join(' · ')}</span>
+          <span>{meta.stats.join(' · ')}</span>
           <span aria-hidden className="text-text-faint/70">
             {' · '}
           </span>
@@ -138,35 +86,35 @@ export function RunCompleteMeta({
         done in{' '}
         <span
           className={cn(
-            veryLongTurn && 'text-warning',
-            !veryLongTurn && longTurn && 'text-text-faint'
+            meta.veryLongTurn && 'text-warning',
+            !meta.veryLongTurn && meta.longTurn && 'text-text-faint'
           )}
-          title={durationTitle}
+          title={meta.durationTitle}
         >
-          {durationLabel}
+          {meta.durationLabel}
         </span>
       </span>
-      {costLabel ? (
+      {meta.costLabel ? (
         <>
           <span aria-hidden className="text-text-faint/70">
             {' · '}
           </span>
           <span className="font-mono tabular-nums text-text-faint" title="Estimated API cost">
-            ~{costLabel}
+            ~{meta.costLabel}
           </span>
         </>
       ) : null}
-      {tokenLabel !== null ? (
+      {meta.tokenLabel !== null ? (
         <>
           <span aria-hidden className="text-text-faint/70">
             {' · '}
           </span>
-          <span className="font-mono tabular-nums" title={tokenTitle ?? undefined}>
-            {tokenLabel}
+          <span className="font-mono tabular-nums" title={meta.tokenTitle ?? undefined}>
+            {meta.tokenLabel}
           </span>
         </>
       ) : null}
-      {cacheLabel !== null ? (
+      {meta.cacheLabel !== null ? (
         <>
           <span aria-hidden className="text-text-faint/70">
             {' · '}
@@ -175,7 +123,7 @@ export function RunCompleteMeta({
             className="font-mono tabular-nums text-text-faint"
             title="Prompt tokens served from provider cache (discounted input)"
           >
-            {cacheLabel}
+            {meta.cacheLabel}
           </span>
         </>
       ) : null}
@@ -183,8 +131,16 @@ export function RunCompleteMeta({
         {' · '}
       </span>
       <time dateTime={new Date(completedAt).toISOString()} className="tabular-nums text-text-faint">
-        {timeLabel}
+        {meta.timeLabel}
       </time>
+      {continued ? (
+        <>
+          <span aria-hidden className="text-text-faint/70">
+            {' · '}
+          </span>
+          <span className="text-text-faint">continued</span>
+        </>
+      ) : null}
     </div>
   );
 }

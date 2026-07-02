@@ -16,6 +16,8 @@
  *     meta-rules.md
  *     memory-last-referenced.json
  *     scheduled-runs.json
+     github.accounts.encrypted.json
+     repos/
  *     models-dev-catalog.json
  *     conversations/
  *     checkpoints/
@@ -88,6 +90,14 @@ export function visionCacheDir(): string {
 
 export function harnessOverridesDir(): string {
   return vyotiqDataPath('harness-overrides');
+}
+
+export function globalSkillsDir(): string {
+  return vyotiqDataPath('skills');
+}
+
+export function skillOverridesDir(): string {
+  return vyotiqDataPath('skill-overrides');
 }
 
 export function scheduledRunsFilePath(): string {

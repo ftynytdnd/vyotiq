@@ -53,7 +53,11 @@ Targets: \`browser\` (Globe tab), \`window\` (Vyotiq UI), \`screen\` (requires \
     const id = randomUUID();
     const started = Date.now();
     const a = args as Partial<CaptureArgs>;
-    if (a.target !== 'browser' && a.target !== 'screen' && a.target !== 'window') {
+    if (
+      a.target !== 'browser' &&
+      a.target !== 'screen' &&
+      a.target !== 'window'
+    ) {
       return {
         id,
         name: 'capture',

@@ -17,7 +17,7 @@ export function CapturePanel() {
   };
 
   return (
-    <ShellSection title="Screen capture" className="vx-capture-settings-panel">
+    <ShellSection className="vx-capture-settings-panel">
       <ShellCaption>
         Screen and window capture is user-initiated from the composer camera button only — Vyotiq
         never captures your display in the background. Captures are saved under{' '}

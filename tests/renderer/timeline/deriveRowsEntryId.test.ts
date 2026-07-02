@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { deriveRows } from '@renderer/components/timeline/reducer/deriveRows';
+import { deriveDisplayRows, deriveRows } from '@renderer/components/timeline/reducer/deriveRows';
 import { normalizeLegacyTranscript } from '@shared/transcript/normalizeLegacyTranscript';
 import type { TimelineEvent } from '@shared/types/chat';
 
@@ -25,11 +25,11 @@ describe('deriveRows — file-edit entryId', () => {
       }
     ];
 
-    const rows = deriveRows(events);
-    const group = rows.find((r) => r.kind === 'file-edit-group');
-    expect(group).toBeDefined();
-    if (group?.kind !== 'file-edit-group') return;
-    expect(group.children[0]?.entryId).toBe('checkpoint-entry-1');
+    const rows = deriveDisplayRows(events);
+    const card = rows.find((r) => r.kind === 'file-edit-card');
+    expect(card).toBeDefined();
+    if (card?.kind !== 'file-edit-card') return;
+    expect(card.entryId).toBe('checkpoint-entry-1');
   });
 
   it('aggregates edit and file counts on run-complete', () => {

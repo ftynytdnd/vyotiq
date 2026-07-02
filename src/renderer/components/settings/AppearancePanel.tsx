@@ -7,7 +7,7 @@ import {
 } from '../../lib/theme.js';
 import { persistSettingsPatch } from '../../lib/persistSettingsPatch.js';
 import { useToastStore } from '../../store/useToastStore.js';
-import { ShellFieldLabel, ShellRow, ShellRowSplit, ShellSection } from '../ui/ShellSection.js';
+import { ShellCaption, ShellFieldLabel, ShellRow, ShellRowSplit, ShellSection } from '../ui/ShellSection.js';
 import { Tabs, type TabItem } from '../ui/Tabs.js';
 import { SettingsSwitchRow } from './SettingsSwitchRow.js';
 
@@ -44,6 +44,10 @@ export function AppearancePanel() {
 
   return (
     <ShellSection>
+      <ShellCaption>
+        Theme, spacing density, and motion apply across the shell — chat, dock, workbench, and
+        settings.
+      </ShellCaption>
       <ShellRow>
         <ShellRowSplit
           main={<ShellFieldLabel>Color scheme</ShellFieldLabel>}

@@ -106,9 +106,43 @@ function withDependsOn(schema: Tool['schema']): Tool['schema'] {
  *
  *  Action tools get an injected optional `depends_on` parameter so the
  *  model can declare cross-call ordering (see `toolDependencyBatches.ts`). */
-export function toolSchemasFor(names: readonly string[]) {
+export function toolSchemasFor(names: readonly string[], opts?: { contextSkillNames?: string[] }) {
   const allowed = new Set(names);
   return listTools()
     .filter((t) => allowed.has(t.name))
-    .map((t) => (DEPENDS_ON_EXCLUDED.has(t.name) ? t.schema : withDependsOn(t.schema)));
+    .map((t) => {
+      const schema =
+        t.name === 'context' && opts?.contextSkillNames?.length
+          ? patchContextToolSchema(t.schema, opts.contextSkillNames)
+          : t.schema;
+      return DEPENDS_ON_EXCLUDED.has(t.name) ? schema : withDependsOn(schema);
+    });
+}
+
+function patchContextToolSchema(
+  schema: Tool['schema'],
+  skillNames: string[]
+): Tool['schema'] {
+  const params = schema.function.parameters as Record<string, unknown>;
+  const properties = {
+    ...((params.properties as Record<string, unknown> | undefined) ?? {}),
+    skill: {
+      type: 'string',
+      enum: skillNames,
+      description:
+        'For action="load": skill name from the in-prompt catalogue or action="list".'
+    },
+    pack: {
+      type: 'string',
+      enum: skillNames,
+      description: 'Deprecated alias for skill (legacy context-pack ids).'
+    }
+  };
+  return {
+    type: 'function',
+    function: {
+      ...schema.function,
+      parameters: { ...params, properties }
+    }
+  };
 }

@@ -16,7 +16,6 @@ const fileActions = {
 
 const titlebarProps = {
   fileActions,
-  onOpenSettings: () => {},
   onBackFromSettings: () => {}
 };
 
@@ -26,7 +25,8 @@ describe('TitleBar — shell chrome', () => {
 
     expect(screen.getByRole('button', { name: 'Menu' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Minimize' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Settings' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Companion panels' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Keyboard shortcuts' })).toBeNull();
   });
 });

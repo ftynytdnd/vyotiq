@@ -42,9 +42,14 @@ interface PtySession {
   agentInterruptPending: boolean;
   /** Per-capture handlers for concurrent agent bash in the same session. */
   agentCaptureHandlers: Set<(data: string) => void>;
+  /** Wall-clock ms when the primary session was last used (LRU eviction). */
+  lastTouchedAt: number;
 }
 
 const sessions = new Map<string, PtySession>();
+
+/** Retain primary PTYs for at most this many workspaces (always-on agent cap). */
+const MAX_RETAINED_WORKSPACE_PRIMARIES = 12;
 
 interface PtyDataEvent {
   workspaceId: string;
@@ -113,8 +118,7 @@ function buildWindowsAgentScript(command: string): string {
     `Invoke-Expression $env:VYOTIQ_AGENT_CMD; ` +
     `$vyotiqEc = $LASTEXITCODE; ` +
     `Write-Output ('${PTY_CMD_END_PREFIX}' + $vyotiqEc); ` +
-    `Remove-Item Env:VYOTIQ_AGENT_CMD; ` +
-    `exit $vyotiqEc`
+    `Remove-Item Env:VYOTIQ_AGENT_CMD`
   );
 }
 
@@ -184,7 +188,8 @@ function spawnSession(
     agentBusy: false,
     agentWaiters: [],
     agentInterruptPending: false,
-    agentCaptureHandlers: new Set()
+    agentCaptureHandlers: new Set(),
+    lastTouchedAt: Date.now()
   };
   attachProcHandlers(session);
   sessions.set(session.sessionId, session);
@@ -206,6 +211,27 @@ export function killWorkspacePty(workspaceId: string): void {
   }
 }
 
+function primarySessionsByWorkspace(): Map<string, PtySession> {
+  const map = new Map<string, PtySession>();
+  for (const session of sessions.values()) {
+    if (session.primary) map.set(session.workspaceId, session);
+  }
+  return map;
+}
+
+function enforcePrimaryPtyCap(protectedWorkspaceId: string): void {
+  const byWorkspace = primarySessionsByWorkspace();
+  if (byWorkspace.size <= MAX_RETAINED_WORKSPACE_PRIMARIES) return;
+  const victims = [...byWorkspace.entries()]
+    .filter(([id]) => id !== protectedWorkspaceId)
+    .sort((a, b) => a[1].lastTouchedAt - b[1].lastTouchedAt);
+  for (const [workspaceId] of victims) {
+    if (byWorkspace.size <= MAX_RETAINED_WORKSPACE_PRIMARIES) break;
+    killWorkspacePty(workspaceId);
+    byWorkspace.delete(workspaceId);
+  }
+}
+
 /** Ensure the workspace primary session exists and return it. */
 export function ensureWorkspacePty(
   workspaceId: string,
@@ -213,11 +239,14 @@ export function ensureWorkspacePty(
 ): TerminalSessionMeta {
   const existing = primarySessionFor(workspaceId);
   if (existing) {
+    existing.lastTouchedAt = Date.now();
     if (existing.workspacePath === workspacePath) return toMeta(existing);
     // Workspace path changed (moved/remounted) — recycle every session.
     killWorkspacePty(workspaceId);
   }
-  return toMeta(spawnSession(workspaceId, workspacePath, true));
+  const meta = toMeta(spawnSession(workspaceId, workspacePath, true));
+  enforcePrimaryPtyCap(workspaceId);
+  return meta;
 }
 
 /** Spawn an additional, non-primary user session for a workspace. */
@@ -428,3 +457,8 @@ export async function runAgentCommandInPty(
 
 /** Test-only: inspect agent command wrapping for the shared PTY path. */
 export const __test_wrapAgentCommand = wrapAgentCommand;
+
+/** Test-only: decoded Windows agent script body (without ScriptBlock wrapper). */
+export function __test_buildWindowsAgentScript(command: string): string {
+  return buildWindowsAgentScript(command);
+}

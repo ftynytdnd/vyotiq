@@ -93,7 +93,7 @@ describe('Timeline inline column alignment', () => {
 
     const { container } = render(<Timeline />);
 
-    const agentColumn = container.querySelector('.timeline-agent-column');
+    const agentColumn = container.querySelector('.vx-timeline-agent-column');
 
     expect(agentColumn).not.toBeNull();
     expect(agentColumn?.className ?? '').toContain('vx-timeline-agent-column');
@@ -108,7 +108,7 @@ describe('Timeline inline column alignment', () => {
     const assistantRow = container.querySelector('[data-row-kind="assistant-text"]');
 
     expect(assistantRow).not.toBeNull();
-    expect(assistantRow?.closest('.timeline-agent-column')).not.toBeNull();
+    expect(assistantRow?.closest('.vx-timeline-agent-column')).not.toBeNull();
     expect(container.textContent ?? '').not.toContain('Delegates');
   });
 

@@ -117,6 +117,27 @@ export function StreamingMarkdownBody({
   );
 }
 
+function streamHeadingClassName(level: number): string {
+  const base = 'vx-timeline-stream-heading vyotiq-stream-heading font-medium tracking-normal';
+  switch (level) {
+    case 1:
+      return cn(base, 'mt-3 mb-1.5 text-[1.05rem] text-text-primary');
+    case 2:
+      return cn(base, 'mt-3 mb-1.5 text-[1rem] text-text-primary');
+    case 3:
+      return cn(base, 'mt-2 mb-1 text-[1rem] text-text-primary');
+    case 4:
+      return cn(base, 'mt-2 mb-1 text-[0.92rem] text-text-secondary');
+    case 5:
+    case 6:
+      return cn(base, 'mt-2 mb-1 text-chat-meta text-text-primary');
+    default: {
+      const _exhaustive: never = level as never;
+      return _exhaustive;
+    }
+  }
+}
+
 const StreamBlock = memo(
   function StreamBlock({ block, isTail }: { block: StreamingBlock; isTail: boolean }) {
     switch (block.kind) {
@@ -126,10 +147,7 @@ const StreamBlock = memo(
         return createElement(
           tag,
           {
-            className: cn(
-              'vx-timeline-stream-heading vyotiq-stream-heading font-medium tracking-normal text-text-primary',
-              level <= 2 ? 'mt-3 mb-1.5 text-row' : 'mt-2 mb-1 text-chat-meta'
-            )
+            className: streamHeadingClassName(level)
           },
           <InlineSpans spans={block.spans} />
         );

@@ -85,3 +85,18 @@ export async function touchScheduledRun(id: string, lastRunAt: number): Promise<
   };
   await persist(runs);
 }
+
+export async function disableScheduledRun(id: string): Promise<boolean> {
+  const runs = await listScheduledRuns();
+  const idx = runs.findIndex((r) => r.id === id);
+  if (idx < 0) return false;
+  const run = runs[idx]!;
+  runs[idx] = {
+    ...run,
+    enabled: false,
+    nextRunAt: undefined,
+    updatedAt: Date.now()
+  };
+  await persist(runs);
+  return true;
+}

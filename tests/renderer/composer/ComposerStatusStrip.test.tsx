@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { ComposerStatusStrip } from '@renderer/components/composer/ComposerStatusStrip';
 import { useChatStore } from '@renderer/store/useChatStore';
+import { useProviderAccountStore } from '@renderer/store/useProviderAccountStore';
+import { useProviderStore } from '@renderer/store/useProviderStore';
 import { INITIAL_TIMELINE_STATE } from '@renderer/components/timeline/reducer/types';
 
 beforeEach(() => {
@@ -15,6 +17,8 @@ beforeEach(() => {
     orchestratorUsage: undefined,
     events: []
   });
+  useProviderStore.setState({ providers: [] });
+  useProviderAccountStore.setState({ snapshots: {} });
 });
 
 describe('ComposerStatusStrip', () => {
@@ -83,6 +87,74 @@ describe('ComposerStatusStrip', () => {
     const hint = screen.getByRole('status', { name: /Send steers mid-run/i });
     expect(hint).toHaveAttribute('title', 'Send steers mid-run · Queue before finish');
     expect(hint).toHaveTextContent('Send steers mid-run · Queue before finish');
+  });
+
+  it('shows vision warning when images may not be analyzed', () => {
+    render(<ComposerStatusStrip visionWarning />);
+    expect(
+      screen.getByText(/Model may not support vision/i)
+    ).toBeInTheDocument();
+  });
+
+  it('hides healthy claude-code-proxy status in the composer', () => {
+    useProviderStore.setState({
+      providers: [
+        {
+          id: 'ccp',
+          name: 'Claude Code Proxy',
+          baseUrl: 'http://127.0.0.1:18765/v1',
+          apiKey: 'cursor-proxy',
+          notes: 'claude-code-proxy'
+        }
+      ]
+    });
+    useProviderAccountStore.setState({
+      snapshots: {
+        ccp: {
+          providerId: 'ccp',
+          fetchedAt: Date.now(),
+          status: 'ok',
+          hostKind: 'claude-code-proxy',
+          message: 'claude-code-proxy 0.0.21 · healthy · auth until 20 Aug 2026'
+        }
+      }
+    });
+
+    const { container } = render(
+      <ComposerStatusStrip model={{ providerId: 'ccp', modelId: 'cursor-composer-2.5-fast' }} />
+    );
+    expect(container.querySelector('.vx-composer-status-strip')).toBeNull();
+    expect(screen.queryByText(/claude-code-proxy/i)).toBeNull();
+  });
+
+  it('shows claude-code-proxy offline warning in the composer', () => {
+    useProviderStore.setState({
+      providers: [
+        {
+          id: 'ccp',
+          name: 'Claude Code Proxy',
+          baseUrl: 'http://127.0.0.1:18765/v1',
+          apiKey: 'cursor-proxy',
+          notes: 'claude-code-proxy'
+        }
+      ]
+    });
+    useProviderAccountStore.setState({
+      snapshots: {
+        ccp: {
+          providerId: 'ccp',
+          fetchedAt: Date.now(),
+          status: 'error',
+          hostKind: 'claude-code-proxy',
+          message: 'Local proxy offline — run ccp start'
+        }
+      }
+    });
+
+    render(<ComposerStatusStrip model={{ providerId: 'ccp', modelId: 'cursor-composer-2.5-fast' }} />);
+    expect(screen.getByText(/Local proxy offline/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Task Scheduler/i)).toBeNull();
+    expect(screen.getByRole('button', { name: /Start proxy/i })).toBeInTheDocument();
   });
 
   it('does not show run phase labels', () => {

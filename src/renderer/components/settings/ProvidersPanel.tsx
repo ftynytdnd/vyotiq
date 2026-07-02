@@ -6,6 +6,7 @@ import { useProviderAccountPollSource } from '../../lib/useProviderAccountPollSo
 import { ProviderRow } from './ProviderRow.js';
 import { AddProviderForm } from './AddProviderForm.js';
 import { DefaultModelRow } from './DefaultModelRow.js';
+import { AuthoringModelRow } from './AuthoringModelRow.js';
 import { LoadingHint } from '../ui/LoadingHint.js';
 import { Button } from '../ui/Button.js';
 import { Notice } from '../ui/Notice.js';
@@ -86,7 +87,9 @@ export function ProvidersPanel() {
 
   return (
     <ShellSection>
+      <h4 className="vx-section-head">Default model</h4>
       <DefaultModelRow />
+      <AuthoringModelRow />
 
       <ShellRow className="pt-0">
         <div className="flex w-full flex-wrap items-center justify-between gap-2">
@@ -128,7 +131,7 @@ export function ProvidersPanel() {
             <p className="text-row text-text-primary">
               Connect a model provider to start chatting.
             </p>
-            <Button variant="primary" onClick={() => setAddFormOpen(true)}>
+            <Button variant="accentFill" onClick={() => setAddFormOpen(true)}>
               Add provider
             </Button>
           </div>
@@ -163,7 +166,9 @@ export function ProvidersPanel() {
       )}
 
       {providers.length > 0 && (
-        <ShellRow className={cn('py-0')}>
+        <>
+          <h4 className="vx-section-head">Connected providers</h4>
+          <ShellRow className={cn('py-0')}>
           <div className="vx-settings-provider-block w-full">
             <div className="vx-settings-provider-master">
               <nav
@@ -190,7 +195,10 @@ export function ProvidersPanel() {
                 className="surface-shell vx-settings-provider-detail scrollbar-stealth"
               >
                 {selected ? (
-                  <ProviderRow key={selected.id} provider={selected} />
+                  <>
+                    <h4 className="vx-section-head mb-2">{selected.name}</h4>
+                    <ProviderRow key={selected.id} provider={selected} hideTitle />
+                  </>
                 ) : (
                   <p className="text-meta text-text-faint">Select a provider.</p>
                 )}
@@ -198,6 +206,7 @@ export function ProvidersPanel() {
             </div>
           </div>
         </ShellRow>
+        </>
       )}
     </ShellSection>
   );

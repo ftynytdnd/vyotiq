@@ -4,12 +4,8 @@ import {
   parseStreamingBlocks
 } from '@renderer/components/timeline/markdown/streamingMarkdown.js';
 import {
-  resolveLivePhaseHeadline,
-  isPhaseHeadlineLabel,
-  isGoldLivePhase,
   toolTitleClassName,
-  reasoningHeadlineClassName,
-  timelineLiveTurnClassName
+  reasoningHeadlineClassName
 } from '@renderer/components/timeline/shared/rowStyles.js';
 
 describe('parseInlineSpans', () => {
@@ -236,42 +232,11 @@ describe('parseStreamingBlocks', () => {
   });
 });
 
-describe('phase headline helpers', () => {
-  it('maps running-tool to Exploring', () => {
-    expect(resolveLivePhaseHeadline('running-tool', 'Running tool: read…')).toBe(
-      'Exploring'
-    );
-  });
-
-  it('maps awaiting-response to Starting…', () => {
-    expect(
-      resolveLivePhaseHeadline(
-        'awaiting-response',
-        'Awaiting first token from gemma4:31b…'
-      )
-    ).toBe('Starting…');
-  });
-
-  it('detects persisted Exploring dividers', () => {
-    expect(isPhaseHeadlineLabel('Exploring')).toBe(true);
-    expect(isPhaseHeadlineLabel('Spawning 2 workers')).toBe(false);
-  });
-
-  it('identifies gold live phases', () => {
-    expect(isGoldLivePhase('running-tool')).toBe(true);
-    expect(isGoldLivePhase('streaming-reasoning')).toBe(true);
-    expect(isGoldLivePhase('awaiting-response')).toBe(false);
-  });
-
+describe('tool title helpers', () => {
   it('styles in-flight tool titles with primary text', () => {
     expect(toolTitleClassName(true)).toContain('text-text-primary');
     expect(toolTitleClassName(false)).toContain('vx-row-label');
     expect(toolTitleClassName(true)).not.toContain('vx-timeline-phase-live');
-  });
-
-  it('does not add live-turn chrome', () => {
-    expect(timelineLiveTurnClassName(true)).toBe('');
-    expect(timelineLiveTurnClassName(false)).toBe('');
   });
 
   it('styles streaming reasoning headlines consistently', () => {

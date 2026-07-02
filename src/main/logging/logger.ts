@@ -99,10 +99,18 @@ function shouldLog(level: LogLevel): boolean {
   return LEVEL_ORDER[level] >= LEVEL_ORDER[MIN_LEVEL];
 }
 
+function formatConsoleLine(text: string): string {
+  // Windows terminals often decode UTF-8 log bytes as cp1252, turning em dashes into mojibake.
+  if (process.platform === 'win32') {
+    return text.replace(/\u2014/g, ' - ');
+  }
+  return text;
+}
+
 function consoleSink(entry: LogEntry): void {
   const head = `[${entry.ts}] ${entry.level.toUpperCase().padEnd(5)} ${entry.scope}`;
   const tail = entry.fields && Object.keys(entry.fields).length > 0 ? ' ' + safeStringify(entry.fields) : '';
-  const text = `${head} ${entry.msg}${tail}`;
+  const text = formatConsoleLine(`${head} ${entry.msg}${tail}`);
   switch (entry.level) {
     case 'debug':
     case 'info':

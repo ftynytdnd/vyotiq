@@ -19,6 +19,7 @@ import { Popover } from '../../ui/Popover.js';
 import { AGENT_NAME } from '@shared/constants.js';
 import type { MentionRef } from '@shared/types/mention.js';
 import { detectAtToken } from '../atToken.js';
+import { detectSlashToken } from '../slashToken.js';
 import { cn } from '../../../lib/cn.js';
 import { appComposerTextareaClassName } from '../../ui/SurfaceShell.js';
 import {
@@ -40,6 +41,11 @@ import {
 import { getPlainCaretOffset, getPlainSelectionRange, placeCaretAtPlainOffset } from './mentionCaret.js';
 import { MentionPicker } from './MentionPicker.js';
 import { useMentionPicker, type MentionPickerRow } from './useMentionPicker.js';
+import { SkillSlashPicker } from '../skillSlash/SkillSlashPicker.js';
+import {
+  useSkillSlashPicker,
+  type SkillSlashPickerRow
+} from '../skillSlash/useSkillSlashPicker.js';
 import { removeComposerGhost, renderComposerGhost } from './composerGhost.js';
 import { useInlineCompletion } from '../../../lib/useInlineCompletion.js';
 import { useModelPickerCollisionPadding } from '../modelPicker/useModelPickerCollisionPadding.js';
@@ -113,6 +119,7 @@ export function MentionComposer({
   const editorRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<MentionDocument>(emptyMentionDocument());
   const atTokenRef = useRef<{ start: number; query: string } | null>(null);
+  const slashTokenRef = useRef<{ start: number; query: string } | null>(null);
   const syncingRef = useRef(false);
 
   const parsed = parseMentionDocument(value);
@@ -123,13 +130,23 @@ export function MentionComposer({
   const plainForToken = documentToPlainText(parsed);
   const caret = getPlainCaretOffset(editorRef.current, extractMentions(parsed));
   const atToken = caret !== null ? detectAtToken(plainForToken, caret) : null;
-  const [pickerDismissed, setPickerDismissed] = useState(false);
-  const pickerOpen = atToken !== null && !pickerDismissed;
+  const slashToken =
+    caret !== null && atToken === null ? detectSlashToken(plainForToken, caret) : null;
+  const [mentionPickerDismissed, setMentionPickerDismissed] = useState(false);
+  const [slashPickerDismissed, setSlashPickerDismissed] = useState(false);
+  const mentionPickerOpen = atToken !== null && !mentionPickerDismissed;
+  const slashPickerOpen = slashToken !== null && !slashPickerDismissed;
+  const pickerOpen = mentionPickerOpen || slashPickerOpen;
 
   const atTokenKey = atToken ? `${atToken.start}:${atToken.query}` : null;
   useEffect(() => {
-    setPickerDismissed(false);
+    setMentionPickerDismissed(false);
   }, [atTokenKey]);
+
+  const slashTokenKey = slashToken ? `${slashToken.start}:${slashToken.query}` : null;
+  useEffect(() => {
+    setSlashPickerDismissed(false);
+  }, [slashTokenKey]);
 
   const {
     rows,
@@ -146,12 +163,27 @@ export function MentionComposer({
     setFolderExpandedState,
     scrollFromKeyboardRef
   } = useMentionPicker({
-    open: pickerOpen,
+    open: mentionPickerOpen,
     query: atToken?.query ?? '',
     mentionedPaths
   });
 
+  const {
+    rows: slashRows,
+    loading: slashLoading,
+    activeIndex: slashActiveIndex,
+    activeRow: slashActiveRow,
+    setActiveIndex: setSlashActiveIndex,
+    moveActive: moveSlashActive,
+    selectActive: selectSlashActive,
+    scrollFromKeyboardRef: slashScrollFromKeyboardRef
+  } = useSkillSlashPicker({
+    open: slashPickerOpen,
+    query: slashToken?.query ?? ''
+  });
+
   atTokenRef.current = atToken;
+  slashTokenRef.current = slashToken;
 
   const collisionPadding = useModelPickerCollisionPadding();
   const dockExpanded = useUiStore((s) => s.dockExpanded);
@@ -169,7 +201,7 @@ export function MentionComposer({
     };
     frame = requestAnimationFrame(remeasure);
     return () => cancelAnimationFrame(frame);
-  }, [pickerOpen, dockExpanded, dockWidth, landing, rows.length, groups.length]);
+  }, [pickerOpen, dockExpanded, dockWidth, landing, rows.length, groups.length, slashRows.length]);
 
   const completion = useInlineCompletion({
     kind: 'composer',
@@ -375,6 +407,32 @@ export function MentionComposer({
     [emitChange, syncDomFromDoc]
   );
 
+  const handleSlashPickerPick = (row: SkillSlashPickerRow) => {
+    const plain = documentToPlainText(docRef.current);
+    const caretOffset =
+      getPlainCaretOffset(editorRef.current, extractMentions(docRef.current)) ?? plain.length;
+    const token = slashTokenRef.current;
+    if (!token) return;
+    const replacement = `/${row.name} `;
+    const next = splicePlainTextRange(
+      docRef.current,
+      token.start,
+      caretOffset,
+      replacement
+    );
+    docRef.current = next;
+    syncDomFromDoc(next);
+    emitChange(next);
+    requestAnimationFrame(() => {
+      editorRef.current?.focus();
+      placeCaretAtPlainOffset(
+        editorRef.current,
+        token.start + replacement.length,
+        next
+      );
+    });
+  };
+
   const handlePickerPick = (row: MentionPickerRow) => {
     if (row.kind === 'workspace-file' && row.path) {
       applyMentionRef(createFileMentionRef(row.path));
@@ -407,11 +465,11 @@ export function MentionComposer({
     return true;
   }, [acceptCompletionGhost, emitChange, syncDomFromDoc]);
 
-  const handlePickerKey = (e: KeyboardEvent<HTMLDivElement>): boolean => {
-    if (!pickerOpen) return false;
+  const handleMentionPickerKey = (e: KeyboardEvent<HTMLDivElement>): boolean => {
+    if (!mentionPickerOpen) return false;
     if (e.key === 'Escape') {
       e.preventDefault();
-      setPickerDismissed(true);
+      setMentionPickerDismissed(true);
       return true;
     }
     if (e.key === 'ArrowDown') {
@@ -445,6 +503,32 @@ export function MentionComposer({
         const row = selectActive();
         if (row) handlePickerPick(row);
       }
+      return true;
+    }
+    return false;
+  };
+
+  const handleSlashPickerKey = (e: KeyboardEvent<HTMLDivElement>): boolean => {
+    if (!slashPickerOpen) return false;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setSlashPickerDismissed(true);
+      return true;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      moveSlashActive(1);
+      return true;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      moveSlashActive(-1);
+      return true;
+    }
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      const row = selectSlashActive();
+      if (row) handleSlashPickerPick(row);
       return true;
     }
     return false;
@@ -517,9 +601,9 @@ export function MentionComposer({
   return (
     <div className="relative min-w-0 flex-1">
       <Popover
-        open={pickerOpen}
+        open={mentionPickerOpen}
         onClose={() => {
-          setPickerDismissed(true);
+          setMentionPickerDismissed(true);
         }}
         triggerRef={editorTriggerRef}
         anchorRef={anchorRef}
@@ -537,7 +621,7 @@ export function MentionComposer({
         className="vx-mention-picker-popover"
       >
         <MentionPicker
-          open={pickerOpen}
+          open={mentionPickerOpen}
           query={atToken?.query ?? ''}
           groups={groups}
           rows={rows}
@@ -550,7 +634,42 @@ export function MentionComposer({
           onPick={handlePickerPick}
           onToggleFolder={toggleFolder}
           onClose={() => {
-            setPickerDismissed(true);
+            setMentionPickerDismissed(true);
+          }}
+        />
+      </Popover>
+      <Popover
+        open={slashPickerOpen}
+        onClose={() => {
+          setSlashPickerDismissed(true);
+        }}
+        triggerRef={editorTriggerRef}
+        anchorRef={anchorRef}
+        preferSide="top"
+        align={anchorRef ? 'fit' : 'start'}
+        anchorStrict={Boolean(anchorRef)}
+        collisionPadding={collisionPadding}
+        revision={popoverRevision}
+        offset={6}
+        zIndex={60}
+        fitMaxWidth={480}
+        widthMode="panel"
+        panelId={PANEL_IDS.MENTION_PICKER}
+        containScroll
+        className="vx-skill-slash-picker-popover"
+      >
+        <SkillSlashPicker
+          open={slashPickerOpen}
+          query={slashToken?.query ?? ''}
+          rows={slashRows}
+          activeRow={slashActiveRow}
+          loading={slashLoading}
+          activeIndex={slashActiveIndex}
+          scrollFromKeyboardRef={slashScrollFromKeyboardRef}
+          onActiveIndexChange={setSlashActiveIndex}
+          onPick={handleSlashPickerPick}
+          onClose={() => {
+            setSlashPickerDismissed(true);
           }}
         />
       </Popover>
@@ -640,7 +759,8 @@ export function MentionComposer({
           ) {
             return;
           }
-          if (handlePickerKey(e)) return;
+          if (handleMentionPickerKey(e)) return;
+          if (handleSlashPickerKey(e)) return;
           onKeyDown?.(e);
         }}
       />

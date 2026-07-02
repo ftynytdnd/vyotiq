@@ -1,6 +1,8 @@
 /** Shared constants and class strings for the left navigation dock. */
 
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
+import { useDockSchedulesStore } from '../../store/useDockSchedulesStore.js';
+import { useWorkspaceLauncherStore } from '../../store/useWorkspaceLauncherStore.js';
 import { useUiStore } from '../../store/useUiStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useConversationsStore } from '../../store/useConversationsStore.js';
@@ -41,8 +43,6 @@ export {
 } from '@shared/dock/dockWidth.js';
 
 export const DOCK_INSET_CLASS = 'flex min-h-0 flex-1 flex-col gap-1 px-1.5';
-
-export const DOCK_FOOTER_TOOLBAR_CLASS = 'px-1.5 py-0';
 
 /** Empty / loading copy — icon + muted text, no background box. */
 export const DOCK_EMPTY_STATE_CLASS =
@@ -138,11 +138,42 @@ export function dockTabActiveAttr(active: boolean): 'true' | 'false' {
   return active ? 'true' : 'false';
 }
 
+/** Expand dock and focus the workspace navigator. */
+export function openDockNavigator(): void {
+  useUiStore.getState().setDockExpanded(true);
+}
+
+/** Expand dock with the files tree for a workspace. */
+export function openDockFiles(workspaceId: string): void {
+  const ui = useUiStore.getState();
+  ui.setDockExpanded(true);
+  ui.setDockPanelTab('files');
+  ui.setWorkspaceFilesExpanded(workspaceId, true);
+}
+
+/** Expand dock with the chats list for a workspace. */
+export function openDockChats(workspaceId: string): void {
+  const ui = useUiStore.getState();
+  ui.setDockExpanded(true);
+  ui.setDockPanelTab('chats');
+  ui.setWorkspaceFilesExpanded(workspaceId, false);
+}
+
 /** Close inline search, or collapse the nav panel when Escape is pressed. */
 export function dismissDockFlyout(): void {
+  const launcher = useWorkspaceLauncherStore.getState();
+  if (launcher.open && launcher.placement === 'inline') {
+    launcher.setOpen(false);
+    return;
+  }
   const search = useDockSearchStore.getState();
   if (search.open) {
     search.setOpen(false);
+    return;
+  }
+  const schedules = useDockSchedulesStore.getState();
+  if (schedules.open) {
+    schedules.setOpen(false);
     return;
   }
   useUiStore.getState().setDockExpanded(false);

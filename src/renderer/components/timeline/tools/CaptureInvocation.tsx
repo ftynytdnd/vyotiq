@@ -20,7 +20,7 @@ export function CaptureInvocation({ call, result, dense, rowKey }: CaptureInvoca
   const summary = result?.ok
     ? `Captured ${target}`
     : result && !result.ok
-      ? (result.error ?? 'capture failed')
+      ? `Capture failed (${target})`
       : `capture ${target}`;
 
   const errorHint = toolErrorHint(result);

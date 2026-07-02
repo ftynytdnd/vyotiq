@@ -3,6 +3,7 @@
  */
 
 import { RotateCcw, TerminalSquare } from 'lucide-react';
+import { Button } from '../ui/Button.js';
 import { SHELL_ACTION_ICON_STROKE, SHELL_ROW_ICON_CLASS } from '../../lib/shellIcons.js';
 import { useTerminalStore } from '../../store/useTerminalStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
@@ -26,14 +27,15 @@ export function TerminalEmptyState({ message }: { message: string }) {
         <p className="text-section font-medium text-text-primary">Terminal</p>
         <p className="text-row text-text-muted">{message}</p>
         {workspaceId ? (
-          <button
-            type="button"
-            className="vx-btn vx-btn-quiet app-no-drag inline-flex items-center gap-1.5 text-row"
+          <Button
+            variant="secondary"
+            size="sm"
+            className="app-no-drag"
             onClick={() => void openPanel(workspaceId)}
           >
             <RotateCcw className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
             Retry
-          </button>
+          </Button>
         ) : null}
       </div>
     </div>

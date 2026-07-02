@@ -53,7 +53,7 @@ describe('resolveComposerPlaceholder', () => {
         isProcessing: true
       })
     ).toBe(COMPOSER_PROCESSING_PLACEHOLDER);
-    expect(COMPOSER_PROCESSING_PLACEHOLDER).toBe('@ to mention files…');
+    expect(COMPOSER_PROCESSING_PLACEHOLDER).toBe('@ files or / skills…');
   });
 
   it('returns ask-user supplement copy for any pending reply', () => {

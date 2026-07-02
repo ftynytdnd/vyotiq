@@ -24,6 +24,8 @@ Then commit the updated `pnpm-lock.yaml`. CI and release builds use the frozen i
 
 [`pnpm-workspace.yaml`](../pnpm-workspace.yaml) sets `minimumReleaseAge: 10080` (minutes = 7 days). pnpm will not resolve package versions published within the last seven days. The lockfile is re-verified on every install.
 
+**Optional (not yet enabled):** `trustPolicy: no-downgrade` blocks versions with weaker provenance than prior releases. Enabling it requires refreshing the lockfile (`pnpm install`) and may need `trustPolicyExclude` for legacy transitive packages — see [pnpm trustPolicy](https://pnpm.io/settings#trustpolicy).
+
 **Emergency override:** add a package to `minimumReleaseAgeExclude` in `pnpm-workspace.yaml` when you deliberately need a version that has not matured yet.
 
 **Bypass warning:** `pnpm dlx` and `npx` can fetch the latest versions and skip age-gating. Prefer committed devDependencies and `pnpm exec --no-install <command>`.

@@ -138,6 +138,16 @@ export function DockChatStrip({ workspaceId, nested = false }: DockChatStripProp
     setChatLimit(CHAT_PAGE_SIZE);
   }, [workspaceId]);
 
+  useEffect(() => {
+    if (!nested || !activeId) return;
+    const activeIndex = entries.findIndex((entry) => entry.id === activeId);
+    if (activeIndex < 0) return;
+    setChatLimit((limit) => {
+      const needed = activeIndex + 1;
+      return needed > limit ? Math.max(CHAT_PAGE_SIZE, needed) : limit;
+    });
+  }, [nested, activeId, entries]);
+
   // Hydrate peak-context badges for visible tabs without requiring
   // the user to open each chat first.
   useEffect(() => {
@@ -217,9 +227,9 @@ export function DockChatStrip({ workspaceId, nested = false }: DockChatStripProp
   if (entries.length === 0) {
     if (nested) {
       return (
-        <p className="vx-dock-session-empty text-meta text-text-faint">
-          {isFiltering ? 'No matches.' : 'No chats yet.'}
-        </p>
+        <div className={cn(DOCK_EMPTY_STATE_CLASS, 'px-2 py-1')}>
+          <span>{isFiltering ? 'No matches.' : 'No chats yet.'}</span>
+        </div>
       );
     }
     return (
@@ -231,7 +241,7 @@ export function DockChatStrip({ workspaceId, nested = false }: DockChatStripProp
           ) : (
             <>
               <MessageSquare className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} aria-hidden />
-              <span>No chats yet.</span>
+              <span>No chats yet — start one with New chat above.</span>
             </>
           )}
         </div>
@@ -291,7 +301,7 @@ export function DockChatStrip({ workspaceId, nested = false }: DockChatStripProp
           className="vx-dock-session-more text-left text-meta text-text-faint hover:text-text-secondary"
           onClick={() => setChatLimit((limit) => limit + CHAT_PAGE_SIZE)}
         >
-          More
+          {hiddenCount} more chat{hiddenCount === 1 ? '' : 's'}
         </button>
       ) : null}
       {archivedEntries.length > 0 && (

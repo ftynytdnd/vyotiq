@@ -64,6 +64,9 @@ export function parseFollowUpMessage(raw: unknown): FollowUpMessage | null {
   if (isNonEmptyString(o.promptEventId)) {
     message.promptEventId = o.promptEventId;
   }
+  if (isNonEmptyString(o.invokedSkill)) {
+    message.invokedSkill = o.invokedSkill;
+  }
 
   return message;
 }

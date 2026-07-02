@@ -24,6 +24,12 @@ export interface GlobalShortcutActions {
   /** Toggle integrated terminal (Ctrl/Cmd+`). */
   toggleTerminal?: () => void;
   blockTerminal?: () => boolean;
+  /** Open companion panels picker (Ctrl/Cmd+Shift+P). */
+  companionPanels?: () => void;
+  blockCompanionPanels?: () => boolean;
+  /** Open source control companion (Ctrl/Cmd+Alt+G). */
+  sourceControl?: () => void;
+  blockSourceControl?: () => boolean;
   closeWorkbenchTab?: () => void;
   blockWorkbenchTab?: () => boolean;
   cycleWorkbenchTabPrev?: () => void;
@@ -118,6 +124,18 @@ export function useGlobalShortcuts(
         if (!actionsRef.current.toggleTerminal || actionsRef.current.blockTerminal?.()) return;
         e.preventDefault();
         actionsRef.current.toggleTerminal();
+        return;
+      }
+      if (eventMatchesCombo(e, b.companionPanels)) {
+        if (!actionsRef.current.companionPanels || actionsRef.current.blockCompanionPanels?.()) return;
+        e.preventDefault();
+        actionsRef.current.companionPanels();
+        return;
+      }
+      if (eventMatchesCombo(e, b.sourceControl)) {
+        if (!actionsRef.current.sourceControl || actionsRef.current.blockSourceControl?.()) return;
+        e.preventDefault();
+        actionsRef.current.sourceControl();
       }
     };
 

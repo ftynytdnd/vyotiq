@@ -36,6 +36,11 @@ import type {
   WorkspaceInfo,
   WorkspacesState
 } from '@shared/types/ipc.js';
+import type { WorkspaceGitHubBinding } from '@shared/types/github.js';
+import { getGitHubAccountWithToken } from '../github/githubAccountsStore.js';
+import { fetchAndCheckout } from '../github/gitRunner.js';
+import { emitGitHubGitDone, gitProgressContext } from '../github/githubGitProgress.js';
+import { emitWorkspaceTreeChanged } from './workspaceTreeWatcher.js';
 import { readBlob, updateBlob } from '../settings/blob.js';
 import { logger } from '../logging/logger.js';
 import {
@@ -385,6 +390,61 @@ export async function removeWorkspace(id: string): Promise<WorkspacesState> {
   log.info('workspace removed', { id });
   syncActiveWorkspaceWatcher();
   return listWorkspaces();
+}
+
+export function findWorkspaceByPath(path: string): WorkspaceEntry | undefined {
+  return findEntryByPath(path);
+}
+
+export async function updateWorkspaceGitHubBinding(
+  id: string,
+  binding: WorkspaceGitHubBinding
+): Promise<WorkspaceEntry> {
+  await loadOnce();
+  const entry = findEntry(id);
+  if (!entry) throw new Error(`Unknown workspace id: ${id}`);
+  const candidate: WorkspaceEntry = {
+    ...entry,
+    source: 'github',
+    github: binding
+  };
+  const candidateWorkspaces = cached.workspaces.map((w) => (w.id === id ? candidate : w));
+  await persistCandidate(candidateWorkspaces, cached.activeId);
+  cached.workspaces = candidateWorkspaces;
+  return { ...candidate };
+}
+
+export async function switchWorkspaceBranch(
+  workspaceId: string,
+  branch: string
+): Promise<WorkspaceEntry> {
+  await loadOnce();
+  const entry = findEntry(workspaceId);
+  if (!entry) throw new Error(`Unknown workspace id: ${workspaceId}`);
+  if (!entry.github) throw new Error('Workspace is not linked to a GitHub repository.');
+  const nextBranch = branch.trim();
+  if (!nextBranch) throw new Error('Branch name cannot be empty.');
+  const account = await getGitHubAccountWithToken(entry.github.accountId);
+  if (!account) throw new Error('GitHub account for this workspace was removed.');
+  const progress = gitProgressContext({
+    workspaceId,
+    owner: entry.github.owner,
+    repo: entry.github.repo,
+    branch: nextBranch
+  });
+  try {
+    await fetchAndCheckout(entry.path, nextBranch, account.token, entry.github.host, progress);
+  } finally {
+    emitGitHubGitDone({
+      workspaceId,
+      owner: entry.github.owner,
+      repo: entry.github.repo,
+      branch: nextBranch,
+      kind: 'fetch'
+    });
+    emitWorkspaceTreeChanged(workspaceId);
+  }
+  return updateWorkspaceGitHubBinding(workspaceId, { ...entry.github, branch: nextBranch });
 }
 
 // ---------------------------------------------------------------------------

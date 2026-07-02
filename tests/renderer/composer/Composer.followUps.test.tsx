@@ -239,7 +239,8 @@ describe('Composer follow-ups', () => {
         prompt: 'Queued task',
         selection: { providerId: 'p1', modelId: 'm1' },
         attachmentMeta: [],
-        mentions: []
+        mentions: [],
+        invokedSkill: ''
       });
     });
     expect(enqueueFollowUpMock).not.toHaveBeenCalled();

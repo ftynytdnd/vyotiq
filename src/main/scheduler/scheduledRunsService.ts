@@ -6,13 +6,15 @@ import { randomUUID } from 'node:crypto';
 import { dispatchChatSend } from '../ipc/chat.ipc.js';
 import { enqueueFollowUp } from '../followUps/followUpQueueService.js';
 import { conversationHasActiveRun } from '../orchestrator/conversationHasActiveRun.js';
-import { listScheduledRuns, touchScheduledRun } from './scheduledRunsStore.js';
+import { listScheduledRuns, touchScheduledRun, disableScheduledRun } from './scheduledRunsStore.js';
 import { logger } from '../logging/logger.js';
 import type { ScheduledRun } from '@shared/types/scheduledRun.js';
 import { FollowUpQueueFullError } from '@shared/types/followUp.js';
-import { MAX_FOLLOW_UP_QUEUE_DEPTH } from '@shared/constants.js';
+import { IPC, MAX_FOLLOW_UP_QUEUE_DEPTH } from '@shared/constants.js';
 import { notifyUiToast } from '../ui/uiToast.js';
 import { requestUserAttention } from '../window/requestUserAttention.js';
+import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
+import { parseAutomationPrompt } from '@shared/skills/parseSkillSlash.js';
 
 const log = logger.child('scheduler/service');
 
@@ -37,15 +39,18 @@ async function tick(): Promise<void> {
     const now = Date.now();
     const runs = await listScheduledRuns();
     for (const run of runs) {
+      if (shuttingDown) break;
       if (!shouldDispatchScheduledRun(run, now)) continue;
+      const { prompt, invokedSkill } = parseAutomationPrompt(run.prompt);
       try {
         if (conversationHasActiveRun(run.conversationId)) {
           await enqueueFollowUp({
             conversationId: run.conversationId,
             kind: 'queue',
-            prompt: run.prompt,
+            prompt,
             selection: { providerId: run.providerId, modelId: run.modelId },
-            source: 'scheduled'
+            source: 'scheduled',
+            ...(invokedSkill ? { invokedSkill } : {})
           });
           await touchScheduledRun(run.id, now);
           queueFullToastNotified.delete(run.id);
@@ -56,13 +61,33 @@ async function tick(): Promise<void> {
           });
           continue;
         }
-        await dispatchChatSend({
+        const reply = await dispatchChatSend({
           runId: randomUUID(),
           conversationId: run.conversationId,
           workspaceId: run.workspaceId,
-          prompt: run.prompt,
-          selection: { providerId: run.providerId, modelId: run.modelId }
+          prompt,
+          selection: { providerId: run.providerId, modelId: run.modelId },
+          ...(invokedSkill ? { invokedSkill } : {})
         });
+        if (!reply.ok) {
+          if (reply.kind === 'unknown-conversation') {
+            await disableScheduledRun(run.id);
+            safeWebContentsSend(IPC.SCHEDULED_RUNS_UPDATED, await listScheduledRuns());
+            notifyUiToast({
+              conversationId: run.conversationId,
+              variant: 'warn',
+              message: `Scheduled run "${run.label || 'Untitled'}" was disabled — conversation no longer exists.`
+            });
+          } else {
+            await touchScheduledRun(run.id, now);
+            log.warn('scheduled run dispatch rejected', {
+              id: run.id,
+              kind: reply.kind
+            });
+          }
+          queueFullToastNotified.delete(run.id);
+          continue;
+        }
         await touchScheduledRun(run.id, now);
         queueFullToastNotified.delete(run.id);
         log.info('scheduled run dispatched', { id: run.id, label: run.label });
@@ -88,6 +113,7 @@ async function tick(): Promise<void> {
           id: run.id,
           err: err instanceof Error ? err.message : String(err)
         });
+        await touchScheduledRun(run.id, now);
         queueFullToastNotified.delete(run.id);
       }
     }
@@ -108,4 +134,5 @@ export function stopScheduledRunsService(): void {
   shuttingDown = true;
   if (timer !== null) clearInterval(timer);
   timer = null;
+  queueFullToastNotified.clear();
 }

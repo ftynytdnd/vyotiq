@@ -9,8 +9,14 @@
  * from the provider stream are dispatched by the orchestrator loop.
  */
 
+import { TASK_CONTENT_MAX_CHARS, TASK_LIST_MAX_ITEMS } from '@shared/types/task.js';
+import type { RegisteredToolName } from '@shared/types/tool.js';
+import {
+  HEARTBEAT_MAX_INTERVAL_MINUTES,
+  HEARTBEAT_MIN_INTERVAL_MINUTES
+} from '@shared/constants.js';
+import { isKnownToolName } from '../../tools/registry.js';
 import { logger } from '../../logging/logger.js';
-import { isContextPackId } from '@shared/types/harness.js';
 
 const log = logger.child('orchestrator/validateToolArgs');
 
@@ -35,9 +41,18 @@ export function validateToolArgs(
   toolName: string,
   args: Record<string, unknown>
 ): ToolArgsValidationResult {
+  if (!isKnownToolName(toolName)) {
+    return { ok: true };
+  }
+  return validateRegisteredToolArgs(toolName, args);
+}
+
+function validateRegisteredToolArgs(
+  toolName: RegisteredToolName,
+  args: Record<string, unknown>
+): ToolArgsValidationResult {
   switch (toolName) {
     case 'read':
-    case 'edit':
     case 'delete': {
       if (!requireNonEmptyString(args, 'path')) {
         log.warn('required tool argument missing', {
@@ -49,6 +64,46 @@ export function validateToolArgs(
           ok: false,
           output: 'Error: `path` is required.',
           error: 'missing path'
+        };
+      }
+      return { ok: true };
+    }
+    case 'edit': {
+      if (!requireNonEmptyString(args, 'path')) {
+        log.warn('required tool argument missing', {
+          tool: toolName,
+          field: 'path',
+          argKeys: Object.keys(args)
+        });
+        return {
+          ok: false,
+          output: 'Error: `path` is required.',
+          error: 'missing path'
+        };
+      }
+      const create = args['create'] === true;
+      if (create) {
+        if (typeof args['content'] !== 'string' || args['content'].length === 0) {
+          return {
+            ok: false,
+            output: 'Error: `content` is required when `create` is true.',
+            error: 'missing content'
+          };
+        }
+        return { ok: true };
+      }
+      if (!requireNonEmptyString(args, 'oldString')) {
+        return {
+          ok: false,
+          output: 'Error: `oldString` is required for edits.',
+          error: 'missing oldString'
+        };
+      }
+      if (typeof args['newString'] !== 'string') {
+        return {
+          ok: false,
+          output: 'Error: `newString` is required for edits.',
+          error: 'missing newString'
         };
       }
       return { ok: true };
@@ -145,7 +200,11 @@ export function validateToolArgs(
     }
     case 'capture': {
       const target = args['target'];
-      if (target !== 'browser' && target !== 'screen' && target !== 'window') {
+      if (
+        target !== 'browser' &&
+        target !== 'screen' &&
+        target !== 'window'
+      ) {
         log.warn('required tool argument missing', {
           tool: toolName,
           field: 'target',
@@ -236,26 +295,155 @@ export function validateToolArgs(
           error: 'invalid action'
         };
       }
-      if (action === 'load' && !requireNonEmptyString(args, 'pack')) {
-        return {
-          ok: false,
-          output: 'Error: `pack` is required for action="load".',
-          error: 'missing pack'
-        };
-      }
       if (action === 'load') {
-        const pack = args['pack'];
-        if (typeof pack === 'string' && !isContextPackId(pack)) {
+        const skill =
+          requireNonEmptyString(args, 'skill') ?? requireNonEmptyString(args, 'pack');
+        if (!skill) {
           return {
             ok: false,
-            output: `Error: unknown context pack "${pack}". Call action="list" for valid ids.`,
-            error: 'invalid pack'
+            output: 'Error: `skill` is required for action="load" (legacy `pack` alias accepted).',
+            error: 'missing skill'
           };
         }
       }
       return { ok: true };
     }
-    default:
+    case 'todos': {
+      if (args['todos'] === undefined) return { ok: true };
+      if (!Array.isArray(args['todos'])) {
+        return {
+          ok: false,
+          output: 'Error: `todos` must be an array when writing.',
+          error: 'invalid todos'
+        };
+      }
+      if (args['todos'].length > TASK_LIST_MAX_ITEMS) {
+        return {
+          ok: false,
+          output: `Error: \`todos\` exceeds the ${TASK_LIST_MAX_ITEMS} item cap.`,
+          error: 'todos too long'
+        };
+      }
+      const validStatuses = new Set(['pending', 'in_progress', 'completed', 'cancelled']);
+      for (const raw of args['todos']) {
+        if (typeof raw !== 'object' || raw === null) {
+          return {
+            ok: false,
+            output: 'Error: each todo item must be an object with `id`, `content`, and `status`.',
+            error: 'invalid todo item'
+          };
+        }
+        const item = raw as Record<string, unknown>;
+        if (typeof item['id'] !== 'string' || !item['id'].trim()) {
+          return {
+            ok: false,
+            output: 'Error: each todo item requires a non-empty string `id`.',
+            error: 'missing todo id'
+          };
+        }
+        if (typeof item['content'] !== 'string' || !item['content'].trim()) {
+          return {
+            ok: false,
+            output: 'Error: each todo item requires non-empty string `content`.',
+            error: 'missing todo content'
+          };
+        }
+        if (item['content'].trim().length > TASK_CONTENT_MAX_CHARS) {
+          return {
+            ok: false,
+            output: `Error: todo content exceeds ${TASK_CONTENT_MAX_CHARS} characters.`,
+            error: 'todo content too long'
+          };
+        }
+        if (typeof item['status'] !== 'string' || !validStatuses.has(item['status'])) {
+          return {
+            ok: false,
+            output:
+              'Error: each todo item requires `status` of pending, in_progress, completed, or cancelled.',
+            error: 'invalid todo status'
+          };
+        }
+        if (item['parentId'] !== undefined && item['parentId'] !== null) {
+          if (typeof item['parentId'] !== 'string' || !item['parentId'].trim()) {
+            return {
+              ok: false,
+              output: 'Error: `parentId` must be a non-empty string when provided.',
+              error: 'invalid parentId'
+            };
+          }
+          if (item['parentId'].trim() === item['id'].trim()) {
+            return {
+              ok: false,
+              output: 'Error: a todo item cannot be its own parent.',
+              error: 'self parentId'
+            };
+          }
+        }
+      }
       return { ok: true };
+    }
+    case 'ls': {
+      const pathArg = args['path'];
+      if (pathArg !== undefined && (typeof pathArg !== 'string' || !pathArg.trim())) {
+        return {
+          ok: false,
+          output: 'Error: `path` must be a non-empty string when provided.',
+          error: 'invalid path'
+        };
+      }
+      const depth = args['depth'];
+      if (depth !== undefined && (typeof depth !== 'number' || !Number.isFinite(depth) || depth < 0)) {
+        return {
+          ok: false,
+          output: 'Error: `depth` must be a non-negative number when provided.',
+          error: 'invalid depth'
+        };
+      }
+      return { ok: true };
+    }
+    case 'heartbeat': {
+      const action = args['action'];
+      if (action !== 'attach' && action !== 'detach' && action !== 'status') {
+        return {
+          ok: false,
+          output: 'Error: `action` must be attach, detach, or status.',
+          error: 'invalid action'
+        };
+      }
+      if (action === 'attach') {
+        const interval = args['intervalMinutes'];
+        if (
+          typeof interval !== 'number' ||
+          !Number.isFinite(interval) ||
+          interval < HEARTBEAT_MIN_INTERVAL_MINUTES ||
+          interval > HEARTBEAT_MAX_INTERVAL_MINUTES
+        ) {
+          return {
+            ok: false,
+            output: `Error: attach requires \`intervalMinutes\` between ${HEARTBEAT_MIN_INTERVAL_MINUTES} and ${HEARTBEAT_MAX_INTERVAL_MINUTES}.`,
+            error: 'invalid intervalMinutes'
+          };
+        }
+      }
+      return { ok: true };
+    }
+    case 'continue': {
+      const prompt = args['prompt'];
+      if (prompt !== undefined && (typeof prompt !== 'string' || !prompt.trim())) {
+        return {
+          ok: false,
+          output: 'Error: `prompt` must be a non-empty string when provided.',
+          error: 'invalid prompt'
+        };
+      }
+      return { ok: true };
+    }
+    case 'finish':
+    case 'ask_user':
+      return { ok: true };
+    default: {
+      const _exhaustive: never = toolName;
+      return _exhaustive;
+    }
   }
 }

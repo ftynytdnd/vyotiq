@@ -26,6 +26,10 @@ pnpm run smoketest
 
 See [`supply-chain-security.md`](supply-chain-security.md) for install hardening.
 
+## Vitest Browser Mode (future)
+
+Vyotiq unit tests today use Vitest in Node/happy-dom for speed. Vitest 4’s stable **Browser Mode** (Playwright provider) is the recommended path for component tests that need real DOM/CSS behavior (focus traps, tokenized z-index, composer pickers) without expanding the Playwright E2E surface. Adopt incrementally for high-value renderer components; keep `pnpm run smoketest` as the thin cross-process IPC gate.
+
 ## What the smoke tests assert
 
 1. Main `BrowserWindow` opens; document title is **Vyotiq — Agent V**.
@@ -35,6 +39,23 @@ See [`supply-chain-security.md`](supply-chain-security.md) for install hardening
 5. Fresh profile shows **Open a workspace to begin** *or* composer when seeded.
 6. `settings.get()` and `workspace.list()` IPC respond.
 7. Composer clipboard paste (`composer.clipboard-paste.spec.ts`) — seeds a workspace + conversation, stubs `attachments.ingestClipboardImage`, dispatches a synthetic image paste, and asserts the attachment card appears.
+8. Composer skill slash commands (`composer.skills.spec.ts`) — `/` picker, status strip hint, unknown-skill Create dialog, cancel, and on-disk `SKILL.md` creation.
+9. Skills IPC (`skills.ipc.spec.ts`) — `window.vyotiq.skills.list` / `read` / `create` against the real main-process registry (bundled + workspace skills).
+10. Settings skills panel (`settings.skills.spec.ts`) — Settings → Agent behavior → Skills: bundled list, Built-in filter, New skill dialog, copy-slash control.
+11. Settings navigation (`settings.navigation.spec.ts`) — `Mod+,` open, Agent behavior sub-nav, dock **Back to chat**.
+12. Composer task tray (`composer.tasks.spec.ts`) — `tasks:set` IPC hydration, progress summary, expand to show task rows.
+13. Claude Code proxy (`proxy.claude-code-proxy.spec.ts`) — lists proxy provider and discovers models when `http://127.0.0.1:18765/healthz` is healthy (skipped otherwise).
+14. Chat landing discoverability (`chat.landing.spec.ts`) — ready-state git context above centered composer.
+15. Dock unified search (`dock.search.spec.ts`) — `Mod+K` / titlebar search button, skills group filter.
+16. Dock scheduled runs (`dock.scheduled-runs.spec.ts`) — toolbar popover lists enabled schedules; **Manage…** deep-links to Settings → Scheduled runs.
+17. GitHub IPC (`github.ipc.spec.ts`) — `github.listAccounts` and PAT format validation on the real preload bridge.
+18. Settings GitHub panel (`settings.github.spec.ts`) — Workspace data empty state, OAuth client ID field, **Open from GitHub…** opens the unified dialog.
+19. Open workspace dialog (`workspace.open-dialog.spec.ts`) — Settings **Add workspace…** opens the unified dialog on the local tab.
+20. Open workspace GitHub (`workspace.open-dialog.github.spec.ts`) — scope pills filter user/org repos; **Recent** list from seeded catalogue; partial clone retry banner; recent repo opens workspace when clone exists.
+21. Chat landing sync suffix (`chat.landing.spec.ts`) — git context line shows `main ↑2 ↓1` when stubbed upstream drift exists.
+22. Composer branch chip (`composer.branch-chip.spec.ts`) — GitHub-bound workspace shows `main ↑2 ↓1` on the status strip chip.
+23. Dock GitHub entry (`dock.github.spec.ts`) — header **Open from GitHub** and empty-state **From GitHub** open the unified dialog.
+24. Settings GitHub seeded account (`settings.github.spec.ts`) — connected account shows verified timestamp and **Re-verify** control.
 
 ## Architecture
 
@@ -46,8 +67,24 @@ tests/e2e/
   helpers/paths.ts            # repo root, out/main/index.js, temp userData
   helpers/stubDialogs.ts      # mock native dialogs in main process
   helpers/seedComposerSession.ts  # workspace/conversation seed + clipboard paste helpers
+  helpers/settingsNavigation.ts   # openSettings, openAgentBehaviorSection, closeSettings
   smoke.launch.spec.ts
   composer.clipboard-paste.spec.ts
+  composer.skills.spec.ts
+  skills.ipc.spec.ts
+  settings.skills.spec.ts
+  settings.navigation.spec.ts
+  composer.tasks.spec.ts
+  proxy.claude-code-proxy.spec.ts
+  chat.landing.spec.ts
+  dock.search.spec.ts
+  dock.scheduled-runs.spec.ts
+  workspace.open-dialog.github.spec.ts
+  composer.branch-chip.spec.ts
+  dock.github.spec.ts
+  helpers/seedGitHub.ts
+  helpers/seedGitHubClone.ts
+  helpers/stubWorkspaceGitStatus.ts
 ```
 
 ### Launch options (security + isolation)

@@ -47,7 +47,8 @@ beforeEach(() => {
 describe('UsagePanel', () => {
   it('renders without crashing when workspaceSpendUsd is unset', () => {
     render(<UsagePanel />);
-    expect(screen.getByText('Usage')).toBeInTheDocument();
+    expect(screen.getByText('App session')).toBeInTheDocument();
+    expect(screen.getByText('Provider accounts')).toBeInTheDocument();
     expect(screen.getByText('Test workspace')).toBeInTheDocument();
   });
 });

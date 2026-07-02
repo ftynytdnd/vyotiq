@@ -3,6 +3,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, startTransition, type KeyboardEvent, type MouseEvent } from 'react';
+import { File } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { isEditableTextFile } from '@shared/text/isEditableTextFile.js';
@@ -45,6 +46,11 @@ import {
   useDockFileTreeContextMenu
 } from './DockFileTreeContextMenu.js';
 import { cn } from '../../lib/cn.js';
+import { DOCK_EMPTY_STATE_CLASS } from './dockShared.js';
+import {
+  SHELL_ACTION_ICON_STROKE,
+  SHELL_ROW_ICON_CLASS
+} from '../../lib/shellIcons.js';
 import {
   allVisibleRowPaths,
   selectionTargetsFromPaths
@@ -93,6 +99,13 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
   const typeaheadRef = useRef({ buffer: '', timer: null as ReturnType<typeof setTimeout> | null });
   const selectionAnchorRef = useRef(0);
 
+  useEffect(() => {
+    return () => {
+      const state = typeaheadRef.current;
+      if (state.timer) clearTimeout(state.timer);
+    };
+  }, []);
+
   const selectedPathList = useDockFileTreeSelectionStore(
     useShallow((s) => (workspaceId && s.workspaceId === workspaceId ? s.paths : EMPTY_TREE_SELECTION))
   );
@@ -113,7 +126,7 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
     clearWorkspaceSelection(workspaceId);
   }, [workspaceId, clearWorkspaceSelection]);
 
-  const gitStatusMap = useWorkspaceGitStatus(workspaceId, true);
+  const gitStatusMap = useWorkspaceGitStatus(workspaceId, true).paths;
 
   const rowRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -605,7 +618,10 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
 
   if (!workspacePath) {
     return (
-      <p className="px-2 py-2 text-meta text-text-faint">Open a workspace to browse files.</p>
+      <div className={cn(DOCK_EMPTY_STATE_CLASS, 'px-2')}>
+        <File className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} aria-hidden />
+        <span>Open a workspace to browse files.</span>
+      </div>
     );
   }
 
@@ -630,11 +646,20 @@ export function DockFileTree({ workspaceId }: DockFileTreeProps) {
         </p>
       ) : null}
       {loading && flatRows.length === 0 ? (
-        <p className="px-2 py-2 text-meta text-text-faint">Loading tree…</p>
+        <div className={cn(DOCK_EMPTY_STATE_CLASS, 'px-2')}>
+          <File className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} aria-hidden />
+          <span>Loading tree…</span>
+        </div>
       ) : flatRows.length === 0 ? (
-        <p className="px-2 py-2 text-meta text-text-faint">
-          {filter ? 'No files match the filter.' : 'No files found.'}
-        </p>
+        <div className={cn(DOCK_EMPTY_STATE_CLASS, 'px-2')}>
+          <File className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} aria-hidden />
+          <span className="text-row text-text-primary">
+            {filter ? 'No files match the filter.' : 'No files found.'}
+          </span>
+          {!filter ? (
+            <span className="text-text-muted">Create or open files in this workspace.</span>
+          ) : null}
+        </div>
       ) : (
         <div
           ref={scrollRef}

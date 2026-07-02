@@ -172,7 +172,7 @@ describe('useComposerAttachments onPaste', () => {
       expect(ingestPaths).toHaveBeenCalledOnce();
     });
     expect(ingestPaths).toHaveBeenCalledWith({
-      paths: ['C:\\tmp\\agent\\docs\\doc.pdf'],
+      paths: ['docs/doc.pdf'],
       workspaceId: 'ws-1',
       conversationId: 'conv-1',
       messageId: expect.any(String)

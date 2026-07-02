@@ -220,7 +220,9 @@ export function Popover({
 
   if (!open) return null;
 
-  const ready = pos !== null;
+  const ready =
+    pos !== null &&
+    (resolvedWidthMode !== 'content' || (popoverRef.current?.offsetWidth ?? 0) > 0);
   const panelWidth = resolvedWidthMode === 'panel' ? pos?.maxWidth : undefined;
   const boundedHeight =
     containScroll && pos?.maxHeight !== undefined ? pos.maxHeight : undefined;

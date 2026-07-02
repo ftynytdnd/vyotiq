@@ -3,7 +3,6 @@
  */
 
 import type {
-  AttachmentMediaKind,
   ChatContentPart,
   ChatMessage,
   PromptAttachmentMeta,
@@ -11,14 +10,9 @@ import type {
 } from '@shared/types/chat.js';
 import type { MentionRef } from '@shared/types/mention.js';
 import type { ModelInputModality, ModelSelection } from '@shared/types/provider.js';
+import { unsupportedNativeMediaLabel } from '@shared/attachments/composerModalityWarnings.js';
 import { mediaKindFromMeta } from '@shared/attachments/mediaKind.js';
-import {
-  inputModalitiesFromModelId,
-  modelSupportsAudioNative,
-  modelSupportsPdfNative,
-  modelSupportsVideoNative,
-  modelSupportsVision
-} from '@shared/providers/visionCapabilities.js';
+import { inputModalitiesFromModelId } from '@shared/providers/visionCapabilities.js';
 import { findProviderModel } from '@shared/providers/modelId.js';
 import { listProviders } from '../providers/providerStore.js';
 import { resolveAttachmentsForInline } from '../attachments/resolveAttachmentsForInline.js';
@@ -26,6 +20,7 @@ import { resolveMentionsForInline } from '../attachments/resolveMentionsForInlin
 import { prepareVisionParts } from '../attachments/prepareMediaForVision.js';
 import type { PreparedMediaCache } from '../attachments/preparedMediaCache.js';
 import { notifyUiToast } from '../ui/uiToast.js';
+import { CONTEXT_SUMMARY_OPEN } from './context/contextSummarize.js';
 import { wrapXml } from './envelope/index.js';
 
 export interface BuildUserTurnMessageInput {
@@ -40,6 +35,8 @@ export interface BuildUserTurnMessageInput {
   runId?: string;
   mediaCache?: PreparedMediaCache;
   signal?: AbortSignal;
+  /** Composer `/skill-name` slash invocation. */
+  invokedSkill?: string;
 }
 
 export interface BuildUserTurnMessageResult {
@@ -63,48 +60,6 @@ function mergePreparedHashes(
   });
 }
 
-function modelSupportsNativeMedia(
-  kind: AttachmentMediaKind,
-  modalities: ModelInputModality[] | undefined
-): boolean {
-  switch (kind) {
-    case 'image':
-      return modelSupportsVision(modalities);
-    case 'pdf':
-      return modelSupportsPdfNative(modalities);
-    case 'video':
-      return modelSupportsVideoNative(modalities);
-    case 'audio':
-      return modelSupportsAudioNative(modalities);
-    default:
-      return true;
-  }
-}
-
-const NATIVE_MEDIA_LABEL: Partial<Record<AttachmentMediaKind, string>> = {
-  image: 'images',
-  pdf: 'PDFs',
-  video: 'video',
-  audio: 'audio'
-};
-
-function unsupportedNativeMediaLabel(
-  attachmentMeta: PromptAttachmentMeta[],
-  modalities: ModelInputModality[] | undefined
-): string | null {
-  const unsupported = new Set<string>();
-  for (const meta of attachmentMeta) {
-    const kind = meta.mediaKind ?? mediaKindFromMeta(meta);
-    if (kind === 'text') continue;
-    if (!modelSupportsNativeMedia(kind, modalities)) {
-      const label = NATIVE_MEDIA_LABEL[kind] ?? kind;
-      unsupported.add(label);
-    }
-  }
-  if (unsupported.size === 0) return null;
-  return [...unsupported].join(', ');
-}
-
 export async function resolveInputModalitiesForSelection(
   selection: ModelSelection
 ): Promise<ModelInputModality[] | undefined> {
@@ -114,7 +69,9 @@ export async function resolveInputModalitiesForSelection(
     return inputModalitiesFromModelId(selection.modelId);
   }
   const model = findProviderModel(provider, selection.modelId);
-  if (model) return model.inputModalities;
+  if (model) {
+    return model.inputModalities ?? inputModalitiesFromModelId(selection.modelId);
+  }
   return inputModalitiesFromModelId(selection.modelId);
 }
 
@@ -136,13 +93,21 @@ export async function buildUserTurnMessage(
         mediaKind: mediaKindFromMeta({ name: ref.label, mimeType: ref.mimeType })
       };
       const kind = meta.mediaKind ?? mediaKindFromMeta(meta);
-      if (kind !== 'image' && kind !== 'pdf' && kind !== 'video') continue;
+      if (kind !== 'image' && kind !== 'pdf' && kind !== 'video' && kind !== 'audio') continue;
       if (mergedAttachmentMeta.some((m) => m.workspacePath === meta.workspacePath)) continue;
       mergedAttachmentMeta.push(meta);
     }
   }
 
   const userMessageXml = wrapXml('user_message', input.prompt, undefined, { escape: true });
+  const invokedSkillXml =
+    input.invokedSkill?.trim()
+      ? wrapXml(
+          'invoked_skill',
+          `User explicitly invoked skill /${input.invokedSkill.trim()}. Load it with context action="load" and skill="${input.invokedSkill.trim()}" before proceeding.`,
+          { name: input.invokedSkill.trim() }
+        )
+      : '';
 
   let visionParts: ChatContentPart[] = [];
   let visionTokenEstimate = 0;
@@ -183,7 +148,8 @@ export async function buildUserTurnMessage(
     inlineBlocks.length > 0
       ? wrapXml('attached_files', inlineBlocks, undefined, { escape: true })
       : '';
-  const turnBody = attachmentsXml ? `${userMessageXml}\n${attachmentsXml}` : userMessageXml;
+  const turnParts = [userMessageXml, invokedSkillXml, attachmentsXml].filter((p) => p.length > 0);
+  const turnBody = turnParts.join('\n');
   const turnXml = wrapXml('turn', turnBody);
 
   const unsupportedMedia = unsupportedNativeMediaLabel(mergedAttachmentMeta, modalities);
@@ -211,6 +177,27 @@ export async function buildUserTurnMessage(
   return { message, turnXml, visionTokenEstimate, usedVisionParts, persistedAttachments };
 }
 
+function chatMessageText(content: ChatMessage['content']): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((part): part is Extract<ChatContentPart, { type: 'text' }> => part.type === 'text')
+    .map((part) => part.text)
+    .join('');
+}
+
+/** Synthetic replay rows (context summary) are not backed by `user-prompt` events. */
+export function isContextSummaryUserContent(content: ChatMessage['content']): boolean {
+  return chatMessageText(content).includes(CONTEXT_SUMMARY_OPEN);
+}
+
+function lastContextSummaryEventIndex(events: TimelineEvent[]): number {
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i]?.kind === 'context-summary') return i;
+  }
+  return -1;
+}
+
 /**
  * Rebuild replayed user turns that carry attachment metadata so vision
  * parts are re-encoded for the active model.
@@ -220,12 +207,17 @@ export async function enrichReplayedVisionMessages(
   events: TimelineEvent[],
   ctx: Omit<BuildUserTurnMessageInput, 'prompt' | 'attachmentMeta' | 'mentions' | 'legacyAttachments'>
 ): Promise<ChatMessage[]> {
-  const userPrompts = events.filter((e): e is Extract<TimelineEvent, { kind: 'user-prompt' }> => e.kind === 'user-prompt');
+  const summaryCutoff = lastContextSummaryEventIndex(events);
+  const userPrompts = events.filter(
+    (e, idx): e is Extract<TimelineEvent, { kind: 'user-prompt' }> =>
+      e.kind === 'user-prompt' && idx > summaryCutoff
+  );
   let promptIdx = 0;
   const out = [...messages];
   for (let i = 0; i < out.length; i++) {
     const m = out[i]!;
     if (m.role !== 'user') continue;
+    if (isContextSummaryUserContent(m.content)) continue;
     const event = userPrompts[promptIdx];
     promptIdx += 1;
     if (!event) continue;

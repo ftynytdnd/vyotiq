@@ -44,14 +44,14 @@ export function AskUserCompactRow({
   return (
     <section
       className={cn(
-        'vyotiq-stepfade-once vx-ask-user-inline rounded-inner border border-border-subtle/40 bg-surface-raised/30 px-3 py-2.5',
+        'vyotiq-stepfade-once vx-ask-user-inline rounded-inner border border-border-subtle/25 bg-surface-raised/20 px-3 py-2.5',
         showInline && 'vx-ask-user-inline--open'
       )}
       data-row-kind="ask-user-prompt"
       aria-label={title}
     >
       <div className="flex items-baseline justify-between gap-2">
-        <p className="text-row font-medium text-text-primary">{title}</p>
+        <p className="text-row font-medium text-accent">{title}</p>
         {questionCount > 1 ? (
           <span className="shrink-0 font-mono text-meta text-text-faint tabular-nums">
             {questionCount} questions
@@ -63,7 +63,7 @@ export function AskUserCompactRow({
           <AskUserForm pending={pending} variant="inline" />
         </div>
       ) : !showInline && status !== 'submitted' ? (
-        <p className="mt-1 text-meta text-text-faint">Waiting for your response…</p>
+        <p className="mt-1 text-row text-text-muted">Waiting for your response…</p>
       ) : null}
       <span className="sr-only">{displayText}</span>
     </section>

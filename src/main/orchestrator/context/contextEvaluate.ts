@@ -7,11 +7,13 @@
 import type { ChatMessage, PromptAttachmentMeta } from '@shared/types/chat.js';
 import type { ContextManagementSettings } from '@shared/settings/agentBehaviorSettings.js';
 import type { ContextUsageSummary } from '@shared/context/contextLevel.js';
+import { DEFAULT_MAX_TOTAL_ITERATIONS } from '@shared/constants.js';
 import { buildOrchestratorSystemPrompt } from '../../harness/harnessLoader.js';
 import { refreshEnvelopes } from '../contextManager.js';
 import { replayTranscript } from '../replay/replayTranscript.js';
 import { readConversation } from '../../conversations/conversationStore.js';
 import { requireWorkspaceById } from '../../workspace/workspaceState.js';
+import { listCatalogueSkillNames } from '../../skills/skillRegistry.js';
 import { toolSchemasFor } from '../../tools/registry.js';
 import { AGENT_TOOLS } from '../../tools/policy/index.js';
 import {
@@ -84,7 +86,7 @@ async function buildProspectiveMessages(
   );
   const runStateAcc = createRunStateAccumulator();
   const runStateXml = buildRunStateXml(
-    snapshotRunState(runStateAcc, createSpinSignatureBuffer(), 0)
+    snapshotRunState(runStateAcc, createSpinSignatureBuffer(), 0, DEFAULT_MAX_TOTAL_ITERATIONS)
   );
   applyCacheLayers(messages, {
     harness,
@@ -101,12 +103,13 @@ export async function evaluateConversationContext(
 ): Promise<ContextUsageSummary> {
   const workspacePath = await requireWorkspaceById(input.workspaceId);
   const messages = await buildProspectiveMessages(input, workspacePath);
+  const skillNames = await listCatalogueSkillNames(workspacePath);
   return evaluateContextBudget({
     messages,
     modelId: input.modelId,
     providerId: input.providerId,
     settings: input.settings,
-    tools: toolSchemasFor(AGENT_TOOLS),
+    tools: toolSchemasFor(AGENT_TOOLS, { contextSkillNames: skillNames }),
     skipRemoteRefine: true,
     ...(input.calibrationRatio !== undefined ? { calibrationRatio: input.calibrationRatio } : {})
   });

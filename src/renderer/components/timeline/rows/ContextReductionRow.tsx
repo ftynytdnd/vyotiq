@@ -19,6 +19,7 @@ import { useActiveConversationId } from '../../../store/useConversationsStore.js
 import { DetailShell } from '../shared/DetailShell.js';
 import { TimelineRowHeader } from '../shared/TimelineRowHeader.js';
 import { useTimelineRowExpand } from '../shared/useTimelineRowExpand.js';
+import { toolTitleClassName } from '../shared/rowStyles.js';
 
 interface ContextReductionRowProps {
   rowKey: string;
@@ -76,7 +77,7 @@ export const ContextReductionRow = memo(function ContextReductionRow({
         }
       >
         <span className="inline-flex min-w-0 max-w-full items-baseline gap-1 truncate text-row">
-          <span className="vx-row-label">Context reduced</span>{' '}
+          <span className={toolTitleClassName(false)}>Context reduced</span>{' '}
           <span className="vx-caption text-text-faint">{summaryLabel}</span>
         </span>
       </TimelineRowHeader>
@@ -138,11 +139,11 @@ const ContextReductionItemRow = memo(function ContextReductionItemRow({
   const canFetchFull = item.relativePath.length > 0;
 
   return (
-    <div className="flex flex-col gap-1 py-0.5 text-meta">
+    <div className="flex flex-col gap-1 py-0.5">
       <div className="flex items-baseline gap-2">
         <button
           type="button"
-          className="vx-context-reduction__toggle inline-flex items-center gap-1 font-mono text-text-faint transition-colors hover:text-text-secondary"
+          className="vx-context-reduction__toggle inline-flex items-center gap-1 font-mono text-row text-text-faint transition-colors hover:text-text-secondary"
           onClick={onToggle}
           aria-expanded={open}
         >
@@ -163,14 +164,14 @@ const ContextReductionItemRow = memo(function ContextReductionItemRow({
           {loading && <span className="vx-caption text-text-faint">Loading…</span>}
           {error && <span className="vx-caption text-danger">{error}</span>}
           {content !== null && (
-            <pre className="vx-context-reduction__body max-h-72 overflow-auto whitespace-pre-wrap break-words rounded border border-border-subtle bg-surface-sunken p-2 font-mono text-meta text-text-secondary">
+            <pre className="vx-context-reduction__body max-h-72 overflow-auto whitespace-pre-wrap break-words rounded border border-border-subtle bg-surface-sunken p-2 font-mono text-row text-text-secondary">
               {content}
             </pre>
           )}
           {item.type === 'summary' && content !== null && content === item.summary && canFetchFull && (
             <button
               type="button"
-              className="vx-context-reduction__action self-start font-mono text-meta text-text-faint transition-colors hover:text-text-secondary disabled:opacity-40"
+              className="vx-context-reduction__action self-start font-mono text-row text-text-faint transition-colors hover:text-text-secondary disabled:opacity-40"
               onClick={() => void load()}
               disabled={loading}
             >

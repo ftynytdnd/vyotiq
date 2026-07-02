@@ -1,12 +1,12 @@
 /**
- * Tests for the `context` tool — on-demand reference context packs.
+ * Tests for the `context` tool — on-demand Agent Skills.
  *
  * Covers:
- *   - `action:'list'` returns the pack catalogue.
+ *   - `action:'list'` returns the skills catalogue.
  *   - A second `list` within a run is deduped to a banner.
- *   - `action:'load'` returns a pack body.
- *   - Re-loading the same pack within a run is deduped to a banner.
- *   - Unknown / missing pack ids fail gracefully.
+ *   - `action:'load'` returns a skill body.
+ *   - Re-loading the same skill within a run is deduped to a banner.
+ *   - Unknown / missing skill names fail gracefully.
  *   - `context` is on the solo-agent `AGENT_TOOLS` allowlist.
  */
 
@@ -29,7 +29,7 @@ function makeCtx(): ToolContext {
 }
 
 describe('context tool', () => {
-  it('action:"list" returns the pack catalogue', async () => {
+  it('action:"list" returns the skills catalogue', async () => {
     const result = await contextTool.run({ action: 'list' }, makeCtx());
     expect(result.ok).toBe(true);
     expect(result.name).toBe('context');
@@ -66,7 +66,7 @@ describe('context tool', () => {
     expect(b.data?.tool === 'context' && b.data.alreadyListed).toBe(false);
   });
 
-  it('action:"load" returns the pack body', async () => {
+  it('action:"load" returns the skill body via pack alias', async () => {
     const result = await contextTool.run(
       { action: 'load', pack: 'ast-grep-reference' },
       makeCtx()
@@ -75,11 +75,20 @@ describe('context tool', () => {
     expect(result.output).toContain('ast-grep');
     expect(result.output).toContain('Metavariables');
     if (result.data?.tool === 'context' && result.data.action === 'load') {
-      expect(result.data.pack).toBe('ast-grep-reference');
+      expect(result.data.skill ?? result.data.pack).toBe('ast-grep-reference');
       expect(result.data.alreadyLoaded).toBe(false);
     } else {
       throw new Error('expected context load data');
     }
+  });
+
+  it('action:"load" accepts skill argument', async () => {
+    const result = await contextTool.run(
+      { action: 'load', skill: 'deliverables' },
+      makeCtx()
+    );
+    expect(result.ok).toBe(true);
+    expect(result.output).toContain('Deliverables');
   });
 
   it('dedupes a second load of the same pack within a run', async () => {
@@ -106,13 +115,13 @@ describe('context tool', () => {
   it('rejects a missing pack on load', async () => {
     const result = await contextTool.run({ action: 'load' }, makeCtx());
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('missing pack');
+    expect(result.error).toContain('missing skill');
   });
 
   it('rejects an unknown pack id', async () => {
     const result = await contextTool.run({ action: 'load', pack: 'nope' }, makeCtx());
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('unknown pack');
+    expect(result.error).toContain('unknown skill');
   });
 
   it('rejects an unknown action', async () => {

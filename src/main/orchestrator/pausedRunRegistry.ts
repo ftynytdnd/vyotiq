@@ -32,6 +32,12 @@ export interface LoopCheckpoint {
   runCumulativeTokens?: number;
   /** Host dynamic-loop audit nudge awaiting agent response. */
   dynamicLoopAuditAwaitingResponse?: boolean;
+  /** Verify-before-finish audit injections consumed this run. */
+  dynamicAuditInjectionCount?: number;
+  /** Substantive edit count at last audit injection (dedupe audits). */
+  substantiveEditsAtLastAudit?: number;
+  /** Index where the current run's history rows start (after replayed transcript). */
+  runHistoryStartIndex?: number;
 }
 
 interface PausedRunCallbacks {
@@ -102,6 +108,9 @@ export function cloneLoopCheckpoint(state: {
   reportGateBonusIteration?: boolean;
   runCumulativeTokens?: number;
   dynamicLoopAuditAwaitingResponse?: boolean;
+  dynamicAuditInjectionCount?: number;
+  substantiveEditsAtLastAudit?: number;
+  runHistoryStartIndex?: number;
 }): LoopCheckpoint {
   return {
     // Defensive shallow copy: the checkpoint must not alias the live
@@ -129,6 +138,15 @@ export function cloneLoopCheckpoint(state: {
       : {}),
     ...(state.dynamicLoopAuditAwaitingResponse !== undefined
       ? { dynamicLoopAuditAwaitingResponse: state.dynamicLoopAuditAwaitingResponse }
+      : {}),
+    ...(state.dynamicAuditInjectionCount !== undefined
+      ? { dynamicAuditInjectionCount: state.dynamicAuditInjectionCount }
+      : {}),
+    ...(state.substantiveEditsAtLastAudit !== undefined
+      ? { substantiveEditsAtLastAudit: state.substantiveEditsAtLastAudit }
+      : {}),
+    ...(state.runHistoryStartIndex !== undefined
+      ? { runHistoryStartIndex: state.runHistoryStartIndex }
       : {})
   };
 }

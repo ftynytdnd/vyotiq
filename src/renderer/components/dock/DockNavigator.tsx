@@ -12,6 +12,7 @@ import {
   type WorkspacePendingAction
 } from './WorkspacePendingBanner.js';
 import { LoadingHint } from '../ui/LoadingHint.js';
+import { Button } from '../ui/Button.js';
 import { cn } from '../../lib/cn.js';
 import {
   SHELL_ACTION_ICON_STROKE,
@@ -24,17 +25,16 @@ import {
 } from './dockShared.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { useUiStore } from '../../store/useUiStore.js';
+import { openWorkspaceLauncher } from '../../store/useWorkspaceLauncherStore.js';
 
 export interface DockNavigatorProps {
-  onOpenWorkspace: () => void;
   onSetWorkspacePath: () => void;
 }
 
-export function DockNavigator({ onOpenWorkspace, onSetWorkspacePath }: DockNavigatorProps) {
+export function DockNavigator({ onSetWorkspacePath }: DockNavigatorProps) {
   const workspaces = useWorkspaceStore((s) => s.list);
   const activeId = useWorkspaceStore((s) => s.activeId);
   const setActive = useWorkspaceStore((s) => s.setActive);
-  const addWorkspace = useWorkspaceStore((s) => s.add);
   const removeWorkspace = useWorkspaceStore((s) => s.remove);
   const retryReachability = useWorkspaceStore((s) => s.retryReachability);
   const loading = useWorkspaceStore((s) => s.loading);
@@ -90,25 +90,20 @@ export function DockNavigator({ onOpenWorkspace, onSetWorkspacePath }: DockNavig
     return (
       <div className={cn(DOCK_WORKSPACE_PANEL_SHELL_CLASS, 'flex min-h-0 flex-1 flex-col')}>
         <DockNavigatorHeader />
-        <div className="vx-dock-workspace-empty flex flex-1 flex-col items-start gap-2 px-3 py-4">
-          <p className="text-row text-text-faint">No workspace open</p>
-          <div className="flex flex-wrap gap-1">
-            <button
-              type="button"
-              className="vx-btn vx-btn-quiet gap-1 px-2 text-row"
-              onClick={onOpenWorkspace}
-            >
-              <FolderInput className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
+        <div className="vx-dock-workspace-empty flex flex-1 flex-col items-start gap-3 px-3 py-4">
+          <p className="text-hero font-medium text-text-primary">Open a workspace</p>
+          <p className="text-row text-text-muted">
+            Agent V needs a folder on your machine to sandbox tools and memory.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="accentFill" size="sm" onClick={() => openWorkspaceLauncher('local', 'inline')}>
+              <FolderInput className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} aria-hidden />
               Open folder…
-            </button>
-            <button
-              type="button"
-              className="vx-btn vx-btn-quiet gap-1 px-2 text-row"
-              onClick={() => void addWorkspace()}
-            >
-              <Plus className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} />
-              Add workspace
-            </button>
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => openWorkspaceLauncher('github', 'inline')}>
+              <Plus className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ACTION_ICON_STROKE} aria-hidden />
+              From GitHub
+            </Button>
           </div>
         </div>
       </div>

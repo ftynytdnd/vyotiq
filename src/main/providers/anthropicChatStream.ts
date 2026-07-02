@@ -71,13 +71,24 @@ import { createInactivityWatch, isStreamInactivityError } from './streamInactivi
 import { readSseFrames } from './sseFrameReader.js';
 import { safeText } from './errorBody.js';
 import { findProviderModel } from '@shared/providers/modelId.js';
-import { toAnthropicUserBlocks } from './multimodal/userContentWire.js';
+import { toAnthropicUserBlocks, userContentHasAudioParts } from './multimodal/userContentWire.js';
 import { resolveFileRefsForUserContent } from './files/resolveFileReference.js';
 import {
   anthropicBetasForProvider,
   mapAnthropicThinking,
   resolveStreamerThinkingEffort
 } from '@shared/providers/thinkingEffort.js';
+import {
+  CLAUDE_CODE_PROXY_STREAM_INACTIVITY_MS,
+  claudeCodeProxyModelSupportsAnthropicBetas,
+  claudeCodeProxySkipsThinkingEffort,
+  isClaudeCodeProxyProvider,
+  resolveClaudeCodeProxyModelId
+} from '@shared/providers/claudeCodeProxy.js';
+import {
+  PRE_HEADER_STREAM_INACTIVITY_MS,
+  STREAM_INACTIVITY_TIMEOUT_MS
+} from '@shared/constants.js';
 import {
   applyAnthropicAutomaticCache,
   buildAnthropicSystemBlocks,
@@ -91,6 +102,8 @@ import {
 } from './cacheHints/anthropicCacheDiagnostics.js';
 import { ANTHROPIC_COMPACTION_BETA, ANTHROPIC_CONTEXT_MANAGEMENT_BETA } from './capabilities.js';
 import { normalizeWireTools } from './normalizeWireTools.js';
+import { extractStaticSystemForWire } from '../orchestrator/context/buildContextLayers.js';
+import { fetchClaudeCodeProxyStatusJson } from './claudeCodeProxy.js';
 
 const log = logger.child('providers/chat/anthropic');
 
@@ -162,25 +175,51 @@ export async function* streamAnthropic(
   // the array) and every assistant `tool_calls` becomes a `tool_use`
   // content block.
   const translated = await toAnthropicMessages(req.messages, provider);
+  const proxyRoute = isClaudeCodeProxyProvider(provider);
+  let wireModel = req.model;
+  if (proxyRoute) {
+    if (req.model.trim().endsWith(':auto')) {
+      const status = await fetchClaudeCodeProxyStatusJson();
+      const defaultModel =
+        status?.config?.userEnvModel ?? status?.config?.settingsModel ?? undefined;
+      wireModel = resolveClaudeCodeProxyModelId(req.model, defaultModel);
+      if (wireModel !== req.model) {
+        log.info('resolved proxy auto model', { from: req.model, to: wireModel });
+      }
+    } else {
+      wireModel = resolveClaudeCodeProxyModelId(req.model);
+    }
+  }
+  const anthropicCacheEnabled =
+    !proxyRoute || claudeCodeProxyModelSupportsAnthropicBetas(wireModel);
   const body: Record<string, unknown> = {
-    model: req.model,
+    model: wireModel,
     max_tokens: typeof req.maxTokens === 'number' ? req.maxTokens : DEFAULT_MAX_TOKENS,
     messages: translated.messages,
     stream: true
   };
-  const systemBlocks = buildAnthropicSystemBlocks(req.messages, translated.system);
-  if (systemBlocks.length > 0) body['system'] = systemBlocks;
+  if (proxyRoute && !anthropicCacheEnabled) {
+    const staticText = extractStaticSystemForWire(req.messages) || translated.system;
+    if (staticText.trim()) {
+      body['system'] = [{ type: 'text', text: staticText }];
+    }
+  } else {
+    const systemBlocks = buildAnthropicSystemBlocks(req.messages, translated.system);
+    if (systemBlocks.length > 0) body['system'] = systemBlocks;
+  }
   const wireMessages = translated.messages as unknown as Array<{
     role: string;
     content: Array<Record<string, unknown>>;
   }>;
-  markWorkspaceUserCache(wireMessages, req.messages);
-  applyAnthropicAutomaticCache(body);
+  if (anthropicCacheEnabled) {
+    markWorkspaceUserCache(wireMessages, req.messages);
+    applyAnthropicAutomaticCache(body);
+  }
   if (req.workspaceId?.trim()) {
     body['metadata'] = { user_id: req.workspaceId.trim() };
   }
   const cacheDiagnosticsOn = isAnthropicCacheDiagnosticsEnabled();
-  if (cacheDiagnosticsOn) {
+  if (cacheDiagnosticsOn && anthropicCacheEnabled) {
     body['diagnostics'] = {
       previous_message_id: req.previousAnthropicMessageId ?? null
     };
@@ -193,7 +232,7 @@ export async function* streamAnthropic(
       description: t.function.description,
       input_schema: t.function.parameters
     }));
-    markAnthropicToolCache(tools);
+    if (anthropicCacheEnabled) markAnthropicToolCache(tools);
     body['tools'] = tools;
     // OpenAI-shape `tool_choice` → Anthropic's structured form.
     if (req.toolChoice === 'auto') body['tool_choice'] = { type: 'auto' };
@@ -226,13 +265,19 @@ export async function* streamAnthropic(
   // `anthropicThinking`) and maps it to the 2026 wire shape: adaptive
   // models get `{ type: 'adaptive' }` + an `output_config.effort`
   // guide; older models get a derived `budget_tokens`.
-  const anthroEffort = resolveStreamerThinkingEffort(provider, req.model, req.reasoningEffort);
-  const thinking = mapAnthropicThinking(
-    anthroEffort,
-    body['max_tokens'] as number,
-    DEFAULT_MAX_TOKENS,
-    findProviderModel(provider, req.model)?.thinking
-  );
+  const anthroEffort =
+    proxyRoute && claudeCodeProxySkipsThinkingEffort()
+      ? undefined
+      : resolveStreamerThinkingEffort(provider, req.model, req.reasoningEffort);
+  const thinking =
+    proxyRoute && claudeCodeProxySkipsThinkingEffort()
+      ? null
+      : mapAnthropicThinking(
+          anthroEffort,
+          body['max_tokens'] as number,
+          DEFAULT_MAX_TOKENS,
+          findProviderModel(provider, wireModel)?.thinking
+        );
   if (thinking !== null) {
     body['thinking'] = thinking.config;
     if (thinking.effortField !== undefined) {
@@ -246,14 +291,17 @@ export async function* streamAnthropic(
     'x-api-key': provider.apiKey,
     'anthropic-version': '2023-06-01'
   };
-  const betas = new Set(anthropicBetasForProvider(provider.anthropicBetas) ?? []);
-  if (cacheDiagnosticsOn) betas.add(ANTHROPIC_CACHE_DIAGNOSIS_BETA);
+  const supportsAnthropicBetas = anthropicCacheEnabled;
+  const betas = new Set(
+    supportsAnthropicBetas ? (anthropicBetasForProvider(provider.anthropicBetas) ?? []) : []
+  );
+  if (cacheDiagnosticsOn && supportsAnthropicBetas) betas.add(ANTHROPIC_CACHE_DIAGNOSIS_BETA);
 
   // Opportunistic native context editing (server-side tool-result clearing).
   // Backstop ON TOP of the host-side reversible reduction: keeps the most
   // recent tool results and lets the server drop older ones once the prompt
   // crosses the trigger. Only attached when the orchestrator opted in.
-  const ctxEdit = req.anthropicContextEditing;
+  const ctxEdit = supportsAnthropicBetas ? req.anthropicContextEditing : undefined;
   if (ctxEdit && ctxEdit.triggerInputTokens > 0) {
     betas.add(ANTHROPIC_CONTEXT_MANAGEMENT_BETA);
     const clearEdit: Record<string, unknown> = {
@@ -292,9 +340,15 @@ export async function* streamAnthropic(
   // Inactivity watchdog — wraps the caller's signal so a silent SSE
   // connection can't hang the run forever. Mirrors the OpenAI /
   // Ollama transports' pattern; see `streamInactivity.ts` for the
-  // rationale.
+  // rationale. Proxy providers get a longer mid-stream budget because
+  // Composer/Codex can think silently for minutes without SSE bytes.
+  const streamInactivityMs = isClaudeCodeProxyProvider(provider)
+    ? CLAUDE_CODE_PROXY_STREAM_INACTIVITY_MS
+    : STREAM_INACTIVITY_TIMEOUT_MS;
   const watch = createInactivityWatch(
-    req.signal ? { parent: req.signal } : {}
+    req.signal
+      ? { parent: req.signal, timeoutMs: PRE_HEADER_STREAM_INACTIVITY_MS }
+      : { timeoutMs: PRE_HEADER_STREAM_INACTIVITY_MS }
   );
 
   // Adaptive rate guard — same shared cooldown as the other
@@ -355,6 +409,7 @@ export async function* streamAnthropic(
       log.warn('onConnect listener threw; continuing to read stream', { err });
     }
   }
+  watch.setTimeoutMs(streamInactivityMs);
 
   // Anthropic SSE frames carry an explicit `event: <name>` line
   // alongside `data: <json>`. We track the most recent event name
@@ -600,6 +655,7 @@ export async function* streamAnthropic(
         });
       }
     })) {
+      watch.poke();
       const gen = processFrame(frame);
       let r = await gen.next();
       while (!r.done) {
@@ -748,6 +804,17 @@ async function toAnthropicMessages(
       continue;
     }
     if (m.role === 'user') {
+      if (userContentHasAudioParts(m.content)) {
+        throw new ProviderError({
+          kind: 'unknown',
+          status: 400,
+          providerId: req.providerId,
+          providerName: provider.name,
+          friendlyMessage: `${provider.name}: Native audio attachments are not supported by this provider.`,
+          surface: 'chat',
+          rawBody: ''
+        });
+      }
       const fileRefs = await resolveFileRefsForUserContent(provider, m.content);
       wire.push({ role: 'user', content: toAnthropicUserBlocks(m.content, fileRefs) });
       continue;

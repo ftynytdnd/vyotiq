@@ -16,7 +16,6 @@ import { escapeXmlAttr, wrapXml } from './envelope/index.js';
 import { retrieveRelevantMemory } from '../memory/retrieval.js';
 import { readWorkspaceNote } from '../memory/workspaceNotes.js';
 import {
-  RUN_PROGRESS_AGENT_KEY,
   runProgressStorageKey
 } from '../memory/runProgressNote.js';
 import { renderTaskListForContext } from '../tasks/taskStore.js';
@@ -24,6 +23,8 @@ import { getWorkspace } from '../workspace/workspaceState.js';
 import { listConversations } from '../conversations/conversationStore.js';
 import type { ConversationMeta } from '@shared/types/chat';
 import { realpathInsideWorkspace } from '../tools/sandbox.js';
+import { getWorkspaceGitContext } from '../workspace/workspaceGitStatus.js';
+import { formatWorkspaceVcsLine } from '@shared/git/formatLandingGitContext.js';
 
 /** Cap on the run-progress body folded into the runtime tail. */
 const RUN_PROGRESS_MAX_CHARS = 2_000;
@@ -79,7 +80,14 @@ async function workspaceTopLevel(workspacePath?: string): Promise<string> {
     .filter((e) => !['node_modules', '.git', 'dist', 'out', '.next'].includes(e.name))
     .slice(0, TOP_LEVEL_LIMIT)
     .map((e) => (e.isDirectory() ? `[D] ${e.name}/` : `[F] ${e.name}`));
-  return `Workspace: ${displayPath}\nLabel: ${label}\n\nTop-level entries:\n${lines.join('\n')}`;
+  let vcsLine = 'VCS: (unknown)';
+  try {
+    const ctx = await getWorkspaceGitContext(path);
+    vcsLine = formatWorkspaceVcsLine(ctx);
+  } catch {
+    vcsLine = 'VCS: (lookup failed)';
+  }
+  return `Workspace: ${displayPath}\nLabel: ${label}\n${vcsLine}\n\nTop-level entries:\n${lines.join('\n')}`;
 }
 
 export interface ContextEnvelopes {
@@ -458,6 +466,21 @@ export async function refreshEnvelopes(
  */
 export function __resetEnvelopeCacheForTests(): void {
   envelopeCache.clear();
+}
+
+/**
+ * Drop cached envelopes for one conversation so the next
+ * `refreshEnvelopes` rebuilds `<run_progress>` from the task sidecar.
+ * Called after `todos` writes and user `tasks:set` edits so the model
+ * never sees a stale checklist within the 3-second TTL window.
+ */
+export function invalidateEnvelopesForConversation(conversationId: string | undefined): void {
+  const id = conversationId?.trim();
+  if (!id) return;
+  const prefix = `${id}\u0000`;
+  for (const key of envelopeCache.keys()) {
+    if (key.startsWith(prefix)) envelopeCache.delete(key);
+  }
 }
 
 /**

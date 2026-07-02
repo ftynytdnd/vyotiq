@@ -28,6 +28,7 @@ interface UserPromptRowProps {
   content: string;
   attachments?: PromptAttachmentMeta[];
   mentions?: MentionRef[];
+  invokedSkill?: string;
   /** Last turn while the agent is still running. */
   live?: boolean;
 }
@@ -38,6 +39,7 @@ export function UserPromptRow({
   content,
   attachments = [],
   mentions = [],
+  invokedSkill,
   live = false
 }: UserPromptRowProps) {
   const revertCtx = useRevertPrompt();
@@ -98,6 +100,14 @@ export function UserPromptRow({
         />
       ) : (
         <>
+          {invokedSkill ? (
+            <span
+              className="mb-1 inline-flex items-center rounded px-1.5 py-0.5 font-mono text-[11px] text-accent bg-accent/10"
+              title={`Skill /${invokedSkill} invoked`}
+            >
+              /{invokedSkill}
+            </span>
+          ) : null}
           <PromptBody content={content} mentions={mentions} />
           {attachments.length > 0 && (
             <PromptAttachmentCards items={attachments} className="mt-2" />

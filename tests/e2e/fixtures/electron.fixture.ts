@@ -36,6 +36,7 @@ export const test = base.extend<ElectronFixtures>({
         ...process.env,
         ELECTRON_USER_DATA: userDataDir,
         VYOTIQ_LOG_LEVEL: 'warn',
+        VYOTIQ_DISABLE_BUNDLED_GITHUB_OAUTH: '1',
         NODE_ENV: 'test'
       }
     });

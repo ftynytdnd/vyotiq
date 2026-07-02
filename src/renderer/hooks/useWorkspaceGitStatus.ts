@@ -1,52 +1,66 @@
 /**
- * Poll git status for dock file tree badges when the Files panel is visible.
+ * Poll git branch/dirty context for landing and shared status invoke.
  */
 
 import { useEffect, useState } from 'react';
-import type { GitPathStatus, WorkspaceGitStatusResult, WorkspaceTreeChangedPayload } from '@shared/types/ipc.js';
-import { vyotiq } from '../lib/ipc.js';
-import { subscribeWorkspaceTreeChanged } from '../lib/workspaceTreeChangeHub.js';
+import type {
+  GitFileState,
+  GitPathStatus,
+  WorkspaceGitContext
+} from '@shared/types/ipc.js';
+import {
+  subscribeWorkspaceGitStatusPoll,
+  type WorkspaceGitPollSnapshot
+} from '../lib/workspaceGitStatusHub.js';
 
-const POLL_MS = 5_000;
+const EMPTY_CONTEXT: WorkspaceGitContext = {
+  isRepo: false,
+  branch: null,
+  headShort: null,
+  dirtyCount: 0,
+  remote: null
+};
+
+const EMPTY_ENTRIES: Record<string, GitFileState> = {};
+
+const EMPTY_SNAPSHOT: WorkspaceGitPollSnapshot = {
+  paths: {},
+  staged: {},
+  unstaged: {},
+  entries: EMPTY_ENTRIES,
+  context: EMPTY_CONTEXT
+};
+
+export interface WorkspaceGitPollResult {
+  paths: Record<string, GitPathStatus>;
+  staged: Record<string, GitPathStatus>;
+  unstaged: Record<string, GitPathStatus>;
+  entries: Record<string, GitFileState>;
+  context: WorkspaceGitContext;
+}
 
 export function useWorkspaceGitStatus(
   workspaceId: string | null,
   enabled: boolean
-): Record<string, GitPathStatus> {
-  const [paths, setPaths] = useState<Record<string, GitPathStatus>>({});
+): WorkspaceGitPollResult {
+  const [snapshot, setSnapshot] = useState<WorkspaceGitPollSnapshot>(EMPTY_SNAPSHOT);
 
   useEffect(() => {
     if (!workspaceId || !enabled) {
-      setPaths({});
+      setSnapshot(EMPTY_SNAPSHOT);
       return;
     }
 
-    let cancelled = false;
-    let timer: ReturnType<typeof setInterval> | null = null;
-
-    const refresh = () => {
-      void vyotiq.workspace
-        .gitStatus({ workspaceId })
-        .then((result: WorkspaceGitStatusResult) => {
-          if (!cancelled) setPaths(result.paths);
-        })
-        .catch(() => {
-          if (!cancelled) setPaths({});
-        });
-    };
-
-    refresh();
-    timer = setInterval(refresh, POLL_MS);
-    const unsub = subscribeWorkspaceTreeChanged((payload: WorkspaceTreeChangedPayload) => {
-      if (payload.workspaceId === workspaceId) refresh();
-    });
-
-    return () => {
-      cancelled = true;
-      if (timer !== null) clearInterval(timer);
-      unsub();
-    };
+    return subscribeWorkspaceGitStatusPoll(workspaceId, setSnapshot);
   }, [workspaceId, enabled]);
 
-  return paths;
+  return snapshot;
+}
+
+/** Landing-only accessor — same poll as dock git badges. */
+export function useWorkspaceGitContext(
+  workspaceId: string | null,
+  enabled: boolean
+): WorkspaceGitContext {
+  return useWorkspaceGitStatus(workspaceId, enabled).context;
 }

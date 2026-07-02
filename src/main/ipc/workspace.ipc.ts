@@ -9,6 +9,8 @@ import { relative, resolve } from 'node:path';
 import { IPC, WORKSPACE_DOTDIR } from '@shared/constants.js';
 import type {
   WorkspaceDeletePathInput,
+  WorkspaceGitFileDiffInput,
+  WorkspaceGitFileDiffResult,
   WorkspaceListChildrenInput,
   WorkspaceListChildrenResult,
   WorkspaceMkdirInput,
@@ -37,7 +39,8 @@ import { evictPendingChangesCache } from '../checkpoints/pendingChanges.js';
 import { disposeLspSession } from '../lsp/lspManager.js';
 import { WORKSPACE_TREE_IGNORE } from '../workspace/workspaceTreeIgnore.js';
 import { listWorkspaceChildren } from '../workspace/workspaceListChildren.js';
-import { getWorkspaceGitStatus } from '../workspace/workspaceGitStatus.js';
+import { getWorkspaceGitStatusPayload } from '../workspace/workspaceGitStatus.js';
+import { getWorkspaceGitFileDiff } from '../workspace/workspaceGitFileDiff.js';
 import { emitWorkspaceTreeChanged } from '../workspace/workspaceTreeWatcher.js';
 import { assertSafeRelativePath } from '../workspace/workspacePathGuards.js';
 import { realpathInsideWorkspace, resolveInsideWorkspace } from '../tools/sandbox.js';
@@ -56,6 +59,14 @@ import {
 } from './validate.js';
 
 const log = logger.child('ipc/workspace');
+
+const EMPTY_GIT_STATUS = {
+  paths: {},
+  staged: {},
+  unstaged: {},
+  entries: {},
+  context: { isRepo: false, branch: null, headShort: null, dirtyCount: 0, remote: null }
+} as const;
 
 async function pickDirectoryPath(): Promise<string | null> {
   const result = await dialog.showOpenDialog({
@@ -307,7 +318,9 @@ export function registerWorkspaceIpc(): void {
       }
       const relativeDir = input.relativeDir.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/$/, '');
       if (relativeDir) {
-        assertSafeRelativePath('workspace:listChildren', 'input.relativeDir', relativeDir);
+        assertSafeRelativePath('workspace:listChildren', 'input.relativeDir', relativeDir, {
+          allowDotVyotiq: true
+        });
       }
       let wsPath: string | null = null;
       if (input.workspaceId) {
@@ -348,15 +361,35 @@ export function registerWorkspaceIpc(): void {
         try {
           wsPath = await requireWorkspaceById(opts.workspaceId);
         } catch {
-          return { paths: {} };
+          return { ...EMPTY_GIT_STATUS };
         }
       } else {
         const ws = await getWorkspace();
         wsPath = ws.path;
       }
-      if (!wsPath) return { paths: {} };
-      const paths = await getWorkspaceGitStatus(wsPath);
-      return { paths };
+      if (!wsPath) return { ...EMPTY_GIT_STATUS };
+      return getWorkspaceGitStatusPayload(wsPath);
+    }
+  );
+
+  wrapIpcHandler(
+    IPC.WORKSPACE_GIT_FILE_DIFF,
+    async (_event, input: WorkspaceGitFileDiffInput): Promise<WorkspaceGitFileDiffResult> => {
+      assertObject('workspace:git-file-diff', 'input', input);
+      assertString('workspace:git-file-diff', 'workspaceId', input.workspaceId);
+      assertString('workspace:git-file-diff', 'path', input.path, { maxBytes: MAX_PATH_BYTES });
+      assertSafeRelativePath('workspace:git-file-diff', 'path', input.path, {
+        allowDotVyotiq: true
+      });
+      const status = input.status;
+      if (!['M', 'A', 'D', 'U', 'R', '?'].includes(status)) {
+        throw new Error(`Invalid git status: ${String(status)}`);
+      }
+      if (input.staged !== undefined) {
+        assertBoolean('workspace:git-file-diff', 'staged', input.staged);
+      }
+      const wsPath = await requireWorkspaceById(input.workspaceId);
+      return getWorkspaceGitFileDiff(wsPath, input.path, status, { staged: input.staged });
     }
   );
 

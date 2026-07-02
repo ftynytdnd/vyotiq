@@ -120,4 +120,23 @@ describe('measurePopoverPosition', () => {
     expect(expanded.maxHeight).toBeGreaterThan(compact.maxHeight ?? 0);
     expect(expanded.maxHeight).toBeLessThanOrEqual(480);
   });
+
+  it('anchors end-aligned popovers to the trigger right edge before width is measured', () => {
+    const anchor = mockAnchor(new DOMRect(1180, 8, 28, 28));
+    const popover = mockPopover(120, 0);
+
+    const pos = measurePopoverPosition(anchor, popover, 8, 'end', { right: 8, left: 8 }, 'bottom', true, 640);
+
+    expect(pos.left).toBeGreaterThan(1000);
+    expect(pos.left + (popover.offsetWidth || 28)).toBeLessThanOrEqual(1180 + 1);
+  });
+
+  it('centers on the anchor when align is center', () => {
+    const anchor = mockAnchor(new DOMRect(400, 8, 120, 28));
+    const popover = mockPopover(100, 200);
+
+    const pos = measurePopoverPosition(anchor, popover, 8, 'center', { right: 8, left: 8 }, 'bottom', true, 640);
+
+    expect(pos.left).toBeCloseTo(400 + 60 - 100, 0);
+  });
 });

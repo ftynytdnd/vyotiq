@@ -2,8 +2,9 @@
  * Blocking progress modal for vector re-index operations.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { vyotiq } from '../../lib/ipc.js';
+import { bindFocusTrap, focusFirstFocusable } from '../../lib/focusTrap.js';
 import { LoadingHint } from '../ui/LoadingHint.js';
 import { Button } from '../ui/Button.js';
 
@@ -20,6 +21,15 @@ export function VectorReindexModal() {
   const [open, setOpen] = useState(false);
   const [lines, setLines] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const closeTimerRef = useRef<number | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     return vyotiq.memory.onReindexProgress((progress: VectorReindexProgress) => {
@@ -43,23 +53,48 @@ export function VectorReindexModal() {
       }
       if (progress.phase === 'done') {
         setLines((prev) => [...prev, 'Re-index complete.']);
-        window.setTimeout(() => setOpen(false), 600);
+        if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = window.setTimeout(() => {
+          closeTimerRef.current = null;
+          setOpen(false);
+        }, 600);
       }
     });
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const raf = requestAnimationFrame(() => {
+      const root = panelRef.current;
+      if (root) focusFirstFocusable(root);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    return bindFocusTrap({
+      getRoot: () => panelRef.current,
+      disableEscape: true
+    });
+  }, [open]);
 
   if (!open) return null;
 
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-(--z-overlay-confirm) flex items-center justify-center bg-scrim p-4"
       role="dialog"
       aria-modal
       aria-label="Vector re-index"
     >
-      <div className="w-full max-w-md rounded-lg border border-border-subtle bg-surface-raised p-4 shadow-modal">
-        <h2 className="font-mono text-row text-text-primary">Vector re-index</h2>
-        <div className="mt-3 max-h-48 space-y-1 overflow-y-auto font-mono text-meta text-text-secondary">
+      <div
+        ref={panelRef}
+        className="w-full max-w-md rounded-lg border border-border-subtle bg-surface-raised p-4 shadow-modal"
+      >
+        <h2 className="vx-panel-title">Vector re-index</h2>
+        <div className="vx-caption mt-3 max-h-48 space-y-1 overflow-y-auto text-text-secondary">
           {lines.map((line, i) => (
             <p key={`${i}-${line}`}>{line}</p>
           ))}

@@ -9,5 +9,5 @@ export function timelineContentWidthClass(zoneOpen: boolean): string {
 
 /** CSS custom property for agent-column max-width (matches content column). */
 export function timelineAgentColumnMaxWidth(zoneOpen: boolean): string {
-  return zoneOpen ? '42rem' : '52rem';
+  return zoneOpen ? '42rem' : '56rem';
 }

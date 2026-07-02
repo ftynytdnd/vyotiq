@@ -20,6 +20,14 @@ export function userContentHasMultimodalParts(
   );
 }
 
+/** True when user content includes native audio parts (unsupported on Anthropic wire). */
+export function userContentHasAudioParts(
+  content: string | ChatContentPart[] | null | undefined
+): boolean {
+  if (!isChatContentPartArray(content)) return false;
+  return content.some((p) => p.type === 'input_audio');
+}
+
 /** Anthropic content blocks for a user message. */
 export type AnthropicUserWireBlock =
   | { type: 'text'; text: string }

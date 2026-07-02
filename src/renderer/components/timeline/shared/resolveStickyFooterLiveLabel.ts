@@ -4,6 +4,7 @@
 
 import type { TimelineEvent } from '@shared/types/chat.js';
 import type { ToolName } from '@shared/types/tool.js';
+import { basenameFromPath } from '@shared/text/languageFromPath.js';
 import type { LiveRunActivity } from './detectLiveRunActivity.js';
 
 type RunStatusEvent = Extract<TimelineEvent, { kind: 'run-status' }>;
@@ -15,8 +16,6 @@ export interface StickyFooterLiveContext {
   fileEditCount: number;
   elapsedMs: number;
   tokenLabel: string | null;
-  /** Last line of live bash stdout/stderr while a command runs. */
-  bashLiveTail?: string | null;
 }
 
 export function resolveStickyFooterLiveLabel(ctx: StickyFooterLiveContext): {
@@ -35,9 +34,6 @@ export function resolveStickyFooterLiveLabel(ctx: StickyFooterLiveContext): {
   if (ctx.fileEditCount > 0) {
     detailParts.push(`${ctx.fileEditCount} edit${ctx.fileEditCount === 1 ? '' : 's'}`);
   }
-  if (ctx.bashLiveTail && ctx.bashLiveTail.length > 0) {
-    detailParts.push(ctx.bashLiveTail);
-  }
 
   return { headline, detailParts };
 }
@@ -53,6 +49,10 @@ function resolveHeadline(
 
   const streamingTool = act.streamingToolName ?? act.activeToolName;
   if (streamingTool) {
+    if (streamingTool === 'edit' && act.creatingFilePath) {
+      const name = basenameFromPath(act.creatingFilePath) || act.creatingFilePath;
+      return `Creating ${name}`;
+    }
     return toolHeadline(streamingTool) ?? 'Exploring';
   }
 

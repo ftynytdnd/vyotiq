@@ -18,13 +18,24 @@ const log = logger.child('checkpoints-store');
 
 let transcriptRewoundTeardown: (() => void) | undefined;
 
+declare global {
+  interface Window {
+    __vyotiqTranscriptRewoundUnsub?: () => void;
+  }
+}
+
 /**
  * Wire the transcript-rewind broadcast once (first rewind/diff read).
  * Replaces the former App-level `initOnce()` call.
  */
 export function ensureTranscriptRewoundSubscription(): void {
-  if (transcriptRewoundTeardown) return;
-  transcriptRewoundTeardown = vyotiq.checkpoints.onTranscriptRewound((conversationId) => {
+  if (typeof window !== 'undefined') {
+    window.__vyotiqTranscriptRewoundUnsub?.();
+    window.__vyotiqTranscriptRewoundUnsub = undefined;
+  }
+  transcriptRewoundTeardown?.();
+  transcriptRewoundTeardown = undefined;
+  const unsub = vyotiq.checkpoints.onTranscriptRewound((conversationId) => {
     const suppressSet = useCheckpointsStore.getState().suppressNextTranscriptRewound;
     if (suppressSet.has(conversationId)) {
       suppressSet.delete(conversationId);
@@ -40,6 +51,10 @@ export function ensureTranscriptRewoundSubscription(): void {
       }
     })();
   });
+  transcriptRewoundTeardown = unsub;
+  if (typeof window !== 'undefined') {
+    window.__vyotiqTranscriptRewoundUnsub = unsub;
+  }
 }
 
 /** Test-only: reset the subscription so mocks can re-wire `onTranscriptRewound`. */

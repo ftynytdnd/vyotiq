@@ -9,7 +9,6 @@ import type { DisplayRow } from './displayRowTypes.js';
 import type { PartitionedTurn } from './groupTurnSegment.js';
 import { TurnStickyFooter } from './TurnStickyFooter.js';
 import {
-  timelineLiveTurnClassName,
   timelineTurnOuterGapClassName,
   timelineTurnZoneGapClassName,
   timelineAgentColumnClassName
@@ -17,7 +16,7 @@ import {
 
 interface TurnBlockProps {
   partitioned: PartitionedTurn;
-  renderRow: (row: DisplayRow) => ReactNode;
+  renderRow: (row: AgentStreamRow) => ReactNode;
   /** Live run — last turn while the conversation is processing. */
   live?: boolean;
   /** Animate the user prompt from the landing composer position. */
@@ -48,7 +47,6 @@ export const TurnBlock = memo(function TurnBlock({
         timelineTurnZoneGapClassName,
         timelineTurnOuterGapClassName,
         !live && 'vyotiq-stepfade-once',
-        timelineLiveTurnClassName(live),
         className
       )}
     >

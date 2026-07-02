@@ -9,6 +9,7 @@ import { EditorEmptyState } from './EditorEmptyState.js';
 import { TerminalCanvas } from './TerminalCanvas.js';
 import { BrowserCanvas } from './BrowserCanvas.js';
 import { PreviewCanvas } from './PreviewCanvas.js';
+import { SourceControlCanvas } from '../sourceControl/SourceControlCanvas.js';
 import {
   WORKBENCH_PANE_CLASS,
   resolveCompanionTab,
@@ -29,6 +30,8 @@ function CompanionCanvas({ tab }: { tab: CompanionTab }) {
       return <BrowserCanvas />;
     case 'preview':
       return <PreviewCanvas />;
+    case 'source-control':
+      return <SourceControlCanvas />;
     case 'editor':
       if (editorTabs.length === 0 || !activeFilePath) {
         return <EditorEmptyState />;

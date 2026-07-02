@@ -119,7 +119,6 @@ interface UiStore {
   dockExpanded: boolean;
   dockWidth: number;
   workbenchPaneWidth: number;
-  dockPanelTab: DockPanelTab;
   workbenchTab: WorkbenchTab;
   collapsedWorkspaces: Set<string>;
   /** Workspace ids whose dock Files panel is expanded. */
@@ -129,6 +128,7 @@ interface UiStore {
   setDockExpanded: (expanded: boolean) => void;
   setDockWidth: (width: number) => void;
   setWorkbenchPaneWidth: (width: number) => void;
+  /** Expand/collapse the active workspace Files panel in the dock. */
   setDockPanelTab: (tab: DockPanelTab) => void;
   setWorkspaceFilesExpanded: (workspaceId: string, expanded: boolean) => void;
   toggleWorkspaceFilesExpanded: (workspaceId: string) => void;
@@ -175,20 +175,10 @@ function persistFilesExpandedWorkspaces(set: Set<string>): void {
   filesExpandedPersistTimer = setTimeout(flushFilesExpandedNow, PERSIST_DEBOUNCE_MS);
 }
 
-function syncDockPanelTabForWorkspace(
-  set: (partial: Pick<UiStore, 'dockPanelTab'>) => void,
-  get: () => UiStore,
-  workspaceId: string
-): void {
-  const tab: DockPanelTab = get().filesExpandedWorkspaces.has(workspaceId) ? 'files' : 'chats';
-  if (get().dockPanelTab !== tab) set({ dockPanelTab: tab });
-}
-
 export const useUiStore = create<UiStore>((set, get) => ({
   dockExpanded: false,
   dockWidth: DOCK_WIDTH_DEFAULT,
   workbenchPaneWidth: WORKBENCH_PANE_WIDTH_DEFAULT,
-  dockPanelTab: 'chats',
   workbenchTab: 'agent',
   collapsedWorkspaces: new Set<string>(),
   filesExpandedWorkspaces: new Set<string>(),
@@ -217,12 +207,8 @@ export const useUiStore = create<UiStore>((set, get) => ({
   },
   setDockPanelTab: (tab) => {
     const activeId = useWorkspaceStore.getState().activeId;
-    if (activeId) {
-      get().setWorkspaceFilesExpanded(activeId, tab === 'files');
-      return;
-    }
-    if (get().dockPanelTab === tab) return;
-    set({ dockPanelTab: tab });
+    if (!activeId) return;
+    get().setWorkspaceFilesExpanded(activeId, tab === 'files');
   },
   setWorkspaceFilesExpanded: (workspaceId, expanded) => {
     const current = get().filesExpandedWorkspaces;
@@ -232,7 +218,6 @@ export const useUiStore = create<UiStore>((set, get) => ({
     if (expanded) next.add(workspaceId);
     else next.delete(workspaceId);
     set({ filesExpandedWorkspaces: next });
-    syncDockPanelTabForWorkspace(set, get, workspaceId);
     if (get().hydrated) persistFilesExpandedWorkspaces(next);
   },
   toggleWorkspaceFilesExpanded: (workspaceId) => {
@@ -269,9 +254,6 @@ export const useUiStore = create<UiStore>((set, get) => ({
   },
   hydrate: ({ dockExpanded, dockWidth, workbenchPaneWidth, collapsedWorkspaces, filesExpandedWorkspaces }) => {
     const filesExpanded = new Set(filesExpandedWorkspaces ?? []);
-    const activeId = useWorkspaceStore.getState().activeId;
-    const dockPanelTab: DockPanelTab =
-      activeId && filesExpanded.has(activeId) ? 'files' : 'chats';
     set({
       dockExpanded,
       dockWidth: clampDockWidth(dockWidth ?? DOCK_WIDTH_DEFAULT),
@@ -280,7 +262,6 @@ export const useUiStore = create<UiStore>((set, get) => ({
       ),
       collapsedWorkspaces: new Set(collapsedWorkspaces ?? []),
       filesExpandedWorkspaces: filesExpanded,
-      dockPanelTab,
       hydrated: true
     });
   }

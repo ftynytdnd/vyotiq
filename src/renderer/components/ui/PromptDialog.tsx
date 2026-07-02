@@ -13,7 +13,7 @@ import { Button } from './Button.js';
 import { ComposerDialog } from './ComposerDialog.js';
 import { ComposerDialogPortal } from './ComposerDialogAnchor.js';
 import { TextField } from './TextField.js';
-import { ShellCaption, ShellFieldActions } from './ShellSection.js';
+import { ShellCaption, ShellFieldActions, ShellFieldLabel } from './ShellSection.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { cn } from '../../lib/cn.js';
@@ -32,6 +32,8 @@ export interface PromptDialogProps {
   /** Recent paths for `workspacePath` (defaults to workspace registry). */
   recentPaths?: string[];
   validate?: (value: string) => string | null;
+  /** Portal above full-screen surfaces (e.g. Settings) when the composer anchor is unmounted. */
+  elevated?: boolean;
   onSubmit: (value: string) => void;
   onCancel: () => void;
 }
@@ -47,6 +49,7 @@ export function PromptDialog({
   variant = 'text',
   recentPaths: recentPathsProp,
   validate,
+  elevated = false,
   onSubmit,
   onCancel
 }: PromptDialogProps) {
@@ -110,7 +113,7 @@ export function PromptDialog({
   const enterPrimaryRef = isWorkspacePath ? browseRef : submitRef;
 
   return (
-    <ComposerDialogPortal>
+    <ComposerDialogPortal elevated={elevated}>
       <ComposerDialog
         open={open}
         onClose={onCancel}
@@ -129,7 +132,7 @@ export function PromptDialog({
             <>
               <Button
                 ref={browseRef}
-                variant="primary"
+                variant="accentFill"
                 className="w-full justify-center"
                 onClick={() => void onBrowse()}
                 disabled={browseBusy}
@@ -140,7 +143,7 @@ export function PromptDialog({
 
               {recentPaths.length > 0 && (
                 <div className="flex flex-col gap-1">
-                  <span className="text-meta font-medium text-text-faint">Recent workspaces</span>
+                  <ShellFieldLabel>Recent workspaces</ShellFieldLabel>
                   <ul
                     className={cn(
                       'scrollbar-stealth max-h-28 overflow-y-auto rounded-[var(--radius-inner)]',
@@ -164,8 +167,9 @@ export function PromptDialog({
               )}
 
               <div className="flex flex-col gap-1.5">
-                <span className="text-meta font-medium text-text-faint">Or paste a path</span>
+                <ShellFieldLabel htmlFor="prompt-dialog-workspace-path">Or paste a path</ShellFieldLabel>
                 <TextField
+                  id="prompt-dialog-workspace-path"
                   ref={inputRef}
                   type="text"
                   value={value}

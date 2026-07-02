@@ -6,6 +6,7 @@
 
 import type { ReactNode } from 'react';
 import { ChatComposerZone } from './ChatComposerZone.js';
+import { ChatLandingShortcutHints } from './ChatLandingShortcutHints.js';
 import { AskUserOverlayHost } from '../components/timeline/askUser/AskUserOverlayHost.js';
 import { ComposerDialogAnchor } from '../components/ui/ComposerDialogAnchor.js';
 import type { ModelSelection } from '@shared/types/provider.js';
@@ -23,6 +24,8 @@ interface ChatFooterProps {
   landing?: boolean;
   /** Setup CTAs above composer (no workspace / no provider). */
   setupLead?: ReactNode;
+  /** Show keyboard shortcut hints below composer (ready empty-chat landing). */
+  showShortcutHints?: boolean;
   /** Focus the message field when the empty-chat landing is shown. */
   requestFocus?: boolean;
   /** Changes re-trigger focus (e.g. switching empty conversations). */
@@ -40,6 +43,7 @@ export function ChatFooter({
   centered = false,
   landing = false,
   setupLead,
+  showShortcutHints = false,
   requestFocus,
   dockingFromCenter = false,
   focusSession
@@ -59,13 +63,13 @@ export function ChatFooter({
         className={cn(
           'relative mx-auto w-full transition-[max-width] duration-200 ease-out',
           contentWidth,
-          centered && 'mb-[clamp(3.5rem,11vh,6.5rem)] vyotiq-chat-landing-enter'
+          centered && 'vyotiq-chat-landing-enter'
         )}
       >
         {setupLead}
         <div
           ref={jumpOverlayHostRef}
-          className="pointer-events-none absolute inset-x-0 bottom-full z-30 mb-2 flex justify-center"
+          className="pointer-events-none absolute inset-x-0 bottom-full z-30 mb-3 flex justify-center"
           aria-hidden
         />
         <ComposerDialogAnchor className="vx-composer-dialog-slot empty:hidden" />
@@ -78,6 +82,7 @@ export function ChatFooter({
           requestFocus={requestFocus}
           focusSession={focusSession}
         />
+        {showShortcutHints ? <ChatLandingShortcutHints /> : null}
       </div>
     </div>
   );

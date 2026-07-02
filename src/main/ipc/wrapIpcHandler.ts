@@ -20,6 +20,7 @@ import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { logger } from '../logging/logger.js';
 import { isProviderError } from '../providers/providerError.js';
 import { isIpcCancelledError } from './ipcCancelledError.js';
+import { isGitUserError } from '../workspace/gitUserError.js';
 
 /**
  * Registers an IPC handler with logging + error capture. Drop-in
@@ -72,6 +73,10 @@ export function wrapIpcHandler<
           providerId: err.providerId,
           message: err.friendlyMessage
         });
+        throw err;
+      }
+      if (isGitUserError(err)) {
+        log.warn('git user error', { ms, channel, message: err.message });
         throw err;
       }
       const message = err instanceof Error ? err.message : String(err);

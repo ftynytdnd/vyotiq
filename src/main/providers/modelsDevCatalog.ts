@@ -341,7 +341,22 @@ export async function enrichModelsFromModelsDev(
 
     if (!changed) return model;
     enriched += 1;
-    return { ...model, contextWindow, pricing, thinking, supportedParameters, inputModalities };
+    const estimatedFields: Partial<ModelInfo> = {};
+    if (contextWindow !== undefined && model.contextWindow === undefined && hit.context !== undefined) {
+      estimatedFields.contextEstimated = true;
+    }
+    if (inputModalities !== undefined && model.inputModalities === undefined && hit.inputModalities) {
+      estimatedFields.inputModalitiesEstimated = true;
+    }
+    return {
+      ...model,
+      contextWindow,
+      pricing,
+      thinking,
+      supportedParameters,
+      inputModalities,
+      ...estimatedFields
+    };
   });
 
   if (enriched > 0) {

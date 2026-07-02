@@ -28,10 +28,21 @@ const writeTaskList = vi.fn(
 );
 const appendEvent = vi.fn(async () => undefined);
 const safeWebContentsSend = vi.fn(() => true);
+const invalidateEnvelopesForConversation = vi.fn();
+const readLastTodosFromTranscript = vi.fn(async () => []);
 
 vi.mock('@main/tasks/taskStore.js', () => ({
   readTaskList: (...args: unknown[]) => readTaskList(...args),
   writeTaskList: (...args: unknown[]) => writeTaskList(...args)
+}));
+
+vi.mock('@main/tasks/taskTranscriptFallback.js', () => ({
+  readLastTodosFromTranscript: (...args: unknown[]) => readLastTodosFromTranscript(...args)
+}));
+
+vi.mock('@main/orchestrator/contextManager.js', () => ({
+  invalidateEnvelopesForConversation: (...args: unknown[]) =>
+    invalidateEnvelopesForConversation(...args)
 }));
 
 vi.mock('@main/conversations/conversationStore.js', () => ({
@@ -47,6 +58,9 @@ beforeEach(async () => {
   writeTaskList.mockClear();
   appendEvent.mockClear();
   safeWebContentsSend.mockClear();
+  invalidateEnvelopesForConversation.mockClear();
+  readLastTodosFromTranscript.mockClear();
+  readLastTodosFromTranscript.mockResolvedValue([]);
   mockIpc.__handlers.clear();
   const { registerTasksIpc } = await import('@main/ipc/tasks.ipc.js');
   registerTasksIpc();
@@ -61,7 +75,25 @@ describe('tasks IPC', () => {
     });
     const list = await mockIpc.__invoke(IPC.TASKS_GET, 'conv-1');
     expect(readTaskList).toHaveBeenCalledWith('conv-1');
+    expect(readLastTodosFromTranscript).not.toHaveBeenCalled();
     expect(list).toMatchObject({ conversationId: 'conv-1', items: [{ id: '1' }] });
+  });
+
+  it('tasks:get falls back to transcript when the sidecar is empty', async () => {
+    readTaskList.mockResolvedValueOnce({
+      conversationId: 'conv-1',
+      items: [],
+      updatedAt: 0
+    });
+    readLastTodosFromTranscript.mockResolvedValueOnce([
+      { id: '2', content: 'from transcript', status: 'pending' }
+    ]);
+    const list = await mockIpc.__invoke(IPC.TASKS_GET, 'conv-1');
+    expect(readLastTodosFromTranscript).toHaveBeenCalledWith('conv-1');
+    expect(list).toMatchObject({
+      conversationId: 'conv-1',
+      items: [{ id: '2', content: 'from transcript', status: 'pending' }]
+    });
   });
 
   it('tasks:set writes and emits todos-update', async () => {
@@ -73,6 +105,7 @@ describe('tasks IPC', () => {
     });
     const list = await mockIpc.__invoke(IPC.TASKS_SET, 'conv-1', items);
     expect(writeTaskList).toHaveBeenCalledWith('conv-1', items, false);
+    expect(invalidateEnvelopesForConversation).toHaveBeenCalledWith('conv-1');
     expect(list).toMatchObject({ items });
     expect(appendEvent).toHaveBeenCalledTimes(1);
     const event = appendEvent.mock.calls[0]?.[1] as { kind: string; items: unknown[] };

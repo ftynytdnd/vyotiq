@@ -19,3 +19,6 @@ allowBuilds:
   node-pty: true
   fsevents: true
   lzma-native: false
+  protobufjs: true
+  sharp: true
+  onnxruntime-node: false

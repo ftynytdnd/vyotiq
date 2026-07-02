@@ -75,15 +75,20 @@ function FollowUpRowBody({ item, editing = false, stale = false }: FollowUpRowBo
     <div className="vx-composer-followup-row__body min-w-0 flex-1">
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
         <FollowUpSourceBadge source={item.source} />
+        {item.invokedSkill ? (
+          <span className="vx-composer-followup-source-badge" title={`Skill /${item.invokedSkill}`}>
+            /{item.invokedSkill}
+          </span>
+        ) : null}
         <FollowUpModelChip selection={item.selection} />
         {stale ? <FollowUpStaleBadge /> : null}
         {editing ? (
           <span className="vx-composer-followup-editing-badge">editing</span>
         ) : null}
-        <p className="min-w-0 truncate text-meta text-text-secondary" title={promptText}>
-          {promptText}
-        </p>
       </div>
+      <p className="min-w-0 truncate text-row text-text-primary" title={promptText}>
+        {promptText}
+      </p>
       {item.attachmentMeta && item.attachmentMeta.length > 0 ? (
         <PromptAttachmentCards items={item.attachmentMeta} className="mt-0.5" />
       ) : null}

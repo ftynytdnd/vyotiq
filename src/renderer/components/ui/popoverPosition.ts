@@ -6,7 +6,7 @@
 import { MODEL_PICKER_FIT_MAX_WIDTH_PX } from '@renderer/components/composer/modelPicker/modelPickerLayout.js';
 
 export type PopoverSide = 'top' | 'bottom';
-export type PopoverAlign = 'start' | 'end' | 'fit';
+export type PopoverAlign = 'start' | 'end' | 'center' | 'fit';
 
 export interface PopoverCollisionPadding {
   top?: number;
@@ -70,9 +70,14 @@ function resolveHorizontal(
   const availW = Math.max(0, viewportW - padLeft - padRight);
   const maxWidth = Math.min(fitMaxWidth, availW);
 
+  const effectiveWidth =
+    popW > 0 ? Math.min(popW, maxWidth) : Math.min(maxWidth, Math.max(rect.width, 1));
+
   let left: number;
   if (align === 'end') {
-    left = rect.right - (popW > 0 ? Math.min(popW, maxWidth) : maxWidth);
+    left = rect.right - effectiveWidth;
+  } else if (align === 'center') {
+    left = rect.left + rect.width / 2 - effectiveWidth / 2;
   } else if (align === 'fit') {
     left = Math.max(padLeft, Math.min(rect.left, viewportW - padRight - maxWidth));
   } else {

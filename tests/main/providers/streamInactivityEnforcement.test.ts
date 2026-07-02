@@ -49,6 +49,16 @@ describe('STREAM_INACTIVITY_TIMEOUT_MS enforcement (M3)', () => {
     expect(src).toMatch(/inactive mid-read/);
   });
 
+  it('anthropicChatStream wires createInactivityWatch with proxy-aware mid-stream budget', async () => {
+    const src = await readSource('src/main/providers/anthropicChatStream.ts');
+    expect(src).toContain("from './streamInactivity.js'");
+    expect(src).toContain('createInactivityWatch(');
+    expect(src).toMatch(/inactive before headers/);
+    expect(src).toMatch(/inactive mid-read/);
+    expect(src).toContain('CLAUDE_CODE_PROXY_STREAM_INACTIVITY_MS');
+    expect(src).toContain('watch.setTimeoutMs(streamInactivityMs)');
+  });
+
   it('streamInactivity.ts defaults to STREAM_INACTIVITY_TIMEOUT_MS', async () => {
     const src = await readSource('src/main/providers/streamInactivity.ts');
     // The default branch reads from the shared constant — a future

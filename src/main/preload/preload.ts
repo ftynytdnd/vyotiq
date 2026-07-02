@@ -12,7 +12,6 @@ import type { ChatSendInput, TimelineEvent } from '../../shared/types/chat.js';
 import type {
   AddProviderInput,
   ProviderConfig,
-  ModelInfo,
   ProviderDiscoverModelsResult
 } from '../../shared/types/provider.js';
 import type { ProviderAccountSnapshotMap } from '../../shared/types/providerAccount.js';
@@ -42,6 +41,35 @@ const api: VyotiqApi = {
     listTree: (opts) => ipcRenderer.invoke(IPC.WORKSPACE_LIST_TREE, opts),
     listChildren: (input) => ipcRenderer.invoke(IPC.WORKSPACE_LIST_CHILDREN, input),
     gitStatus: (opts) => ipcRenderer.invoke(IPC.WORKSPACE_GIT_STATUS, opts),
+    gitFileDiff: (input) => ipcRenderer.invoke(IPC.WORKSPACE_GIT_FILE_DIFF, input),
+    gitStage: (input) => ipcRenderer.invoke(IPC.WORKSPACE_GIT_STAGE, input),
+    gitUnstage: (input) => ipcRenderer.invoke(IPC.WORKSPACE_GIT_UNSTAGE, input),
+    gitCommit: (input) => ipcRenderer.invoke(IPC.WORKSPACE_GIT_COMMIT, input),
+    gitPush: (input) => ipcRenderer.invoke(IPC.WORKSPACE_GIT_PUSH, input),
+    gitPull: (input) => ipcRenderer.invoke(IPC.WORKSPACE_GIT_PULL, input),
+    gitFetch: (input) => ipcRenderer.invoke(IPC.WORKSPACE_GIT_FETCH, input),
+    gitDiscard: (input) => ipcRenderer.invoke(IPC.WORKSPACE_GIT_DISCARD, input),
+    gitStash: (input) => ipcRenderer.invoke(IPC.WORKSPACE_GIT_STASH, input),
+    gitStashPop: (input) => ipcRenderer.invoke(IPC.WORKSPACE_GIT_STASH_POP, input),
+    gitStashDrop: (input) => ipcRenderer.invoke(IPC.WORKSPACE_GIT_STASH_DROP, input),
+    gitStashList: (input) => ipcRenderer.invoke(IPC.WORKSPACE_GIT_STASH_LIST, input),
+    gitBranches: (input) => ipcRenderer.invoke(IPC.WORKSPACE_GIT_BRANCHES, input),
+    gitCheckout: (input) => ipcRenderer.invoke(IPC.WORKSPACE_GIT_CHECKOUT, input),
+    gitCreateBranch: (input) => ipcRenderer.invoke(IPC.WORKSPACE_GIT_CREATE_BRANCH, input),
+    gitGenerateCommitMessage: (input, onDelta) => {
+      const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const cleanup = onDelta
+        ? on<[{ requestId: string; delta: string }]>(
+            IPC.WORKSPACE_GIT_COMMIT_MESSAGE_DELTA,
+            (payload) => {
+              if (payload.requestId === requestId) onDelta(payload.delta);
+            }
+          )
+        : undefined;
+      return ipcRenderer
+        .invoke(IPC.WORKSPACE_GIT_GENERATE_COMMIT_MESSAGE, { ...input, requestId })
+        .finally(() => cleanup?.());
+    },
     list: () => ipcRenderer.invoke(IPC.WORKSPACES_LIST),
     add: (path?: string) => ipcRenderer.invoke(IPC.WORKSPACES_ADD, path),
     setActive: (id: string) => ipcRenderer.invoke(IPC.WORKSPACES_SET_ACTIVE, id),
@@ -50,6 +78,7 @@ const api: VyotiqApi = {
       ipcRenderer.invoke(IPC.WORKSPACES_REMOVE, id, opts),
     retryReachability: (id: string) =>
       ipcRenderer.invoke(IPC.WORKSPACES_RETRY_REACHABILITY, id),
+    switchBranch: (input) => ipcRenderer.invoke(IPC.WORKSPACES_SWITCH_BRANCH, input),
     mkdir: (input) => ipcRenderer.invoke(IPC.WORKSPACE_MKDIR, input),
     renamePath: (input) => ipcRenderer.invoke(IPC.WORKSPACE_RENAME_PATH, input),
     deletePath: (input) => ipcRenderer.invoke(IPC.WORKSPACE_DELETE_PATH, input),
@@ -74,6 +103,8 @@ const api: VyotiqApi = {
     discoverModels: (id, force): Promise<ProviderDiscoverModelsResult> =>
       ipcRenderer.invoke(IPC.PROVIDERS_DISCOVER_MODELS, id, force),
     test: (id) => ipcRenderer.invoke(IPC.PROVIDERS_TEST, id),
+    claudeCodeProxyAction: (action) =>
+      ipcRenderer.invoke(IPC.PROVIDERS_CLAUDE_CODE_PROXY_ACTION, action),
     getAccounts: () => ipcRenderer.invoke(IPC.PROVIDERS_GET_ACCOUNTS),
     refreshAccounts: () => ipcRenderer.invoke(IPC.PROVIDERS_REFRESH_ACCOUNTS),
     setAccountPollSource: (source: string, active: boolean) =>
@@ -111,6 +142,8 @@ const api: VyotiqApi = {
     readBefore: (id, beforeEventId, limit) =>
       ipcRenderer.invoke(IPC.CONVERSATIONS_READ_BEFORE, id, beforeEventId, limit),
     export: (id, format) => ipcRenderer.invoke(IPC.CONVERSATIONS_EXPORT, id, format),
+    search: (workspaceId, query, limit) =>
+      ipcRenderer.invoke(IPC.CONVERSATIONS_SEARCH, workspaceId, query, limit),
     create: (workspaceId: string) => ipcRenderer.invoke(IPC.CONVERSATIONS_CREATE, workspaceId),
     rename: (id, title) => ipcRenderer.invoke(IPC.CONVERSATIONS_RENAME, id, title),
     remove: (id) => ipcRenderer.invoke(IPC.CONVERSATIONS_REMOVE, id),
@@ -125,7 +158,37 @@ const api: VyotiqApi = {
   scheduledRuns: {
     list: () => ipcRenderer.invoke(IPC.SCHEDULED_RUNS_LIST),
     upsert: (input) => ipcRenderer.invoke(IPC.SCHEDULED_RUNS_UPSERT, input),
-    delete: (id) => ipcRenderer.invoke(IPC.SCHEDULED_RUNS_DELETE, id)
+    delete: (id) => ipcRenderer.invoke(IPC.SCHEDULED_RUNS_DELETE, id),
+    onUpdated: (cb) =>
+      on<[import('@shared/types/scheduledRun.js').ScheduledRun[]]>(IPC.SCHEDULED_RUNS_UPDATED, (runs) =>
+        cb(runs)
+      )
+  },
+
+  github: {
+    listAccounts: () => ipcRenderer.invoke(IPC.GITHUB_ACCOUNTS_LIST),
+    startDeviceFlow: (host?: string) => ipcRenderer.invoke(IPC.GITHUB_ACCOUNTS_START_DEVICE, host),
+    pollDeviceFlow: (deviceCode: string, host?: string) =>
+      ipcRenderer.invoke(IPC.GITHUB_ACCOUNTS_POLL_DEVICE, deviceCode, host),
+    addPat: (input) => ipcRenderer.invoke(IPC.GITHUB_ACCOUNTS_ADD_PAT, input),
+    removeAccount: (id: string) => ipcRenderer.invoke(IPC.GITHUB_ACCOUNTS_REMOVE, id),
+    verifyAccount: (id: string) => ipcRenderer.invoke(IPC.GITHUB_ACCOUNTS_VERIFY, id),
+    isOAuthConfigured: () => ipcRenderer.invoke(IPC.GITHUB_OAUTH_CONFIGURED),
+    listRepos: (input) => ipcRenderer.invoke(IPC.GITHUB_REPOS_LIST, input),
+    listOrgs: (accountId: string) => ipcRenderer.invoke(IPC.GITHUB_ORGS_LIST, accountId),
+    listRecentRepos: (accountId: string) => ipcRenderer.invoke(IPC.GITHUB_REPOS_RECENT, accountId),
+    getCloneState: (accountId: string, owner: string, repo: string) =>
+      ipcRenderer.invoke(IPC.GITHUB_REPOS_CLONE_STATE, accountId, owner, repo),
+    listBranches: (accountId: string, owner: string, repo: string) =>
+      ipcRenderer.invoke(IPC.GITHUB_REPOS_BRANCHES, accountId, owner, repo),
+    openRepo: (input) => ipcRenderer.invoke(IPC.GITHUB_REPOS_OPEN, input),
+    e2eSeed: (input) => ipcRenderer.invoke(IPC.GITHUB_E2E_SEED, input),
+    e2eBindWorkspace: (input) => ipcRenderer.invoke(IPC.GITHUB_E2E_BIND_WORKSPACE, input),
+    onGitProgress: (cb) =>
+      on<[import('../../shared/types/github.js').GitHubGitProgress]>(
+        IPC.GITHUB_GIT_PROGRESS,
+        (payload) => cb(payload)
+      )
   },
 
   heartbeat: {
@@ -230,6 +293,19 @@ const api: VyotiqApi = {
     writeSection: (sectionId, body) =>
       ipcRenderer.invoke(IPC.HARNESS_WRITE_SECTION, sectionId, body),
     resetSection: (sectionId) => ipcRenderer.invoke(IPC.HARNESS_RESET_SECTION, sectionId)
+  },
+
+  skills: {
+    list: (workspaceId) => ipcRenderer.invoke(IPC.SKILLS_LIST, workspaceId),
+    read: (workspaceId, skillName) => ipcRenderer.invoke(IPC.SKILLS_READ, workspaceId, skillName),
+    create: (workspaceId, skillName) =>
+      ipcRenderer.invoke(IPC.SKILLS_CREATE, workspaceId, skillName),
+    reveal: (workspaceId, skillName) =>
+      ipcRenderer.invoke(IPC.SKILLS_REVEAL, workspaceId, skillName),
+    writeOverride: (workspaceId, skillName, body) =>
+      ipcRenderer.invoke(IPC.SKILLS_WRITE_OVERRIDE, workspaceId, skillName, body),
+    resetOverride: (workspaceId, skillName) =>
+      ipcRenderer.invoke(IPC.SKILLS_RESET_OVERRIDE, workspaceId, skillName)
   },
 
   editor: {

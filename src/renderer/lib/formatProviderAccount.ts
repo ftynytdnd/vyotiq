@@ -4,6 +4,7 @@
 
 import type { ProviderAccountSnapshot } from '@shared/types/providerAccount.js';
 import { formatRunCostUsd } from '@shared/providers/estimateRunCost.js';
+import { formatClaudeCodeProxyAccountLine } from '@shared/providers/claudeCodeProxy.js';
 
 function currencySymbol(currency: string | undefined): string {
   const c = (currency ?? 'USD').toUpperCase();
@@ -74,10 +75,11 @@ export function managementKeyDocsUrl(hostKind: string | undefined): string | nul
   }
 }
 
-/** One-line account summary for picker footer / composer. */
+/** One-line account summary for picker footer and settings lists. */
 export function formatProviderAccountLine(snapshot: ProviderAccountSnapshot | undefined): string | null {
   if (!snapshot) return null;
   if (snapshot.status === 'local') return 'Local — no billing';
+  if (snapshot.hostKind === 'claude-code-proxy') return formatClaudeCodeProxyAccountLine(snapshot);
 
   const parts: string[] = [];
   if (snapshot.planLabel) parts.push(snapshot.planLabel);
@@ -97,6 +99,13 @@ export function formatProviderAccountLine(snapshot: ProviderAccountSnapshot | un
   return parts.join(' · ');
 }
 
+/** Composer chip row — omit healthy claude-code-proxy noise (warnings use ComposerProxyStatusStrip). */
+export function formatComposerAccountLine(snapshot: ProviderAccountSnapshot | undefined): string | null {
+  if (!snapshot) return null;
+  if (snapshot.hostKind === 'claude-code-proxy') return null;
+  return formatProviderAccountLine(snapshot);
+}
+
 export interface ProviderAccountDetailRow {
   label: string;
   value: string;
@@ -111,6 +120,19 @@ export function formatProviderAccountDetailRows(
 
   if (snapshot.status === 'local') {
     rows.push({ label: 'Billing', value: 'Local provider — no cloud billing' });
+    return rows;
+  }
+
+  if (snapshot.hostKind === 'claude-code-proxy') {
+    if (snapshot.planLabel) rows.push({ label: 'Bridge', value: snapshot.planLabel });
+    if (snapshot.message) rows.push({ label: 'Status', value: snapshot.message });
+    if (snapshot.fetchedAt) {
+      const ageSec = Math.max(0, Math.round((Date.now() - snapshot.fetchedAt) / 1000));
+      rows.push({
+        label: 'Updated',
+        value: ageSec < 5 ? 'just now' : `${ageSec}s ago`
+      });
+    }
     return rows;
   }
 

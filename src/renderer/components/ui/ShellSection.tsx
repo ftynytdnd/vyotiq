@@ -30,7 +30,7 @@ export function ShellSection({
 }) {
   return (
     <section className={cn('vx-section', className)}>
-      {title ? <h3 className="vx-section-head">{title}</h3> : null}
+      {title ? <h4 className="vx-section-head">{title}</h4> : null}
       <div className={cn('vx-section-body', variant === 'rail' && 'vx-section-body--rail')}>
         {children}
       </div>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isComposerModelValid,
+  resolveAutoModelSelection,
   resolveComposerModel
 } from '@renderer/lib/resolveComposerModel';
 import type { ProviderConfig } from '@shared/types/provider.js';
@@ -73,5 +74,41 @@ describe('resolveComposerModel', () => {
     });
 
     expect(sel).toEqual({ providerId: 'remote', modelId: 'alpha' });
+  });
+
+  it('uses authoring model when auto mode is enabled for workspace', () => {
+    const sel = resolveComposerModel({
+      providers,
+      activeConversationId: 'c1',
+      conversationList: [
+        {
+          id: 'c1',
+          workspaceId: 'ws-1',
+          lastProviderId: 'remote',
+          lastModelId: 'alpha'
+        } as never
+      ],
+      activeWorkspaceId: 'ws-1',
+      lastModelByWorkspace: { 'ws-1': { providerId: 'remote', modelId: 'beta' } },
+      defaultModel: { providerId: 'remote', modelId: 'alpha' },
+      authoringModel: { providerId: 'remote', modelId: 'beta' },
+      autoModelEnabled: true
+    });
+
+    expect(sel).toEqual({
+      providerId: 'remote',
+      modelId: 'beta',
+      thinkingEffort: 'high'
+    });
+  });
+
+  it('resolveAutoModelSelection prefers authoring over default', () => {
+    expect(
+      resolveAutoModelSelection(
+        providers,
+        { providerId: 'remote', modelId: 'beta' },
+        { providerId: 'remote', modelId: 'alpha' }
+      )
+    ).toEqual({ providerId: 'remote', modelId: 'beta', thinkingEffort: 'high' });
   });
 });

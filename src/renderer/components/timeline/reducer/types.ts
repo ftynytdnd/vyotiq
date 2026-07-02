@@ -14,7 +14,7 @@ export interface AssistantTextAcc {
   done: boolean;
   /**
    * Wall-clock timestamp of the first `agent-text-delta` for this id.
-   * Powers the live tok/s readout in `LiveStatusRow` while text is
+   * Powers the live tok/s readout in `TurnStickyFooter` while text is
    * streaming; calculated as `chars/4 / max(now - startedAt, 0.5s)`.
    * Stamped once on first delta and never overwritten — spread order
    * in the reducer guarantees the original anchor survives subsequent

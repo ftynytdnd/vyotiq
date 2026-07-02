@@ -32,6 +32,14 @@ describe('workspace path guards', () => {
     ).not.toThrow();
   });
 
+  it('allows read-only git diff under .vyotiq', () => {
+    expect(() =>
+      assertSafeRelativePath('workspace:git-file-diff', 'path', '.vyotiq/cache/index.json', {
+        allowDotVyotiq: true
+      })
+    ).not.toThrow();
+  });
+
   it('still rejects dot root for mutating ops', () => {
     expect(() => assertSafeRelativePath('workspace:mkdir', 'path', '.')).toThrow(/invalid path/);
   });

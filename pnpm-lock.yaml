@@ -4841,7 +4841,7 @@ snapshots:
 
   '@types/fs-extra@9.0.13':
     dependencies:
-      '@types/node': 24.12.2
+      '@types/node': 22.19.17
 
   '@types/hast@3.0.4':
     dependencies:
@@ -4851,7 +4851,7 @@ snapshots:
 
   '@types/keyv@3.1.4':
     dependencies:
-      '@types/node': 24.12.2
+      '@types/node': 22.19.17
 
   '@types/mdast@4.0.4':
     dependencies:

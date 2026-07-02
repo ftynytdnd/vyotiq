@@ -5,6 +5,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DockNavigator } from './DockNavigator.js';
 import { DockSearchPopover } from './DockSearchPopover.js';
+import { DockScheduledRunsPopover } from './DockScheduledRunsPopover.js';
+import { DockWorkspaceLauncher } from './DockWorkspaceLauncher.js';
 import {
   clampDockWidth,
   DOCK_INSET_CLASS,
@@ -16,17 +18,17 @@ import { useDockShortcuts } from './useDockShortcuts.js';
 import { useWorkspaceTreeWatcher } from '../../hooks/useWorkspaceTreeWatcher.js';
 import { useUiStore } from '../../store/useUiStore.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
+import { useDockSchedulesStore } from '../../store/useDockSchedulesStore.js';
+import { useWorkspaceLauncherStore } from '../../store/useWorkspaceLauncherStore.js';
 import { cn } from '../../lib/cn.js';
 
 export interface LeftDockProps {
-  onOpenWorkspace: () => void;
   onSetWorkspacePath: () => void;
   /** Flyout stays collapsed while settings is open. */
   settingsMode?: boolean;
 }
 
 export function LeftDock({
-  onOpenWorkspace,
   onSetWorkspacePath,
   settingsMode = false
 }: LeftDockProps) {
@@ -39,6 +41,10 @@ export function LeftDock({
   const setDockWidth = useUiStore((s) => s.setDockWidth);
 
   const searchOpen = useDockSearchStore((s) => s.open);
+  const schedulesOpen = useDockSchedulesStore((s) => s.open);
+  const launcherOpen = useWorkspaceLauncherStore(
+    (s) => s.open && s.placement === 'inline'
+  );
 
   const [liveWidth, setLiveWidth] = useState<number | null>(null);
   const [isResizing, setIsResizing] = useState(false);
@@ -53,10 +59,24 @@ export function LeftDock({
   }, [dockExpanded, searchOpen]);
 
   useEffect(() => {
+    if (!dockExpanded && schedulesOpen) {
+      useDockSchedulesStore.getState().setOpen(false);
+    }
+  }, [dockExpanded, schedulesOpen]);
+
+  useEffect(() => {
+    if (!dockExpanded && launcherOpen) {
+      useWorkspaceLauncherStore.getState().setOpen(false);
+    }
+  }, [dockExpanded, launcherOpen]);
+
+  useEffect(() => {
     if (!settingsMode) return;
     if (dockExpanded) setDockExpanded(false);
     if (searchOpen) useDockSearchStore.getState().setOpen(false);
-  }, [settingsMode, dockExpanded, searchOpen, setDockExpanded]);
+    if (schedulesOpen) useDockSchedulesStore.getState().setOpen(false);
+    if (launcherOpen) useWorkspaceLauncherStore.getState().setOpen(false);
+  }, [settingsMode, dockExpanded, searchOpen, schedulesOpen, launcherOpen, setDockExpanded]);
 
   useEffect(() => {
     return () => {
@@ -119,11 +139,10 @@ export function LeftDock({
       style={{ width: `${expandedWidthPx}px` }}
     >
       <div className={cn(DOCK_INSET_CLASS, 'vx-dock-inset h-full py-1 pr-2')}>
+        <DockWorkspaceLauncher />
         <DockSearchPopover />
-        <DockNavigator
-          onOpenWorkspace={onOpenWorkspace}
-          onSetWorkspacePath={onSetWorkspacePath}
-        />
+        <DockScheduledRunsPopover />
+        <DockNavigator onSetWorkspacePath={onSetWorkspacePath} />
       </div>
       <div
         role="separator"

@@ -4,7 +4,7 @@ import {
   createRunStateAccumulator,
   snapshotRunState
 } from '@main/orchestrator/loop/buildRunState';
-import { MAX_TOTAL_ITERATIONS } from '@shared/constants';
+import { DEFAULT_MAX_TOTAL_ITERATIONS } from '@shared/constants';
 import { createSpinSignatureBuffer } from '@main/orchestrator/loop/toolSpinSignature';
 
 describe('buildRunStateXml', () => {
@@ -13,11 +13,27 @@ describe('buildRunStateXml', () => {
     acc.iteration = 2;
     acc.toolRoundsTotal = 1;
     acc.lastAction = 'tool';
-    const xml = buildRunStateXml(snapshotRunState(acc, createSpinSignatureBuffer(), 0));
-    expect(xml).toContain(`iteration: 2 of ${MAX_TOTAL_ITERATIONS}`);
+    const xml = buildRunStateXml(
+      snapshotRunState(acc, createSpinSignatureBuffer(), 0, DEFAULT_MAX_TOTAL_ITERATIONS)
+    );
+    expect(xml).toContain(`iteration: 2 of ${DEFAULT_MAX_TOTAL_ITERATIONS}`);
     expect(xml).toContain('tool_rounds: 1');
     expect(xml).toContain('last_action: tool');
     expect(xml).toContain('spin_signature_hot:');
+    expect(xml).toContain('tool_recovery_cycles: 0');
+    expect(xml).toContain('continue_without_progress: 0');
+  });
+
+  it('renders recovery and continue counters', () => {
+    const acc = createRunStateAccumulator();
+    acc.toolRecoveryCycles = 2;
+    acc.continueWithoutProgress = 3;
+    const xml = buildRunStateXml(
+      snapshotRunState(acc, createSpinSignatureBuffer(), 1, 50)
+    );
+    expect(xml).toContain('tool_recovery_cycles: 2');
+    expect(xml).toContain('continue_without_progress: 3');
+    expect(xml).toContain('consecutive_failed_tools: 1');
   });
 
   it('starts clean', () => {

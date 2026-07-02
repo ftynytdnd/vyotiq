@@ -38,14 +38,15 @@ beforeEach(() => {
 
 describe('SettingsFullView shell', () => {
   it('places the page title in the nav column without a duplicate header back link', () => {
-    render(<SettingsFullView initialSection="appearance" />);
-    expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+    render(<SettingsFullView />);
+    expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Appearance' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Back to chat' })).toBeNull();
     expect(document.querySelector('.vx-settings-shell')).not.toBeNull();
   });
 
   it('renders section nav including About with correct selection', () => {
-    render(<SettingsFullView initialSection="appearance" />);
+    render(<SettingsFullView />);
     expect(screen.getByRole('tablist', { name: 'Settings sections' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /Appearance/i })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: /About/i })).toHaveAttribute('aria-selected', 'false');
@@ -53,7 +54,7 @@ describe('SettingsFullView shell', () => {
 
   it('selects About in the nav when about is open', () => {
     useAppViewStore.setState({ aboutOpen: true, settingsSection: 'about' });
-    render(<SettingsFullView initialSection="about" />);
+    render(<SettingsFullView />);
     expect(screen.getByRole('tab', { name: /About/i })).toHaveAttribute('aria-selected', 'true');
   });
 });

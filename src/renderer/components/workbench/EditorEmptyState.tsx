@@ -1,11 +1,15 @@
 /**
- * Editor empty state — open / create file and recent paths.
+ * EditorEmptyState — open / create file and recent paths.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { FilePlus, FolderOpen } from 'lucide-react';
 import { basenameFromPath } from '@shared/text/languageFromPath.js';
 import { Button } from '../ui/Button.js';
+import { ComposerDialog } from '../ui/ComposerDialog.js';
+import { ComposerDialogPortal } from '../ui/ComposerDialogAnchor.js';
+import { TextField } from '../ui/TextField.js';
+import { ShellCaption, ShellFieldActions } from '../ui/ShellSection.js';
 import { useUiStore } from '../../store/useUiStore.js';
 import { useEditorStore } from '../../store/useEditorStore.js';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
@@ -28,6 +32,7 @@ export function EditorEmptyState() {
   const [newFileOpen, setNewFileOpen] = useState(false);
   const [newFilePath, setNewFilePath] = useState('');
   const [creating, setCreating] = useState(false);
+  const createRef = useRef<HTMLButtonElement>(null);
 
   const recent = useMemo(
     () => readRecentEditorFiles(activeWorkspaceId),
@@ -128,55 +133,56 @@ export function EditorEmptyState() {
         ) : null}
       </div>
 
-      {newFileOpen ? (
-        <div
-          className="absolute inset-0 z-20 flex items-center justify-center bg-scrim/60 p-4"
-          role="presentation"
-          onClick={() => !creating && setNewFileOpen(false)}
+      <ComposerDialogPortal elevated>
+        <ComposerDialog
+          open={newFileOpen}
+          onClose={() => setNewFileOpen(false)}
+          title="New file"
+          size="compact"
+          disableEscape={creating}
+          enterPrimaryRef={createRef}
         >
-          <form
-            className="w-full max-w-md rounded-lg border border-border-subtle/40 bg-surface-raised p-4 shadow-lg"
-            role="dialog"
-            aria-label="New file"
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={(e) => {
-              e.preventDefault();
-              void onCreateFile();
+          <ShellCaption>Workspace-relative path</ShellCaption>
+          <TextField
+            type="text"
+            className="mt-2 w-full font-mono"
+            placeholder="src/example.ts"
+            value={newFilePath}
+            autoFocus
+            disabled={creating}
+            onChange={(e) => setNewFilePath(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void onCreateFile();
+              }
             }}
-          >
-            <p className="text-section font-medium text-text-primary">New file</p>
-            <p className="mt-1 text-row text-text-muted">Workspace-relative path</p>
-            <input
-              type="text"
-              className="vx-input mt-3 w-full font-mono text-row"
-              placeholder="src/example.ts"
-              value={newFilePath}
-              autoFocus
+            size="lg"
+            tone="base"
+          />
+          <ShellFieldActions className="mt-3">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
               disabled={creating}
-              onChange={(e) => setNewFilePath(e.target.value)}
-            />
-            <div className="mt-4 flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={creating}
-                onClick={() => setNewFileOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                variant="primary"
-                size="sm"
-                disabled={creating || newFilePath.trim().length === 0}
-              >
-                Create
-              </Button>
-            </div>
-          </form>
-        </div>
-      ) : null}
+              onClick={() => setNewFileOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              ref={createRef}
+              type="button"
+              variant="primary"
+              size="sm"
+              disabled={creating || newFilePath.trim().length === 0}
+              onClick={() => void onCreateFile()}
+            >
+              Create
+            </Button>
+          </ShellFieldActions>
+        </ComposerDialog>
+      </ComposerDialogPortal>
     </div>
   );
 }

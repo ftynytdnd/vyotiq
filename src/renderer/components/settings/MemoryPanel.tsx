@@ -218,7 +218,7 @@ export function MemoryPanel() {
   const activeEntry = draft ? list.find((e) => e.key === draft.key) : undefined;
 
   return (
-    <ShellSection title="Memory">
+    <ShellSection>
       <ShellCaption>
         Notes are read each turn. Global{' '}
         <span className="font-mono text-text-secondary">meta-rules.md</span> · workspace{' '}
@@ -268,7 +268,9 @@ export function MemoryPanel() {
                   </li>
                 )}
                 {!loading && list.length === 0 && (
-                  <li className="px-2 py-2 text-meta text-text-faint">No notes yet.</li>
+                  <li className="px-2 py-2 text-row text-text-muted">
+                    No notes yet — use New note below to add workspace memory.
+                  </li>
                 )}
                 {list.map((entry) => (
                   <li key={entry.key}>
@@ -325,7 +327,7 @@ export function MemoryPanel() {
                           {draft.key}
                         </div>
                         {draft.dirty && (
-                          <span className="text-meta text-warning">Unsaved changes</span>
+                          <span className="text-row text-warning">Unsaved changes</span>
                         )}
                       </div>
                       <Button
@@ -477,7 +479,7 @@ export function MemoryPanel() {
                   )}
                 </>
               ) : (
-                <p className="text-meta text-text-faint py-2">
+                <p className="text-row text-text-muted py-2">
                   {loading || contentLoading
                     ? 'Loading…'
                     : scope === 'global'

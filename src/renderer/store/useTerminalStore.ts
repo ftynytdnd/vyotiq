@@ -30,6 +30,8 @@ interface TerminalStore {
   searchOpen: boolean;
   setSearchOpen: (open: boolean) => void;
   toggle: (workspaceId: string | null) => void;
+  /** Attach workspace PTY sessions without opening the Terminal panel tab. */
+  ensureWorkspaceSessions: (workspaceId: string) => Promise<void>;
   openPanel: (workspaceId: string) => Promise<void>;
   close: () => void;
   createSession: () => Promise<void>;
@@ -66,6 +68,30 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       return;
     }
     void get().openPanel(workspaceId);
+  },
+
+  ensureWorkspaceSessions: async (workspaceId) => {
+    const { workspaceId: currentWs, sessions } = get();
+    if (currentWs === workspaceId && sessions.length > 0) return;
+
+    set({ workspaceId, attaching: true, error: null });
+    try {
+      const reply = await vyotiq.terminal.attach({ workspaceId });
+      if (get().workspaceId !== workspaceId) return;
+      const nextSessions = reply.sessions;
+      const current = get().activeSessionId;
+      const activeStillValid = current && nextSessions.some((s) => s.sessionId === current);
+      const primary = nextSessions.find((s) => s.primary) ?? nextSessions[0] ?? null;
+      disposeStaleTerminalEntries(nextSessions.map((s) => s.sessionId));
+      set({
+        attaching: false,
+        sessions: nextSessions,
+        activeSessionId: activeStillValid ? current : primary?.sessionId ?? null
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      set({ attaching: false, error: msg });
+    }
   },
 
   openPanel: async (workspaceId) => {

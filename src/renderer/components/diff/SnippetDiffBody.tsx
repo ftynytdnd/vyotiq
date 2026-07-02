@@ -32,6 +32,8 @@ export interface SnippetDiffBodyProps {
   maxHeightClass?: string;
   /** Brief crossfade when handoff from preview → FS-aware stream. */
   handoff?: boolean;
+  /** Root-level streaming cards hide the blinking tail cursor (GIF-faithful). */
+  hideStreamCursor?: boolean;
 }
 
 export const SnippetDiffBody = memo(function SnippetDiffBody({
@@ -39,7 +41,8 @@ export const SnippetDiffBody = memo(function SnippetDiffBody({
   variant,
   filePath,
   maxHeightClass = 'max-h-80',
-  handoff = false
+  handoff = false,
+  hideStreamCursor = false
 }: SnippetDiffBodyProps) {
   const instanceId = useId();
   const foldScopeKey = `${instanceId}:snippet`;
@@ -65,6 +68,13 @@ export const SnippetDiffBody = memo(function SnippetDiffBody({
     [safeHunks]
   );
 
+  const lastLineItemIndex = useMemo(() => {
+    for (let i = items.length - 1; i >= 0; i--) {
+      if (items[i]?.kind === 'line') return i;
+    }
+    return -1;
+  }, [items]);
+
   const copyText = useMemo(() => hunksToChangedSnippet(safeHunks), [safeHunks]);
 
   const shouldVirtualize = items.length > VIRTUALIZE_LINE_THRESHOLD;
@@ -81,6 +91,14 @@ export const SnippetDiffBody = memo(function SnippetDiffBody({
     if (!shouldVirtualize || items.length === 0 || !scrollRef.current) return;
     virtualizer.measure();
   }, [shouldVirtualize, items.length, virtualizer]);
+
+  useLayoutEffect(() => {
+    if (variant !== 'partial' || items.length === 0 || !scrollRef.current) return;
+    const el = scrollRef.current;
+    if (el.scrollHeight > el.clientHeight) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [variant, items.length, lastLineItemIndex]);
 
   if (safeHunks.length === 0) {
     return (
@@ -112,6 +130,10 @@ export const SnippetDiffBody = memo(function SnippetDiffBody({
         line={item.line}
         {...(language ? { language } : {})}
         {...(intra ? { intra } : {})}
+        isStreamingTip={
+          variant === 'partial' && item.kind === 'line' && i === lastLineItemIndex
+        }
+        hideStreamCursor={hideStreamCursor}
       />
     );
   };

@@ -55,6 +55,16 @@ function buildToolRecoveryHints(lastFailure?: string, rootFailure?: string): str
   if (combined.includes('long-running server')) {
     hints.push('Do not start dev servers in bash — probe with curl/Invoke-RestMethod or ask the user to start the service.');
   }
+  if (
+    combined.includes('no match') ||
+    combined.includes('oldstring') ||
+    combined.includes('ambiguous') ||
+    combined.includes('not found in')
+  ) {
+    hints.push(
+      'Re-read the target file with `read` immediately, copy exact file bytes (strip `NNNNN\\t` line prefixes), use 5+ lines of context in `oldString`, and do not repeat the same failing anchor.'
+    );
+  }
   if (hints.length === 0) {
     hints.push(
       'Re-read affected files with `read` before `edit`. Run `ls` to verify paths. Use `ask_user` if blocked.'
@@ -80,6 +90,13 @@ export function formatToolRecoveryThought(
     `Tool recovery (${strikeCount} failed rounds): ${detail} ${buildToolRecoveryHints(lastFailure, rootFailure)}`
   );
 }
+
+/** Injected after multiple tool-recovery cycles — forces pivot or ask_user. */
+export const TOOL_ESCALATION_STEERING_PROMPT = `<tool_escalation>
+Repeated tool failures exhausted recovery cycles. Stop retrying the same command or edit anchor.
+Summarize what you tried, why it failed, and either pivot to a different approach or use \`ask_user\` with ONE focused question.
+Do not repeat the failing tool call with identical arguments.
+</tool_escalation>`;
 
 /** Harness-driven recovery when the provider keeps failing — run continues. */
 export function formatProviderRecoveryThought(consecutiveErrors: number, detail: string): string {

@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import {
   checkToolCallDedupe,
+  clearToolCallDedupeSignature,
   __test_resetToolCallDedupe
 } from '@main/orchestrator/toolCallDedupe';
 
@@ -18,7 +19,7 @@ describe('checkToolCallDedupe', () => {
     expect(blocked).not.toBeNull();
     expect(blocked?.ok).toBe(false);
     expect(blocked?.error).toBe('duplicate_tool_call');
-    expect(blocked?.output).toContain('ask_user');
+    expect(blocked?.output).toContain('identical arguments');
   });
 
   it('allows two identical dispatches then blocks the third for other tools', () => {
@@ -53,5 +54,15 @@ describe('checkToolCallDedupe', () => {
     for (let i = 0; i < 5; i++) {
       expect(checkToolCallDedupe(signal, 'todos', args)).toBeNull();
     }
+  });
+
+  it('allows one more read after clearToolCallDedupeSignature', () => {
+    const args = { path: 'src/Hero.tsx' };
+    expect(checkToolCallDedupe(signal, 'read', args)).toBeNull();
+    expect(checkToolCallDedupe(signal, 'read', args)?.error).toBe('duplicate_tool_call');
+
+    clearToolCallDedupeSignature(signal, 'read', args);
+    expect(checkToolCallDedupe(signal, 'read', args)).toBeNull();
+    expect(checkToolCallDedupe(signal, 'read', args)?.error).toBe('duplicate_tool_call');
   });
 });

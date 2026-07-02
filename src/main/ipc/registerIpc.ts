@@ -12,6 +12,7 @@ import { registerSettingsIpc } from './settings.ipc.js';
 import { registerConversationsIpc } from './conversations.ipc.js';
 import { registerCheckpointsIpc } from './checkpoints.ipc.js';
 import { registerHarnessIpc } from './harness.ipc.js';
+import { registerSkillsIpc } from './skills.ipc.js';
 import { registerAppIpc } from './app.ipc.js';
 import { registerAttachmentsIpc } from './attachments.ipc.js';
 import { registerRendererLogRelay } from './rendererLogRelay.js';
@@ -29,6 +30,8 @@ import { registerScheduledRunsIpc } from './scheduledRuns.ipc.js';
 import { registerHeartbeatIpc } from './heartbeat.ipc.js';
 import { registerFollowUpsIpc } from './followUps.ipc.js';
 import { registerTasksIpc } from './tasks.ipc.js';
+import { registerGitHubIpc } from './github.ipc.js';
+import { registerWorkspaceGitIpc } from './workspaceGit.ipc.js';
 import {
   abortRunsForConversation,
   abortRunsForProvider,
@@ -64,6 +67,7 @@ export function registerIpc(): void {
   registerConversationsIpc();
   registerCheckpointsIpc();
   registerHarnessIpc();
+  registerSkillsIpc();
   registerAppIpc();
   registerAttachmentsIpc();
   registerRendererLogRelay();
@@ -71,4 +75,6 @@ export function registerIpc(): void {
   registerHeartbeatIpc();
   registerFollowUpsIpc();
   registerTasksIpc();
+  registerGitHubIpc();
+  registerWorkspaceGitIpc();
 }

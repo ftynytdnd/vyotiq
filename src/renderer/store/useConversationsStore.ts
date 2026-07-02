@@ -521,7 +521,7 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
     try {
       const conv = await vyotiq.conversations.readTail(id);
       if (conv) {
-        events = conv.events;
+        events = conv.events ?? [];
         peakPromptTokens = conv.peakPromptTokens;
         paging = conv.paging;
       }
@@ -558,7 +558,7 @@ export const useConversationsStore = create<ConversationsStore>((set, get) => ({
     try {
       const conv = await vyotiq.conversations.readTail(id);
       if (conv) {
-        events = conv.events;
+        events = conv.events ?? [];
         peakPromptTokens = conv.peakPromptTokens;
         paging = conv.paging;
       }

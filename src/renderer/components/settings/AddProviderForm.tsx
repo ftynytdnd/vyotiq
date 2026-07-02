@@ -12,6 +12,12 @@ import {
   ShellRow
 } from '../ui/ShellSection.js';
 import {
+  CLAUDE_CODE_PROXY_NOTES_MARKER,
+  CLAUDE_CODE_PROXY_PLACEHOLDER_KEY,
+  CLAUDE_CODE_PROXY_UPSTREAM_PRESETS,
+  defaultClaudeCodeProxyBaseUrl
+} from '@shared/providers/claudeCodeProxy.js';
+import {
   PROVIDER_DIALECTS,
   PROVIDER_DIALECT_LABELS,
   type ProviderDialect
@@ -37,11 +43,36 @@ interface Preset {
   label: string;
   baseUrl: string;
   dialect: ProviderDialect;
+  notes?: string;
+}
+
+function proxyPresetNotes(label: string): string | undefined {
+  const preset = CLAUDE_CODE_PROXY_UPSTREAM_PRESETS.find((p) => p.name === label);
+  if (!preset) return undefined;
+  return `${CLAUDE_CODE_PROXY_NOTES_MARKER} on localhost. ${preset.notesSuffix}`;
 }
 
 const PRESETS: Preset[] = [
   { label: 'OpenAI', baseUrl: 'https://api.openai.com', dialect: 'openai' },
   { label: 'Anthropic', baseUrl: 'https://api.anthropic.com', dialect: 'anthropic-native' },
+  {
+    label: 'Local subscription proxy',
+    baseUrl: defaultClaudeCodeProxyBaseUrl(),
+    dialect: 'anthropic-native',
+    notes: proxyPresetNotes('Local subscription proxy')
+  },
+  {
+    label: 'Local subscription proxy (Codex)',
+    baseUrl: defaultClaudeCodeProxyBaseUrl(),
+    dialect: 'anthropic-native',
+    notes: proxyPresetNotes('Local subscription proxy (Codex)')
+  },
+  {
+    label: 'Local subscription proxy (Kimi)',
+    baseUrl: defaultClaudeCodeProxyBaseUrl(),
+    dialect: 'anthropic-native',
+    notes: proxyPresetNotes('Local subscription proxy (Kimi)')
+  },
   {
     label: 'Gemini (AI Studio)',
     baseUrl: 'https://generativelanguage.googleapis.com',
@@ -89,6 +120,7 @@ export function AddProviderForm({
   const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [dialect, setDialect] = useState<ProviderDialect>('openai');
+  const [notes, setNotes] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const add = useProviderStore((s) => s.add);
@@ -103,6 +135,7 @@ export function AddProviderForm({
     setBaseUrl('');
     setApiKey('');
     setDialect('openai');
+    setNotes(undefined);
     setErr(null);
   };
 
@@ -123,7 +156,8 @@ export function AddProviderForm({
         name: name.trim(),
         baseUrl: effectiveBaseUrl,
         apiKey: apiKey.trim(),
-        dialect
+        dialect,
+        ...(notes ? { notes } : {})
       });
       reset();
       setOpen(false);
@@ -163,6 +197,10 @@ export function AddProviderForm({
               setName(p.label);
               setBaseUrl(p.baseUrl);
               setDialect(p.dialect);
+              setNotes(p.notes);
+              if (p.label.startsWith('Local subscription proxy')) {
+                setApiKey(CLAUDE_CODE_PROXY_PLACEHOLDER_KEY);
+              }
             }}
           >
             {p.label}
@@ -181,6 +219,13 @@ export function AddProviderForm({
         <ShellCaption>
           Auto-attributing as Vyotiq · vyotiq.app for OpenRouter rankings. Adjust later in the
           provider settings.
+        </ShellCaption>
+      )}
+
+      {baseUrl.includes('127.0.0.1:18765') && dialect === 'anthropic-native' && (
+        <ShellCaption>
+          Local claude-code-proxy bridge — API key is the placeholder cursor-proxy. Ensure the
+          proxy is running (ccp start) and authenticated (ccp login).
         </ShellCaption>
       )}
 

@@ -1,17 +1,24 @@
 /**
- * Error-handling path for the `context` tool: when a pack body resolves
- * empty (e.g. a blank user override with a missing bundled body), `load`
- * must fail gracefully with `ok:false` rather than returning a header with
- * no content or crashing on a downstream `.trim()`.
- *
- * `getContextPackBody` is mocked to '' in isolation so the happy-path tests
- * in `context.test.ts` keep exercising the real pack bodies.
+ * Error-handling path for the `context` tool: when a skill body resolves
+ * empty, `load` must fail gracefully with `ok:false` rather than returning
+ * a header with no content.
  */
 
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@main/harness/contextPacks', () => ({
-  getContextPackBody: () => ''
+const mockSkill = {
+  name: 'ast-grep-reference',
+  description: 'ast-grep help',
+  source: 'bundled' as const,
+  rootPath: 'bundled://ast-grep-reference',
+  skillMdPath: 'bundled://ast-grep-reference/SKILL.md'
+};
+
+vi.mock('@main/skills/skillRegistry', () => ({
+  findSkill: async () => mockSkill,
+  getSkillBody: async () => '',
+  listSkills: async () => [mockSkill],
+  listCatalogueSkills: async () => [mockSkill]
 }));
 
 import { contextTool } from '@main/tools/context.tool';
@@ -28,18 +35,18 @@ function makeCtx(): ToolContext {
   };
 }
 
-describe('context tool — empty pack body', () => {
-  it('fails gracefully when a pack body resolves empty', async () => {
+describe('context tool — empty skill body', () => {
+  it('fails gracefully when a skill body resolves empty', async () => {
     const result = await contextTool.run(
-      { action: 'load', pack: 'ast-grep-reference' },
+      { action: 'load', skill: 'ast-grep-reference' },
       makeCtx()
     );
     expect(result.ok).toBe(false);
-    expect(result.error).toBe('empty pack body');
+    expect(result.error).toBe('empty skill body');
     expect(result.output).toContain('unavailable');
   });
 
-  it('still lists the catalogue (list does not depend on pack bodies)', async () => {
+  it('still lists the catalogue (list does not depend on skill bodies)', async () => {
     const result = await contextTool.run({ action: 'list' }, makeCtx());
     expect(result.ok).toBe(true);
   });

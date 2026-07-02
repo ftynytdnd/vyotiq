@@ -33,13 +33,22 @@ vi.mock('@main/workspace/workspaceState', () => ({
 vi.mock('@main/conversations/conversationStore', () => ({
   listConversations: vi.fn()
 }));
+vi.mock('@main/memory/workspaceNotes.js', () => ({
+  readWorkspaceNote: vi.fn()
+}));
+vi.mock('@main/tasks/taskStore.js', () => ({
+  renderTaskListForContext: vi.fn()
+}));
 
 import {
   refreshEnvelopes,
-  __resetEnvelopeCacheForTests
+  __resetEnvelopeCacheForTests,
+  invalidateEnvelopesForConversation
 } from '@main/orchestrator/contextManager';
 import { retrieveRelevantMemory } from '@main/memory/retrieval';
 import { getWorkspace } from '@main/workspace/workspaceState';
+import { readWorkspaceNote } from '@main/memory/workspaceNotes';
+import { renderTaskListForContext } from '@main/tasks/taskStore';
 // `listConversations` is mocked above (the builder calls it from BOTH
 // `sessionContextBody` AND `priorConversationsBody`). We import the
 // symbol here to seed the mock return shape; the LRU hit/miss oracle
@@ -56,6 +65,8 @@ describe('refreshEnvelopes — bounded LRU (audit A2)', () => {
       notes: []
     });
     vi.mocked(listConversations).mockResolvedValue([]);
+    vi.mocked(readWorkspaceNote).mockResolvedValue(null);
+    vi.mocked(renderTaskListForContext).mockResolvedValue('');
   });
 
   // Audit fix B1: LRU key is (conversationId, workspaceId, workspacePath).
@@ -130,5 +141,24 @@ describe('refreshEnvelopes — bounded LRU (audit A2)', () => {
 
     await refreshEnvelopes('q', 'conv-1', undefined, 'ws-A');
     expect(retrieveRelevantMemory).toHaveBeenCalledTimes(10); // miss — was evicted
+  });
+
+  it('invalidates cached envelopes for one conversation after todo writes', async () => {
+    vi.mocked(renderTaskListForContext)
+      .mockResolvedValueOnce('')
+      .mockResolvedValueOnce('Task plan (0/1 done):\n- [ ] Ship fix');
+
+    const first = await refreshEnvelopes('q', 'conv-1', undefined, 'ws-A');
+    expect(first.runProgressXml).toBe('');
+
+    const cached = await refreshEnvelopes('q', 'conv-1', undefined, 'ws-A');
+    expect(cached.runProgressXml).toBe('');
+    expect(renderTaskListForContext).toHaveBeenCalledTimes(1);
+
+    invalidateEnvelopesForConversation('conv-1');
+
+    const fresh = await refreshEnvelopes('q', 'conv-1', undefined, 'ws-A');
+    expect(renderTaskListForContext).toHaveBeenCalledTimes(2);
+    expect(fresh.runProgressXml).toContain('Ship fix');
   });
 });

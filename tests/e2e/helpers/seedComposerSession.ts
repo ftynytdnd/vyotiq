@@ -5,6 +5,80 @@ export interface SeededComposerSession {
   conversationId: string;
 }
 
+export interface SeededE2EProvider {
+  providerId: string;
+  modelId: string;
+}
+
+/**
+ * Register a minimal enabled provider with one discovered model (no network).
+ */
+export async function seedE2EProvider(window: Page): Promise<SeededE2EProvider> {
+  return window.evaluate(async () => {
+    const provider = await window.vyotiq.providers.add({
+      name: 'E2E Provider',
+      baseUrl: 'http://127.0.0.1:11434',
+      apiKey: ''
+    });
+    await window.vyotiq.providers.update(provider.id, {
+      enabled: true,
+      models: [{ id: 'e2e-model', label: 'E2E Model' }]
+    });
+    return { providerId: provider.id, modelId: 'e2e-model' };
+  });
+}
+
+/**
+ * Upsert an enabled scheduled run bound to a seeded workspace conversation.
+ */
+export async function seedScheduledRun(
+  window: Page,
+  input: {
+    workspaceId: string;
+    conversationId: string;
+    providerId: string;
+    modelId: string;
+    label?: string;
+    prompt?: string;
+  }
+): Promise<string> {
+  return window.evaluate(
+    async ({ workspaceId, conversationId, providerId, modelId, label, prompt }) => {
+      const run = await window.vyotiq.scheduledRuns.upsert({
+        enabled: true,
+        label: label ?? 'E2E schedule',
+        workspaceId,
+        conversationId,
+        prompt: prompt ?? 'Run the hourly check',
+        providerId,
+        modelId,
+        intervalMinutes: 60
+      });
+      return run.id;
+    },
+    input
+  );
+}
+
+/**
+ * Workspace + provider + fresh empty chat on the centered landing composer.
+ */
+export async function prepareLandingComposer(
+  window: Page,
+  workspacePath: string
+): Promise<SeededComposerSession> {
+  const session = await seedComposerSession(window, workspacePath);
+  await seedE2EProvider(window);
+  await window.reload();
+  await window.waitForLoadState('domcontentloaded');
+  await waitForComposerSession(window);
+  await expect(window.getByLabel(/^Message /)).toBeVisible();
+  await expect(window.getByText('Loading conversation…')).toHaveCount(0, { timeout: 15_000 });
+  await window.getByRole('button', { name: 'New chat' }).click();
+  await expect(window.locator('[data-e2e-can-attach="true"]')).toBeVisible({ timeout: 15_000 });
+  return session;
+}
+
 /**
  * Register a workspace + conversation and persist the active slot so a
  * reload restores `useChatStore.conversationId` via `restoreWorkspaceSession`.
@@ -19,9 +93,12 @@ export async function seedComposerSession(
       throw new Error('workspace.add returned null');
     }
     const conversation = await window.vyotiq.conversations.create(workspace.id);
+    const settings = await window.vyotiq.settings.get();
     await window.vyotiq.settings.set({
       ui: {
+        ...(settings.ui ?? {}),
         activeConversationByWorkspace: {
+          ...(settings.ui?.activeConversationByWorkspace ?? {}),
           [workspace.id]: conversation.id
         }
       }
@@ -30,26 +107,16 @@ export async function seedComposerSession(
   }, workspacePath);
 }
 
-/** Stub clipboard-image ingest IPC via main-process handler replacement. */
+/** Stub clipboard blob ingest IPC via main-process handler replacement. */
 export async function stubIngestClipboardImage(
   window: Page,
   electronApp: ElectronApplication
 ): Promise<void> {
-  const channel = 'attachments:ingest-clipboard-image';
-  await electronApp.evaluate(async ({ ipcMain, BrowserWindow }, ipcChannel: string) => {
-    ipcMain.removeHandler(ipcChannel);
-    ipcMain.handle(ipcChannel, async (_event, input: unknown) => {
-      const win = BrowserWindow.getAllWindows()[0];
-      if (win) {
-        await win.webContents.executeJavaScript(
-          `(() => {
-            const w = window;
-            w.__e2eIngestClipboardCalls = w.__e2eIngestClipboardCalls ?? [];
-            w.__e2eIngestClipboardCalls.push(${JSON.stringify(input)});
-          })()`
-        );
-      }
-      return {
+  const channel = 'attachments:ingest-clipboard';
+  const legacyChannel = 'attachments:ingest-clipboard-image';
+  await electronApp.evaluate(
+    async ({ ipcMain, BrowserWindow }, channels: { batch: string; legacy: string }) => {
+      const stubMeta = {
         id: 'e2e-clipboard-attach',
         name: 'clipboard-e2e.png',
         storedPath: 'attachments/e2e/clipboard-e2e.png',
@@ -57,8 +124,31 @@ export async function stubIngestClipboardImage(
         mediaKind: 'image',
         sizeBytes: 42
       };
-    });
-  }, channel);
+      const recordCall = async (input: unknown) => {
+        const win = BrowserWindow.getAllWindows()[0];
+        if (win) {
+          await win.webContents.executeJavaScript(
+            `(() => {
+            const w = window;
+            w.__e2eIngestClipboardCalls = w.__e2eIngestClipboardCalls ?? [];
+            w.__e2eIngestClipboardCalls.push(${JSON.stringify(input)});
+          })()`
+          );
+        }
+      };
+      ipcMain.removeHandler(channels.batch);
+      ipcMain.removeHandler(channels.legacy);
+      ipcMain.handle(channels.batch, async (_event, input: unknown) => {
+        await recordCall(input);
+        return [stubMeta];
+      });
+      ipcMain.handle(channels.legacy, async (_event, input: unknown) => {
+        await recordCall(input);
+        return stubMeta;
+      });
+    },
+    { batch: channel, legacy: legacyChannel }
+  );
   await window.evaluate(() => {
     (window as Window & { __e2eIngestClipboardCalls?: unknown[] }).__e2eIngestClipboardCalls = [];
   });
@@ -69,6 +159,29 @@ export async function readIngestClipboardCalls(window: Page): Promise<unknown[]>
     const w = window as Window & { __e2eIngestClipboardCalls?: unknown[] };
     return w.__e2eIngestClipboardCalls ?? [];
   });
+}
+
+/** Reload after seeding and open a fresh chat with an attach-ready composer. */
+export async function prepareActiveComposer(
+  window: Page,
+  workspacePath: string
+): Promise<SeededComposerSession> {
+  const session = await seedComposerSession(window, workspacePath);
+  await window.reload();
+  await window.waitForLoadState('domcontentloaded');
+  await waitForComposerSession(window);
+  await expect(window.getByLabel(/^Message /)).toBeVisible();
+  await expect(window.getByText('Loading conversation…')).toHaveCount(0, { timeout: 15_000 });
+  await window.getByRole('button', { name: 'New chat' }).click();
+  await expect(window.locator('[data-e2e-can-attach="true"]')).toBeVisible({ timeout: 15_000 });
+  return session;
+}
+
+/** Type into the contenteditable composer (triggers slash / mention pickers). */
+export async function typeInComposer(window: Page, text: string): Promise<void> {
+  const composer = window.getByLabel(/^Message /);
+  await composer.click();
+  await composer.pressSequentially(text, { delay: 15 });
 }
 
 /** Wait until the composer has an active workspace + conversation mirror. */

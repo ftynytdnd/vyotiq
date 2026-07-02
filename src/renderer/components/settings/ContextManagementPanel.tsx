@@ -12,7 +12,7 @@ import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { persistSettingsPatch } from '../../lib/persistSettingsPatch.js';
 import { useProviderStore } from '../../store/useProviderStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
-import { ShellCaption, ShellSection } from '../ui/ShellSection.js';
+import { ShellCaption, ShellFieldLabel, ShellSection } from '../ui/ShellSection.js';
 import { SettingsSwitchRow } from './SettingsSwitchRow.js';
 
 type ContextManagementPatch = Partial<
@@ -67,7 +67,7 @@ export function ContextManagementPanel() {
   };
 
   return (
-    <ShellSection title="Context management" className="mt-4">
+    <ShellSection>
       <ShellCaption>
         Keep long agent runs sharp by proactively managing the prompt against the model&apos;s
         discovered context window. Older detail is offloaded reversibly first (tool-result and
@@ -89,9 +89,12 @@ export function ContextManagementPanel() {
         onChange={(v) => apply({ summarizationEnabled: v })}
       />
 
-      <label className="mt-3 flex flex-col gap-1 text-meta">
-        <span>Reduce at (% of context window)</span>
+      <div className="mt-3 flex flex-col gap-1">
+        <ShellFieldLabel htmlFor="context-trigger-fraction">
+          Reduce at (% of context window)
+        </ShellFieldLabel>
         <input
+          id="context-trigger-fraction"
           type="number"
           min={40}
           max={95}
@@ -101,11 +104,12 @@ export function ContextManagementPanel() {
           value={pct(cm.triggerFraction)}
           onChange={(e) => apply({ triggerFraction: fromPct(e.target.value, cm.triggerFraction) })}
         />
-      </label>
+      </div>
 
-      <label className="mt-3 flex flex-col gap-1 text-meta">
-        <span>Warn at (% of context window)</span>
+      <div className="mt-3 flex flex-col gap-1">
+        <ShellFieldLabel htmlFor="context-warn-fraction">Warn at (% of context window)</ShellFieldLabel>
         <input
+          id="context-warn-fraction"
           type="number"
           min={30}
           max={94}
@@ -115,11 +119,14 @@ export function ContextManagementPanel() {
           value={pct(cm.warnFraction)}
           onChange={(e) => apply({ warnFraction: fromPct(e.target.value, cm.warnFraction) })}
         />
-      </label>
+      </div>
 
-      <label className="mt-3 flex flex-col gap-1 text-meta">
-        <span>Keep last N tool results verbatim</span>
+      <div className="mt-3 flex flex-col gap-1">
+        <ShellFieldLabel htmlFor="context-keep-tool-results">
+          Keep last N tool results verbatim
+        </ShellFieldLabel>
         <input
+          id="context-keep-tool-results"
           type="number"
           min={0}
           max={20}
@@ -132,22 +139,29 @@ export function ContextManagementPanel() {
             apply({ keepLastToolResults: Number.isFinite(n) ? Math.round(n) : 3 });
           }}
         />
-      </label>
+      </div>
 
-      <button
-        type="button"
-        className="mt-4 self-start font-mono text-meta text-text-faint transition-colors hover:text-text-secondary"
-        onClick={() => setAdvancedOpen((v) => !v)}
-        aria-expanded={advancedOpen}
-      >
-        {advancedOpen ? '▾' : '▸'} Advanced
-      </button>
+      <div className="mt-4 flex items-center gap-1.5">
+        <button
+          type="button"
+          className="vx-btn vx-btn-quiet h-6 w-6 shrink-0 px-0 text-text-faint"
+          onClick={() => setAdvancedOpen((v) => !v)}
+          aria-expanded={advancedOpen}
+          aria-label={advancedOpen ? 'Collapse advanced settings' : 'Expand advanced settings'}
+        >
+          {advancedOpen ? '▾' : '▸'}
+        </button>
+        <h4 className="vx-section-head mb-0">Advanced</h4>
+      </div>
 
       {advancedOpen && (
         <div className="mt-2 flex flex-col gap-3 border-l border-border-subtle/40 pl-3">
-          <label className="flex flex-col gap-1 text-meta">
-            <span>Cooldown between passes (seconds)</span>
+          <div className="flex flex-col gap-1">
+            <ShellFieldLabel htmlFor="context-cooldown-seconds">
+              Cooldown between passes (seconds)
+            </ShellFieldLabel>
             <input
+              id="context-cooldown-seconds"
               type="number"
               min={0}
               max={300}
@@ -160,11 +174,14 @@ export function ContextManagementPanel() {
                 apply({ cooldownMs: Number.isFinite(s) ? Math.max(0, Math.round(s * 1000)) : cm.cooldownMs });
               }}
             />
-          </label>
+          </div>
 
-          <label className="flex flex-col gap-1 text-meta">
-            <span>Minimum tokens freed per pass</span>
+          <div className="flex flex-col gap-1">
+            <ShellFieldLabel htmlFor="context-min-savings-tokens">
+              Minimum tokens freed per pass
+            </ShellFieldLabel>
             <input
+              id="context-min-savings-tokens"
               type="number"
               min={0}
               max={1_000_000}
@@ -177,12 +194,13 @@ export function ContextManagementPanel() {
                 apply({ minSavingsTokens: Number.isFinite(n) ? Math.max(0, Math.round(n)) : cm.minSavingsTokens });
               }}
             />
-          </label>
+          </div>
 
-          <div className="flex flex-col gap-1 text-meta">
-            <span>Summarization model</span>
+          <div className="flex flex-col gap-1">
+            <ShellFieldLabel htmlFor="context-summary-provider">Summarization model</ShellFieldLabel>
             <div className="flex flex-wrap items-center gap-2">
               <select
+                id="context-summary-provider"
                 className="vx-input font-mono text-row disabled:opacity-50"
                 disabled={!cm.enabled || !cm.summarizationEnabled}
                 value={cm.summaryModel?.providerId ?? ''}

@@ -22,6 +22,8 @@ import {
   updateProvider
 } from '../providers/providerStore.js';
 import { detectDialect, discoverModels, testProvider } from '../providers/modelDiscovery.js';
+import { runClaudeCodeProxyAction } from '../providers/claudeCodeProxy.js';
+import type { ClaudeCodeProxyAction } from '@shared/providers/claudeCodeProxy.js';
 import {
   refreshProviderAccountsNow,
   setProviderAccountPollSource,
@@ -263,6 +265,21 @@ export function registerProvidersIpc(): void {
       assertString('providers:setAccountPollSource', 'source', source, { maxBytes: 64 });
       assertBoolean('providers:setAccountPollSource', 'active', active);
       setProviderAccountPollSource(source, active);
+    }
+  );
+
+  wrapIpcHandler(
+    IPC.PROVIDERS_CLAUDE_CODE_PROXY_ACTION,
+    async (_event, action: ClaudeCodeProxyAction) => {
+      assertEnum(
+        'providers:claudeCodeProxyAction',
+        'action',
+        action,
+        ['start', 'login', 'refresh'] as const
+      );
+      const result = await runClaudeCodeProxyAction(action);
+      await refreshProviderAccountsNow();
+      return result;
     }
   );
 

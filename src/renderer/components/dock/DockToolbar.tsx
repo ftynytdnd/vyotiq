@@ -1,289 +1,352 @@
 /**
- * DockToolbar — footer / collapsed-rail actions (composer-aligned h-6 pills).
+
+ * DockToolbar — titlebar-integrated dock actions (horizontal icon row).
+
  */
 
-import { ChevronLeft, ChevronRight, Plus, Search, Settings, ArrowLeft } from 'lucide-react';
+
+
+import { ChevronLeft, ChevronRight, Plus, Search, Settings, ArrowLeft, CalendarClock } from 'lucide-react';
+
 import type { ReactNode } from 'react';
-import { DOCK_FOOTER_TOOLBAR_CLASS, DOCK_TAB_ICON_CLASS, DOCK_TAB_ICON_STROKE } from './dockShared.js';
+
+import { DOCK_TAB_ICON_CLASS, DOCK_TAB_ICON_STROKE } from './dockShared.js';
+
 import { cn } from '../../lib/cn.js';
-import { chromePillClassName, chromeToolbarButtonClassName } from '../ui/SurfaceShell.js';
+
 import { TITLEBAR_ICON_ACTION_CLASS } from '../titlebar/titlebarShared.js';
 
+
+
 export interface DockToolbarProps {
-  layout: 'horizontal' | 'vertical';
   searchOpen: boolean;
+  schedulesOpen: boolean;
+  enabledScheduleCount: number;
   onNewChat: () => void;
   onToggleSearch: () => void;
-  onOpenSettings: () => void;
+  onToggleSchedules: () => void;
+
   onCollapse: () => void;
+
   collapseIcon: 'left' | 'right';
+
   className?: string;
-  /** Compact icon-only row for the frameless titlebar (collapse first). */
-  titlebarMode?: boolean;
-  /** Larger icon slots and expand-first ordering for centered dock rail. */
-  dockStyle?: boolean;
-  /** Strip-only mode while settings is open — back replaces settings; no expand. */
-  settingsMode?: boolean;
-  /** Highlights the collapse control while the dock flyout is open (titlebar mode). */
+
+  /** Highlights the collapse control while the dock flyout is open. */
+
   dockExpanded?: boolean;
+
+  /** Strip-only mode while settings is open — back replaces settings; no expand. */
+
+  settingsMode?: boolean;
+
   onBackFromSettings?: () => void;
+
 }
 
-type DockActionId = 'new' | 'search' | 'settings' | 'back' | 'collapse';
+
+
+type DockActionId = 'new' | 'search' | 'schedules' | 'settings' | 'back' | 'collapse';
+
+
 
 interface DockActionDef {
+
   id: DockActionId;
+
   label: string;
+
   title: string;
+
   active?: boolean;
+
   onClick: () => void;
+
 }
 
+
+
 export function DockToolbar({
-  layout,
   searchOpen,
+  schedulesOpen,
+  enabledScheduleCount,
   onNewChat,
   onToggleSearch,
-  onOpenSettings,
+  onToggleSchedules,
   onCollapse,
+
   collapseIcon,
+
   className,
-  titlebarMode = false,
-  dockStyle = false,
-  settingsMode = false,
+
   dockExpanded = false,
+
+  settingsMode = false,
+
   onBackFromSettings
+
 }: DockToolbarProps) {
+
   const CollapseIcon = collapseIcon === 'left' ? ChevronLeft : ChevronRight;
+
   const collapseLabel =
+
     collapseIcon === 'left' ? 'Collapse navigation' : 'Expand navigation';
+
   const collapseTitle =
+
     collapseIcon === 'left'
+
       ? 'Collapse navigation (Ctrl+B)'
+
       : 'Expand navigation (Ctrl+B)';
 
+  const showSchedules = schedulesOpen || enabledScheduleCount > 0;
+
+
+
   const actions: DockActionDef[] = [
+
     {
+
       id: 'collapse',
+
       label: collapseLabel,
+
       title: collapseTitle,
-      active: titlebarMode ? dockExpanded : undefined,
+
+      active: dockExpanded,
+
       onClick: onCollapse
+
     },
+
     {
+
       id: 'new',
+
       label: 'New chat',
+
       title: 'New chat (Ctrl+N)',
+
       onClick: onNewChat
+
     },
+
     {
       id: 'search',
-      label: 'Search chats and files',
-      title: 'Search chats and files (Ctrl+K)',
+      label: 'Search skills, chats, messages, and files',
+      title: 'Search skills, chats, messages, and files (Ctrl+K)',
       active: searchOpen,
       onClick: onToggleSearch
     },
+    {
+      id: 'schedules',
+      label: 'Scheduled runs',
+      title: 'Scheduled runs',
+      active: schedulesOpen,
+      onClick: onToggleSchedules
+    },
+
     ...(settingsMode
+
       ? [
+
           {
+
             id: 'back' as const,
+
             label: 'Back to chat',
+
             title: 'Back to chat (Esc)',
+
             onClick: () => onBackFromSettings?.()
+
           }
+
         ]
-      : [
-          {
-            id: 'settings' as const,
-            label: 'Settings',
-            title: 'Settings (Ctrl+,)',
-            onClick: onOpenSettings
-          }
-        ])
+
+      : [])
+
   ];
 
-  const order: DockActionId[] =
-    titlebarMode && layout === 'horizontal'
-      ? settingsMode
-        ? ['back']
-        : dockExpanded
-          ? ['collapse', 'settings']
-          : ['collapse', 'new', 'search', 'settings']
-      : layout === 'horizontal'
-        ? settingsMode
-          ? ['back']
-          : ['new', 'search', 'settings', 'collapse']
-        : dockStyle
-          ? settingsMode
-            ? ['back']
-            : ['collapse', 'new', 'search', 'settings']
-          : ['new', 'search', settingsMode ? 'back' : 'settings', 'collapse'];
+
+
+  const order: DockActionId[] = settingsMode
+    ? ['back']
+    : dockExpanded
+      ? ['collapse', ...(showSchedules ? (['schedules'] as const) : [])]
+      : showSchedules
+        ? (['collapse', 'schedules'] as const)
+        : ['collapse'];
+
+
 
   const ordered = order
+
     .map((id) => actions.find((a) => a.id === id))
+
     .filter((a): a is DockActionDef => a !== undefined);
 
-  const iconClass = dockStyle ? 'h-4 w-4' : DOCK_TAB_ICON_CLASS;
+
 
   const renderIcon = (id: DockActionId) => {
+
     const stroke = DOCK_TAB_ICON_STROKE;
+
     switch (id) {
+
       case 'collapse':
-        return <CollapseIcon className={iconClass} strokeWidth={stroke} />;
+
+        return <CollapseIcon className={DOCK_TAB_ICON_CLASS} strokeWidth={stroke} />;
+
       case 'new':
-        return <Plus className={iconClass} strokeWidth={stroke} />;
+
+        return <Plus className={DOCK_TAB_ICON_CLASS} strokeWidth={stroke} />;
+
       case 'search':
-        return <Search className={iconClass} strokeWidth={stroke} />;
+        return <Search className={DOCK_TAB_ICON_CLASS} strokeWidth={stroke} />;
+      case 'schedules':
+        return (
+          <span className="relative inline-flex">
+            <CalendarClock className={DOCK_TAB_ICON_CLASS} strokeWidth={stroke} />
+            {enabledScheduleCount > 0 ? (
+              <span
+                className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-accent-gold px-0.5 font-mono text-meta leading-none text-surface-base"
+                aria-hidden
+              >
+                {enabledScheduleCount > 9 ? '9+' : enabledScheduleCount}
+              </span>
+            ) : null}
+          </span>
+        );
       case 'settings':
-        return <Settings className={iconClass} strokeWidth={stroke} />;
+
+        return <Settings className={DOCK_TAB_ICON_CLASS} strokeWidth={stroke} />;
+
       case 'back':
-        return <ArrowLeft className={iconClass} strokeWidth={stroke} />;
+
+        return <ArrowLeft className={DOCK_TAB_ICON_CLASS} strokeWidth={stroke} />;
+
       default: {
+
         const _exhaustive: never = id;
+
         return _exhaustive;
+
       }
+
     }
+
   };
 
+
+
   return (
-    <div
-      className={cn(
-        'flex shrink-0',
-        layout === 'horizontal' && !titlebarMode ? DOCK_FOOTER_TOOLBAR_CLASS : 'p-0',
-        layout === 'horizontal'
-          ? titlebarMode
-            ? 'items-center gap-0.5'
-            : 'items-center justify-between gap-0.5'
-          : cn('flex-col items-center', dockStyle ? 'gap-1' : 'gap-0.5'),
-        className
-      )}
-    >
-      {layout === 'horizontal' ? (
-        settingsMode ? (
-          ordered.map((action) => (
-            <DockIconButton
-              key={action.id}
-              label={action.label}
-              title={action.title}
-              active={action.active}
-              onClick={action.onClick}
-              titlebarMode={titlebarMode}
-              settingsExit={action.id === 'back'}
-            >
-              {renderIcon(action.id)}
-            </DockIconButton>
-          ))
-        ) : titlebarMode ? (
-          ordered.map((action) => (
-            <DockIconButton
-              key={action.id}
-              label={action.label}
-              title={action.title}
-              active={action.active}
-              onClick={action.onClick}
-              titlebarMode
-            >
-              {renderIcon(action.id)}
-            </DockIconButton>
-          ))
-        ) : (
-          <>
-            <div className="flex min-w-0 flex-1 items-center gap-0.5">
-              {ordered.slice(0, -1).map((action) =>
-                action.id === 'new' ? (
-                  <button
-                    key={action.id}
-                    type="button"
-                    aria-label={action.label}
-                    title={action.title}
-                    onClick={action.onClick}
-                    className={cn(chromePillClassName(false), 'gap-1 px-1.5 text-row')}
-                  >
-                    {renderIcon(action.id)}
-                    <span className="truncate">New chat</span>
-                  </button>
-                ) : (
-                  <DockIconButton
-                    key={action.id}
-                    label={action.label}
-                    title={action.title}
-                    active={action.active}
-                    onClick={action.onClick}
-                  >
-                    {renderIcon(action.id)}
-                  </DockIconButton>
-                )
-              )}
-            </div>
-            <DockIconButton
-              label={collapseLabel}
-              title={collapseTitle}
-              onClick={onCollapse}
-            >
-              {renderIcon('collapse')}
-            </DockIconButton>
-          </>
-        )
-      ) : (
-        ordered.map((action) => (
-          <DockIconButton
-            key={action.id}
-            label={action.label}
-            title={action.title}
-            active={action.active}
-            onClick={action.onClick}
-            hoverScale={dockStyle}
-            dockStyle={dockStyle}
-            settingsExit={settingsMode && action.id === 'back'}
-          >
-            {renderIcon(action.id)}
-          </DockIconButton>
-        ))
-      )}
+
+    <div className={cn('flex shrink-0 items-center gap-0.5 p-0', className)}>
+
+      {ordered.map((action) => (
+
+        <DockIconButton
+
+          key={action.id}
+
+          label={action.label}
+
+          title={action.title}
+
+          active={action.active}
+
+          emphasis={action.id === 'new'}
+
+          onClick={action.onClick}
+
+          settingsExit={settingsMode && action.id === 'back'}
+
+        >
+
+          {renderIcon(action.id)}
+
+        </DockIconButton>
+
+      ))}
+
     </div>
+
   );
+
 }
 
+
+
 function DockIconButton({
+
   label,
+
   title,
+
   active,
+
+  emphasis,
+
   onClick,
-  hoverScale,
-  dockStyle,
-  titlebarMode,
+
   settingsExit,
+
   children
+
 }: {
+
   label: string;
+
   title: string;
+
   active?: boolean;
+
+  emphasis?: boolean;
+
   onClick: () => void;
-  hoverScale?: boolean;
-  dockStyle?: boolean;
-  titlebarMode?: boolean;
+
   settingsExit?: boolean;
+
   children: ReactNode;
+
 }) {
+
   return (
+
     <button
+
       type="button"
+
       aria-label={label}
+
       title={title}
+
       onClick={onClick}
+
       className={cn(
-        titlebarMode
-          ? cn(TITLEBAR_ICON_ACTION_CLASS, 'vx-btn vx-btn-quiet px-1 text-text-muted')
-          : dockStyle
-            ? 'vx-dock-icon-slot vx-btn vx-btn-quiet px-0'
-            : chromeToolbarButtonClassName(active),
-        !titlebarMode && !dockStyle && 'h-6 w-6 shrink-0 px-0',
-        (titlebarMode || dockStyle) && active && 'bg-chrome-hover-soft text-text-primary',
-        settingsExit && 'text-text-secondary hover:text-text-primary',
-        hoverScale && 'vx-dock-icon-hover'
+
+        TITLEBAR_ICON_ACTION_CLASS,
+
+        'vx-btn vx-btn-quiet px-1',
+
+        emphasis ? 'vx-titlebar-action--emphasis' : 'text-text-muted',
+
+        active && 'bg-chrome-hover-soft text-text-primary',
+
+        settingsExit && 'text-text-secondary hover:text-text-primary'
+
       )}
+
     >
+
       {children}
+
     </button>
+
   );
+
 }
+

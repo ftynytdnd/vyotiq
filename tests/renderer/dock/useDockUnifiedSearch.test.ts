@@ -31,6 +31,12 @@ beforeEach(() => {
       total: 3
     }) as never
   ) as unknown as typeof window.vyotiq.workspace.listTree;
+  window.vyotiq.skills = {
+    list: vi.fn(async () => [])
+  } as unknown as typeof window.vyotiq.skills;
+  window.vyotiq.conversations = {
+    search: vi.fn(async () => [])
+  } as unknown as typeof window.vyotiq.conversations;
 });
 
 describe('useDockUnifiedSearch', () => {

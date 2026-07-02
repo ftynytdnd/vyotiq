@@ -57,7 +57,7 @@ export interface FollowUpInjectResult {
   query: string;
 
   selection: ModelSelection;
-
+  invokedSkill?: string;
 }
 
 
@@ -104,7 +104,7 @@ async function injectOne(
 
   });
 
-  return { query: result.query, selection: { ...item.selection } };
+  return { query: result.query, selection: { ...item.selection }, invokedSkill: item.invokedSkill };
 
 }
 

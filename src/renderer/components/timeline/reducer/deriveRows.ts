@@ -9,9 +9,9 @@
  *     file` → `Read foo.tsx and 2 other files`. Expanded, it shows each
  *     individual call as a nested row (each further expandable to the
  *     existing bespoke detail).
- *   - Consecutive `file-edit` events fold into a single
- *     `file-edit-group` row with an expanded list of per-file cards.
- *   - Reasoning becomes a single `reasoning-line` row (`Thought for Ns`).
+ *   - Consecutive `file-edit` events emit inline `file-edit-card` rows
+ *     (same-path edits consolidate into one card with revision history).
+ *   - Reasoning streams as inline `reasoning-line` rows in wire order.
  *
  * Breakers that close any in-flight group: different tool/kind, assistant
  * text delta, reasoning delta, phase, user-prompt, agent-thought,
@@ -26,6 +26,15 @@ import type { ToolCall, ToolName, ToolResult, DiffHunk } from '@shared/types/too
 import type { DiffStreamSnapshot, PartialToolCallArgs, TokenUsageAggregate } from './types.js';
 import { foldTokenUsage } from './types.js';
 import { appendSynthesizedPartialRows } from './deriveRows/partials.js';
+import {
+  appendLiveStreamingFileEdits,
+  consolidateSamePathFileEditCards,
+  filterNonEditPartials,
+  flattenSettledEditRows,
+  insertExplorationSummary,
+  suppressExploredToolGroups,
+  suppressRedundantEditToolGroups
+} from './deriveRows/streamingFileEdits.js';
 import { flushRunToRows, type OpenRun, type OpenRunUsage } from './deriveRows/runBoundaries.js';
 import {
   foldOrchestratorFileEdit,
@@ -49,8 +58,7 @@ export interface ToolGroupChild {
   /**
    * Diff stats attached when a successful `edit` tool-call has a
    * matching `file-edit` event. Lets `ToolGroupRow` render the
-   * aggregate `+N -M` badge inline instead of emitting a separate
-   * `file-edit-group` row right beneath it. Populated by the
+   * aggregate `+N -M` badge inline instead of a separate file-edit card.
    * `case 'file-edit'` branch when it folds into the prior edit
    * tool-group; otherwise undefined.
    */
@@ -80,9 +88,8 @@ export interface ToolGroupChild {
   retryCount?: number;
 }
 
-export interface FileEditGroupChild {
-  key: string;
-  filePath: string;
+export interface FileEditCardRevision {
+  callId: string;
   additions: number;
   deletions: number;
   entryId?: string;
@@ -107,6 +114,7 @@ export type Row =
     content: string;
     attachments?: PromptAttachmentMeta[];
     mentions?: MentionRef[];
+    invokedSkill?: string;
   }
   | { kind: 'assistant-text'; key: string; id: string }
   | {
@@ -155,9 +163,29 @@ export type Row =
     children: ToolGroupChild[];
   }
   | {
-    kind: 'file-edit-group';
+    kind: 'file-edit-card';
     key: string;
-    children: FileEditGroupChild[];
+    callId: string;
+    filePath: string;
+    additions: number;
+    deletions: number;
+    entryId?: string;
+    hunks?: DiffHunk[];
+    phase: 'pending' | 'streaming' | 'settling' | 'settled';
+    revisions?: FileEditCardRevision[];
+  }
+  | {
+    kind: 'file-edit-pending';
+    key: string;
+    callId: string;
+    filePath: string;
+  }
+  | {
+    kind: 'exploration-summary';
+    key: string;
+    fileCount: number;
+    searchCount: number;
+    samples?: Array<{ toolName: 'read' | 'search'; path: string }>;
   }
   | {
     kind: 'run-complete';
@@ -169,6 +197,7 @@ export type Row =
     editCount?: number;
     fileCount?: number;
     commandCount?: number;
+    continued?: boolean;
   }
   | {
     kind: 'context-reduction';
@@ -282,7 +311,6 @@ export function deriveRows(
   const seenReasoning = new Set<string>();
   const scopedGroups: ScopedGroupState = {
     openToolGroupIdx: null,
-    openFileEditGroupIdx: null,
     callIdToGroupIdx: new Map(),
     callIdToChildIdx: new Map()
   };
@@ -303,7 +331,6 @@ export function deriveRows(
 
   const closeGroups = () => {
     scopedGroups.openToolGroupIdx = null;
-    scopedGroups.openFileEditGroupIdx = null;
   };
 
   for (const e of events) {
@@ -329,7 +356,8 @@ export function deriveRows(
           lastTs: e.ts,
           editCount: 0,
           filePaths: new Set(),
-          commandCount: 0
+          commandCount: 0,
+          continuedCount: 0
         };
         out.push({
           kind: 'user-prompt',
@@ -342,7 +370,8 @@ export function deriveRows(
           ...(e.attachments && e.attachments.length > 0
             ? { attachments: e.attachments }
             : {}),
-          ...(e.mentions && e.mentions.length > 0 ? { mentions: e.mentions } : {})
+          ...(e.mentions && e.mentions.length > 0 ? { mentions: e.mentions } : {}),
+          ...(e.invokedSkill ? { invokedSkill: e.invokedSkill } : {})
         });
         break;
 
@@ -455,6 +484,9 @@ export function deriveRows(
         break;
 
       case 'tool-call': {
+        if (openRun && e.call.name === 'continue') {
+          openRun.continuedCount += 1;
+        }
         if (isTimelineHiddenTool(e.call.name)) break;
         foldToolCall(out, scopedGroups, e.call);
         break;
@@ -622,7 +654,15 @@ export function deriveRows(
   if (!opts.runActive) {
     flushRun();
   }
-  return applyDeriveRowsLiveLayer(out, opts);
+  return out;
+}
+
+/** Event walk + one live-layer pass (tests and non-Timeline callers). */
+export function deriveDisplayRows(
+  events: TimelineEvent[],
+  opts: DeriveRowsOptions = {}
+): Row[] {
+  return applyDeriveRowsLiveLayer(deriveRows(events, opts), opts);
 }
 
 /**
@@ -632,14 +672,31 @@ export function deriveRows(
  * O(rows) instead of O(events).
  */
 export function applyDeriveRowsLiveLayer(rows: Row[], opts: DeriveRowsOptions): Row[] {
-  let out = rows;
+  let out: Row[] = rows;
   const partials = opts.partialToolCallArgs;
   if (partials && Object.keys(partials).length > 0) {
     out = [...rows];
-    appendSynthesizedPartialRows(out, partials, opts.settledCallIds, true);
+    appendSynthesizedPartialRows(
+      out,
+      filterNonEditPartials(partials),
+      opts.settledCallIds,
+      true
+    );
   }
-  return enrichToolGroupsWithLiveOutput(
+  out = enrichToolGroupsWithLiveOutput(
     enrichToolGroupsWithLiveDiff(out, opts.liveDiffByCallId),
     opts.liveToolOutputByCallId
   );
+  let display = flattenSettledEditRows(out);
+  display = insertExplorationSummary(display);
+  display = suppressExploredToolGroups(display);
+  display = appendLiveStreamingFileEdits(
+    display,
+    partials,
+    opts.settledCallIds,
+    opts.liveDiffByCallId
+  );
+  display = suppressRedundantEditToolGroups(display);
+  display = consolidateSamePathFileEditCards(display);
+  return display;
 }

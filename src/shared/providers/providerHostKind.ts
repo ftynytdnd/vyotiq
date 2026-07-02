@@ -4,11 +4,13 @@
  */
 
 import type { ProviderConfig } from '../types/provider.js';
+import { isClaudeCodeProxyBaseUrl } from './claudeCodeProxy.js';
 import { isLocalProvider } from './isLocalProvider.js';
 import { parseProviderHostname } from './providerHostname.js';
 
 export type ProviderHostKind =
   | 'local'
+  | 'claude-code-proxy'
   | 'openrouter'
   | 'openai'
   | 'anthropic'
@@ -23,7 +25,10 @@ export type ProviderHostKind =
   | 'generic';
 
 /** Classify a provider's upstream host for account fetch routing. */
-export function classifyProviderHost(provider: Pick<ProviderConfig, 'baseUrl' | 'dialect'>): ProviderHostKind {
+export function classifyProviderHost(
+  provider: Pick<ProviderConfig, 'baseUrl' | 'dialect' | 'notes'>
+): ProviderHostKind {
+  if (isClaudeCodeProxyBaseUrl(provider.baseUrl, provider.notes)) return 'claude-code-proxy';
   if (isLocalProvider(provider)) return 'local';
 
   const flags = parseProviderHostname(provider.baseUrl);
@@ -73,6 +78,8 @@ export function defaultDashboardUrl(kind: ProviderHostKind): string | undefined 
       return 'https://build.nvidia.com/';
     case 'ollama-cloud':
       return 'https://ollama.com/settings';
+    case 'claude-code-proxy':
+      return undefined;
     case 'local':
     case 'generic':
       return undefined;

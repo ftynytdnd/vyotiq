@@ -32,10 +32,12 @@ import {
 import { clearPreparedMediaCache, getPreparedMediaCache } from '../attachments/preparedMediaCache.js';
 import { clearRunVisionQueue } from '../orchestrator/runVisionQueue.js';
 import {
+  CACHE_LAYER_HISTORY_START,
   insertHistoryBeforeTail,
   seedCacheLayeredMessages
 } from './context/buildContextLayers.js';
 import { runOrchestratorLoop } from './loop/index.js';
+import { prefetchInvokedSkills } from './prefetchInvokedSkills.js';
 import {
   requireWorkspace,
   requireWorkspaceById
@@ -195,6 +197,14 @@ export function listActiveRuns(): ActiveRunInfo[] {
     });
   }
   return out;
+}
+
+/** Wait for aborted runs to exit their `startRun` finally blocks before shutdown flush. */
+export async function drainActiveRuns(timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (listActiveRuns().length > 0 && Date.now() < deadline) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
 }
 
 /** Model selection for an in-flight run on this conversation, if any. */
@@ -417,6 +427,7 @@ export async function startRun(
             : undefined,
       mentions:
         input.mentions && input.mentions.length > 0 ? input.mentions : undefined,
+      ...(input.invokedSkill ? { invokedSkill: input.invokedSkill } : {}),
       runId: input.runId,
       providerId: input.selection.providerId,
       modelId: input.selection.modelId
@@ -465,7 +476,8 @@ export async function startRun(
       initialQuery: input.prompt,
       reportsSettings,
       agentBehaviorSettings,
-      runStartedAt: activeRuns.get(input.runId)?.startedAt ?? Date.now()
+      runStartedAt: activeRuns.get(input.runId)?.startedAt ?? Date.now(),
+      runHistoryStartIndex: CACHE_LAYER_HISTORY_START + replayedMessageCount
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -502,9 +514,24 @@ interface RunLoopBodyOpts {
   reportsSettings: ResolvedReportsSettings;
   agentBehaviorSettings: ResolvedAgentBehaviorSettings;
   runStartedAt?: number;
+  runHistoryStartIndex?: number;
 }
 
 async function runLoopBody(opts: RunLoopBodyOpts): Promise<void> {
+  const invoked = opts.input.invokedSkill?.trim();
+  if (invoked && opts.input.conversationId) {
+    await prefetchInvokedSkills({
+      invokedSkills: [invoked],
+      workspacePath: opts.workspacePath,
+      workspaceId: opts.workspaceId,
+      runId: opts.input.runId,
+      conversationId: opts.input.conversationId,
+      signal: opts.abort.signal,
+      messages: opts.initialMessages,
+      emit: opts.emit
+    });
+  }
+
   const loopResult = await runOrchestratorLoop({
     input: opts.input,
     workspacePath: opts.workspacePath,
@@ -516,7 +543,12 @@ async function runLoopBody(opts: RunLoopBodyOpts): Promise<void> {
     reportsSettings: opts.reportsSettings,
     agentBehaviorSettings: opts.agentBehaviorSettings,
     ...(opts.runStartedAt !== undefined ? { runStartedAt: opts.runStartedAt } : {}),
-    ...(opts.resumeCheckpoint ? { resumeCheckpoint: opts.resumeCheckpoint } : {})
+    ...(opts.resumeCheckpoint ? { resumeCheckpoint: opts.resumeCheckpoint } : {}),
+    ...(opts.resumeCheckpoint?.runHistoryStartIndex !== undefined
+      ? { runHistoryStartIndex: opts.resumeCheckpoint.runHistoryStartIndex }
+      : opts.runHistoryStartIndex !== undefined
+        ? { runHistoryStartIndex: opts.runHistoryStartIndex }
+        : {})
   });
 
   if (loopResult.pausedForAskUser) {
@@ -678,7 +710,8 @@ export async function submitAskUserAnswers(input: AskUserSubmitInput): Promise<b
       resumeCheckpoint: entry.checkpoint,
       reportsSettings: entry.reportsSettings,
       agentBehaviorSettings: entry.agentBehaviorSettings,
-      runStartedAt: run.startedAt
+      runStartedAt: run.startedAt,
+      runHistoryStartIndex: entry.checkpoint.runHistoryStartIndex
     });
   } catch (err: unknown) {
     clearPausedRun(input.runId);
@@ -777,7 +810,8 @@ async function buildInitialMessages(
     conversationId: input.conversationId,
     runId: input.runId,
     mediaCache: getPreparedMediaCache(input.runId),
-    signal
+    signal,
+    ...(input.invokedSkill ? { invokedSkill: input.invokedSkill } : {})
   });
 
   return {

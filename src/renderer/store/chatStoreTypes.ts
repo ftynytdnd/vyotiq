@@ -120,6 +120,7 @@ export interface ChatStore extends ActiveMirror {
       attachmentMeta?: PromptAttachmentMeta[];
       promptEventId?: string;
       mentions?: MentionRef[];
+      invokedSkill?: string;
     }
   ) => Promise<void>;
   abort: () => Promise<void>;
@@ -145,6 +146,7 @@ export interface ChatStore extends ActiveMirror {
       attachmentMeta?: PromptAttachmentMeta[];
       mentions?: MentionRef[];
       promptEventId?: string;
+      invokedSkill?: string;
     }
   ) => Promise<void>;
   updateFollowUp: (
@@ -154,6 +156,7 @@ export interface ChatStore extends ActiveMirror {
       selection?: ModelSelection;
       attachmentMeta?: PromptAttachmentMeta[];
       mentions?: MentionRef[];
+      invokedSkill?: string;
     }
   ) => Promise<void>;
   removeFollowUp: (id: string) => Promise<void>;

@@ -24,6 +24,10 @@ interface EditDiffViewProps {
   pending?: boolean;
   /** When false, hide the hover Open affordance. Defaults true when `filePath` is set. */
   openable?: boolean;
+  /** Hide the blinking stream cursor on the partial tail line. */
+  hideStreamCursor?: boolean;
+  /** Brief crossfade when handoff from preview → FS-aware stream. */
+  handoff?: boolean;
 }
 
 function countStats(hunks: DiffHunk[]): { additions: number; deletions: number } {
@@ -48,7 +52,9 @@ export function EditDiffView({
   linePick,
   statusLabel,
   pending,
-  openable
+  openable,
+  hideStreamCursor,
+  handoff
 }: EditDiffViewProps) {
   const workspaceId = useWorkspaceStore((s) => s.activeId);
 
@@ -92,6 +98,8 @@ export function EditDiffView({
         variant={variant}
         {...(filePath ? { filePath } : {})}
         {...(maxHeightClass ? { maxHeightClass } : {})}
+        {...(hideStreamCursor ? { hideStreamCursor } : {})}
+        {...(handoff ? { handoff } : {})}
       />
     </FileChangeCard>
   );

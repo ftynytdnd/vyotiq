@@ -20,6 +20,8 @@ import type { TimelineEvent } from '@shared/types/chat.js';
 import type { TaskList } from '@shared/types/task.js';
 import { TASK_LIST_MAX_ITEMS } from '@shared/types/task.js';
 import { appendEvent } from '../conversations/conversationStore.js';
+import { invalidateEnvelopesForConversation } from '../orchestrator/contextManager.js';
+import { readLastTodosFromTranscript } from '../tasks/taskTranscriptFallback.js';
 import { readTaskList, writeTaskList } from '../tasks/taskStore.js';
 import { safeWebContentsSend } from '../window/safeWebContentsSend.js';
 import { wrapIpcHandler } from './wrapIpcHandler.js';
@@ -48,7 +50,11 @@ function emitTodosUpdate(conversationId: string, items: TaskList['items']): void
 export function registerTasksIpc(): void {
   wrapIpcHandler(IPC.TASKS_GET, async (_event, conversationId: string): Promise<TaskList> => {
     assertString('tasks:get', 'conversationId', conversationId);
-    return readTaskList(conversationId);
+    const list = await readTaskList(conversationId);
+    if (list.items.length > 0) return list;
+    const fromTranscript = await readLastTodosFromTranscript(conversationId);
+    if (fromTranscript.length === 0) return list;
+    return { ...list, items: fromTranscript };
   });
 
   wrapIpcHandler(
@@ -66,6 +72,7 @@ export function registerTasksIpc(): void {
       // `writeTaskList` normalizes defensively (dedupe, single in_progress,
       // content caps), so a malformed entry can never corrupt the sidecar.
       const list = await writeTaskList(conversationId, items as TaskList['items'], false);
+      invalidateEnvelopesForConversation(conversationId);
       emitTodosUpdate(conversationId, list.items);
       return list;
     }

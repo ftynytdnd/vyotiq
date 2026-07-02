@@ -4,11 +4,8 @@
  * registry `Tool` objects so schemas and prose stay aligned.
  *
  * Always-on sections (`HARNESS_PREFIX_SECTION_IDS`) go into the cached
- * `<system_instructions>` system slot every turn. Reference material lives in
- * on-demand "context packs" (`CONTEXT_PACK_IDS`): a short catalogue advertises
- * them in the prefix, and the model loads a pack itself via the `context` tool
- * when it needs it — keeping the static prefix lean and the per-turn token
- * cost low without sacrificing recoverability.
+ * `<system_instructions>` system slot every turn. On-demand skills are advertised
+ * via a per-run catalogue; the model loads them via the `context` tool.
  */
 
 import { listTools } from '../tools/registry.js';
@@ -23,7 +20,7 @@ import {
   MAX_BACKOFF_MS,
   MAX_SELF_CORRECTION_ATTEMPTS,
   MAX_TOOL_OUTPUT_CHARS,
-  MAX_TOTAL_ITERATIONS,
+  DEFAULT_MAX_TOTAL_ITERATIONS,
   STREAM_INACTIVITY_TIMEOUT_MS
 } from '@shared/constants.js';
 
@@ -33,11 +30,13 @@ import dynamicLoop from './05-dynamic-loop.md?raw';
 import { readHarnessOverride } from './harnessOverrides.js';
 import {
   assertContextPacksPresent,
-  buildContextPackCatalogue,
   invalidateContextPacks,
   readBundledContextPack,
   warmContextPacks
 } from './contextPacks.js';
+import { buildSkillsCatalogue } from '../skills/buildSkillsCatalogue.js';
+import { invalidateSkillRegistry } from '../skills/skillRegistry.js';
+import { listBundledSkillMetas } from '../skills/bundledSkills.js';
 
 /** Bundled bodies for the always-on prefix sections (00 / 01 / 05). */
 const BUNDLED_PREFIX_BODIES: Record<(typeof HARNESS_PREFIX_SECTION_IDS)[number], string> = {
@@ -52,7 +51,7 @@ function isPrefixSectionId(
   return (HARNESS_PREFIX_SECTION_IDS as readonly string[]).includes(id);
 }
 
-/** Bundled body for any editable section — prefix sections here, packs delegate. */
+/** Bundled body for any editable section — prefix sections here, packs delegate to skills. */
 export function readBundledHarnessSection(sectionId: HarnessSectionId): string {
   return isPrefixSectionId(sectionId)
     ? BUNDLED_PREFIX_BODIES[sectionId]
@@ -89,6 +88,7 @@ export function invalidateHarnessPromptCache(): void {
   agentPromptCache = null;
   prefixBodiesCache = null;
   invalidateContextPacks();
+  invalidateSkillRegistry();
 }
 
 function assertHarnessMarkdownPresent(): void {
@@ -103,11 +103,11 @@ function assertHarnessMarkdownPresent(): void {
   assertContextPacksPresent();
 }
 
-function buildRuntimeLimitsBlock(): string {
+function buildRuntimeLimitsBlock(maxTotalIterations: number = DEFAULT_MAX_TOTAL_ITERATIONS): string {
   return wrapXml(
     'runtime_limits',
     [
-      `MAX_TOTAL_ITERATIONS=${MAX_TOTAL_ITERATIONS}`,
+      `MAX_TOTAL_ITERATIONS=${maxTotalIterations}`,
       `MAX_SELF_CORRECTION_ATTEMPTS=${MAX_SELF_CORRECTION_ATTEMPTS}`,
       `BASE_BACKOFF_MS=${BASE_BACKOFF_MS}`,
       `MAX_BACKOFF_MS=${MAX_BACKOFF_MS}`,
@@ -136,6 +136,26 @@ function buildAgentToolCatalogue(): string {
   );
 }
 
+function buildHarnessBaseInner(maxTotalIterations: number = DEFAULT_MAX_TOTAL_ITERATIONS): string {
+  const bodies = prefixBodiesCache ?? BUNDLED_PREFIX_BODIES;
+  const sections = HARNESS_PREFIX_SECTION_IDS.map((id) => bodies[id]).join('\n\n---\n\n');
+  return (
+    `${sections}\n\n---\n\n${buildRuntimeLimitsBlock(maxTotalIterations)}\n\n---\n\n${buildAgentToolCatalogue()}`
+  );
+}
+
+/** Boot-time placeholder catalogue (bundled skills only, sync). */
+function buildBootSkillsCataloguePlaceholder(): string {
+  const lines = listBundledSkillMetas().map(
+    (s) => `- \`${s.name}\` — ${s.description}`
+  );
+  return (
+    `# On-Demand Skills\n\n` +
+    `Built-in skills (workspace skills discovered per run):\n\n` +
+    lines.join('\n')
+  );
+}
+
 let agentPromptCache: string | null = null;
 
 export function assertHarnessBoot(): void {
@@ -147,26 +167,43 @@ export function assertHarnessBoot(): void {
   if (!prompt.includes('<runtime_limits>')) {
     throw new Error('harness boot: agent prompt missing <runtime_limits>');
   }
-  if (!prompt.includes(`MAX_TOTAL_ITERATIONS=${MAX_TOTAL_ITERATIONS}`)) {
+  if (!prompt.includes(`MAX_TOTAL_ITERATIONS=${DEFAULT_MAX_TOTAL_ITERATIONS}`)) {
     throw new Error('harness boot: runtime_limits drift from constants.ts');
   }
-  if (!prompt.includes('# On-Demand Context Packs')) {
-    throw new Error('harness boot: context pack catalogue missing from system prompt');
+  if (!prompt.includes('# On-Demand Skills')) {
+    throw new Error('harness boot: skills catalogue missing from system prompt');
   }
 }
 
-/** System prompt for Agent V (single dynamic agent). */
+/**
+ * Cached harness without workspace-specific skills catalogue (boot / idle meter).
+ */
 export function buildOrchestratorSystemPrompt(): string {
   if (agentPromptCache !== null) return agentPromptCache;
-  const bodies = prefixBodiesCache ?? BUNDLED_PREFIX_BODIES;
-  const sections = HARNESS_PREFIX_SECTION_IDS.map((id) => bodies[id]).join('\n\n---\n\n');
   const built = wrapXml(
     'system_instructions',
-    `${sections}\n\n---\n\n${buildRuntimeLimitsBlock()}\n\n---\n\n` +
-      `${buildAgentToolCatalogue()}\n\n---\n\n${buildContextPackCatalogue()}`
+    `${buildHarnessBaseInner()}\n\n---\n\n${buildBootSkillsCataloguePlaceholder()}`
   );
   agentPromptCache = built;
   return built;
+}
+
+export interface BuildOrchestratorSystemPromptForRunOpts {
+  workspacePath?: string;
+  invokedSkills?: readonly string[];
+  maxTotalIterations?: number;
+}
+
+/** Full system prompt with discovered skills catalogue for an agent run. */
+export async function buildOrchestratorSystemPromptForRun(
+  opts: BuildOrchestratorSystemPromptForRunOpts = {}
+): Promise<string> {
+  const maxIter = opts.maxTotalIterations ?? DEFAULT_MAX_TOTAL_ITERATIONS;
+  const catalogue = await buildSkillsCatalogue({
+    ...(opts.workspacePath !== undefined ? { workspacePath: opts.workspacePath } : {}),
+    ...(opts.invokedSkills !== undefined ? { invokedSkills: opts.invokedSkills } : {})
+  });
+  return wrapXml('system_instructions', `${buildHarnessBaseInner(maxIter)}\n\n---\n\n${catalogue}`);
 }
 
 export function __resetOrchestratorPromptCacheForTests(): void {
@@ -177,5 +214,6 @@ export function __resetOrchestratorPromptCacheForTests(): void {
 export async function warmHarnessOverrides(): Promise<void> {
   prefixBodiesCache = null;
   agentPromptCache = null;
+  invalidateSkillRegistry();
   await Promise.all([loadPrefixBodies(), warmContextPacks()]);
 }

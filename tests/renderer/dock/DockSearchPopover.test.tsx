@@ -34,16 +34,24 @@ beforeEach(() => {
       total: 2
     }) as never
   ) as unknown as typeof window.vyotiq.workspace.listTree;
+  window.vyotiq.skills = {
+    list: vi.fn(async () => [])
+  } as unknown as typeof window.vyotiq.skills;
+  window.vyotiq.conversations = {
+    search: vi.fn(async () => [])
+  } as unknown as typeof window.vyotiq.conversations;
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const SEARCH_PLACEHOLDER = 'Search skills, chats, messages, files…';
+
 describe('DockSearchPopover', () => {
   it('Enter on empty query closes the search', async () => {
     render(<DockSearchPopover />);
-    const input = screen.getByPlaceholderText('Search chats and files…');
+    const input = screen.getByPlaceholderText(SEARCH_PLACEHOLDER);
     await userEvent.click(input);
     await userEvent.keyboard('{Enter}');
     expect(useDockSearchStore.getState().open).toBe(false);
@@ -51,7 +59,7 @@ describe('DockSearchPopover', () => {
 
   it('Escape closes the search', async () => {
     render(<DockSearchPopover />);
-    const input = screen.getByPlaceholderText('Search chats and files…');
+    const input = screen.getByPlaceholderText(SEARCH_PLACEHOLDER);
     await userEvent.click(input);
     await userEvent.keyboard('{Escape}');
     expect(useDockSearchStore.getState().open).toBe(false);
@@ -60,7 +68,7 @@ describe('DockSearchPopover', () => {
   it('Enter with a non-empty query selects the top chat match and closes', async () => {
     const select = vi.spyOn(useConversationsStore.getState(), 'select');
     render(<DockSearchPopover />);
-    const input = screen.getByPlaceholderText('Search chats and files…');
+    const input = screen.getByPlaceholderText(SEARCH_PLACEHOLDER);
     await userEvent.click(input);
     await userEvent.type(input, 'tri');
     await userEvent.keyboard('{Enter}');
@@ -70,7 +78,7 @@ describe('DockSearchPopover', () => {
 
   it('shows grouped Chats and Files results', async () => {
     render(<DockSearchPopover />);
-    const input = screen.getByPlaceholderText('Search chats and files…');
+    const input = screen.getByPlaceholderText(SEARCH_PLACEHOLDER);
     await userEvent.type(input, 'main');
     await waitFor(() => {
       expect(screen.getByText('Files')).toBeInTheDocument();

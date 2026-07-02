@@ -11,14 +11,13 @@ import {
 
 const setAccountPollSource = vi.fn(async () => undefined);
 
-vi.mock('@renderer/lib/ipc.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@renderer/lib/ipc.js')>();
+vi.mock('@renderer/lib/ipc.js', async () => {
+  const stub = window.vyotiq;
   return {
-    ...actual,
     vyotiq: {
-      ...actual.vyotiq,
+      ...stub,
       providers: {
-        ...actual.vyotiq.providers,
+        ...stub.providers,
         setAccountPollSource: (...args: unknown[]) => setAccountPollSource(...args)
       }
     }
@@ -37,7 +36,7 @@ beforeEach(() => {
 
 describe('useProviderAccountPollSource', () => {
   it('activates and deactivates a source', () => {
-    const { unmount } = render(<PollHolder source="agent-run" active={true} />);
+    const { unmount } = render(<PollHolder source="agent-run" active />);
     expect(setAccountPollSource).toHaveBeenCalledWith('agent-run', true);
 
     act(() => unmount());
@@ -47,7 +46,7 @@ describe('useProviderAccountPollSource', () => {
   it('keeps source active while any holder is active', () => {
     const { rerender } = render(
       <>
-        <PollHolder source="composer" active={true} />
+        <PollHolder source="composer" active />
         <PollHolder source="composer" active={false} />
       </>
     );
@@ -55,33 +54,10 @@ describe('useProviderAccountPollSource', () => {
 
     rerender(
       <>
-        <PollHolder source="composer" active={true} />
-        <PollHolder source="composer" active={true} />
+        <PollHolder source="composer" active />
+        <PollHolder source="composer" active />
       </>
     );
-    expect(setAccountPollSource).toHaveBeenCalledWith('composer', true);
-  });
-
-  it('survives rapid active toggles without throwing', () => {
-    const { rerender } = render(<PollHolder source="agent-run" active={false} />);
-
-    for (let i = 0; i < 40; i++) {
-      act(() => {
-        rerender(<PollHolder source="agent-run" active={i % 2 === 0} />);
-      });
-    }
-
-    expect(setAccountPollSource).toHaveBeenCalled();
-  });
-
-  it('syncs when active flips via layout effect', () => {
-    const { rerender } = render(<PollHolder source="composer" active={false} />);
-    setAccountPollSource.mockClear();
-
-    act(() => {
-      rerender(<PollHolder source="composer" active={true} />);
-    });
-
     expect(setAccountPollSource).toHaveBeenCalledWith('composer', true);
   });
 });

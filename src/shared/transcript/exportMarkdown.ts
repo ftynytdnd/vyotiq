@@ -133,6 +133,7 @@ export function renderTranscriptMarkdown(
       case 'synthetic-usage-update':
       case 'attachment-pre-read':
       case 'assistant-image':
+        break;
       case 'todos-update': {
         const checklist = renderTaskListMarkdown(e.items);
         if (checklist.length > 0) {

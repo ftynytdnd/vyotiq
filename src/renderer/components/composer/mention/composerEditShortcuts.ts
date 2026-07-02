@@ -44,6 +44,8 @@ const GLOBAL_WIN_IDS = [
   'openSettings',
   'saveEditor',
   'toggleTerminal',
+  'companionPanels',
+  'sourceControl',
   'closeWorkbenchTab',
   'cycleWorkbenchTabPrev',
   'cycleWorkbenchTabNext',

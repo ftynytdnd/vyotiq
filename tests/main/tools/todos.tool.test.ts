@@ -9,7 +9,11 @@ const state = vi.hoisted(() => ({ root: '' }));
 vi.mock('@main/paths/userDataLayout.js', () => ({
   tasksDir: () => state.root
 }));
+vi.mock('@main/orchestrator/contextManager.js', () => ({
+  invalidateEnvelopesForConversation: vi.fn()
+}));
 
+import { invalidateEnvelopesForConversation } from '@main/orchestrator/contextManager.js';
 import { todosTool } from '@main/tools/todos.tool.js';
 
 function ctxFor(emit: (e: TimelineEvent) => void): ToolContext {
@@ -55,6 +59,7 @@ describe('todos.tool', () => {
       ctxFor((e) => events.push(e))
     );
     expect(result.ok).toBe(true);
+    expect(invalidateEnvelopesForConversation).toHaveBeenCalledWith('conv-1');
     expect(result.data).toMatchObject({ tool: 'todos', action: 'write', merged: false, count: 2 });
 
     const update = events.find((e) => e.kind === 'todos-update');
@@ -90,5 +95,26 @@ describe('todos.tool', () => {
     const result = await todosTool.run({ todos: 'not-an-array' }, ctxFor(() => undefined));
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/array/i);
+  });
+
+  it('writes nested sub-tasks with parentId', async () => {
+    const events: TimelineEvent[] = [];
+    const result = await todosTool.run(
+      {
+        todos: [
+          { id: 'p', content: 'Implement auth', status: 'pending' },
+          { id: 's1', parentId: 'p', content: 'Read module', status: 'in_progress' },
+          { id: 's2', parentId: 'p', content: 'Add route', status: 'pending' }
+        ]
+      },
+      ctxFor((e) => events.push(e))
+    );
+    expect(result.ok).toBe(true);
+    expect(result.output).toContain('1. [ ] Implement auth');
+    expect(result.output).toContain('1.1 Read module (in progress)');
+    if (result.data?.tool === 'todos') {
+      expect(result.data.items.map((t) => t.id)).toEqual(['p', 's1', 's2']);
+      expect(result.data.items[1]).toMatchObject({ parentId: 'p' });
+    }
   });
 });

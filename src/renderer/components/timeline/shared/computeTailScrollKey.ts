@@ -34,11 +34,20 @@ export function computeTailScrollKey(
       }
       growth += last.children.length;
       break;
-    case 'file-edit-group':
-      for (const child of last.children) {
-        growth += child.additions + child.deletions;
+    case 'file-edit-card': {
+      let lineCount = 0;
+      if (last.hunks) {
+        for (const hunk of last.hunks) {
+          lineCount += hunk.lines.length;
+        }
       }
-      growth += last.children.length * 48;
+      growth += last.additions + last.deletions + lineCount * 8;
+      if (last.phase === 'streaming') growth += 96;
+      if (last.phase === 'settling') growth += 48;
+      break;
+    }
+    case 'file-edit-pending':
+      growth += 32;
       break;
     case 'ask-user-prompt':
       growth += 120;

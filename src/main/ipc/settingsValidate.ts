@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Runtime shape gates for `settings:set` patches.
  */
 
@@ -20,7 +20,7 @@ import {
   assertStringArray
 } from './validate.js';
 
-const SETTINGS_TOP_KEYS = new Set(['defaultModel', 'ui']);
+const SETTINGS_TOP_KEYS = new Set(['defaultModel', 'authoringModel', 'ui']);
 
 const UI_BOOLEAN_KEYS = ['sidebarOpen', 'dockExpanded', 'reducedMotion', 'firstLaunch'] as const;
 
@@ -31,7 +31,7 @@ const UI_NUMERIC_BOUNDS: Record<(typeof UI_NUMERIC_KEYS)[number], { min: number;
   workbenchPaneWidth: { min: WORKBENCH_PANE_WIDTH_MIN, max: WORKBENCH_PANE_WIDTH_MAX }
 };
 
-const UI_STRING_KEYS = ['theme', 'density', 'lastSettingsTab'] as const;
+const UI_STRING_KEYS = ['theme', 'density', 'lastSettingsTab', 'lastAgentBehaviorSection'] as const;
 
 const UI_RECORD_KEYS = [
   'expandedRows',
@@ -39,6 +39,7 @@ const UI_RECORD_KEYS = [
   'collapsedWorkspaces',
   'filesExpandedWorkspaces',
   'lastModelByWorkspace',
+  'autoModelByWorkspace',
   'panelWidths',
   'pinnedConversationIds',
   'keybindings',
@@ -177,6 +178,7 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
       (UI_RECORD_KEYS as readonly string[]).includes(key) ||
       (UI_NESTED_OBJECT_KEYS as readonly string[]).includes(key) ||
       key === 'favoriteModels' ||
+      key === 'githubOAuthClientId' ||
       key === 'workspaceSpendUsd' ||
       key === 'workspaceSpendIncrement' ||
       key === 'workspaceUsageIncrement';
@@ -212,6 +214,11 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
   }
   if ('diffLayout' in ui && ui.diffLayout !== undefined) {
     assertEnum(channel, 'patch.ui.diffLayout', ui.diffLayout, ['unified', 'split']);
+  }
+  if ('githubOAuthClientId' in ui && ui.githubOAuthClientId !== undefined) {
+    assertString(channel, 'patch.ui.githubOAuthClientId', ui.githubOAuthClientId, {
+      maxBytes: 256
+    });
   }
   if ('favoriteModels' in ui && ui.favoriteModels !== undefined) {
     assertStringArray(channel, 'patch.ui.favoriteModels', ui.favoriteModels, {
@@ -268,6 +275,15 @@ function assertUiPatch(channel: string, ui: Record<string, unknown>): void {
       const s = sel as Record<string, unknown>;
       assertString(channel, `patch.ui.lastModelByWorkspace[${wsId}].providerId`, s.providerId);
       assertString(channel, `patch.ui.lastModelByWorkspace[${wsId}].modelId`, s.modelId);
+    }
+  }
+  if ('autoModelByWorkspace' in ui && ui.autoModelByWorkspace !== undefined) {
+    assertObject(channel, 'patch.ui.autoModelByWorkspace', ui.autoModelByWorkspace);
+    const map = ui.autoModelByWorkspace as Record<string, unknown>;
+    assertRecordKeyCount(channel, 'patch.ui.autoModelByWorkspace', map, UI_RECORD_MAX_KEYS);
+    for (const [wsId, enabled] of Object.entries(map)) {
+      assertString(channel, 'patch.ui.autoModelByWorkspace key', wsId);
+      assertBoolean(channel, `patch.ui.autoModelByWorkspace[${wsId}]`, enabled);
     }
   }
   if ('workspaceSpendUsd' in ui && ui.workspaceSpendUsd !== undefined) {
@@ -707,6 +723,16 @@ export function assertSettingsPatch(
     const dm = patch.defaultModel as Record<string, unknown>;
     assertString(channel, 'patch.defaultModel.providerId', dm.providerId);
     assertString(channel, 'patch.defaultModel.modelId', dm.modelId);
+  }
+  if (
+    'authoringModel' in patch &&
+    patch.authoringModel !== null &&
+    patch.authoringModel !== undefined
+  ) {
+    assertObject(channel, 'patch.authoringModel', patch.authoringModel);
+    const am = patch.authoringModel as Record<string, unknown>;
+    assertString(channel, 'patch.authoringModel.providerId', am.providerId);
+    assertString(channel, 'patch.authoringModel.modelId', am.modelId);
   }
   if ('ui' in patch && patch.ui !== undefined) {
     assertObject(channel, 'patch.ui', patch.ui);

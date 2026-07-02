@@ -90,6 +90,22 @@ describe('scheduledRuns enqueue when busy', () => {
     expect(touchScheduledRunMock).toHaveBeenCalled();
   });
 
+  it('parses slash skill prompts and passes invokedSkill', async () => {
+    const run = { ...sampleRun(), prompt: '/review audit CI' };
+    listScheduledRunsMock.mockResolvedValue([run]);
+    listActiveRunsMock.mockReturnValue([]);
+
+    startScheduledRunsService();
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(dispatchChatSendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: 'audit CI',
+        invokedSkill: 'review-checklist'
+      })
+    );
+  });
+
   it('dispatches immediately when conversation is idle', async () => {
     listScheduledRunsMock.mockResolvedValue([sampleRun()]);
     listActiveRunsMock.mockReturnValue([]);

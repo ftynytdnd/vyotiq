@@ -4,6 +4,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { TitlebarDockChrome, TitlebarWorkbenchChrome } from '@renderer/components/titlebar/TitlebarChrome';
 import { useUiStore } from '@renderer/store/useUiStore';
 import { useAppViewStore } from '@renderer/store/useAppViewStore';
@@ -25,60 +26,50 @@ beforeEach(() => {
 });
 
 describe('TitlebarDockChrome', () => {
-  it('renders horizontal dock actions when chat view is active', () => {
-    render(
-      <TitlebarDockChrome onOpenSettings={() => {}} onBackFromSettings={() => {}} />
-    );
-    expect(screen.getByRole('button', { name: 'New chat' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Search chats and files' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument();
+  it('renders collapse control when chat view is active', () => {
+    render(<TitlebarDockChrome onBackFromSettings={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Search skills, chats, messages, and files' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Scheduled runs' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Expand navigation' })).toBeInTheDocument();
   });
 
   it('shows back only in settings mode', () => {
     useAppViewStore.setState({ view: 'settings' });
-    render(
-      <TitlebarDockChrome onOpenSettings={() => {}} onBackFromSettings={() => {}} />
-    );
+    render(<TitlebarDockChrome onBackFromSettings={() => {}} />);
     expect(screen.getByRole('button', { name: 'Back to chat' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull();
   });
 
   it('expands dock from collapse control', () => {
-    render(
-      <TitlebarDockChrome onOpenSettings={() => {}} onBackFromSettings={() => {}} />
-    );
+    render(<TitlebarDockChrome onBackFromSettings={() => {}} />);
     fireEvent.click(screen.getByRole('button', { name: 'Expand navigation' }));
     expect(useUiStore.getState().dockExpanded).toBe(true);
   });
 });
 
 describe('TitlebarWorkbenchChrome', () => {
-  it('renders horizontal workbench launchers', () => {
+  it('renders compact companion panels menu', async () => {
+    const user = userEvent.setup();
     render(<TitlebarWorkbenchChrome />);
-    expect(screen.getByRole('button', { name: /open terminal/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /open browser/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /open files to edit/i })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Companion panels' }));
+    expect(screen.getByRole('menuitem', { name: /Terminal/i })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: /Browser/i })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: /Editor/i })).toBeTruthy();
   });
 
   it('hides launchers in settings mode', () => {
     useAppViewStore.setState({ view: 'settings' });
     render(<TitlebarWorkbenchChrome />);
-    expect(screen.queryByRole('button', { name: /open terminal/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Companion panels' })).toBeNull();
   });
 
-  it('keeps launchers visible when a companion panel is open', () => {
+  it('shows active dot when a companion panel is open', () => {
     useEditorStore.setState({ open: true } as never);
     useUiStore.setState({ workbenchTab: 'editor' });
     render(<TitlebarWorkbenchChrome />);
-    expect(screen.getByRole('button', { name: /close editor/i })).toBeTruthy();
-  });
-
-  it('marks the focused companion launcher as pressed', () => {
-    useEditorStore.setState({ open: true } as never);
-    useUiStore.setState({ workbenchTab: 'editor' });
-    render(<TitlebarWorkbenchChrome />);
-    expect(screen.getByRole('button', { name: /close editor/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Companion panels' })).toBeTruthy();
   });
 });

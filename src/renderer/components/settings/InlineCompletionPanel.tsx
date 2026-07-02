@@ -11,7 +11,7 @@ import { useSettingsStore } from '../../store/useSettingsStore.js';
 import { persistSettingsPatch } from '../../lib/persistSettingsPatch.js';
 import { useProviderStore } from '../../store/useProviderStore.js';
 import { useToastStore } from '../../store/useToastStore.js';
-import { ShellCaption, ShellSection } from '../ui/ShellSection.js';
+import { ShellCaption, ShellFieldLabel, ShellSection } from '../ui/ShellSection.js';
 import { SettingsSwitchRow } from './SettingsSwitchRow.js';
 
 export function InlineCompletionPanel() {
@@ -49,7 +49,7 @@ export function InlineCompletionPanel() {
   };
 
   return (
-    <ShellSection title="Inline completion" className="vx-inline-completion-panel">
+    <ShellSection className="vx-inline-completion-panel">
       <ShellCaption>
         Tab/ghost suggestions in the editor and composer. Uses a small, fast completion request via
         your configured providers (local or cloud). Defaults to the active chat model when no
@@ -79,9 +79,10 @@ export function InlineCompletionPanel() {
         onChange={(composerEnabled) => apply({ composerEnabled })}
       />
 
-      <label className="vx-settings-field flex flex-col gap-1.5">
-        <span className="text-meta text-text-muted">Completion model</span>
+      <div className="vx-settings-field flex flex-col gap-1.5">
+        <ShellFieldLabel htmlFor="inline-completion-model">Completion model</ShellFieldLabel>
         <select
+          id="inline-completion-model"
           className="vx-select"
           value={selectedModelValue}
           disabled={!inline.enabled}
@@ -101,11 +102,12 @@ export function InlineCompletionPanel() {
             </option>
           ))}
         </select>
-      </label>
+      </div>
 
-      <label className="vx-settings-field flex flex-col gap-1.5">
-        <span className="text-meta text-text-muted">Debounce (ms)</span>
+      <div className="vx-settings-field flex flex-col gap-1.5">
+        <ShellFieldLabel htmlFor="inline-completion-debounce">Debounce (ms)</ShellFieldLabel>
         <input
+          id="inline-completion-debounce"
           className="vx-input"
           type="number"
           min={150}
@@ -124,7 +126,7 @@ export function InlineCompletionPanel() {
             });
           }}
         />
-      </label>
+      </div>
     </ShellSection>
   );
 }

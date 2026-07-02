@@ -8,7 +8,7 @@ import { useConversationsStore } from '../../store/useConversationsStore.js';
 import { vyotiq } from '../../lib/ipc.js';
 import { formatTokenCountWithUnit } from '../../lib/formatTokens.js';
 import { useToastStore } from '../../store/useToastStore.js';
-import { ShellCaption, ShellSection } from '../ui/ShellSection.js';
+import { ShellCaption, ShellFieldLabel, ShellSection } from '../ui/ShellSection.js';
 import { SettingsSwitchRow } from './SettingsSwitchRow.js';
 
 function formatGeminiCacheState(status: PromptCacheRuntimeStatus['geminiExplicitCache']): string {
@@ -88,7 +88,7 @@ export function PromptCachingPanel() {
   };
 
   return (
-    <ShellSection title="Prompt caching" className="mt-4">
+    <ShellSection>
       <ShellCaption>
         Reduces cost and latency when static prefixes repeat across turns. Static harness and
         workspace sit at the top; volatile runtime data stays at the tail. OpenAI routes with{' '}
@@ -100,23 +100,23 @@ export function PromptCachingPanel() {
         value={promptCaching.anthropicCacheDiagnostics}
         onChange={(v) => apply({ anthropicCacheDiagnostics: v })}
       />
-      <label className="mt-2 flex max-w-md flex-col gap-1">
-        <span className="text-meta font-medium text-text-secondary">Anthropic cache TTL</span>
-        <span className="text-meta text-text-faint">
+      <div className="mt-2 flex max-w-md flex-col gap-1">
+        <ShellFieldLabel htmlFor="prompt-cache-anthropic-ttl">Anthropic cache TTL</ShellFieldLabel>
+        <span className="vx-caption text-text-faint">
           1h keeps long agent sessions warm (2× write surcharge vs 5-minute ephemeral).
         </span>
         <select
+          id="prompt-cache-anthropic-ttl"
           className="vx-input w-full font-mono text-row"
           value={promptCaching.anthropicCacheTtl}
           onChange={(e) =>
             apply({ anthropicCacheTtl: e.target.value === '5m' ? '5m' : '1h' })
           }
-          aria-label="Anthropic cache TTL"
         >
           <option value="1h">1 hour (default)</option>
           <option value="5m">5 minutes</option>
         </select>
-      </label>
+      </div>
       <SettingsSwitchRow
         label="Gemini explicit cache"
         description="Opt in to named cachedContents when the static prefix is large enough."
@@ -130,7 +130,7 @@ export function PromptCachingPanel() {
         onChange={(v) => apply({ openaiExtendedCacheRetention: v })}
       />
       <div className="mt-3 space-y-1 border-t border-border-subtle pt-3">
-        <p className="text-meta font-medium text-text-secondary">Active session</p>
+        <h4 className="vx-section-head mb-1">Active session</h4>
         {latest && prompt > 0 ? (
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 font-mono text-meta text-text-faint tabular-nums">
             {conversationMeta?.lastProviderId ? (
@@ -167,7 +167,9 @@ export function PromptCachingPanel() {
             ) : null}
           </dl>
         ) : (
-          <p className="text-meta text-text-faint">No token usage in the current conversation yet.</p>
+          <ShellCaption>
+            Token usage appears here after Agent V completes its first run in the active chat.
+          </ShellCaption>
         )}
         {runtimeStatus ? (
           <p className="font-mono text-meta text-text-faint">
@@ -175,14 +177,14 @@ export function PromptCachingPanel() {
           </p>
         ) : null}
         {runtimeStatus?.geminiExplicitCache.state === 'active' ? (
-          <p className="text-meta text-warning">
+          <p className="text-row text-warning">
             Gemini explicit cache is active — hourly storage fees are not included in Vyotiq cost
             estimates ($1–$4.50/MTok/hr depending on model).
           </p>
         ) : null}
         <button
           type="button"
-          className="mt-2 text-meta text-accent hover:underline"
+          className="mt-2 text-row text-accent hover:underline"
           onClick={() => void copySessionStats()}
         >
           Copy last turn cache stats

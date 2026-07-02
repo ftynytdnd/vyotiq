@@ -31,7 +31,7 @@ import type {
 } from '@shared/types/chat.js';
 import type { ProviderDialect } from '@shared/types/provider.js';
 import { providerDialectReportsPromptCache } from '@shared/providers/promptCacheMetrics.js';
-import { buildOrchestratorSystemPrompt } from '../../harness/harnessLoader.js';
+import { buildOrchestratorSystemPromptForRun } from '../../harness/harnessLoader.js';
 import { refreshEnvelopes } from '../contextManager.js';
 import { wrapXml } from '../envelope/index.js';
 import { tryParseArgumentsRecord } from './parseToolArgs.js';
@@ -58,7 +58,7 @@ import {
   IMPLICIT_FINISH_MIN_SENTENCE_CHARS,
   MAX_PROVIDER_RECOVERY_ROUNDS,
   MAX_SELF_CORRECTION_ATTEMPTS,
-  MAX_TOTAL_ITERATIONS
+  DEFAULT_MAX_TOTAL_ITERATIONS
 } from '@shared/constants.js';
 import { AGENT_TOOLS } from '../../tools/policy/index.js';
 import { handleToolCalls } from './handleToolCalls.js';
@@ -104,8 +104,10 @@ import {
   type FollowUpInjectResult,
   type FollowUpLoopCtx
 } from '../followUps/followUpLoopHooks.js';
+import { injectFollowUp } from '../followUps/injectFollowUp.js';
 import {
   clearsDynamicLoopAuditAwaiting,
+  countSubstantiveEdits,
   injectDynamicLoopAudit,
   shouldInjectDynamicLoopAudit
 } from './dynamicLoopAudit.js';
@@ -123,6 +125,7 @@ import {
   isRunTokenBudgetExceeded,
   isRunWallClockBudgetExceeded,
   resolveAgentBehaviorSettings,
+  resolveMaxTotalIterations,
   type ResolvedAgentBehaviorSettings
 } from '@shared/settings/agentBehaviorSettings.js';
 import {
@@ -135,6 +138,9 @@ import {
   loadContextCalibration,
   rememberContextCalibration
 } from '../context/contextCalibration.js';
+import { listCatalogueSkillNames } from '../../skills/skillRegistry.js';
+import { seedInvokedSkills } from '../../tools/context.tool.js';
+import { prefetchInvokedSkills } from '../prefetchInvokedSkills.js';
 import { toolSchemasFor } from '../../tools/registry.js';
 import { maybeInterceptHostReportGate } from './hostReportGate.js';
 import {
@@ -144,6 +150,7 @@ import {
   formatRunTokenBudgetError,
   formatRunWallClockBudgetError,
   formatToolRecoveryThought,
+  TOOL_ESCALATION_STEERING_PROMPT,
   RUN_STOPPED_THOUGHT
 } from './runLoopMessages.js';
 
@@ -214,6 +221,8 @@ interface RunLoopOpts {
   agentBehaviorSettings?: ResolvedAgentBehaviorSettings;
   /** Wall-clock anchor for optional per-run duration budget. */
   runStartedAt?: number;
+  /** Index where the current run's history rows start (after replayed transcript). */
+  runHistoryStartIndex?: number;
 }
 
 /** Remove the last prose-only assistant row (empty-turn retry). */
@@ -256,13 +265,61 @@ function buildFollowUpLoopCtx(
   };
 }
 
-function applyFollowUpResult(result: FollowUpInjectResult, opts: RunLoopOpts): string {
+function applyFollowUpResult(
+  result: FollowUpInjectResult,
+  opts: RunLoopOpts,
+  invokedSkills: string[]
+): string {
   opts.input.selection = { ...result.selection };
+  const skill = result.invokedSkill?.trim();
+  if (skill) {
+    opts.input.invokedSkill = skill;
+    if (!invokedSkills.includes(skill)) {
+      invokedSkills.push(skill);
+    }
+    seedInvokedSkills(opts.signal, [skill]);
+  }
   return clampQuery(result.query, opts.input.prompt);
 }
 
+async function applyFollowUpAndPrefetch(
+  result: FollowUpInjectResult,
+  opts: RunLoopOpts,
+  invokedSkills: string[],
+  emit: (event: TimelineEvent) => void,
+  messages: ChatMessage[]
+): Promise<string> {
+  const skillBefore = new Set(invokedSkills);
+  const query = applyFollowUpResult(result, opts, invokedSkills);
+  const skill = result.invokedSkill?.trim();
+  if (skill && !skillBefore.has(skill) && opts.input.conversationId) {
+    await prefetchInvokedSkills({
+      invokedSkills: [skill],
+      workspacePath: opts.workspacePath,
+      workspaceId: opts.workspaceId,
+      runId: opts.input.runId,
+      conversationId: opts.input.conversationId,
+      signal: opts.signal,
+      messages,
+      emit
+    });
+  }
+  return query;
+}
+
 export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopResult> {
-  let harness = buildOrchestratorSystemPrompt();
+  const invokedSkills = opts.input.invokedSkill?.trim()
+    ? [opts.input.invokedSkill.trim()]
+    : [];
+  seedInvokedSkills(opts.signal, invokedSkills);
+  const agentBehaviorSettings =
+    opts.agentBehaviorSettings ?? resolveAgentBehaviorSettings();
+  const maxTotalIterations = resolveMaxTotalIterations(agentBehaviorSettings);
+  let harness = await buildOrchestratorSystemPromptForRun({
+    workspacePath: opts.workspacePath,
+    invokedSkills,
+    maxTotalIterations
+  });
   const messages = opts.initialMessages;
   let query = opts.initialQuery;
 
@@ -275,7 +332,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
   const diffStreamer = new DiffStreamer({
     workspacePath: opts.workspacePath,
     runId: opts.input.runId,
-    emit: emit,
+    emit,
     computeHunksAsync: (before, after) => diffWorkerPool.computeHunks(before, after)
   });
   const {
@@ -309,8 +366,8 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     let runCumulativeTokens = resume?.runCumulativeTokens ?? 0;
     const iterationCapBonus = resume?.reportGateBonusIteration ? 1 : 0;
     const runStateAcc: RunStateAccumulator = resume
-      ? { ...resume.runStateAcc }
-     : createRunStateAccumulator();
+      ? { ...createRunStateAccumulator(), ...resume.runStateAcc }
+      : createRunStateAccumulator();
     if (resume) {
       query = resume.query;
     }
@@ -330,6 +387,10 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     let consecutiveReasoningOnlyTurns = 0;
     /** Skip back-to-back host audit nudges until the agent edits/continues. */
     let dynamicLoopAuditAwaitingResponse = resume?.dynamicLoopAuditAwaitingResponse ?? false;
+    let dynamicAuditInjectionCount = resume?.dynamicAuditInjectionCount ?? 0;
+    let substantiveEditsAtLastAudit = resume?.substantiveEditsAtLastAudit ?? 0;
+    const runHistoryStartIndex =
+      resume?.runHistoryStartIndex ?? opts.runHistoryStartIndex ?? 0;
     /** Anthropic cache-diagnostics: prior turn `msg_…` id for prefix comparison. */
     let lastAnthropicMessageId: string | undefined;
 
@@ -347,10 +408,9 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     }
 
     const reportsSettings = opts.reportsSettings ?? resolveReportsSettings();
-    const agentBehaviorSettings =
-      opts.agentBehaviorSettings ?? resolveAgentBehaviorSettings();
     const reductionState = createContextReductionState();
-    const budgetToolSchemas = toolSchemasFor(AGENT_TOOLS);
+    let contextSkillNames = await listCatalogueSkillNames(opts.workspacePath, invokedSkills);
+    let budgetToolSchemas = toolSchemasFor(AGENT_TOOLS, { contextSkillNames });
     // Calibration: provider-reported prompt tokens ÷ our estimate, carried turn
     // to turn so the budget/meter anchor to what the provider actually bills.
     let calibrationRatio: number | undefined;
@@ -385,12 +445,12 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
     for (let iter = resume?.nextIteration ?? 0; ; iter++) {
       const abortedEarly = exitIfAborted(opts, emit, runHadLlmProgress);
       if (abortedEarly) return abortedEarly;
-      if (iter > MAX_TOTAL_ITERATIONS + iterationCapBonus) {
-        const capMsg = `Run stopped after ${MAX_TOTAL_ITERATIONS + iterationCapBonus} iterations without a final answer.`;
+      if (iter > maxTotalIterations + iterationCapBonus) {
+        const capMsg = `Run stopped after ${maxTotalIterations + iterationCapBonus} iterations without a final answer.`;
         emit({ kind: 'error', id: randomUUID(), ts: Date.now(), message: capMsg });
         return { terminalError: capMsg };
       }
-      const wrapUp = iter === MAX_TOTAL_ITERATIONS + iterationCapBonus;
+      const wrapUp = iter === maxTotalIterations + iterationCapBonus;
       if (
         isRunWallClockBudgetExceeded(Date.now() - runStartedAtMs, agentBehaviorSettings)
       ) {
@@ -450,7 +510,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           spinHotNudgeEmitted = false;
         }
         const runStateXml = buildRunStateXml(
-          snapshotRunState(runStateAcc, spin, consecutiveBadToolRounds)
+          snapshotRunState(runStateAcc, spin, consecutiveBadToolRounds, maxTotalIterations)
         );
         const hostEnvXml = buildHostEnvironmentXml(undefined, {
           workspacePath: opts.workspacePath
@@ -478,6 +538,13 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         const contextPressureXml = agentBehaviorSettings.contextManagement.enabled
           ? buildContextPressureXml(pressureLevel)
           : '';
+        harness = await buildOrchestratorSystemPromptForRun({
+          workspacePath: opts.workspacePath,
+          invokedSkills,
+          maxTotalIterations
+        });
+        contextSkillNames = await listCatalogueSkillNames(opts.workspacePath, invokedSkills);
+        budgetToolSchemas = toolSchemasFor(AGENT_TOOLS, { contextSkillNames });
         applyCacheLayers(messages, {
           harness,
           env,
@@ -574,7 +641,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               // inputs (mirrors the host-side `clear_tool_inputs` tier).
               clearAtLeastTokens: 8_192,
               clearToolInputs: true,
-              // Loaded context packs are reference material — keep them server-side
+              // Loaded skills are reference material — keep them server-side
               // when Anthropic context editing clears stale tool results.
               excludeTools: ['context'],
               // Opt-in server-side compaction backstop. Trigger sits below the
@@ -649,6 +716,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           ...(opts.input.workspaceId !== undefined
             ? { workspaceId: opts.input.workspaceId }
             : {}),
+          ...(contextSkillNames.length > 0 ? { contextSkillNames } : {}),
           ...(providerDialect === 'anthropic-native'
             ? { previousAnthropicMessageId: lastAnthropicMessageId ?? null }
             : {}),
@@ -1020,12 +1088,14 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         });
 
         const followUpCtx = buildFollowUpLoopCtx(opts, emit, messages, runStateAcc, spin);
-        const steered = await consumeSteeringFollowUps(followUpCtx);
-        if (steered) {
-          query = applyFollowUpResult(steered, opts);
-          consecutiveEmptyTurns = 0;
-          runStateAcc.lastAction = 'none';
-          continue;
+        if (actionTools.length === 0) {
+          const steered = await consumeSteeringFollowUps(followUpCtx);
+          if (steered) {
+            query = await applyFollowUpAndPrefetch(steered, opts, invokedSkills, emit, messages);
+            consecutiveEmptyTurns = 0;
+            runStateAcc.lastAction = 'none';
+            continue;
+          }
         }
 
         if (finishCall) {
@@ -1036,6 +1106,38 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               actionTools: actionTools.length
             });
           } else {
+            if (
+              shouldInjectDynamicLoopAudit(
+                [],
+                finishedToolCalls,
+                dynamicLoopAuditAwaitingResponse,
+                messages,
+                runHistoryStartIndex,
+                dynamicAuditInjectionCount,
+                substantiveEditsAtLastAudit
+              ) &&
+              opts.input.conversationId
+            ) {
+              const auditedBeforeFinishOnly = await injectDynamicLoopAudit(
+                followUpCtx,
+                opts.input.selection,
+                messages,
+                runHistoryStartIndex
+              );
+              if (auditedBeforeFinishOnly) {
+                query = await applyFollowUpAndPrefetch(auditedBeforeFinishOnly, opts, invokedSkills, emit, messages);
+                consecutiveEmptyTurns = 0;
+                runStateAcc.lastAction = 'none';
+                dynamicLoopAuditAwaitingResponse = true;
+                dynamicAuditInjectionCount += 1;
+                substantiveEditsAtLastAudit = countSubstantiveEdits(messages, runHistoryStartIndex);
+                log.info('dynamic loop auto-audit injected before finish-only turn', {
+                  iteration: iter,
+                  runId: opts.input.runId
+                });
+                continue;
+              }
+            }
             const summary = resolveFinishSummary(finishCall, turn.assistantText);
             if (!turn.hadText) {
               emitFinalAnswer(emit, summary);
@@ -1048,7 +1150,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             });
             const queued = await tryConsumeQueueBeforeFinish(followUpCtx);
             if (queued) {
-              query = applyFollowUpResult(queued, opts);
+              query = await applyFollowUpAndPrefetch(queued, opts, invokedSkills, emit, messages);
               consecutiveEmptyTurns = 0;
               runStateAcc.lastAction = 'none';
               continue;
@@ -1069,7 +1171,8 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               spin,
               pendingTerminal: 'finish',
               emit,
-              runCumulativeTokens
+              runCumulativeTokens,
+              runHistoryStartIndex
             });
             if (gate) return gate;
             return {};
@@ -1094,6 +1197,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             spin,
             runCumulativeTokens,
             dynamicLoopAuditAwaitingResponse,
+            runHistoryStartIndex,
             emit
           });
         }
@@ -1109,6 +1213,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         let didWork = false;
 
         if (actionTools.length > 0) {
+          const spinHotNow = spinHotSignature(spin);
           const summary = await handleToolCalls(actionTools, messages, emit, {
             workspacePath: opts.workspacePath,
             workspaceId: opts.workspaceId,
@@ -1117,7 +1222,8 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             signal: opts.signal,
             allowlist: AGENT_TOOLS,
             allowlistRefusalCounts,
-            onToolCallSettled
+            onToolCallSettled,
+            spinSignatureHot: spinHotNow
           });
           const abortedAfterTools = exitIfAborted(opts, emit, runHadLlmProgress);
           if (abortedAfterTools) return abortedAfterTools;
@@ -1127,11 +1233,34 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             consecutiveEmptyTurns = 0;
             consecutiveReasoningOnlyTurns = 0;
             retryAssistantMsgId = null;
-            resetSpinBuffer(spin);
             runStateAcc.toolRoundsTotal += 1;
             runStateAcc.lastAction = 'tool';
             if (clearsDynamicLoopAuditAwaiting(actionTools)) {
               dynamicLoopAuditAwaitingResponse = false;
+              runStateAcc.continueWithoutProgress = 0;
+            }
+            const onlyContinue =
+              actionTools.length > 0 &&
+              actionTools.every(
+                (tc) => normalizeRegisteredToolName(tc.name) === 'continue'
+              ) &&
+              summary.attempted > 0 &&
+              summary.failed === 0;
+            if (onlyContinue) {
+              runStateAcc.continueWithoutProgress += 1;
+              if (runStateAcc.continueWithoutProgress >= 4) {
+                emit({
+                  kind: 'agent-thought',
+                  id: randomUUID(),
+                  ts: Date.now(),
+                  content:
+                    'Several `continue` calls without substantive tool progress. Run tests, `edit`, or `ask_user` — do not keep self-prompting the same step.',
+                  severity: 'warn'
+                });
+                runStateAcc.continueWithoutProgress = 0;
+              }
+            } else if (summary.attempted > 0 && summary.failed < summary.attempted) {
+              runStateAcc.continueWithoutProgress = 0;
             }
             const directQuery = summarizeDirectToolArgs(actionTools);
             if (directQuery.length > 0) {
@@ -1144,6 +1273,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
               const duplicateOnly =
                 summary.failed > 0 && summary.duplicateFailures === summary.failed;
               if (!duplicateOnly) {
+                resetSpinBuffer(spin);
                 if (consecutiveBadToolRounds === 0 && summary.lastFailure) {
                   rootToolRoundFailure = summary.lastFailure;
                 }
@@ -1166,8 +1296,32 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
                     ),
                     severity: 'warn'
                   });
+                  runStateAcc.toolRecoveryCycles += 1;
+                  resetSpinBuffer(spin);
                   consecutiveBadToolRounds = 0;
                   rootToolRoundFailure = undefined;
+                  if (runStateAcc.toolRecoveryCycles >= 2 && opts.input.conversationId) {
+                    const injected = await injectFollowUp({
+                      followUp: {
+                        id: randomUUID(),
+                        kind: 'steering',
+                        prompt: TOOL_ESCALATION_STEERING_PROMPT,
+                        selection: { ...opts.input.selection },
+                        queuedAt: Date.now(),
+                        source: 'dynamic-loop'
+                      },
+                      runId: opts.input.runId,
+                      conversationId: opts.input.conversationId,
+                      workspacePath: opts.workspacePath,
+                      workspaceId: opts.workspaceId,
+                      emit,
+                      messages,
+                      signal: opts.signal
+                    });
+                    query = injected.query;
+                    runStateAcc.lastAction = 'none';
+                    continue;
+                  }
                 }
               }
             } else if (summary.attempted > 0) {
@@ -1200,7 +1354,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
         if (finishCall && actionTools.length > 0) {
           const steeredBeforeDeferredFinish = await consumeSteeringFollowUps(followUpCtx);
           if (steeredBeforeDeferredFinish) {
-            query = applyFollowUpResult(steeredBeforeDeferredFinish, opts);
+            query = await applyFollowUpAndPrefetch(steeredBeforeDeferredFinish, opts, invokedSkills, emit, messages);
             consecutiveEmptyTurns = 0;
             runStateAcc.lastAction = 'none';
             continue;
@@ -1209,19 +1363,27 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             shouldInjectDynamicLoopAudit(
               actionTools,
               finishedToolCalls,
-              dynamicLoopAuditAwaitingResponse
+              dynamicLoopAuditAwaitingResponse,
+              messages,
+              runHistoryStartIndex,
+              dynamicAuditInjectionCount,
+              substantiveEditsAtLastAudit
             ) &&
             opts.input.conversationId
           ) {
             const auditedBeforeFinish = await injectDynamicLoopAudit(
               followUpCtx,
-              opts.input.selection
+              opts.input.selection,
+              messages,
+              runHistoryStartIndex
             );
             if (auditedBeforeFinish) {
-              query = applyFollowUpResult(auditedBeforeFinish, opts);
+              query = await applyFollowUpAndPrefetch(auditedBeforeFinish, opts, invokedSkills, emit, messages);
               consecutiveEmptyTurns = 0;
               runStateAcc.lastAction = 'none';
               dynamicLoopAuditAwaitingResponse = true;
+              dynamicAuditInjectionCount += 1;
+              substantiveEditsAtLastAudit = countSubstantiveEdits(messages, runHistoryStartIndex);
               log.info('dynamic loop auto-audit injected before deferred finish', {
                 iteration: iter,
                 runId: opts.input.runId
@@ -1242,7 +1404,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           });
           const queuedAfterTools = await tryConsumeQueueBeforeFinish(followUpCtx);
           if (queuedAfterTools) {
-            query = applyFollowUpResult(queuedAfterTools, opts);
+            query = await applyFollowUpAndPrefetch(queuedAfterTools, opts, invokedSkills, emit, messages);
             consecutiveEmptyTurns = 0;
             runStateAcc.lastAction = 'none';
             continue;
@@ -1263,7 +1425,8 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             spin,
             pendingTerminal: 'finish',
             emit,
-            runCumulativeTokens
+            runCumulativeTokens,
+            runHistoryStartIndex
           });
           if (gate) return gate;
           return {};
@@ -1287,6 +1450,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             spin,
             runCumulativeTokens,
             dynamicLoopAuditAwaitingResponse,
+            runHistoryStartIndex,
             emit,
             deferred: true
           });
@@ -1294,7 +1458,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
 
         const steeredAfterTools = await consumeSteeringFollowUps(followUpCtx);
         if (steeredAfterTools) {
-          query = applyFollowUpResult(steeredAfterTools, opts);
+          query = await applyFollowUpAndPrefetch(steeredAfterTools, opts, invokedSkills, emit, messages);
           consecutiveEmptyTurns = 0;
           runStateAcc.lastAction = 'none';
           continue;
@@ -1370,7 +1534,7 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
           });
           const queuedImplicit = await tryConsumeQueueBeforeFinish(followUpCtx);
           if (queuedImplicit) {
-            query = applyFollowUpResult(queuedImplicit, opts);
+            query = await applyFollowUpAndPrefetch(queuedImplicit, opts, invokedSkills, emit, messages);
             consecutiveEmptyTurns = 0;
             runStateAcc.lastAction = 'none';
             continue;
@@ -1391,7 +1555,8 @@ export async function runOrchestratorLoop(opts: RunLoopOpts): Promise<RunLoopRes
             spin,
             pendingTerminal: 'implicit-finish',
             emit,
-            runCumulativeTokens
+            runCumulativeTokens,
+            runHistoryStartIndex
           });
           if (gate) return gate;
           return {};

@@ -30,6 +30,8 @@ export interface ToolRunOpts {
   signal: AbortSignal;
   toolCallId?: string;
   onProgress?: (message: string) => void;
+  /** When true, cache replays use compact/stub tiers aligned with spin detection. */
+  spinSignatureHot?: boolean;
 }
 
 function blockDuplicateToolCall(
@@ -75,7 +77,13 @@ export async function runToolByName(
   // Cache before dedupe: identical read-shaped calls replay the prior ok result
   // with a pivot banner instead of emitting a synthetic duplicate_tool_call
   // failure that bloats context and trips the three-strike tool recovery path.
-  const cached = lookupCachedResult(opts.signal, tool.name, args, opts.conversationId);
+  const cached = lookupCachedResult(
+    opts.signal,
+    tool.name,
+    args,
+    opts.conversationId,
+    opts.spinSignatureHot === true
+  );
   if (cached) return cached;
 
   const blocked = blockDuplicateToolCall(tool.name, args, opts);

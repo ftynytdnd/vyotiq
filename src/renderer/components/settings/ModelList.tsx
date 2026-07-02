@@ -107,14 +107,16 @@ export function ModelList({
   }
   if (models.length === 0) {
     return (
-      <div className="flex flex-col items-start gap-2">
-        <ShellCaption>{emptyMessage ?? 'No models discovered yet.'}</ShellCaption>
-        {onDiscover && (
+      <div className="vx-settings-empty w-full">
+        <p className="text-row text-text-primary">
+          {emptyMessage ?? 'No models discovered yet.'}
+        </p>
+        {onDiscover ? (
           <Button variant="secondary" onClick={onDiscover} disabled={discoverDisabled}>
             <RefreshCcw className={SHELL_ROW_ICON_CLASS} strokeWidth={SHELL_ROW_ICON_STROKE} />
             Discover models
           </Button>
-        )}
+        ) : null}
       </div>
     );
   }

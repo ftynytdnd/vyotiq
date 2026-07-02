@@ -40,7 +40,7 @@ export function VectorMemoryPanel() {
   };
 
   return (
-    <ShellSection title="Vector memory" className="vx-vector-memory-panel">
+    <ShellSection className="vx-vector-memory-panel">
       <ShellCaption>
         Embedding strategy for the local hybrid index under <code>.vyotiq/vector/</code>. Hash
         embedder is the default; Ollama uses your local server when selected. Changing embedder
@@ -91,10 +91,10 @@ export function VectorMemoryPanel() {
           Re-index now
         </Button>
       </ShellRow>
-      <p className="text-meta text-text-faint">
+      <ShellCaption>
         Env override <code className="font-mono">VYOTIQ_VECTOR_EMBED=ollama</code> still wins at
         runtime.
-      </p>
+      </ShellCaption>
     </ShellSection>
   );
 }

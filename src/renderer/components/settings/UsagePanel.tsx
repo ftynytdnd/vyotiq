@@ -19,6 +19,8 @@ import { useSettingsStore, EMPTY_WORKSPACE_SPEND_USD } from '../../store/useSett
 import { useWorkspaceStore } from '../../store/useWorkspaceStore.js';
 import { normalizeWorkspaceSpendEntry } from '@shared/types/usageStats.js';
 import { ShellCaption, ShellRow, ShellRowSplit, ShellSection, ShellStack } from '../ui/ShellSection.js';
+import { Button } from '../ui/Button.js';
+import { useAppViewStore } from '../../store/useAppViewStore.js';
 import { cn } from '../../lib/cn.js';
 
 function modelLabel(providerId?: string, modelId?: string): string {
@@ -60,6 +62,7 @@ export function UsagePanel() {
     (s) => s.settings.ui?.workspaceSpendUsd ?? EMPTY_WORKSPACE_SPEND_USD
   );
   const sessionStats = useSessionStatsStore((s) => s.stats);
+  const openSettings = useAppViewStore((s) => s.openSettings);
 
   const activeWorkspaceStats = normalizeWorkspaceSpendEntry(
     activeWorkspaceId ? workspaceSpend[activeWorkspaceId] : undefined
@@ -99,12 +102,10 @@ export function UsagePanel() {
 
   return (
     <ShellStack>
-      <ShellSection title="Usage">
-        <ShellCaption className="text-text-faint">
-          Costs are Vyotiq estimates from token usage and discovered per-model rates (OpenRouter
-          includes 5.5% platform fee). Provider-billed amounts may differ.
-        </ShellCaption>
-      </ShellSection>
+      <ShellCaption className="text-text-faint">
+        Costs are Vyotiq estimates from token usage and discovered per-model rates (OpenRouter
+        includes 5.5% platform fee). Provider-billed amounts may differ.
+      </ShellCaption>
 
       <ShellSection title="App session">
         <ShellCaption className="mb-2 text-text-faint">
@@ -149,7 +150,11 @@ export function UsagePanel() {
           Per-chat cumulative Vyotiq estimates.
         </ShellCaption>
         {conversationRows.length === 0 ? (
-          <ShellCaption className="text-text-faint">No conversations yet.</ShellCaption>
+          <div className="vx-settings-empty w-full">
+            <p className="text-row text-text-primary">
+              Start a chat in the dock — per-conversation estimates appear here after Agent V runs.
+            </p>
+          </div>
         ) : (
           <div className="flex flex-col divide-y divide-border-subtle/30">
             {conversationRows.map((c) => {
@@ -200,13 +205,20 @@ export function UsagePanel() {
         )}
       </ShellSection>
 
-      <ShellSection title="Providers">
+      <ShellSection title="Provider accounts">
         <ShellCaption className="mb-2 text-text-faint">
           Live account snapshots from provider APIs. Provider Δ compares monthly billed usage to
           Vyotiq workspace estimates.
         </ShellCaption>
         {providerRows.length === 0 ? (
-          <ShellCaption className="text-text-faint">No enabled providers.</ShellCaption>
+          <div className="vx-settings-empty w-full">
+            <p className="text-row text-text-primary">
+              Enable a provider under Models &amp; API to see billing snapshots here.
+            </p>
+            <Button variant="secondary" size="sm" onClick={() => openSettings('models-api')}>
+              Open Models &amp; API
+            </Button>
+          </div>
         ) : (
           <div className="flex flex-col divide-y divide-border-subtle/30">
             {providerRows.map((row) => (

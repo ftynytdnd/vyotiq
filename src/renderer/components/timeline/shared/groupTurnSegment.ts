@@ -1,42 +1,24 @@
 /**
- * Turn zone partitioner — classifies derived rows into prompt / activity /
- * response / footer zones for the timeline turn block.
+ * Turn zone partitioner — classifies derived rows into prompt / agent stream / footer.
  */
 
-import type { DisplayRow } from './displayRowTypes.js';
-import { reorderTurnSegment } from './turnRowOrdering.js';
+import type { DisplayRow, AgentStreamRow } from './displayRowTypes.js';
 
 export interface PartitionedTurn {
   prompt: DisplayRow | null;
-  activity: DisplayRow[];
-  response: DisplayRow | null;
   footer: DisplayRow[];
   /** Agent-side rows in render order (excludes prompt + footer). */
-  agentStream: DisplayRow[];
-}
-
-export interface PartitionTurnOptions {
-  /** When false, legacy activity→response reorder (default: wire order). */
-  chronological?: boolean;
+  agentStream: AgentStreamRow[];
 }
 
 const FOOTER_KINDS = new Set(['run-complete', 'error']);
 
-export { reorderTurnSegment } from './turnRowOrdering.js';
-
-export function partitionTurnSegment(
-  segment: DisplayRow[],
-  opts?: PartitionTurnOptions
-): PartitionedTurn {
-  // Default to wire order — inline stream renders rows as they occurred.
-  const ordered = opts?.chronological === false ? reorderTurnSegment(segment) : segment;
+export function partitionTurnSegment(segment: DisplayRow[]): PartitionedTurn {
   let prompt: DisplayRow | null = null;
-  let response: DisplayRow | null = null;
-  const activity: DisplayRow[] = [];
   const footer: DisplayRow[] = [];
   const agentStream: DisplayRow[] = [];
 
-  for (const row of ordered) {
+  for (const row of segment) {
     if (row.kind === 'user-prompt') {
       prompt = row;
       continue;
@@ -46,12 +28,7 @@ export function partitionTurnSegment(
       continue;
     }
     agentStream.push(row);
-    if (row.kind === 'assistant-text') {
-      if (!response) response = row;
-    } else {
-      activity.push(row);
-    }
   }
 
-  return { prompt, activity, response, footer, agentStream };
+  return { prompt, footer, agentStream };
 }

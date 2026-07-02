@@ -25,7 +25,7 @@ export function AskUserOptionButton({
   htmlFor
 }: AskUserOptionButtonProps) {
   const shared = cn(
-    'vx-ask-user-option flex w-full items-start gap-2 rounded-inner border px-2.5 py-1.5 text-left text-meta transition-colors',
+    'vx-ask-user-option flex w-full items-start gap-2 rounded-inner border px-2.5 py-1.5 text-left text-row transition-colors',
     selected
       ? 'border-accent/50 bg-accent-soft/30 text-text-primary'
       : 'border-border-subtle/50 bg-chrome-hover-soft/15 text-text-secondary hover:border-border-subtle hover:bg-chrome-hover-soft/25',

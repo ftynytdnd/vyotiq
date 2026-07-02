@@ -31,6 +31,21 @@ export function autoCloseReasoning(
   };
 }
 
+/** Close every open reasoning stream except `exceptId` (if set). */
+export function closeAllOpenReasoning(
+  reasoningTexts: Record<string, ReasoningTextAcc>,
+  ts: number,
+  exceptId?: string
+): Record<string, ReasoningTextAcc> {
+  let next: Record<string, ReasoningTextAcc> | null = null;
+  for (const [id, acc] of Object.entries(reasoningTexts)) {
+    if (acc.done || id === exceptId) continue;
+    if (!next) next = { ...reasoningTexts };
+    next[id] = { ...acc, done: true, endedAt: ts };
+  }
+  return next ?? reasoningTexts;
+}
+
 export function clearPartialFor(
   prior: Record<string, PartialToolCallArgs>,
   realCallId: string,

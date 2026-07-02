@@ -17,7 +17,6 @@ describe('WorkbenchLaunchers', () => {
     } as never);
     useUiStore.setState({
       dockExpanded: false,
-      dockPanelTab: 'files',
       filesExpandedWorkspaces: new Set(['ws-1']),
       workbenchTab: 'terminal',
       hydrated: true
@@ -28,7 +27,6 @@ describe('WorkbenchLaunchers', () => {
   it('renders horizontal terminal, browser, and editor launchers', () => {
     render(
       <WorkbenchLaunchers
-        layout="horizontal"
         terminalOpen={false}
         browserOpen={false}
         editorOpen={false}
@@ -42,7 +40,6 @@ describe('WorkbenchLaunchers', () => {
   it('opens the dock files panel instead of an empty editor pane', () => {
     render(
       <WorkbenchLaunchers
-        layout="horizontal"
         titlebarMode
         terminalOpen={false}
         browserOpen={false}
@@ -51,7 +48,6 @@ describe('WorkbenchLaunchers', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /open files to edit/i }));
     expect(useUiStore.getState().dockExpanded).toBe(true);
-    expect(useUiStore.getState().dockPanelTab).toBe('files');
     expect(useUiStore.getState().filesExpandedWorkspaces.has('ws-1')).toBe(true);
   });
 
@@ -59,7 +55,6 @@ describe('WorkbenchLaunchers', () => {
     useTerminalStore.setState({ open: true } as never);
     render(
       <WorkbenchLaunchers
-        layout="horizontal"
         titlebarMode
         terminalOpen
         browserOpen={false}

@@ -35,7 +35,7 @@ export function AskUserCustomAnswer({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         aria-label={placeholder}
-        className="w-full border-0 bg-transparent p-0 font-mono text-meta text-text-primary placeholder:text-text-faint focus:outline-none"
+        className="w-full border-0 bg-transparent p-0 font-mono text-row text-text-primary placeholder:text-text-faint focus:outline-none"
       />
     </AskUserOptionButton>
   );

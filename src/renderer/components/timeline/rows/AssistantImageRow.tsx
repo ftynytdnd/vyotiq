@@ -81,10 +81,10 @@ export function AssistantImageRow({ id, mime, storedPath }: AssistantImageRowPro
         )}
       </button>
       <div className="mt-1 flex gap-2">
-        <button type="button" className="vx-btn vx-btn--ghost text-meta" onClick={onOpen}>
+        <button type="button" className="vx-btn vx-btn-text text-row" onClick={onOpen}>
           Preview
         </button>
-        <button type="button" className="vx-btn vx-btn--ghost text-meta" onClick={() => void onSave()}>
+        <button type="button" className="vx-btn vx-btn-text text-row" onClick={() => void onSave()}>
           Reveal in workspace
         </button>
       </div>

@@ -13,7 +13,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/react';
 import { ToolGroupRow } from '@renderer/components/timeline/rows/ToolGroupRow';
-import { deriveRows } from '@renderer/components/timeline/reducer/deriveRows';
+import { deriveDisplayRows } from '@renderer/components/timeline/reducer/deriveRows';
 import { useChatStore } from '@renderer/store/useChatStore';
 import { useTimelineUiStore } from '@renderer/store/useTimelineUiStore';
 import type { ToolGroupChild } from '@renderer/components/timeline/reducer/deriveRows';
@@ -169,7 +169,7 @@ describe('live streaming diff — auto-expand', () => {
     expect(container.querySelector('button')!.getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('merges liveDiffByCallId into settled tool-group children via deriveRows', () => {
+  it('merges liveDiffByCallId into root-level streaming file-edit cards via deriveRows', () => {
     const events = [
       { kind: 'user-prompt' as const, id: 'p1', ts: 1, content: 'go' },
       {
@@ -192,11 +192,16 @@ describe('live streaming diff — auto-expand', () => {
       settled: false,
       ts: 3
     };
-    const rows = deriveRows(events, {
+    const rows = deriveDisplayRows(events, {
       liveDiffByCallId: { 'c-live': diffStream }
     });
-    const group = rows.find((r) => r.kind === 'tool-group');
-    expect(group?.kind === 'tool-group' && group.children[0]?.diffStream).toBeTruthy();
+    const card = rows.find((r) => r.kind === 'file-edit-card');
+    expect(card?.kind).toBe('file-edit-card');
+    if (card?.kind !== 'file-edit-card') return;
+    expect(card.callId).toBe('c-live');
+    expect(card.hunks).toEqual(HUNKS);
+    expect(card.phase).toBe('streaming');
+    expect(rows.some((r) => r.kind === 'tool-group' && r.toolName === 'edit')).toBe(false);
   });
 
   it('collapses when the user clicks the header during streaming', async () => {

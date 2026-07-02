@@ -17,14 +17,9 @@ import { DetailShell } from '../shared/DetailShell.js';
 import { TimelineRowHeader } from '../shared/TimelineRowHeader.js';
 import { useTimelineRowExpand } from '../shared/useTimelineRowExpand.js';
 import { toolGroupLiveAutoExpand } from '../shared/toolInflight.js';
-import {
-  scrubPreviewSlice,
-  toolGroupStreamingBody
-} from '../shared/toolGroupScrubPreview.js';
 import { useToolStatusAnnouncer } from '../shared/useToolStatusAnnouncer.js';
 import { toolTitleClassName } from '../shared/rowStyles.js';
 import { formatToolGroupDisplayPrimary } from '../shared/formatToolGroupDisplayPrimary.js';
-import { CodeBlock } from '../tools/shared/CodeBlock.js';
 
 interface ToolGroupRowProps {
   rowKey: string;
@@ -40,8 +35,6 @@ export const ToolGroupRow = memo(function ToolGroupRow({ rowKey, toolName, items
   const liveAutoExpand = toolGroupLiveAutoExpand(toolName, items);
   const { expanded, onToggle } = useTimelineRowExpand({ rowKey, liveAutoExpand });
   const [showAllChildren, setShowAllChildren] = useState(false);
-  const [scrubHover, setScrubHover] = useState(false);
-  const [scrubRatio, setScrubRatio] = useState(0);
   const panelId = `tool-group-panel-${rowKey}`;
 
   useEffect(() => {
@@ -84,15 +77,7 @@ export const ToolGroupRow = memo(function ToolGroupRow({ rowKey, toolName, items
 
   const running = status === 'running';
   const failed = status === 'failed';
-  const streamBody = useMemo(
-    () => (running ? toolGroupStreamingBody(toolName, items) : ''),
-    [running, toolName, items]
-  );
-  const scrubPreview = useMemo(
-    () => scrubPreviewSlice(streamBody, scrubRatio),
-    [streamBody, scrubRatio]
-  );
-  const showScrub = running && !expanded && scrubHover && streamBody.length > 0;
+
   const largeGroup = items.length >= LARGE_GROUP_THRESHOLD;
   const hiddenChildCount =
     expanded && largeGroup && !showAllChildren
@@ -127,7 +112,9 @@ export const ToolGroupRow = memo(function ToolGroupRow({ rowKey, toolName, items
           </span>
         </>
       )}
-      {suffix && <span className="text-text-muted">{suffix}</span>}
+      {suffix && (
+        <span className={cn(failed ? 'text-danger-strong/90' : 'text-text-muted')}>{suffix}</span>
+      )}
     </span>
   );
 
@@ -137,60 +124,37 @@ export const ToolGroupRow = memo(function ToolGroupRow({ rowKey, toolName, items
       data-row-kind="tool-group"
       data-status={status}
     >
-      <div
-        onMouseEnter={() => setScrubHover(true)}
-        onMouseLeave={() => {
-          setScrubHover(false);
-          setScrubRatio(0);
-        }}
-        onMouseMove={(e) => {
-          if (!running || expanded || !streamBody) return;
-          const rect = e.currentTarget.getBoundingClientRect();
-          const w = rect.width || 1;
-          setScrubRatio(Math.min(1, Math.max(0, (e.clientX - rect.left) / w)));
-        }}
+      <TimelineRowHeader
+        expanded={expanded}
+        onToggle={onToggle}
+        expandable
+        chevronOnRight
+        expandAriaLabel={expanded ? 'Collapse tool group' : 'Expand tool group'}
+        rowAnchorKey={rowKey}
+        panelId={panelId}
+        trailing={
+          <>
+            {showCount ? (
+              <span
+                className="vx-tool-group-count shrink-0 font-mono tabular-nums"
+                aria-label={`${items.length} tool calls`}
+              >
+                ×{items.length}
+              </span>
+            ) : null}
+            {hasDiffStats ? (
+              <DiffStatsBadge
+                additions={additions}
+                deletions={deletions}
+                pending={pendingStats}
+                className="shrink-0"
+              />
+            ) : null}
+          </>
+        }
       >
-        <TimelineRowHeader
-          expanded={expanded}
-          onToggle={onToggle}
-          expandable
-          chevronOnRight
-          expandAriaLabel={expanded ? 'Collapse tool group' : 'Expand tool group'}
-          rowAnchorKey={rowKey}
-          panelId={panelId}
-          trailing={
-            <>
-              {showCount ? (
-                <span
-                  className="vx-tool-group-count shrink-0 font-mono tabular-nums"
-                  aria-label={`${items.length} tool calls`}
-                >
-                  ×{items.length}
-                </span>
-              ) : null}
-              {hasDiffStats ? (
-                <DiffStatsBadge
-                  additions={additions}
-                  deletions={deletions}
-                  pending={pendingStats}
-                  className="shrink-0"
-                />
-              ) : null}
-            </>
-          }
-        >
-          {label}
-        </TimelineRowHeader>
-      </div>
-
-      {showScrub && (
-        <div
-          className="vx-tool-scrub-preview pointer-events-none absolute left-0 right-0 top-full z-20 mt-0.5 max-h-28 overflow-hidden rounded-inner border border-border-subtle/40 bg-surface-sidebar/95 px-2 py-1 shadow-md"
-          aria-hidden
-        >
-          <CodeBlock body={scrubPreview} tone="muted" maxHeight={104} />
-        </div>
-      )}
+        {label}
+      </TimelineRowHeader>
 
       {expanded && (
         <DetailShell variant="flat" gap="gap-1">
@@ -213,7 +177,7 @@ export const ToolGroupRow = memo(function ToolGroupRow({ rowKey, toolName, items
             <button
               type="button"
               onClick={() => setShowAllChildren(true)}
-              className="self-start vx-btn-text px-2 py-0.5 text-meta italic"
+              className="self-start vx-btn-text px-2 py-0.5 text-row italic"
             >
               Show all {items.length} calls
             </button>

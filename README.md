@@ -246,9 +246,9 @@ The harness is the heart of Vyotiq. It is a set of Markdown files in `src/main/h
 
 - `00-orchestrator-core.md` — the core rules: how to understand a request, plan silently, execute tools, evaluate results, and verify before answering.
 - `01-context-learning.md` — how Agent V learns from you and keeps its memory up to date.
-- `02-deliverables.md` — what good, complete output looks like.
-- `03-static-examples.md` — stable worked examples that also help the AI provider cache the prompt efficiently.
-- `04-ast-grep-cheatsheet.md` — practical guidance for structural search and rewrites.
+- `05-dynamic-loop.md` — verify-before-finish and dynamic loop discipline.
+
+**On-demand Agent Skills** (bundled under `src/main/skills/bundled/`, plus workspace `.vyotiq/skills/`) replace legacy reference packs (`deliverables`, `static-examples`, `ast-grep-reference`). The model loads skills via the `context` tool or composer `/skill-name`; customize built-in skills in Settings → Agent behavior → Skills.
 
 To keep the model focused and safe from prompt injection, the harness and the live environment are kept apart using XML-style boundaries: the rules sit in clearly marked instruction blocks, while dynamic data (your workspace context, recent memory, the current turn) is wrapped in its own tags that the agent treats strictly as information, never as commands.
 

@@ -12,7 +12,6 @@ import { useConversationsStore } from '@renderer/store/useConversationsStore';
 import { useDockSearchStore } from '@renderer/store/useDockSearchStore';
 
 const dockProps = {
-  onOpenWorkspace: () => {},
   onSetWorkspacePath: () => {}
 };
 
@@ -20,7 +19,6 @@ beforeEach(() => {
   useUiStore.setState({
     dockExpanded: true,
     dockWidth: DOCK_WIDTH_DEFAULT,
-    dockPanelTab: 'chats',
     filesExpandedWorkspaces: new Set<string>(),
     collapsedWorkspaces: new Set<string>(),
     hydrated: true
@@ -124,13 +122,11 @@ describe('LeftDock layout', () => {
 
   it('collapses files for the active workspace when chats are focused via store', () => {
     useUiStore.setState({
-      dockPanelTab: 'files',
       filesExpandedWorkspaces: new Set(['ws-1']),
       dockExpanded: true
     });
     render(<LeftDock {...dockProps} />);
     useUiStore.getState().setDockPanelTab('chats');
-    expect(useUiStore.getState().dockPanelTab).toBe('chats');
     expect(useUiStore.getState().filesExpandedWorkspaces.has('ws-1')).toBe(false);
   });
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import type { ModelSelection } from '@shared/types/provider.js';
 import type { FollowUpMessage } from '@shared/types/followUp.js';
+import { EMPTY_FOLLOW_UP_STATE } from '@shared/types/followUp.js';
 import { MAX_CHAT_ATTACHMENTS } from '@shared/constants.js';
 import { ComposerStatusStrip } from './ComposerStatusStrip.js';
 import { ComposerCacheStatPill } from './ComposerCacheStatPill.js';
@@ -43,9 +44,16 @@ import { useRevertPrompt } from '../timeline/revert/RevertPromptContext.js';
 import { useComposerTokenEstimate } from './useComposerTokenEstimate.js';
 import { resolveComposerPlaceholder } from './composerPlaceholder.js';
 import { useProviderAccountPollSource } from '../../lib/useProviderAccountPollSource.js';
+import { useProviderStore } from '../../store/useProviderStore.js';
+import { computeComposerModalityWarnings } from '@shared/attachments/composerModalityWarnings.js';
+import { inputModalitiesFromModelId } from '@shared/providers/visionCapabilities.js';
+import { findProviderModel } from './modelPicker/modelPickerContext.js';
 import { resolveKeybindings, isMacPlatform } from '../../lib/resolveKeybindings.js';
 import { eventMatchesCombo } from '@shared/keybindings/defaultKeybindings.js';
 import { composerEditAriaKeyshortcuts } from './mention/composerEditShortcuts.js';
+import { parseSkillSlashInput, isKnownSkillName } from './skillSlash.js';
+import { PromptDialog } from '../ui/PromptDialog.js';
+import { vyotiq } from '../../lib/ipc.js';
 import {
   resolveCompletionModelSelection,
   resolveInlineCompletionSettings
@@ -54,9 +62,14 @@ import {
 const TEXTAREA_MAX_HEIGHT = 168;
 
 function followUpToComposerDraft(item: FollowUpMessage): string {
-  if (!item.mentions?.length) return item.prompt;
+  let text = item.prompt;
+  if (item.invokedSkill) {
+    const slashOnly = text === `Invoke skill /${item.invokedSkill}`;
+    text = slashOnly ? `/${item.invokedSkill}` : `/${item.invokedSkill} ${text}`;
+  }
+  if (!item.mentions?.length) return text;
   const segments: MentionSegment[] = item.mentions.map((ref) => ({ type: 'mention', ref }));
-  const plain = item.prompt.trim();
+  const plain = text.trim();
   if (plain) segments.push({ type: 'text', value: plain });
   const doc: MentionDocument = { segments };
   return serializeMentionDocument(doc);
@@ -86,6 +99,8 @@ export function Composer({
   const [dragOver, setDragOver] = useState(false);
   const [composerFocused, setComposerFocused] = useState(false);
   const [editingQueuedId, setEditingQueuedId] = useState<string | null>(null);
+  const [unknownSkillPrompt, setUnknownSkillPrompt] = useState<string | null>(null);
+  const pendingSkillSendRef = useRef<(() => Promise<void>) | null>(null);
   const fromHistoryRef = useRef(false);
   const revertPrompt = useRevertPrompt();
   const {
@@ -170,11 +185,12 @@ export function Composer({
     [composerKeybindings]
   );
 
-  const history = useComposerHistory(events);
+  const history = useComposerHistory(events ?? []);
 
   const draftRafRef = useRef<number | null>(null);
   const pendingDraftRef = useRef('');
   const selfDraftRef = useRef<string | null>(null);
+  const suppressDraftRef = useRef(false);
 
   const flushDraft = (textToWrite: string) => {
     if (!conversationId) return;
@@ -214,11 +230,15 @@ export function Composer({
     setEditingQueuedId(null);
   }, [conversationId]);
 
+  const followUpLanes = followUps ?? EMPTY_FOLLOW_UP_STATE;
+  const steeringFollowUps = followUpLanes.steering ?? [];
+  const queuedFollowUps = followUpLanes.queued ?? [];
+
   useEffect(() => {
     if (!editingQueuedId) return;
-    const stillQueued = followUps.queued.some((m) => m.id === editingQueuedId);
+    const stillQueued = queuedFollowUps.some((m) => m.id === editingQueuedId);
     if (!stillQueued) setEditingQueuedId(null);
-  }, [editingQueuedId, followUps.queued]);
+  }, [editingQueuedId, queuedFollowUps]);
 
   const clearComposerAfterSubmit = useCallback(() => {
     setText('');
@@ -238,8 +258,24 @@ export function Composer({
 
   const showToast = useToastStore((s) => s.show);
 
-  const pendingAskUser = useMemo(() => findPendingAskUserEvent(events), [events]);
+  const pendingAskUser = useMemo(() => findPendingAskUserEvent(events ?? []), [events]);
   const needsAskUserReply = awaitingAskUser || pendingAskUser !== null;
+
+  const providers = useProviderStore((s) => s.providers);
+  const modalityWarnings = useMemo(() => {
+    if (!model || attachments.length === 0) {
+      return {
+        visionWarning: false,
+        pdfWarning: false,
+        videoWarning: false,
+        audioWarning: false
+      };
+    }
+    const provider = providers.find((p) => p.id === model.providerId);
+    const modelInfo = provider ? findProviderModel(provider, model.modelId) : undefined;
+    const modalities = modelInfo?.inputModalities ?? inputModalitiesFromModelId(model.modelId);
+    return computeComposerModalityWarnings(attachments, modalities);
+  }, [attachments, model, providers]);
 
   useProviderAccountPollSource(
     'composer',
@@ -274,6 +310,10 @@ export function Composer({
     const doc = parseMentionDocument(text);
     const trimmed = documentTrimmedPlain(doc);
     const mentions = extractMentions(doc);
+    const slash = parseSkillSlashInput(trimmed);
+    const effectivePrompt = slash.invokedSkill ? slash.prompt : trimmed;
+
+    const continueSend = async () => {
     if (needsAskUserReply && pendingAskUser && conversationId && runId) {
       const draftReady = useAskUserDraftStore
         .getState()
@@ -302,12 +342,12 @@ export function Composer({
       });
       return;
     }
-    if (!trimmed && attachments.length === 0) return;
+    if (!effectivePrompt && attachments.length === 0 && !slash.invokedSkill) return;
     if (!model) return;
 
     const toSendMeta = attachments;
     const promptText =
-      trimmed || (toSendMeta.length > 0 ? defaultAttachmentPrompt(toSendMeta) : '');
+      effectivePrompt || (toSendMeta.length > 0 ? defaultAttachmentPrompt(toSendMeta) : '');
     const promptEventId =
       toSendMeta.length > 0 ? peekPendingMessageId() : undefined;
 
@@ -320,6 +360,7 @@ export function Composer({
         if (promptEventId) steerOpts.promptEventId = promptEventId;
       }
       if (mentions.length > 0) steerOpts.mentions = mentions;
+      if (slash.invokedSkill) steerOpts.invokedSkill = slash.invokedSkill;
       await enqueueFollowUp(
         'steering',
         promptText,
@@ -337,20 +378,36 @@ export function Composer({
       if (promptEventId) sendOpts.promptEventId = promptEventId;
     }
     if (mentions.length > 0) sendOpts.mentions = mentions;
+    if (slash.invokedSkill) sendOpts.invokedSkill = slash.invokedSkill;
     await send(promptText, model, sendOpts);
+    };
+
+    if (
+      slash.invokedSkill &&
+      activeWorkspaceIdForAttach &&
+      !(await isKnownSkillName(activeWorkspaceIdForAttach, slash.invokedSkill))
+    ) {
+      pendingSkillSendRef.current = continueSend;
+      setUnknownSkillPrompt(slash.invokedSkill);
+      return;
+    }
+
+    await continueSend();
   };
 
   const handleQueue = async () => {
     const doc = parseMentionDocument(text);
     const trimmed = documentTrimmedPlain(doc);
     const mentions = extractMentions(doc);
-    if (!trimmed && attachments.length === 0) return;
+    const slash = parseSkillSlashInput(trimmed);
+    const effectivePrompt = slash.invokedSkill ? slash.prompt : trimmed;
+    if (!effectivePrompt && attachments.length === 0 && !slash.invokedSkill) return;
     if (!model) return;
     if (!isProcessing && !awaitingAskUser) return;
 
     const toSendMeta = attachments;
     const promptText =
-      trimmed || (toSendMeta.length > 0 ? defaultAttachmentPrompt(toSendMeta) : '');
+      effectivePrompt || (toSendMeta.length > 0 ? defaultAttachmentPrompt(toSendMeta) : '');
     const promptEventId =
       toSendMeta.length > 0 ? peekPendingMessageId() : undefined;
 
@@ -360,7 +417,8 @@ export function Composer({
         prompt: promptText,
         selection: model,
         attachmentMeta: toSendMeta,
-        ...(mentions.length > 0 ? { mentions } : { mentions: [] })
+        ...(mentions.length > 0 ? { mentions } : { mentions: [] }),
+        ...(slash.invokedSkill ? { invokedSkill: slash.invokedSkill } : { invokedSkill: '' })
       });
       setEditingQueuedId(null);
       return;
@@ -373,6 +431,7 @@ export function Composer({
       if (promptEventId) queueOpts.promptEventId = promptEventId;
     }
     if (mentions.length > 0) queueOpts.mentions = mentions;
+    if (slash.invokedSkill) queueOpts.invokedSkill = slash.invokedSkill;
     await enqueueFollowUp('queue', promptText, model, queueOpts);
   };
 
@@ -404,10 +463,11 @@ export function Composer({
     setText(next);
     fromHistoryRef.current = false;
     history.reset();
-    flushDraft(next);
+    if (!suppressDraftRef.current) flushDraft(next);
   };
 
   const composerDoc = parseMentionDocument(text);
+  const invokedSkillDraft = parseSkillSlashInput(documentTrimmedPlain(composerDoc)).invokedSkill;
   const draftTokenEstimate = useComposerTokenEstimate({
     model,
     prompt: documentToPlainText(composerDoc),
@@ -429,7 +489,7 @@ export function Composer({
     attachments.length > 0 ||
     (needsAskUserReply && draftHasAnswer);
   const showFollowUpTray =
-    followUps.steering.length > 0 || followUps.queued.length > 0;
+    steeringFollowUps.length > 0 || queuedFollowUps.length > 0;
   const isRunActive = isProcessing || needsAskUserReply;
   const showProcessingRunHint = isProcessing && !needsAskUserReply;
   const sendState: 'idle' | 'ready' | 'processing' =
@@ -447,7 +507,7 @@ export function Composer({
     landing,
     storeDraft,
     editorPlain: documentTrimmedPlain(composerDoc),
-    eventsLength: events.length,
+    eventsLength: (events ?? []).length,
     isProcessing: isProcessing && !needsAskUserReply,
     needsAskUserReply,
     editingQueued: Boolean(editingQueuedId)
@@ -491,8 +551,8 @@ export function Composer({
       >
         <TaskTrayHost conversationId={conversationId} />
         <FollowUpTrayHost
-          steering={followUps.steering}
-          queued={followUps.queued}
+          steering={steeringFollowUps}
+          queued={queuedFollowUps}
           visible={showFollowUpTray}
           isRunActive={isRunActive}
           awaitingAskUser={needsAskUserReply}
@@ -508,13 +568,15 @@ export function Composer({
               attachments.length > 0 && 'vx-composer-chip-row--has-attachments'
             )}
           >
-            <ModelPicker
-              value={model}
-              onChange={onModelChange}
-              onOpenProviders={onOpenProviders}
-              landing={landing}
-              anchorRef={shellRef}
-            />
+            {!landing ? (
+              <ModelPicker
+                value={model}
+                onChange={onModelChange}
+                onOpenProviders={onOpenProviders}
+                landing={landing}
+                anchorRef={shellRef}
+              />
+            ) : null}
             <AttachmentButton
               onPickFromComputer={() => void pickFromComputer()}
               disabled={!canAttach}
@@ -551,18 +613,16 @@ export function Composer({
               </div>
             ) : null}
             <ComposerStatusStrip
+              workspaceId={activeWorkspaceIdForAttach}
               pendingAskUser={pendingAskUser}
+              model={model}
               processingRun={showProcessingRunHint}
+              invokedSkillDraft={invokedSkillDraft}
+              visionWarning={modalityWarnings.visionWarning}
+              pdfWarning={modalityWarnings.pdfWarning}
+              videoWarning={modalityWarnings.videoWarning}
+              audioWarning={modalityWarnings.audioWarning}
             />
-            {showQueueBtn ? (
-              <button
-                type="button"
-                className="vx-btn vx-btn-quiet vx-composer-queue-btn shrink-0 px-2"
-                onClick={() => void handleQueue()}
-              >
-                {editingQueuedId ? 'Save' : 'Queue'}
-              </button>
-            ) : null}
           </div>
           <div className="vx-composer-editor-slot">
             <MentionComposer
@@ -579,8 +639,7 @@ export function Composer({
               ariaKeyshortcuts={composerAriaKeyshortcuts}
               placeholder={placeholder}
               className={cn(
-                'min-w-0 flex-1',
-                landing ? 'min-h-[3.25rem]' : 'min-h-[2.5rem]',
+                'min-w-0 flex-1 min-h-[2.5rem]',
                 'transition-[height] duration-150 ease-out motion-reduce:transition-none'
               )}
               style={{ maxHeight: TEXTAREA_MAX_HEIGHT }}
@@ -646,7 +705,27 @@ export function Composer({
             />
           </div>
           <div className="vx-composer-send-cluster vx-composer-send-slot">
+            {landing ? (
+              <div className="vx-composer-send-cluster__model mr-auto min-w-0">
+                <ModelPicker
+                  value={model}
+                  onChange={onModelChange}
+                  onOpenProviders={onOpenProviders}
+                  landing={landing}
+                  anchorRef={shellRef}
+                />
+              </div>
+            ) : null}
             {showStop ? <StopButton onClick={() => void abort()} /> : null}
+            {showQueueBtn ? (
+              <button
+                type="button"
+                className="vx-btn vx-btn-quiet vx-composer-queue-btn shrink-0 px-2"
+                onClick={() => void handleQueue()}
+              >
+                {editingQueuedId ? 'Save' : 'Queue'}
+              </button>
+            ) : null}
             <SendButton
               onClick={() => void (editingQueuedId ? handleQueue() : handleSend())}
               state={sendState}
@@ -697,6 +776,37 @@ export function Composer({
           </div>
         </div>
       </div>
+      <PromptDialog
+        open={unknownSkillPrompt !== null}
+        title="Create skill?"
+        message={
+          unknownSkillPrompt
+            ? `Skill "/${unknownSkillPrompt}" was not found. Create it under .vyotiq/skills/?`
+            : undefined
+        }
+        initialValue={unknownSkillPrompt ?? ''}
+        confirmLabel="Create & send"
+        cancelLabel="Cancel"
+        onSubmit={async (name) => {
+          const trimmed = name.trim();
+          const pending = pendingSkillSendRef.current;
+          pendingSkillSendRef.current = null;
+          setUnknownSkillPrompt(null);
+          if (!trimmed || !activeWorkspaceIdForAttach) return;
+          try {
+            await vyotiq.skills.create(activeWorkspaceIdForAttach, trimmed);
+            showToast(`Created skill "${trimmed}"`, 'success');
+            await pending?.();
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            showToast(`Could not create skill: ${msg}`, 'danger');
+          }
+        }}
+        onCancel={() => {
+          pendingSkillSendRef.current = null;
+          setUnknownSkillPrompt(null);
+        }}
+      />
     </div>
   );
 }

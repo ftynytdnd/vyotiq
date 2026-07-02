@@ -11,6 +11,9 @@ import { DestructiveConfirm } from '../ui/DestructiveConfirm.js';
 import { ShellCaption, ShellRow, ShellSection, ShellStack } from '../ui/ShellSection.js';
 import { Button } from '../ui/Button.js';
 import { LoadingHint } from '../ui/LoadingHint.js';
+import { useSettingsStore } from '../../store/useSettingsStore.js';
+import { formatAuthoringModelHint } from '../../lib/authoringModelHint.js';
+import { useRequestAuthoringModelForEdit } from './useRequestAuthoringModelForEdit.js';
 
 const SECTION_LABELS: Record<HarnessSectionId, string> = {
   'orchestrator-core': 'Agent core',
@@ -25,6 +28,8 @@ const SECTION_LABELS: Record<HarnessSectionId, string> = {
 const PACK_META = new Map(CONTEXT_PACKS.map((p) => [p.id as HarnessSectionId, p]));
 
 export function HarnessPanel() {
+  useRequestAuthoringModelForEdit();
+  const authoringModel = useSettingsStore((s) => s.settings.authoringModel);
   const [sections, setSections] = useState<HarnessSectionInfo[]>([]);
   const [activeId, setActiveId] = useState<HarnessSectionId>('orchestrator-core');
   const [draft, setDraft] = useState('');
@@ -127,7 +132,7 @@ export function HarnessPanel() {
     if (group.length === 0) return null;
     return (
       <ShellStack>
-        <ShellCaption>{label}</ShellCaption>
+        <h4 className="vx-section-head">{label}</h4>
         <ShellRow className="flex flex-wrap gap-1.5">
           {group.map((meta) => {
             const selected = meta.id === activeId;
@@ -150,17 +155,26 @@ export function HarnessPanel() {
   };
 
   return (
-    <ShellSection title="Harness">
+    <ShellSection>
       <ShellStack>
         <ShellCaption>
           Edit Agent V natural-language instructions. Always-on sections ship in every system
-          prompt; on-demand packs are loaded by the agent itself via the `context` tool when
-          relevant. Overrides persist under userData and apply on the next run without rebuilding
-          the app.
+          prompt. On-demand reference workflows are **Agent Skills** — manage them in
+          Settings → Agent behavior → Skills (loaded via the `context` tool). Overrides persist
+          under userData and apply on the next run without rebuilding the app.
         </ShellCaption>
+        {authoringModel ? (
+          <ShellCaption>{formatAuthoringModelHint(authoringModel)}</ShellCaption>
+        ) : null}
 
         {renderGroup('Always-on sections', prefixSections)}
-        {renderGroup('On-demand packs', packSections)}
+        {packSections.length > 0 ? (
+          <ShellCaption>
+            Built-in reference skills (ast-grep, deliverables, examples) live under Agent
+            behavior → Skills. Invoke with <code>context</code> load or <code>/skill-name</code>{' '}
+            in the composer.
+          </ShellCaption>
+        ) : null}
 
         {activeMeta && (
           <ShellCaption>
@@ -175,6 +189,11 @@ export function HarnessPanel() {
 
         {loading ? (
           <LoadingHint message="Loading harness…" className="py-2" />
+        ) : activeMeta?.placement === 'pack' ? (
+          <ShellCaption>
+            This section is now a built-in skill. Open Agent behavior → Skills to browse it,
+            or edit legacy overrides via skill-overrides in userData.
+          </ShellCaption>
         ) : (
           <textarea
             value={draft}

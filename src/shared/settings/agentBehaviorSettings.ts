@@ -10,6 +10,7 @@ import {
   CONTEXT_DEFAULT_MIN_SAVINGS_TOKENS,
   CONTEXT_DEFAULT_TRIGGER_FRACTION,
   CONTEXT_DEFAULT_WARN_FRACTION,
+  DEFAULT_MAX_TOTAL_ITERATIONS,
   DEFAULT_RUN_WALL_CLOCK_BUDGET_MS
 } from '../constants.js';
 
@@ -29,6 +30,11 @@ export interface RunWallClockBudgetSettings {
   enabled: boolean;
   /** Maximum run duration in milliseconds. */
   maxDurationMs: number;
+}
+
+export interface RunIterationLimitSettings {
+  /** Maximum orchestrator loop iterations before wrap-up synthesis / halt. */
+  maxTotalIterations: number;
 }
 
 /**
@@ -64,6 +70,7 @@ export interface ContextManagementSettings {
 export interface AgentBehaviorSettings {
   runTokenBudget: RunTokenBudgetSettings;
   runWallClockBudget: RunWallClockBudgetSettings;
+  runIterationLimit: RunIterationLimitSettings;
   contextManagement: ContextManagementSettings;
 }
 
@@ -88,6 +95,9 @@ export const DEFAULT_AGENT_BEHAVIOR_SETTINGS: AgentBehaviorSettings = {
     enabled: false,
     maxDurationMs: DEFAULT_RUN_WALL_CLOCK_BUDGET_MS
   },
+  runIterationLimit: {
+    maxTotalIterations: DEFAULT_MAX_TOTAL_ITERATIONS
+  },
   contextManagement: DEFAULT_CONTEXT_MANAGEMENT_SETTINGS
 } as const;
 
@@ -110,6 +120,16 @@ function clampWallClockBudgetMs(value: unknown): number {
   const rounded = Math.round(value);
   if (rounded < 60_000) return 60_000;
   if (rounded > 24 * 60 * 60 * 1000) return 24 * 60 * 60 * 1000;
+  return rounded;
+}
+
+function clampMaxTotalIterations(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_MAX_TOTAL_ITERATIONS;
+  }
+  const rounded = Math.round(value);
+  if (rounded < 8) return 8;
+  if (rounded > 200) return 200;
   return rounded;
 }
 
@@ -194,8 +214,16 @@ export function resolveAgentBehaviorSettings(
       enabled: a?.runWallClockBudget?.enabled === true,
       maxDurationMs: clampWallClockBudgetMs(a?.runWallClockBudget?.maxDurationMs)
     },
+    runIterationLimit: {
+      maxTotalIterations: clampMaxTotalIterations(a?.runIterationLimit?.maxTotalIterations)
+    },
     contextManagement: resolveContextManagement(a)
   };
+}
+
+/** Resolved per-run iteration ceiling from agent behavior settings. */
+export function resolveMaxTotalIterations(settings: ResolvedAgentBehaviorSettings): number {
+  return settings.runIterationLimit.maxTotalIterations;
 }
 
 /** True when cumulative run tokens exceed the configured budget. */

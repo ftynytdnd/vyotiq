@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatBalanceAmount,
+  formatComposerAccountLine,
   formatProviderAccountDetailRows,
   formatProviderAccountLine,
   providerNeedsManagementKey
@@ -53,5 +54,18 @@ describe('formatProviderAccount', () => {
         managementKeyRequired: true
       })
     ).toBe(true);
+  });
+
+  it('hides healthy claude-code-proxy lines from the composer', () => {
+    const snap: ProviderAccountSnapshot = {
+      providerId: 'ccp',
+      fetchedAt: Date.now(),
+      status: 'ok',
+      hostKind: 'claude-code-proxy',
+      planLabel: 'Local subscription proxy',
+      message: 'claude-code-proxy 0.0.21 · healthy · auth until 20 Aug 2026'
+    };
+    expect(formatProviderAccountLine(snap)).toBe('Local subscription proxy');
+    expect(formatComposerAccountLine(snap)).toBeNull();
   });
 });

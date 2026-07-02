@@ -4,33 +4,51 @@
  */
 
 import { DockToolbar } from '../dock/DockToolbar.js';
-import { WorkbenchLaunchers } from '../workbench/WorkbenchLaunchers.js';
+import { WorkbenchPanelsMenu } from '../workbench/WorkbenchPanelsMenu.js';
 import { beginNewChatFromDock } from '../dock/dockShared.js';
 import { useDockSearchStore } from '../../store/useDockSearchStore.js';
+import { useDockSchedulesStore } from '../../store/useDockSchedulesStore.js';
+import { useWorkspaceLauncherStore } from '../../store/useWorkspaceLauncherStore.js';
+import { useEnabledScheduleCount } from '../../hooks/useEnabledScheduleCount.js';
 import { useUiStore } from '../../store/useUiStore.js';
-import { useTerminalStore } from '../../store/useTerminalStore.js';
-import { useBrowserStore } from '../../store/useBrowserStore.js';
-import { useEditorStore } from '../../store/useEditorStore.js';
 import { useAppViewStore } from '../../store/useAppViewStore.js';
 import { TITLEBAR_NAV_ZONE_CLASS, TITLEBAR_WORKBENCH_ZONE_CLASS } from './titlebarShared.js';
 
 export interface TitlebarChromeProps {
-  onOpenSettings: () => void;
   onBackFromSettings: () => void;
 }
 
-export function TitlebarDockChrome({ onOpenSettings, onBackFromSettings }: TitlebarChromeProps) {
+export function TitlebarDockChrome({ onBackFromSettings }: TitlebarChromeProps) {
   const settingsOpen = useAppViewStore((s) => s.view === 'settings');
   const dockExpanded = useUiStore((s) => s.dockExpanded);
   const toggleDock = useUiStore((s) => s.toggleDock);
   const setDockExpanded = useUiStore((s) => s.setDockExpanded);
   const searchOpen = useDockSearchStore((s) => s.open);
+  const schedulesOpen = useDockSchedulesStore((s) => s.open);
   const toggleSearch = useDockSearchStore((s) => s.toggle);
+  const toggleSchedules = useDockSchedulesStore((s) => s.toggle);
+  const enabledScheduleCount = useEnabledScheduleCount();
 
   const handleToggleSearch = () => {
     if (settingsOpen) return;
     if (!dockExpanded) setDockExpanded(true);
+    const next = !searchOpen;
+    if (next) {
+      useDockSchedulesStore.getState().setOpen(false);
+      useWorkspaceLauncherStore.getState().setOpen(false);
+    }
     toggleSearch();
+  };
+
+  const handleToggleSchedules = () => {
+    if (settingsOpen) return;
+    if (!dockExpanded) setDockExpanded(true);
+    const next = !schedulesOpen;
+    if (next) {
+      useDockSearchStore.getState().setOpen(false);
+      useWorkspaceLauncherStore.getState().setOpen(false);
+    }
+    toggleSchedules();
   };
 
   const handleCollapse = () => {
@@ -42,16 +60,16 @@ export function TitlebarDockChrome({ onOpenSettings, onBackFromSettings }: Title
   return (
     <div className={TITLEBAR_NAV_ZONE_CLASS}>
       <DockToolbar
-        layout="horizontal"
-        titlebarMode
         dockExpanded={dockExpanded}
         searchOpen={searchOpen}
+        schedulesOpen={schedulesOpen}
+        enabledScheduleCount={enabledScheduleCount}
         onNewChat={() => {
           if (settingsOpen) return;
           void beginNewChatFromDock();
         }}
         onToggleSearch={handleToggleSearch}
-        onOpenSettings={onOpenSettings}
+        onToggleSchedules={handleToggleSchedules}
         onCollapse={handleCollapse}
         collapseIcon={dockExpanded ? 'left' : 'right'}
         settingsMode={settingsOpen}
@@ -64,21 +82,12 @@ export function TitlebarDockChrome({ onOpenSettings, onBackFromSettings }: Title
 
 export function TitlebarWorkbenchChrome() {
   const settingsOpen = useAppViewStore((s) => s.view === 'settings');
-  const terminalOpen = useTerminalStore((s) => s.open);
-  const browserOpen = useBrowserStore((s) => s.open);
-  const editorOpen = useEditorStore((s) => s.open);
 
   if (settingsOpen) return null;
 
   return (
     <div className={TITLEBAR_WORKBENCH_ZONE_CLASS} data-titlebar-workbench-tray>
-      <WorkbenchLaunchers
-        layout="horizontal"
-        titlebarMode
-        terminalOpen={terminalOpen}
-        browserOpen={browserOpen}
-        editorOpen={editorOpen}
-      />
+      <WorkbenchPanelsMenu />
     </div>
   );
 }

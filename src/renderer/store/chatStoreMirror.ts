@@ -3,12 +3,23 @@
  */
 
 import type { ActiveMirror, ChatSlice } from './chatStoreTypes.js';
+import { EMPTY_FOLLOW_UP_STATE } from '@shared/types/followUp.js';
 import { computeTotalRunUsage } from './chatStoreTotalRunUsage.js';
+
+function normalizeFollowUps(
+  followUps: ChatSlice['followUps'] | undefined
+): ChatSlice['followUps'] {
+  if (!followUps) return { ...EMPTY_FOLLOW_UP_STATE };
+  return {
+    steering: Array.isArray(followUps.steering) ? followUps.steering : [],
+    queued: Array.isArray(followUps.queued) ? followUps.queued : []
+  };
+}
 
 export function mirrorOf(slice: ChatSlice): ActiveMirror {
   const totalRunUsage = computeTotalRunUsage(slice);
   return {
-    events: slice.events,
+    events: slice.events ?? [],
     assistantTexts: slice.assistantTexts,
     reasoningTexts: slice.reasoningTexts,
     partialToolCallArgs: slice.partialToolCallArgs,
@@ -17,6 +28,7 @@ export function mirrorOf(slice: ChatSlice): ActiveMirror {
     liveToolOutputByCallId: slice.liveToolOutputByCallId,
     toolResultSettledIds: slice.toolResultSettledIds,
     liveReportResultIds: slice.liveReportResultIds,
+    toolCacheHint: slice.toolCacheHint ?? null,
     orchestratorUsage: slice.orchestratorUsage,
     lastPromptCacheMissReason: slice.lastPromptCacheMissReason,
     latestOrchestratorRunStatus: slice.latestOrchestratorRunStatus,
@@ -33,6 +45,6 @@ export function mirrorOf(slice: ChatSlice): ActiveMirror {
     draft: slice.draft,
     attachmentDraft: slice.attachmentDraft,
     transcriptPaging: slice.transcriptPaging,
-    followUps: slice.followUps
+    followUps: normalizeFollowUps(slice.followUps)
   };
 }
